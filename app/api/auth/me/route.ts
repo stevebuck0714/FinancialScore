@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import prisma from '@/lib/prisma';
+import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,27 +41,54 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('✅ User data retrieved:', user.email);
+    await ensureLegacyCompanyAccess(user.id);
+    const accessibleCompanies = await listAccessibleCompaniesForUser(user.id);
+    const cookieActiveCompanyId = request.cookies.get('fs_active_company')?.value;
+    const activeCompanyId =
+      accessibleCompanies.find((c) => c.companyId === cookieActiveCompanyId)?.companyId ||
+      accessibleCompanies[0]?.companyId ||
+      user.companyId ||
+      null;
 
     // Get consultant info
     const consultant = user.primaryConsultant || user.consultantFirm;
     const consultantId = consultant?.id || user.consultantId;
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
         userType: user.userType,
-        companyRole: user.companyRole,
-        companyId: user.companyId,
+        companyRole:
+          accessibleCompanies.find((c) => c.companyId === activeCompanyId)?.companyRole ||
+          user.companyRole,
+        sidebarAccess:
+          (accessibleCompanies.find((c) => c.companyId === activeCompanyId)?.sidebarAccess as any) ??
+          user.sidebarAccess,
+        companyId: activeCompanyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,
         consultantType: consultant?.type,
         consultantCompanyName: consultant?.companyName,
-        mfaEnabled: user.mfaEnabled
-      }
+        mfaEnabled: user.mfaEnabled,
+        accessibleCompanies,
+      },
+      activeCompanyId,
     });
+
+    if (activeCompanyId) {
+      response.cookies.set('fs_active_company', activeCompanyId, {
+        httpOnly: false,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30,
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error('❌ Error fetching user:', error);
     return NextResponse.json(

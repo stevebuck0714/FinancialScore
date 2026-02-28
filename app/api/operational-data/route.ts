@@ -2,6 +2,68 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
+import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from '@/lib/operations/sector-mock-data';
+
+export const dynamic = 'force-dynamic';
+
+async function companyHasAnyRealOperationalData(companyId: string): Promise<boolean> {
+  const [
+    customers,
+    arAging,
+    apAging,
+    products,
+    inventory,
+    cash,
+    arOpenInvoices,
+    arPayments,
+    apOpenBills,
+    apPayments,
+  ] = await Promise.all([
+    prisma.customerSalesSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.aRAgingSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.aPAgingSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.productSalesSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.inventorySnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.cashSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.aROpenInvoiceSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    prisma.aRPaymentFact.findFirst({ where: { companyId }, select: { id: true } }),
+    (prisma as any).aPOpenBillSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
+    (prisma as any).aPPaymentFact.findFirst({ where: { companyId }, select: { id: true } }),
+  ]);
+  return Boolean(
+    customers ||
+      arAging ||
+      apAging ||
+      products ||
+      inventory ||
+      cash ||
+      arOpenInvoices ||
+      arPayments ||
+      apOpenBills ||
+      apPayments
+  );
+}
+
+async function activateRealOperationalData(companyId: string): Promise<void> {
+  await prisma.company.updateMany({
+    where: {
+      id: companyId,
+      hasRealOperationalData: false,
+    },
+    data: {
+      hasRealOperationalData: true,
+      realDataActivatedAt: new Date(),
+    },
+  });
+}
+
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
 
 /**
  * GET /api/operational-data
@@ -13,6 +75,7 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
  * - limit: number (optional) - max records to return
+ * - sectorCategory: NAICS sector code (optional) - falls back to company sector
  */
 export async function GET(request: NextRequest) {
   try {
@@ -24,8 +87,9 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
-    const frequency = searchParams.get('frequency') || 'monthly';
+    const frequency = (searchParams.get('frequency') || 'monthly') as 'daily' | 'weekly' | 'monthly';
     const limit = parseInt(searchParams.get('limit') || '1000');
+    const sectorCategoryParam = searchParams.get('sectorCategory');
 
     if (!companyId) {
       return NextResponse.json(
@@ -51,6 +115,30 @@ export async function GET(request: NextRequest) {
 
     const startDate = startDateParam ? new Date(startDateParam) : defaultStartDate;
     const endDate = endDateParam ? new Date(endDateParam) : defaultEndDate;
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: {
+        industrySectorCategory: true,
+        hasRealOperationalData: true,
+        forceOperationalMockData: true,
+      },
+    });
+    if (!company) {
+      return NextResponse.json(
+        { error: 'Company not found' },
+        { status: 404 }
+      );
+    }
+
+    const hasAnyRealData = await companyHasAnyRealOperationalData(companyId);
+    let hasRealOperationalData = company.hasRealOperationalData;
+    if (hasAnyRealData && !hasRealOperationalData) {
+      await activateRealOperationalData(companyId);
+      hasRealOperationalData = true;
+    }
+    const shouldUseMockData = company.forceOperationalMockData || !hasRealOperationalData;
+
+    const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
 
     // Build date filter
     const dateFilter = {
@@ -86,6 +174,20 @@ export async function GET(request: NextRequest) {
           acc[record.customerName].totalInvoices += record.invoiceCount;
           return acc;
         }, {} as Record<string, any>);
+
+        if (!data.length && shouldUseMockData) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'customers',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
 
         return NextResponse.json({
           records: data,
@@ -123,9 +225,182 @@ export async function GET(request: NextRequest) {
             }
           : null;
 
+        let unpaidByCustomer: Array<{
+          customerName: string;
+          current: number;
+          days1to30: number;
+          days31to60: number;
+          days61to90: number;
+          days90plus: number;
+          totalDue: number;
+        }> = [];
+        let unpaidInvoices: Array<{
+          customerName: string;
+          customerNumber: string;
+          invoiceDate: string | null;
+          dueDate: string | null;
+          amountDue: number;
+        }> = [];
+        let customerInvoices: Array<{
+          customerName: string;
+          invoiceNo: string;
+          date: string | null;
+          dueDate: string | null;
+          currency: string;
+          amountCurrency: number;
+          amountHome: number;
+          amountDueHome: number;
+        }> = [];
+        let paidInvoices: Array<{
+          customerName: string;
+          currentMonth: number;
+          lastMonth: number;
+          last12Months: number;
+        }> = [];
+
+        const latestOpenSnapshotDate = await prisma.aROpenInvoiceSnapshot.findFirst({
+          where: {
+            companyId,
+            frequency,
+            snapshotDate: dateFilter,
+          },
+          select: { snapshotDate: true },
+          orderBy: { snapshotDate: 'desc' },
+        });
+
+        if (latestOpenSnapshotDate?.snapshotDate) {
+          const openRows = await prisma.aROpenInvoiceSnapshot.findMany({
+            where: {
+              companyId,
+              frequency,
+              snapshotDate: latestOpenSnapshotDate.snapshotDate,
+            },
+            orderBy: [{ amountDueHome: 'desc' }],
+            take: Math.max(limit, 500),
+          });
+
+          const customerAging = openRows.reduce((acc: Record<string, any>, row: any) => {
+            const name = row.customerName || 'Unknown Customer';
+            if (!acc[name]) {
+              acc[name] = {
+                customerName: name,
+                current: 0,
+                days1to30: 0,
+                days31to60: 0,
+                days61to90: 0,
+                days90plus: 0,
+                totalDue: 0,
+              };
+            }
+            const bucketCurrent = Number(row.current || 0);
+            const bucket1to30 = Number(row.days1to30 || 0);
+            const bucket31to60 = Number(row.days31to60 || 0);
+            const bucket61to90 = Number(row.days61to90 || 0);
+            const bucket90plus = Number(row.days90plus || 0);
+            const openAmount = Number(row.amountDueHome || 0);
+            acc[name].current += bucketCurrent;
+            acc[name].days1to30 += bucket1to30;
+            acc[name].days31to60 += bucket31to60;
+            acc[name].days61to90 += bucket61to90;
+            acc[name].days90plus += bucket90plus;
+            acc[name].totalDue +=
+              bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus > 0
+                ? bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus
+                : openAmount;
+            return acc;
+          }, {});
+
+          unpaidByCustomer = Object.values(customerAging)
+            .sort((a: any, b: any) => b.totalDue - a.totalDue)
+            .slice(0, 25) as any[];
+
+          unpaidInvoices = openRows
+            .filter((row: any) => Number(row.amountDueHome || 0) > 0)
+            .slice(0, 250)
+            .map((row: any) => ({
+              customerName: row.customerName || 'Unknown Customer',
+              customerNumber: row.customerId || '-',
+              invoiceDate: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
+              dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
+              amountDue: Number(row.amountDueHome || 0),
+            }));
+
+          customerInvoices = openRows.slice(0, 500).map((row: any) => ({
+            customerName: row.customerName || 'Unknown Customer',
+            invoiceNo: row.invoiceNo || '-',
+            date: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
+            dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
+            currency: row.currencyCode || 'USD',
+            amountCurrency: Number(row.amountCurrency || row.amountHome || 0),
+            amountHome: Number(row.amountHome || row.amountDueHome || 0),
+            amountDueHome: Number(row.amountDueHome || 0),
+          }));
+        }
+
+        const monthStart = startOfMonth(endDate);
+        const lastMonthStart = addMonths(monthStart, -1);
+        const trailing12Start = addMonths(monthStart, -11);
+        const paymentRows = await prisma.aRPaymentFact.findMany({
+          where: {
+            companyId,
+            paymentDate: {
+              gte: trailing12Start,
+              lte: endDate,
+            },
+          },
+          orderBy: [{ paymentDate: 'desc' }],
+          take: Math.max(limit * 5, 2000),
+        });
+
+        if (paymentRows.length) {
+          const grouped = paymentRows.reduce((acc: Record<string, any>, row: any) => {
+            const name = row.customerName || 'Unknown Customer';
+            if (!acc[name]) {
+              acc[name] = {
+                customerName: name,
+                currentMonth: 0,
+                lastMonth: 0,
+                last12Months: 0,
+              };
+            }
+            const dt = new Date(row.paymentDate);
+            const amount = Number(row.paidAmountHome || 0);
+            if (dt >= monthStart && dt <= endDate) acc[name].currentMonth += amount;
+            if (dt >= lastMonthStart && dt < monthStart) acc[name].lastMonth += amount;
+            if (dt >= trailing12Start && dt <= endDate) acc[name].last12Months += amount;
+            return acc;
+          }, {});
+          paidInvoices = Object.values(grouped)
+            .sort((a: any, b: any) => b.last12Months - a.last12Months)
+            .slice(0, 25) as any[];
+        }
+
+        if (!data.length && shouldUseMockData) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'ar-aging',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
+
         return NextResponse.json({
           records: data,
-          summary: agingMetrics,
+          summary: agingMetrics
+            ? {
+                ...agingMetrics,
+                breakdown: unpaidByCustomer,
+                unpaidByCustomer,
+                unpaidInvoices,
+                paidInvoices,
+                customerInvoices,
+              }
+            : agingMetrics,
         });
 
       case 'ap-aging':
@@ -155,9 +430,182 @@ export async function GET(request: NextRequest) {
             }
           : null;
 
+        let unpaidByVendor: Array<{
+          vendorName: string;
+          current: number;
+          days1to30: number;
+          days31to60: number;
+          days61to90: number;
+          days90plus: number;
+          totalDue: number;
+        }> = [];
+        let unpaidBills: Array<{
+          vendorName: string;
+          billNo: string;
+          date: string | null;
+          dueDate: string | null;
+          amountDue: number;
+        }> = [];
+        let vendorBills: Array<{
+          vendorName: string;
+          billNo: string;
+          date: string | null;
+          dueDate: string | null;
+          currency: string;
+          amountCurrency: number;
+          amountHome: number;
+          amountDueHome: number;
+        }> = [];
+        let paidBills: Array<{
+          vendorName: string;
+          currentMonth: number;
+          lastMonth: number;
+          last12Months: number;
+        }> = [];
+
+        const latestOpenBillsSnapshotDate = await (prisma as any).aPOpenBillSnapshot.findFirst({
+          where: {
+            companyId,
+            frequency,
+            snapshotDate: dateFilter,
+          },
+          select: { snapshotDate: true },
+          orderBy: { snapshotDate: 'desc' },
+        });
+
+        if (latestOpenBillsSnapshotDate?.snapshotDate) {
+          const openBillRows = await (prisma as any).aPOpenBillSnapshot.findMany({
+            where: {
+              companyId,
+              frequency,
+              snapshotDate: latestOpenBillsSnapshotDate.snapshotDate,
+            },
+            orderBy: [{ amountDueHome: 'desc' }],
+            take: Math.max(limit, 500),
+          });
+
+          const vendorAging = openBillRows.reduce((acc: Record<string, any>, row: any) => {
+            const name = row.vendorName || 'Unknown Vendor';
+            if (!acc[name]) {
+              acc[name] = {
+                vendorName: name,
+                current: 0,
+                days1to30: 0,
+                days31to60: 0,
+                days61to90: 0,
+                days90plus: 0,
+                totalDue: 0,
+              };
+            }
+            const bucketCurrent = Number(row.current || 0);
+            const bucket1to30 = Number(row.days1to30 || 0);
+            const bucket31to60 = Number(row.days31to60 || 0);
+            const bucket61to90 = Number(row.days61to90 || 0);
+            const bucket90plus = Number(row.days90plus || 0);
+            const openAmount = Number(row.amountDueHome || 0);
+            acc[name].current += bucketCurrent;
+            acc[name].days1to30 += bucket1to30;
+            acc[name].days31to60 += bucket31to60;
+            acc[name].days61to90 += bucket61to90;
+            acc[name].days90plus += bucket90plus;
+            acc[name].totalDue +=
+              bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus > 0
+                ? bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus
+                : openAmount;
+            return acc;
+          }, {});
+
+          unpaidByVendor = Object.values(vendorAging)
+            .sort((a: any, b: any) => b.totalDue - a.totalDue)
+            .slice(0, 25) as any[];
+
+          unpaidBills = openBillRows
+            .filter((row: any) => Number(row.amountDueHome || 0) > 0)
+            .slice(0, 250)
+            .map((row: any) => ({
+              vendorName: row.vendorName || 'Unknown Vendor',
+              billNo: row.billNo || '-',
+              date: row.billDate ? new Date(row.billDate).toISOString().split('T')[0] : null,
+              dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
+              amountDue: Number(row.amountDueHome || 0),
+            }));
+
+          vendorBills = openBillRows.slice(0, 500).map((row: any) => ({
+            vendorName: row.vendorName || 'Unknown Vendor',
+            billNo: row.billNo || '-',
+            date: row.billDate ? new Date(row.billDate).toISOString().split('T')[0] : null,
+            dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
+            currency: row.currencyCode || 'USD',
+            amountCurrency: Number(row.amountCurrency || row.amountHome || 0),
+            amountHome: Number(row.amountHome || row.amountDueHome || 0),
+            amountDueHome: Number(row.amountDueHome || 0),
+          }));
+        }
+
+        const apMonthStart = startOfMonth(endDate);
+        const apLastMonthStart = addMonths(apMonthStart, -1);
+        const apTrailing12Start = addMonths(apMonthStart, -11);
+        const apPaymentRows = await (prisma as any).aPPaymentFact.findMany({
+          where: {
+            companyId,
+            paymentDate: {
+              gte: apTrailing12Start,
+              lte: endDate,
+            },
+          },
+          orderBy: [{ paymentDate: 'desc' }],
+          take: Math.max(limit * 5, 2000),
+        });
+
+        if (apPaymentRows.length) {
+          const grouped = apPaymentRows.reduce((acc: Record<string, any>, row: any) => {
+            const name = row.vendorName || 'Unknown Vendor';
+            if (!acc[name]) {
+              acc[name] = {
+                vendorName: name,
+                currentMonth: 0,
+                lastMonth: 0,
+                last12Months: 0,
+              };
+            }
+            const dt = new Date(row.paymentDate);
+            const amount = Number(row.paidAmountHome || 0);
+            if (dt >= apMonthStart && dt <= endDate) acc[name].currentMonth += amount;
+            if (dt >= apLastMonthStart && dt < apMonthStart) acc[name].lastMonth += amount;
+            if (dt >= apTrailing12Start && dt <= endDate) acc[name].last12Months += amount;
+            return acc;
+          }, {});
+          paidBills = Object.values(grouped)
+            .sort((a: any, b: any) => b.last12Months - a.last12Months)
+            .slice(0, 25) as any[];
+        }
+
+        if (!data.length && shouldUseMockData) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'ap-aging',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
+
         return NextResponse.json({
           records: data,
-          summary: apMetrics,
+          summary: apMetrics
+            ? {
+                ...apMetrics,
+                breakdown: unpaidByVendor,
+                unpaidByVendor,
+                unpaidBills,
+                paidBills,
+                vendorBills,
+              }
+            : apMetrics,
         });
 
       case 'products':
@@ -188,6 +636,20 @@ export async function GET(request: NextRequest) {
           acc[record.itemName].totalQuantity += record.quantitySold;
           return acc;
         }, {} as Record<string, any>);
+
+        if (!data.length && shouldUseMockData) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'products',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
 
         return NextResponse.json({
           records: data,
@@ -228,6 +690,20 @@ export async function GET(request: NextRequest) {
             .sort((a, b) => b.assetValue - a.assetValue)
             .slice(0, 10),
         };
+
+        if (!data.length && shouldUseMockData) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'inventory',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
 
         return NextResponse.json({
           records: data,
@@ -293,6 +769,20 @@ export async function GET(request: NextRequest) {
             : 0,
         };
 
+        if (!data.length && shouldUseMockData) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'cash',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
+
         return NextResponse.json({
           records: data,
           summary: cashMetrics,
@@ -309,14 +799,23 @@ export async function GET(request: NextRequest) {
           prisma.cashSnapshot.count({ where: { companyId } }),
         ]);
 
+        const summary = {
+          customerSalesRecords: customers,
+          arAgingRecords: arAging,
+          apAgingRecords: apAging,
+          productSalesRecords: products,
+          inventoryRecords: inventory,
+          cashRecords: cash,
+        };
+        if (!customers && !arAging && !apAging && !products && !inventory && !cash && shouldUseMockData) {
+          return NextResponse.json({
+            summary: buildOperationalMockSummaryCounts(sectorCategory),
+          });
+        }
+
         return NextResponse.json({
           summary: {
-            customerSalesRecords: customers,
-            arAgingRecords: arAging,
-            apAgingRecords: apAging,
-            productSalesRecords: products,
-            inventoryRecords: inventory,
-            cashRecords: cash,
+            ...summary,
           },
         });
     }

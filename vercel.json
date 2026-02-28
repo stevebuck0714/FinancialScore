@@ -3,8 +3,12 @@
   "installCommand": "npm install --include=dev",
   "crons": [
     {
+      "path": "/api/cron/keepalive",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/sync-operational-data",
-      "schedule": "0 2 * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/cleanup-devices",

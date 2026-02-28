@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface MFAVerificationModalProps {
   userId: string;
@@ -10,21 +10,38 @@ interface MFAVerificationModalProps {
   onCancel: () => void;
 }
 
-export default function MFAVerificationModal({
-  userId,
-  userEmail,
-  trustDurationDays = 180,
-  onSuccess,
-  onCancel,
-}: MFAVerificationModalProps) {
+export default function MFAVerificationModal({ userId, userEmail, onSuccess, onCancel, trustDurationDays }: MFAVerificationModalProps) {
+  const BACKUP_CODE_LENGTH = 8;
   const [verificationCode, setVerificationCode] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBackupCodeInput, setShowBackupCodeInput] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(false);
+  const trustDurationMax = Number.isFinite(trustDurationDays) ? Math.floor(trustDurationDays as number) : 180;
+  const [selectedTrustDurationDays, setSelectedTrustDurationDays] = useState(trustDurationMax);
+
+  useEffect(() => {
+    setSelectedTrustDurationDays(trustDurationMax);
+  }, [trustDurationMax]);
+
+  const trustDurationOptions = [
+    7, 14, 30, 60, 90, 120, 180
+  ].filter((days) => days <= trustDurationMax);
+
+  if (trustDurationOptions.length === 0) {
+    trustDurationOptions.push(trustDurationMax);
+  } else if (!trustDurationOptions.includes(trustDurationMax)) {
+    trustDurationOptions.push(trustDurationMax);
+    trustDurationOptions.sort((a, b) => a - b);
+  }
 
   const verifyMFACode = async () => {
-    if (!verificationCode || verificationCode.length !== 6) {
+    if (showBackupCodeInput) {
+      if (!verificationCode || verificationCode.length !== BACKUP_CODE_LENGTH) {
+        setError(`Please enter your ${BACKUP_CODE_LENGTH}-character backup code`);
+        return;
+      }
+    } else if (!verificationCode || verificationCode.length !== 6) {
       setError('Please enter a 6-digit code');
       return;
     }
@@ -33,15 +50,28 @@ export default function MFAVerificationModal({
     setError('');
 
     try {
+      const payload: {
+        userId: string;
+        token: string;
+        isBackupCode: boolean;
+        rememberDevice: boolean;
+        trustDurationDays?: number;
+      } = {
+        userId,
+        token: verificationCode,
+        isBackupCode: showBackupCodeInput,
+        rememberDevice: rememberDevice
+      };
+
+      if (rememberDevice) {
+        payload.trustDurationDays = selectedTrustDurationDays;
+      }
+
       const response = await fetch('/api/auth/mfa/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId, 
-          token: verificationCode,
-          isBackupCode: showBackupCodeInput,
-          rememberDevice: rememberDevice,
-        })
+        credentials: 'include',
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -59,7 +89,10 @@ export default function MFAVerificationModal({
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && verificationCode.length === 6 && !isSubmitting) {
+    const isReadyToSubmit = showBackupCodeInput
+      ? verificationCode.length === BACKUP_CODE_LENGTH
+      : verificationCode.length === 6;
+    if (e.key === 'Enter' && isReadyToSubmit && !isSubmitting) {
       verifyMFACode();
     }
   };
@@ -125,14 +158,14 @@ export default function MFAVerificationModal({
             value={verificationCode}
             onChange={(e) => {
               const value = showBackupCodeInput 
-                ? e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase()
+                ? e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, BACKUP_CODE_LENGTH).toUpperCase()
                 : e.target.value.replace(/\D/g, '').slice(0, 6);
               setVerificationCode(value);
               setError('');
             }}
             onKeyPress={handleKeyPress}
-            placeholder={showBackupCodeInput ? 'XXXXXXXXXX' : '000000'}
-            maxLength={showBackupCodeInput ? 10 : 6}
+            placeholder={showBackupCodeInput ? 'XXXXXXXX' : '000000'}
+            maxLength={showBackupCodeInput ? BACKUP_CODE_LENGTH : 6}
             style={{
               width: '100%',
               padding: '14px',
@@ -192,26 +225,60 @@ export default function MFAVerificationModal({
               }}
             />
             <span>
-              <strong>Remember this device for {trustDurationDays} days</strong>
+              <strong>Remember this device for {selectedTrustDurationDays} days</strong>
               <br />
               <span style={{ fontSize: '12px', color: '#64748b' }}>
                 Don't check this on shared or public computers
               </span>
             </span>
           </label>
+          <div style={{
+            marginTop: '10px',
+            opacity: rememberDevice ? 1 : 0.6
+          }}>
+            <label style={{
+              display: 'block',
+              fontSize: '12px',
+              fontWeight: '600',
+              color: '#475569',
+              marginBottom: '6px'
+            }}>
+              Trust Duration Days
+            </label>
+            <select
+              value={selectedTrustDurationDays}
+              onChange={(e) => setSelectedTrustDurationDays(parseInt(e.target.value, 10))}
+              disabled={!rememberDevice}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                fontSize: '13px',
+                backgroundColor: rememberDevice ? 'white' : '#f1f5f9',
+                cursor: rememberDevice ? 'pointer' : 'not-allowed'
+              }}
+            >
+              {trustDurationOptions.map((days) => (
+                <option key={days} value={days}>
+                  {days} days
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <button
           onClick={verifyMFACode}
           disabled={
-            (showBackupCodeInput ? verificationCode.length < 6 : verificationCode.length !== 6) 
+            (showBackupCodeInput ? verificationCode.length !== BACKUP_CODE_LENGTH : verificationCode.length !== 6) 
             || isSubmitting
           }
           style={{
             width: '100%',
             padding: '12px',
             background: (
-              (showBackupCodeInput ? verificationCode.length >= 6 : verificationCode.length === 6) 
+              (showBackupCodeInput ? verificationCode.length === BACKUP_CODE_LENGTH : verificationCode.length === 6) 
               && !isSubmitting
             ) ? '#667eea' : '#cbd5e1',
             color: 'white',
@@ -220,19 +287,19 @@ export default function MFAVerificationModal({
             fontSize: '15px',
             fontWeight: '600',
             cursor: (
-              (showBackupCodeInput ? verificationCode.length >= 6 : verificationCode.length === 6) 
+              (showBackupCodeInput ? verificationCode.length === BACKUP_CODE_LENGTH : verificationCode.length === 6) 
               && !isSubmitting
             ) ? 'pointer' : 'not-allowed',
             transition: 'all 0.2s',
             marginBottom: '12px'
           }}
           onMouseEnter={(e) => {
-            if ((showBackupCodeInput ? verificationCode.length >= 6 : verificationCode.length === 6) && !isSubmitting) {
+            if ((showBackupCodeInput ? verificationCode.length === BACKUP_CODE_LENGTH : verificationCode.length === 6) && !isSubmitting) {
               e.currentTarget.style.background = '#5568d3';
             }
           }}
           onMouseLeave={(e) => {
-            if ((showBackupCodeInput ? verificationCode.length >= 6 : verificationCode.length === 6) && !isSubmitting) {
+            if ((showBackupCodeInput ? verificationCode.length === BACKUP_CODE_LENGTH : verificationCode.length === 6) && !isSubmitting) {
               e.currentTarget.style.background = '#667eea';
             }
           }}

@@ -2,8 +2,8 @@
  * Database Security Utilities
  * 
  * CRITICAL: These functions prevent cross-database contamination between:
- * - Production databases (e.g., aged-snow / orange-poetry)
- * - Staging databases (e.g., cold-frost)
+ * - Production: configured via PRODUCTION_DB_PROJECTS (default: aged-snow,orange-poetry)
+ * - Staging: configured via STAGING_DB_PROJECTS (default: cold-frost)
  * 
  * These safeguards ensure:
  * 1. Production (orange-poetry) NEVER connects to staging (cold-frost)
@@ -17,6 +17,25 @@ export interface DatabaseInfo {
   databaseName: string;
   label: string;
   isAllowed: boolean;
+  productionProjects: string[];
+  stagingProjects: string[];
+}
+
+function getProjectList(envValue: string | undefined, fallback: string[]): string[] {
+  const raw = (envValue ?? fallback.join(',')).split(',');
+  return raw.map((value) => value.trim()).filter(Boolean);
+}
+
+function findProject(databaseUrl: string, projects: string[]): string | null {
+  return projects.find((project) => databaseUrl.includes(project)) ?? null;
+}
+
+function getDatabaseHost(databaseUrl: string): string {
+  try {
+    return new URL(databaseUrl).host;
+  } catch (error) {
+    return 'unknown';
+  }
 }
 
 function parseMatchers(raw: string | undefined, defaults: string[]): string[] {
@@ -55,48 +74,42 @@ function isVercelProductionRuntime(): boolean {
  */
 export function validateDatabaseConnection(): DatabaseInfo {
   const databaseUrl = process.env.DATABASE_URL || '';
-  const productionMatchers = getProductionMatchers();
-  const stagingMatchers = getStagingMatchers();
-  
-  const isProduction = matchesAny(databaseUrl, productionMatchers);
-  const isStaging = !isProduction && matchesAny(databaseUrl, stagingMatchers);
-  
+
+  const productionProjects = getProjectList(process.env.PRODUCTION_DB_PROJECTS, ['orange-poetry', 'aged-snow']);
+  const stagingProjects = getProjectList(process.env.STAGING_DB_PROJECTS, ['cold-frost']);
+
+  const productionMatch = findProject(databaseUrl, productionProjects);
+  const stagingMatch = findProject(databaseUrl, stagingProjects);
+
+  const isProduction = !!productionMatch;
+  const isStaging = !!stagingMatch;
+
   let databaseName = 'unknown';
   let label = 'UNKNOWN';
   let isAllowed = false;
   
   if (isProduction) {
-    databaseName = productionMatchers[0] || 'production-db';
+    databaseName = productionMatch || 'production';
     label = `PRODUCTION (${databaseName})`;
-    // Production DB is ONLY allowed on Vercel production runtime.
-    // Local dev should NEVER be able to connect to orange-poetry.
+    // Production DBs are ONLY allowed on Vercel production runtime.
+    // Local dev should NEVER be able to connect to production databases.
     isAllowed = isVercelProductionRuntime();
   } else if (isStaging) {
-    databaseName = stagingMatchers[0] || 'staging-db';
+    databaseName = stagingMatch || 'staging';
     label = `STAGING (${databaseName})`;
     // Staging DB is allowed in local dev and Vercel preview/development environments.
     // We also allow it on Vercel production runtime for non-prod projects that deploy with --prod.
-    // The critical invariant is: orange-poetry must never be reachable from local/dev.
+    // The critical invariant is: production databases must never be reachable from local/dev.
     isAllowed = true;
   } else if (databaseUrl.includes('file:') || databaseUrl.includes('sqlite')) {
     databaseName = 'sqlite';
     label = 'SQLITE (local file)';
     isAllowed = true; // SQLite is always allowed for local development
   } else if (databaseUrl.includes('neon.tech')) {
-    // Generic neon.tech connection - classify with configurable matchers.
-    if (matchesAny(databaseUrl, productionMatchers)) {
-      databaseName = productionMatchers[0] || 'production-db';
-      label = `PRODUCTION (${databaseName})`;
-      isAllowed = isVercelProductionRuntime();
-    } else if (matchesAny(databaseUrl, stagingMatchers)) {
-      databaseName = stagingMatchers[0] || 'staging-db';
-      label = `STAGING (${databaseName})`;
-      isAllowed = true;
-    } else {
-      databaseName = 'neon-unknown';
-      label = 'UNKNOWN NEON DATABASE';
-      isAllowed = false; // Unknown neon database - not allowed
-    }
+    // Generic neon.tech connection - validate by checking the endpoint name
+    databaseName = 'neon-unknown';
+    label = 'UNKNOWN NEON DATABASE';
+    isAllowed = false; // Unknown neon database - not allowed
   }
   
   return {
@@ -104,7 +117,9 @@ export function validateDatabaseConnection(): DatabaseInfo {
     isStaging,
     databaseName,
     label,
-    isAllowed
+    isAllowed,
+    productionProjects,
+    stagingProjects
   };
 }
 
@@ -122,13 +137,14 @@ export function enforceDatabaseSecurity(): void {
     // During build, only block production database connections
     // Staging database is allowed during build
     const databaseUrl = process.env.DATABASE_URL || '';
-    if (matchesAny(databaseUrl, getProductionMatchers()) && !isVercelProductionRuntime()) {
+    const productionProjects = getProjectList(process.env.PRODUCTION_DB_PROJECTS, ['orange-poetry', 'aged-snow']);
+    if (findProject(databaseUrl, productionProjects) && !isVercelProductionRuntime()) {
       const error = new Error(
         `🚨 SECURITY VIOLATION: Production database detected during build in non-production environment!\n` +
         `   NODE_ENV: ${process.env.NODE_ENV}\n` +
         `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
         `   VERCEL: ${process.env.VERCEL}\n` +
-        `   Production database must ONLY be used on Vercel production runtime.`
+        `   Production databases must ONLY be used on Vercel production runtime.`
       );
       console.error(error.message);
       throw error;
@@ -143,9 +159,12 @@ export function enforceDatabaseSecurity(): void {
     const error = new Error(
       `🚨 SECURITY VIOLATION: Database connection not allowed!\n` +
       `   Database: ${dbInfo.label}\n` +
+      `   Database host: ${getDatabaseHost(process.env.DATABASE_URL || '')}\n` +
       `   NODE_ENV: ${process.env.NODE_ENV}\n` +
       `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
       `   VERCEL: ${process.env.VERCEL}\n` +
+      `   Allowed production projects: ${dbInfo.productionProjects.join(', ') || '(none)'}\n` +
+      `   Allowed staging projects: ${dbInfo.stagingProjects.join(', ') || '(none)'}\n` +
       `   This connection violates database isolation rules.\n` +
       `   Production databases must ONLY be used on Vercel production runtime.\n` +
       `   Local/dev/preview must NEVER connect to production databases.`

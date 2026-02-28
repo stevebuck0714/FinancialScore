@@ -1,5 +1,6 @@
 import { headers } from 'next/headers'
 import prisma from './prisma'
+import { ensureLegacyCompanyAccess } from './user-company-access'
 
 /**
  * Tenant Security & Authorization Helpers
@@ -26,7 +27,7 @@ export async function getUserContext(): Promise<UserContext | null> {
   const userId = headersList.get('x-user-id')
   const email = headersList.get('x-user-email')
   const role = headersList.get('x-user-role')
-  const companyId = headersList.get('x-company-id')
+  const companyId = headersList.get('x-active-company-id') || headersList.get('x-company-id')
   const consultantId = headersList.get('x-consultant-id')
   
   if (!userId || !email || !role) {
@@ -93,7 +94,18 @@ export async function validateCompanyAccess(targetCompanyId: string): Promise<bo
   
   // Users can only access their own company
   if (context.role === 'USER') {
-    return context.companyId === targetCompanyId
+    if (context.companyId === targetCompanyId) return true
+    await ensureLegacyCompanyAccess(context.userId)
+    const membership = await prisma.userCompanyAccess.findUnique({
+      where: {
+        userId_companyId: {
+          userId: context.userId,
+          companyId: targetCompanyId,
+        },
+      },
+      select: { id: true },
+    })
+    return Boolean(membership)
   }
   
   // Consultants can access their companies
@@ -102,8 +114,20 @@ export async function validateCompanyAccess(targetCompanyId: string): Promise<bo
       where: { id: targetCompanyId },
       select: { consultantId: true }
     })
-    
-    return company?.consultantId === context.consultantId
+    if (company?.consultantId === context.consultantId) {
+      return true
+    }
+    await ensureLegacyCompanyAccess(context.userId)
+    const membership = await prisma.userCompanyAccess.findUnique({
+      where: {
+        userId_companyId: {
+          userId: context.userId,
+          companyId: targetCompanyId,
+        },
+      },
+      select: { id: true },
+    })
+    return Boolean(membership)
   }
   
   return false
@@ -176,13 +200,32 @@ export async function validateUserAccess(targetUserId: string): Promise<boolean>
   }
   
   // Users in same company can access each other (e.g., for team features)
-  if (context.role === 'USER' && context.companyId) {
+  if (context.role === 'USER') {
+    await ensureLegacyCompanyAccess(context.userId)
+    const myMemberships = await prisma.userCompanyAccess.findMany({
+      where: { userId: context.userId },
+      select: { companyId: true },
+    })
+    const myCompanyIds = new Set(myMemberships.map((m) => m.companyId))
+    if (context.companyId) myCompanyIds.add(context.companyId)
+
     const targetUser = await prisma.user.findUnique({
       where: { id: targetUserId },
-      select: { companyId: true }
+      select: { companyId: true, id: true }
     })
-    
-    return targetUser?.companyId === context.companyId
+    if (!targetUser) return false
+
+    const targetMemberships = await prisma.userCompanyAccess.findMany({
+      where: { userId: targetUser.id },
+      select: { companyId: true },
+    })
+    const targetCompanyIds = new Set(targetMemberships.map((m) => m.companyId))
+    if (targetUser.companyId) targetCompanyIds.add(targetUser.companyId)
+
+    for (const companyId of myCompanyIds) {
+      if (targetCompanyIds.has(companyId)) return true
+    }
+    return false
   }
   
   return false
@@ -266,16 +309,32 @@ export async function getAccessibleCompanyIds(): Promise<string[]> {
   
   // Consultants have access to their companies
   if (context.role === 'CONSULTANT' && context.consultantId) {
-    const companies = await prisma.company.findMany({
+    const consultantCompanies = await prisma.company.findMany({
       where: { consultantId: context.consultantId },
       select: { id: true }
     })
-    return companies.map(c => c.id)
+    await ensureLegacyCompanyAccess(context.userId)
+    const memberships = await prisma.userCompanyAccess.findMany({
+      where: { userId: context.userId },
+      select: { companyId: true },
+    })
+    const idSet = new Set([
+      ...consultantCompanies.map(c => c.id),
+      ...memberships.map(m => m.companyId),
+    ])
+    return Array.from(idSet)
   }
   
   // Users have access to their own company only
-  if (context.role === 'USER' && context.companyId) {
-    return [context.companyId]
+  if (context.role === 'USER') {
+    await ensureLegacyCompanyAccess(context.userId)
+    const memberships = await prisma.userCompanyAccess.findMany({
+      where: { userId: context.userId },
+      select: { companyId: true },
+    })
+    const ids = memberships.map((m) => m.companyId)
+    if (ids.length > 0) return ids
+    if (context.companyId) return [context.companyId]
   }
   
   return []

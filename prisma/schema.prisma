@@ -39,15 +39,32 @@ model Company {
   id                         String                 @id @default(cuid())
   name                       String
   consultantId               String?                // Optional - NULL for standalone businesses
+  // Tier 1 support routing: CONSULTANT or CORELYTICS
+  tier1SupportOwner          String?                @default("CORELYTICS")
+  // Consultant that owns Tier 1 support when owner is CONSULTANT
+  tier1SupportConsultantId   String?
+  // Optional per-company Tier 1 contact email override
+  tier1SupportContactEmail   String?
+  // Once true, operational APIs never serve mock data for this company.
+  hasRealOperationalData     Boolean                @default(false)
+  // When any real operational snapshot is first detected.
+  realDataActivatedAt        DateTime?
+  // Site-admin override to force demo/mock operational responses.
+  forceOperationalMockData   Boolean                @default(false)
   addressStreet              String?
   addressCity                String?
   addressState               String?
   addressZip                 String?
   addressCountry             String?
-  industrySector             Int?
+  industrySector             Int?                   // Existing industry classification for benchmarks (keep as "Industry Group" in UI)
+  accountingSystem           String?                // QuickBooks, Xero, NetSuite, Sage, etc.
+  companySizeCategory        String?                // DEFAULT, SMB, MID_MARKET, ENTERPRISE
+  industrySectorCategory     String?                // For specialized reporting (Agriculture, Mining, Construction, etc.)
   subscriptionMonthlyPrice   Float?
   subscriptionQuarterlyPrice Float?
   subscriptionAnnualPrice    Float?
+  // One-time setup fee charged at onboarding (before recurring begins)
+  subscriptionSetupFee       Float?                 @default(0)
   createdAt                  DateTime               @default(now())
   updatedAt                  DateTime               @updatedAt
   selectedSubscriptionPlan   String?
@@ -72,6 +89,9 @@ model Company {
   financialRecords           FinancialRecord[]
   subscription               Subscription?
   users                      User[]
+  userAccess                 UserCompanyAccess[]
+  documents                  CompanyDocument[]
+  documentChunks             CompanyDocumentChunk[]
   loans                      Loan[]
   xeroTransactions           XeroTransaction[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
@@ -107,12 +127,102 @@ model User {
   consultantFirm       Consultant?        @relation("ConsultantTeamMembers", fields: [consultantId], references: [id], onDelete: Cascade)
   financialRecords     FinancialRecord[]
   company              Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyAccess        UserCompanyAccess[]
   trustedDevices       TrustedDevice[]
+  uploadedDocuments    CompanyDocument[]  @relation("CompanyDocumentUploadedBy")
 
   @@index([email])
   @@index([companyId])
   @@index([consultantId])
   @@index([passwordResetToken])
+}
+
+model UserCompanyAccess {
+  id          String   @id @default(cuid())
+  userId      String
+  companyId   String
+  companyRole String?  @default("user")
+  sidebarAccess Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
+}
+
+enum CompanyDocumentCategory {
+  LOAN_DOCUMENTS
+  FINANCING_DOCUMENTS
+  LEGAL_AND_REGULATORY
+  OTHER
+}
+
+model CompanyDocument {
+  id               String                  @id @default(cuid())
+  companyId        String
+  uploadedByUserId String
+  category         CompanyDocumentCategory
+
+  originalFileName String
+  blobUrl          String                  @unique
+  blobPathname     String?                 @unique
+  contentType      String?
+  sizeBytes        Int?
+
+  extractionStatus String                  @default("PENDING") // PENDING | DONE | FAILED | NO_TEXT
+  extractedText    String?
+  extractionError  String?
+
+  // Chunk/embedding index status for document search (RAG).
+  // PENDING | DONE | FAILED
+  indexStatus      String                  @default("PENDING")
+  indexedAt        DateTime?
+  indexError       String?
+  embeddingModel   String?
+  embeddingDim     Int?
+
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  company          Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User                    @relation("CompanyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  chunks           CompanyDocumentChunk[]
+
+  @@index([companyId])
+  @@index([uploadedByUserId])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model CompanyDocumentChunk {
+  id         String          @id @default(cuid())
+  documentId String
+  companyId  String
+
+  chunkIndex Int
+  startOffset Int?
+  endOffset   Int?
+
+  text       String
+  textHash   String
+
+  // Stored in Postgres as pgvector 'vector' type. Prisma does not natively support it,
+  // but keeping the field here documents the column and allows raw SQL to reference it.
+  embedding  Unsupported("vector")
+
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  document   CompanyDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@index([companyId])
 }
 
 model TrustedDevice {
@@ -133,6 +243,14 @@ model TrustedDevice {
   @@index([deviceToken])
   @@index([expiresAt])
   @@index([isActive])
+}
+
+model OpsSectorLayoutConfig {
+  id             String   @id @default(cuid())
+  sectorCategory String   @unique
+  config         Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model FinancialRecord {
@@ -433,9 +551,11 @@ model SystemSettings {
   businessMonthlyPrice     Float?   @default(0)
   businessQuarterlyPrice   Float?   @default(0)
   businessAnnualPrice      Float?   @default(0)
+  businessSetupFee         Float?   @default(0)
   consultantMonthlyPrice   Float?   @default(0)
   consultantQuarterlyPrice Float?   @default(0)
   consultantAnnualPrice    Float?   @default(0)
+  consultantSetupFee       Float?   @default(0)
   updatedAt                DateTime @updatedAt
   createdAt                DateTime @default(now())
 
@@ -476,6 +596,7 @@ model AffiliateCode {
   annualPrice    Float     @default(0)
   monthlyPrice   Float     @default(0)
   quarterlyPrice Float     @default(0)
+  setupFee       Float     @default(0)
   affiliate      Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
 
   @@index([affiliateId])
@@ -487,6 +608,14 @@ model Subscription {
   companyId          String               @unique
   usaepayCustomerId  String?
   usaepayBillingId   String?
+  // One-time setup fee (required before recurring is activated)
+  setupFeeAmount         Float            @default(0)
+  setupFeeStatus         String           @default("PENDING") // PENDING | PAID | FAILED | WAIVED
+  setupFeePaidAt         DateTime?
+  setupFeeTransactionId  String?
+  // Recurring billing schedule (anchored to setupFeePaidAt)
+  billingAnchorDate      DateTime?
+  firstRecurringBillDate DateTime?
   plan               String
   amount             Float
   status             SubscriptionStatus   @default(PENDING)
@@ -618,11 +747,15 @@ enum BusinessStatus {
 }
 
 enum AccountingPlatform {
+  ACUMATICA
+  ODOO
   QUICKBOOKS
   XERO
   SAGE
+  SAGE_INTACCT
   NETSUITE
   DYNAMICS365
+  INFOR_M3
 }
 
 enum ConnectionStatus {
@@ -649,6 +782,7 @@ enum PaymentStatus {
 
 enum PaymentType {
   INITIAL
+  SETUP_FEE
   RECURRING
   MANUAL
   REFUND
@@ -763,6 +897,122 @@ model ARAgingSnapshot {
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@unique([companyId, snapshotDate, frequency])
+}
+
+model AROpenInvoiceSnapshot {
+  id                String   @id @default(cuid())
+  companyId         String
+  snapshotDate      DateTime
+  frequency         String   @default("daily")
+  customerId        String?
+  customerName      String
+  invoiceNo         String
+  invoiceDate       DateTime?
+  dueDate           DateTime?
+  status            String?
+  currencyCode      String?
+  amountCurrency    Float?
+  amountHome        Float?
+  amountDueHome     Float
+  current           Float?
+  days1to30         Float?
+  days31to60        Float?
+  days61to90        Float?
+  days90plus        Float?
+  sourcePlatform    String?  @default("INFOR_M3")
+  sourceProgram     String?
+  sourceTransaction String?
+  cono              String?
+  divi              String?
+  createdAt         DateTime @default(now())
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, customerId])
+  @@index([companyId, invoiceNo])
+  @@index([companyId, customerName])
+  @@unique([companyId, frequency, snapshotDate, invoiceNo, customerName])
+}
+
+model ARPaymentFact {
+  id                 String   @id @default(cuid())
+  companyId          String
+  paymentDate        DateTime
+  customerId         String?
+  customerName       String
+  invoiceNo          String?
+  currencyCode       String?
+  paidAmountCurrency Float?
+  paidAmountHome     Float
+  sourcePlatform     String?  @default("INFOR_M3")
+  sourceProgram      String?
+  sourceTransaction  String?
+  cono               String?
+  divi               String?
+  createdAt          DateTime @default(now())
+
+  @@index([companyId, paymentDate(sort: Desc)])
+  @@index([companyId, customerId, paymentDate(sort: Desc)])
+  @@index([companyId, customerName, paymentDate(sort: Desc)])
+  @@index([companyId, invoiceNo])
+}
+
+model APOpenBillSnapshot {
+  id                String   @id @default(cuid())
+  companyId         String
+  snapshotDate      DateTime
+  frequency         String   @default("daily")
+  vendorId          String?
+  vendorName        String
+  billNo            String
+  billDate          DateTime?
+  dueDate           DateTime?
+  status            String?
+  currencyCode      String?
+  amountCurrency    Float?
+  amountHome        Float?
+  amountDueHome     Float
+  current           Float?
+  days1to30         Float?
+  days31to60        Float?
+  days61to90        Float?
+  days90plus        Float?
+  sourcePlatform    String?  @default("INFOR_M3")
+  sourceProgram     String?
+  sourceTransaction String?
+  cono              String?
+  divi              String?
+  createdAt         DateTime @default(now())
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, vendorId])
+  @@index([companyId, billNo])
+  @@index([companyId, vendorName])
+  @@unique([companyId, frequency, snapshotDate, billNo, vendorName])
+}
+
+model APPaymentFact {
+  id                 String   @id @default(cuid())
+  companyId          String
+  paymentDate        DateTime
+  vendorId           String?
+  vendorName         String
+  billNo             String?
+  currencyCode       String?
+  paidAmountCurrency Float?
+  paidAmountHome     Float
+  sourcePlatform     String?  @default("INFOR_M3")
+  sourceProgram      String?
+  sourceTransaction  String?
+  cono               String?
+  divi               String?
+  createdAt          DateTime @default(now())
+
+  @@index([companyId, paymentDate(sort: Desc)])
+  @@index([companyId, vendorId, paymentDate(sort: Desc)])
+  @@index([companyId, vendorName, paymentDate(sort: Desc)])
+  @@index([companyId, billNo])
 }
 
 model APAgingSnapshot {

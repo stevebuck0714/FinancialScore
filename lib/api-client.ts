@@ -21,7 +21,8 @@ async function fetchApi(url: string, options?: RequestInit) {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new ApiError(response.status, data.error || 'Request failed');
+      const detailText = data?.details ? ` (${data.details})` : '';
+      throw new ApiError(response.status, `${data.error || 'Request failed'}${detailText}`);
     }
 
     return data;
@@ -40,6 +41,13 @@ export const authApi = {
     return fetchApi('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    });
+  },
+
+  async selectCompany(companyId: string) {
+    return fetchApi('/api/auth/select-company', {
+      method: 'POST',
+      body: JSON.stringify({ companyId }),
     });
   },
 
@@ -79,6 +87,9 @@ export const companiesApi = {
     location?: string;
     industrySector?: number;
     affiliateCode?: string;
+    tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
+    tier1SupportConsultantId?: string | null;
+    tier1SupportContactEmail?: string | null;
   }) {
     return fetchApi('/api/companies', {
       method: 'POST',
@@ -94,6 +105,14 @@ export const companiesApi = {
     addressZip?: string;
     addressCountry?: string;
     industrySector?: number;
+    industrySectorCategory?: string | null;
+    accountingSystem?: string | null;
+    companySizeCategory?: string | null;
+    tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
+    tier1SupportConsultantId?: string | null;
+    tier1SupportContactEmail?: string | null;
+    hasRealOperationalData?: boolean;
+    forceOperationalMockData?: boolean;
   }) {
     return fetchApi('/api/companies', {
       method: 'PATCH',
@@ -101,14 +120,15 @@ export const companiesApi = {
     });
   },
 
-  async updatePricing(id: string, monthly: number, quarterly: number, annual: number) {
+  async updatePricing(id: string, monthly: number, quarterly: number, annual: number, setupFee?: number) {
     return fetchApi('/api/companies', {
       method: 'PUT',
       body: JSON.stringify({ 
         id, 
         subscriptionMonthly: monthly,
         subscriptionQuarterly: quarterly,
-        subscriptionAnnual: annual
+        subscriptionAnnual: annual,
+        ...(setupFee !== undefined ? { subscriptionSetupFee: setupFee } : {})
       }),
     });
   },
@@ -134,7 +154,7 @@ export const usersApi = {
     title?: string;
     phone?: string;
     email: string;
-    password: string;
+    password?: string;
     companyId: string;
     userType: 'COMPANY' | 'ASSESSMENT';
   }) {
@@ -144,8 +164,10 @@ export const usersApi = {
     });
   },
 
-  async delete(id: string) {
-    return fetchApi(`/api/users?id=${id}`, {
+  async delete(id: string, companyId?: string) {
+    const params = new URLSearchParams({ id });
+    if (companyId) params.set('companyId', companyId);
+    return fetchApi(`/api/users?${params.toString()}`, {
       method: 'DELETE',
     });
   },

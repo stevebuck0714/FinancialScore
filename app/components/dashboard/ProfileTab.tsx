@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { INDUSTRY_SECTORS } from '../../../data/industrySectors';
-import { profilesApi, ApiError } from '@/lib/api-client';
+import { profilesApi, companiesApi, ApiError } from '@/lib/api-client';
+import { ACCOUNTING_SYSTEMS, COMPANY_SIZES, INDUSTRY_SECTORS as INDUSTRY_SECTOR_OPTIONS } from '../../../lib/constants/company-options';
 import type { Company, CompanyProfile, MonthlyDataRow, User } from '../../types';
 
 interface ProfileTabProps {
@@ -15,6 +16,7 @@ interface ProfileTabProps {
   trendData: any[];
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
+  onCompanyUpdated?: (company: Company) => void;
   setEditingCompanyId?: (id: string) => void;
   setCompanyAddressStreet?: (street: string) => void;
   setCompanyAddressCity?: (city: string) => void;
@@ -22,6 +24,9 @@ interface ProfileTabProps {
   setCompanyAddressZip?: (zip: string) => void;
   setCompanyAddressCountry?: (country: string) => void;
   setCompanyIndustrySector?: (sector: string) => void;
+  setAccountingSystem?: (system: string) => void;
+  setCompanySizeCategory?: (size: string) => void;
+  setIndustrySectorCategory?: (sector: string) => void;
   setShowCompanyDetailsModal?: (show: boolean) => void;
 }
 
@@ -35,19 +40,21 @@ export default function ProfileTab({
   trendData,
   isLoading,
   setIsLoading,
-  setEditingCompanyId,
-  setCompanyAddressStreet,
-  setCompanyAddressCity,
-  setCompanyAddressState,
-  setCompanyAddressZip,
-  setCompanyAddressCountry,
-  setCompanyIndustrySector,
-  setShowCompanyDetailsModal
+  onCompanyUpdated,
 }: ProfileTabProps) {
   // State for LOB management
   const [linesOfBusiness, setLinesOfBusiness] = React.useState<string[]>(['', '', '', '', '']);
   const [headcountAllocations, setHeadcountAllocations] = React.useState<{ [lobName: string]: number }>({});
   const [userDefinedAllocations, setUserDefinedAllocations] = React.useState<{ lobName: string; percentage: number }[]>([]);
+  const [companyIndustryGroup, setCompanyIndustryGroup] = React.useState<number | ''>('');
+  const [companyAccountingSystem, setCompanyAccountingSystem] = React.useState('');
+  const [companySize, setCompanySize] = React.useState('DEFAULT');
+  const [companyIndustrySectorCode, setCompanyIndustrySectorCode] = React.useState('01');
+  const [companyAddressStreet, setCompanyAddressStreet] = React.useState('');
+  const [companyAddressCity, setCompanyAddressCity] = React.useState('');
+  const [companyAddressState, setCompanyAddressState] = React.useState('');
+  const [companyAddressZip, setCompanyAddressZip] = React.useState('');
+  const [companyAddressCountry, setCompanyAddressCountry] = React.useState('USA');
 
   // Load LOB data when component mounts or company changes
   React.useEffect(() => {
@@ -68,6 +75,28 @@ export default function ProfileTab({
       setUserDefinedAllocations(company.userDefinedAllocations as { lobName: string; percentage: number }[]);
     }
   }, [company]);
+
+  React.useEffect(() => {
+    setCompanyIndustryGroup(company?.industrySector || '');
+    setCompanyAccountingSystem(company?.accountingSystem || '');
+    setCompanySize(company?.companySizeCategory || 'DEFAULT');
+    setCompanyIndustrySectorCode(company?.industrySectorCategory || '01');
+    setCompanyAddressStreet(company?.addressStreet || '');
+    setCompanyAddressCity(company?.addressCity || '');
+    setCompanyAddressState(company?.addressState || '');
+    setCompanyAddressZip(company?.addressZip || '');
+    setCompanyAddressCountry(company?.addressCountry || 'USA');
+  }, [
+    company?.industrySector,
+    company?.accountingSystem,
+    company?.companySizeCategory,
+    company?.industrySectorCategory,
+    company?.addressStreet,
+    company?.addressCity,
+    company?.addressState,
+    company?.addressZip,
+    company?.addressCountry,
+  ]);
 
   // Get or create profile for this company
   let profile = companyProfiles.find(p => p.companyId === selectedCompanyId);
@@ -137,7 +166,44 @@ export default function ProfileTab({
   }
 
   // Get industry info
-  const industry = INDUSTRY_SECTORS.find(i => i.id === company?.industrySector);
+  const industry = INDUSTRY_SECTORS.find(i => i.id === companyIndustryGroup);
+
+  const handleSaveProfile = async () => {
+    if (!companyAccountingSystem) {
+      alert('Please select an Accounting System before saving.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const companyUpdatePayload: any = {
+        addressStreet: companyAddressStreet || '',
+        addressCity: companyAddressCity || '',
+        addressState: companyAddressState || '',
+        addressZip: companyAddressZip || '',
+        addressCountry: companyAddressCountry || '',
+        accountingSystem: companyAccountingSystem,
+        companySizeCategory: companySize || null,
+        industrySectorCategory: companyIndustrySectorCode || null
+      };
+      // Industry Group is optional; only send if selected so the API doesn't reject it.
+      if (companyIndustryGroup) {
+        companyUpdatePayload.industrySector = Number(companyIndustryGroup);
+      }
+
+      const [, companyUpdateResult] = await Promise.all([
+        profilesApi.save(selectedCompanyId, profile!),
+        companiesApi.update(selectedCompanyId, companyUpdatePayload)
+      ]);
+      if (companyUpdateResult?.company) {
+        onCompanyUpdated?.(companyUpdateResult.company as Company);
+      }
+      alert('Profile saved successfully!');
+    } catch (error) {
+      alert(error instanceof ApiError ? error.message : 'Failed to save profile');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   // Calculate Last 12 months for ratio table
   // Get up to last 12 trend data points (or fewer if less data available)
@@ -152,6 +218,7 @@ export default function ProfileTab({
       <style>{`
         @media print {
           @page {
+            size: portrait;
             margin: 0.75in 0.75in 0.75in 0.75in;
           }
           
@@ -232,109 +299,181 @@ export default function ProfileTab({
         
         {/* Container 1: Company Profile */}
         <div id="first-profile-section" className="page-break" style={{ background: 'white', borderRadius: '12px', padding: '4px 32px 32px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '2px solid #e2e8f0', paddingBottom: '6px' }}>
             <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
               Company Profile
             </h2>
             <button
               className="no-print"
-              onClick={() => window.print()}
-              style={{ 
-                padding: '8px 16px', 
-                background: '#667eea', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: '6px', 
-                fontSize: '13px', 
-                fontWeight: '600', 
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)',
-                whiteSpace: 'nowrap'
+              onClick={handleSaveProfile}
+              disabled={isLoading}
+              style={{
+                padding: '8px 16px',
+                background: isLoading ? '#94a3b8' : '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                whiteSpace: 'nowrap',
+                opacity: isLoading ? 0.8 : 1
               }}
             >
-              🖨️ Print
+              {isLoading ? 'Saving...' : 'Save'}
             </button>
           </div>
         
         {/* Company Header Info */}
-        <div style={{ marginBottom: '24px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '2px solid #667eea' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
               <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{company?.name}</h3>
-              <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>✓ Active Company</div>
             </div>
-            {setEditingCompanyId && setShowCompanyDetailsModal && (
-              <button
-                onClick={() => {
-                  if (company && setEditingCompanyId && setCompanyAddressStreet && setCompanyAddressCity && 
-                      setCompanyAddressState && setCompanyAddressZip && setCompanyAddressCountry && 
-                      setCompanyIndustrySector && setShowCompanyDetailsModal) {
-                    setEditingCompanyId(company.id);
-                    setCompanyAddressStreet(company.addressStreet || '');
-                    setCompanyAddressCity(company.addressCity || '');
-                    setCompanyAddressState(company.addressState || '');
-                    setCompanyAddressZip(company.addressZip || '');
-                    setCompanyAddressCountry(company.addressCountry || 'USA');
-                    setCompanyIndustrySector(company.industrySector || '');
-                    setShowCompanyDetailsModal(true);
-                  }
-                }}
-                style={{
-                  padding: '6px 12px',
-                  background: '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  whiteSpace: 'nowrap',
-                }}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '10px 12px', alignItems: 'center', fontSize: '13px', color: '#64748b', marginBottom: '10px' }}>
+            <div>
+              <span style={{ fontWeight: '600' }}>Address Street:</span>
+            </div>
+            <div>
+              <input
+                type="text"
+                value={companyAddressStreet}
+                onChange={(e) => setCompanyAddressStreet(e.target.value)}
+                placeholder="Street Address"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+              />
+            </div>
+            <div>
+              <span style={{ fontWeight: '600' }}>City:</span>
+            </div>
+            <div>
+              <input
+                type="text"
+                value={companyAddressCity}
+                onChange={(e) => setCompanyAddressCity(e.target.value)}
+                placeholder="City"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+              />
+            </div>
+            <div>
+              <span style={{ fontWeight: '600' }}>State / ZIP:</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <input
+                type="text"
+                value={companyAddressState}
+                onChange={(e) => setCompanyAddressState(e.target.value)}
+                placeholder="State"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+              />
+              <input
+                type="text"
+                value={companyAddressZip}
+                onChange={(e) => setCompanyAddressZip(e.target.value)}
+                placeholder="ZIP"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+              />
+            </div>
+            <div>
+              <span style={{ fontWeight: '600' }}>Country:</span>
+            </div>
+            <div>
+              <input
+                type="text"
+                value={companyAddressCountry}
+                onChange={(e) => setCompanyAddressCountry(e.target.value)}
+                placeholder="Country"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+              />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '10px 12px', alignItems: 'center', fontSize: '13px', color: '#64748b' }}>
+            <div>
+              <span style={{ fontWeight: '600' }}>
+                Accounting System: <span style={{ color: '#ef4444' }}>*</span>
+              </span>
+            </div>
+            <div>
+              <select
+                value={companyAccountingSystem}
+                onChange={(e) => setCompanyAccountingSystem(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
               >
-                Edit Details
-              </button>
-            )}
-          </div>
-          <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>
-            <span style={{ fontWeight: '600', display: 'block', marginBottom: '4px' }}>Address:</span>
-            {company?.addressStreet || company?.addressCity ? (
-              <div style={{ color: '#1e293b' }}>
-                {company?.addressStreet && <div>{company.addressStreet}</div>}
-                <div>
-                  {company?.addressCity && company.addressCity}
-                  {company?.addressState && `, ${company.addressState}`}
-                  {company?.addressZip && ` ${company.addressZip}`}
+                {ACCOUNTING_SYSTEMS.map(system => (
+                  <option key={system.value} value={system.value}>{system.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span style={{ fontWeight: '600' }}>Company Size:</span>
+            </div>
+            <div>
+              <select
+                value={companySize}
+                onChange={(e) => setCompanySize(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+              >
+                {COMPANY_SIZES.map(size => (
+                  <option key={size.value} value={size.value}>{size.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span style={{ fontWeight: '600' }}>Industry Sector:</span>
+            </div>
+            <div>
+              <select
+                value={companyIndustrySectorCode}
+                onChange={(e) => setCompanyIndustrySectorCode(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+              >
+                {INDUSTRY_SECTOR_OPTIONS.map(sector => (
+                  <option key={sector.value} value={sector.value}>{sector.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span style={{ fontWeight: '600' }}>Industry Group:</span>
+            </div>
+            <div>
+              <select
+                value={companyIndustryGroup}
+                onChange={(e) => setCompanyIndustryGroup(e.target.value ? Number(e.target.value) : '')}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+              >
+                <option value="">-- Select Industry Group --</option>
+                {INDUSTRY_SECTORS.map(industryOption => (
+                  <option key={industryOption.id} value={industryOption.id}>
+                    {industryOption.id} - {industryOption.name}
+                  </option>
+                ))}
+              </select>
+              {companyIndustryGroup && industry && (
+                <div style={{ marginTop: '6px', fontSize: '12px', color: '#475569' }}>
+                  {industry.description}
                 </div>
-                {company?.addressCountry && <div>{company.addressCountry}</div>}
-              </div>
-            ) : (
-              <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Not set</span>
-            )}
-          </div>
-          <div style={{ fontSize: '13px', color: '#64748b' }}>
-            <span style={{ fontWeight: '600' }}>Industry:</span>{' '}
-            <span style={{ color: '#1e293b' }}>
-              {industry ? `${industry.id} - ${industry.name}` : 'Not set'}
-            </span>
+              )}
+            </div>
           </div>
         </div>
         
         {/* Business Details Fields */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '24px' }}>
-          
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
           {/* Business Status */}
-          <div>
-            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               BUSINESS STATUS
             </label>
             <select
               value={profile.businessStatus}
               onChange={(e) => updateProfile({ businessStatus: e.target.value })}
-              style={{ 
+              style={{
                 width: '100%',
-                padding: '10px 12px', 
-                borderRadius: '6px', 
-                border: '1px solid #cbd5e1', 
+                padding: '10px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
                 fontSize: '14px',
                 backgroundColor: 'white',
                 cursor: 'pointer'
@@ -346,82 +485,82 @@ export default function ProfileTab({
               <option value="PENDING">PENDING</option>
             </select>
           </div>
-          
+
           {/* Legal Structure */}
-          <div>
-            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               LEGAL STRUCTURE
             </label>
-            <input 
-              type="text" 
-              value={profile.legalStructure} 
+            <input
+              type="text"
+              value={profile.legalStructure}
               onChange={(e) => updateProfile({ legalStructure: e.target.value })}
               placeholder="e.g., C Corp, S Corp, LLC"
-              style={{ 
+              style={{
                 width: '100%',
-                padding: '10px 12px', 
-                borderRadius: '6px', 
-                border: '1px solid #cbd5e1', 
+                padding: '10px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
                 fontSize: '14px'
               }}
             />
           </div>
-          
+
           {/* Ownership */}
-          <div>
-            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               OWNERSHIP
             </label>
-            <input 
-              type="text" 
-              value={profile.ownership} 
+            <input
+              type="text"
+              value={profile.ownership}
               onChange={(e) => updateProfile({ ownership: e.target.value })}
               placeholder="Owner name(s)"
-              style={{ 
+              style={{
                 width: '100%',
-                padding: '10px 12px', 
-                borderRadius: '6px', 
-                border: '1px solid #cbd5e1', 
+                padding: '10px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
                 fontSize: '14px'
               }}
             />
           </div>
-          
+
           {/* Workforce */}
-          <div>
-            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               WORKFORCE
             </label>
-            <input 
-              type="text" 
-              value={profile.workforce} 
+            <input
+              type="text"
+              value={profile.workforce}
               onChange={(e) => updateProfile({ workforce: e.target.value })}
               placeholder="e.g., 3 FT, 1 owner"
-              style={{ 
+              style={{
                 width: '100%',
-                padding: '10px 12px', 
-                borderRadius: '6px', 
-                border: '1px solid #cbd5e1', 
+                padding: '10px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
                 fontSize: '14px'
               }}
             />
           </div>
-          
+
           {/* Key Advisors */}
-          <div>
-            <label style={{ display: 'block', fontWeight: '600', color: '#475569', fontSize: '13px', marginBottom: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px', alignItems: 'center' }}>
+            <label style={{ fontWeight: '600', color: '#475569', fontSize: '13px' }}>
               KEY ADVISORS
             </label>
-            <input 
-              type="text" 
-              value={profile.keyAdvisors} 
+            <input
+              type="text"
+              value={profile.keyAdvisors}
               onChange={(e) => updateProfile({ keyAdvisors: e.target.value })}
               placeholder="Advisor names"
-              style={{ 
+              style={{
                 width: '100%',
-                padding: '10px 12px', 
-                borderRadius: '6px', 
-                border: '1px solid #cbd5e1', 
+                padding: '10px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
                 fontSize: '14px'
               }}
             />
@@ -552,21 +691,23 @@ export default function ProfileTab({
             </h2>
             <button
               className="no-print"
-              onClick={() => window.print()}
+              onClick={handleSaveProfile}
+              disabled={isLoading}
               style={{ 
                 padding: '8px 16px', 
-                background: '#667eea', 
+                background: isLoading ? '#94a3b8' : '#10b981',
                 color: 'white', 
                 border: 'none', 
                 borderRadius: '6px', 
                 fontSize: '13px', 
-                fontWeight: '600', 
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(102, 126, 234, 0.3)',
-                whiteSpace: 'nowrap'
+                fontWeight: '700',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                whiteSpace: 'nowrap',
+                opacity: isLoading ? 0.8 : 1
               }}
             >
-              🖨️ Print
+              {isLoading ? 'Saving...' : 'Save'}
             </button>
           </div>
         
@@ -671,17 +812,7 @@ export default function ProfileTab({
 
       <div className="no-print" style={{ textAlign: 'center', padding: '24px' }}>
         <button
-          onClick={async () => {
-            setIsLoading(true);
-            try {
-              await profilesApi.save(selectedCompanyId, profile);
-              alert('Profile saved successfully!');
-            } catch (error) {
-              alert(error instanceof ApiError ? error.message : 'Failed to save profile');
-            } finally {
-              setIsLoading(false);
-            }
-          }}
+          onClick={handleSaveProfile}
           disabled={isLoading}
           style={{ 
             padding: '12px 32px', 

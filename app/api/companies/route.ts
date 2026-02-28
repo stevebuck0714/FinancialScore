@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, validateCompanyAccess, validateConsultantAccess, getCompanyAccessFilter } from "@/lib/tenant-security";
 import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger";
+import { sendAccountingSystemSelectionNotification } from "@/lib/email";
+
+async function hasCompanyColumn(columnName: string): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS(
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'Company'
+          AND column_name = ${columnName}
+      ) as "exists"
+    `;
+    return rows[0]?.exists === true;
+  } catch (error) {
+    console.warn(`Could not verify Company.${columnName} column`, error);
+    return false;
+  }
+}
 
 // GET all companies (optionally filtered by consultant or company ID)
 export async function GET(request: NextRequest) {
@@ -19,7 +37,15 @@ export async function GET(request: NextRequest) {
       : undefined;
 
     // SECURITY: Build where clause based on user access
-    let where: any = await getCompanyAccessFilter();
+    let where: any = {
+      ...(await getCompanyAccessFilter()),
+      // Hide legacy soft-deleted companies from all listings.
+      NOT: {
+        name: {
+          contains: ' (DELETED)',
+        },
+      },
+    };
 
     // SECURITY: Validate consultant access if consultantId filter is requested
     if (consultantId) {
@@ -47,35 +73,94 @@ export async function GET(request: NextRequest) {
       where.id = companyId;
     }
 
-    const companies = await prisma.company.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        consultantId: true,
-        addressStreet: true,
-        addressCity: true,
-        addressState: true,
-        addressZip: true,
-        addressCountry: true,
-        industrySector: true,
-        linesOfBusiness: true,
-        userDefinedAllocations: true,
-        createdAt: true,
-        // Always include pricing fields - they're needed for payment logic
-        subscriptionMonthlyPrice: true,
-        subscriptionQuarterlyPrice: true,
-        subscriptionAnnualPrice: true,
-        // Skip affiliateCode in production (not needed)
-        ...(process.env.NODE_ENV === "production"
-          ? {}
-          : {
-              affiliateCode: true,
-            }),
-      },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-    });
+    const includeSetupFee = await hasCompanyColumn("subscriptionSetupFee");
+    const includeTier1SupportOwner = await hasCompanyColumn("tier1SupportOwner");
+    const includeTier1SupportConsultantId = await hasCompanyColumn("tier1SupportConsultantId");
+    const includeTier1SupportContactEmail = await hasCompanyColumn("tier1SupportContactEmail");
+    const includeHasRealOperationalData = await hasCompanyColumn("hasRealOperationalData");
+    const includeRealDataActivatedAt = await hasCompanyColumn("realDataActivatedAt");
+    const includeForceOperationalMockData = await hasCompanyColumn("forceOperationalMockData");
+    let companies;
+    try {
+      companies = await prisma.company.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          consultantId: true,
+          addressStreet: true,
+          addressCity: true,
+          addressState: true,
+          addressZip: true,
+          addressCountry: true,
+          industrySector: true,
+          industrySectorCategory: true,
+          accountingSystem: true,
+          companySizeCategory: true,
+          linesOfBusiness: true,
+          userDefinedAllocations: true,
+          createdAt: true,
+          // Always include pricing fields - they're needed for payment logic
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true,
+          ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
+          ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
+          ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
+          ...(includeTier1SupportContactEmail ? { tier1SupportContactEmail: true } : {}),
+          ...(includeHasRealOperationalData ? { hasRealOperationalData: true } : {}),
+          ...(includeRealDataActivatedAt ? { realDataActivatedAt: true } : {}),
+          ...(includeForceOperationalMockData ? { forceOperationalMockData: true } : {}),
+          // Skip affiliateCode in production (not needed)
+          ...(process.env.NODE_ENV === "production"
+            ? {}
+            : {
+                affiliateCode: true,
+              }),
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+    } catch (error) {
+      console.warn("Companies API: fallback select used", error);
+      companies = await prisma.company.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          consultantId: true,
+          addressStreet: true,
+          addressCity: true,
+          addressState: true,
+          addressZip: true,
+          addressCountry: true,
+          industrySector: true,
+          industrySectorCategory: true,
+          accountingSystem: true,
+          companySizeCategory: true,
+          linesOfBusiness: true,
+          userDefinedAllocations: true,
+          createdAt: true,
+          subscriptionMonthlyPrice: true,
+          subscriptionQuarterlyPrice: true,
+          subscriptionAnnualPrice: true,
+          ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
+          ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
+          ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
+          ...(includeTier1SupportContactEmail ? { tier1SupportContactEmail: true } : {}),
+          ...(includeHasRealOperationalData ? { hasRealOperationalData: true } : {}),
+          ...(includeRealDataActivatedAt ? { realDataActivatedAt: true } : {}),
+          ...(includeForceOperationalMockData ? { forceOperationalMockData: true } : {}),
+          ...(process.env.NODE_ENV === "production"
+            ? {}
+            : {
+                affiliateCode: true,
+              }),
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+    }
 
     console.log(`Retrieved ${companies.length} companies for user ${context.email}`);
 
@@ -138,8 +223,14 @@ export async function POST(request: NextRequest) {
       addressZip,
       addressCountry,
       industrySector,
+      industrySectorCategory,
+      accountingSystem,
+      companySizeCategory,
       affiliateCode,
       linesOfBusiness,
+      tier1SupportOwner,
+      tier1SupportConsultantId,
+      tier1SupportContactEmail,
     } = requestBody;
 
     console.log("🔍 Received data:", {
@@ -164,6 +255,8 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    // Industry data is collected after company creation in the details flow.
 
     // Actually save companies to database
     console.log("🔍 Creating company in database");
@@ -230,6 +323,7 @@ export async function POST(request: NextRequest) {
     let monthlyPrice: number;
     let quarterlyPrice: number;
     let annualPrice: number;
+    let setupFee: number = 0;
     let affiliateId: string | undefined;
     let validatedAffiliateCode: string | undefined;
     let useAffiliatePricing = false;
@@ -348,6 +442,7 @@ export async function POST(request: NextRequest) {
         monthlyPrice = affiliateCodeBasic.monthlyPrice ?? 0;
         quarterlyPrice = affiliateCodeBasic.quarterlyPrice ?? 0;
         annualPrice = affiliateCodeBasic.annualPrice ?? 0;
+        setupFee = affiliateCodeBasic.setupFee ?? 0;
         affiliateId = affiliateCodeBasic.affiliateId;
         validatedAffiliateCode = affiliateCodeBasic.code;
         useAffiliatePricing = true;
@@ -356,9 +451,10 @@ export async function POST(request: NextRequest) {
           monthlyPrice,
           quarterlyPrice,
           annualPrice,
+          setupFee,
           affiliateId,
           affiliateCode: validatedAffiliateCode,
-          isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0
+          isFree: monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0 && setupFee === 0
         });
       } catch (affiliateError) {
         console.error(
@@ -423,9 +519,11 @@ export async function POST(request: NextRequest) {
               businessMonthlyPrice: 195,
               businessQuarterlyPrice: 500,
               businessAnnualPrice: 1750,
+              businessSetupFee: 0,
               consultantMonthlyPrice: 195,
               consultantQuarterlyPrice: 500,
               consultantAnnualPrice: 1750,
+              consultantSetupFee: 0,
             },
           });
           console.log(
@@ -447,17 +545,22 @@ export async function POST(request: NextRequest) {
           annualPrice = isBusinessUser
             ? (defaultPricing.businessAnnualPrice ?? 1750)
             : (defaultPricing.consultantAnnualPrice ?? 1750);
+          setupFee = isBusinessUser
+            ? (defaultPricing.businessSetupFee ?? 0)
+            : (defaultPricing.consultantSetupFee ?? 0);
         } else {
           // Fallback pricing
           monthlyPrice = 195;
           quarterlyPrice = 500;
           annualPrice = 1750;
+          setupFee = 0;
         }
 
         console.log("🔍 Final pricing:", {
           monthlyPrice,
           quarterlyPrice,
           annualPrice,
+          setupFee,
         });
       } catch (settingsError) {
         console.error("❌ Error with SystemSettings lookup:", settingsError);
@@ -466,6 +569,7 @@ export async function POST(request: NextRequest) {
         monthlyPrice = 195;
         quarterlyPrice = 500;
         annualPrice = 1750;
+        setupFee = 0;
       }
     }
 
@@ -479,9 +583,62 @@ export async function POST(request: NextRequest) {
       addressCountry,
       industrySector,
       pricingUsed: { monthlyPrice, quarterlyPrice, annualPrice }, // Pricing determined but not stored in Company table
+      setupFee,
       affiliateCode: validatedAffiliateCode,
       affiliateId: affiliateId,
     });
+
+    const includeSetupFee = await hasCompanyColumn("subscriptionSetupFee");
+    const includeTier1SupportOwner = await hasCompanyColumn("tier1SupportOwner");
+    const includeTier1SupportConsultantId = await hasCompanyColumn("tier1SupportConsultantId");
+    const includeTier1SupportContactEmail = await hasCompanyColumn("tier1SupportContactEmail");
+
+    const normalizedTier1SupportOwner =
+      typeof tier1SupportOwner === "string"
+        ? tier1SupportOwner.trim().toUpperCase()
+        : null;
+    if (
+      normalizedTier1SupportOwner &&
+      normalizedTier1SupportOwner !== "CORELYTICS" &&
+      normalizedTier1SupportOwner !== "CONSULTANT"
+    ) {
+      return NextResponse.json(
+        { error: "tier1SupportOwner must be CORELYTICS or CONSULTANT" },
+        { status: 400 },
+      );
+    }
+
+    // Consultant-originated company defaults to consultant-owned Tier 1.
+    const finalTier1SupportOwner =
+      normalizedTier1SupportOwner || (consultantId ? "CONSULTANT" : "CORELYTICS");
+    const finalTier1SupportConsultantId =
+      finalTier1SupportOwner === "CONSULTANT"
+        ? (typeof tier1SupportConsultantId === "string" && tier1SupportConsultantId.trim()) || consultantId
+        : null;
+    const finalTier1SupportContactEmail =
+      finalTier1SupportOwner === "CONSULTANT" && typeof tier1SupportContactEmail === "string"
+        ? tier1SupportContactEmail.trim().toLowerCase() || null
+        : null;
+
+    if (finalTier1SupportOwner === "CONSULTANT" && !finalTier1SupportConsultantId) {
+      return NextResponse.json(
+        { error: "tier1SupportConsultantId is required when tier1SupportOwner is CONSULTANT" },
+        { status: 400 },
+      );
+    }
+
+    if (finalTier1SupportOwner === "CONSULTANT" && finalTier1SupportConsultantId) {
+      const supportConsultant = await prisma.consultant.findUnique({
+        where: { id: finalTier1SupportConsultantId },
+        select: { id: true },
+      });
+      if (!supportConsultant) {
+        return NextResponse.json(
+          { error: "Tier 1 support consultant not found" },
+          { status: 400 },
+        );
+      }
+    }
 
     try {
       const company = await prisma.company.create({
@@ -496,18 +653,32 @@ export async function POST(request: NextRequest) {
           addressZip,
           addressCountry,
           industrySector,
+          industrySectorCategory: industrySectorCategory || null,
+          accountingSystem: accountingSystem || null,
+          companySizeCategory: companySizeCategory || null,
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES WORK IN BOTH ENVIRONMENTS
           // Always store pricing fields regardless of environment for affiliate codes
           // Ensure $0 values are stored as 0, not null
           subscriptionMonthlyPrice: monthlyPrice ?? 0,
           subscriptionQuarterlyPrice: quarterlyPrice ?? 0,
           subscriptionAnnualPrice: annualPrice ?? 0,
+          ...(includeSetupFee ? { subscriptionSetupFee: setupFee ?? 0 } : {}),
           subscriptionStatus:
             monthlyPrice === 0 &&
             quarterlyPrice === 0 &&
-            annualPrice === 0
+            annualPrice === 0 &&
+            (setupFee ?? 0) === 0
               ? "free"
               : "active",
+          ...(includeTier1SupportOwner
+            ? { tier1SupportOwner: finalTier1SupportOwner }
+            : {}),
+          ...(includeTier1SupportConsultantId
+            ? { tier1SupportConsultantId: finalTier1SupportConsultantId }
+            : {}),
+          ...(includeTier1SupportContactEmail
+            ? { tier1SupportContactEmail: finalTier1SupportContactEmail }
+            : {}),
           // Store pricing in userDefinedAllocations (only for affiliate codes, not for default pricing)
           // Only store userDefinedAllocations if affiliate code was used
           userDefinedAllocations: useAffiliatePricing ? {
@@ -518,7 +689,9 @@ export async function POST(request: NextRequest) {
               isFree:
                 (monthlyPrice ?? 0) === 0 &&
                 (quarterlyPrice ?? 0) === 0 &&
-                (annualPrice ?? 0) === 0,
+                (annualPrice ?? 0) === 0 &&
+                (setupFee ?? 0) === 0,
+              setupFee: setupFee ?? 0,
               source: "affiliate_code",
               createdAt: new Date().toISOString(),
             },
@@ -538,11 +711,18 @@ export async function POST(request: NextRequest) {
           addressZip: true,
           addressCountry: true,
           industrySector: true,
+          industrySectorCategory: true,
+          accountingSystem: true,
+          companySizeCategory: true,
           linesOfBusiness: true,
           userDefinedAllocations: true,
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
+          ...(includeSetupFee ? { subscriptionSetupFee: true } : {}),
+          ...(includeTier1SupportOwner ? { tier1SupportOwner: true } : {}),
+          ...(includeTier1SupportConsultantId ? { tier1SupportConsultantId: true } : {}),
+          ...(includeTier1SupportContactEmail ? { tier1SupportContactEmail: true } : {}),
           createdAt: true,
         },
       });
@@ -651,6 +831,17 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const existingCompany = await prisma.company.findUnique({
+      where: { id: targetCompanyId },
+      select: { id: true, name: true, accountingSystem: true },
+    });
+    if (!existingCompany) {
+      return NextResponse.json(
+        { error: "Company not found" },
+        { status: 404 }
+      );
+    }
+
     console.log("🔄 Target company ID:", targetCompanyId);
     console.log("🔄 Update fields:", updateFields);
 
@@ -670,8 +861,224 @@ export async function PATCH(request: NextRequest) {
       updateData.addressCountry = updateFields.addressCountry;
 
     // Industry sector
-    if (updateFields.industrySector !== undefined)
+    if (updateFields.industrySector !== undefined) {
+      if (!updateFields.industrySector) {
+        return NextResponse.json(
+          { error: "Industry Group is required" },
+          { status: 400 },
+        );
+      }
       updateData.industrySector = updateFields.industrySector;
+    }
+    if (updateFields.industrySectorCategory !== undefined) {
+      if (!updateFields.industrySectorCategory) {
+        return NextResponse.json(
+          { error: "Industry Sector is required" },
+          { status: 400 },
+        );
+      }
+      try {
+        const sectorCategoryColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS(
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Company'
+              AND column_name = 'industrySectorCategory'
+          ) as "exists"
+        `;
+        if (sectorCategoryColumn[0]?.exists) {
+          updateData.industrySectorCategory = updateFields.industrySectorCategory;
+        } else {
+          console.warn('Company update: industrySectorCategory column missing, skipping update');
+        }
+      } catch (error) {
+        console.warn('Company update: could not verify industrySectorCategory column, skipping update', error);
+      }
+    }
+    if (updateFields.accountingSystem !== undefined) {
+      if (!updateFields.accountingSystem || typeof updateFields.accountingSystem !== 'string') {
+        return NextResponse.json(
+          { error: "Accounting System is required" },
+          { status: 400 },
+        );
+      }
+      try {
+        const accountingSystemColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS(
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Company'
+              AND column_name = 'accountingSystem'
+          ) as "exists"
+        `;
+        if (accountingSystemColumn[0]?.exists) {
+          updateData.accountingSystem = updateFields.accountingSystem;
+        } else {
+          console.warn('Company update: accountingSystem column missing, skipping update');
+        }
+      } catch (error) {
+        console.warn('Company update: could not verify accountingSystem column, skipping update', error);
+      }
+    }
+    if (updateFields.companySizeCategory !== undefined) {
+      try {
+        const companySizeColumn = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS(
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Company'
+              AND column_name = 'companySizeCategory'
+          ) as "exists"
+        `;
+        if (companySizeColumn[0]?.exists) {
+          updateData.companySizeCategory = updateFields.companySizeCategory;
+        } else {
+          console.warn('Company update: companySizeCategory column missing, skipping update');
+        }
+      } catch (error) {
+        console.warn('Company update: could not verify companySizeCategory column, skipping update', error);
+      }
+    }
+
+    // Tier 1 support routing
+    const tier1SupportOwnerColumnExists = await hasCompanyColumn('tier1SupportOwner');
+    const tier1SupportConsultantIdColumnExists = await hasCompanyColumn('tier1SupportConsultantId');
+    const tier1SupportContactEmailColumnExists = await hasCompanyColumn('tier1SupportContactEmail');
+    const hasTier1SupportUpdate =
+      updateFields.tier1SupportOwner !== undefined ||
+      updateFields.tier1SupportConsultantId !== undefined ||
+      updateFields.tier1SupportContactEmail !== undefined;
+
+    if (hasTier1SupportUpdate) {
+      if (!tier1SupportOwnerColumnExists || !tier1SupportConsultantIdColumnExists || !tier1SupportContactEmailColumnExists) {
+        return NextResponse.json(
+          { error: "Tier 1 support routing columns are not available in this environment" },
+          { status: 400 },
+        );
+      }
+
+      const nextOwnerRaw =
+        updateFields.tier1SupportOwner !== undefined
+          ? String(updateFields.tier1SupportOwner || '').trim().toUpperCase()
+          : undefined;
+      const nextOwner = nextOwnerRaw ?? undefined;
+      if (nextOwner !== undefined && nextOwner !== 'CORELYTICS' && nextOwner !== 'CONSULTANT') {
+        return NextResponse.json(
+          { error: "tier1SupportOwner must be CORELYTICS or CONSULTANT" },
+          { status: 400 },
+        );
+      }
+
+      const requestedConsultantId =
+        updateFields.tier1SupportConsultantId === undefined
+          ? undefined
+          : (updateFields.tier1SupportConsultantId || null);
+      const requestedSupportContactEmail =
+        updateFields.tier1SupportContactEmail === undefined
+          ? undefined
+          : (typeof updateFields.tier1SupportContactEmail === 'string'
+              ? updateFields.tier1SupportContactEmail.trim().toLowerCase()
+              : null);
+
+      const currentSupportRows = await prisma.$queryRaw<
+        Array<{
+          tier1SupportOwner: string | null;
+          tier1SupportConsultantId: string | null;
+          tier1SupportContactEmail: string | null;
+          consultantId: string | null;
+        }>
+      >`
+        SELECT "tier1SupportOwner", "tier1SupportConsultantId", "tier1SupportContactEmail", "consultantId"
+        FROM "Company"
+        WHERE "id" = ${targetCompanyId}
+        LIMIT 1
+      `;
+      const currentSupportRouting = currentSupportRows[0] || null;
+
+      const effectiveOwner =
+        nextOwner ??
+        (currentSupportRouting?.tier1SupportOwner
+          ? String(currentSupportRouting.tier1SupportOwner).toUpperCase()
+          : (currentSupportRouting?.consultantId ? 'CONSULTANT' : 'CORELYTICS'));
+
+      let effectiveConsultantId: string | null =
+        requestedConsultantId === undefined
+          ? (currentSupportRouting?.tier1SupportConsultantId || null)
+          : requestedConsultantId;
+      let effectiveSupportContactEmail: string | null =
+        requestedSupportContactEmail === undefined
+          ? (currentSupportRouting?.tier1SupportContactEmail || null)
+          : requestedSupportContactEmail;
+
+      if (effectiveOwner === 'CONSULTANT') {
+        if (!effectiveConsultantId) {
+          effectiveConsultantId = currentSupportRouting?.consultantId || null;
+        }
+        if (!effectiveConsultantId) {
+          return NextResponse.json(
+            { error: "tier1SupportConsultantId is required when tier1SupportOwner is CONSULTANT" },
+            { status: 400 },
+          );
+        }
+        const supportConsultant = await prisma.consultant.findUnique({
+          where: { id: effectiveConsultantId },
+          select: { id: true },
+        });
+        if (!supportConsultant) {
+          return NextResponse.json(
+            { error: "Tier 1 support consultant not found" },
+            { status: 400 },
+          );
+        }
+      } else {
+        effectiveConsultantId = null;
+        effectiveSupportContactEmail = null;
+      }
+
+      updateData.tier1SupportOwner = effectiveOwner;
+      updateData.tier1SupportConsultantId = effectiveConsultantId;
+      updateData.tier1SupportContactEmail = effectiveSupportContactEmail;
+    }
+
+    const hasOperationalDataModeUpdate =
+      updateFields.forceOperationalMockData !== undefined ||
+      updateFields.hasRealOperationalData !== undefined;
+    if (hasOperationalDataModeUpdate) {
+      if (context.role !== 'SITEADMIN') {
+        return NextResponse.json(
+          { error: "Only site admins can update operational data mode settings" },
+          { status: 403 },
+        );
+      }
+
+      const forceOperationalMockDataColumnExists = await hasCompanyColumn('forceOperationalMockData');
+      const hasRealOperationalDataColumnExists = await hasCompanyColumn('hasRealOperationalData');
+      const realDataActivatedAtColumnExists = await hasCompanyColumn('realDataActivatedAt');
+
+      if (updateFields.forceOperationalMockData !== undefined) {
+        if (!forceOperationalMockDataColumnExists) {
+          return NextResponse.json(
+            { error: "forceOperationalMockData column is not available in this environment" },
+            { status: 400 },
+          );
+        }
+        updateData.forceOperationalMockData = Boolean(updateFields.forceOperationalMockData);
+      }
+
+      if (updateFields.hasRealOperationalData !== undefined) {
+        if (!hasRealOperationalDataColumnExists) {
+          return NextResponse.json(
+            { error: "hasRealOperationalData column is not available in this environment" },
+            { status: 400 },
+          );
+        }
+        const hasReal = Boolean(updateFields.hasRealOperationalData);
+        updateData.hasRealOperationalData = hasReal;
+        if (realDataActivatedAtColumnExists) {
+          updateData.realDataActivatedAt = hasReal ? new Date() : null;
+        }
+      }
+    }
 
     // Name
     if (updateFields.name !== undefined) updateData.name = updateFields.name;
@@ -687,6 +1094,23 @@ export async function PATCH(request: NextRequest) {
     console.log("🔄 Final update data:", updateData);
 
     // Build select object - include fields that exist in production DB
+    const columnExists = async (columnName: string) => {
+      try {
+        const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS(
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'Company'
+              AND column_name = ${columnName}
+          ) as "exists"
+        `;
+        return rows[0]?.exists === true;
+      } catch (error) {
+        console.warn(`Company update: could not verify ${columnName} column`, error);
+        return false;
+      }
+    };
+
     const selectFields: any = {
       id: true,
       name: true,
@@ -698,9 +1122,36 @@ export async function PATCH(request: NextRequest) {
       addressCountry: true,
       industrySector: true,
       linesOfBusiness: true,
-      // userDefinedAllocations: true, // Column doesn't exist in production DB
       createdAt: true,
     };
+
+    if (await columnExists('industrySectorCategory')) {
+      selectFields.industrySectorCategory = true;
+    }
+    if (await columnExists('accountingSystem')) {
+      selectFields.accountingSystem = true;
+    }
+    if (await columnExists('companySizeCategory')) {
+      selectFields.companySizeCategory = true;
+    }
+    if (await columnExists('tier1SupportOwner')) {
+      selectFields.tier1SupportOwner = true;
+    }
+    if (await columnExists('tier1SupportConsultantId')) {
+      selectFields.tier1SupportConsultantId = true;
+    }
+    if (await columnExists('tier1SupportContactEmail')) {
+      selectFields.tier1SupportContactEmail = true;
+    }
+    if (await columnExists('hasRealOperationalData')) {
+      selectFields.hasRealOperationalData = true;
+    }
+    if (await columnExists('realDataActivatedAt')) {
+      selectFields.realDataActivatedAt = true;
+    }
+    if (await columnExists('forceOperationalMockData')) {
+      selectFields.forceOperationalMockData = true;
+    }
 
     // Select headcountAllocations if it exists (now that database column is added)
     if (process.env.NODE_ENV !== "development") {
@@ -719,6 +1170,37 @@ export async function PATCH(request: NextRequest) {
     
     // AUDIT: Log company update
     await auditCompanyOperation('COMPANY_UPDATED', targetCompanyId);
+
+    const requestedAccountingSystem =
+      typeof updateFields.accountingSystem === 'string'
+        ? updateFields.accountingSystem.trim()
+        : null;
+    const previousAccountingSystem = (existingCompany.accountingSystem || '').trim();
+    const accountingSystemChanged =
+      !!requestedAccountingSystem && requestedAccountingSystem !== previousAccountingSystem;
+
+    // Notify site admins only when accounting system is newly selected/changed.
+    if (accountingSystemChanged) {
+      try {
+        const siteAdmins = await prisma.user.findMany({
+          where: { role: 'SITEADMIN' },
+          select: { email: true },
+        });
+        const recipients = siteAdmins.map((admin) => admin.email).filter(Boolean);
+        if (recipients.length > 0) {
+          await sendAccountingSystemSelectionNotification({
+            recipients,
+            companyName: existingCompany.name,
+            companyId: existingCompany.id,
+            accountingSystem: requestedAccountingSystem,
+            changedByEmail: context.email,
+            changedByRole: context.role,
+          });
+        }
+      } catch (notificationError) {
+        console.error('⚠️ Failed to send accounting system selection notification:', notificationError);
+      }
+    }
     
     return NextResponse.json({ company }, { status: 200 });
   } catch (error: any) {
@@ -734,6 +1216,85 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(
       { error: "Failed to update company", details: error.message },
       { status: 500 },
+    );
+  }
+}
+
+// PUT update company subscription pricing (site admin)
+export async function PUT(request: NextRequest) {
+  try {
+    const context = await requireAuth();
+
+    if (context.role !== 'SITEADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden: Only site administrators can update pricing' },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const {
+      id,
+      subscriptionMonthly,
+      subscriptionQuarterly,
+      subscriptionAnnual,
+      subscriptionSetupFee,
+    } = body || {};
+
+    if (!id) {
+      return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
+    }
+
+    // SECURITY: Validate company access (site admin should pass, but keep consistent)
+    const hasAccess = await validateCompanyAccess(id);
+    if (!hasAccess) {
+      await auditForbiddenAccess('Company', id, 'UPDATE_PRICING');
+      return NextResponse.json({ error: 'Forbidden: Access denied' }, { status: 403 });
+    }
+
+    const monthly = Number(subscriptionMonthly);
+    const quarterly = Number(subscriptionQuarterly);
+    const annual = Number(subscriptionAnnual);
+    const setupFee = subscriptionSetupFee === undefined ? undefined : Number(subscriptionSetupFee);
+
+    if (![monthly, quarterly, annual].every((v) => Number.isFinite(v) && v >= 0)) {
+      return NextResponse.json({ error: 'Invalid pricing values' }, { status: 400 });
+    }
+    if (setupFee !== undefined && (!Number.isFinite(setupFee) || setupFee < 0)) {
+      return NextResponse.json({ error: 'Invalid setup fee value' }, { status: 400 });
+    }
+
+    const company = await prisma.company.update({
+      where: { id },
+      data: {
+        subscriptionMonthlyPrice: monthly,
+        subscriptionQuarterlyPrice: quarterly,
+        subscriptionAnnualPrice: annual,
+        ...(setupFee !== undefined ? { subscriptionSetupFee: setupFee } : {}),
+        // Reset selected plan so the UI doesn't show a stale selection.
+        selectedSubscriptionPlan: null,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        name: true,
+        consultantId: true,
+        subscriptionMonthlyPrice: true,
+        subscriptionQuarterlyPrice: true,
+        subscriptionAnnualPrice: true,
+        subscriptionSetupFee: true,
+        selectedSubscriptionPlan: true,
+      },
+    });
+
+    await auditCompanyOperation('COMPANY_PRICING_UPDATED', id);
+
+    return NextResponse.json({ company }, { status: 200 });
+  } catch (error: any) {
+    console.error('Error updating company pricing:', error);
+    return NextResponse.json(
+      { error: 'Failed to update pricing', details: error.message },
+      { status: 500 }
     );
   }
 }

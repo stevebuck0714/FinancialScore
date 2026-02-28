@@ -3,6 +3,7 @@
 import React from 'react';
 import TeamManagementTab from '../dashboard/TeamManagementTab';
 import CompanyListTab from './CompanyListTab';
+import DocumentationTab from './DocumentationTab';
 // import CovenantsTab from '../../covenants/components/CovenantsTab'; // Removed - covenants only in Company Management
 
 interface ConsultantDashboardProps {
@@ -33,6 +34,7 @@ interface ConsultantDashboardProps {
   selectedCompanyId?: string;
   monthly?: any[];
   companyName?: string;
+  onAddCompany: () => void;
 }
 
 export default function ConsultantDashboard({
@@ -56,7 +58,8 @@ export default function ConsultantDashboard({
   isLoading,
   selectedCompanyId,
   monthly,
-  companyName
+  companyName,
+  onAddCompany
 }: ConsultantDashboardProps) {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
@@ -100,10 +103,27 @@ export default function ConsultantDashboard({
               borderRadius: '8px 8px 0 0',
               transition: 'all 0.2s'
             }}
-          >
-            Team Management
+        >
+          Team Management
           </button>
         )}
+        <button
+          onClick={() => setConsultantDashboardTab('documentation')}
+          style={{
+            padding: '12px 24px',
+            background: consultantDashboardTab === 'documentation' ? '#667eea' : 'transparent',
+            color: consultantDashboardTab === 'documentation' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: consultantDashboardTab === 'documentation' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '8px 8px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Documentation
+        </button>
       </div>
 
       {/* Company List Tab */}
@@ -116,6 +136,7 @@ export default function ConsultantDashboard({
           setCompanyManagementSubTab={setCompanyManagementSubTab}
           setCompanyToDelete={setCompanyToDelete}
           setShowDeleteConfirmation={setShowDeleteConfirmation}
+          onAddCompany={onAddCompany}
         />
       )}
 
@@ -131,6 +152,11 @@ export default function ConsultantDashboard({
           removeTeamMember={removeTeamMember}
           isLoading={isLoading}
         />
+      )}
+
+      {/* Documentation Tab */}
+      {consultantDashboardTab === 'documentation' && (
+        <DocumentationTab />
       )}
 
     </div>

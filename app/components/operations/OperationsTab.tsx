@@ -18,16 +18,303 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
+import { getSectorArApFallbacks, getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
+import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 
 interface OperationsTabProps {
   selectedCompanyId: string;
   companyName: string;
+  industrySectorCategory?: string | null;
+  viewMode?: 'full' | 'overview-only';
 }
 
-const COLORS = ['#667eea', '#2563eb', '#16a34a', '#f59e0b', '#ec4899', '#6366f1', '#8b5cf6', '#14b8a6'];
+type OpTab = 'dashboard' | 'overview' | string;
 
-export default function OperationsTab({ selectedCompanyId, companyName }: OperationsTabProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'overview' | 'customers' | 'ar' | 'ap' | 'products' | 'inventory' | 'cash'>('dashboard');
+const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+  if (!percent || percent < 0.04) return null;
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
+  const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#ffffff"
+      textAnchor="middle"
+      dominantBaseline="central"
+      style={{ fontSize: '11px', fontWeight: 700 }}
+    >
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  );
+};
+const MOCK_AR_CUSTOMERS = [
+  { customerName: 'Coastal Shipping', current: 6400, days1to30: 2100, days31to60: 1200, days61to90: 800, days90plus: 300 },
+  { customerName: 'City Construction', current: 5200, days1to30: 1900, days31to60: 900, days61to90: 600, days90plus: 200 },
+  { customerName: 'TechAdvantage Software', current: 4100, days1to30: 1600, days31to60: 800, days61to90: 400, days90plus: 150 },
+  { customerName: 'Urban Apparel', current: 3600, days1to30: 1200, days31to60: 700, days61to90: 300, days90plus: 120 },
+  { customerName: 'Global Exports Co.', current: 2800, days1to30: 900, days31to60: 500, days61to90: 300, days90plus: 100 },
+  { customerName: 'Green Gardens', current: 2400, days1to30: 800, days31to60: 400, days61to90: 200, days90plus: 80 },
+  { customerName: 'Innovative Tech', current: 2200, days1to30: 700, days31to60: 350, days61to90: 180, days90plus: 70 },
+  { customerName: 'Solar Solutions', current: 2000, days1to30: 600, days31to60: 300, days61to90: 160, days90plus: 60 },
+  { customerName: 'Summit Logistics', current: 1800, days1to30: 520, days31to60: 260, days61to90: 140, days90plus: 50 },
+  { customerName: 'Northern Foods', current: 1600, days1to30: 480, days31to60: 220, days61to90: 120, days90plus: 40 },
+  { customerName: 'Fieldstone Partners', current: 1500, days1to30: 430, days31to60: 210, days61to90: 110, days90plus: 35 },
+  { customerName: 'Blue Ridge Energy', current: 1400, days1to30: 400, days31to60: 200, days61to90: 100, days90plus: 30 }
+];
+const MOCK_UNPAID_INVOICES = [
+  { customerName: 'Global Exports Co.', customerNumber: '1049', invoiceDate: 'Dec 3, 2025', dueDate: 'Jan 2, 2026', amountDue: 3593.75 },
+  { customerName: 'Coastal Shipping', customerNumber: '1015', invoiceDate: 'Nov 8, 2025', dueDate: 'Dec 8, 2025', amountDue: 3508.15 },
+  { customerName: 'Coastal Shipping', customerNumber: '1031', invoiceDate: 'Nov 12, 2025', dueDate: 'Dec 12, 2025', amountDue: 3095.56 },
+  { customerName: 'Urban Apparel', customerNumber: '1083', invoiceDate: 'Nov 15, 2025', dueDate: 'Dec 15, 2025', amountDue: 2821.48 },
+  { customerName: 'Green Gardens', customerNumber: '1055', invoiceDate: 'Oct 24, 2025', dueDate: 'Dec 8, 2025', amountDue: 2469.0 },
+  { customerName: 'TechAdvantage Software', customerNumber: '1092', invoiceDate: 'Nov 18, 2025', dueDate: 'Dec 18, 2025', amountDue: 2187.32 },
+  { customerName: 'City Construction', customerNumber: '1024', invoiceDate: 'Nov 21, 2025', dueDate: 'Dec 21, 2025', amountDue: 1975.4 },
+  { customerName: 'Solar Solutions', customerNumber: '1107', invoiceDate: 'Nov 29, 2025', dueDate: 'Dec 29, 2025', amountDue: 1820.0 },
+  { customerName: 'Summit Logistics', customerNumber: '1079', invoiceDate: 'Dec 1, 2025', dueDate: 'Jan 1, 2026', amountDue: 1654.9 },
+  { customerName: 'Northern Foods', customerNumber: '1066', invoiceDate: 'Dec 4, 2025', dueDate: 'Jan 4, 2026', amountDue: 1525.0 },
+  { customerName: 'Fieldstone Partners', customerNumber: '1112', invoiceDate: 'Dec 6, 2025', dueDate: 'Jan 6, 2026', amountDue: 1410.5 },
+  { customerName: 'Blue Ridge Energy', customerNumber: '1120', invoiceDate: 'Dec 7, 2025', dueDate: 'Jan 7, 2026', amountDue: 1320.25 }
+];
+const MOCK_PAID_INVOICES = [
+  { customerName: 'Coastal Shipping', currentMonth: 1437, lastMonth: 4917.78, last12Months: 28240.74 },
+  { customerName: 'Innovative Tech', currentMonth: 1350, lastMonth: 0, last12Months: 25699.0 },
+  { customerName: 'Green Gardens', currentMonth: 7545, lastMonth: 0, last12Months: 21637.0 },
+  { customerName: 'TechAdvantage Software', currentMonth: 0, lastMonth: 0, last12Months: 20650.0 },
+  { customerName: 'Solar Solutions', currentMonth: 0, lastMonth: 0, last12Months: 19008.0 },
+  { customerName: 'Urban Apparel', currentMonth: 0, lastMonth: 2821.48, last12Months: 15517.04 },
+  { customerName: 'City Construction', currentMonth: 0, lastMonth: 0, last12Months: 12900.0 },
+  { customerName: 'Global Exports Co.', currentMonth: 0, lastMonth: 0, last12Months: 11850.0 },
+  { customerName: 'Summit Logistics', currentMonth: 980, lastMonth: 0, last12Months: 10240.0 },
+  { customerName: 'Northern Foods', currentMonth: 0, lastMonth: 1420.0, last12Months: 9840.0 }
+];
+const MOCK_CUSTOMER_INVOICES = [
+  { customerName: 'Urban Apparel', invoiceNo: '1030', date: 'Jan 3, 2026', dueDate: 'Feb 2, 2026', currency: 'USD', amountCurrency: 3809, amountHome: 2821.48, amountDueHome: 0 },
+  { customerName: 'Urban Apparel', invoiceNo: '1062', date: 'Dec 18, 2025', dueDate: 'Jan 17, 2026', currency: 'USD', amountCurrency: 5783, amountHome: 4283.7, amountDueHome: 4283.7 },
+  { customerName: 'Urban Apparel', invoiceNo: '1083', date: 'Nov 15, 2025', dueDate: 'Dec 15, 2025', currency: 'USD', amountCurrency: 3809, amountHome: 2821.48, amountDueHome: 2821.48 },
+  { customerName: 'Urban Apparel', invoiceNo: '1022', date: 'Oct 5, 2025', dueDate: 'Nov 4, 2025', currency: 'USD', amountCurrency: 211, amountHome: 156.3, amountDueHome: 0 },
+  { customerName: 'Urban Apparel', invoiceNo: '1020', date: 'Sep 27, 2025', dueDate: 'Oct 27, 2025', currency: 'USD', amountCurrency: 363, amountHome: 268.89, amountDueHome: 0 },
+  { customerName: 'Urban Apparel', invoiceNo: '1034', date: 'Sep 16, 2025', dueDate: 'Oct 16, 2025', currency: 'USD', amountCurrency: 5783, amountHome: 4283.7, amountDueHome: 0 },
+  { customerName: 'Urban Apparel', invoiceNo: '1050', date: 'Aug 24, 2025', dueDate: 'Sep 23, 2025', currency: 'USD', amountCurrency: 211, amountHome: 156.3, amountDueHome: 0 },
+  { customerName: 'Urban Apparel', invoiceNo: '1058', date: 'Aug 7, 2025', dueDate: 'Sep 6, 2025', currency: 'USD', amountCurrency: 3809, amountHome: 2821.48, amountDueHome: 0 },
+  { customerName: 'Urban Apparel', invoiceNo: '1009', date: 'Jun 1, 2025', dueDate: 'Jul 1, 2025', currency: 'USD', amountCurrency: 449, amountHome: 332.59, amountDueHome: 0 },
+  { customerName: 'Urban Apparel', invoiceNo: '1048', date: 'May 16, 2025', dueDate: 'Jun 15, 2025', currency: 'USD', amountCurrency: 363, amountHome: 268.89, amountDueHome: 0 }
+];
+const TOP_CUSTOMERS_OVERRIDE = [
+  { name: 'GlobalTech Industries', totalRevenue: 312509 },
+  { name: 'Smith & Associates', totalRevenue: 191948 },
+  { name: 'Premier Solutions LLC', totalRevenue: 184322 },
+  { name: 'Acme Corporation', totalRevenue: 162950 },
+  { name: 'Regional Services Inc', totalRevenue: 132784 },
+  { name: 'Harbor Industrial', totalRevenue: 117800 }
+];
+const OTHER_CUSTOMERS_OVERRIDE = [
+  { name: 'Evergreen Supply Co.', totalRevenue: 74200 },
+  { name: 'Summit Equipment', totalRevenue: 68950 },
+  { name: 'Valley Precision', totalRevenue: 65500 },
+  { name: 'Northwind Parts', totalRevenue: 61200 },
+  { name: 'Brightline Services', totalRevenue: 58400 }
+];
+const MOCK_AP_VENDORS = [
+  { vendorName: 'Blue Ridge Materials', current: 5200, days1to30: 1800, days31to60: 900, days61to90: 600, days90plus: 300 },
+  { vendorName: 'Summit Logistics', current: 4300, days1to30: 1500, days31to60: 800, days61to90: 500, days90plus: 200 },
+  { vendorName: 'Northstar Energy', current: 3900, days1to30: 1200, days31to60: 700, days61to90: 400, days90plus: 150 },
+  { vendorName: 'Precision Hardware', current: 3600, days1to30: 1100, days31to60: 650, days61to90: 350, days90plus: 120 },
+  { vendorName: 'Greenline Supplies', current: 3200, days1to30: 980, days31to60: 540, days61to90: 280, days90plus: 100 },
+  { vendorName: 'Atlas Services', current: 2800, days1to30: 860, days31to60: 460, days61to90: 240, days90plus: 90 },
+  { vendorName: 'Pioneer Freight', current: 2600, days1to30: 780, days31to60: 420, days61to90: 220, days90plus: 80 },
+  { vendorName: 'Delta Packaging', current: 2400, days1to30: 720, days31to60: 390, days61to90: 200, days90plus: 70 },
+  { vendorName: 'Canyon Utilities', current: 2200, days1to30: 650, days31to60: 350, days61to90: 180, days90plus: 60 },
+  { vendorName: 'Stonebridge Rentals', current: 2000, days1to30: 600, days31to60: 320, days61to90: 160, days90plus: 50 }
+];
+const MOCK_UNPAID_BILLS = [
+  { vendorName: 'Blue Ridge Materials', billNo: 'B-2049', date: 'Dec 3, 2025', dueDate: 'Jan 2, 2026', amountDue: 3593.75 },
+  { vendorName: 'Summit Logistics', billNo: 'B-2015', date: 'Nov 8, 2025', dueDate: 'Dec 8, 2025', amountDue: 3508.15 },
+  { vendorName: 'Summit Logistics', billNo: 'B-2031', date: 'Nov 12, 2025', dueDate: 'Dec 12, 2025', amountDue: 3095.56 },
+  { vendorName: 'Precision Hardware', billNo: 'B-2083', date: 'Nov 15, 2025', dueDate: 'Dec 15, 2025', amountDue: 2821.48 },
+  { vendorName: 'Greenline Supplies', billNo: 'B-2055', date: 'Oct 24, 2025', dueDate: 'Dec 8, 2025', amountDue: 2469.0 },
+  { vendorName: 'Atlas Services', billNo: 'B-2092', date: 'Nov 18, 2025', dueDate: 'Dec 18, 2025', amountDue: 2187.32 },
+  { vendorName: 'Northstar Energy', billNo: 'B-2024', date: 'Nov 21, 2025', dueDate: 'Dec 21, 2025', amountDue: 1975.4 },
+  { vendorName: 'Delta Packaging', billNo: 'B-2107', date: 'Nov 29, 2025', dueDate: 'Dec 29, 2025', amountDue: 1820.0 },
+  { vendorName: 'Pioneer Freight', billNo: 'B-2079', date: 'Dec 1, 2025', dueDate: 'Jan 1, 2026', amountDue: 1654.9 },
+  { vendorName: 'Canyon Utilities', billNo: 'B-2066', date: 'Dec 4, 2025', dueDate: 'Jan 4, 2026', amountDue: 1525.0 }
+];
+const MOCK_PAID_BILLS = [
+  { vendorName: 'Blue Ridge Materials', currentMonth: 1832, lastMonth: 4210.4, last12Months: 24510.2 },
+  { vendorName: 'Summit Logistics', currentMonth: 1520, lastMonth: 0, last12Months: 22340.0 },
+  { vendorName: 'Northstar Energy', currentMonth: 0, lastMonth: 0, last12Months: 19870.5 },
+  { vendorName: 'Precision Hardware', currentMonth: 0, lastMonth: 2480.5, last12Months: 17560.2 },
+  { vendorName: 'Greenline Supplies', currentMonth: 0, lastMonth: 0, last12Months: 16240.0 },
+  { vendorName: 'Atlas Services', currentMonth: 0, lastMonth: 1860.0, last12Months: 14890.0 },
+  { vendorName: 'Pioneer Freight', currentMonth: 980, lastMonth: 0, last12Months: 13240.0 },
+  { vendorName: 'Delta Packaging', currentMonth: 0, lastMonth: 1420.0, last12Months: 11890.0 }
+];
+const MOCK_VENDOR_BILLS = [
+  { vendorName: 'Greenline Supplies', billNo: 'V-1030', date: 'Jan 3, 2026', dueDate: 'Feb 2, 2026', currency: 'USD', amountCurrency: 3809, amountHome: 2821.48, amountDueHome: 0 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1062', date: 'Dec 18, 2025', dueDate: 'Jan 17, 2026', currency: 'USD', amountCurrency: 5783, amountHome: 4283.7, amountDueHome: 4283.7 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1083', date: 'Nov 15, 2025', dueDate: 'Dec 15, 2025', currency: 'USD', amountCurrency: 3809, amountHome: 2821.48, amountDueHome: 2821.48 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1022', date: 'Oct 5, 2025', dueDate: 'Nov 4, 2025', currency: 'USD', amountCurrency: 211, amountHome: 156.3, amountDueHome: 0 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1020', date: 'Sep 27, 2025', dueDate: 'Oct 27, 2025', currency: 'USD', amountCurrency: 363, amountHome: 268.89, amountDueHome: 0 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1034', date: 'Sep 16, 2025', dueDate: 'Oct 16, 2025', currency: 'USD', amountCurrency: 5783, amountHome: 4283.7, amountDueHome: 0 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1050', date: 'Aug 24, 2025', dueDate: 'Sep 23, 2025', currency: 'USD', amountCurrency: 211, amountHome: 156.3, amountDueHome: 0 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1058', date: 'Aug 7, 2025', dueDate: 'Sep 6, 2025', currency: 'USD', amountCurrency: 3809, amountHome: 2821.48, amountDueHome: 0 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1009', date: 'Jun 1, 2025', dueDate: 'Jul 1, 2025', currency: 'USD', amountCurrency: 449, amountHome: 332.59, amountDueHome: 0 },
+  { vendorName: 'Greenline Supplies', billNo: 'V-1048', date: 'May 16, 2025', dueDate: 'Jun 15, 2025', currency: 'USD', amountCurrency: 363, amountHome: 268.89, amountDueHome: 0 }
+];
+const LEGACY_MOCKS_FOR_REFERENCE = [
+  MOCK_AR_CUSTOMERS,
+  MOCK_UNPAID_INVOICES,
+  MOCK_PAID_INVOICES,
+  MOCK_CUSTOMER_INVOICES,
+  MOCK_AP_VENDORS,
+  MOCK_UNPAID_BILLS,
+  MOCK_PAID_BILLS,
+  MOCK_VENDOR_BILLS,
+];
+void LEGACY_MOCKS_FOR_REFERENCE;
+
+type MonitorCard = {
+  title: string;
+  question: string;
+  trigger: string;
+  drill: string;
+  dataType?: OpsDataType;
+};
+type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
+
+type InvestigatePlaybook = {
+  title: string;
+  path: string;
+  outcome: string;
+  dataType?: OpsDataType;
+};
+
+type InvestigateInsight = {
+  whyNow: string;
+  impact: string;
+  drivers: string[];
+  startHere: string;
+  owner: string;
+  eta: string;
+  freshness: string;
+  confidence: 'Low' | 'Medium' | 'High';
+  severity: CardSeverity;
+  focusCustomer?: string | null;
+  focusVendor?: string | null;
+};
+
+const UNIVERSAL_MONITOR_CARDS: MonitorCard[] = [
+  { title: 'DSO Drift', question: 'Are collections slowing?', trigger: 'DSO +5 days vs trailing 60', drill: 'Customer -> invoices -> aging buckets', dataType: 'ar-aging' },
+  { title: 'Past-Due AR Spike', question: 'Is receivables quality deteriorating?', trigger: '% AR >30 days up 15%+ vs prior 30', drill: 'Top customers -> invoice aging', dataType: 'ar-aging' },
+  { title: 'AP Past Due Risk', question: 'Are vendor obligations building?', trigger: '$ past due AP up 20%+ vs prior 30', drill: 'Vendor -> invoices -> approval lag', dataType: 'ap-aging' },
+  { title: 'Spend Acceleration', question: 'What is driving cost jumps?', trigger: 'Any major spend category +15% MoM', drill: 'Category -> vendor -> transactions', dataType: 'ap-aging' },
+  { title: 'Working Capital Spike', question: 'Is cash being trapped?', trigger: 'AR + Inventory - AP up 10%+ MoM', drill: 'AR vs Inventory vs AP contribution', dataType: 'cash' },
+  { title: 'Cash Runway', question: 'How long can operations self-fund?', trigger: 'Runway below 8 weeks', drill: 'Cash bridge -> AR/AP/Inventory drivers', dataType: 'cash' },
+];
+
+const UNIVERSAL_INVESTIGATIONS: InvestigatePlaybook[] = [
+  { title: 'Why did cash change?', path: 'Cash bridge -> receipts/disbursements -> top contributors', outcome: 'Ranked cash drivers with owner actions', dataType: 'cash' },
+  { title: 'Why did AR worsen?', path: 'AR delta -> customer concentration -> invoice aging', outcome: 'Top delinquent accounts and next-step actions', dataType: 'ar-aging' },
+  { title: 'Why did margin shrink?', path: 'Price/mix/discount -> credits/returns -> cost drift', outcome: 'Leakage diagnosis by root cause', dataType: 'products' },
+  { title: 'Why did spend spike?', path: 'Category -> vendor -> transaction detail', outcome: 'Unplanned spend sources and controls', dataType: 'ap-aging' },
+  { title: 'What moved working capital?', path: 'AR vs Inventory vs AP bridge', outcome: 'Dollar-impact decomposition and playbook', dataType: 'cash' },
+  { title: 'What should we do next?', path: 'Synthesize top drivers into role-based actions', outcome: 'Prioritized action list by owner', dataType: 'customers' },
+];
+
+const SECTOR_NAMES: Record<string, string> = {
+  '42': 'Wholesale Trade',
+  '32': 'Manufacturing',
+  '23': 'Construction',
+  '45': 'Retail Trade',
+  '48': 'Transportation & Warehousing',
+  '51': 'Information',
+  '54': 'Professional, Scientific & Technical Services',
+  '62': 'Health Care & Social Assistance',
+};
+
+const SECTOR_MONITOR_OVERRIDES: Record<string, MonitorCard[]> = {
+  '42': [
+    { title: 'Deductions / Chargebacks Trend', question: 'Are deductions eroding cash and margin?', trigger: 'Deduction $ +25% vs trailing 8 weeks', drill: 'Reason code -> customer -> invoice', dataType: 'ar-aging' },
+    { title: 'Inventory Turns Deterioration', question: 'Is inventory velocity falling?', trigger: 'Turns down 10%+ vs trailing quarter', drill: 'Category/SKU contributors', dataType: 'inventory' },
+    { title: 'Discount Rate Creep', question: 'Are discounts rising without volume lift?', trigger: 'Average discount +1 point while volume flat/down', drill: 'Rep/customer/SKU', dataType: 'products' },
+  ],
+  '32': [
+    { title: 'WIP Build', question: 'Is production bottlenecking?', trigger: 'WIP $ +10% MoM', drill: 'WIP aging -> bottleneck area/SKU family', dataType: 'products' },
+    { title: 'FG Aging / Overproduction', question: 'Are finished goods accumulating?', trigger: 'FG >90-day $ +15%', drill: 'SKU -> last shipped -> demand trend', dataType: 'inventory' },
+    { title: 'Material Cost Drift', question: 'Are material costs moving against us?', trigger: 'Purchase unit cost +5% on top materials', drill: 'Item -> vendor -> PO/invoice history', dataType: 'ap-aging' },
+  ],
+  '23': [
+    { title: 'Unbilled / WIP Growth', question: 'Are we funding work before billing?', trigger: 'Unbilled/WIP +15% MoM', drill: 'Project -> billing lag -> change orders', dataType: 'ar-aging' },
+    { title: 'Retainage Exposure', question: 'Is cash locked in retainage?', trigger: 'Retainage receivable +10% MoM', drill: 'Owner/GC -> project -> aging', dataType: 'ar-aging' },
+    { title: 'Subcontractor AP Risk', question: 'Are critical subcontractors overdue?', trigger: 'Top subcontractor past due +15%', drill: 'Vendor -> invoice -> approval stage', dataType: 'ap-aging' },
+  ],
+  '45': [
+    { title: 'Stockout Proxy', question: 'Are we losing sales from out-of-stocks?', trigger: 'Stockout incidents +25% vs trailing 8 weeks', drill: 'Store/channel -> SKU -> lost demand', dataType: 'inventory' },
+    { title: 'Sell-Through Slowdown', question: 'Is assortment getting stale?', trigger: 'Sell-through down 10%+ QoQ', drill: 'Category/SKU -> markdown path', dataType: 'products' },
+    { title: 'Returns Rate Increase', question: 'Are quality or fit issues rising?', trigger: 'Credits/returns +30% vs trailing 8 weeks', drill: 'Reason -> SKU -> location/channel', dataType: 'products' },
+  ],
+  '48': [
+    { title: 'Billing Leakage Proxy', question: 'Are loads shipped but under-billed?', trigger: 'Receipts lag shipments by 10%+', drill: 'Customer -> lane -> shipment/accessorial', dataType: 'customers' },
+    { title: 'Fuel & Vendor Cost Spike', question: 'Are transport costs compressing margin?', trigger: 'Fuel/vendor spend +15% MoM', drill: 'Vendor -> lane/site -> period variance', dataType: 'ap-aging' },
+    { title: 'Claims / Credits Increase', question: 'Are service failures rising?', trigger: 'Claims/credits +25% vs trailing 8 weeks', drill: 'Reason -> lane/site -> customer', dataType: 'customers' },
+  ],
+  '51': [
+    { title: 'Credits / SLA Penalties', question: 'Are service credits increasing?', trigger: 'Credits +25% vs trailing 8 weeks', drill: 'Account -> issue type -> invoice', dataType: 'customers' },
+    { title: 'Cloud/Tooling Spend Drift', question: 'Is platform spend rising faster than revenue?', trigger: 'Spend +15% MoM with flat revenue', drill: 'Vendor -> service -> period variance', dataType: 'ap-aging' },
+    { title: 'Renewal Risk Proxy', question: 'Are key accounts weakening?', trigger: 'Large account revenue down 10%+ with slower pay', drill: 'Account -> invoice/payment trend', dataType: 'customers' },
+  ],
+  '54': [
+    { title: 'Unbilled Services Growth', question: 'Are delivered services not being invoiced?', trigger: 'Unbilled/WIP proxy +12% MoM', drill: 'Client -> engagement -> invoice cadence', dataType: 'ar-aging' },
+    { title: 'Write-off / Credit Trend', question: 'Are scope disputes increasing?', trigger: 'Credits/write-offs +20% vs trailing 8 weeks', drill: 'Client -> project -> reason', dataType: 'customers' },
+    { title: 'Contractor Spend Spike', question: 'Is delivery mix eroding margin?', trigger: 'Contractor AP +15% MoM', drill: 'Vendor -> engagement -> rate/volume', dataType: 'ap-aging' },
+  ],
+  '62': [
+    { title: 'Payer AR Deterioration', question: 'Are collections slowing by payer?', trigger: 'Payer AR >30 days +15% vs prior 30', drill: 'Payer -> claim/invoice aging', dataType: 'ar-aging' },
+    { title: 'Write-offs / Denial Proxy', question: 'Are denials or adjustments increasing?', trigger: 'Credits/write-offs +20% vs trailing 8 weeks', drill: 'Reason -> service line -> location', dataType: 'customers' },
+    { title: 'Staffing Cost Acceleration', question: 'Are labor costs spiking?', trigger: 'Staffing-related AP +15% MoM', drill: 'Vendor category -> location -> time window', dataType: 'ap-aging' },
+  ],
+};
+
+const SECTOR_INVESTIGATE_OVERRIDES: Record<string, InvestigatePlaybook[]> = {
+  '42': [
+    { title: 'Why are deductions rising?', path: 'Reason codes -> customer patterns -> SKU correlation', outcome: 'Deduction root-cause tree with recovery actions', dataType: 'ar-aging' },
+    { title: 'Why are we stocking out?', path: 'SKU demand spike vs supply delay -> reorder cadence', outcome: 'Stockout driver map and replenishment actions', dataType: 'inventory' },
+  ],
+  '32': [
+    { title: 'Why did WIP build?', path: 'WIP delta -> aging buckets -> SKU family', outcome: 'Bottleneck diagnosis and throughput actions', dataType: 'products' },
+    { title: 'Why did material costs rise?', path: 'Unit cost vs volume -> vendor changes -> PO history', outcome: 'Cost inflation decomposition and sourcing actions', dataType: 'ap-aging' },
+  ],
+  '23': [
+    { title: 'Why is WIP/unbilled growing?', path: 'Project billing lag -> change-order backlog', outcome: 'Billing acceleration playbook by project', dataType: 'ar-aging' },
+    { title: 'Why are job costs spiking?', path: 'Materials/subcontractor spend -> project variance', outcome: 'Cost overrun causes and controls', dataType: 'ap-aging' },
+  ],
+  '45': [
+    { title: 'Why did margin drop?', path: 'Discounts/markdowns -> returns -> vendor cost drift', outcome: 'Retail margin bridge by category/SKU', dataType: 'products' },
+    { title: 'Why is inventory bloating?', path: 'Buying vs demand -> aged stock -> markdown path', outcome: 'Inventory action list by category', dataType: 'inventory' },
+  ],
+  '48': [
+    { title: 'Why did cash drop this week?', path: 'Collections vs fuel/payroll/claims', outcome: 'Transport cash bridge with owner actions', dataType: 'cash' },
+    { title: 'Which lanes/customers are unprofitable?', path: 'Revenue vs credits/claims vs pay speed', outcome: 'Lane-account profitability risk list', dataType: 'customers' },
+  ],
+  '51': [
+    { title: 'Why did credits increase?', path: 'Issue/SLA -> account -> contract period', outcome: 'Service-quality and revenue leakage actions', dataType: 'customers' },
+    { title: 'Why did cloud spend jump?', path: 'Vendor -> service -> team/project driver', outcome: 'Cloud/tooling cost containment actions', dataType: 'ap-aging' },
+  ],
+  '54': [
+    { title: 'Why did AR worsen?', path: 'Client aging -> invoice cadence -> disputes', outcome: 'Collection and billing cadence action plan', dataType: 'ar-aging' },
+    { title: 'Which clients are unprofitable?', path: 'Slow pay + credits + contractor-heavy delivery', outcome: 'Client portfolio risk ranking', dataType: 'customers' },
+  ],
+  '62': [
+    { title: 'Why did collections fall?', path: 'Payer mix -> aging -> adjustment/credit patterns', outcome: 'Payer-focused collections recovery plan', dataType: 'ar-aging' },
+    { title: 'Where is margin leaking?', path: 'Payer mix + write-offs + staffing cost drift', outcome: 'Healthcare margin leakage map', dataType: 'ap-aging' },
+  ],
+};
+
+export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory, viewMode = 'full' }: OperationsTabProps) {
+  const isOverviewOnly = viewMode === 'overview-only';
+  const [activeTab, setActiveTab] = useState<OpTab>(isOverviewOnly ? 'overview' : 'dashboard');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -37,28 +324,140 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   const [productData, setProductData] = useState<any>(null);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
+  const [arSummaryPage, setArSummaryPage] = useState(1);
+  const [unpaidInvoicesPage, setUnpaidInvoicesPage] = useState(1);
+  const [customerInvoicePage, setCustomerInvoicePage] = useState(1);
+  const [selectedInvoiceCustomer, setSelectedInvoiceCustomer] = useState('All');
+  const [apSummaryPage, setApSummaryPage] = useState(1);
+  const [unpaidBillsPage, setUnpaidBillsPage] = useState(1);
+  const [vendorBillsPage, setVendorBillsPage] = useState(1);
+  const [selectedVendorBill, setSelectedVendorBill] = useState('All');
+  const [demandSortKey, setDemandSortKey] = useState<'customer' | 'bookingsMtd' | 'bookingsQtd' | 'bookingsYtd' | 'backlogTotal' | 'backlog60' | 'shareBacklog' | 'trend'>('backlogTotal');
+  const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
+  const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
+  const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   
   // Date range and frequency filters
-  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
-    // Default to 12 months ago for monthly view
-    date.setMonth(date.getMonth() - 12);
+    // Default to last 90 days for daily view
+    date.setDate(date.getDate() - 90);
     return date.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState<string>(() => {
     return new Date().toISOString().split('T')[0];
   });
 
-  useEffect(() => {
-    loadSummary();
-  }, [selectedCompanyId]);
+  const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash'];
+  const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules)
+    ? opsSectorLayoutConfig.modules
+        .map((module: unknown) => String(module || '').trim())
+        .filter((module: string) => module && module.toLowerCase() !== 'ops-default')
+    : [];
+  const sectorModules = getTopLineBucketsForSector(industrySectorCategory).map((bucket) => bucket.key);
+  const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
+  const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
+  const availableModuleTabs = Array.from(
+    new Set(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash'])
+  );
+  const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', ...availableModuleTabs];
+  const moduleTitlesByType = Object.fromEntries(
+    orderedDashboardDataTypes
+      .map((type) => {
+        const modulesForType = availableModuleTabs.filter((module) => mapModuleToDataType(module) === type);
+        if (!modulesForType.length) return [type, null];
+        const labels = modulesForType.map((module) => getModuleLabel(module));
+        return [type, labels.length === 1 ? labels[0] : `${labels[0]} (+${labels.length - 1})`];
+      })
+      .filter(([, label]) => Boolean(label))
+  ) as Partial<Record<OpsDataType, string>>;
+  const sectorProfile = getSectorMockProfile(industrySectorCategory);
+  const sectorCode = sectorProfile.sectorCategory;
+  const sectorLabel = SECTOR_NAMES[sectorCode] || 'This Sector';
+  const monitorCards = [...(SECTOR_MONITOR_OVERRIDES[sectorCode] || []), ...UNIVERSAL_MONITOR_CARDS];
+  const investigatePlaybooks = [...(SECTOR_INVESTIGATE_OVERRIDES[sectorCode] || []), ...UNIVERSAL_INVESTIGATIONS];
+
+  const jumpToDataType = (type?: OpsDataType) => {
+    if (!type) return;
+    const targetModule = availableModuleTabs.find((module) => mapModuleToDataType(module) === type);
+    if (targetModule) setActiveTab(targetModule as OpTab);
+  };
 
   useEffect(() => {
-    if (activeTab !== 'overview') {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, availableTabs]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [selectedCompanyId, industrySectorCategory]);
+
+  useEffect(() => {
+    if (!industrySectorCategory) {
+      setOpsSectorLayoutConfig(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch(`/api/ops-sector-layouts?sectorCategory=${industrySectorCategory}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        setOpsSectorLayoutConfig(data?.config?.config || null);
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.error('Failed to load ops sector layout config:', error);
+        }
+      });
+
+    return () => controller.abort();
+  }, [industrySectorCategory]);
+
+  useEffect(() => {
+    if (activeTab !== 'overview' && activeTab !== 'dashboard') {
       loadTabData(activeTab);
     }
-  }, [activeTab, selectedCompanyId, frequency, startDate, endDate]);
+  }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
+
+  useEffect(() => {
+    if (activeTab !== 'overview') return;
+    const needsAnyCoreData = !arData || !apData || !cashData || !inventoryData || !customerData || !productData;
+    if (!needsAnyCoreData) return;
+
+    let cancelled = false;
+    setSmartCardsLoading(true);
+    Promise.all([
+      arData ? Promise.resolve(arData) : fetchOperationalType('ar-aging'),
+      apData ? Promise.resolve(apData) : fetchOperationalType('ap-aging'),
+      cashData ? Promise.resolve(cashData) : fetchOperationalType('cash'),
+      inventoryData ? Promise.resolve(inventoryData) : fetchOperationalType('inventory'),
+      customerData ? Promise.resolve(customerData) : fetchOperationalType('customers'),
+      productData ? Promise.resolve(productData) : fetchOperationalType('products'),
+    ])
+      .then(([nextAr, nextAp, nextCash, nextInventory, nextCustomers, nextProducts]) => {
+        if (cancelled) return;
+        if (!arData && nextAr) setArData(nextAr);
+        if (!apData && nextAp) setApData(nextAp);
+        if (!cashData && nextCash) setCashData(nextCash);
+        if (!inventoryData && nextInventory) setInventoryData(nextInventory);
+        if (!customerData && nextCustomers) setCustomerData(nextCustomers);
+        if (!productData && nextProducts) setProductData(nextProducts);
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          console.error('Failed to preload smart card data:', err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSmartCardsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, arData, apData, cashData, inventoryData, customerData, productData, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
 
   // Auto-adjust date range when frequency changes
   useEffect(() => {
@@ -81,7 +480,11 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/operational-data?companyId=${selectedCompanyId}`);
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+      });
+      const response = await fetch(`/api/operational-data?${params}`);
       if (!response.ok) throw new Error('Failed to load operational data');
       const data = await response.json();
       setSummary(data.summary);
@@ -92,41 +495,39 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     }
   };
 
+  const fetchOperationalType = async (type: OpsDataType) => {
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      type,
+      frequency,
+      startDate,
+      endDate,
+      ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+    });
+    const response = await fetch(`/api/operational-data?${params}`);
+    if (!response.ok) throw new Error(`Failed to load ${type} data`);
+    return response.json();
+  };
+
   const loadTabData = async (tab: string) => {
     setLoading(true);
     setError(null);
     try {
-      // Map tab names to API type parameter
-      const typeMap: Record<string, string> = {
-        'customers': 'customers',
-        'ar': 'ar-aging',
-        'ap': 'ap-aging',
-        'products': 'products',
-        'inventory': 'inventory',
-        'cash': 'cash'
-      };
+      const type = mapModuleToDataType(tab) || null;
+      if (!type) {
+        setLoading(false);
+        return;
+      }
+      const data = await fetchOperationalType(type);
       
-      const type = typeMap[tab];
-      const params = new URLSearchParams({
-        companyId: selectedCompanyId,
-        type,
-        frequency,
-        startDate,
-        endDate,
-      });
-      
-      const response = await fetch(`/api/operational-data?${params}`);
-      if (!response.ok) throw new Error(`Failed to load ${type} data`);
-      const data = await response.json();
-      
-      switch (tab) {
+      switch (type) {
         case 'customers':
           setCustomerData(data);
           break;
-        case 'ar':
+        case 'ar-aging':
           setArData(data);
           break;
-        case 'ap':
+        case 'ap-aging':
           setApData(data);
           break;
         case 'products':
@@ -146,10 +547,369 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     }
   };
 
+  const severityStyles: Record<CardSeverity, { border: string; bg: string; badgeBg: string; badgeColor: string; label: string }> = {
+    normal: { border: '#bfdbfe', bg: '#f8fafc', badgeBg: '#dcfce7', badgeColor: '#166534', label: 'Normal' },
+    warning: { border: '#fde68a', bg: '#fffbeb', badgeBg: '#fef3c7', badgeColor: '#92400e', label: 'Watch' },
+    critical: { border: '#fecaca', bg: '#fef2f2', badgeBg: '#fee2e2', badgeColor: '#991b1b', label: 'Alert' },
+    loading: { border: '#e2e8f0', bg: '#f8fafc', badgeBg: '#f1f5f9', badgeColor: '#475569', label: 'Loading' },
+  };
+
+  const getMonitorInsight = (card: MonitorCard): { headline: string; detail: string; severity: CardSeverity } => {
+    if (!arData?.summary || !apData?.summary || !cashData?.summary) {
+      return { headline: 'Calculating from operational data...', detail: card.trigger, severity: smartCardsLoading ? 'loading' : 'normal' };
+    }
+
+    const arSummary = arData.summary || {};
+    const apSummary = apData.summary || {};
+    const cashSummary = cashData.summary || {};
+    const arRecords = Array.isArray(arData.records) ? arData.records : [];
+    const apRecords = Array.isArray(apData.records) ? apData.records : [];
+    const inventorySummary = inventoryData?.summary || {};
+
+    if (card.title === 'DSO Drift') {
+      const currentDso = Number(arSummary.dso || 0);
+      const latestAr = Number(arRecords[0]?.totalAR || arSummary.totalAR || 0);
+      const trailingAvgAr = arRecords.length
+        ? arRecords.reduce((sum: number, row: any) => sum + Number(row.totalAR || 0), 0) / arRecords.length
+        : latestAr;
+      const baselineDso = trailingAvgAr > 0 ? currentDso * (trailingAvgAr / Math.max(latestAr, 1)) : currentDso;
+      const delta = currentDso - baselineDso;
+      const severity: CardSeverity = delta >= 5 ? 'critical' : delta >= 2 ? 'warning' : 'normal';
+      return {
+        headline: `DSO ${currentDso.toFixed(1)} days (${delta >= 0 ? '+' : ''}${delta.toFixed(1)} vs baseline)`,
+        detail: `Baseline ${baselineDso.toFixed(1)} days (trailing-window proxy)`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Past-Due AR Spike') {
+      const currentOver30 = Number(arSummary.over30Pct || 0);
+      const latest = arRecords[0];
+      const previous = arRecords[1];
+      const prevOver30 = previous
+        ? ((Number(previous.days1to30 || 0) + Number(previous.days31to60 || 0) + Number(previous.days61to90 || 0) + Number(previous.days90plus || 0)) / Math.max(Number(previous.totalAR || 1), 1)) * 100
+        : currentOver30;
+      const delta = currentOver30 - prevOver30;
+      const severity: CardSeverity = delta >= 15 ? 'critical' : delta >= 8 ? 'warning' : 'normal';
+      return {
+        headline: `AR >30d ${currentOver30.toFixed(1)}% (${delta >= 0 ? '+' : ''}${delta.toFixed(1)} pts)`,
+        detail: `Latest AR ${formatCurrency(Number(latest?.totalAR || arSummary.totalAR || 0))}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'AP Past Due Risk') {
+      const currentOver30 = Number(apSummary.over30Pct || 0);
+      const totalAp = Number(apSummary.totalAP || 0);
+      const severity: CardSeverity = currentOver30 >= 40 ? 'critical' : currentOver30 >= 28 ? 'warning' : 'normal';
+      return {
+        headline: `AP >30d ${currentOver30.toFixed(1)}%`,
+        detail: `Total AP ${formatCurrency(totalAp)}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Spend Acceleration') {
+      const latestAp = Number(apRecords[0]?.totalAP || apSummary.totalAP || 0);
+      const previousAp = Number(apRecords[1]?.totalAP || latestAp || 0);
+      const pct = previousAp > 0 ? ((latestAp - previousAp) / previousAp) * 100 : 0;
+      const severity: CardSeverity = pct >= 15 ? 'critical' : pct >= 8 ? 'warning' : 'normal';
+      return {
+        headline: `AP trend ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% period-over-period`,
+        detail: `${formatCurrency(previousAp)} -> ${formatCurrency(latestAp)}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Working Capital Spike') {
+      const ar = Number(arSummary.totalAR || 0);
+      const inv = Number(inventorySummary.totalValue || 0);
+      const ap = Number(apSummary.totalAP || 0);
+      const net = ar + inv - ap;
+      const prevAr = Number(arRecords[1]?.totalAR || ar);
+      const prevAp = Number(apRecords[1]?.totalAP || ap);
+      const prevInv = Number(inventorySummary.totalValue || inv);
+      const prevNet = prevAr + prevInv - prevAp;
+      const pct = prevNet > 0 ? ((net - prevNet) / prevNet) * 100 : 0;
+      const severity: CardSeverity = pct >= 10 ? 'critical' : pct >= 5 ? 'warning' : 'normal';
+      return {
+        headline: `Net working capital ${formatCurrency(net)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`,
+        detail: `AR ${formatCurrency(ar)} + Inv ${formatCurrency(inv)} - AP ${formatCurrency(ap)}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Cash Runway') {
+      const totalCash = Number(cashSummary.totalCash || 0);
+      const monthlyBurn = Math.max(1, Math.abs(Number(cashSummary.changeAmount || 0)));
+      const runwayMonths = totalCash / monthlyBurn;
+      const runwayWeeks = runwayMonths * 4.33;
+      const severity: CardSeverity = runwayWeeks < 8 ? 'critical' : runwayWeeks < 16 ? 'warning' : 'normal';
+      return {
+        headline: `Runway ~${runwayWeeks.toFixed(1)} weeks`,
+        detail: `Cash ${formatCurrency(totalCash)} / burn proxy ${formatCurrency(monthlyBurn)} per period`,
+        severity,
+      };
+    }
+
+    if (card.dataType === 'ar-aging') {
+      const over30 = Number(arSummary.over30Pct || 0);
+      return {
+        headline: `AR signal: ${over30.toFixed(1)}% over 30 days`,
+        detail: `DSO ${Number(arSummary.dso || 0).toFixed(1)} days`,
+        severity: over30 >= 35 ? 'warning' : 'normal',
+      };
+    }
+    if (card.dataType === 'ap-aging') {
+      const over30 = Number(apSummary.over30Pct || 0);
+      return {
+        headline: `AP signal: ${over30.toFixed(1)}% over 30 days`,
+        detail: `DPO ${Number(apSummary.dpo || 0).toFixed(1)} days`,
+        severity: over30 >= 35 ? 'warning' : 'normal',
+      };
+    }
+    if (card.dataType === 'cash') {
+      const change = Number(cashSummary.changePercent || 0);
+      return {
+        headline: `Cash ${change >= 0 ? '+' : ''}${change.toFixed(1)}% period change`,
+        detail: `Total ${formatCurrency(Number(cashSummary.totalCash || 0))}`,
+        severity: change <= -10 ? 'warning' : 'normal',
+      };
+    }
+
+    return { headline: 'Signal configured for this sector', detail: card.trigger, severity: 'normal' };
+  };
+
+  const getInvestigateInsight = (playbook: InvestigatePlaybook): InvestigateInsight => {
+    if (!arData?.summary || !apData?.summary || !cashData?.summary) {
+      return {
+        whyNow: 'Preparing signals from live operational data...',
+        impact: 'Impact pending data refresh',
+        drivers: [],
+        startHere: playbook.path,
+        owner: 'Ops Team',
+        eta: '1-2 days',
+        freshness: 'Refreshing',
+        confidence: 'Low',
+        severity: smartCardsLoading ? 'loading' : 'normal',
+      };
+    }
+
+    const arSummary = arData.summary || {};
+    const apSummary = apData.summary || {};
+    const cashSummary = cashData.summary || {};
+    const inventorySummary = inventoryData?.summary || {};
+    const productsSummary = productData?.summary || {};
+    const customersSummary = customerData?.summary || {};
+
+    const arDrivers = (Array.isArray(arSummary.unpaidByCustomer) ? arSummary.unpaidByCustomer : [])
+      .map((row: any) => ({
+        name: row.customerName,
+        overdue: Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0),
+      }))
+      .sort((a: any, b: any) => b.overdue - a.overdue);
+    const apDrivers = (Array.isArray(apSummary.unpaidByVendor) ? apSummary.unpaidByVendor : [])
+      .map((row: any) => ({
+        name: row.vendorName,
+        overdue: Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0),
+      }))
+      .sort((a: any, b: any) => b.overdue - a.overdue);
+
+    const ownerByType: Record<string, { owner: string; eta: string }> = {
+      'ar-aging': { owner: 'Collections Lead', eta: '24-72 hours' },
+      'ap-aging': { owner: 'AP Manager', eta: '1-3 days' },
+      cash: { owner: 'Controller', eta: 'Same day' },
+      products: { owner: 'Ops + Finance', eta: '2-4 days' },
+      customers: { owner: 'Revenue Ops', eta: '1-2 days' },
+      inventory: { owner: 'Supply Chain', eta: '2-4 days' },
+    };
+    const ownerMeta = ownerByType[playbook.dataType || ''] || { owner: 'Ops Team', eta: '1-3 days' };
+
+    if (playbook.title === 'Why did AR worsen?') {
+      const over30 = Number(arSummary.over30Pct || 0);
+      const dso = Number(arSummary.dso || 0);
+      const top = arDrivers[0];
+      const impact = arDrivers.slice(0, 3).reduce((sum: number, row: any) => sum + row.overdue, 0);
+      const severity: CardSeverity = over30 >= 35 || dso >= 50 ? 'critical' : over30 >= 25 ? 'warning' : 'normal';
+      return {
+        whyNow: `AR >30d is ${over30.toFixed(1)}% with DSO at ${dso.toFixed(1)} days`,
+        impact: `~${formatCurrency(impact)} concentrated in top overdue accounts`,
+        drivers: arDrivers.slice(0, 3).map((row: any) => `${row.name} (${formatCurrency(row.overdue)})`),
+        startHere: top ? `Open AR for ${top.name}` : playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: arDrivers.length >= 3 ? 'High' : 'Medium',
+        severity,
+        focusCustomer: top?.name || null,
+      };
+    }
+
+    if (playbook.title === 'Why did spend spike?') {
+      const totalAp = Number(apSummary.totalAP || 0);
+      const over30 = Number(apSummary.over30Pct || 0);
+      const top = apDrivers[0];
+      const impact = apDrivers.slice(0, 3).reduce((sum: number, row: any) => sum + row.overdue, 0);
+      const severity: CardSeverity = over30 >= 35 ? 'critical' : over30 >= 25 ? 'warning' : 'normal';
+      return {
+        whyNow: `AP aging pressure: ${over30.toFixed(1)}% over 30 days`,
+        impact: `~${formatCurrency(impact)} in top overdue vendors; total AP ${formatCurrency(totalAp)}`,
+        drivers: apDrivers.slice(0, 3).map((row: any) => `${row.name} (${formatCurrency(row.overdue)})`),
+        startHere: top ? `Open AP for ${top.name}` : playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: apDrivers.length >= 3 ? 'High' : 'Medium',
+        severity,
+        focusVendor: top?.name || null,
+      };
+    }
+
+    if (playbook.title === 'Why did cash change?') {
+      const totalCash = Number(cashSummary.totalCash || 0);
+      const changeAmt = Number(cashSummary.changeAmount || 0);
+      const changePct = Number(cashSummary.changePercent || 0);
+      const accounts = Array.isArray(cashSummary.accounts) ? cashSummary.accounts : [];
+      const drivers = accounts
+        .sort((a: any, b: any) => Math.abs(Number(b.currentBalance || 0) - Number(b.avgBalance || 0)) - Math.abs(Number(a.currentBalance || 0) - Number(a.avgBalance || 0)))
+        .slice(0, 3)
+        .map((acct: any) => `${acct.accountName} (${formatCurrency(Number(acct.currentBalance || 0))})`);
+      const severity: CardSeverity = changePct <= -10 ? 'critical' : changePct <= -4 ? 'warning' : 'normal';
+      return {
+        whyNow: `Cash moved ${changeAmt >= 0 ? '+' : ''}${formatCurrency(changeAmt)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}%)`,
+        impact: `Current liquidity ${formatCurrency(totalCash)}`,
+        drivers,
+        startHere: 'Open cash trend + account variance',
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: drivers.length ? 'High' : 'Medium',
+        severity,
+      };
+    }
+
+    if (playbook.title === 'Why did margin shrink?') {
+      const products = Array.isArray(productsSummary.topProducts) ? productsSummary.topProducts : [];
+      const lowestMargin = [...products]
+        .sort((a: any, b: any) => Number(a.grossMarginPct || 0) - Number(b.grossMarginPct || 0))
+        .slice(0, 3);
+      const atRiskRevenue = lowestMargin.reduce((sum: number, row: any) => sum + Number(row.totalRevenue || 0), 0);
+      const avgMargin = products.length
+        ? products.reduce((sum: number, row: any) => sum + Number(row.grossMarginPct || 0), 0) / products.length
+        : 0;
+      const severity: CardSeverity = avgMargin < 25 ? 'critical' : avgMargin < 35 ? 'warning' : 'normal';
+      return {
+        whyNow: `Average gross margin is ${avgMargin.toFixed(1)}% across top products`,
+        impact: `${formatCurrency(atRiskRevenue)} revenue tied to lowest-margin items`,
+        drivers: lowestMargin.map((row: any) => `${row.name} (${Number(row.grossMarginPct || 0).toFixed(1)}%)`),
+        startHere: 'Open products sorted by gross margin %',
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: lowestMargin.length ? 'Medium' : 'Low',
+        severity,
+      };
+    }
+
+    if (playbook.title === 'What moved working capital?') {
+      const ar = Number(arSummary.totalAR || 0);
+      const ap = Number(apSummary.totalAP || 0);
+      const inv = Number(inventorySummary.totalValue || 0);
+      const net = ar + inv - ap;
+      const components = [
+        { name: 'AR', value: ar },
+        { name: 'Inventory', value: inv },
+        { name: 'AP (offset)', value: -ap },
+      ].sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+      const severity: CardSeverity = net > 250000 ? 'warning' : 'normal';
+      return {
+        whyNow: `Net working capital sits at ${formatCurrency(net)}`,
+        impact: `Cash tied up by AR + Inventory less AP offset`,
+        drivers: components.slice(0, 3).map((row) => `${row.name}: ${row.value >= 0 ? '' : '-'}${formatCurrency(Math.abs(row.value))}`),
+        startHere: 'Open cash and reconcile AR / Inventory / AP contributions',
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: 'Medium',
+        severity,
+      };
+    }
+
+    if (playbook.title === 'What should we do next?') {
+      const topCustomers = (Array.isArray(customersSummary.topCustomers) ? customersSummary.topCustomers : []).slice(0, 3);
+      const over30 = Number(arSummary.over30Pct || 0);
+      const changePct = Number(cashSummary.changePercent || 0);
+      const severity: CardSeverity = over30 > 30 || changePct < -8 ? 'warning' : 'normal';
+      return {
+        whyNow: `Cash ${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}% and AR >30d at ${over30.toFixed(1)}%`,
+        impact: 'Focus response on collection acceleration and spend controls',
+        drivers: topCustomers.map((row: any) => `${row.name} (${formatCurrency(Number(row.totalRevenue || 0))})`),
+        startHere: topCustomers[0] ? `Open customer trends for ${topCustomers[0].name}` : playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: topCustomers.length ? 'Medium' : 'Low',
+        severity,
+      };
+    }
+
+    const fallbackSeverity: CardSeverity =
+      playbook.dataType === 'ar-aging'
+        ? Number(arSummary.over30Pct || 0) >= 30 ? 'warning' : 'normal'
+        : playbook.dataType === 'ap-aging'
+          ? Number(apSummary.over30Pct || 0) >= 30 ? 'warning' : 'normal'
+          : playbook.dataType === 'cash'
+            ? Number(cashSummary.changePercent || 0) <= -8 ? 'warning' : 'normal'
+            : 'normal';
+    return {
+      whyNow: 'Playbook ready with current period context',
+      impact: playbook.outcome,
+      drivers: [],
+      startHere: playbook.path,
+      owner: ownerMeta.owner,
+      eta: ownerMeta.eta,
+      freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+      confidence: 'Medium',
+      severity: fallbackSeverity,
+    };
+  };
+
+  const openInvestigate = (playbook: InvestigatePlaybook, insight: InvestigateInsight) => {
+    if (playbook.dataType === 'ar-aging' && insight.focusCustomer) {
+      setSelectedInvoiceCustomer(insight.focusCustomer);
+      setCustomerInvoicePage(1);
+    }
+    if (playbook.dataType === 'ap-aging' && insight.focusVendor) {
+      setSelectedVendorBill(insight.focusVendor);
+      setVendorBillsPage(1);
+    }
+    if (playbook.dataType === 'customers') {
+      setDemandSortKey('backlogTotal');
+      setDemandSortDir('desc');
+    }
+    jumpToDataType(playbook.dataType);
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+  const formatCurrencyWithCents = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+  const formatForeignCurrency = (value: number, currency: string) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(value);
@@ -168,7 +928,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
   };
 
   const renderFilters = () => {
-    if (activeTab === 'overview' || activeTab === 'dashboard') return null;
+    if (isOverviewOnly || activeTab === 'overview' || activeTab === 'dashboard') return null;
 
     return (
       <div style={{ 
@@ -388,9 +1148,27 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
 
   // Overview Tab
   const renderOverview = () => (
-    <div style={{ padding: '16px 24px' }}>
-      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-        Operational Data Overview
+    <div style={{ padding: '12px 24px' }}>
+      {(() => {
+        const severityRank: Record<CardSeverity, number> = {
+          critical: 3,
+          warning: 2,
+          normal: 1,
+          loading: 0,
+        };
+        const rankedMonitorCards = monitorCards
+          .map((card, index) => ({ card, insight: getMonitorInsight(card), index }))
+          .sort((a, b) => (severityRank[b.insight.severity] - severityRank[a.insight.severity]) || (a.index - b.index))
+          .slice(0, 6);
+        const rankedInvestigateCards = investigatePlaybooks
+          .map((playbook, index) => ({ playbook, insight: getInvestigateInsight(playbook), index }))
+          .sort((a, b) => (severityRank[b.insight.severity] - severityRank[a.insight.severity]) || (a.index - b.index))
+          .slice(0, 6);
+
+        return (
+          <>
+      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '10px' }}>
+        Operations Overview
       </h2>
 
       {loading && (
@@ -400,13 +1178,13 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
       )}
 
       {error && (
-        <div style={{ 
-          background: '#fef2f2', 
-          border: '1px solid #fecaca', 
-          borderRadius: '8px', 
-          padding: '16px', 
-          display: 'flex', 
-          alignItems: 'center', 
+        <div style={{
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          padding: '16px',
+          display: 'flex',
+          alignItems: 'center',
           gap: '12px',
           marginBottom: '24px'
         }}>
@@ -415,235 +1193,84 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
         </div>
       )}
 
-      {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('customers')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#dbeafe', padding: '8px', borderRadius: '6px' }}>
-                <Users style={{ width: '20px', height: '20px', color: '#2563eb' }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px 12px' }}>
+          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', margin: '0 0 3px 0', lineHeight: 1.2 }}>Monitor</h3>
+          <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 8px 0' }}>Trigger cards for near-term risk and change detection.</p>
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {rankedMonitorCards.map(({ card, insight }) => {
+              const severity = severityStyles[insight.severity];
+              return (
+              <div key={card.title} style={{ border: `1px solid ${severity.border}`, borderRadius: '8px', padding: '8px 10px', background: severity.bg }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
+                  <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{card.title}</h4>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', padding: '3px 9px', borderRadius: '999px', background: severity.badgeBg, color: severity.badgeColor, fontWeight: 700 }}>
+                      {severity.label}
+                    </span>
+                    {card.dataType && (
+                      <button
+                        onClick={() => jumpToDataType(card.dataType)}
+                        style={{ fontSize: '13px', color: '#2563eb', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        Open
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ marginTop: '2px', fontSize: '15px', color: '#0f172a', fontWeight: 700, lineHeight: 1.35 }}>{insight.headline}</div>
+                <div style={{ marginTop: '3px', fontSize: '14px', color: '#334155', lineHeight: 1.35 }}>{insight.detail}</div>
+                <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}><strong>Question:</strong> {card.question}</div>
+                <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}><strong>Trigger:</strong> {card.trigger}</div>
+                <div style={{ fontSize: '14px', color: '#475569', marginTop: '3px', lineHeight: 1.35 }}><strong>Drill:</strong> {card.drill}</div>
               </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Customer Sales</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.customerSalesRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Sales records tracked</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('ar')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#dcfce7', padding: '8px', borderRadius: '6px' }}>
-                <TrendingUp style={{ width: '20px', height: '20px', color: '#16a34a' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>AR Aging</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.arAgingRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Monthly snapshots</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('ap')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#fef3c7', padding: '8px', borderRadius: '6px' }}>
-                <DollarSign style={{ width: '20px', height: '20px', color: '#f59e0b' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>AP Aging</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.apAgingRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Monthly snapshots</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('products')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#fce7f3', padding: '8px', borderRadius: '6px' }}>
-                <Package style={{ width: '20px', height: '20px', color: '#ec4899' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Product Sales</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.productSalesRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Product records</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('inventory')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#e0e7ff', padding: '8px', borderRadius: '6px' }}>
-                <Warehouse style={{ width: '20px', height: '20px', color: '#6366f1' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Inventory</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.inventoryRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Inventory records</p>
-          </div>
-
-          <div style={{ 
-            background: 'white', 
-            borderRadius: '8px', 
-            padding: '16px', 
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            border: '1px solid #e2e8f0',
-            cursor: 'pointer',
-            transition: 'transform 0.2s, box-shadow 0.2s'
-          }}
-          onClick={() => setActiveTab('cash')}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-4px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <div style={{ background: '#d1fae5', padding: '8px', borderRadius: '6px' }}>
-                <DollarSign style={{ width: '20px', height: '20px', color: '#10b981' }} />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: '600', color: '#475569' }}>Cash</h3>
-            </div>
-            <div style={{ fontSize: '26px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
-              {summary.cashRecords || 0}
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>Cash snapshots</p>
+            )})}
           </div>
         </div>
-      )}
 
-      <div style={{ 
-        marginTop: '20px', 
-        background: '#f8fafc', 
-        border: '1px solid #e2e8f0', 
-        borderRadius: '8px', 
-        padding: '16px' 
-      }}>
-        <h3 style={{ fontSize: '17px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-          About Operational Data
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' }}>
-          <div>
-            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-              📊 Customer Analytics
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
-              Track customer revenue trends, invoice patterns, and identify your top customers and revenue concentration.
-            </p>
-          </div>
-          <div>
-            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-              💰 AR & AP Aging
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
-              Monitor accounts receivable and payable aging to optimize cash flow and working capital management.
-            </p>
-          </div>
-          <div>
-            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-              📦 Product Performance
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
-              Analyze product sales, margins, and trends to identify your best performers and optimization opportunities.
-            </p>
-          </div>
-          <div>
-            <h4 style={{ fontSize: '21px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-              🏭 Inventory Management
-            </h4>
-            <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.5' }}>
-              Track inventory levels, values, and turnover to optimize stock levels and reduce carrying costs.
-            </p>
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px 12px' }}>
+          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', margin: '0 0 3px 0', lineHeight: 1.2 }}>Investigate</h3>
+          <p style={{ fontSize: '14px', color: '#64748b', margin: '0 0 8px 0' }}>Playbooks to explain deltas and produce actions.</p>
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {rankedInvestigateCards.map(({ playbook, insight }) => {
+              const severity = severityStyles[insight.severity];
+              return (
+                <div key={playbook.title} style={{ border: `1px solid ${severity.border}`, borderRadius: '8px', padding: '8px 10px', background: severity.bg }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
+                    <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{playbook.title}</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', padding: '3px 9px', borderRadius: '999px', background: severity.badgeBg, color: severity.badgeColor, fontWeight: 700 }}>
+                        {severity.label}
+                      </span>
+                      <button
+                        onClick={() => openInvestigate(playbook, insight)}
+                        style={{ fontSize: '13px', color: '#2563eb', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        Investigate
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '15px', color: '#0f172a', marginTop: '3px', fontWeight: 700, lineHeight: 1.35 }}><strong>Why now:</strong> {insight.whyNow}</div>
+                  <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}><strong>Impact:</strong> {insight.impact}</div>
+                  {insight.drivers.length > 0 && (
+                    <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}>
+                      <strong>Top drivers:</strong> {insight.drivers.join(' | ')}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '14px', color: '#334155', marginTop: '3px', lineHeight: 1.35 }}><strong>Start:</strong> {insight.startHere}</div>
+                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px', lineHeight: 1.35 }}>
+                    <strong>Owner/ETA:</strong> {insight.owner} / {insight.eta} | <strong>Confidence:</strong> {insight.confidence} | <strong>Data:</strong> {insight.freshness}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
+
+          </>
+        );
+      })()}
     </div>
   );
 
@@ -698,86 +1325,293 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
           </div>
         </div>
 
-        {/* Revenue Trend Chart */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            {frequency.charAt(0).toUpperCase() + frequency.slice(1)} Revenue Trend
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-              <Tooltip 
-                formatter={(value: any) => [formatCurrency(value), 'Revenue']}
-                contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="revenue" stroke="#667eea" strokeWidth={2} dot={{ fill: '#667eea', r: 4 }} name="Revenue" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Top Customers Table */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Top Customers by Revenue
-          </h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Rank</th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Customer</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Total Revenue</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Invoices</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Avg Invoice</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.topCustomers.map((customer: any, index: number) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b' }}>#{index + 1}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{customer.name}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrency(customer.totalRevenue)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>{customer.totalInvoices}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
-                      {formatCurrency(customer.totalRevenue / customer.totalInvoices)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings</div>
+            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>MTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(420000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>QTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(1260000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>YTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(4860000)}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog $</div>
+            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(2840000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 30</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(940000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 60</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(1120000)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 90</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(780000)}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog concentration</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>
+              Top 5 customers = 56.8%
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings trend (3-month slope)</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>+${formatCurrency(420000).replace('$', '')}/mo</span>
+              <span style={{ color: '#16a34a', fontWeight: 700 }}>↑</span>
+            </div>
           </div>
         </div>
 
-        {/* Customer Revenue Distribution Chart */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Revenue Distribution by Customer
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={summary.topCustomers}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={(entry) => `${entry.name}: ${((entry.totalRevenue / summary.topCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0)) * 100).toFixed(1)}%`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="totalRevenue"
+        {(() => {
+          const fillNeeded = Math.max(0, 10 - TOP_CUSTOMERS_OVERRIDE.length);
+          const filler = OTHER_CUSTOMERS_OVERRIDE.slice(0, fillNeeded);
+          const topTen = [...TOP_CUSTOMERS_OVERRIDE, ...filler].map((customer) => {
+            const bookingsYtd = customer.totalRevenue;
+            const bookingsQtd = Math.round(bookingsYtd * 0.34);
+            const bookingsMtd = Math.round(bookingsQtd * 0.45);
+            const backlogTotal = Math.round(bookingsYtd * 0.58);
+            const backlog30 = Math.round(backlogTotal * 0.32);
+            const backlog60 = Math.round(backlogTotal * 0.38);
+            const backlog90 = Math.max(0, backlogTotal - backlog30 - backlog60);
+            const trend = Math.round((bookingsMtd - bookingsQtd / 3) / 1000);
+            return {
+              customerName: customer.name,
+              bookingsMtd,
+              bookingsQtd,
+              bookingsYtd,
+              backlogTotal,
+              backlog30,
+              backlog60,
+              backlog90,
+              trend
+            };
+          });
+          const remainingOthers = OTHER_CUSTOMERS_OVERRIDE.slice(fillNeeded);
+          const otherAggregate = remainingOthers.reduce(
+            (acc, customer) => {
+              acc.bookingsYtd += customer.totalRevenue;
+              return acc;
+            },
+            { bookingsYtd: 0 }
+          );
+          const allOther = {
+            customerName: 'All other',
+            bookingsYtd: otherAggregate.bookingsYtd,
+            bookingsQtd: Math.round(otherAggregate.bookingsYtd * 0.34),
+            bookingsMtd: Math.round(otherAggregate.bookingsYtd * 0.15),
+            backlogTotal: Math.round(otherAggregate.bookingsYtd * 0.58),
+            backlog30: Math.round(otherAggregate.bookingsYtd * 0.19),
+            backlog60: Math.round(otherAggregate.bookingsYtd * 0.22),
+            backlog90: Math.round(otherAggregate.bookingsYtd * 0.17),
+            trend: Math.round(otherAggregate.bookingsYtd * 0.01 / 1000)
+          };
+          const demandRows = [...topTen, allOther];
+          const backlogTotalAll = demandRows.reduce((sum, row) => sum + row.backlogTotal, 0);
+          const sortedRows = [...demandRows].sort((a, b) => {
+            const dir = demandSortDir === 'asc' ? 1 : -1;
+            switch (demandSortKey) {
+              case 'customer':
+                return a.customerName.localeCompare(b.customerName) * dir;
+              case 'bookingsMtd':
+                return (a.bookingsMtd - b.bookingsMtd) * dir;
+              case 'bookingsQtd':
+                return (a.bookingsQtd - b.bookingsQtd) * dir;
+              case 'bookingsYtd':
+                return (a.bookingsYtd - b.bookingsYtd) * dir;
+              case 'backlog60':
+                return (a.backlog60 - b.backlog60) * dir;
+              case 'shareBacklog':
+                return ((a.backlogTotal / backlogTotalAll) - (b.backlogTotal / backlogTotalAll)) * dir;
+              case 'trend':
+                return (a.trend - b.trend) * dir;
+              case 'backlogTotal':
+              default:
+                return (a.backlogTotal - b.backlogTotal) * dir;
+            }
+          });
+          const handleSort = (key: typeof demandSortKey) => {
+            if (demandSortKey === key) {
+              setDemandSortDir(demandSortDir === 'asc' ? 'desc' : 'asc');
+            } else {
+              setDemandSortKey(key);
+              setDemandSortDir('desc');
+            }
+          };
+          return (
+            <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                  Top Customers Driving Demand
+                </h3>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>Default: Top 10 + All other</span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th onClick={() => handleSort('customer')} style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Customer</th>
+                      <th onClick={() => handleSort('bookingsMtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings MTD</th>
+                      <th onClick={() => handleSort('bookingsQtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings QTD</th>
+                      <th onClick={() => handleSort('bookingsYtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings YTD</th>
+                      <th onClick={() => handleSort('backlogTotal')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Backlog total</th>
+                      <th onClick={() => handleSort('backlog60')} style={{ textAlign: 'center', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Backlog due 30/60/90</th>
+                      <th onClick={() => handleSort('shareBacklog')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Share of backlog %</th>
+                      <th onClick={() => handleSort('trend')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings trend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRows.map((row) => {
+                      const backlogTotal = Math.max(1, row.backlogTotal);
+                      const backlog30Pct = (row.backlog30 / backlogTotal) * 100;
+                      const backlog60Pct = (row.backlog60 / backlogTotal) * 100;
+                      const backlog90Pct = 100 - backlog30Pct - backlog60Pct;
+                      const sharePct = backlogTotalAll ? (row.backlogTotal / backlogTotalAll) * 100 : 0;
+                      return (
+                        <tr key={row.customerName} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsMtd)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsQtd)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsYtd)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(row.backlogTotal)}</td>
+                          <td style={{ padding: '6px 10px' }}>
+                            <div style={{ display: 'flex', height: '8px', width: '100%', borderRadius: '4px', overflow: 'hidden', background: '#e2e8f0' }}>
+                              <div style={{ width: `${backlog30Pct}%`, background: AR_TREND_COLORS[0] }} title={`30: ${formatCurrency(row.backlog30)}`} />
+                              <div style={{ width: `${backlog60Pct}%`, background: AR_TREND_COLORS[1] }} title={`60: ${formatCurrency(row.backlog60)}`} />
+                              <div style={{ width: `${backlog90Pct}%`, background: AR_TREND_COLORS[2] }} title={`90: ${formatCurrency(row.backlog90)}`} />
+                            </div>
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{sharePct.toFixed(1)}%</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: row.trend >= 0 ? '#16a34a' : '#ef4444', textAlign: 'right', fontWeight: 600 }}>
+                            {row.trend >= 0 ? '+' : '-'}${Math.abs(row.trend)}k/mo
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
+
+        {(() => {
+          const tableCustomers = TOP_CUSTOMERS_OVERRIDE.map((customer) => ({
+            ...customer,
+            totalInvoices: Math.max(1, Math.round(customer.totalRevenue / 10000))
+          }));
+          const chartCustomers = tableCustomers;
+          const chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
+          const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent }: any) => {
+            const radius = outerRadius + 16;
+            const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
+            const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
+            return (
+              <text
+                x={x}
+                y={y}
+                fill="#475569"
+                textAnchor={x > cx ? 'start' : 'end'}
+                dominantBaseline="central"
+                style={{ fontSize: '11px', fontWeight: 600 }}
               >
-                {summary.topCustomers.map((entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value: any) => formatCurrency(value)} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+                {`${(percent * 100).toFixed(1)}%`}
+              </text>
+            );
+          };
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+              {/* Top Customers Table */}
+              <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
+                  Top Customers by Revenue
+                </h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                        <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Rank</th>
+                        <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Customer</th>
+                        <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Total Revenue</th>
+                        <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Invoices</th>
+                        <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '600', color: '#475569' }}>Avg Invoice</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableCustomers.map((customer: any, index: number) => (
+                        <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b' }}>#{index + 1}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{customer.name}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
+                            {formatCurrency(customer.totalRevenue)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>{customer.totalInvoices}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
+                            {formatCurrency(customer.totalRevenue / customer.totalInvoices)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Customer Revenue Distribution Chart */}
+              <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
+                  Revenue Distribution by Customer
+                </h3>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                  <div style={{ flex: 1.4 }}>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <PieChart>
+                        <Pie
+                          data={chartCustomers}
+                          cx="50%"
+                          cy="50%"
+                        labelLine={true}
+                        label={renderPieLabel}
+                          outerRadius={115}
+                          fill="#8884d8"
+                          dataKey="totalRevenue"
+                        >
+                          {chartCustomers.map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div style={{ flex: 0.8, display: 'grid', gap: '6px' }}>
+                    {chartCustomers.map((entry: any, index: number) => (
+                      <div key={`legend-${entry.name}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: COLORS[index % COLORS.length] }} />
+                        <span style={{ fontSize: '12px', color: '#475569' }}>{entry.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
@@ -791,6 +1625,78 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     if (!arData) return null;
 
     const { records, summary } = arData;
+    const sectorFallback = getSectorArApFallbacks(industrySectorCategory);
+    const latestRecord = records[0];
+    const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || sectorFallback.unpaidByCustomer).map((row: any) => ({
+      customerName: row.customerName || row.name,
+      current: row.current || 0,
+      days1to30: row.days1to30 || 0,
+      days31to60: row.days31to60 || 0,
+      days61to90: row.days61to90 || 0,
+      days90plus: row.days90plus || 0,
+      totalDue: row.totalDue || row.total || (row.current || 0) + (row.days1to30 || 0) + (row.days31to60 || 0) + (row.days61to90 || 0) + (row.days90plus || 0),
+    }));
+    const unpaidByCustomer = arCustomers
+      .map((row) => ({ customerName: row.customerName, totalDue: row.totalDue }))
+      .sort((a, b) => b.totalDue - a.totalDue)
+      .slice(0, 10);
+    const unpaidTotal = unpaidByCustomer.reduce((sum, item) => sum + item.totalDue, 0);
+    const invoices = (summary?.unpaidInvoices || sectorFallback.unpaidInvoices).map((row: any) => ({
+      customerName: row.customerName || row.customer,
+      customerNumber: row.customerNumber || row.customerId || row.customerNo || '-',
+      invoiceDate: row.invoiceDate || row.date,
+      dueDate: row.dueDate,
+      amountDue: row.amountDue || row.balance || 0,
+    }));
+    const paidByCustomer = (summary?.paidInvoices || sectorFallback.paidInvoices)
+      .map((row: any) => ({
+        customerName: row.customerName || row.customer,
+        currentMonth: row.currentMonth || 0,
+        lastMonth: row.lastMonth || 0,
+        last12Months: row.last12Months || 0,
+      }))
+      .sort((a: any, b: any) => b.last12Months - a.last12Months)
+      .slice(0, 10);
+    const paidTotal = paidByCustomer.reduce((sum: number, item: any) => sum + item.last12Months, 0);
+    const customerInvoiceRows = (summary?.customerInvoices || sectorFallback.customerInvoices).map((row: any) => ({
+      customerName: row.customerName || row.customer,
+      invoiceNo: row.invoiceNo || row.invoiceNumber,
+      date: row.date,
+      dueDate: row.dueDate,
+      currency: 'USD',
+      amountCurrency: row.amountCurrency || row.amount || 0,
+      amountHome: row.amountHome || row.amountHomeCurrency || 0,
+      amountDueHome: row.amountDueHome || row.amountDue || 0,
+    }));
+    const customerOptions = Array.from(new Set(customerInvoiceRows.map((row) => row.customerName))).sort();
+    const filteredCustomerInvoices =
+      selectedInvoiceCustomer === 'All'
+        ? customerInvoiceRows
+        : customerInvoiceRows.filter((row) => row.customerName === selectedInvoiceCustomer);
+    const customerInvoicePageSize = 50;
+    const customerInvoiceTotalPages = Math.max(1, Math.ceil(filteredCustomerInvoices.length / customerInvoicePageSize));
+    const customerInvoiceSlice = filteredCustomerInvoices.slice(
+      (customerInvoicePage - 1) * customerInvoicePageSize,
+      customerInvoicePage * customerInvoicePageSize
+    );
+    const invoiceTotals = filteredCustomerInvoices.reduce(
+      (acc, row) => {
+        acc.amountCurrency += row.amountCurrency;
+        acc.amountHome += row.amountHome;
+        acc.amountDueHome += row.amountDueHome;
+        return acc;
+      },
+      { amountCurrency: 0, amountHome: 0, amountDueHome: 0 }
+    );
+    const unpaidSummaryRows = summary
+      ? [
+          { label: 'Total AR', value: formatCurrency(summary.totalAR || 0) },
+          { label: 'Current %', value: `${summary.currentPct?.toFixed(1) || '0.0'}%` },
+          { label: 'Over 30 %', value: `${summary.over30Pct?.toFixed(1) || '0.0'}%` },
+          { label: 'Over 90 %', value: `${summary.over90Pct?.toFixed(1) || '0.0'}%` },
+          { label: 'DSO (Days)', value: summary.dso?.toFixed(0) || '0' },
+        ]
+      : [];
 
     // Prepare stacked area chart data
     const chartData = records.map((record: any) => ({
@@ -861,59 +1767,452 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="Current" stackId="a" fill="#16a34a" />
-              <Bar dataKey="1-30 Days" stackId="a" fill="#f59e0b" />
-              <Bar dataKey="31-60 Days" stackId="a" fill="#f97316" />
-              <Bar dataKey="61-90 Days" stackId="a" fill="#ef4444" />
-              <Bar dataKey="90+ Days" stackId="a" fill="#991b1b" />
+              <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
+              <Bar dataKey="1-30 Days" stackId="a" fill={AR_TREND_COLORS[1]} />
+              <Bar dataKey="31-60 Days" stackId="a" fill={AR_TREND_COLORS[2]} />
+              <Bar dataKey="61-90 Days" stackId="a" fill={AR_TREND_COLORS[3]} />
+              <Bar dataKey="90+ Days" stackId="a" fill={AR_TREND_COLORS[4]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* AR Aging Table */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Monthly AR Aging Detail
+        {/* Unpaid Invoices by Customer (Top 10) */}
+        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>
+            Unpaid Invoices Amount by Customer (Top 10)
           </h3>
+          {unpaidByCustomer.length === 0 ? (
+            <div style={{ height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+              No unpaid invoice detail available for this period.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1.8, minWidth: 0 }}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={unpaidByCustomer} layout="vertical" margin={{ left: 24 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis type="number" stroke="#64748b" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                    <YAxis type="category" dataKey="customerName" stroke="#64748b" style={{ fontSize: '12px' }} width={140} />
+                    <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                    <Bar dataKey="totalDue" name="Unpaid Amount">
+                      {unpaidByCustomer.map((entry, index) => (
+                        <Cell key={`bar-cell-${entry.customerName}-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ flex: 1.2, minWidth: 280, display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={unpaidByCustomer}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={110}
+                        dataKey="totalDue"
+                        nameKey="customerName"
+                        labelLine={false}
+                        label={renderDonutLabel}
+                      >
+                        {unpaidByCustomer.map((entry, index) => (
+                          <Cell key={`cell-${entry.customerName}-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ flex: 1, display: 'grid', gap: '6px' }}>
+                  {unpaidByCustomer.map((entry, index) => (
+                    <div key={`legend-${entry.customerName}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: COLORS[index % COLORS.length] }} />
+                      <span style={{ fontSize: '12px', color: '#475569' }}>{entry.customerName}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '11fr 9fr', gap: '24px' }}>
+          {/* AR Summary Table */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              AR Summary Table
+            </h3>
+            {arCustomers.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>1-30</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>91+</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {arCustomers
+                      .sort((a, b) => b.totalDue - a.totalDue)
+                      .slice((arSummaryPage - 1) * 8, arSummaryPage * 8)
+                      .map((row) => (
+                        <tr key={row.customerName} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right' }}>
+                            {formatCurrency(row.current)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f59e0b', textAlign: 'right' }}>
+                            {formatCurrency(row.days1to30)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f97316', textAlign: 'right' }}>
+                            {formatCurrency(row.days31to60)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#ef4444', textAlign: 'right' }}>
+                            {formatCurrency(row.days61to90)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#991b1b', textAlign: 'right' }}>
+                            {formatCurrency(row.days90plus)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                            {formatCurrency(row.totalDue)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                No AR summary available for this period.
+              </div>
+            )}
+            {arCustomers.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
+                <span>
+                  {Math.min((arSummaryPage - 1) * 8 + 1, arCustomers.length)}-
+                  {Math.min(arSummaryPage * 8, arCustomers.length)} of {arCustomers.length}
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => setArSummaryPage((page) => Math.max(1, page - 1))}
+                    disabled={arSummaryPage === 1}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: arSummaryPage === 1 ? '#f1f5f9' : 'white',
+                      cursor: arSummaryPage === 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setArSummaryPage((page) => Math.min(Math.ceil(arCustomers.length / 8), page + 1))}
+                    disabled={arSummaryPage >= Math.ceil(arCustomers.length / 8)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: arSummaryPage >= Math.ceil(arCustomers.length / 8) ? '#f1f5f9' : 'white',
+                      cursor: arSummaryPage >= Math.ceil(arCustomers.length / 8) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Unpaid Invoices Summary */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              Unpaid Invoices
+            </h3>
+            {invoices.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices
+                      .slice((unpaidInvoicesPage - 1) * 8, unpaidInvoicesPage * 8)
+                      .map((row, index) => (
+                        <tr key={`${row.customerName}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.invoiceDate}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.dueDate}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                            {formatCurrency(row.amountDue)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                No unpaid invoices available for this period.
+              </div>
+            )}
+            {invoices.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
+                <span>
+                  {Math.min((unpaidInvoicesPage - 1) * 8 + 1, invoices.length)}-
+                  {Math.min(unpaidInvoicesPage * 8, invoices.length)} of {invoices.length}
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => setUnpaidInvoicesPage((page) => Math.max(1, page - 1))}
+                    disabled={unpaidInvoicesPage === 1}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: unpaidInvoicesPage === 1 ? '#f1f5f9' : 'white',
+                      cursor: unpaidInvoicesPage === 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setUnpaidInvoicesPage((page) => Math.min(Math.ceil(invoices.length / 8), page + 1))}
+                    disabled={unpaidInvoicesPage >= Math.ceil(invoices.length / 8)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: unpaidInvoicesPage >= Math.ceil(invoices.length / 8) ? '#f1f5f9' : 'white',
+                      cursor: unpaidInvoicesPage >= Math.ceil(invoices.length / 8) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '11fr 9fr', gap: '24px', marginTop: '24px' }}>
+          {/* Paid Invoices by Customer */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              Paid Invoices by Customer
+            </h3>
+            {paidByCustomer.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current Month</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last Month</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last 12 Months</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paidByCustomer.map((row: any) => (
+                      <tr key={row.customerName} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                          {formatCurrency(row.currentMonth)}
+                        </td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                          {formatCurrency(row.lastMonth)}
+                        </td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                          {formatCurrency(row.last12Months)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                No paid invoices available for this period.
+              </div>
+            )}
+          </div>
+
+          {/* Last 12 Month Paid Invoices Amount */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              Last 12 Month Paid Invoices Amount
+            </h3>
+            {paidByCustomer.length > 0 ? (
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={paidByCustomer}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={100}
+                        dataKey="last12Months"
+                        nameKey="customerName"
+                        labelLine={false}
+                        label={renderDonutLabel}
+                      >
+                        {paidByCustomer.map((entry: any, index: number) => (
+                          <Cell key={`paid-cell-${entry.customerName}-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ flex: 1, display: 'grid', gap: '6px' }}>
+                  {paidByCustomer.map((entry: any, index: number) => (
+                    <div key={`paid-legend-${entry.customerName}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: COLORS[index % COLORS.length] }} />
+                      <span style={{ fontSize: '12px', color: '#475569' }}>{entry.customerName}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                No paid invoices available for this period.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+              Customer Invoices
+            </h3>
+            <select
+              value={selectedInvoiceCustomer}
+              onChange={(event) => {
+                setSelectedInvoiceCustomer(event.target.value);
+                setCustomerInvoicePage(1);
+              }}
+              style={{
+                padding: '6px 10px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#1e293b',
+                background: 'white',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="All">All Customers</option>
+              {customerOptions.map((customer) => (
+                <option key={customer} value={customer}>
+                  {customer}
+                </option>
+              ))}
+            </select>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Month</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Total AR</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>1-30 Days</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>31-60 Days</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>61-90 Days</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>90+ Days</th>
+                <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Invoice No.</th>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Currency</th>
+                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
+                    Amount in currency
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
+                    Amount in home currency
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
+                    Amount Due in home currency
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {records.map((record: any, index: number) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{formatDate(record.month)}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrency(record.totalAR)}
+                {customerInvoiceSlice.map((row, index) => (
+                  <tr key={`${row.customerName}-${row.invoiceNo}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.invoiceNo}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.date}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.dueDate}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.currency}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                      {formatCurrencyWithCents(row.amountCurrency)}
                     </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right' }}>
-                      {formatCurrency(record.current)}
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                      {formatCurrencyWithCents(row.amountHome)}
                     </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#f59e0b', textAlign: 'right' }}>
-                      {formatCurrency(record.days1to30)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#f97316', textAlign: 'right' }}>
-                      {formatCurrency(record.days31to60)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#ef4444', textAlign: 'right' }}>
-                      {formatCurrency(record.days61to90)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#991b1b', textAlign: 'right', fontWeight: record.days90plus > record.totalAR * 0.1 ? '700' : '400' }}>
-                      {formatCurrency(record.days90plus)}
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                      {formatCurrencyWithCents(row.amountDueHome)}
                     </td>
                   </tr>
                 ))}
+                <tr>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '700' }} colSpan={5}>
+                    Grand total
+                  </td>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
+                    {formatCurrencyWithCents(invoiceTotals.amountCurrency)}
+                  </td>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
+                    {formatCurrencyWithCents(invoiceTotals.amountHome)}
+                  </td>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
+                    {formatCurrencyWithCents(invoiceTotals.amountDueHome)}
+                  </td>
+                </tr>
               </tbody>
             </table>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
+            <span>
+              {filteredCustomerInvoices.length === 0 ? 0 : (customerInvoicePage - 1) * customerInvoicePageSize + 1}-
+              {Math.min(customerInvoicePage * customerInvoicePageSize, filteredCustomerInvoices.length)} / {filteredCustomerInvoices.length}
+            </span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => setCustomerInvoicePage((page) => Math.max(1, page - 1))}
+                disabled={customerInvoicePage === 1}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #e2e8f0',
+                  background: customerInvoicePage === 1 ? '#f1f5f9' : 'white',
+                  cursor: customerInvoicePage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {'<'}
+              </button>
+              <button
+                onClick={() => setCustomerInvoicePage((page) => Math.min(customerInvoiceTotalPages, page + 1))}
+                disabled={customerInvoicePage >= customerInvoiceTotalPages}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #e2e8f0',
+                  background: customerInvoicePage >= customerInvoiceTotalPages ? '#f1f5f9' : 'white',
+                  cursor: customerInvoicePage >= customerInvoiceTotalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {'>'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -929,6 +2228,69 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     if (!apData) return null;
 
     const { records, summary } = apData;
+    const sectorFallback = getSectorArApFallbacks(industrySectorCategory);
+    const latestRecord = records[0];
+    const apVendors = (summary?.breakdown || summary?.unpaidByVendor || sectorFallback.unpaidByVendor).map((row: any) => ({
+      vendorName: row.vendorName || row.name,
+      current: row.current || 0,
+      days1to30: row.days1to30 || 0,
+      days31to60: row.days31to60 || 0,
+      days61to90: row.days61to90 || 0,
+      days90plus: row.days90plus || 0,
+      totalDue: row.totalDue || row.total || (row.current || 0) + (row.days1to30 || 0) + (row.days31to60 || 0) + (row.days61to90 || 0) + (row.days90plus || 0),
+    }));
+    const unpaidByVendor = apVendors
+      .map((row) => ({ vendorName: row.vendorName, totalDue: row.totalDue }))
+      .sort((a, b) => b.totalDue - a.totalDue)
+      .slice(0, 10);
+    const unpaidVendorTotal = unpaidByVendor.reduce((sum, item) => sum + item.totalDue, 0);
+    const unpaidBills = (summary?.unpaidBills || sectorFallback.unpaidBills).map((row: any) => ({
+      vendorName: row.vendorName || row.vendor,
+      billNo: row.billNo || row.billNumber,
+      date: row.date,
+      dueDate: row.dueDate,
+      amountDue: row.amountDue || row.balance || 0,
+    }));
+    const paidBills = (summary?.paidBills || sectorFallback.paidBills)
+      .map((row: any) => ({
+        vendorName: row.vendorName || row.vendor,
+        currentMonth: row.currentMonth || 0,
+        lastMonth: row.lastMonth || 0,
+        last12Months: row.last12Months || 0,
+      }))
+      .sort((a: any, b: any) => b.last12Months - a.last12Months)
+      .slice(0, 10);
+    const paidBillsTotal = paidBills.reduce((sum: number, item: any) => sum + item.last12Months, 0);
+    const vendorBillRows = (summary?.vendorBills || sectorFallback.vendorBills).map((row: any) => ({
+      vendorName: row.vendorName || row.vendor,
+      billNo: row.billNo || row.billNumber,
+      date: row.date,
+      dueDate: row.dueDate,
+      currency: 'USD',
+      amountCurrency: row.amountCurrency || row.amount || 0,
+      amountHome: row.amountHome || row.amountHomeCurrency || 0,
+      amountDueHome: row.amountDueHome || row.amountDue || 0,
+    }));
+    const vendorOptions = Array.from(new Set(vendorBillRows.map((row) => row.vendorName))).sort();
+    const filteredVendorBills =
+      selectedVendorBill === 'All'
+        ? vendorBillRows
+        : vendorBillRows.filter((row) => row.vendorName === selectedVendorBill);
+    const vendorBillPageSize = 50;
+    const vendorBillTotalPages = Math.max(1, Math.ceil(filteredVendorBills.length / vendorBillPageSize));
+    const vendorBillSlice = filteredVendorBills.slice(
+      (vendorBillsPage - 1) * vendorBillPageSize,
+      vendorBillsPage * vendorBillPageSize
+    );
+    const vendorBillTotals = filteredVendorBills.reduce(
+      (acc, row) => {
+        acc.amountCurrency += row.amountCurrency;
+        acc.amountHome += row.amountHome;
+        acc.amountDueHome += row.amountDueHome;
+        return acc;
+      },
+      { amountCurrency: 0, amountHome: 0, amountDueHome: 0 }
+    );
 
     const chartData = records.map((record: any) => ({
       month: formatDate(record.snapshotDate),
@@ -997,59 +2359,452 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="Current" stackId="a" fill="#16a34a" />
-              <Bar dataKey="1-30 Days" stackId="a" fill="#f59e0b" />
-              <Bar dataKey="31-60 Days" stackId="a" fill="#f97316" />
-              <Bar dataKey="61-90 Days" stackId="a" fill="#ef4444" />
-              <Bar dataKey="90+ Days" stackId="a" fill="#991b1b" />
+              <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
+              <Bar dataKey="1-30 Days" stackId="a" fill={AR_TREND_COLORS[1]} />
+              <Bar dataKey="31-60 Days" stackId="a" fill={AR_TREND_COLORS[2]} />
+              <Bar dataKey="61-90 Days" stackId="a" fill={AR_TREND_COLORS[3]} />
+              <Bar dataKey="90+ Days" stackId="a" fill={AR_TREND_COLORS[4]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* AP Aging Table */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Monthly AP Aging Detail
+        {/* Unpaid Bills by Vendor (Top 10) */}
+        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>
+            Unpaid Bills Amount by Vendor (Top 10)
           </h3>
+          {unpaidByVendor.length === 0 ? (
+            <div style={{ height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+              No unpaid bills detail available for this period.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1.8, minWidth: 0 }}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={unpaidByVendor} layout="vertical" margin={{ left: 24 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis type="number" stroke="#64748b" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                    <YAxis type="category" dataKey="vendorName" stroke="#64748b" style={{ fontSize: '12px' }} width={140} />
+                    <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                    <Bar dataKey="totalDue" name="Unpaid Amount">
+                      {unpaidByVendor.map((entry, index) => (
+                        <Cell key={`ap-bar-${entry.vendorName}-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ flex: 1.2, minWidth: 280, display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={unpaidByVendor}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={110}
+                        dataKey="totalDue"
+                        nameKey="vendorName"
+                        labelLine={false}
+                        label={renderDonutLabel}
+                      >
+                        {unpaidByVendor.map((entry, index) => (
+                          <Cell key={`ap-donut-${entry.vendorName}-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ flex: 1, display: 'grid', gap: '6px' }}>
+                  {unpaidByVendor.map((entry, index) => (
+                    <div key={`ap-legend-${entry.vendorName}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: COLORS[index % COLORS.length] }} />
+                      <span style={{ fontSize: '12px', color: '#475569' }}>{entry.vendorName}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+          {/* AP Summary Table */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              AP Summary Table
+            </h3>
+            {apVendors.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>1-30</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>91+</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {apVendors
+                      .sort((a, b) => b.totalDue - a.totalDue)
+                      .slice((apSummaryPage - 1) * 8, apSummaryPage * 8)
+                      .map((row) => (
+                        <tr key={row.vendorName} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right' }}>
+                            {formatCurrency(row.current)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f59e0b', textAlign: 'right' }}>
+                            {formatCurrency(row.days1to30)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f97316', textAlign: 'right' }}>
+                            {formatCurrency(row.days31to60)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#ef4444', textAlign: 'right' }}>
+                            {formatCurrency(row.days61to90)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#991b1b', textAlign: 'right' }}>
+                            {formatCurrency(row.days90plus)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                            {formatCurrency(row.totalDue)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                No AP summary available for this period.
+              </div>
+            )}
+            {apVendors.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
+                <span>
+                  {Math.min((apSummaryPage - 1) * 8 + 1, apVendors.length)}-
+                  {Math.min(apSummaryPage * 8, apVendors.length)} of {apVendors.length}
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => setApSummaryPage((page) => Math.max(1, page - 1))}
+                    disabled={apSummaryPage === 1}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: apSummaryPage === 1 ? '#f1f5f9' : 'white',
+                      cursor: apSummaryPage === 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setApSummaryPage((page) => Math.min(Math.ceil(apVendors.length / 8), page + 1))}
+                    disabled={apSummaryPage >= Math.ceil(apVendors.length / 8)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: apSummaryPage >= Math.ceil(apVendors.length / 8) ? '#f1f5f9' : 'white',
+                      cursor: apSummaryPage >= Math.ceil(apVendors.length / 8) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Unpaid Bills */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              Unpaid Bills
+            </h3>
+            {unpaidBills.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unpaidBills
+                      .slice((unpaidBillsPage - 1) * 8, unpaidBillsPage * 8)
+                      .map((row, index) => (
+                        <tr key={`${row.vendorName}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.date}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.dueDate}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                            {formatCurrency(row.amountDue)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                No unpaid bills available for this period.
+              </div>
+            )}
+            {unpaidBills.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
+                <span>
+                  {Math.min((unpaidBillsPage - 1) * 8 + 1, unpaidBills.length)}-
+                  {Math.min(unpaidBillsPage * 8, unpaidBills.length)} of {unpaidBills.length}
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => setUnpaidBillsPage((page) => Math.max(1, page - 1))}
+                    disabled={unpaidBillsPage === 1}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: unpaidBillsPage === 1 ? '#f1f5f9' : 'white',
+                      cursor: unpaidBillsPage === 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setUnpaidBillsPage((page) => Math.min(Math.ceil(unpaidBills.length / 8), page + 1))}
+                    disabled={unpaidBillsPage >= Math.ceil(unpaidBills.length / 8)}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      background: unpaidBillsPage >= Math.ceil(unpaidBills.length / 8) ? '#f1f5f9' : 'white',
+                      cursor: unpaidBillsPage >= Math.ceil(unpaidBills.length / 8) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
+          {/* Paid Bills Table */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              Paid Bills by Vendor
+            </h3>
+            {paidBills.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current Month</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last Month</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last 12 Months</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paidBills.map((row: any) => (
+                      <tr key={row.vendorName} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                          {formatCurrency(row.currentMonth)}
+                        </td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                          {formatCurrency(row.lastMonth)}
+                        </td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                          {formatCurrency(row.last12Months)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                No paid bills available for this period.
+              </div>
+            )}
+          </div>
+
+          {/* Last 12 Month Bills Paid */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              Last 12 Month Bills Paid
+            </h3>
+            {paidBills.length > 0 ? (
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={paidBills}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={100}
+                        dataKey="last12Months"
+                        nameKey="vendorName"
+                        labelLine={false}
+                        label={renderDonutLabel}
+                      >
+                        {paidBills.map((entry: any, index: number) => (
+                          <Cell key={`ap-paid-${entry.vendorName}-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ flex: 1, display: 'grid', gap: '6px' }}>
+                  {paidBills.map((entry: any, index: number) => (
+                    <div key={`ap-paid-legend-${entry.vendorName}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: COLORS[index % COLORS.length] }} />
+                      <span style={{ fontSize: '12px', color: '#475569' }}>{entry.vendorName}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                No paid bills available for this period.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+              Vendor Bills
+            </h3>
+            <select
+              value={selectedVendorBill}
+              onChange={(event) => {
+                setSelectedVendorBill(event.target.value);
+                setVendorBillsPage(1);
+              }}
+              style={{
+                padding: '6px 10px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#1e293b',
+                background: 'white',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="All">All Vendors</option>
+              {vendorOptions.map((vendor) => (
+                <option key={vendor} value={vendor}>
+                  {vendor}
+                </option>
+              ))}
+            </select>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Month</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Total AP</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>1-30 Days</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>31-60 Days</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>61-90 Days</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>90+ Days</th>
+                <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Bill No.</th>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Currency</th>
+                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
+                    Amount in currency
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
+                    Amount in home currency
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
+                    Amount Due in home currency
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {records.map((record: any, index: number) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{formatDate(record.month)}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrency(record.totalAP)}
+                {vendorBillSlice.map((row, index) => (
+                  <tr key={`${row.vendorName}-${row.billNo}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.billNo}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.date}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.dueDate}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.currency}</td>
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                      {formatCurrencyWithCents(row.amountCurrency)}
                     </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right' }}>
-                      {formatCurrency(record.current)}
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
+                      {formatCurrencyWithCents(row.amountHome)}
                     </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#f59e0b', textAlign: 'right' }}>
-                      {formatCurrency(record.days1to30)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#f97316', textAlign: 'right' }}>
-                      {formatCurrency(record.days31to60)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#ef4444', textAlign: 'right' }}>
-                      {formatCurrency(record.days61to90)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#991b1b', textAlign: 'right' }}>
-                      {formatCurrency(record.days90plus)}
+                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
+                      {formatCurrencyWithCents(row.amountDueHome)}
                     </td>
                   </tr>
                 ))}
+                <tr>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '700' }} colSpan={5}>
+                    Grand total
+                  </td>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
+                    {formatCurrencyWithCents(vendorBillTotals.amountCurrency)}
+                  </td>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
+                    {formatCurrencyWithCents(vendorBillTotals.amountHome)}
+                  </td>
+                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
+                    {formatCurrencyWithCents(vendorBillTotals.amountDueHome)}
+                  </td>
+                </tr>
               </tbody>
             </table>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
+            <span>
+              {filteredVendorBills.length === 0 ? 0 : (vendorBillsPage - 1) * vendorBillPageSize + 1}-
+              {Math.min(vendorBillsPage * vendorBillPageSize, filteredVendorBills.length)} / {filteredVendorBills.length}
+            </span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => setVendorBillsPage((page) => Math.max(1, page - 1))}
+                disabled={vendorBillsPage === 1}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #e2e8f0',
+                  background: vendorBillsPage === 1 ? '#f1f5f9' : 'white',
+                  cursor: vendorBillsPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {'<'}
+              </button>
+              <button
+                onClick={() => setVendorBillsPage((page) => Math.min(vendorBillTotalPages, page + 1))}
+                disabled={vendorBillsPage >= vendorBillTotalPages}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #e2e8f0',
+                  background: vendorBillsPage >= vendorBillTotalPages ? '#f1f5f9' : 'white',
+                  cursor: vendorBillsPage >= vendorBillTotalPages ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {'>'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1473,6 +3228,35 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
     );
   };
 
+  const renderModuleTabContent = (moduleKey: string) => {
+    const dataType = mapModuleToDataType(moduleKey);
+    if (dataType === 'customers') return renderCustomers();
+    if (dataType === 'ar-aging') return renderARaging();
+    if (dataType === 'ap-aging') return renderAPaging();
+    if (dataType === 'products') return renderProducts();
+    if (dataType === 'inventory') return renderInventory();
+    if (dataType === 'cash') return renderCash();
+    return (
+      <div style={{ padding: '32px', color: '#64748b' }}>
+        No renderer is configured for module <strong>{moduleKey}</strong>.
+      </div>
+    );
+  };
+
+  if (isOverviewOnly) {
+    return (
+      <div style={{
+        maxWidth: '1600px',
+        margin: '0 auto',
+        minHeight: '100vh',
+        background: '#f8fafc'
+      }}>
+        <div style={{ height: '20px' }}></div>
+        {renderOverview()}
+      </div>
+    );
+  }
+
   return (
     <div style={{ 
       maxWidth: '1600px', 
@@ -1481,7 +3265,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
       background: '#f8fafc'
     }}>
       {/* Spacer for main nav */}
-      <div style={{ height: '60px' }}></div>
+      <div style={{ height: '20px' }}></div>
 
       {/* Tabs */}
       <div style={{ 
@@ -1491,7 +3275,7 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
         display: 'flex',
         gap: '20px'
       }}>
-        {['dashboard', 'overview', 'customers', 'ar', 'ap', 'products', 'inventory', 'cash'].map((tab) => (
+        {availableTabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
@@ -1504,11 +3288,12 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
               color: activeTab === tab ? '#667eea' : '#64748b',
               cursor: 'pointer',
               borderBottom: activeTab === tab ? '3px solid #667eea' : '3px solid transparent',
-              transition: 'all 0.2s',
-              textTransform: 'capitalize'
+              transition: 'all 0.2s'
             }}
           >
-            {tab === 'dashboard' ? 'Ops Dashboard' : tab === 'ar' ? 'AR Aging' : tab === 'ap' ? 'AP Aging' : tab}
+            {tab === 'dashboard'
+              ? 'Ops Dashboard'
+              : getModuleLabel(tab)}
           </button>
         ))}
       </div>
@@ -1517,14 +3302,16 @@ export default function OperationsTab({ selectedCompanyId, companyName }: Operat
       {renderFilters()}
 
       {/* Content */}
-      {activeTab === 'dashboard' && <OpsDashboard selectedCompanyId={selectedCompanyId} companyName={companyName} />}
-      {activeTab === 'overview' && renderOverview()}
-      {activeTab === 'customers' && renderCustomers()}
-      {activeTab === 'ar' && renderARaging()}
-      {activeTab === 'ap' && renderAPaging()}
-      {activeTab === 'products' && renderProducts()}
-      {activeTab === 'inventory' && renderInventory()}
-      {activeTab === 'cash' && renderCash()}
+      {activeTab === 'dashboard' && (
+        <OpsDashboard
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          industrySectorCategory={industrySectorCategory}
+          activeModules={resolvedModules}
+          moduleTitlesByType={moduleTitlesByType}
+        />
+      )}
+      {activeTab !== 'dashboard' && renderModuleTabContent(activeTab)}
     </div>
   );
 }

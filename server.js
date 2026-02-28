@@ -2,25 +2,58 @@ const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
 const { Server: SocketIOServer } = require('socket.io');
+const fs = require('fs');
+const dotenv = require('dotenv');
 
 // Load environment variables - .env.local takes precedence for development
-require('dotenv').config({ path: '.env.local' });
-require('dotenv').config(); // Fallback to .env for any missing vars
+// IMPORTANT: Use override=true so a blank host env var doesn't mask .env.local
+dotenv.config({ path: '.env.local', override: true });
+// Fallback to .env for any missing vars, but DO NOT override .env.local
+dotenv.config({ path: '.env', override: false });
 
-// SAFETY CHECK: Local/dev/preview should NEVER connect to production database (orange-poetry)
+// Debug (safe): show whether keys are present (no secrets)
+let serpApiFileLen = 0;
+let serpApiFilePrefix = '';
+try {
+  const raw = fs.readFileSync('.env.local', 'utf8');
+  const parsedEnv = dotenv.parse(raw);
+  const fileKey = String(parsedEnv.SERPAPI_API_KEY || '');
+  serpApiFileLen = fileKey.length;
+  serpApiFilePrefix = fileKey.slice(0, 8);
+} catch (e) {
+  // ignore
+}
+console.log('🔐 ENV loaded:', {
+  hasOpenAI: !!process.env.OPENAI_API_KEY,
+  hasSerpApi: !!process.env.SERPAPI_API_KEY,
+  serpApiLen: (process.env.SERPAPI_API_KEY || '').length,
+  serpApiFileLen,
+  serpApiFilePrefix,
+});
+
+// SAFETY CHECK: Local/dev/preview should NEVER connect to production databases
 // CRITICAL: Even if NODE_ENV is "production" locally, this must be blocked.
-// The only time orange-poetry is allowed is on Vercel production runtime: VERCEL=1 and VERCEL_ENV=production.
+// Production databases are only allowed on Vercel production runtime: VERCEL=1 and VERCEL_ENV=production.
 
-const isProductionDatabase = process.env.DATABASE_URL?.includes('orange-poetry');
-const isStagingDatabase = process.env.DATABASE_URL?.includes('cold-frost');
+const productionProjects = (process.env.PRODUCTION_DB_PROJECTS || 'orange-poetry,aged-snow')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+const stagingProjects = (process.env.STAGING_DB_PROJECTS || 'cold-frost')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+const isProductionDatabase = productionProjects.some((project) => process.env.DATABASE_URL?.includes(project));
+const isStagingDatabase = stagingProjects.some((project) => process.env.DATABASE_URL?.includes(project));
 const isVercelProductionRuntime = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
 
 // CRITICAL: Block production database everywhere except Vercel production runtime
 if (isProductionDatabase && !isVercelProductionRuntime) {
-  console.error('🚨 SECURITY ERROR: Staging/Dev environment is trying to connect to PRODUCTION database (orange-poetry)!');
+  console.error('🚨 SECURITY ERROR: Staging/Dev environment is trying to connect to a PRODUCTION database!');
   console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
   console.error(`🚨 VERCEL_ENV: ${process.env.VERCEL_ENV}  VERCEL: ${process.env.VERCEL}  NODE_ENV: ${process.env.NODE_ENV}`);
-  console.error('🚨 This is a critical security violation. Local/dev/preview must never connect to orange-poetry.');
+  console.error('🚨 This is a critical security violation. Local/dev/preview must never connect to production databases.');
   console.error('🚨 Aborting startup.');
   process.exit(1);
 }
@@ -31,9 +64,11 @@ if (isProductionDatabase && !isVercelProductionRuntime) {
 // Log which database we're connecting to
 let dbLabel = 'UNKNOWN';
 if (isStagingDatabase) {
-  dbLabel = 'STAGING (cold-frost)';
+  const stagingName = stagingProjects.find((project) => process.env.DATABASE_URL?.includes(project)) || 'staging';
+  dbLabel = `STAGING (${stagingName})`;
 } else if (isProductionDatabase) {
-  dbLabel = 'PRODUCTION (orange-poetry) ⚠️';
+  const prodName = productionProjects.find((project) => process.env.DATABASE_URL?.includes(project)) || 'production';
+  dbLabel = `PRODUCTION (${prodName}) ⚠️`;
   console.warn('⚠️  WARNING: Connected to PRODUCTION database!');
 } else if (process.env.DATABASE_URL?.includes('file:')) {
   dbLabel = 'SQLITE (file)';

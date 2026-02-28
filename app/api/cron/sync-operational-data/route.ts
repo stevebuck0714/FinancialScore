@@ -1,6 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AdapterFactory } from '@/lib/accounting-adapters';
 import prisma from '@/lib/prisma';
+import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
+
+function normalizePullTime(value: unknown): string {
+  if (typeof value !== 'string') return '08:00';
+  const trimmed = value.trim();
+  return /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : '08:00';
+}
+
+function readOperationalPullTime(metadata: unknown): string {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return '08:00';
+  const source = metadata as Record<string, unknown>;
+  const direct = normalizePullTime(source.operationalPullTime);
+  if (direct !== '08:00' || source.operationalPullTime === '08:00') return direct;
+
+  const settingsKeys = [
+    'quickbooksOnlineSettings',
+    'quickbooksDesktopSettings',
+    'dynamicsSettings',
+    'acumaticaSettings',
+    'odooSettings',
+    'sageIntacctSettings',
+  ] as const;
+
+  for (const key of settingsKeys) {
+    const settings = source[key];
+    if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
+      const time = normalizePullTime((settings as Record<string, unknown>).syncTime);
+      if (time !== '08:00' || (settings as Record<string, unknown>).syncTime === '08:00') {
+        return time;
+      }
+    }
+  }
+
+  return '08:00';
+}
+
+function shouldRunForFrequency(frequency: string, pullTime: string): boolean {
+  const normalized = String(frequency || 'daily').toLowerCase();
+  const now = new Date();
+  const [scheduledHour, scheduledMinute] = normalizePullTime(pullTime).split(':').map((value) => Number(value));
+  if (now.getHours() !== scheduledHour || now.getMinutes() !== scheduledMinute) {
+    return false;
+  }
+  if (normalized === 'daily') return true;
+  if (normalized === 'weekly') return now.getDay() === 0; // Sunday local server time
+  if (normalized === 'monthly') return now.getDate() === 1; // first day local server time
+  return false;
+}
 
 /**
  * Cron Job: Sync Operational Data
@@ -27,15 +74,43 @@ export async function GET(request: NextRequest) {
     console.log('🕐 Starting daily operational data sync...');
     const startTime = Date.now();
     
-    // Get all companies with auto-sync enabled
-    const companyIds = await AdapterFactory.getCompaniesForAutoSync();
+    // Get all active connections with auto-sync enabled.
+    const connections = await prisma.accountingConnection.findMany({
+      where: {
+        status: 'ACTIVE',
+        autoSync: true,
+      },
+      select: {
+        id: true,
+        companyId: true,
+        platform: true,
+        accessToken: true,
+        connectionMetadata: true,
+        syncFrequency: true,
+        company: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        companyId: 'asc',
+      },
+    });
+
+    const runnableConnections = connections.filter((connection) =>
+      shouldRunForFrequency(
+        connection.syncFrequency || 'daily',
+        readOperationalPullTime(connection.connectionMetadata)
+      )
+    );
     
-    console.log(`📊 Found ${companyIds.length} companies with auto-sync enabled`);
+    console.log(`📊 Found ${connections.length} auto-sync connections (${runnableConnections.length} runnable now)`);
     
-    if (companyIds.length === 0) {
+    if (runnableConnections.length === 0) {
       return NextResponse.json({
         success: true,
-        message: 'No companies configured for auto-sync',
+        message: 'No connections due for auto-sync at this time',
         companiesSynced: 0,
         totalRecords: 0,
         duration: Date.now() - startTime
@@ -47,85 +122,63 @@ export async function GET(request: NextRequest) {
     let successCount = 0;
     let errorCount = 0;
     
-    // Sync each company
-    for (const companyId of companyIds) {
+    // Sync each connection
+    for (const connection of runnableConnections) {
       try {
-        console.log(`\n💼 Syncing company: ${companyId}`);
-        
-        // Get company name for logging
-        const company = await prisma.company.findUnique({
-          where: { id: companyId },
-          select: { name: true }
-        });
-        
-        // Create adapter for this company
-        const adapter = await AdapterFactory.createForCompany(companyId);
-        
-        // Test connection first
-        const isConnected = await adapter.testConnection();
-        if (!isConnected) {
-          console.error(`❌ Connection test failed for ${company?.name}`);
-          results.push({
-            companyId,
-            companyName: company?.name,
-            success: false,
-            error: 'Connection test failed'
-          });
-          errorCount++;
-          continue;
-        }
-        
-        // Sync all operational data
-        const syncResult = await adapter.syncAll('daily');
-        
+        console.log(`\n💼 Syncing company: ${connection.companyId} (${connection.platform})`);
+
+        const syncResult = await runOperationalSyncForConnection(connection, connection.syncFrequency || 'daily');
+
         totalRecords += syncResult.recordsCreated;
-        
         if (syncResult.success) {
-          console.log(`✅ ${company?.name}: ${syncResult.recordsCreated} records synced`);
+          console.log(`✅ ${connection.company?.name}: ${syncResult.recordsCreated} records synced`);
           successCount++;
         } else {
-          console.error(`⚠️  ${company?.name}: Partial sync with errors:`, syncResult.errors);
+          console.error(`⚠️ ${connection.company?.name}: Partial sync with errors:`, syncResult.errors);
           errorCount++;
         }
         
         // Update last sync timestamp
         await prisma.accountingConnection.updateMany({
           where: {
-            companyId,
-            status: 'ACTIVE'
+            id: connection.id,
+            status: 'ACTIVE',
           },
           data: {
-            lastSyncAt: new Date()
-          }
+            lastSyncAt: new Date(),
+            errorMessage: syncResult.success ? null : (syncResult.errors || []).join(' | ').slice(0, 900),
+          },
         });
         
         results.push({
-          companyId,
-          companyName: company?.name,
+          companyId: connection.companyId,
+          companyName: connection.company?.name,
+          platform: connection.platform,
           success: syncResult.success,
           recordsCreated: syncResult.recordsCreated,
-          errors: syncResult.errors
+          errors: syncResult.errors,
         });
         
       } catch (error: any) {
-        console.error(`❌ Error syncing company ${companyId}:`, error);
+        console.error(`❌ Error syncing company ${connection.companyId}:`, error);
         errorCount++;
         
         results.push({
-          companyId,
+          companyId: connection.companyId,
+          companyName: connection.company?.name,
+          platform: connection.platform,
           success: false,
-          error: error.message
+          error: error.message,
         });
         
         // Update connection with error
-        await prisma.accountingConnection.updateMany({
+        await prisma.accountingConnection.update({
           where: {
-            companyId,
-            status: 'ACTIVE'
+            id: connection.id,
           },
           data: {
-            errorMessage: error.message
-          }
+            errorMessage: error.message,
+          },
         });
       }
     }
@@ -137,7 +190,7 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json({
       success: errorCount === 0,
-      message: `Synced ${successCount} of ${companyIds.length} companies`,
+      message: `Synced ${successCount} of ${runnableConnections.length} connections`,
       companiesSynced: successCount,
       companiesWithErrors: errorCount,
       totalRecords,

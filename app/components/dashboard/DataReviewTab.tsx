@@ -19,7 +19,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   // Check if master data exists
   if (masterDataLoading) {
     return (
-      <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
+      <div style={{ maxWidth: "100%", marginTop: "-52px", padding: "8px 32px 32px", overflowX: "auto" }}>
         <div
           style={{
             display: "flex",
@@ -47,7 +47,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
 
   if (masterDataError || !monthlyData || monthlyData.length === 0) {
     return (
-      <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
+      <div style={{ maxWidth: "100%", marginTop: "-52px", padding: "8px 32px 32px", overflowX: "auto" }}>
         <div
           style={{
             display: "flex",
@@ -92,7 +92,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   };
 
   return (
-    <div style={{ maxWidth: "100%", padding: "32px", overflowX: "auto" }}>
+    <div style={{ maxWidth: "100%", marginTop: "-52px", padding: "8px 32px 32px", overflowX: "auto" }}>
       <div
         style={{
           display: "flex",
@@ -112,46 +112,9 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
           >
             📊 Data Review - Financial Data
           </h1>
-          {companyName && (
-            <div
-              style={{
-                fontSize: "24px",
-                fontWeight: "600",
-                color: "#64748b",
-                marginTop: "4px",
-              }}
-            >
-              {companyName}
-            </div>
-          )}
         </div>
-        {monthly && monthly.length > 0 && (
-          <button
-            onClick={() => exportDataReviewToExcel(monthly, companyName)}
-            style={{
-              background: "#10b981",
-              color: "white",
-              border: "none",
-              padding: "12px 24px",
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: "600",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              transition: "all 0.2s",
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.background = "#059669")}
-            onMouseOut={(e) => (e.currentTarget.style.background = "#10b981")}
-          >
-            📥 Export to Excel
-          </button>
-        )}
       </div>
-      <p style={{ fontSize: "14px", color: "#64748b", marginBottom: "32px" }}>
-        Review all imported financial data for {companyName || "this company"}
-      </p>
+      {/* Intentionally omit company name + export button + helper text to reduce clutter */}
 
       {(!monthly || monthly.length === 0) && (
         <div

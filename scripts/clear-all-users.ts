@@ -2,6 +2,15 @@ import prisma from '../lib/prisma';
 
 async function clearAllUsers() {
   try {
+    if (
+      process.env.NODE_ENV === 'production' &&
+      process.env.FORCE_ALLOW_PROD_CLEAR !== 'true'
+    ) {
+      throw new Error(
+        'Refusing to clear production data. Set FORCE_ALLOW_PROD_CLEAR=true only for intentional emergency operations.'
+      );
+    }
+
     const siteAdminEmail = process.env.SITEADMIN_EMAIL || 'steve@stevebuck.us';
 
     console.log('🗑️  Clearing all users and companies...\n');

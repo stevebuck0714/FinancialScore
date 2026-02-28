@@ -93,7 +93,6 @@ export default function FinancialScoreView({
       <style>{`
         @media print {
           @page {
-            size: portrait;
             margin: 0.3in;
           }
           

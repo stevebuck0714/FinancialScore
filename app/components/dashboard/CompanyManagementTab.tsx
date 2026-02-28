@@ -23,6 +23,9 @@ interface CompanyManagementTabProps {
   setCompanyAddressZip: (zip: string) => void;
   setCompanyAddressCountry: (country: string) => void;
   setCompanyIndustrySector: (sector: string) => void;
+  setAccountingSystem?: (system: string) => void;
+  setCompanySizeCategory?: (size: string) => void;
+  setIndustrySectorCategory?: (sector: string) => void;
   setShowCompanyDetailsModal: (show: boolean) => void;
   users: User[];
   deleteUser: (id: number) => void;
@@ -66,6 +69,9 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
     setCompanyAddressZip,
     setCompanyAddressCountry,
     setCompanyIndustrySector,
+    setAccountingSystem,
+    setCompanySizeCategory,
+    setIndustrySectorCategory,
     setShowCompanyDetailsModal,
     users,
     deleteUser,
@@ -90,6 +96,9 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
     setNewAssessmentUserPassword,
     addUser
   } = props;
+  const normalizedRole = String(currentUser?.role || '').toUpperCase();
+  const canDeleteCompany =
+    normalizedRole === 'CONSULTANT' || normalizedRole === 'SITEADMIN';
 
   return (
     <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -160,8 +169,8 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                       <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{comp.name}</h3>
                       <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600' }}>✓ Active Company</div>
                     </div>
-                    {/* Only show Delete button for regular consultants, not business users */}
-                    {currentUser.consultantType !== 'business' && (
+                    {/* Only consultants/site admins can delete companies */}
+                    {canDeleteCompany && (
                       <button onClick={() => deleteCompany(comp.id)} style={{ padding: '8px 16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: '600' }}>Delete Company</button>
                     )}
                   </div>
@@ -203,6 +212,9 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                           setCompanyAddressZip(comp.addressZip || '');
                           setCompanyAddressCountry(comp.addressCountry || 'USA');
                           setCompanyIndustrySector(comp.industrySector || '');
+                          if (setAccountingSystem) setAccountingSystem(comp.accountingSystem || '');
+                          if (setCompanySizeCategory) setCompanySizeCategory(comp.companySizeCategory || 'DEFAULT');
+                          if (setIndustrySectorCategory) setIndustrySectorCategory(comp.industrySectorCategory || '01');
                           setShowCompanyDetailsModal(true);
                         }}
                         style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}
@@ -300,7 +312,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
                     {/* Assessment Users */}
                     <div style={{ background: 'white', borderRadius: '8px', padding: '16px', border: '2px solid #8b5cf6' }}>
                       <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Assessment Users</h4>
-                      <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '12px' }}>Fill out Management Assessment (max 5)</p>
+                      <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '12px' }}>Fill out Team Assessment (max 5)</p>
                       <div style={{ fontSize: '20px', fontWeight: '700', color: '#8b5cf6', marginBottom: '12px' }}>
                         {users.filter(u => u.companyId === comp.id && u.userType === 'assessment').length} / 5
                       </div>

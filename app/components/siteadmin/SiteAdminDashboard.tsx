@@ -16,9 +16,11 @@ export default function SiteAdminDashboard(props: any) {
     defaultBusinessMonthlyPrice, setDefaultBusinessMonthlyPrice,
     defaultBusinessQuarterlyPrice, setDefaultBusinessQuarterlyPrice,
     defaultBusinessAnnualPrice, setDefaultBusinessAnnualPrice,
+    defaultBusinessSetupFee, setDefaultBusinessSetupFee,
     defaultConsultantMonthlyPrice, setDefaultConsultantMonthlyPrice,
     defaultConsultantQuarterlyPrice, setDefaultConsultantQuarterlyPrice,
     defaultConsultantAnnualPrice, setDefaultConsultantAnnualPrice,
+    defaultConsultantSetupFee, setDefaultConsultantSetupFee,
     affiliates, setAffiliates,
     showAddAffiliateForm, setShowAddAffiliateForm,
     editingAffiliate, setEditingAffiliate,
@@ -44,12 +46,1114 @@ export default function SiteAdminDashboard(props: any) {
     addConsultant, deleteConsultant, updateConsultantInfo, getConsultantCompanies,
     setCurrentUser, setSiteAdminViewingAs, setCurrentView, setLoadedConsultantId, setCompanies, currentUser,
     setSelectedCompanyId, setCompanyToDelete, setShowDeleteConfirmation,
+    inforConnected, inforStatus, inforLastSync, inforError, inforBusy,
+    inforCredentials, setInforCredentials, inforProbePath, setInforProbePath, inforProbeSummary,
+    checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3, runInforM3OperationalSync,
+    runPlatformOperationalSync,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
     newSiteAdminEmail, setNewSiteAdminEmail,
     newSiteAdminPassword, setNewSiteAdminPassword,
     showAddSiteAdminForm, setShowAddSiteAdminForm
   } = props;
+  const businessesLoading = Boolean(props.businessesLoading);
+
+  const updateCompanyPricing = props.updateCompanyPricing as
+    | undefined
+    | ((companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number }) => void);
+  const [editingTier1RoutingByCompany, setEditingTier1RoutingByCompany] = React.useState<
+    Record<string, { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string; supportEmail: string }>
+  >({});
+  const [savingTier1RoutingCompanyId, setSavingTier1RoutingCompanyId] = React.useState<string | null>(null);
+  const [savingOperationalDataModeCompanyId, setSavingOperationalDataModeCompanyId] = React.useState<string | null>(null);
+
+  const getEffectiveTier1Routing = (company: any): { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string; supportEmail: string } => {
+    const ownerRaw =
+      typeof company?.tier1SupportOwner === 'string'
+        ? company.tier1SupportOwner.trim().toUpperCase()
+        : '';
+    const owner =
+      ownerRaw === 'CONSULTANT'
+        ? 'CONSULTANT'
+        : company?.consultantId
+          ? 'CONSULTANT'
+          : 'CORELYTICS';
+    const consultantIdRaw =
+      typeof company?.tier1SupportConsultantId === 'string'
+        ? company.tier1SupportConsultantId.trim()
+        : '';
+    const consultantId = consultantIdRaw || (typeof company?.consultantId === 'string' ? company.consultantId : '') || '';
+    const supportEmail =
+      typeof company?.tier1SupportContactEmail === 'string'
+        ? company.tier1SupportContactEmail.trim()
+        : '';
+    return { owner, consultantId, supportEmail };
+  };
+
+  const saveTier1Routing = async (companyId: string, owner: 'CORELYTICS' | 'CONSULTANT', consultantId: string, supportEmail: string) => {
+    if (owner === 'CONSULTANT' && !consultantId) {
+      alert('Please select a consultant for consultant-owned Tier 1 support.');
+      return;
+    }
+
+    setSavingTier1RoutingCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          tier1SupportOwner: owner,
+          tier1SupportConsultantId: owner === 'CONSULTANT' ? consultantId : null,
+          tier1SupportContactEmail: owner === 'CONSULTANT' ? (supportEmail || null) : null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save Tier 1 support routing');
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((company: any) =>
+              company.id === companyId
+                ? {
+                    ...company,
+                    tier1SupportOwner: data?.company?.tier1SupportOwner ?? owner,
+                    tier1SupportConsultantId: data?.company?.tier1SupportConsultantId ?? (owner === 'CONSULTANT' ? consultantId : null),
+                    tier1SupportContactEmail: data?.company?.tier1SupportContactEmail ?? (owner === 'CONSULTANT' ? supportEmail : null),
+                  }
+                : company
+            )
+          : prev
+      );
+
+      setEditingTier1RoutingByCompany((prev) => {
+        const next = { ...prev };
+        delete next[companyId];
+        return next;
+      });
+      alert('Tier 1 support routing saved.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to save Tier 1 support routing');
+    } finally {
+      setSavingTier1RoutingCompanyId(null);
+    }
+  };
+
+  const saveOperationalDataMode = async (companyId: string, forceOperationalMockData: boolean) => {
+    setSavingOperationalDataModeCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          forceOperationalMockData,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to update operational data mode');
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((company: any) =>
+              company.id === companyId
+                ? {
+                    ...company,
+                    forceOperationalMockData:
+                      data?.company?.forceOperationalMockData ?? forceOperationalMockData,
+                    hasRealOperationalData:
+                      data?.company?.hasRealOperationalData ?? company.hasRealOperationalData,
+                    realDataActivatedAt:
+                      data?.company?.realDataActivatedAt ?? company.realDataActivatedAt,
+                  }
+                : company
+            )
+          : prev
+      );
+
+      alert(
+        forceOperationalMockData
+          ? 'Demo mode enabled for this company. Company Pulse and Operations will use mock data.'
+          : 'Demo mode disabled. Company Pulse and Operations will use real data when available.',
+      );
+    } catch (error: any) {
+      alert(error?.message || 'Failed to update operational data mode');
+    } finally {
+      setSavingOperationalDataModeCompanyId(null);
+    }
+  };
+  const [operationalSyncSettingsByCompany, setOperationalSyncSettingsByCompany] = React.useState<
+    Record<string, { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }>
+  >({});
+
+  const getCompanyOperationalSettings = (companyId: string) =>
+    operationalSyncSettingsByCompany[companyId] || { frequency: 'daily', pullTime: '08:00' };
+
+  const setCompanyOperationalSettings = (
+    companyId: string,
+    next: Partial<{ frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }>
+  ) => {
+    setOperationalSyncSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        frequency: next.frequency || prev[companyId]?.frequency || 'daily',
+        pullTime: next.pullTime || prev[companyId]?.pullTime || '08:00',
+      },
+    }));
+  };
+
+  type InforAccountingProgramRow = {
+    module: string;
+    miProgram: string;
+    transactions: string[];
+    cono: string;
+    divi: string;
+    enabled: boolean;
+  };
+
+  const createEmptyInforAccountingProgramRow = (): InforAccountingProgramRow => ({
+    module: '',
+    miProgram: '',
+    transactions: [],
+    cono: '',
+    divi: '',
+    enabled: true,
+  });
+
+  // Preserve line breaks while typing; backend will normalize on save.
+  const parseTransactionsFromInput = (value: string): string[] =>
+    value
+      .replace(/\r/g, '')
+      .split('\n');
+
+  const formatTransactionsForInput = (transactions: string[] | undefined): string =>
+    Array.isArray(transactions) ? transactions.join('\n') : '';
+
+  const [accountingProgramsByCompany, setAccountingProgramsByCompany] = React.useState<
+    Record<string, InforAccountingProgramRow[]>
+  >({});
+
+  const defaultAccountingPrograms: InforAccountingProgramRow[] = [
+    { module: 'Accounts', miProgram: 'CRS630MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'AR', miProgram: 'ARS200MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'AP', miProgram: 'APS200MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Customer', miProgram: 'CRS610MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Supplier', miProgram: 'CRS620MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Sales', miProgram: 'OIS100MI', transactions: [], cono: '', divi: '', enabled: true },
+  ];
+
+  const getCompanyPrograms = (companyId: string) =>
+    accountingProgramsByCompany[companyId] || defaultAccountingPrograms;
+
+  const setCompanyPrograms = (companyId: string, programs: InforAccountingProgramRow[]) => {
+    setAccountingProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+
+  const updateCompanyProgram = (
+    companyId: string,
+    index: number,
+    field: keyof InforAccountingProgramRow,
+    value: string | boolean | string[]
+  ) => {
+    const current = getCompanyPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setCompanyPrograms(companyId, next);
+  };
+
+  const addCompanyProgram = (companyId: string) => {
+    const current = getCompanyPrograms(companyId);
+    setCompanyPrograms(companyId, [...current, createEmptyInforAccountingProgramRow()]);
+  };
+
+  const deleteCompanyProgram = (companyId: string, index: number) => {
+    const current = getCompanyPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setCompanyPrograms(companyId, next.length > 0 ? next : [createEmptyInforAccountingProgramRow()]);
+  };
+
+  const loadCompanyPrograms = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok || !Array.isArray(data?.programs)) return;
+      setCompanyPrograms(companyId, data.programs);
+    } catch (error) {
+      console.error('Failed to load accounting programs:', error);
+    }
+  };
+
+  const saveCompanyPrograms = async (companyId: string) => {
+    try {
+      const programs = getCompanyPrograms(companyId);
+      const response = await fetch('/api/infor-m3/programs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          programs,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save accounting programs');
+      }
+      alert('Accounting programs saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save accounting programs: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const [qbDesktopSettingsByCompany, setQbDesktopSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        integrationType: 'WEB_CONNECTOR' | 'SDK' | '';
+        applicationName: string;
+        soapEndpointUrl: string;
+        supportUrl: string;
+        ownerId: string;
+        fileId: string;
+        webConnectorUsername: string;
+        pollingIntervalMinutes: string;
+        permissionScope: 'READ_ONLY' | 'READ_WRITE' | '';
+        unattendedAccessRequired: 'YES' | 'NO' | '';
+        desktopEditionYear: string;
+        countryVersion: string;
+        companyFilePath: string;
+        hostMachineName: string;
+        hostOnlineForSync: 'YES' | 'NO' | '';
+        syncDirection: 'QB_TO_PLATFORM' | 'TWO_WAY' | '';
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+      }
+    >
+  >({});
+  const [qbDesktopProgramsByCompany, setQbDesktopProgramsByCompany] = React.useState<
+    Record<string, Array<{ dataDomain: string; qbEntity: string }>>
+  >({});
+  const [qboSettingsByCompany, setQboSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+        webhookEnabled: 'YES' | 'NO' | '';
+        cdcEnabled: 'YES' | 'NO' | '';
+        reconciliationEnabled: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [qboProgramsByCompany, setQboProgramsByCompany] = React.useState<
+    Record<string, Array<{ dataDomain: string; qboEntity: string; enabled: boolean }>>
+  >({});
+  const [dynamicsSettingsByCompany, setDynamicsSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        tenantId: string;
+        environmentUrl: string;
+        legalEntity: string;
+        region: string;
+        clientId: string;
+        clientSecret: string;
+        authorityUrl: string;
+        scope: string;
+        redirectUri: string;
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [dynamicsProgramsByCompany, setDynamicsProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; entityOrEndpoint: string }>>
+  >({});
+  const [acumaticaSettingsByCompany, setAcumaticaSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        tenantId: string;
+        instanceUrl: string;
+        companyCode: string;
+        branch: string;
+        clientId: string;
+        clientSecret: string;
+        username: string;
+        password: string;
+        endpointName: string;
+        endpointVersion: string;
+        contractBasedApiPath: string;
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [acumaticaProgramsByCompany, setAcumaticaProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; endpointOrEntity: string }>>
+  >({});
+  const [sageIntacctSettingsByCompany, setSageIntacctSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        senderId: string;
+        senderPassword: string;
+        companyId: string;
+        userId: string;
+        userPassword: string;
+        entityId: string;
+        endpointUrl: string;
+        dtdVersion: string;
+        locationId: string;
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [sageIntacctProgramsByCompany, setSageIntacctProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; objectName: string }>>
+  >({});
+  const [odooSettingsByCompany, setOdooSettingsByCompany] = React.useState<
+    Record<
+      string,
+      {
+        baseUrl: string;
+        database: string;
+        username: string;
+        password: string;
+        apiKey: string;
+        companyId: string;
+        odooVersion: string;
+        authMethod: 'PASSWORD' | 'API_KEY' | '';
+        syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
+        syncTime: string;
+        initialSyncStartDate: string;
+        incrementalSync: 'YES' | 'NO' | '';
+      }
+    >
+  >({});
+  const [odooProgramsByCompany, setOdooProgramsByCompany] = React.useState<
+    Record<string, Array<{ module: string; modelOrEndpoint: string }>>
+  >({});
+
+  const defaultQbDesktopSettings = {
+    integrationType: 'WEB_CONNECTOR' as 'WEB_CONNECTOR' | 'SDK' | '',
+    applicationName: '',
+    soapEndpointUrl: '',
+    supportUrl: '',
+    ownerId: '',
+    fileId: '',
+    webConnectorUsername: '',
+    pollingIntervalMinutes: '60',
+    permissionScope: 'READ_ONLY' as 'READ_ONLY' | 'READ_WRITE' | '',
+    unattendedAccessRequired: 'YES' as 'YES' | 'NO' | '',
+    desktopEditionYear: '',
+    countryVersion: '',
+    companyFilePath: '',
+    hostMachineName: '',
+    hostOnlineForSync: 'YES' as 'YES' | 'NO' | '',
+    syncDirection: 'QB_TO_PLATFORM' as 'QB_TO_PLATFORM' | 'TWO_WAY' | '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+  };
+
+  const defaultQbDesktopPrograms = [
+    { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery' },
+    { dataDomain: 'Customers', qbEntity: 'CustomerQuery' },
+    { dataDomain: 'Vendors', qbEntity: 'VendorQuery' },
+    { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
+    { dataDomain: 'Bills', qbEntity: 'BillQuery' },
+    { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
+  ];
+  const defaultQboSettings = {
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+    webhookEnabled: 'YES' as 'YES' | 'NO' | '',
+    cdcEnabled: 'YES' as 'YES' | 'NO' | '',
+    reconciliationEnabled: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultQboPrograms = [
+    { dataDomain: 'Customers', qboEntity: 'Customer', enabled: true },
+    { dataDomain: 'Vendors', qboEntity: 'Vendor', enabled: true },
+    { dataDomain: 'Products', qboEntity: 'Item', enabled: true },
+    { dataDomain: 'AR', qboEntity: 'Invoice', enabled: true },
+    { dataDomain: 'AR Payments', qboEntity: 'Payment', enabled: true },
+    { dataDomain: 'AP', qboEntity: 'Bill', enabled: true },
+    { dataDomain: 'AP Payments', qboEntity: 'BillPayment', enabled: true },
+  ];
+  const defaultDynamicsSettings = {
+    tenantId: '',
+    environmentUrl: '',
+    legalEntity: '',
+    region: '',
+    clientId: '',
+    clientSecret: '',
+    authorityUrl: '',
+    scope: '',
+    redirectUri: '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultDynamicsPrograms = [
+    { module: 'Accounts', entityOrEndpoint: 'accounts' },
+    { module: 'Customers', entityOrEndpoint: 'customers' },
+    { module: 'Vendors', entityOrEndpoint: 'vendors' },
+    { module: 'AR', entityOrEndpoint: 'customerledgerentries' },
+    { module: 'AP', entityOrEndpoint: 'vendorledgerentries' },
+    { module: 'Sales', entityOrEndpoint: 'salesinvoices' },
+  ];
+  const defaultAcumaticaSettings = {
+    tenantId: '',
+    instanceUrl: '',
+    companyCode: '',
+    branch: '',
+    clientId: '',
+    clientSecret: '',
+    username: '',
+    password: '',
+    endpointName: '',
+    endpointVersion: '',
+    contractBasedApiPath: '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultAcumaticaPrograms = [
+    { module: 'Chart of Accounts', endpointOrEntity: 'GLAccounts' },
+    { module: 'Customers', endpointOrEntity: 'Customers' },
+    { module: 'Vendors', endpointOrEntity: 'Vendors' },
+    { module: 'AR', endpointOrEntity: 'ARInvoices' },
+    { module: 'AP', endpointOrEntity: 'APBills' },
+    { module: 'Sales', endpointOrEntity: 'SalesOrders' },
+  ];
+  const defaultSageIntacctSettings = {
+    senderId: '',
+    senderPassword: '',
+    companyId: '',
+    userId: '',
+    userPassword: '',
+    entityId: '',
+    endpointUrl: '',
+    dtdVersion: '3.0',
+    locationId: '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultSageIntacctPrograms = [
+    { module: 'Chart of Accounts', objectName: 'GLACCOUNT' },
+    { module: 'Customers', objectName: 'CUSTOMER' },
+    { module: 'Vendors', objectName: 'VENDOR' },
+    { module: 'AR', objectName: 'ARINVOICE' },
+    { module: 'AP', objectName: 'APBILL' },
+    { module: 'Sales', objectName: 'SODOCUMENT' },
+  ];
+  const defaultOdooSettings = {
+    baseUrl: '',
+    database: '',
+    username: '',
+    password: '',
+    apiKey: '',
+    companyId: '',
+    odooVersion: '',
+    authMethod: 'PASSWORD' as 'PASSWORD' | 'API_KEY' | '',
+    syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
+    syncTime: '08:00',
+    initialSyncStartDate: '',
+    incrementalSync: 'YES' as 'YES' | 'NO' | '',
+  };
+  const defaultOdooPrograms = [
+    { module: 'Chart of Accounts', modelOrEndpoint: 'account.account' },
+    { module: 'Customers', modelOrEndpoint: 'res.partner' },
+    { module: 'Vendors', modelOrEndpoint: 'res.partner' },
+    { module: 'AR', modelOrEndpoint: 'account.move (out_invoice)' },
+    { module: 'AP', modelOrEndpoint: 'account.move (in_invoice)' },
+    { module: 'Sales', modelOrEndpoint: 'sale.order' },
+  ];
+
+  const getQbDesktopSettings = (companyId: string) =>
+    qbDesktopSettingsByCompany[companyId] || defaultQbDesktopSettings;
+  const getQbDesktopPrograms = (companyId: string) =>
+    qbDesktopProgramsByCompany[companyId] || defaultQbDesktopPrograms;
+  const getQboSettings = (companyId: string) =>
+    qboSettingsByCompany[companyId] || defaultQboSettings;
+  const getQboPrograms = (companyId: string) =>
+    qboProgramsByCompany[companyId] || defaultQboPrograms;
+  const getDynamicsSettings = (companyId: string) =>
+    dynamicsSettingsByCompany[companyId] || defaultDynamicsSettings;
+  const getDynamicsPrograms = (companyId: string) =>
+    dynamicsProgramsByCompany[companyId] || defaultDynamicsPrograms;
+  const getAcumaticaSettings = (companyId: string) =>
+    acumaticaSettingsByCompany[companyId] || defaultAcumaticaSettings;
+  const getAcumaticaPrograms = (companyId: string) =>
+    acumaticaProgramsByCompany[companyId] || defaultAcumaticaPrograms;
+  const getSageIntacctSettings = (companyId: string) =>
+    sageIntacctSettingsByCompany[companyId] || defaultSageIntacctSettings;
+  const getSageIntacctPrograms = (companyId: string) =>
+    sageIntacctProgramsByCompany[companyId] || defaultSageIntacctPrograms;
+  const getOdooSettings = (companyId: string) =>
+    odooSettingsByCompany[companyId] || defaultOdooSettings;
+  const getOdooPrograms = (companyId: string) =>
+    odooProgramsByCompany[companyId] || defaultOdooPrograms;
+
+  const setQbDesktopSetting = (
+    companyId: string,
+    field: keyof typeof defaultQbDesktopSettings,
+    value: string
+  ) => {
+    setQbDesktopSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultQbDesktopSettings),
+        [field]: value,
+      },
+    }));
+  };
+
+  const setQbDesktopPrograms = (companyId: string, programs: Array<{ dataDomain: string; qbEntity: string }>) => {
+    setQbDesktopProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+  const setQboSetting = (
+    companyId: string,
+    field: keyof typeof defaultQboSettings,
+    value: string
+  ) => {
+    setQboSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultQboSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setQboPrograms = (
+    companyId: string,
+    programs: Array<{ dataDomain: string; qboEntity: string; enabled: boolean }>
+  ) => {
+    setQboProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+  const setDynamicsSetting = (
+    companyId: string,
+    field: keyof typeof defaultDynamicsSettings,
+    value: string
+  ) => {
+    setDynamicsSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultDynamicsSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setDynamicsPrograms = (companyId: string, programs: Array<{ module: string; entityOrEndpoint: string }>) => {
+    setDynamicsProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+  const setAcumaticaSetting = (
+    companyId: string,
+    field: keyof typeof defaultAcumaticaSettings,
+    value: string
+  ) => {
+    setAcumaticaSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultAcumaticaSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setAcumaticaPrograms = (companyId: string, programs: Array<{ module: string; endpointOrEntity: string }>) => {
+    setAcumaticaProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+  const setSageIntacctSetting = (
+    companyId: string,
+    field: keyof typeof defaultSageIntacctSettings,
+    value: string
+  ) => {
+    setSageIntacctSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultSageIntacctSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setSageIntacctPrograms = (companyId: string, programs: Array<{ module: string; objectName: string }>) => {
+    setSageIntacctProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+  const setOdooSetting = (
+    companyId: string,
+    field: keyof typeof defaultOdooSettings,
+    value: string
+  ) => {
+    setOdooSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] || defaultOdooSettings),
+        [field]: value,
+      },
+    }));
+  };
+  const setOdooPrograms = (companyId: string, programs: Array<{ module: string; modelOrEndpoint: string }>) => {
+    setOdooProgramsByCompany((prev) => ({
+      ...prev,
+      [companyId]: programs,
+    }));
+  };
+
+  const updateQbDesktopProgram = (
+    companyId: string,
+    index: number,
+    field: 'dataDomain' | 'qbEntity',
+    value: string
+  ) => {
+    const current = getQbDesktopPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setQbDesktopPrograms(companyId, next);
+  };
+
+  const addQbDesktopProgram = (companyId: string) => {
+    const current = getQbDesktopPrograms(companyId);
+    setQbDesktopPrograms(companyId, [...current, { dataDomain: '', qbEntity: '' }]);
+  };
+  const updateQboProgram = (
+    companyId: string,
+    index: number,
+    field: 'dataDomain' | 'qboEntity' | 'enabled',
+    value: string | boolean
+  ) => {
+    const current = getQboPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setQboPrograms(companyId, next);
+  };
+  const addQboProgram = (companyId: string) => {
+    const current = getQboPrograms(companyId);
+    setQboPrograms(companyId, [...current, { dataDomain: '', qboEntity: '', enabled: true }]);
+  };
+  const updateDynamicsProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'entityOrEndpoint',
+    value: string
+  ) => {
+    const current = getDynamicsPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setDynamicsPrograms(companyId, next);
+  };
+  const addDynamicsProgram = (companyId: string) => {
+    const current = getDynamicsPrograms(companyId);
+    setDynamicsPrograms(companyId, [...current, { module: '', entityOrEndpoint: '' }]);
+  };
+  const updateAcumaticaProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'endpointOrEntity',
+    value: string
+  ) => {
+    const current = getAcumaticaPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setAcumaticaPrograms(companyId, next);
+  };
+  const addAcumaticaProgram = (companyId: string) => {
+    const current = getAcumaticaPrograms(companyId);
+    setAcumaticaPrograms(companyId, [...current, { module: '', endpointOrEntity: '' }]);
+  };
+  const updateSageIntacctProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'objectName',
+    value: string
+  ) => {
+    const current = getSageIntacctPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setSageIntacctPrograms(companyId, next);
+  };
+  const addSageIntacctProgram = (companyId: string) => {
+    const current = getSageIntacctPrograms(companyId);
+    setSageIntacctPrograms(companyId, [...current, { module: '', objectName: '' }]);
+  };
+  const updateOdooProgram = (
+    companyId: string,
+    index: number,
+    field: 'module' | 'modelOrEndpoint',
+    value: string
+  ) => {
+    const current = getOdooPrograms(companyId);
+    const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+    setOdooPrograms(companyId, next);
+  };
+  const addOdooProgram = (companyId: string) => {
+    const current = getOdooPrograms(companyId);
+    setOdooPrograms(companyId, [...current, { module: '', modelOrEndpoint: '' }]);
+  };
+  const deleteDynamicsProgram = (companyId: string, index: number) => {
+    const current = getDynamicsPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setDynamicsPrograms(companyId, next.length > 0 ? next : [{ module: '', entityOrEndpoint: '' }]);
+  };
+  const deleteAcumaticaProgram = (companyId: string, index: number) => {
+    const current = getAcumaticaPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setAcumaticaPrograms(companyId, next.length > 0 ? next : [{ module: '', endpointOrEntity: '' }]);
+  };
+  const deleteSageIntacctProgram = (companyId: string, index: number) => {
+    const current = getSageIntacctPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setSageIntacctPrograms(companyId, next.length > 0 ? next : [{ module: '', objectName: '' }]);
+  };
+  const deleteOdooProgram = (companyId: string, index: number) => {
+    const current = getOdooPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setOdooPrograms(companyId, next.length > 0 ? next : [{ module: '', modelOrEndpoint: '' }]);
+  };
+
+  const deleteQbDesktopProgram = (companyId: string, index: number) => {
+    const current = getQbDesktopPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setQbDesktopPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qbEntity: '' }]);
+  };
+  const deleteQboProgram = (companyId: string, index: number) => {
+    const current = getQboPrograms(companyId);
+    const next = current.filter((_, i) => i !== index);
+    setQboPrograms(companyId, next.length > 0 ? next : [{ dataDomain: '', qboEntity: '', enabled: true }]);
+  };
+
+  const loadQbDesktopSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/quickbooks-desktop/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setQbDesktopSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultQbDesktopSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setQbDesktopPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load QuickBooks Desktop settings:', error);
+    }
+  };
+  const loadQboSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/quickbooks-online/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setQboSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultQboSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setQboPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load QuickBooks Online settings:', error);
+    }
+  };
+  const loadDynamicsSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/dynamics-365/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setDynamicsSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultDynamicsSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setDynamicsPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load Dynamics settings:', error);
+    }
+  };
+  const loadAcumaticaSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/acumatica/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setAcumaticaSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultAcumaticaSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setAcumaticaPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load Acumatica settings:', error);
+    }
+  };
+  const loadSageIntacctSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/sage-intacct/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setSageIntacctSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultSageIntacctSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setSageIntacctPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load Sage Intacct settings:', error);
+    }
+  };
+  const loadOdooSettings = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/odoo/settings?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (data?.settings && typeof data.settings === 'object') {
+        setOdooSettingsByCompany((prev) => ({
+          ...prev,
+          [companyId]: { ...defaultOdooSettings, ...data.settings },
+        }));
+      }
+      if (Array.isArray(data?.programs)) {
+        setOdooPrograms(companyId, data.programs);
+      }
+    } catch (error) {
+      console.error('Failed to load Odoo settings:', error);
+    }
+  };
+
+  const saveQbDesktopSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/quickbooks-desktop/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getQbDesktopSettings(companyId),
+          programs: getQbDesktopPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Desktop settings');
+      }
+      alert('QuickBooks Desktop settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save QuickBooks Desktop settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveQboSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/quickbooks-online/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getQboSettings(companyId),
+          programs: getQboPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Online settings');
+      }
+      alert('QuickBooks Online settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save QuickBooks Online settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveDynamicsSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/dynamics-365/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getDynamicsSettings(companyId),
+          programs: getDynamicsPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save Dynamics settings');
+      }
+      alert('Dynamics settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save Dynamics settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveAcumaticaSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/acumatica/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getAcumaticaSettings(companyId),
+          programs: getAcumaticaPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save Acumatica settings');
+      }
+      alert('Acumatica settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save Acumatica settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveSageIntacctSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/sage-intacct/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getSageIntacctSettings(companyId),
+          programs: getSageIntacctPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save Sage Intacct settings');
+      }
+      alert('Sage Intacct settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save Sage Intacct settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+  const saveOdooSettings = async (companyId: string) => {
+    try {
+      const response = await fetch('/api/odoo/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          settings: getOdooSettings(companyId),
+          programs: getOdooPrograms(companyId),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to save Odoo settings');
+      }
+      alert('Odoo settings saved for this company.');
+    } catch (error: any) {
+      alert(`Failed to save Odoo settings: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const parseInforCredentialsFromJson = (raw: string) => {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Invalid JSON object');
+    }
+
+    const source = parsed as Record<string, unknown>;
+    const read = (...keys: string[]) => {
+      for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'string' && value.trim().length > 0) {
+          return value.trim();
+        }
+      }
+      return '';
+    };
+
+    const mapped = {
+      tenantId: read('tenantId', 'ti'),
+      clientName: read('clientName', 'cn'),
+      clientId: read('clientId', 'ci'),
+      clientSecret: read('clientSecret', 'cs'),
+      ionApiBaseUrl: read('ionApiBaseUrl', 'iu'),
+      ssoBaseUrl: read('ssoBaseUrl', 'pu'),
+      oauthAuthPath: read('oauthAuthPath', 'oa'),
+      oauthTokenPath: read('oauthTokenPath', 'ot'),
+      oauthRevokePath: read('oauthRevokePath', 'or'),
+      serviceAccountAccessKey: read('serviceAccountAccessKey', 'saak'),
+      serviceAccountSecretKey: read('serviceAccountSecretKey', 'sask'),
+    };
+
+    const requiredMissing = [
+      'tenantId',
+      'clientId',
+      'clientSecret',
+      'ionApiBaseUrl',
+      'ssoBaseUrl',
+      'serviceAccountAccessKey',
+      'serviceAccountSecretKey',
+    ].filter((key) => !(mapped as Record<string, string>)[key]);
+
+    if (requiredMissing.length > 0) {
+      throw new Error(`Missing required keys in file: ${requiredMissing.join(', ')}`);
+    }
+
+    return mapped;
+  };
+
+  const handleInforCredentialsFileImport = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    companyId: string,
+    companyName: string
+  ) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      const raw = await file.text();
+      const mapped = parseInforCredentialsFromJson(raw);
+      setInforCredentials?.((prev: any) => ({
+        ...prev,
+        ...mapped,
+      }));
+      alert(`Imported Infor credentials into form for ${companyName}. Click Save to persist for this company.`);
+    } catch (error: any) {
+      alert(`Failed to import Infor credentials file: ${error?.message || 'Invalid file format'}`);
+    } finally {
+      input.value = '';
+    }
+  };
 
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
@@ -181,7 +1285,7 @@ export default function SiteAdminDashboard(props: any) {
                           cursor: 'pointer' 
                         }}
                       >
-                        {showAddConsultantForm ? '?' : '?'}
+                        {showAddConsultantForm ? 'Collapse' : 'Expand'}
                       </button>
                     </div>
                     {showAddConsultantForm && (
@@ -189,7 +1293,7 @@ export default function SiteAdminDashboard(props: any) {
                         {/* Personal Information Section */}
                         <div style={{ marginBottom: '16px' }}>
                           <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Contact Person Information</h4>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
                         <input
                           type="text"
                           placeholder="Type *"
@@ -211,6 +1315,12 @@ export default function SiteAdminDashboard(props: any) {
                           onChange={(e) => setNewConsultantEmail(e.target.value)}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
+                        <PasswordInput
+                          placeholder="Password *"
+                          value={newConsultantPassword}
+                          onChange={setNewConsultantPassword}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
                         <input
                           type="tel"
                           placeholder="(555) 777-1212"
@@ -218,16 +1328,8 @@ export default function SiteAdminDashboard(props: any) {
                           onChange={(e) => setNewConsultantPhone(formatPhoneNumber(e.target.value))}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
-                        <div style={{ gridColumn: 'span 2' }}>
-                          <PasswordInput
-                            placeholder="Password *"
-                            value={newConsultantPassword}
-                            onChange={setNewConsultantPassword}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                          />
-                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', lineHeight: '1.4' }}>
-                            Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
-                          </div>
+                        <div style={{ gridColumn: 'span 3', fontSize: '11px', color: '#64748b', lineHeight: '1.4', alignSelf: 'center' }}>
+                          Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
                         </div>
                       </div>
                     </div>
@@ -235,59 +1337,57 @@ export default function SiteAdminDashboard(props: any) {
                     {/* Company Information Section */}
                     <div style={{ marginBottom: '12px' }}>
                       <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Company Information (Optional)</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '8px' }}>
                         <input
                           type="text"
                           placeholder="Company Name"
                           value={newConsultantCompanyName}
                           onChange={(e) => setNewConsultantCompanyName(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                          style={{ gridColumn: 'span 2', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
                         <input
                           type="text"
                           placeholder="Company Address Line 1"
                           value={newConsultantCompanyAddress1}
                           onChange={(e) => setNewConsultantCompanyAddress1(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                          style={{ gridColumn: 'span 2', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="url"
+                          placeholder="Company Website"
+                          value={newConsultantCompanyWebsite}
+                          onChange={(e) => setNewConsultantCompanyWebsite(e.target.value)}
+                          style={{ gridColumn: 'span 2', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
                         <input
                           type="text"
                           placeholder="Company Address Line 2"
                           value={newConsultantCompanyAddress2}
                           onChange={(e) => setNewConsultantCompanyAddress2(e.target.value)}
+                          style={{ gridColumn: 'span 2', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="City"
+                          value={newConsultantCompanyCity}
+                          onChange={(e) => setNewConsultantCompanyCity(e.target.value)}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px' }}>
-                          <input
-                            type="text"
-                            placeholder="City"
-                            value={newConsultantCompanyCity}
-                            onChange={(e) => setNewConsultantCompanyCity(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                          />
-                          <select
-                            value={newConsultantCompanyState}
-                            onChange={(e) => setNewConsultantCompanyState(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: 'white' }}
-                          >
-                            {US_STATES.map(state => (
-                              <option key={state.code} value={state.code}>{state.code || 'State'}</option>
-                            ))}
-                          </select>
-                          <input
-                            type="text"
-                            placeholder="ZIP"
-                            value={newConsultantCompanyZip}
-                            onChange={(e) => setNewConsultantCompanyZip(e.target.value)}
-                            maxLength={10}
-                            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                          />
-                        </div>
+                        <select
+                          value={newConsultantCompanyState}
+                          onChange={(e) => setNewConsultantCompanyState(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: 'white' }}
+                        >
+                          {US_STATES.map(state => (
+                            <option key={state.code} value={state.code}>{state.code || 'State'}</option>
+                          ))}
+                        </select>
                         <input
-                          type="url"
-                          placeholder="Company Website"
-                          value={newConsultantCompanyWebsite}
-                          onChange={(e) => setNewConsultantCompanyWebsite(e.target.value)}
+                          type="text"
+                          placeholder="ZIP"
+                          value={newConsultantCompanyZip}
+                          onChange={(e) => setNewConsultantCompanyZip(e.target.value)}
+                          maxLength={10}
                           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
                         />
                       </div>
@@ -326,13 +1426,22 @@ export default function SiteAdminDashboard(props: any) {
                       <p style={{ fontSize: '13px', color: '#94a3b8' }}>Add your first consultant to get started</p>
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      {consultants.filter(c => c.type !== 'business').map((consultant) => {
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {consultants
+                        .filter(c => c.type !== 'business')
+                        .sort((a: any, b: any) =>
+                          (a.companyName || a.fullName || '').localeCompare(
+                            b.companyName || b.fullName || '',
+                            undefined,
+                            { numeric: true, sensitivity: 'base' }
+                          )
+                        )
+                        .map((consultant) => {
                     const consultantCompanies = getConsultantCompanies(consultant.id);
                     const expanded = selectedConsultantId === consultant.id;
 
                     return (
-                      <div key={consultant.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                      <div key={consultant.id} style={{ background: 'white', borderRadius: '8px', padding: '10px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
                         {/* Consultant Header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ flex: 1 }}>
@@ -364,6 +1473,7 @@ export default function SiteAdminDashboard(props: any) {
                                   fontSize: '15px', 
                                   fontWeight: '600', 
                                   color: '#667eea', 
+                                  margin: 0,
                                   marginBottom: '2px',
                                   cursor: 'pointer',
                                   textDecoration: 'underline'
@@ -403,7 +1513,7 @@ export default function SiteAdminDashboard(props: any) {
 
                         {/* Expanded Details */}
                         {expanded && (
-                          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', marginTop: '10px' }}>
+                          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '8px' }}>
                             {/* Consultant Information */}
                             <div style={{ marginBottom: '10px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
@@ -668,11 +1778,11 @@ export default function SiteAdminDashboard(props: any) {
                                     <div key={company.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '8px' : '0' }}>
                                         <div style={{ flex: 1 }}>
-                                          <h5 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>{company.name}</h5>
-                                          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>
-                                            <span style={{ fontWeight: '600' }}>ID:</span> <span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{company.id}</span>
+                                          <h5 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>{company.name}</h5>
+                                          <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>
+                                            <span style={{ fontWeight: '600' }}>ID:</span> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company.id}</span>
                                           </div>
-                                          <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                          <div style={{ fontSize: '13px', color: '#64748b' }}>
                                             <span style={{ fontWeight: '600' }}>Industry:</span> {
                                               company.industrySector 
                                                 ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` 
@@ -681,29 +1791,60 @@ export default function SiteAdminDashboard(props: any) {
                                           </div>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                          <div style={{ fontSize: '11px', fontWeight: '600', color: '#667eea' }}>
+                                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#667eea' }}>
                                             {companyUsers.length} user{companyUsers.length !== 1 ? 's' : ''}
                                           </div>
                                           <button
                                             onClick={() => {
-                                              setExpandedCompanyIds(prev => 
-                                                prev.includes(company.id) 
-                                                  ? prev.filter(id => id !== company.id)
-                                                  : [...prev, company.id]
-                                              );
+                                              setExpandedCompanyIds(prev => {
+                                                const isExpandedNow = prev.includes(company.id);
+                                                if (isExpandedNow) {
+                                                  return prev.filter(id => id !== company.id);
+                                                }
+                                                setSelectedCompanyId(company.id);
+                                                if (company.accountingSystem === 'INFOR_M3') {
+                                                  loadInforM3Credentials?.(company.id);
+                                                  loadCompanyPrograms(company.id);
+                                                  checkInforM3Status?.(company.id).then((statusData: any) => {
+                                                    if (!statusData) return;
+                                                    const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
+                                                    const pullTime =
+                                                      typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+                                                    if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
+                                                      setCompanyOperationalSettings(company.id, {
+                                                        frequency,
+                                                        pullTime,
+                                                      });
+                                                    }
+                                                  });
+                                                } else if (company.accountingSystem === 'QUICKBOOKS_DESKTOP') {
+                                                  loadQbDesktopSettings(company.id);
+                                                } else if (company.accountingSystem === 'QUICKBOOKS') {
+                                                  loadQboSettings(company.id);
+                                                } else if (company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') {
+                                                  loadDynamicsSettings(company.id);
+                                                } else if (company.accountingSystem === 'ACUMATICA') {
+                                                  loadAcumaticaSettings(company.id);
+                                                } else if (company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE') {
+                                                  loadSageIntacctSettings(company.id);
+                                                } else if (company.accountingSystem === 'ODOO') {
+                                                  loadOdooSettings(company.id);
+                                                }
+                                                return [...prev, company.id];
+                                              });
                                             }}
                                             style={{ 
-                                              padding: '4px 10px', 
+                                              padding: '6px 12px', 
                                               background: isCompanyExpanded ? '#f1f5f9' : '#667eea', 
                                               color: isCompanyExpanded ? '#475569' : 'white', 
                                               border: 'none', 
                                               borderRadius: '4px', 
-                                              fontSize: '11px', 
+                                              fontSize: '13px', 
                                               fontWeight: '600', 
                                               cursor: 'pointer' 
                                             }}
                                           >
-                                            {isCompanyExpanded ? '?' : '?'}
+                                            {isCompanyExpanded ? 'Collapse' : 'Expand'}
                                           </button>
                                         </div>
                                       </div>
@@ -711,27 +1852,1405 @@ export default function SiteAdminDashboard(props: any) {
                                       {/* Expanded Details */}
                                       {isCompanyExpanded && (
                                         <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
-                                          {/* Company Address */}
-                                          {(company.addressStreet || company.addressCity) && (
-                                            <div style={{ marginBottom: '8px', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                              <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Address</h6>
-                                              <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                                {company.addressStreet && <div>{company.addressStreet}</div>}
-                                                <div>
-                                                  {company.addressCity && company.addressCity}
-                                                  {company.addressState && `, ${company.addressState}`}
-                                                  {company.addressZip && ` ${company.addressZip}`}
-                                                </div>
-                                                {company.addressCountry && <div>{company.addressCountry}</div>}
+                                          <div style={{ marginBottom: '8px' }}>
+                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                              <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Company Information</h4>
+                                              <div
+                                                style={{
+                                                  display: 'grid',
+                                                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                                  gap: '6px 14px',
+                                                  fontSize: '13px',
+                                                  color: '#64748b',
+                                                  lineHeight: '1.5',
+                                                }}
+                                              >
+                                                <div><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
+                                                <div><strong>Industry:</strong> {company?.industrySector || 'Not set'}</div>
+                                                <div><strong>Type:</strong> Consultant Business</div>
+                                                <div><strong>Address Street:</strong> {company?.addressStreet || 'Not provided'}</div>
+                                                <div><strong>Address City:</strong> {company?.addressCity || 'Not provided'}</div>
+                                                <div><strong>Address State:</strong> {company?.addressState || 'Not provided'}</div>
+                                                <div><strong>Address ZIP:</strong> {company?.addressZip || 'Not provided'}</div>
+                                                <div><strong>Address Country:</strong> {company?.addressCountry || 'Not provided'}</div>
                                               </div>
                                             </div>
-                                          )}
+                                          </div>
+
+                                          <div style={{ display: 'grid', gridTemplateColumns: '55% 45%', gap: '8px', marginBottom: '8px' }}>
+                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                                <div>
+                                                  <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
+                                                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                                    Configuration for <strong>{company.name}</strong>
+                                                  </div>
+                                                  <div style={{ marginTop: '10px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
+                                                      Operational Data Mode
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                                      {company.forceOperationalMockData
+                                                        ? 'Demo mode is ON. Mock data is being served.'
+                                                        : company.hasRealOperationalData
+                                                          ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                          : 'Demo mode is active until real operational data is detected.'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                      <button
+                                                        onClick={() => saveOperationalDataMode(company.id, true)}
+                                                        disabled={savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData}
+                                                        style={{
+                                                          padding: '6px 10px',
+                                                          background: company.forceOperationalMockData ? '#0f766e' : 'white',
+                                                          color: company.forceOperationalMockData ? 'white' : '#0f766e',
+                                                          border: '1px solid #0f766e',
+                                                          borderRadius: '6px',
+                                                          fontSize: '12px',
+                                                          fontWeight: '600',
+                                                          cursor: savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                        }}
+                                                      >
+                                                        Force Demo Mode
+                                                      </button>
+                                                      <button
+                                                        onClick={() => saveOperationalDataMode(company.id, false)}
+                                                        disabled={savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData}
+                                                        style={{
+                                                          padding: '6px 10px',
+                                                          background: !company.forceOperationalMockData ? '#1d4ed8' : 'white',
+                                                          color: !company.forceOperationalMockData ? 'white' : '#1d4ed8',
+                                                          border: '1px solid #1d4ed8',
+                                                          borderRadius: '6px',
+                                                          fontSize: '12px',
+                                                          fontWeight: '600',
+                                                          cursor: savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                        }}
+                                                      >
+                                                        Use Real Data
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                                {company.accountingSystem === 'INFOR_M3' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <input
+                                                      id={`consultant-infor-json-file-${company.id}`}
+                                                      type="file"
+                                                      accept=".json,.txt,.ionapi"
+                                                      style={{ display: 'none' }}
+                                                      onChange={(event) =>
+                                                        handleInforCredentialsFileImport(event, company.id, company.name)
+                                                      }
+                                                    />
+                                                    <button
+                                                      onClick={() => {
+                                                        const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
+                                                        fileInput?.click();
+                                                      }}
+                                                      disabled={inforBusy}
+                                                      style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Import JSON
+                                                    </button>
+                                                    <button
+                                                      onClick={() =>
+                                                        saveInforM3Credentials?.(company.id, {
+                                                          frequency: getCompanyOperationalSettings(company.id).frequency,
+                                                          pullTime: getCompanyOperationalSettings(company.id).pullTime,
+                                                        })
+                                                      }
+                                                      disabled={inforBusy}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      onClick={() => connectInforM3?.(company.id)}
+                                                      disabled={inforBusy}
+                                                      style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')}
+                                                    </button>
+                                                    <button
+                                                      onClick={() => runInforM3OperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                    <button
+                                                      onClick={() => testInforM3Token?.(company.id)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Test Token
+                                                    </button>
+                                                    <button
+                                                      onClick={() => disconnectInforM3?.(company.id)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Disconnect
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'QUICKBOOKS_DESKTOP' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveQbDesktopSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Connection
+                                                    </button>
+                                                    <button
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'QUICKBOOKS' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveQboSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Connection
+                                                    </button>
+                                                    <button
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {(company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365') && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveDynamicsSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Token
+                                                    </button>
+                                                    <button
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'ACUMATICA' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveAcumaticaSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Token
+                                                    </button>
+                                                    <button
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {(company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE') && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveSageIntacctSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Token
+                                                    </button>
+                                                    <button
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {company.accountingSystem === 'ODOO' && (
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                      onClick={() => saveOdooSettings(company.id)}
+                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      disabled
+                                                      style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                                    >
+                                                      Validate Token
+                                                    </button>
+                                                    <button
+                                                      onClick={() => runPlatformOperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Run Ops Sync Now
+                                                    </button>
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                              {company.accountingSystem === 'INFOR_M3' ? (
+                                                <>
+                                                  <div
+                                                    style={{
+                                                      marginBottom: '8px',
+                                                      padding: '8px',
+                                                      background: inforConnected && inforStatus === 'ACTIVE' ? '#d1fae5' : inforStatus === 'ERROR' ? '#fee2e2' : inforStatus === 'EXPIRED' ? '#fed7aa' : '#fef3c7',
+                                                      border: `1px solid ${inforConnected && inforStatus === 'ACTIVE' ? '#10b981' : inforStatus === 'ERROR' ? '#ef4444' : inforStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}`,
+                                                      borderRadius: '6px',
+                                                    }}
+                                                  >
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                                                      {inforConnected && inforStatus === 'ACTIVE' ? 'Connected' : inforStatus === 'ERROR' ? 'Error' : inforStatus === 'EXPIRED' ? 'Token Expired' : 'Not Connected'}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#475569' }}>
+                                                      {inforError || (inforLastSync ? `Last synced: ${new Date(inforLastSync).toLocaleString()}` : 'Enter credentials and connect')}
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
+                                                      { key: 'clientName', label: 'Client Name', type: 'text' },
+                                                      { key: 'clientId', label: 'Client ID *', type: 'text' },
+                                                      { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                                      { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
+                                                      { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
+                                                      { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
+                                                      { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type}
+                                                          value={inforCredentials?.[field.key] || ''}
+                                                          onChange={(e) => setInforCredentials?.((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px', marginBottom: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Operational Pull Frequency</span>
+                                                      <select
+                                                        value={getCompanyOperationalSettings(company.id).frequency}
+                                                        onChange={(e) =>
+                                                          setCompanyOperationalSettings(company.id, {
+                                                            frequency: e.target.value as 'daily' | 'weekly' | 'monthly',
+                                                          })
+                                                        }
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Auto Pull Time (Local)</span>
+                                                      <select
+                                                        value={getCompanyOperationalSettings(company.id).pullTime}
+                                                        onChange={(e) =>
+                                                          setCompanyOperationalSettings(company.id, {
+                                                            pullTime: e.target.value,
+                                                          })
+                                                        }
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'end' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Read-Only Probe Path</span>
+                                                      <input
+                                                        type="text"
+                                                        value={inforProbePath || ''}
+                                                        onChange={(e) => setInforProbePath?.(e.target.value)}
+                                                        placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
+                                                    </label>
+                                                    <button
+                                                      onClick={() => probeInforM3?.(company.id)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Probe
+                                                    </button>
+                                                  </div>
+
+                                                  {inforProbeSummary && (
+                                                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px', padding: '8px' }}>
+                                                      {inforProbeSummary}
+                                                    </div>
+                                                  )}
+                                                </>
+                                              ) : company.accountingSystem === 'QUICKBOOKS' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#dcfce7', border: '1px solid #86efac', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#166534' }}>
+                                                      QuickBooks Online operational sync configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#166534' }}>
+                                                      Configure Phase 1 daily operational pulls for Customer, Vendor, Item, Invoice, Payment, Bill, and BillPayment.
+                                                    </div>
+                                                  </div>
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setQboSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).syncTime}
+                                                        onChange={(e) => setQboSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Initial Sync Start Date (YYYY-MM-DD)</span>
+                                                      <input
+                                                        type="text"
+                                                        value={getQboSettings(company.id).initialSyncStartDate}
+                                                        onChange={(e) => setQboSetting(company.id, 'initialSyncStartDate', e.target.value)}
+                                                        placeholder="2024-01-01"
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setQboSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Webhook Enabled *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).webhookEnabled}
+                                                        onChange={(e) => setQboSetting(company.id, 'webhookEnabled', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>CDC Enabled *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).cdcEnabled}
+                                                        onChange={(e) => setQboSetting(company.id, 'cdcEnabled', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Nightly Reconciliation *</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).reconciliationEnabled}
+                                                        onChange={(e) => setQboSetting(company.id, 'reconciliationEnabled', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
+                                              ) : company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      QuickBooks Desktop configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      This company is configured for Web Connector/SDK setup. Save the required technical values below.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'integrationType', label: 'Integration Type *' },
+                                                      { key: 'applicationName', label: 'Application Name *' },
+                                                      { key: 'soapEndpointUrl', label: 'SOAP/App Endpoint URL *' },
+                                                      { key: 'supportUrl', label: 'Support URL' },
+                                                      { key: 'ownerId', label: 'Owner ID (GUID) *' },
+                                                      { key: 'fileId', label: 'File ID (GUID) *' },
+                                                      { key: 'webConnectorUsername', label: 'Web Connector Username *' },
+                                                      { key: 'pollingIntervalMinutes', label: 'Polling Interval (minutes) *' },
+                                                      { key: 'desktopEditionYear', label: 'QB Desktop Edition + Year *' },
+                                                      { key: 'countryVersion', label: 'Country Version *' },
+                                                      { key: 'companyFilePath', label: 'Target Company File Path (.QBW) *' },
+                                                      { key: 'hostMachineName', label: 'Host Machine Name *' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-qbdesktop-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        {field.key === 'integrationType' ? (
+                                                          <select
+                                                            value={getQbDesktopSettings(company.id).integrationType}
+                                                            onChange={(e) => setQbDesktopSetting(company.id, 'integrationType', e.target.value)}
+                                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          >
+                                                            <option value="">Select</option>
+                                                            <option value="WEB_CONNECTOR">QuickBooks Web Connector</option>
+                                                            <option value="SDK">SDK</option>
+                                                          </select>
+                                                        ) : (
+                                                          <input
+                                                            type="text"
+                                                            value={(getQbDesktopSettings(company.id) as any)[field.key] || ''}
+                                                            onChange={(e) => setQbDesktopSetting(company.id, field.key as keyof typeof defaultQbDesktopSettings, e.target.value)}
+                                                            placeholder={field.label.replace(' *', '')}
+                                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          />
+                                                        )}
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Permission Scope *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).permissionScope}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'permissionScope', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="READ_ONLY">Read-only</option>
+                                                        <option value="READ_WRITE">Read-write</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Unattended Access Required *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).unattendedAccessRequired}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'unattendedAccessRequired', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Host Online During Sync *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).hostOnlineForSync}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'hostOnlineForSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Direction *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).syncDirection}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'syncDirection', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="QB_TO_PLATFORM">QB to Platform</option>
+                                                        <option value="TWO_WAY">Two-way</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getQbDesktopSettings(company.id).syncTime}
+                                                        onChange={(e) => setQbDesktopSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
+                                              ) : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      Dynamics 365 configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      Enter tenant/app values for this company and save. Validation/probe actions are enabled when backend endpoints are wired.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'tenantId', label: 'Tenant ID *' },
+                                                      { key: 'environmentUrl', label: 'Environment URL *' },
+                                                      { key: 'legalEntity', label: 'Legal Entity' },
+                                                      { key: 'region', label: 'Region' },
+                                                      { key: 'clientId', label: 'Client ID *' },
+                                                      { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                                      { key: 'authorityUrl', label: 'Authority URL' },
+                                                      { key: 'scope', label: 'Scope / Resource *' },
+                                                      { key: 'redirectUri', label: 'Redirect URI' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-dynamics-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type || 'text'}
+                                                          value={(getDynamicsSettings(company.id) as any)[field.key] || ''}
+                                                          onChange={(e) => setDynamicsSetting(company.id, field.key as keyof typeof defaultDynamicsSettings, e.target.value)}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getDynamicsSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setDynamicsSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getDynamicsSettings(company.id).syncTime}
+                                                        onChange={(e) => setDynamicsSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getDynamicsSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setDynamicsSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
+                                              ) : company.accountingSystem === 'ACUMATICA' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      Acumatica Cloud ERP configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      Enter tenant/app endpoint values for this company and save.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'tenantId', label: 'Tenant ID *' },
+                                                      { key: 'instanceUrl', label: 'Instance URL *' },
+                                                      { key: 'companyCode', label: 'Company Code *' },
+                                                      { key: 'branch', label: 'Branch' },
+                                                      { key: 'clientId', label: 'Client ID *' },
+                                                      { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                                      { key: 'username', label: 'Username *' },
+                                                      { key: 'password', label: 'Password *', type: 'password' },
+                                                      { key: 'endpointName', label: 'Endpoint Name *' },
+                                                      { key: 'endpointVersion', label: 'Endpoint Version *' },
+                                                      { key: 'contractBasedApiPath', label: 'Contract-based API Path' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-acumatica-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type || 'text'}
+                                                          value={(getAcumaticaSettings(company.id) as any)[field.key] || ''}
+                                                          onChange={(e) => setAcumaticaSetting(company.id, field.key as keyof typeof defaultAcumaticaSettings, e.target.value)}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getAcumaticaSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setAcumaticaSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getAcumaticaSettings(company.id).syncTime}
+                                                        onChange={(e) => setAcumaticaSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getAcumaticaSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setAcumaticaSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
+                                              ) : company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      Sage Intacct configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      Enter sender credentials and company user credentials for this company, then save.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'senderId', label: 'Sender ID *' },
+                                                      { key: 'senderPassword', label: 'Sender Password *', type: 'password' },
+                                                      { key: 'companyId', label: 'Company ID *' },
+                                                      { key: 'userId', label: 'User ID *' },
+                                                      { key: 'userPassword', label: 'User Password *', type: 'password' },
+                                                      { key: 'entityId', label: 'Entity ID' },
+                                                      { key: 'endpointUrl', label: 'Endpoint URL *' },
+                                                      { key: 'dtdVersion', label: 'DTD Version' },
+                                                      { key: 'locationId', label: 'Location ID' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-sage-intacct-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type || 'text'}
+                                                          value={(getSageIntacctSettings(company.id) as any)[field.key] || ''}
+                                                          onChange={(e) => setSageIntacctSetting(company.id, field.key as keyof typeof defaultSageIntacctSettings, e.target.value)}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getSageIntacctSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setSageIntacctSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getSageIntacctSettings(company.id).syncTime}
+                                                        onChange={(e) => setSageIntacctSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getSageIntacctSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setSageIntacctSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
+                                              ) : company.accountingSystem === 'ODOO' ? (
+                                                <>
+                                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>
+                                                      Odoo Accounting ERP configuration
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                                      Enter Odoo URL/database credentials and sync settings for this company.
+                                                    </div>
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                    {[
+                                                      { key: 'baseUrl', label: 'Base URL *' },
+                                                      { key: 'database', label: 'Database *' },
+                                                      { key: 'username', label: 'Username *' },
+                                                      { key: 'password', label: 'Password *', type: 'password' },
+                                                      { key: 'apiKey', label: 'API Key', type: 'password' },
+                                                      { key: 'companyId', label: 'Company ID' },
+                                                      { key: 'odooVersion', label: 'Odoo Version' },
+                                                      { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                                    ].map((field) => (
+                                                      <label key={`${company.id}-odoo-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                                        <input
+                                                          type={field.type || 'text'}
+                                                          value={(getOdooSettings(company.id) as any)[field.key] || ''}
+                                                          onChange={(e) => setOdooSetting(company.id, field.key as keyof typeof defaultOdooSettings, e.target.value)}
+                                                          placeholder={field.label.replace(' *', '')}
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    ))}
+                                                  </div>
+
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Auth Method *</span>
+                                                      <select
+                                                        value={getOdooSettings(company.id).authMethod}
+                                                        onChange={(e) => setOdooSetting(company.id, 'authMethod', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="PASSWORD">Username/Password</option>
+                                                        <option value="API_KEY">API Key</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <select
+                                                        value={getOdooSettings(company.id).syncFrequency}
+                                                        onChange={(e) => setOdooSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                                      <select
+                                                        value={getOdooSettings(company.id).syncTime}
+                                                        onChange={(e) => setOdooSetting(company.id, 'syncTime', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        {Array.from({ length: 24 }).map((_, hour) => {
+                                                          const hh = String(hour).padStart(2, '0');
+                                                          const value = `${hh}:00`;
+                                                          return (
+                                                            <option key={value} value={value}>
+                                                              {value}
+                                                            </option>
+                                                          );
+                                                        })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                                      <select
+                                                        value={getOdooSettings(company.id).incrementalSync}
+                                                        onChange={(e) => setOdooSetting(company.id, 'incrementalSync', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="">Select</option>
+                                                        <option value="YES">Yes</option>
+                                                        <option value="NO">No</option>
+                                                      </select>
+                                                    </label>
+                                                  </div>
+                                                </>
+                                              ) : (
+                                                <div style={{ fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '6px', padding: '10px' }}>
+                                                  {company.accountingSystem
+                                                    ? `${company.accountingSystem} integration configuration will render here for this company.`
+                                                    : 'No accounting system selected for this company.'}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                  <button
+                                                    onClick={() =>
+                                                      company.accountingSystem === 'QUICKBOOKS_DESKTOP'
+                                                        ? addQbDesktopProgram(company.id)
+                                                        : company.accountingSystem === 'QUICKBOOKS'
+                                                          ? addQboProgram(company.id)
+                                                        : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365'
+                                                          ? addDynamicsProgram(company.id)
+                                                          : company.accountingSystem === 'ACUMATICA'
+                                                            ? addAcumaticaProgram(company.id)
+                                                            : company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE'
+                                                              ? addSageIntacctProgram(company.id)
+                                                              : company.accountingSystem === 'ODOO'
+                                                                ? addOdooProgram(company.id)
+                                                        : addCompanyProgram(company.id)
+                                                    }
+                                                    style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    + Add
+                                                  </button>
+                                                  <button
+                                                    onClick={() =>
+                                                      company.accountingSystem === 'QUICKBOOKS_DESKTOP'
+                                                        ? saveQbDesktopSettings(company.id)
+                                                        : company.accountingSystem === 'QUICKBOOKS'
+                                                          ? saveQboSettings(company.id)
+                                                        : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365'
+                                                          ? saveDynamicsSettings(company.id)
+                                                          : company.accountingSystem === 'ACUMATICA'
+                                                            ? saveAcumaticaSettings(company.id)
+                                                            : company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE'
+                                                              ? saveSageIntacctSettings(company.id)
+                                                              : company.accountingSystem === 'ODOO'
+                                                                ? saveOdooSettings(company.id)
+                                                        : saveCompanyPrograms(company.id)
+                                                    }
+                                                    style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Save
+                                                  </button>
+                                                </div>
+                                              </div>
+                                              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                                Programs called by the integration
+                                              </div>
+                                              <div style={{ overflowX: 'auto' }}>
+                                                {company.accountingSystem === 'QUICKBOOKS' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QBO Entity</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getQboPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-qbo-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.dataDomain}
+                                                              onChange={(e) => updateQboProgram(company.id, index, 'dataDomain', e.target.value)}
+                                                              placeholder="Data Domain"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.qboEntity}
+                                                              onChange={(e) => updateQboProgram(company.id, index, 'qboEntity', e.target.value)}
+                                                              placeholder="QBO Entity"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="checkbox"
+                                                              checked={Boolean(row.enabled)}
+                                                              onChange={(e) => updateQboProgram(company.id, index, 'enabled', e.target.checked)}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteQboProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QB Entity</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getQbDesktopPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-qbdesktop-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.dataDomain}
+                                                              onChange={(e) => updateQbDesktopProgram(company.id, index, 'dataDomain', e.target.value)}
+                                                              placeholder="Data Domain"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.qbEntity}
+                                                              onChange={(e) => updateQbDesktopProgram(company.id, index, 'qbEntity', e.target.value)}
+                                                              placeholder="QB Entity"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteQbDesktopProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'DYNAMICS' || company.accountingSystem === 'DYNAMICS365' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Entity / Endpoint</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getDynamicsPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-dynamics-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateDynamicsProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.entityOrEndpoint}
+                                                              onChange={(e) => updateDynamicsProgram(company.id, index, 'entityOrEndpoint', e.target.value)}
+                                                              placeholder="Entity or Endpoint"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteDynamicsProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'ACUMATICA' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Endpoint / Entity</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getAcumaticaPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-acumatica-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateAcumaticaProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.endpointOrEntity}
+                                                              onChange={(e) => updateAcumaticaProgram(company.id, index, 'endpointOrEntity', e.target.value)}
+                                                              placeholder="Endpoint or Entity"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteAcumaticaProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'SAGE_INTACCT' || company.accountingSystem === 'SAGE' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Object</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getSageIntacctPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-sage-intacct-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateSageIntacctProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.objectName}
+                                                              onChange={(e) => updateSageIntacctProgram(company.id, index, 'objectName', e.target.value)}
+                                                              placeholder="Object Name"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteSageIntacctProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : company.accountingSystem === 'ODOO' ? (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Model / Endpoint</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getOdooPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-odoo-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateOdooProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.modelOrEndpoint}
+                                                              onChange={(e) => updateOdooProgram(company.id, index, 'modelOrEndpoint', e.target.value)}
+                                                              placeholder="Model or Endpoint"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteOdooProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                ) : (
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                                    <thead>
+                                                      <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (one per line)</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                                                        <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {getCompanyPrograms(company.id).map((row, index) => (
+                                                        <tr key={`${company.id}-consultant-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.module}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'module', e.target.value)}
+                                                              placeholder="Module"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.miProgram}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'miProgram', e.target.value)}
+                                                              placeholder="MI Program"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <textarea
+                                                              value={formatTransactionsForInput(row.transactions)}
+                                                              onChange={(e) =>
+                                                                updateCompanyProgram(
+                                                                  company.id,
+                                                                  index,
+                                                                  'transactions',
+                                                                  parseTransactionsFromInput(e.target.value)
+                                                                )
+                                                              }
+                                                              onKeyDown={(e) => {
+                                                                e.stopPropagation();
+                                                                if (e.key !== 'Enter') return;
+                                                                e.preventDefault();
+                                                                const currentValue = formatTransactionsForInput(row.transactions);
+                                                                const start = e.currentTarget.selectionStart ?? currentValue.length;
+                                                                const end = e.currentTarget.selectionEnd ?? currentValue.length;
+                                                                const nextValue =
+                                                                  `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`;
+                                                                updateCompanyProgram(
+                                                                  company.id,
+                                                                  index,
+                                                                  'transactions',
+                                                                  parseTransactionsFromInput(nextValue)
+                                                                );
+                                                              }}
+                                                              placeholder={"Transaction 1\nTransaction 2"}
+                                                              rows={3}
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.cono}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'cono', e.target.value)}
+                                                              placeholder="CONO"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.divi}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'divi', e.target.value)}
+                                                              placeholder="DIVI"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px', textAlign: 'center' }}>
+                                                            <input
+                                                              type="checkbox"
+                                                              checked={row.enabled}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'enabled', e.target.checked)}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <button
+                                                              onClick={() => deleteCompanyProgram(company.id, index)}
+                                                              style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                            >
+                                                              Delete
+                                                            </button>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
                                           
                                           {/* Subscription Pricing */}
-                                          <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '8px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                                            <h6 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h6>
+                                          <div style={{ marginBottom: companyUsers.length > 0 ? '8px' : '0', padding: '10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
                                             {editing ? (
-                                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                                                 <div>
                                                   <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
                                                   <input
@@ -768,9 +3287,25 @@ export default function SiteAdminDashboard(props: any) {
                                                     style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
                                                   />
                                                 </div>
-                                                <div style={{ display: 'flex', gap: '6px', gridColumn: 'span 3' }}>
+                                                <div>
+                                                  <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Setup Fee ($)</label>
+                                                  <input
+                                                    type="number"
+                                                    value={editing.setupFee ?? 0}
+                                                    onChange={(e) => setEditingPricing({
+                                                      ...editingPricing,
+                                                      [company.id]: { ...editing, setupFee: parseFloat(e.target.value) || 0 }
+                                                    })}
+                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                  />
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '6px', gridColumn: 'span 4' }}>
                                                   <button
                                                     onClick={() => {
+                                                      if (!updateCompanyPricing) {
+                                                        alert('Update pricing function is not configured.');
+                                                        return;
+                                                      }
                                                       updateCompanyPricing(company.id, editing);
                                                     }}
                                                     style={{ padding: '4px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
@@ -793,10 +3328,11 @@ export default function SiteAdminDashboard(props: any) {
                                               </div>
                                             ) : (
                                               <div>
-                                                <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
+                                                <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.7', marginBottom: '8px' }}>
                                                   <div><strong>Monthly:</strong> ${company.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
                                                   <div><strong>Quarterly:</strong> ${company.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
                                                   <div><strong>Annual:</strong> ${company.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
+                                                  <div><strong>Setup Fee:</strong> ${company.subscriptionSetupFee?.toFixed(2) ?? '0.00'}</div>
                                                 </div>
                                                 <button
                                                   onClick={() => {
@@ -805,11 +3341,12 @@ export default function SiteAdminDashboard(props: any) {
                                                       [company.id]: {
                                                         monthly: company.subscriptionMonthlyPrice ?? 0,
                                                         quarterly: company.subscriptionQuarterlyPrice ?? 0,
-                                                        annual: company.subscriptionAnnualPrice ?? 0
+                                                        annual: company.subscriptionAnnualPrice ?? 0,
+                                                        setupFee: company.subscriptionSetupFee ?? 0,
                                                       }
                                                     });
                                                   }}
-                                                  style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                                  style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
                                                 >
                                                   Edit Pricing
                                                 </button>
@@ -867,7 +3404,7 @@ export default function SiteAdminDashboard(props: any) {
                         });
 
                         if (orphanedBusinesses.length === 0) {
-                          alert('? No orphaned business records found!');
+                          alert('No orphaned business records found!');
                           return;
                         }
 
@@ -896,7 +3433,7 @@ export default function SiteAdminDashboard(props: any) {
 
                           // Show results
                           if (errors.length === 0) {
-                            alert(`? Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
+                            alert(`Successfully deleted ${deletedCount} orphaned business record(s) from the database.`);
                           } else {
                             alert(`⚠️ Deleted ${deletedCount} of ${orphanedBusinesses.length} records.\n\nErrors:\n${errors.join('\n')}`);
                           }
@@ -926,29 +3463,73 @@ export default function SiteAdminDashboard(props: any) {
                     </button>
                   </div>
 
-                  {Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).length === 0 ? (
+                  {businessesLoading ? (
+                    <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                      <div style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>Loading businesses...</div>
+                      <p style={{ fontSize: '13px', color: '#94a3b8' }}>Please wait while company data is retrieved.</p>
+                    </div>
+                  ) : Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).length === 0 ? (
                     <div style={{ background: 'white', borderRadius: '8px', padding: '40px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
                       <div style={{ fontSize: '36px', marginBottom: '12px' }}>🏢</div>
                       <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#64748b', marginBottom: '6px' }}>No businesses registered yet</h3>
                       <p style={{ fontSize: '13px', color: '#94a3b8' }}>Businesses will appear here once they register</p>
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      {Array.isArray(companies) && companies.filter(comp => comp.consultantId === null).map((businessCompany) => {
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {Array.isArray(companies) && companies
+                        .filter(comp => comp.consultantId === null)
+                        .sort((a: any, b: any) =>
+                          (a.name || '').localeCompare(
+                            b.name || '',
+                            undefined,
+                            { numeric: true, sensitivity: 'base' }
+                          )
+                        )
+                        .map((businessCompany) => {
                         // Find the user associated with this company
                         const businessUser = users.find(u => u.companyId === businessCompany.id);
                         const isExpanded = expandedBusinessIds.has(businessCompany.id);
                         const editing = editingPricing?.[businessCompany.id];
+                        const operationalSettings = getCompanyOperationalSettings(businessCompany.id);
+                        const accountingPrograms = getCompanyPrograms(businessCompany.id);
+                        const qbDesktopSettings = getQbDesktopSettings(businessCompany.id);
+                        const qbDesktopPrograms = getQbDesktopPrograms(businessCompany.id);
+                        const dynamicsSettings = getDynamicsSettings(businessCompany.id);
+                        const dynamicsPrograms = getDynamicsPrograms(businessCompany.id);
+                        const acumaticaSettings = getAcumaticaSettings(businessCompany.id);
+                        const acumaticaPrograms = getAcumaticaPrograms(businessCompany.id);
+                        const sageIntacctSettings = getSageIntacctSettings(businessCompany.id);
+                        const sageIntacctPrograms = getSageIntacctPrograms(businessCompany.id);
+                        const odooSettings = getOdooSettings(businessCompany.id);
+                        const odooPrograms = getOdooPrograms(businessCompany.id);
+                        const effectiveTier1Routing = getEffectiveTier1Routing(businessCompany);
+                        const tier1RoutingDraft = editingTier1RoutingByCompany[businessCompany.id] || effectiveTier1Routing;
+                        const supportConsultants = consultants.filter((consultant: any) => consultant?.type !== 'business');
+                        const currentSupportConsultant = supportConsultants.find(
+                          (consultant: any) => consultant.id === effectiveTier1Routing.consultantId
+                        );
                         
                         return (
-                          <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                          <div key={businessCompany.id} style={{ background: 'white', borderRadius: '8px', padding: '10px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
                             {/* Business Header */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   <h3 
-                                    onClick={() => {
-                                      if (!businessUser) {
+                                    onClick={async () => {
+                                      let resolvedBusinessUser = businessUser;
+                                      if (!resolvedBusinessUser) {
+                                        try {
+                                          const userRes = await fetch(`/api/users?companyId=${businessCompany.id}`);
+                                          const userData = await userRes.json();
+                                          if (userRes.ok && Array.isArray(userData?.users) && userData.users.length > 0) {
+                                            resolvedBusinessUser = userData.users.find((u: any) => String(u?.role || '').toUpperCase() === 'USER') || userData.users[0];
+                                          }
+                                        } catch (err) {
+                                          console.error('Error resolving business user from API:', err);
+                                        }
+                                      }
+                                      if (!resolvedBusinessUser) {
                                         console.error('User not found for company:', businessCompany.id, 'Available users:', users);
                                         alert('User not found for this company. Please ensure the business has a registered user.');
                                         return;
@@ -965,9 +3546,9 @@ export default function SiteAdminDashboard(props: any) {
                                             setLoadedConsultantId(null);
                                             // Switch to viewing this business's dashboard
                                             // Normalize userType to lowercase 'company' to match sidebar checks
-                                            const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                            const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
                                             setCurrentUser({
-                                              ...businessUser,
+                                              ...resolvedBusinessUser,
                                               role: 'user',
                                               userType: normalizedUserType,
                                               companyId: businessCompany.id
@@ -978,9 +3559,9 @@ export default function SiteAdminDashboard(props: any) {
                                             // Fallback to using the company from the list
                                             setCompanies([businessCompany]);
                                             setLoadedConsultantId(null);
-                                            const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                            const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
                                             setCurrentUser({
-                                              ...businessUser,
+                                              ...resolvedBusinessUser,
                                               role: 'user',
                                               userType: normalizedUserType,
                                               companyId: businessCompany.id
@@ -994,9 +3575,9 @@ export default function SiteAdminDashboard(props: any) {
                                           // Fallback to using the company from the list
                                           setCompanies([businessCompany]);
                                           setLoadedConsultantId(null);
-                                          const normalizedUserType = businessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
+                                          const normalizedUserType = resolvedBusinessUser.userType?.toLowerCase() === 'company' ? 'company' : 'company';
                                           setCurrentUser({
-                                            ...businessUser,
+                                            ...resolvedBusinessUser,
                                             role: 'user',
                                             userType: normalizedUserType,
                                             companyId: businessCompany.id
@@ -1006,7 +3587,7 @@ export default function SiteAdminDashboard(props: any) {
                                         });
                                     }}
                                     style={{ 
-                                      fontSize: '15px', 
+                                      fontSize: '16px', 
                                       fontWeight: '600', 
                                       color: '#667eea', 
                                       margin: 0,
@@ -1029,11 +3610,40 @@ export default function SiteAdminDashboard(props: any) {
                                         newSet.delete(businessCompany.id);
                                       } else {
                                         newSet.add(businessCompany.id);
+                                        setSelectedCompanyId(businessCompany.id);
+                                        if (businessCompany.accountingSystem === 'INFOR_M3') {
+                                          loadInforM3Credentials?.(businessCompany.id);
+                                          loadCompanyPrograms(businessCompany.id);
+                                          checkInforM3Status?.(businessCompany.id).then((statusData: any) => {
+                                            if (!statusData) return;
+                                            const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
+                                            const pullTime =
+                                              typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+                                            if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
+                                              setCompanyOperationalSettings(businessCompany.id, {
+                                                frequency,
+                                                pullTime,
+                                              });
+                                            }
+                                          });
+                                        } else if (businessCompany.accountingSystem === 'QUICKBOOKS_DESKTOP') {
+                                          loadQbDesktopSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'QUICKBOOKS') {
+                                          loadQboSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'DYNAMICS' || businessCompany.accountingSystem === 'DYNAMICS365') {
+                                          loadDynamicsSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'ACUMATICA') {
+                                          loadAcumaticaSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'SAGE_INTACCT' || businessCompany.accountingSystem === 'SAGE') {
+                                          loadSageIntacctSettings(businessCompany.id);
+                                        } else if (businessCompany.accountingSystem === 'ODOO') {
+                                          loadOdooSettings(businessCompany.id);
+                                        }
                                       }
                                       return newSet;
                                     });
                                   }}
-                                  style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                  style={{ padding: '6px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                 >
                                   {isExpanded ? 'Collapse' : 'Expand'}
                                 </button>
@@ -1056,7 +3666,7 @@ export default function SiteAdminDashboard(props: any) {
                                     }
                                   }}
                                   style={{ 
-                                    padding: '6px 12px', 
+                                    padding: '6px 10px', 
                                     background: '#ef4444', 
                                     color: 'white', 
                                     border: 'none', 
@@ -1076,48 +3686,1786 @@ export default function SiteAdminDashboard(props: any) {
 
                             {/* Expanded Details */}
                             {isExpanded && (
-                              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '10px', paddingTop: '10px' }}>
-
-                                {/* Business Information */}
-                                <div style={{ marginBottom: '8px', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>
-                                  <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Business Information</h4>
-                                  <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                    <div><strong>Type:</strong> Standalone Business</div>
-                                    <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                    <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                    <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                    <div><strong>Address:</strong> {
-                                      businessCompany && (businessCompany.addressStreet || businessCompany.addressCity) ? (
-                                        <>
-                                          {businessCompany.addressStreet && <>{businessCompany.addressStreet}<br /></>}
-                                          {businessCompany.addressCity && businessCompany.addressCity}
-                                          {businessCompany.addressState && `, ${businessCompany.addressState}`}
-                                          {businessCompany.addressZip && ` ${businessCompany.addressZip}`}
-                                          {businessCompany.addressCountry && <><br />{businessCompany.addressCountry}</>}
-                                        </>
-                                      ) : 'Not provided'
-                                    }</div>
+                              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '8px' }}>
+                                <div style={{ marginBottom: '10px', padding: '10px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                  <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Tier 1 Support Routing</h4>
+                                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                    Current: <strong>{effectiveTier1Routing.owner === 'CONSULTANT' ? 'Consultant' : 'Corelytics'}</strong>
+                                    {effectiveTier1Routing.owner === 'CONSULTANT' && (
+                                      <span>
+                                        {' '}
+                                        ({currentSupportConsultant?.fullName || currentSupportConsultant?.companyName || 'Consultant'})
+                                      </span>
+                                    )}
+                                    {effectiveTier1Routing.owner === 'CONSULTANT' && effectiveTier1Routing.supportEmail && (
+                                      <span> - {effectiveTier1Routing.supportEmail}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: '8px', alignItems: 'end' }}>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Tier 1 Owner
+                                      </label>
+                                      <select
+                                        value={tier1RoutingDraft.owner}
+                                        onChange={(e) =>
+                                          setEditingTier1RoutingByCompany((prev) => ({
+                                            ...prev,
+                                            [businessCompany.id]: {
+                                              owner: e.target.value === 'CONSULTANT' ? 'CONSULTANT' : 'CORELYTICS',
+                                              consultantId:
+                                                e.target.value === 'CONSULTANT'
+                                                  ? (tier1RoutingDraft.consultantId || businessCompany.consultantId || '')
+                                                  : '',
+                                              supportEmail:
+                                                e.target.value === 'CONSULTANT' ? tier1RoutingDraft.supportEmail : '',
+                                            },
+                                          }))
+                                        }
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                                      >
+                                        <option value="CORELYTICS">Corelytics</option>
+                                        <option value="CONSULTANT">Consultant</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Consultant
+                                      </label>
+                                      <select
+                                        value={tier1RoutingDraft.consultantId}
+                                        disabled={tier1RoutingDraft.owner !== 'CONSULTANT'}
+                                        onChange={(e) =>
+                                          setEditingTier1RoutingByCompany((prev) => ({
+                                            ...prev,
+                                            [businessCompany.id]: {
+                                              owner: tier1RoutingDraft.owner,
+                                              consultantId: e.target.value,
+                                              supportEmail:
+                                                tier1RoutingDraft.supportEmail ||
+                                                (supportConsultants.find((c: any) => c.id === e.target.value)?.email || ''),
+                                            },
+                                          }))
+                                        }
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', background: tier1RoutingDraft.owner !== 'CONSULTANT' ? '#f1f5f9' : 'white' }}
+                                      >
+                                        <option value="">Select consultant</option>
+                                        {supportConsultants.map((consultant: any) => (
+                                          <option key={consultant.id} value={consultant.id}>
+                                            {consultant.companyName || consultant.fullName}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Tier 1 Contact Email
+                                      </label>
+                                      <input
+                                        type="email"
+                                        value={tier1RoutingDraft.supportEmail}
+                                        disabled={tier1RoutingDraft.owner !== 'CONSULTANT'}
+                                        onChange={(e) =>
+                                          setEditingTier1RoutingByCompany((prev) => ({
+                                            ...prev,
+                                            [businessCompany.id]: {
+                                              owner: tier1RoutingDraft.owner,
+                                              consultantId: tier1RoutingDraft.consultantId,
+                                              supportEmail: e.target.value,
+                                            },
+                                          }))
+                                        }
+                                        placeholder="tier1@consultant.com"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', background: tier1RoutingDraft.owner !== 'CONSULTANT' ? '#f1f5f9' : 'white' }}
+                                      />
+                                    </div>
+                                    <button
+                                      onClick={() =>
+                                        saveTier1Routing(
+                                          businessCompany.id,
+                                          tier1RoutingDraft.owner,
+                                          tier1RoutingDraft.consultantId,
+                                          tier1RoutingDraft.supportEmail
+                                        )
+                                      }
+                                      disabled={savingTier1RoutingCompanyId === businessCompany.id}
+                                      style={{ padding: '6px 12px', background: savingTier1RoutingCompanyId === businessCompany.id ? '#94a3b8' : '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: savingTier1RoutingCompanyId === businessCompany.id ? 'not-allowed' : 'pointer' }}
+                                    >
+                                      {savingTier1RoutingCompanyId === businessCompany.id ? 'Saving...' : 'Save'}
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        setEditingTier1RoutingByCompany((prev) => {
+                                          const next = { ...prev };
+                                          delete next[businessCompany.id];
+                                          return next;
+                                        })
+                                      }
+                                      style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                    >
+                                      Reset
+                                    </button>
                                   </div>
                                 </div>
 
-                                {/* Company Details */}
-                                {businessCompany && (
-                                  <div style={{ marginBottom: '8px', padding: '8px', background: '#f0f9ff', borderRadius: '6px' }}>
-                                    <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>Company Details</h4>
-                                    <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5' }}>
-                                      <div><strong>Company Name:</strong> {businessCompany.name}</div>
-                                      <div><strong>Industry:</strong> {businessCompany.industrySector || 'Not set'}</div>
+                                {businessCompany?.accountingSystem === 'INFOR_M3' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                      <div>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                        <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                          Infor M3 credentials for <strong>{businessCompany.name}</strong>
+                                        </div>
+                                        <div style={{ marginTop: '10px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc' }}>
+                                          <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
+                                            Operational Data Mode
+                                          </div>
+                                          <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                            {businessCompany.forceOperationalMockData
+                                              ? 'Demo mode is ON. Mock data is being served.'
+                                              : businessCompany.hasRealOperationalData
+                                                ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${new Date(businessCompany.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                : 'Demo mode is active until real operational data is detected.'}
+                                          </div>
+                                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            <button
+                                              onClick={() => saveOperationalDataMode(businessCompany.id, true)}
+                                              disabled={savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData}
+                                              style={{
+                                                padding: '6px 10px',
+                                                background: businessCompany.forceOperationalMockData ? '#0f766e' : 'white',
+                                                color: businessCompany.forceOperationalMockData ? 'white' : '#0f766e',
+                                                border: '1px solid #0f766e',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontWeight: '600',
+                                                cursor: savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                              }}
+                                            >
+                                              Force Demo Mode
+                                            </button>
+                                            <button
+                                              onClick={() => saveOperationalDataMode(businessCompany.id, false)}
+                                              disabled={savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData}
+                                              style={{
+                                                padding: '6px 10px',
+                                                background: !businessCompany.forceOperationalMockData ? '#1d4ed8' : 'white',
+                                                color: !businessCompany.forceOperationalMockData ? 'white' : '#1d4ed8',
+                                                border: '1px solid #1d4ed8',
+                                                borderRadius: '6px',
+                                                fontSize: '12px',
+                                                fontWeight: '600',
+                                                cursor: savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                              }}
+                                            >
+                                              Use Real Data
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                        <input
+                                          id={`infor-json-file-${businessCompany.id}`}
+                                          type="file"
+                                          accept=".json,.txt,.ionapi"
+                                          style={{ display: 'none' }}
+                                          onChange={(event) =>
+                                            handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
+                                          }
+                                        />
+                                        <button
+                                          onClick={() => {
+                                            const fileInput = document.getElementById(`infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
+                                            fileInput?.click();
+                                          }}
+                                          disabled={inforBusy}
+                                          style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Import JSON
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            saveInforM3Credentials?.(businessCompany.id, {
+                                              frequency: operationalSettings.frequency,
+                                              pullTime: operationalSettings.pullTime,
+                                            })
+                                          }
+                                          disabled={inforBusy}
+                                          style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          onClick={() => connectInforM3?.(businessCompany.id)}
+                                          disabled={inforBusy}
+                                          style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')}
+                                        </button>
+                                        <button
+                                          onClick={() => runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                          disabled={inforBusy || !inforConnected}
+                                          style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Run Ops Sync Now
+                                        </button>
+                                        <button
+                                          onClick={() => testInforM3Token?.(businessCompany.id)}
+                                          disabled={inforBusy || !inforConnected}
+                                          style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Test Token
+                                        </button>
+                                        <button
+                                          onClick={() => disconnectInforM3?.(businessCompany.id)}
+                                          disabled={inforBusy || !inforConnected}
+                                          style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Disconnect
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        marginBottom: '8px',
+                                        padding: '8px',
+                                        background: inforConnected && inforStatus === 'ACTIVE' ? '#d1fae5' : inforStatus === 'ERROR' ? '#fee2e2' : inforStatus === 'EXPIRED' ? '#fed7aa' : '#fef3c7',
+                                        border: `1px solid ${inforConnected && inforStatus === 'ACTIVE' ? '#10b981' : inforStatus === 'ERROR' ? '#ef4444' : inforStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}`,
+                                        borderRadius: '6px',
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>
+                                        {inforConnected && inforStatus === 'ACTIVE' ? 'Connected' : inforStatus === 'ERROR' ? 'Error' : inforStatus === 'EXPIRED' ? 'Token Expired' : 'Not Connected'}
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#475569' }}>
+                                        {inforError || (inforLastSync ? `Last synced: ${new Date(inforLastSync).toLocaleString()}` : 'Enter credentials and connect')}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                      {[
+                                        { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
+                                        { key: 'clientName', label: 'Client Name', type: 'text' },
+                                        { key: 'clientId', label: 'Client ID *', type: 'text' },
+                                        { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                        { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
+                                        { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
+                                        { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
+                                        { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
+                                      ].map((field) => (
+                                        <label key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                          <input
+                                            type={field.type}
+                                            value={inforCredentials?.[field.key] || ''}
+                                            onChange={(e) => setInforCredentials?.((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
+                                            placeholder={field.label.replace(' *', '')}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px', marginBottom: '8px' }}>
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                        <span style={{ fontWeight: 600 }}>Operational Pull Frequency</span>
+                                        <select
+                                          value={operationalSettings.frequency}
+                                          onChange={(e) =>
+                                            setCompanyOperationalSettings(businessCompany.id, {
+                                              frequency: e.target.value as 'daily' | 'weekly' | 'monthly',
+                                            })
+                                          }
+                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                        >
+                                          <option value="daily">Daily</option>
+                                          <option value="weekly">Weekly</option>
+                                          <option value="monthly">Monthly</option>
+                                        </select>
+                                      </label>
+
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                        <span style={{ fontWeight: 600 }}>Auto Pull Time (Local)</span>
+                                        <select
+                                          value={operationalSettings.pullTime}
+                                          onChange={(e) =>
+                                            setCompanyOperationalSettings(businessCompany.id, {
+                                              pullTime: e.target.value,
+                                            })
+                                          }
+                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                        >
+                                          {Array.from({ length: 24 }).map((_, hour) => {
+                                            const hh = String(hour).padStart(2, '0');
+                                            const value = `${hh}:00`;
+                                            return (
+                                              <option key={value} value={value}>
+                                                {value}
+                                              </option>
+                                            );
+                                          })}
+                                        </select>
+                                      </label>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'end' }}>
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                        <span style={{ fontWeight: 600 }}>Read-Only Probe Path</span>
+                                        <input
+                                          type="text"
+                                          value={inforProbePath || ''}
+                                          onChange={(e) => setInforProbePath?.(e.target.value)}
+                                          placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
+                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                        />
+                                      </label>
+                                      <button
+                                        onClick={() => probeInforM3?.(businessCompany.id)}
+                                        disabled={inforBusy || !inforConnected}
+                                        style={{ padding: '8px 12px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                      >
+                                        Probe
+                                      </button>
+                                    </div>
+
+                                    {inforProbeSummary && (
+                                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#0369a1', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px', padding: '8px' }}>
+                                        {inforProbeSummary}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addCompanyProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveCompanyPrograms(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (one per line)</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                                              <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {accountingPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.miProgram}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'miProgram', e.target.value)}
+                                                    placeholder="MI Program"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <textarea
+                                                    value={formatTransactionsForInput(row.transactions)}
+                                                    onChange={(e) =>
+                                                      updateCompanyProgram(
+                                                        businessCompany.id,
+                                                        index,
+                                                        'transactions',
+                                                        parseTransactionsFromInput(e.target.value)
+                                                      )
+                                                    }
+                                                    onKeyDown={(e) => {
+                                                      e.stopPropagation();
+                                                      if (e.key !== 'Enter') return;
+                                                      e.preventDefault();
+                                                      const currentValue = formatTransactionsForInput(row.transactions);
+                                                      const start = e.currentTarget.selectionStart ?? currentValue.length;
+                                                      const end = e.currentTarget.selectionEnd ?? currentValue.length;
+                                                      const nextValue =
+                                                        `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`;
+                                                      updateCompanyProgram(
+                                                        businessCompany.id,
+                                                        index,
+                                                        'transactions',
+                                                        parseTransactionsFromInput(nextValue)
+                                                      );
+                                                    }}
+                                                    placeholder={"Transaction 1\nTransaction 2"}
+                                                    rows={3}
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.cono}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'cono', e.target.value)}
+                                                    placeholder="CONO"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.divi}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'divi', e.target.value)}
+                                                    placeholder="DIVI"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px', textAlign: 'center' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={row.enabled}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'enabled', e.target.checked)}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteCompanyProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'QUICKBOOKS' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            QuickBooks Online setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveQboSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Connection
+                                          </button>
+                                          <button
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Run Ops Sync Now
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#dcfce7', border: '1px solid #86efac', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#166534' }}>QuickBooks Online operational sync configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#166534' }}>
+                                          Configure Phase 1 daily operational pulls and save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).syncFrequency}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).syncTime}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Initial Sync Start Date (YYYY-MM-DD)</span>
+                                          <input
+                                            type="text"
+                                            value={getQboSettings(businessCompany.id).initialSyncStartDate}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'initialSyncStartDate', e.target.value)}
+                                            placeholder="2024-01-01"
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          />
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).incrementalSync}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Webhook Enabled *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).webhookEnabled}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'webhookEnabled', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>CDC Enabled *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).cdcEnabled}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'cdcEnabled', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Nightly Reconciliation *</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).reconciliationEnabled}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'reconciliationEnabled', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addQboProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveQboSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QBO Entity</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {getQboPrograms(businessCompany.id).map((row, index) => (
+                                              <tr key={`${businessCompany.id}-qbo-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.dataDomain}
+                                                    onChange={(e) => updateQboProgram(businessCompany.id, index, 'dataDomain', e.target.value)}
+                                                    placeholder="Data Domain"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.qboEntity}
+                                                    onChange={(e) => updateQboProgram(businessCompany.id, index, 'qboEntity', e.target.value)}
+                                                    placeholder="QBO Entity"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px', textAlign: 'center' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={Boolean(row.enabled)}
+                                                    onChange={(e) => updateQboProgram(businessCompany.id, index, 'enabled', e.target.checked)}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteQboProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            QuickBooks Desktop setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveQbDesktopSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Connection
+                                          </button>
+                                          <button
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Run Ops Sync Now
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>QuickBooks Desktop configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter required Web Connector/SDK setup values, then click Save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'integrationType', label: 'Integration Type *' },
+                                          { key: 'applicationName', label: 'Application Name *' },
+                                          { key: 'soapEndpointUrl', label: 'SOAP/App Endpoint URL *' },
+                                          { key: 'supportUrl', label: 'Support URL' },
+                                          { key: 'ownerId', label: 'Owner ID (GUID) *' },
+                                          { key: 'fileId', label: 'File ID (GUID) *' },
+                                          { key: 'webConnectorUsername', label: 'Web Connector Username *' },
+                                          { key: 'pollingIntervalMinutes', label: 'Polling Interval (minutes) *' },
+                                          { key: 'desktopEditionYear', label: 'QB Desktop Edition + Year *' },
+                                          { key: 'countryVersion', label: 'Country Version *' },
+                                          { key: 'companyFilePath', label: 'Target Company File Path (.QBW) *' },
+                                          { key: 'hostMachineName', label: 'Host Machine Name *' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-qbdesktop-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            {field.key === 'integrationType' ? (
+                                              <select
+                                                value={qbDesktopSettings.integrationType}
+                                                onChange={(e) => setQbDesktopSetting(businessCompany.id, 'integrationType', e.target.value)}
+                                                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                              >
+                                                <option value="">Select</option>
+                                                <option value="WEB_CONNECTOR">QuickBooks Web Connector</option>
+                                                <option value="SDK">SDK</option>
+                                              </select>
+                                            ) : (
+                                              <input
+                                                type="text"
+                                                value={(qbDesktopSettings as any)[field.key] || ''}
+                                                onChange={(e) => setQbDesktopSetting(businessCompany.id, field.key as keyof typeof defaultQbDesktopSettings, e.target.value)}
+                                                placeholder={field.label.replace(' *', '')}
+                                                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                              />
+                                            )}
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Permission Scope *</span>
+                                          <select
+                                            value={qbDesktopSettings.permissionScope}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'permissionScope', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="READ_ONLY">Read-only</option>
+                                            <option value="READ_WRITE">Read-write</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Unattended Access Required *</span>
+                                          <select
+                                            value={qbDesktopSettings.unattendedAccessRequired}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'unattendedAccessRequired', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Host Online During Sync *</span>
+                                          <select
+                                            value={qbDesktopSettings.hostOnlineForSync}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'hostOnlineForSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Direction *</span>
+                                          <select
+                                            value={qbDesktopSettings.syncDirection}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'syncDirection', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="QB_TO_PLATFORM">QB to Platform</option>
+                                            <option value="TWO_WAY">Two-way</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={qbDesktopSettings.syncFrequency}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={qbDesktopSettings.syncTime}
+                                            onChange={(e) => setQbDesktopSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addQbDesktopProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveQbDesktopSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Data Domain</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>QB Entity</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {qbDesktopPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-qbdesktop-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.dataDomain}
+                                                    onChange={(e) => updateQbDesktopProgram(businessCompany.id, index, 'dataDomain', e.target.value)}
+                                                    placeholder="Data Domain"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.qbEntity}
+                                                    onChange={(e) => updateQbDesktopProgram(businessCompany.id, index, 'qbEntity', e.target.value)}
+                                                    placeholder="QB Entity"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteQbDesktopProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'DYNAMICS' || businessCompany?.accountingSystem === 'DYNAMICS365' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            Dynamics 365 setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveDynamicsSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Token
+                                          </button>
+                                          <button
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Run Ops Sync Now
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>Dynamics 365 configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter tenant/app values for this company and save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'tenantId', label: 'Tenant ID *' },
+                                          { key: 'environmentUrl', label: 'Environment URL *' },
+                                          { key: 'legalEntity', label: 'Legal Entity' },
+                                          { key: 'region', label: 'Region' },
+                                          { key: 'clientId', label: 'Client ID *' },
+                                          { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                          { key: 'authorityUrl', label: 'Authority URL' },
+                                          { key: 'scope', label: 'Scope / Resource *' },
+                                          { key: 'redirectUri', label: 'Redirect URI' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-dynamics-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            <input
+                                              type={field.type || 'text'}
+                                              value={(dynamicsSettings as any)[field.key] || ''}
+                                              onChange={(e) => setDynamicsSetting(businessCompany.id, field.key as keyof typeof defaultDynamicsSettings, e.target.value)}
+                                              placeholder={field.label.replace(' *', '')}
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={dynamicsSettings.syncFrequency}
+                                            onChange={(e) => setDynamicsSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={dynamicsSettings.syncTime}
+                                            onChange={(e) => setDynamicsSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={dynamicsSettings.incrementalSync}
+                                            onChange={(e) => setDynamicsSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addDynamicsProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveDynamicsSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Entity / Endpoint</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {dynamicsPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-dynamics-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateDynamicsProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.entityOrEndpoint}
+                                                    onChange={(e) => updateDynamicsProgram(businessCompany.id, index, 'entityOrEndpoint', e.target.value)}
+                                                    placeholder="Entity or Endpoint"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteDynamicsProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'ACUMATICA' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            Acumatica setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveAcumaticaSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Token
+                                          </button>
+                                          <button
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Run Ops Sync Now
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>Acumatica Cloud ERP configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter tenant/app endpoint values for this company and save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'tenantId', label: 'Tenant ID *' },
+                                          { key: 'instanceUrl', label: 'Instance URL *' },
+                                          { key: 'companyCode', label: 'Company Code *' },
+                                          { key: 'branch', label: 'Branch' },
+                                          { key: 'clientId', label: 'Client ID *' },
+                                          { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
+                                          { key: 'username', label: 'Username *' },
+                                          { key: 'password', label: 'Password *', type: 'password' },
+                                          { key: 'endpointName', label: 'Endpoint Name *' },
+                                          { key: 'endpointVersion', label: 'Endpoint Version *' },
+                                          { key: 'contractBasedApiPath', label: 'Contract-based API Path' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-acumatica-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            <input
+                                              type={field.type || 'text'}
+                                              value={(acumaticaSettings as any)[field.key] || ''}
+                                              onChange={(e) => setAcumaticaSetting(businessCompany.id, field.key as keyof typeof defaultAcumaticaSettings, e.target.value)}
+                                              placeholder={field.label.replace(' *', '')}
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={acumaticaSettings.syncFrequency}
+                                            onChange={(e) => setAcumaticaSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={acumaticaSettings.syncTime}
+                                            onChange={(e) => setAcumaticaSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={acumaticaSettings.incrementalSync}
+                                            onChange={(e) => setAcumaticaSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addAcumaticaProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveAcumaticaSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Endpoint / Entity</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {acumaticaPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-acumatica-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateAcumaticaProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.endpointOrEntity}
+                                                    onChange={(e) => updateAcumaticaProgram(businessCompany.id, index, 'endpointOrEntity', e.target.value)}
+                                                    placeholder="Endpoint or Entity"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteAcumaticaProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'SAGE_INTACCT' || businessCompany?.accountingSystem === 'SAGE' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            Sage Intacct setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveSageIntacctSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            disabled
+                                            style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}
+                                          >
+                                            Validate Token
+                                          </button>
+                                          <button
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Run Ops Sync Now
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>Sage Intacct configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter sender and company credentials for this company and save.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'senderId', label: 'Sender ID *' },
+                                          { key: 'senderPassword', label: 'Sender Password *', type: 'password' },
+                                          { key: 'companyId', label: 'Company ID *' },
+                                          { key: 'userId', label: 'User ID *' },
+                                          { key: 'userPassword', label: 'User Password *', type: 'password' },
+                                          { key: 'entityId', label: 'Entity ID' },
+                                          { key: 'endpointUrl', label: 'Endpoint URL *' },
+                                          { key: 'dtdVersion', label: 'DTD Version' },
+                                          { key: 'locationId', label: 'Location ID' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-sage-intacct-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            <input
+                                              type={field.type || 'text'}
+                                              value={(sageIntacctSettings as any)[field.key] || ''}
+                                              onChange={(e) => setSageIntacctSetting(businessCompany.id, field.key as keyof typeof defaultSageIntacctSettings, e.target.value)}
+                                              placeholder={field.label.replace(' *', '')}
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={sageIntacctSettings.syncFrequency}
+                                            onChange={(e) => setSageIntacctSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={sageIntacctSettings.syncTime}
+                                            onChange={(e) => setSageIntacctSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={sageIntacctSettings.incrementalSync}
+                                            onChange={(e) => setSageIntacctSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addSageIntacctProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveSageIntacctSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Object</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {sageIntacctPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-sage-intacct-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateSageIntacctProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.objectName}
+                                                    onChange={(e) => updateSageIntacctProgram(businessCompany.id, index, 'objectName', e.target.value)}
+                                                    placeholder="Object Name"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteSageIntacctProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : businessCompany?.accountingSystem === 'ODOO' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                        <div>
+                                          <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            Odoo setup for <strong>{businessCompany.name}</strong>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <button
+                                            onClick={() => saveOdooSettings(businessCompany.id)}
+                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button disabled style={{ padding: '8px 12px', background: '#cbd5e1', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'not-allowed' }}>
+                                            Validate Token
+                                          </button>
+                                          <button
+                                            onClick={() => runPlatformOperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Run Ops Sync Now
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '8px', padding: '8px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '6px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e' }}>Odoo Accounting ERP configuration</div>
+                                        <div style={{ fontSize: '12px', color: '#78350f' }}>
+                                          Enter Odoo URL/database credentials and sync settings for this company.
+                                        </div>
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                        {[
+                                          { key: 'baseUrl', label: 'Base URL *' },
+                                          { key: 'database', label: 'Database *' },
+                                          { key: 'username', label: 'Username *' },
+                                          { key: 'password', label: 'Password *', type: 'password' },
+                                          { key: 'apiKey', label: 'API Key', type: 'password' },
+                                          { key: 'companyId', label: 'Company ID' },
+                                          { key: 'odooVersion', label: 'Odoo Version' },
+                                          { key: 'initialSyncStartDate', label: 'Initial Sync Start Date (YYYY-MM-DD)' },
+                                        ].map((field) => (
+                                          <label key={`${businessCompany.id}-odoo-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                            <span style={{ fontWeight: 600 }}>{field.label}</span>
+                                            <input
+                                              type={field.type || 'text'}
+                                              value={(odooSettings as any)[field.key] || ''}
+                                              onChange={(e) => setOdooSetting(businessCompany.id, field.key as keyof typeof defaultOdooSettings, e.target.value)}
+                                              placeholder={field.label.replace(' *', '')}
+                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Auth Method *</span>
+                                          <select
+                                            value={odooSettings.authMethod}
+                                            onChange={(e) => setOdooSetting(businessCompany.id, 'authMethod', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="PASSWORD">Username/Password</option>
+                                            <option value="API_KEY">API Key</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <select
+                                            value={odooSettings.syncFrequency}
+                                            onChange={(e) => setOdooSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Sync Time (Local)</span>
+                                          <select
+                                            value={odooSettings.syncTime}
+                                            onChange={(e) => setOdooSetting(businessCompany.id, 'syncTime', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            {Array.from({ length: 24 }).map((_, hour) => {
+                                              const hh = String(hour).padStart(2, '0');
+                                              const value = `${hh}:00`;
+                                              return (
+                                                <option key={value} value={value}>
+                                                  {value}
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Incremental Sync *</span>
+                                          <select
+                                            value={odooSettings.incrementalSync}
+                                            onChange={(e) => setOdooSetting(businessCompany.id, 'incrementalSync', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="">Select</option>
+                                            <option value="YES">Yes</option>
+                                            <option value="NO">No</option>
+                                          </select>
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => addOdooProgram(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            + Add
+                                          </button>
+                                          <button
+                                            onClick={() => saveOdooSettings(businessCompany.id)}
+                                            style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                        Programs called by the integration
+                                      </div>
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                          <thead>
+                                            <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Model / Endpoint</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {odooPrograms.map((row, index) => (
+                                              <tr key={`${businessCompany.id}-odoo-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.module}
+                                                    onChange={(e) => updateOdooProgram(businessCompany.id, index, 'module', e.target.value)}
+                                                    placeholder="Module"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.modelOrEndpoint}
+                                                    onChange={(e) => updateOdooProgram(businessCompany.id, index, 'modelOrEndpoint', e.target.value)}
+                                                    placeholder="Model or Endpoint"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <button
+                                                    onClick={() => deleteOdooProgram(businessCompany.id, index)}
+                                                    style={{ padding: '6px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div style={{ marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
+                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
+                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
+                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
+                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
+                                        <div><strong>Type:</strong> Standalone Business</div>
+                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
+                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
+                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
+                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
+                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
+                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
+                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
+                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                      </div>
                                     </div>
                                   </div>
                                 )}
 
                                 {/* Subscription Pricing */}
-                                <div style={{ padding: '8px', background: '#fef3c7', borderRadius: '6px' }}>
-                                  <h4 style={{ fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Subscription Pricing</h4>
+                                <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px' }}>
+                                  <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
                                   {editing ? (
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                                       <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
+                                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Monthly ($)</label>
                                         <input
                                           type="number"
                                           value={editing.monthly}
@@ -1125,11 +5473,11 @@ export default function SiteAdminDashboard(props: any) {
                                             ...editingPricing,
                                             [businessCompany.id]: { ...editing, monthly: parseFloat(e.target.value) || 0 }
                                           })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                                         />
                                       </div>
                                       <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Quarterly ($)</label>
+                                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Quarterly ($)</label>
                                         <input
                                           type="number"
                                           value={editing.quarterly}
@@ -1137,11 +5485,11 @@ export default function SiteAdminDashboard(props: any) {
                                             ...editingPricing,
                                             [businessCompany.id]: { ...editing, quarterly: parseFloat(e.target.value) || 0 }
                                           })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                                         />
                                       </div>
                                       <div>
-                                        <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Annual ($)</label>
+                                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Annual ($)</label>
                                         <input
                                           type="number"
                                           value={editing.annual}
@@ -1149,16 +5497,32 @@ export default function SiteAdminDashboard(props: any) {
                                             ...editingPricing,
                                             [businessCompany.id]: { ...editing, annual: parseFloat(e.target.value) || 0 }
                                           })}
-                                          style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Setup Fee ($)</label>
+                                        <input
+                                          type="number"
+                                          value={editing.setupFee ?? 0}
+                                          onChange={(e) => setEditingPricing({
+                                            ...editingPricing,
+                                            [businessCompany.id]: { ...editing, setupFee: parseFloat(e.target.value) || 0 }
+                                          })}
+                                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
                                         />
                                       </div>
                                       <button
                                         onClick={() => {
                                           if (businessCompany) {
+                                            if (!updateCompanyPricing) {
+                                              alert('Update pricing function is not configured.');
+                                              return;
+                                            }
                                             updateCompanyPricing(businessCompany.id, editing);
                                           }
                                         }}
-                                        style={{ padding: '4px 10px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                        style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                       >
                                         Save
                                       </button>
@@ -1170,17 +5534,18 @@ export default function SiteAdminDashboard(props: any) {
                                             return newState;
                                           });
                                         }}
-                                        style={{ padding: '4px 10px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                        style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                       >
                                         Cancel
                                       </button>
                                     </div>
                                   ) : (
                                     <div>
-                                      <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.5', marginBottom: '6px' }}>
+                                      <div style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.6', marginBottom: '8px' }}>
                                         <div><strong>Monthly:</strong> ${businessCompany?.subscriptionMonthlyPrice?.toFixed(2) ?? '0.00'}</div>
                                         <div><strong>Quarterly:</strong> ${businessCompany?.subscriptionQuarterlyPrice?.toFixed(2) ?? '0.00'}</div>
                                         <div><strong>Annual:</strong> ${businessCompany?.subscriptionAnnualPrice?.toFixed(2) ?? '0.00'}</div>
+                                        <div><strong>Setup Fee:</strong> ${businessCompany?.subscriptionSetupFee?.toFixed(2) ?? '0.00'}</div>
                                       </div>
                                       <button
                                         onClick={() => {
@@ -1189,11 +5554,12 @@ export default function SiteAdminDashboard(props: any) {
                                             [businessCompany.id]: {
                                               monthly: businessCompany?.subscriptionMonthlyPrice ?? 0,
                                               quarterly: businessCompany?.subscriptionQuarterlyPrice ?? 0,
-                                              annual: businessCompany?.subscriptionAnnualPrice ?? 0
+                                              annual: businessCompany?.subscriptionAnnualPrice ?? 0,
+                                              setupFee: businessCompany?.subscriptionSetupFee ?? 0,
                                             }
                                           });
                                         }}
-                                        style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}
+                                        style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                       >
                                         Edit Pricing
                                       </button>
@@ -1473,6 +5839,8 @@ export default function SiteAdminDashboard(props: any) {
                                   <span>${code.quarterlyPrice}/qtr</span>
                                   <span>|</span>
                                   <span>${code.annualPrice}/yr</span>
+                                  <span>|</span>
+                                  <span>${code.setupFee ?? 0}/setup</span>
                                   {code.maxUses && (
                                     <>
                                       <span>|</span>
@@ -1589,7 +5957,7 @@ export default function SiteAdminDashboard(props: any) {
                                 onClick={() => setExpandedAffiliateId(expandedAffiliateId === affiliate.id ? null : affiliate.id)}
                                 style={{ padding: '6px 12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                               >
-                                {expandedAffiliateId === affiliate.id ? '? Hide Details' : '? See Codes & Pricing'}
+                                {expandedAffiliateId === affiliate.id ? 'Hide Details' : 'See Codes & Pricing'}
                               </button>
                             </div>
 
@@ -1703,7 +6071,7 @@ export default function SiteAdminDashboard(props: any) {
                                   </div>
                                   
                                   {/* Row 2: Pricing & Button */}
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
                                     <div>
                                       <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                                         Monthly ($) *
@@ -1744,6 +6112,20 @@ export default function SiteAdminDashboard(props: any) {
                                         style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                                       />
                                     </div>
+                                    <div>
+                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                        Setup Fee ($)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        value={newAffiliateCode.setupFee || ''}
+                                        onChange={(e) => setNewAffiliateCode({...newAffiliateCode, setupFee: e.target.value})}
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        min="0"
+                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                      />
+                                    </div>
                                     <button
                                       onClick={async () => {
                                         if (!newAffiliateCode.code) {
@@ -1774,6 +6156,7 @@ export default function SiteAdminDashboard(props: any) {
                                               monthlyPrice: parseFloat(newAffiliateCode.monthlyPrice),
                                               quarterlyPrice: parseFloat(newAffiliateCode.quarterlyPrice),
                                               annualPrice: parseFloat(newAffiliateCode.annualPrice),
+                                              setupFee: newAffiliateCode.setupFee === '' ? 0 : parseFloat(newAffiliateCode.setupFee),
                                               maxUses: newAffiliateCode.maxUses ? parseInt(newAffiliateCode.maxUses) : null,
                                               expiresAt: newAffiliateCode.expiresAt || null
                                             })
@@ -1792,7 +6175,7 @@ export default function SiteAdminDashboard(props: any) {
                                             setAffiliates(affiliatesData.affiliates);
                                           }
 
-                                          setNewAffiliateCode({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
+                                          setNewAffiliateCode({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: '', setupFee: ''});
                                           alert('Code created successfully!');
                                         } catch (error) {
                                           console.error('Error creating code:', error);
@@ -1864,7 +6247,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 </label>
                                               </div>
                                             </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                                               <div>
                                                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                                                   Monthly ($)
@@ -1913,6 +6296,22 @@ export default function SiteAdminDashboard(props: any) {
                                                     const value = e.target.value;
                                                     const numValue = value === '' ? '' : parseFloat(value);
                                                     setEditingAffiliateCode({...editingAffiliateCode, annualPrice: numValue});
+                                                  }}
+                                                  min="0"
+                                                  style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                                />
+                                              </div>
+                                              <div>
+                                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                                  Setup Fee ($)
+                                                </label>
+                                                <input
+                                                  type="number"
+                                                  value={editingAffiliateCode.setupFee === 0 ? '0' : (editingAffiliateCode.setupFee || '')}
+                                                  onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    const numValue = value === '' ? '' : parseFloat(value);
+                                                    setEditingAffiliateCode({...editingAffiliateCode, setupFee: numValue});
                                                   }}
                                                   min="0"
                                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
@@ -1988,7 +6387,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 {code.expiresAt && <span> - Expires: {new Date(code.expiresAt).toLocaleDateString()}</span>}
                                               </div>
                                               <div style={{ fontSize: '11px', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>
-                                                Pricing: ${code.monthlyPrice}/mo | ${code.quarterlyPrice}/qtr | ${code.annualPrice}/yr
+                                                Pricing: ${code.monthlyPrice}/mo | ${code.quarterlyPrice}/qtr | ${code.annualPrice}/yr | ${code.setupFee ?? 0} setup
                                               </div>
                                             </div>
                                             <div style={{ display: 'flex', gap: '6px' }}>
@@ -2063,7 +6462,7 @@ export default function SiteAdminDashboard(props: any) {
                       🏢 Default Business Pricing
                     </h3>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                           Monthly Price ($)
@@ -2108,6 +6507,20 @@ export default function SiteAdminDashboard(props: any) {
                         />
                         <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
                       </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Setup Fee ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultBusinessSetupFee}
+                          onChange={(e) => setDefaultBusinessSetupFee(parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>One-time fee due at onboarding</div>
+                      </div>
                     </div>
 
                     <button
@@ -2120,16 +6533,19 @@ export default function SiteAdminDashboard(props: any) {
                               businessMonthlyPrice: defaultBusinessMonthlyPrice,
                               businessQuarterlyPrice: defaultBusinessQuarterlyPrice,
                               businessAnnualPrice: defaultBusinessAnnualPrice,
+                              businessSetupFee: defaultBusinessSetupFee,
                               consultantMonthlyPrice: defaultConsultantMonthlyPrice,
                               consultantQuarterlyPrice: defaultConsultantQuarterlyPrice,
-                              consultantAnnualPrice: defaultConsultantAnnualPrice
+                              consultantAnnualPrice: defaultConsultantAnnualPrice,
+                              consultantSetupFee: defaultConsultantSetupFee,
                             })
                           });
                           
                           if (response.ok) {
-                            alert(`? Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
+                            alert(`Business default pricing saved:\nMonthly: $${defaultBusinessMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultBusinessQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultBusinessAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new businesses.`);
                           } else {
-                            alert('❌ Failed to save pricing. Please try again.');
+                            const data = await response.json().catch(() => null);
+                            alert(`❌ Failed to save pricing.\n\n${data?.error || 'Unknown error'}${data?.details ? `\n${data.details}` : ''}`);
                           }
                         } catch (error) {
                           console.error('Error saving pricing:', error);
@@ -2158,7 +6574,7 @@ export default function SiteAdminDashboard(props: any) {
                       👤 Default Consultant Pricing
                     </h3>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '20px' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
                           Monthly Price ($)
@@ -2203,6 +6619,20 @@ export default function SiteAdminDashboard(props: any) {
                         />
                         <div style={{ fontSize: '11px', color: '#10b981', marginTop: '4px', fontWeight: '500' }}>Save 15% annually</div>
                       </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                          Setup Fee ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={defaultConsultantSetupFee}
+                          onChange={(e) => setDefaultConsultantSetupFee(parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                          step="0.01"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                        />
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>One-time fee due at onboarding</div>
+                      </div>
                     </div>
 
                     <button
@@ -2215,16 +6645,19 @@ export default function SiteAdminDashboard(props: any) {
                               businessMonthlyPrice: defaultBusinessMonthlyPrice,
                               businessQuarterlyPrice: defaultBusinessQuarterlyPrice,
                               businessAnnualPrice: defaultBusinessAnnualPrice,
+                              businessSetupFee: defaultBusinessSetupFee,
                               consultantMonthlyPrice: defaultConsultantMonthlyPrice,
                               consultantQuarterlyPrice: defaultConsultantQuarterlyPrice,
-                              consultantAnnualPrice: defaultConsultantAnnualPrice
+                              consultantAnnualPrice: defaultConsultantAnnualPrice,
+                              consultantSetupFee: defaultConsultantSetupFee,
                             })
                           });
                           
                           if (response.ok) {
-                            alert(`? Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
+                            alert(`Consultant default pricing saved:\nMonthly: $${defaultConsultantMonthlyPrice.toFixed(2)}\nQuarterly: $${defaultConsultantQuarterlyPrice.toFixed(2)}\nAnnual: $${defaultConsultantAnnualPrice.toFixed(2)}\n\nThese defaults will be used for all new consultants.`);
                           } else {
-                            alert('❌ Failed to save pricing. Please try again.');
+                            const data = await response.json().catch(() => null);
+                            alert(`❌ Failed to save pricing.\n\n${data?.error || 'Unknown error'}${data?.details ? `\n${data.details}` : ''}`);
                           }
                         } catch (error) {
                           console.error('Error saving pricing:', error);
@@ -2351,7 +6784,7 @@ export default function SiteAdminDashboard(props: any) {
                             setNewSiteAdminEmail('');
                             setNewSiteAdminPassword('');
                             setShowAddSiteAdminForm(false);
-                            alert('? Site administrator added successfully!');
+                            alert('Site administrator added successfully!');
                           } else {
                             const error = await response.json();
                             if (error.error && error.error.includes('Password does not meet requirements')) {
@@ -2433,7 +6866,7 @@ export default function SiteAdminDashboard(props: any) {
 
                                 if (response.ok) {
                                   setSiteAdmins(siteAdmins.filter((a: any) => a.id !== admin.id));
-                                  alert('? Site administrator deleted successfully!');
+                                  alert('Site administrator deleted successfully!');
                                 } else {
                                   alert('❌ Failed to delete site administrator');
                                 }

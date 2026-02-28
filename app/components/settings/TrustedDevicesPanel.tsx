@@ -19,6 +19,7 @@ export default function TrustedDevicesPanel({ userId }: TrustedDevicesPanelProps
   const [devices, setDevices] = useState<TrustedDevice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [trustDurationDays, setTrustDurationDays] = useState<number | null>(null);
   const [isRevoking, setIsRevoking] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function TrustedDevicesPanel({ userId }: TrustedDevicesPanelProps
 
       const data = await response.json();
       setDevices(data.devices || []);
+      setTrustDurationDays(typeof data.trustDurationDays === 'number' ? data.trustDurationDays : null);
     } catch (err: any) {
       setError(err.message || 'Failed to load devices');
     } finally {
@@ -137,7 +139,7 @@ export default function TrustedDevicesPanel({ userId }: TrustedDevicesPanelProps
           Trusted Devices
         </h2>
         <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
-          Manage devices that don't require MFA verification for 30 days. Remove any devices you don't recognize.
+          Manage devices that don't require MFA verification for {trustDurationDays ? `${trustDurationDays} days` : 'the configured trust duration'}. Remove any devices you don't recognize.
         </p>
       </div>
 

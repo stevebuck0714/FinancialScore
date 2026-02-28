@@ -90,7 +90,10 @@ export async function middleware(request: NextRequest) {
       )
     }
     
-    console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining);
+    // Only log rate limit for non-session endpoints (session checks are very frequent)
+    if (!pathname.includes('/api/auth/session')) {
+      console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining);
+    }
   }
   
   // Public API routes that don't require authentication
@@ -98,6 +101,7 @@ export async function middleware(request: NextRequest) {
     '/api/auth/', // All NextAuth routes including callbacks, sessions, etc.
     '/api/check-db',
     '/api/webhooks', // Webhooks have their own authentication
+    '/api/cron', // Vercel Cron endpoints authenticate via headers/secret
   ]
   
   // Check if this is a public route
@@ -113,22 +117,30 @@ export async function middleware(request: NextRequest) {
   }
   
   if (pathname.startsWith('/api') && !isPublicRoute) {
-    // Get the session token - try multiple cookie names for compatibility
-    let token = await getToken({ 
+    // Try default token resolution first, then common cookie-name variants.
+    let token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
-      cookieName: 'next-auth.session-token'
     })
-    
-    // If not found with next-auth name, try authjs name (NextAuth v5)
+
     if (!token) {
-      token = await getToken({ 
-        req: request,
-        secret: process.env.NEXTAUTH_SECRET,
-        cookieName: process.env.NODE_ENV === 'production' 
-          ? '__Secure-authjs.session-token' 
-          : 'authjs.session-token'
-      })
+      const cookieNamesToTry = [
+        'next-auth.session-token',
+        '__Secure-next-auth.session-token',
+        '__Host-next-auth.session-token',
+        'authjs.session-token',
+        '__Secure-authjs.session-token',
+        '__Host-authjs.session-token',
+      ]
+
+      for (const cookieName of cookieNamesToTry) {
+        token = await getToken({
+          req: request,
+          secret: process.env.NEXTAUTH_SECRET,
+          cookieName,
+        })
+        if (token) break
+      }
     }
     
     console.log('🔐 Middleware auth check:', {
@@ -156,6 +168,8 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set('x-user-role', token.role as string || '')
     requestHeaders.set('x-company-id', token.companyId as string || '')
     requestHeaders.set('x-consultant-id', token.consultantId as string || '')
+    const activeCompanyCookie = request.cookies.get('fs_active_company')?.value || ''
+    requestHeaders.set('x-active-company-id', activeCompanyCookie)
     
     // Session fingerprinting for security
     const userAgent = request.headers.get('user-agent') || ''

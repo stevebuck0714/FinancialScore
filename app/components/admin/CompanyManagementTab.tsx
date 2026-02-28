@@ -3,6 +3,8 @@
 import React, { useEffect } from 'react';
 import ProfileTab from '../dashboard/ProfileTab';
 import CompanyDetailsTab from './CompanyDetailsTab';
+import DocumentationTab from '../consultant/DocumentationTab';
+import PaymentsTab from '../dashboard/PaymentsTab';
 import { useFinancialData } from '../../hooks/useFinancialData';
 
 interface CompanyManagementTabProps {
@@ -26,8 +28,11 @@ interface CompanyManagementTabProps {
   setCompanyAddressZip: (zip: string) => void;
   setCompanyAddressCountry: (country: string) => void;
   setCompanyIndustrySector: (sector: string) => void;
+  setAccountingSystem: (system: string) => void;
+  setCompanySizeCategory: (size: string) => void;
+  setIndustrySectorCategory: (sector: string) => void;
   setShowCompanyDetailsModal: (show: boolean) => void;
-  deleteUser: (id: string) => void;
+  deleteUser: (id: string, companyId?: string) => void;
   newCompanyUserName: string;
   setNewCompanyUserName: (name: string) => void;
   newCompanyUserTitle: string;
@@ -38,7 +43,11 @@ interface CompanyManagementTabProps {
   setNewCompanyUserPhone: (phone: string) => void;
   newCompanyUserPassword: string;
   setNewCompanyUserPassword: (password: string) => void;
-  addUser: (companyId: string, userType: string) => void;
+  addUser: (companyId: string, userType: "company" | "assessment") => void;
+  existingCompanyUserName: string;
+  setExistingCompanyUserName: (name: string) => void;
+  existingCompanyUserEmail: string;
+  setExistingCompanyUserEmail: (email: string) => void;
   newAssessmentUserName: string;
   setNewAssessmentUserName: (name: string) => void;
   newAssessmentUserTitle: string;
@@ -47,6 +56,14 @@ interface CompanyManagementTabProps {
   setNewAssessmentUserEmail: (email: string) => void;
   newAssessmentUserPassword: string;
   setNewAssessmentUserPassword: (password: string) => void;
+  existingAssessmentUserName: string;
+  setExistingAssessmentUserName: (name: string) => void;
+  existingAssessmentUserEmail: string;
+  setExistingAssessmentUserEmail: (email: string) => void;
+  grantExistingUserAccess: (
+    companyId: string,
+    userType: "company" | "assessment",
+  ) => void;
   setSelectedCompanyId: (id: string) => void;
   // Profile tab props
   company: any;
@@ -54,6 +71,21 @@ interface CompanyManagementTabProps {
   setCompanyProfiles: (profiles: any[]) => void;
   trendData: any;
   setIsLoading: (loading: boolean) => void;
+  onCompanyUpdated?: (company: any) => void;
+
+  // Payments (moved under Company Management)
+  paymentsSelectedCompany: any;
+  selectedSubscriptionPlan: string | null;
+  setSelectedSubscriptionPlan: (plan: string | null) => void;
+  activeSubscription: any;
+  setActiveSubscription: (sub: any) => void;
+  loadingSubscription: boolean;
+  setShowCheckoutModal: (show: boolean) => void;
+  setShowUpdatePaymentModal: (show: boolean) => void;
+  subscriptionMonthlyPrice: number;
+  subscriptionQuarterlyPrice: number;
+  subscriptionAnnualPrice: number;
+  subscriptionSetupFee: number;
 }
 
 export default function CompanyManagementTab(props: CompanyManagementTabProps) {
@@ -104,6 +136,40 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
         >
           Manage Users
         </button>
+        <button
+          onClick={() => props.setCompanyManagementSubTab('payments')}
+          style={{
+            padding: '10px 20px',
+            background: props.companyManagementSubTab === 'payments' ? '#667eea' : 'transparent',
+            color: props.companyManagementSubTab === 'payments' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: props.companyManagementSubTab === 'payments' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '6px 6px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Payments
+        </button>
+        <button
+          onClick={() => props.setCompanyManagementSubTab('documentation')}
+          style={{
+            padding: '10px 20px',
+            background: props.companyManagementSubTab === 'documentation' ? '#667eea' : 'transparent',
+            color: props.companyManagementSubTab === 'documentation' ? 'white' : '#64748b',
+            border: 'none',
+            borderBottom: props.companyManagementSubTab === 'documentation' ? '3px solid #667eea' : '3px solid transparent',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            borderRadius: '6px 6px 0 0',
+            transition: 'all 0.2s'
+          }}
+        >
+          Documentation
+        </button>
       </div>
       
       {/* Profile Sub-tab */}
@@ -125,6 +191,7 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
               trendData={props.trendData}
               isLoading={props.isLoading}
               setIsLoading={props.setIsLoading}
+              onCompanyUpdated={props.onCompanyUpdated}
               setEditingCompanyId={props.setEditingCompanyId}
               setCompanyAddressStreet={props.setCompanyAddressStreet}
               setCompanyAddressCity={props.setCompanyAddressCity}
@@ -132,12 +199,48 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
               setCompanyAddressZip={props.setCompanyAddressZip}
               setCompanyAddressCountry={props.setCompanyAddressCountry}
               setCompanyIndustrySector={props.setCompanyIndustrySector}
+              setAccountingSystem={props.setAccountingSystem}
+              setCompanySizeCategory={props.setCompanySizeCategory}
+              setIndustrySectorCategory={props.setIndustrySectorCategory}
               setShowCompanyDetailsModal={props.setShowCompanyDetailsModal}
             />
           )}
         </div>
       )}
       
+      {/* Documentation Sub-tab */}
+      {props.companyManagementSubTab === 'documentation' && (
+        <DocumentationTab />
+      )}
+
+      {/* Payments Sub-tab */}
+      {props.companyManagementSubTab === 'payments' && (
+        <>
+          {!props.selectedCompanyId ? (
+            <div className="no-print" style={{ background: '#f8fafc', borderRadius: '8px', padding: '48px 24px', textAlign: 'center', border: '2px dashed #cbd5e1' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and payments.</p>
+            </div>
+          ) : (
+            <PaymentsTab
+              selectedCompany={props.paymentsSelectedCompany}
+              selectedSubscriptionPlan={props.selectedSubscriptionPlan}
+              setSelectedSubscriptionPlan={props.setSelectedSubscriptionPlan}
+              activeSubscription={props.activeSubscription}
+              setActiveSubscription={props.setActiveSubscription}
+              loadingSubscription={props.loadingSubscription}
+              setShowCheckoutModal={props.setShowCheckoutModal}
+              setShowUpdatePaymentModal={props.setShowUpdatePaymentModal}
+              selectedCompanyId={props.selectedCompanyId as any}
+              subscriptionMonthlyPrice={props.subscriptionMonthlyPrice}
+              subscriptionQuarterlyPrice={props.subscriptionQuarterlyPrice}
+              subscriptionAnnualPrice={props.subscriptionAnnualPrice}
+              subscriptionSetupFee={props.subscriptionSetupFee}
+            />
+          )}
+        </>
+      )}
+
       {/* Manage Users Sub-tab */}
       {props.companyManagementSubTab === 'details' && (
         <CompanyDetailsTab
@@ -172,6 +275,10 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           newCompanyUserPassword={props.newCompanyUserPassword}
           setNewCompanyUserPassword={props.setNewCompanyUserPassword}
           addUser={props.addUser}
+          existingCompanyUserName={props.existingCompanyUserName}
+          setExistingCompanyUserName={props.setExistingCompanyUserName}
+          existingCompanyUserEmail={props.existingCompanyUserEmail}
+          setExistingCompanyUserEmail={props.setExistingCompanyUserEmail}
           newAssessmentUserName={props.newAssessmentUserName}
           setNewAssessmentUserName={props.setNewAssessmentUserName}
           newAssessmentUserTitle={props.newAssessmentUserTitle}
@@ -180,9 +287,15 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           setNewAssessmentUserEmail={props.setNewAssessmentUserEmail}
           newAssessmentUserPassword={props.newAssessmentUserPassword}
           setNewAssessmentUserPassword={props.setNewAssessmentUserPassword}
+          existingAssessmentUserName={props.existingAssessmentUserName}
+          setExistingAssessmentUserName={props.setExistingAssessmentUserName}
+          existingAssessmentUserEmail={props.existingAssessmentUserEmail}
+          setExistingAssessmentUserEmail={props.setExistingAssessmentUserEmail}
+          grantExistingUserAccess={props.grantExistingUserAccess}
           setSelectedCompanyId={props.setSelectedCompanyId}
         />
       )}
+
     </div>
   );
 }

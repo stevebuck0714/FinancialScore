@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { createModelText } from '@/lib/openai-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,25 +21,28 @@ export async function GET(request: NextRequest) {
 
     console.log('Making test API call to OpenAI...');
     
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const resp = await createModelText({
+      openai,
+      model: process.env.OPENAI_MODEL || 'gpt-4o',
       messages: [
         {
           role: 'user',
           content: 'Say "Hello, API is working!" in JSON format like: {"message": "your message"}',
         },
       ],
-      max_tokens: 50,
+      maxTokens: 80,
+      temperature: 0,
     });
 
-    const response = completion.choices[0]?.message?.content || 'No response';
+    const response = resp.text || 'No response';
     console.log('OpenAI response:', response);
 
     return NextResponse.json({ 
       success: true,
       apiKeyConfigured: true,
       response: response,
-      model: completion.model
+      model: process.env.OPENAI_MODEL || 'gpt-4o',
+      api: resp.api,
     });
   } catch (error: any) {
     console.error('OpenAI test error:', {

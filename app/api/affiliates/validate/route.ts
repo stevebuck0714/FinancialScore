@@ -72,6 +72,7 @@ export async function POST(request: NextRequest) {
       monthlyPrice: code.monthlyPrice,
       quarterlyPrice: code.quarterlyPrice,
       annualPrice: code.annualPrice,
+      setupFee: code.setupFee ?? 0,
       affiliateName: affiliate.name
     });
   } catch (error) {

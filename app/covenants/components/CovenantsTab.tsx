@@ -24,6 +24,23 @@ interface Loan {
 // Feature flag for covenants module
 const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' || true;
 
+const DEFAULT_COVENANT_THRESHOLDS: Record<string, number> = {
+  '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
+  '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
+};
+
+const DEFAULT_COVENANT_APPLICABILITY: Record<string, boolean> = {
+  '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
+  '10': true, '11': true, '12': true, '13': true, '14': true, '15': true, '16': true, '17': true, '18': true,
+  '19': true, '20': true, '21': true, '22': true, '23': true, '24': false, '25': false, '26': false
+};
+
+const DEFAULT_COVENANT_ALERT_LEVELS: Record<string, 'none' | 'warning' | 'critical'> = {
+  '1': 'warning', '2': 'warning', '3': 'warning', '4': 'warning', '5': 'warning', '6': 'warning', '7': 'warning', '8': 'warning', '9': 'warning',
+  '10': 'warning', '11': 'warning', '12': 'warning', '13': 'warning', '14': 'warning', '15': 'warning', '16': 'warning', '17': 'warning', '18': 'warning',
+  '19': 'warning', '20': 'warning', '21': 'warning', '22': 'warning', '23': 'warning', '24': 'none', '25': 'none', '26': 'none'
+};
+
 interface CovenantsTabProps {
   selectedCompanyId: string;
   currentUser: User | null;
@@ -31,45 +48,15 @@ interface CovenantsTabProps {
   companyName: string;
 }
 
-// Mock alerts for demonstration
-const mockAlerts = [
-  {
-    id: '1',
-    title: 'Debt-to-Equity Ratio Breach',
-    description: 'Current ratio of 1.8 exceeds the maximum threshold of 2.0',
-    severity: 'critical',
-    status: 'active',
-    covenantName: 'Debt-to-Equity Ratio',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2 hours ago
-  },
-  {
-    id: '2',
-    title: 'Minimum Liquidity Warning',
-    description: 'Cash balance of $450,000 is approaching the minimum requirement of $250,000',
-    severity: 'warning',
-    status: 'active',
-    covenantName: 'Minimum Liquidity',
-    timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) // 1 day ago
-  },
-  {
-    id: '3',
-    title: 'Interest Coverage Ratio Alert',
-    description: 'Coverage ratio dropped to 3.2, very close to the minimum requirement of 3.0',
-    severity: 'warning',
-    status: 'active',
-    covenantName: 'Interest Coverage Ratio',
-    timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
-  },
-  {
-    id: '4',
-    title: 'Capex Limit Exceeded',
-    description: 'Annual capital expenditures have reached $1.2M, exceeding the $1M limit',
-    severity: 'critical',
-    status: 'resolved',
-    covenantName: 'Capex Limitation',
-    timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // 1 week ago
-  }
-];
+type CovenantAlert = {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'critical' | 'warning';
+  status: 'active' | 'resolved';
+  covenantName: string;
+  timestamp: string;
+};
 
 // Mock data for demonstration - All Comprehensive Covenants
 const mockCovenantData = [
@@ -420,6 +407,64 @@ const getStatusIcon = (status: string) => {
   }
 };
 
+const normalizeCovenantType = (value?: string | null) => {
+  const normalized = String(value || '').toUpperCase();
+  if (normalized === 'MINIMUM') return 'minimum';
+  if (normalized === 'MAXIMUM') return 'maximum';
+  if (normalized === 'RANGE') return 'range';
+  if (normalized === 'QUALITATIVE') return 'qualitative';
+  if (normalized === 'FINANCIAL') return 'financial';
+  if (normalized === 'AFFIRMATIVE') return 'affirmative';
+  if (normalized === 'NEGATIVE') return 'negative';
+  if (normalized === 'INCURRENCE') return 'incurrence';
+  return 'minimum';
+};
+
+const normalizeCovenantStatus = (value?: string | null, applicable = true) => {
+  if (!applicable) return 'compliant';
+  const normalized = String(value || '').toUpperCase();
+  if (normalized === 'BREACHED' || normalized === 'BREACH' || normalized === 'CRITICAL') return 'breached';
+  if (normalized === 'WARNING') return 'warning';
+  return 'compliant';
+};
+
+const mapServerCovenant = (covenant: any) => {
+  const type = normalizeCovenantType(covenant?.covenantType);
+  const applicable = covenant?.isApplicable ?? covenant?.applicable ?? true;
+  const status = normalizeCovenantStatus(covenant?.status ?? covenant?.alertLevel, applicable);
+  const category =
+    type === 'affirmative'
+      ? 'Affirmative'
+      : type === 'negative'
+        ? 'Negative'
+        : type === 'incurrence'
+          ? 'Incurrence'
+          : 'Financial';
+  const subCategory =
+    type === 'minimum'
+      ? 'Minimum'
+      : type === 'maximum'
+        ? 'Maximum'
+        : type === 'range'
+          ? 'Range'
+          : type === 'financial'
+            ? 'Financial'
+            : 'Qualitative';
+
+  return {
+    id: String(covenant.id),
+    name: covenant.covenantName || 'Covenant',
+    category,
+    subCategory,
+    currentValue: covenant.currentValue ?? null,
+    threshold: covenant.threshold ?? null,
+    status,
+    description: covenant.description || covenant.notes || `${covenant.loan?.loanName || 'Loan'}${covenant.loan?.lenderName ? ` • ${covenant.loan?.lenderName}` : ''}`,
+    covenantType: type,
+    applicable,
+  };
+};
+
 // Calculate real financial ratios from monthly data
 // Generate historical data for a covenant (36 months) - uses real data when available
 const generateHistoricalData = (covenant: any, covenantThresholds: Record<string, number>) => {
@@ -511,6 +556,9 @@ export default function CovenantsTab({
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [selectedCovenant, setSelectedCovenant] = useState<any>(null);
+  const [serverCovenants, setServerCovenants] = useState<any[] | null>(null);
+  const [serverCovenantsLoading, setServerCovenantsLoading] = useState(false);
+  const [serverCovenantsError, setServerCovenantsError] = useState<string | null>(null);
 
   // Fetch loans for this company
   useEffect(() => {
@@ -533,10 +581,72 @@ export default function CovenantsTab({
         console.error('Error fetching loans:', err);
       }
     };
+    const fetchAlerts = async () => {
+      try {
+        setAlertsLoading(true);
+        setAlertsError(null);
+        const response = await fetch(`/api/covenants/alerts?companyId=${selectedCompanyId}`);
+        if (!response.ok) throw new Error('Failed to load covenant alerts');
+        const data = await response.json();
+        setAlerts(data.alerts || []);
+      } catch (err: any) {
+        setAlertsError(err.message || 'Failed to load covenant alerts');
+        setAlerts([]);
+      } finally {
+        setAlertsLoading(false);
+      }
+    };
     if (selectedCompanyId) {
       fetchLoans();
+      fetchAlerts();
     }
   }, [selectedCompanyId]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCovenants = async () => {
+      if (!selectedCompanyId) return;
+      setServerCovenantsLoading(true);
+      setServerCovenantsError(null);
+      try {
+        const loanParam = selectedLoan?.id ? `&loanId=${selectedLoan.id}` : '';
+        const response = await fetch(`/api/covenants?companyId=${selectedCompanyId}${loanParam}`);
+        if (!response.ok) throw new Error('Failed to load covenant data');
+        const data = await response.json();
+        const mapped = Array.isArray(data.covenants) ? data.covenants.map(mapServerCovenant) : [];
+        if (isMounted) {
+          setServerCovenants(mapped);
+          const thresholds: Record<string, number> = {};
+          const applicability: Record<string, boolean> = {};
+          mapped.forEach((covenant: any) => {
+            if (typeof covenant.threshold === 'number') thresholds[covenant.id] = covenant.threshold;
+            applicability[covenant.id] = covenant.applicable !== false;
+          });
+          if (Object.keys(thresholds).length) {
+            setCovenantThresholds((prev) => ({ ...prev, ...thresholds }));
+          }
+          if (Object.keys(applicability).length) {
+            setCovenantApplicability((prev) => ({ ...prev, ...applicability }));
+          }
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          setServerCovenantsError(err.message || 'Failed to load covenant data');
+          setServerCovenants(null);
+        }
+      } finally {
+        if (isMounted) setServerCovenantsLoading(false);
+      }
+    };
+
+    if (selectedCompanyId) {
+      fetchCovenants();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedCompanyId, selectedLoan?.id]);
 
   // Handler for when a loan is selected from LoansManagement
   const handleLoanSelected = (loan: Loan) => {
@@ -544,111 +654,46 @@ export default function CovenantsTab({
     setActiveTab('overview');
   };
   const [alertFilter, setAlertFilter] = useState<'all' | 'critical' | 'warning'>('all');
-  const [alerts, setAlerts] = useState(mockAlerts);
+  const [alerts, setAlerts] = useState<CovenantAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
   const [configCategory, setConfigCategory] = useState<'all' | 'financial' | 'maintenance' | 'negative' | 'affirmative' | 'incurrence'>('all');
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
 
-  const [loanName, setLoanName] = useState<string>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.loanName || '';
-        } catch (e) {
-          console.warn('Failed to load saved loan name');
-        }
-      }
-    }
-    return '';
-  });
+  const [loanName, setLoanName] = useState<string>('');
 
-  const [loanAccountNumber, setLoanAccountNumber] = useState<string>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.loanAccountNumber || '';
-        } catch (e) {
-          console.warn('Failed to load saved loan account number');
-        }
-      }
-    }
-    return '';
-  });
+  const [loanAccountNumber, setLoanAccountNumber] = useState<string>('');
 
-  const [covenantThresholds, setCovenantThresholds] = useState<Record<string, number>>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.covenantThresholds || {
-            '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
-            '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
-          };
-        } catch (e) {
-          console.warn('Failed to load saved covenant thresholds');
-        }
-      }
-    }
-    return {
-      '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
-      '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
-    };
-  });
+  const [covenantThresholds, setCovenantThresholds] = useState<Record<string, number>>({});
 
-  const [covenantApplicability, setCovenantApplicability] = useState<Record<string, boolean>>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.covenantApplicability || {
-            '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
-            '10': true, '11': true, '12': true, '13': true, '14': true, '15': true, '16': true, '17': true, '18': true,
-            '19': true, '20': true, '21': true, '22': true, '23': true, '24': false, '25': false, '26': false
-          };
-        } catch (e) {
-          console.warn('Failed to load saved covenant applicability');
-        }
+  const [covenantApplicability, setCovenantApplicability] = useState<Record<string, boolean>>(DEFAULT_COVENANT_APPLICABILITY);
+  const [covenantAlertLevels, setCovenantAlertLevels] = useState<Record<string, 'none' | 'warning' | 'critical'>>(DEFAULT_COVENANT_ALERT_LEVELS);
+
+  useEffect(() => {
+    if (!selectedLoan?.id || typeof window === 'undefined') return;
+    const storageKey = `covenantConfiguration:${selectedLoan.id}`;
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        setLoanName(config.loanName || selectedLoan.loanName || '');
+        setLoanAccountNumber(config.loanAccountNumber || selectedLoan.loanIdNumber || '');
+        setCovenantThresholds(config.covenantThresholds || {});
+        setCovenantApplicability(config.covenantApplicability || DEFAULT_COVENANT_APPLICABILITY);
+        setCovenantAlertLevels(config.covenantAlertLevels || DEFAULT_COVENANT_ALERT_LEVELS);
+        return;
+      } catch (e) {
+        console.warn('Failed to load saved covenant configuration for loan');
       }
     }
-    return {
-      '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
-      '10': true, '11': true, '12': true, '13': true, '14': true, '15': true, '16': true, '17': true, '18': true,
-      '19': true, '20': true, '21': true, '22': true, '23': true, '24': false, '25': false, '26': false
-    };
-  });
-  const [covenantAlertLevels, setCovenantAlertLevels] = useState<Record<string, 'none' | 'warning' | 'critical'>>(() => {
-    // Load from localStorage if available
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('covenantConfiguration');
-      if (saved) {
-        try {
-          const config = JSON.parse(saved);
-          return config.covenantAlertLevels || {
-            '1': 'warning', '2': 'warning', '3': 'warning', '4': 'warning', '5': 'warning', '6': 'warning', '7': 'warning', '8': 'warning', '9': 'warning',
-            '10': 'warning', '11': 'warning', '12': 'warning', '13': 'warning', '14': 'warning', '15': 'warning', '16': 'warning', '17': 'warning', '18': 'warning',
-            '19': 'warning', '20': 'warning', '21': 'warning', '22': 'warning', '23': 'warning', '24': 'none', '25': 'none', '26': 'none'
-          };
-        } catch (e) {
-          console.warn('Failed to load saved covenant alert levels');
-        }
-      }
-    }
-    return {
-      '1': 'warning', '2': 'warning', '3': 'warning', '4': 'warning', '5': 'warning', '6': 'warning', '7': 'warning', '8': 'warning', '9': 'warning',
-      '10': 'warning', '11': 'warning', '12': 'warning', '13': 'warning', '14': 'warning', '15': 'warning', '16': 'warning', '17': 'warning', '18': 'warning',
-      '19': 'warning', '20': 'warning', '21': 'warning', '22': 'warning', '23': 'warning', '24': 'none', '25': 'none', '26': 'none'
-    };
-  });
+
+    setLoanName(selectedLoan.loanName || '');
+    setLoanAccountNumber(selectedLoan.loanIdNumber || '');
+    setCovenantThresholds({});
+    setCovenantApplicability(DEFAULT_COVENANT_APPLICABILITY);
+    setCovenantAlertLevels(DEFAULT_COVENANT_ALERT_LEVELS);
+  }, [selectedLoan?.id, selectedLoan?.loanName, selectedLoan?.loanIdNumber]);
 
   // Get latest month data (November 2025)
   const latestData = React.useMemo(() => {
@@ -767,6 +812,12 @@ export default function CovenantsTab({
 
   // Generate dynamic covenant data based on real financials
   const covenantData = React.useMemo(() => {
+    if (serverCovenants !== null) {
+      if (serverCovenants.length > 0) {
+        return serverCovenants;
+      }
+      console.warn('⚠️ No server covenants returned, using fallback data');
+    }
     console.log('🔄 CovenantData useMemo - financialRatios:', financialRatios);
     if (!financialRatios) {
       console.log('❌ No financialRatios, using mock data');
@@ -844,13 +895,15 @@ export default function CovenantsTab({
         status
       };
     });
-  }, [financialRatios, covenantThresholds]);
+  }, [serverCovenants, financialRatios, covenantThresholds]);
 
   console.log('🏢 CovenantsTab RENDER - financialRatios exists:', !!financialRatios, 'covenantData length:', covenantData?.length);
 
   // Initialize selectedCovenant with first available covenant that has data
   React.useEffect(() => {
-    if (covenantData.length > 0 && !selectedCovenant) {
+    if (!covenantData.length) return;
+    const hasSelected = selectedCovenant && covenantData.some((c) => c.id === selectedCovenant.id);
+    if (!hasSelected) {
       const firstCovenant = covenantData.find(c => c.currentValue !== null && (covenantApplicability[c.id] ?? c.applicable));
       if (firstCovenant) {
         setSelectedCovenant(firstCovenant);
@@ -907,11 +960,94 @@ export default function CovenantsTab({
     setSaveMessage('💾 Saving configuration...');
 
     try {
-      // Simulate API call to save configuration
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (!serverCovenants || serverCovenants.length === 0) {
+        if (!selectedLoan) {
+          setSaveMessage('⚠️ Select a loan before saving covenants.');
+          return;
+        }
+        const covenantsToCreate = covenantData.map((covenant: any) => {
+          const threshold = covenantThresholds[covenant.id] ?? covenant.threshold ?? null;
+          let warningThreshold: number | null = null;
+          let breachThreshold: number | null = null;
+          if (typeof threshold === 'number') {
+            breachThreshold = threshold;
+            warningThreshold = covenant.covenantType === 'maximum' ? threshold * 0.9 : threshold * 1.1;
+          }
+          return {
+            covenantName: covenant.name,
+            covenantType: covenant.covenantType?.toUpperCase?.() || 'MINIMUM',
+            threshold,
+            warningThreshold,
+            breachThreshold,
+            currentValue: covenant.currentValue ?? null,
+            status: covenant.status?.toUpperCase?.() || 'COMPLIANT',
+            isApplicable: covenantApplicability[covenant.id] ?? covenant.applicable,
+            description: covenant.description,
+          };
+        });
+
+        const createResponse = await fetch('/api/covenants/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            loanId: selectedLoan.id,
+            covenants: covenantsToCreate,
+          }),
+        });
+
+        const createPayload = await createResponse.json().catch(() => null);
+        if (!createResponse.ok) {
+          throw new Error(createPayload?.error || 'Failed to create covenants');
+        }
+        const failed = Array.isArray(createPayload?.created)
+          ? createPayload.created.filter((item: any) => !item.ok)
+          : [];
+        if (failed.length > 0) {
+          const errorDetail = failed.map((item: any) => item.error || 'unknown error').join('; ');
+          throw new Error(`Failed to create ${failed.length} covenant(s): ${errorDetail}`);
+        }
+
+        setSaveMessage('✅ Covenants created. Saving configuration...');
+      }
+
+      const updates = (serverCovenants || covenantData).map((covenant) => {
+        const threshold = covenantThresholds[covenant.id] ?? covenant.threshold ?? null;
+        const covenantType = covenant.covenantType;
+        let warningThreshold: number | null = null;
+        let breachThreshold: number | null = null;
+
+        if (typeof threshold === 'number') {
+          breachThreshold = threshold;
+          if (covenantType === 'maximum') {
+            warningThreshold = threshold * 0.9;
+          } else {
+            warningThreshold = threshold * 1.1;
+          }
+        }
+
+        return {
+          id: covenant.id,
+          threshold,
+          warningThreshold,
+          breachThreshold,
+          isApplicable: covenantApplicability[covenant.id] ?? covenant.applicable,
+        };
+      });
+
+      const response = await fetch('/api/covenants/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId, updates }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save covenant configuration');
+      }
 
       // Save current configuration to localStorage for persistence
       const configuration = {
+        loanId: selectedLoan?.id || null,
         loanName,
         loanAccountNumber,
         covenantThresholds,
@@ -920,9 +1056,10 @@ export default function CovenantsTab({
         savedAt: new Date().toISOString()
       };
 
-      localStorage.setItem('covenantConfiguration', JSON.stringify(configuration));
+      if (selectedLoan?.id) {
+        localStorage.setItem(`covenantConfiguration:${selectedLoan.id}`, JSON.stringify(configuration));
+      }
 
-      // In a real implementation, this would save to a database
       setSaveMessage('✅ Configuration saved successfully!');
 
       // Clear message after 4 seconds
@@ -938,23 +1075,13 @@ export default function CovenantsTab({
   // Function to reset to defaults
   const resetToDefaults = () => {
     // Reset to default values
-    setCovenantThresholds({
-      '1': 4.0, '2': 3.5, '3': 2.0, '4': 3.0, '5': 1.5, '6': 1.5, '7': 1.0, '8': 250000, '9': 2000000,
-      '10': 4.0, '11': 1.5, '12': 4000000, '16': 1000000, '24': 3.5, '25': 3.0
-    });
-    setCovenantApplicability({
-      '1': true, '2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
-      '10': true, '11': true, '12': true, '13': true, '14': true, '15': true, '16': true, '17': true, '18': true,
-      '19': true, '20': true, '21': true, '22': true, '23': true, '24': false, '25': false, '26': false
-    });
-    setCovenantAlertLevels({
-      '1': 'warning', '2': 'warning', '3': 'warning', '4': 'warning', '5': 'warning', '6': 'warning', '7': 'warning', '8': 'warning', '9': 'warning',
-      '10': 'warning', '11': 'warning', '12': 'warning', '13': 'warning', '14': 'warning', '15': 'warning', '16': 'warning', '17': 'warning', '18': 'warning',
-      '19': 'warning', '20': 'warning', '21': 'warning', '22': 'warning', '23': 'warning', '24': 'none', '25': 'none', '26': 'none'
-    });
+    setCovenantThresholds(DEFAULT_COVENANT_THRESHOLDS);
+    setCovenantApplicability(DEFAULT_COVENANT_APPLICABILITY);
+    setCovenantAlertLevels(DEFAULT_COVENANT_ALERT_LEVELS);
 
-    // Clear localStorage
-    localStorage.removeItem('covenantConfiguration');
+    if (selectedLoan?.id) {
+      localStorage.removeItem(`covenantConfiguration:${selectedLoan.id}`);
+    }
 
     setSaveMessage('🔄 Configuration reset to defaults.');
     setTimeout(() => setSaveMessage(''), 3000);
@@ -1021,6 +1148,19 @@ export default function CovenantsTab({
           </div>
         )}
       </div>
+
+      {(serverCovenantsLoading || serverCovenantsError) && (
+        <div style={{ marginBottom: '12px' }}>
+          {serverCovenantsLoading && (
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Loading covenant data…</div>
+          )}
+          {serverCovenantsError && (
+            <div style={{ fontSize: '12px', color: '#b91c1c' }}>
+              {serverCovenantsError}. Showing fallback projections.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: '16px' }}>
@@ -1393,7 +1533,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#EF4444' }}>
-                  {mockAlerts.filter(a => a.severity === 'critical' && a.status === 'active').length}
+                  {alerts.filter(a => a.severity === 'critical' && a.status === 'active').length}
                 </div>
               </div>
             </div>
@@ -1408,7 +1548,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#F59E0B' }}>
-                  {mockAlerts.filter(a => a.severity === 'warning' && a.status === 'active').length}
+                  {alerts.filter(a => a.severity === 'warning' && a.status === 'active').length}
                 </div>
               </div>
             </div>
@@ -1423,7 +1563,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#10B981' }}>
-                  {mockAlerts.filter(a => a.status === 'resolved').length}
+                  {alerts.filter(a => a.status === 'resolved').length}
                 </div>
               </div>
             </div>
@@ -1482,7 +1622,7 @@ export default function CovenantsTab({
             </div>
 
             <div style={{ spaceY: '12px' }}>
-              {mockAlerts
+              {alerts
                 .filter(alert => alertFilter === 'all' || alert.severity === alertFilter)
                 .filter(alert => alert.status === 'active')
                 .map((alert) => (
@@ -1510,7 +1650,7 @@ export default function CovenantsTab({
                         {alert.description}
                       </div>
                       <div style={{ fontSize: '11px', color: '#9ca3af' }}>
-                        {alert.timestamp.toLocaleDateString()} • {alert.covenantName}
+                        {new Date(alert.timestamp).toLocaleDateString()} • {alert.covenantName}
                       </div>
                     </div>
                   </div>
@@ -1544,12 +1684,14 @@ export default function CovenantsTab({
                 </div>
               ))}
 
-              {mockAlerts.filter(alert => alertFilter === 'all' || alert.severity === alertFilter).filter(alert => alert.status === 'active').length === 0 && (
+              {alerts.filter(alert => alertFilter === 'all' || alert.severity === alertFilter).filter(alert => alert.status === 'active').length === 0 && (
                 <div style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
                   <CheckCircle size={32} style={{ margin: '0 auto 12px', color: '#10b981' }} />
-                  <div style={{ fontSize: '14px' }}>No active alerts</div>
+                  <div style={{ fontSize: '14px' }}>
+                    {alertsLoading ? 'Loading alerts...' : alertsError ? 'Failed to load alerts' : 'No active alerts'}
+                  </div>
                   <div style={{ fontSize: '12px', marginTop: '6px' }}>
-                    All covenants are within acceptable ranges
+                    {alertsLoading || alertsError ? 'Please try again or refresh.' : 'All covenants are within acceptable ranges'}
                   </div>
                 </div>
               )}

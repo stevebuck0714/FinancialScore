@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
+import { auditCompanyOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 
 const prisma = new PrismaClient();
 
@@ -79,128 +81,103 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const context = await requireAuth();
+    const normalizedRole = String(context.role || '').toUpperCase();
     const { id: companyId } = await params;
 
     if (!companyId) {
       return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
     }
 
-    console.log(`Processing delete for company ${companyId} in ${process.env.NODE_ENV} environment (VERCEL_ENV: ${process.env.VERCEL_ENV})`);
-
-    // PRODUCTION: Actually delete companies from database (same as staging)
-    console.log('Production: Actually deleting company from database');
-    // Continue with deletion logic below
-
-    // STAGING/PREVIEW/DEV: Actually delete the company from database
-    console.log(`🔥 STAGING/DEV: Actually deleting company ${companyId} from database`);
-    console.log(`Environment check: NODE_ENV = ${process.env.NODE_ENV}, VERCEL_ENV = ${process.env.VERCEL_ENV}`);
-
-    try {
-      console.log(`🗑️ Starting deletion cascade for company ${companyId}`);
-
-      // Check if company exists before deletion
-      const companyExists = await prisma.company.findUnique({
-        where: { id: companyId },
-        select: { id: true, name: true, consultantId: true }
-      });
-
-      if (!companyExists) {
-        console.log(`❌ Company ${companyId} does not exist in database`);
-        return NextResponse.json({
-          success: true,
-          message: 'Company was already deleted.',
-          deleted: true
-        });
-      }
-
-      console.log(`📋 Company exists: ${companyExists.name} (consultantId: ${companyExists.consultantId})`);
-
-      // Delete related records first to avoid foreign key constraints
-      console.log(`🗑️ Deleting PaymentTransaction records...`);
-      const paymentDeleted = await prisma.$executeRaw`DELETE FROM "PaymentTransaction" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${paymentDeleted} PaymentTransaction records`);
-
-      console.log(`🗑️ Deleting RevenueRecord records...`);
-      const revenueDeleted = await prisma.$executeRaw`DELETE FROM "RevenueRecord" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${revenueDeleted} RevenueRecord records`);
-
-      console.log(`🗑️ Deleting SubscriptionEvent records...`);
-      const subscriptionEventDeleted = await prisma.$executeRaw`DELETE FROM "SubscriptionEvent" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${subscriptionEventDeleted} SubscriptionEvent records`);
-
-      console.log(`🗑️ Deleting Subscription records...`);
-      const subscriptionDeleted = await prisma.$executeRaw`DELETE FROM "Subscription" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${subscriptionDeleted} Subscription records`);
-
-      console.log(`🗑️ Deleting CompanyProfile records...`);
-      const profileDeleted = await prisma.$executeRaw`DELETE FROM "CompanyProfile" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${profileDeleted} CompanyProfile records`);
-
-      console.log(`🗑️ Deleting FinancialRecord records...`);
-      const financialDeleted = await prisma.$executeRaw`DELETE FROM "FinancialRecord" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${financialDeleted} FinancialRecord records`);
-
-      console.log(`🗑️ Deleting AssessmentRecord records...`);
-      const assessmentDeleted = await prisma.$executeRaw`DELETE FROM "AssessmentRecord" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${assessmentDeleted} AssessmentRecord records`);
-
-      console.log(`🗑️ Deleting User records...`);
-      const userDeleted = await prisma.$executeRaw`DELETE FROM "User" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${userDeleted} User records`);
-
-      console.log(`🗑️ Deleting AccountingConnection records...`);
-      const accountingDeleted = await prisma.$executeRaw`DELETE FROM "AccountingConnection" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${accountingDeleted} AccountingConnection records`);
-
-      console.log(`🗑️ Deleting AccountMapping records...`);
-      const mappingDeleted = await prisma.$executeRaw`DELETE FROM "AccountMapping" WHERE "companyId" = ${companyId}`;
-      console.log(`✅ Deleted ${mappingDeleted} AccountMapping records`);
-
-      // Finally delete the company
-      console.log(`🗑️ Deleting the Company record...`);
-      const companyDeleted = await prisma.$executeRaw`DELETE FROM "Company" WHERE "id" = ${companyId}`;
-      console.log(`✅ Deleted ${companyDeleted} Company record`);
-
-      if (companyDeleted === 0) {
-        console.log(`❌ Company ${companyId} was not found for deletion (might have been deleted already)`);
-      } else {
-        console.log(`🎉 Successfully deleted company ${companyId} from database`);
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Company has been permanently deleted.',
-        deleted: true,
-        recordsDeleted: {
-          paymentTransactions: paymentDeleted,
-          revenueRecords: revenueDeleted,
-          subscriptionEvents: subscriptionEventDeleted,
-          subscriptions: subscriptionDeleted,
-          companyProfiles: profileDeleted,
-          financialRecords: financialDeleted,
-          assessmentRecords: assessmentDeleted,
-          users: userDeleted,
-          accountingConnections: accountingDeleted,
-          accountMappings: mappingDeleted,
-          companies: companyDeleted
-        }
-      });
-    } catch (dbError: any) {
-      console.error('❌ Database error during delete:', dbError);
-      console.error('Stack trace:', dbError.stack);
-      throw dbError;
+    const hasDeleteConfirmation = request.headers.get('x-confirm-delete') === 'true';
+    if (!hasDeleteConfirmation) {
+      await auditForbiddenAccess('Company', companyId, 'DELETE_MISSING_CONFIRMATION');
+      return NextResponse.json(
+        { success: false, error: 'Delete confirmation header is required.' },
+        { status: 400 }
+      );
     }
 
-  } catch (error: any) {
-    console.error('Error in delete operation:', error);
+    if (normalizedRole !== 'SITEADMIN' && normalizedRole !== 'CONSULTANT') {
+      await auditForbiddenAccess('Company', companyId, 'DELETE');
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only consultants and site admins can remove companies.' },
+        { status: 403 }
+      );
+    }
 
-    // Fallback: always return success for UI compatibility
+    const hasAccess = await validateCompanyAccess(companyId);
+    if (!hasAccess) {
+      await auditForbiddenAccess('Company', companyId, 'DELETE');
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Access to this company denied' },
+        { status: 403 }
+      );
+    }
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, name: true },
+    });
+
+    if (!company) {
+      await auditCompanyOperation('COMPANY_DELETED', companyId, {
+        mode: 'hard-delete',
+        result: 'already-removed',
+      });
+      return NextResponse.json({
+        success: true,
+        hardDelete: true,
+        message: 'Company was already removed.',
+      });
+    }
+
+    // Hard delete all data scoped to this company.
+    // Some models do not have FK cascades, so we explicitly clean them.
+    await prisma.$transaction(async (tx) => {
+      await tx.paymentTransaction.deleteMany({ where: { companyId } });
+      await tx.customerSalesSnapshot.deleteMany({ where: { companyId } });
+      await tx.aRAgingSnapshot.deleteMany({ where: { companyId } });
+      await tx.aPAgingSnapshot.deleteMany({ where: { companyId } });
+      await tx.productSalesSnapshot.deleteMany({ where: { companyId } });
+      await tx.inventorySnapshot.deleteMany({ where: { companyId } });
+      await tx.cashSnapshot.deleteMany({ where: { companyId } });
+
+      // Keep this explicit even when some tables have FK cascade.
+      await tx.subscriptionEvent.deleteMany({ where: { companyId } });
+      await tx.subscription.deleteMany({ where: { companyId } });
+      await tx.revenueRecord.deleteMany({ where: { companyId } });
+      await tx.companyProfile.deleteMany({ where: { companyId } });
+      await tx.financialRecord.deleteMany({ where: { companyId } });
+      await tx.assessmentRecord.deleteMany({ where: { companyId } });
+      await tx.user.deleteMany({ where: { companyId } });
+      await tx.accountingConnection.deleteMany({ where: { companyId } });
+      await tx.accountMapping.deleteMany({ where: { companyId } });
+      await tx.apiSyncLog.deleteMany({ where: { companyId } });
+      await tx.companyDocumentChunk.deleteMany({ where: { companyId } });
+      await tx.companyDocument.deleteMany({ where: { companyId } });
+      await tx.loan.deleteMany({ where: { companyId } });
+
+      await tx.company.delete({ where: { id: companyId } });
+    });
+
+    console.log(`Hard-deleted company ${companyId} requested by ${context.email}`);
+    await auditCompanyOperation('COMPANY_DELETED', companyId, {
+      mode: 'hard-delete',
+      deletedBy: context.email,
+      deletedByRole: normalizedRole,
+    });
     return NextResponse.json({
       success: true,
-      message: 'Company removed from your dashboard.',
-      hidden: true,
-      note: 'Completed for UI compatibility'
+      hardDelete: true,
+      message: 'Company and related data deleted successfully.',
     });
+  } catch (error: any) {
+    console.error('Error in delete operation:', error);
+    return NextResponse.json({
+      success: false,
+      error: error.message || 'Delete operation failed',
+    }, { status: 500 });
   } finally {
     try {
       await prisma.$disconnect();

@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
       pricing: {
         monthly: affiliateCode.monthlyPrice,
         quarterly: affiliateCode.quarterlyPrice,
-        annual: affiliateCode.annualPrice
+        annual: affiliateCode.annualPrice,
+        setupFee: affiliateCode.setupFee
       },
       affiliate: affiliateCode.affiliate?.name
     });
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
 // POST - Create new affiliate code
 export async function POST(request: NextRequest) {
   try {
-    const { affiliateId, code, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice } = await request.json();
+    const { affiliateId, code, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, setupFee } = await request.json();
 
     if (!affiliateId || !code) {
       return NextResponse.json(
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
         monthlyPrice: monthlyPrice ? parseFloat(monthlyPrice) : 0,
         quarterlyPrice: quarterlyPrice ? parseFloat(quarterlyPrice) : 0,
         annualPrice: annualPrice ? parseFloat(annualPrice) : 0,
+        setupFee: setupFee ? parseFloat(setupFee) : 0,
         maxUses: maxUses ? parseInt(maxUses) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null
       }
@@ -103,7 +105,7 @@ export async function POST(request: NextRequest) {
 // PUT - Update affiliate code
 export async function PUT(request: NextRequest) {
   try {
-    const { id, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, isActive } = await request.json();
+    const { id, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, setupFee, isActive } = await request.json();
 
     if (!id) {
       return NextResponse.json(
@@ -119,6 +121,7 @@ export async function PUT(request: NextRequest) {
         monthlyPrice: monthlyPrice ? parseFloat(monthlyPrice.toString()) : 0,
         quarterlyPrice: quarterlyPrice ? parseFloat(quarterlyPrice.toString()) : 0,
         annualPrice: annualPrice ? parseFloat(annualPrice.toString()) : 0,
+        setupFee: setupFee ? parseFloat(setupFee.toString()) : 0,
         maxUses: maxUses ? parseInt(maxUses.toString()) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         isActive: isActive !== undefined ? isActive : true

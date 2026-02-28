@@ -1,9 +1,10 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 import { getBenchmarkValue } from '../utils/data-processing';
+import DocumentsTab from './dashboard/DocumentsTab';
 
 // Dynamic imports for charts
 const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
@@ -125,6 +126,8 @@ export default function DashboardView({
   onSaveDashboardPrefs
 }: DashboardViewProps) {
   const [isSaving, setIsSaving] = useState(false);
+  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
+  const [pageTab, setPageTab] = useState<'dashboard' | 'documents'>('dashboard');
   
   const handleSaveDashboard = async () => {
     if (!onSaveDashboardPrefs) return;
@@ -155,7 +158,7 @@ export default function DashboardView({
           <style>{`
             @media print {
               @page {
-                size: landscape;
+                size: ${printOrientation};
                 margin: 0.2in 0.4in 0.3in 0.4in;
               }
               
@@ -261,6 +264,7 @@ export default function DashboardView({
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
               Dashboard
             </h1>
+            {pageTab === 'dashboard' && (
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
                 className="no-print"
@@ -284,6 +288,15 @@ export default function DashboardView({
               >
                 {isSaving ? '💾 Saving...' : '💾 Save Dashboard'}
               </button>
+              <select
+                className="no-print"
+                value={printOrientation}
+                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+                style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
+              >
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
               <button
                 className="no-print"
                 onClick={() => window.print()}
@@ -325,8 +338,49 @@ export default function DashboardView({
                 {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
               </button>
             </div>
+            )}
           </div>
 
+          {/* Page Tabs */}
+          <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '2px solid #e2e8f0' }}>
+            <button
+              onClick={() => setPageTab('dashboard')}
+              style={{
+                padding: '10px 18px',
+                background: pageTab === 'dashboard' ? '#667eea' : 'transparent',
+                color: pageTab === 'dashboard' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: pageTab === 'dashboard' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '14px',
+                fontWeight: '800',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+              }}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => setPageTab('documents')}
+              style={{
+                padding: '10px 18px',
+                background: pageTab === 'documents' ? '#667eea' : 'transparent',
+                color: pageTab === 'documents' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: pageTab === 'documents' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '14px',
+                fontWeight: '800',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+              }}
+            >
+              Documents
+            </button>
+          </div>
+
+          {pageTab === 'documents' ? (
+            <DocumentsTab selectedCompanyId={selectedCompanyId} />
+          ) : (
+            <>
           {/* Dashboard Customizer */}
           {showDashboardCustomizer && (
             <div style={{ 
@@ -349,7 +403,7 @@ export default function DashboardView({
                 
               {/* Ratios Section */}
               <div>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   📊 Financial Ratios
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
@@ -567,7 +621,7 @@ export default function DashboardView({
 
                 {/* Trend Analysis Section */}
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     📈 Trend Analysis
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
@@ -703,7 +757,7 @@ export default function DashboardView({
 
                 {/* Working Capital Metrics */}
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     💼 Working Capital Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
@@ -741,7 +795,7 @@ export default function DashboardView({
 
                 {/* Cash Flow Metrics */}
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     💰 Cash Flow
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
@@ -779,7 +833,7 @@ export default function DashboardView({
 
                 {/* Valuation Metrics */}
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#667eea', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     💎 Valuation Metrics
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
@@ -1404,6 +1458,8 @@ export default function DashboardView({
                 return renderedWidgets;
               })()}
             </div>
+          )}
+            </>
           )}
         </div>
   );

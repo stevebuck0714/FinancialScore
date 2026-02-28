@@ -749,7 +749,7 @@ const ImportFinancialsTab: React.FC<ImportFinancialsTabProps> = ({
                 );
                 setError(null);
                 alert(
-                  `? Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Account Mapping tab to map accounts.`,
+                  `Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Account Mapping tab to map accounts.`,
                 );
               } catch (err: any) {
                 setError(

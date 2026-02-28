@@ -20,6 +20,7 @@ interface CompanyListTabProps {
   setCompanyManagementSubTab: (tab: string) => void;
   setCompanyToDelete: (company: { companyId: string; businessId: string; companyName: string }) => void;
   setShowDeleteConfirmation: (show: boolean) => void;
+  onAddCompany: () => void;
 }
 
 export default function CompanyListTab({
@@ -29,7 +30,8 @@ export default function CompanyListTab({
   setAdminDashboardTab,
   setCompanyManagementSubTab,
   setCompanyToDelete,
-  setShowDeleteConfirmation
+  setShowDeleteConfirmation,
+  onAddCompany
 }: CompanyListTabProps) {
   return (
     <div style={{ background: 'white', borderRadius: '12px', padding: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
@@ -39,10 +41,7 @@ export default function CompanyListTab({
         </h2>
         <button
           onClick={() => {
-            setCurrentView('admin');
-            setSelectedCompanyId('');
-            setAdminDashboardTab('company-management');
-            setCompanyManagementSubTab('details');
+            onAddCompany();
           }}
           style={{
             padding: '6px 12px',
@@ -95,7 +94,7 @@ export default function CompanyListTab({
                       setSelectedCompanyId(company.id);
                       setCurrentView('admin');
                       setAdminDashboardTab('company-management');
-                      setCompanyManagementSubTab('details');
+                      setCompanyManagementSubTab('profile');
                     }}
                   >
                     <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0, lineHeight: '1.2' }}>

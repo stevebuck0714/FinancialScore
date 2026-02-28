@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserTrustedDevices, revokeAllTrustedDevices } from '@/lib/trusted-device';
+import { getTrustDurationDays, getUserTrustedDevices, revokeAllTrustedDevices } from '@/lib/trusted-device';
+import { clearMfaDeviceCookie } from '@/lib/mfa-device-cookie';
 
 /**
  * GET /api/auth/trusted-devices
@@ -17,8 +18,9 @@ export async function GET(request: NextRequest) {
     }
 
     const devices = await getUserTrustedDevices(userId);
+    const trustDurationDays = getTrustDurationDays();
 
-    return NextResponse.json({ devices });
+    return NextResponse.json({ devices, trustDurationDays });
   } catch (error) {
     console.error('Error fetching trusted devices:', error);
     return NextResponse.json(
@@ -50,7 +52,7 @@ export async function DELETE(request: NextRequest) {
       success: true,
       message: 'All trusted devices have been revoked' 
     });
-    response.cookies.delete('mfa_device_token');
+    clearMfaDeviceCookie(response, request);
 
     return response;
   } catch (error) {

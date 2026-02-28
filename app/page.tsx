@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
-import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet } from 'lucide-react';
+import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, ArrowLeft, CreditCard, MapPin, Lock } from 'lucide-react';
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
 import { assessmentData } from '../data/assessmentData';
 import { authApi, companiesApi, usersApi, consultantsApi, financialsApi, assessmentsApi, profilesApi, benchmarksApi, ApiError } from '@/lib/api-client';
@@ -17,6 +17,7 @@ import type { Mappings, NormalRow, MonthlyDataRow, Company, CompanyProfile, Asse
 import { US_STATES, KPI_TO_BENCHMARK_MAP } from './constants';
 import { KPI_FORMULAS } from './constants/kpi-formulas';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
+import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
 const LoginView = dynamic(() => import('./components/auth/LoginView'), { ssr: false });
 const MFAEnrollmentModal = dynamic(() => import('./components/auth/MFAEnrollmentModal'), { ssr: false });
 const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerificationModal'), { ssr: false });
@@ -24,11 +25,12 @@ const MFAVerificationModal = dynamic(() => import('./components/auth/MFAVerifica
 const LineChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.LineChart), { ssr: false });
 const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 const CompanyDetailsModal = dynamic(() => import('./components/modals/CompanyDetailsModal'), { ssr: false });
+const AddCompanyModal = dynamic(() => import('./components/modals/AddCompanyModal'), { ssr: false });
 const DataReviewTab = dynamic(() => import('./components/dashboard/DataReviewTab'), { ssr: false });
 const TeamManagementTab = dynamic(() => import('./components/dashboard/TeamManagementTab'), { ssr: false });
-const PaymentsTab = dynamic(() => import('./components/dashboard/PaymentsTab'), { ssr: false });
 const ProfileTab = dynamic(() => import('./components/dashboard/ProfileTab'), { ssr: false });
 const LOBReportingTab = dynamic(() => import('./components/dashboard/LOBReportingTab'), { ssr: false });
+const DocumentsTab = dynamic(() => import('./components/dashboard/DocumentsTab'), { ssr: false });
 const ConsultantDashboard = dynamic(() => import('./components/consultant/ConsultantDashboard'), { ssr: false });
 const CompanyManagementTab = dynamic(() => import('./components/admin/CompanyManagementTab'), { ssr: false });
 const CompanySettingsTab = dynamic(() => import('./components/admin/CompanySettingsTab'), { ssr: false });
@@ -38,6 +40,7 @@ const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' |
 
 const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab'), { ssr: false });
 const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
+const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlertsView'), { ssr: false });
 
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
 const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
@@ -57,6 +60,12 @@ const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: fal
 const WorkingCapitalTab = dynamic(() => import('./components/WorkingCapitalTab'), { ssr: false });
 const ProjectionsTab = dynamic(() => import('./components/ProjectionsTab'), { ssr: false });
 const MDAView = dynamic(() => import('./components/MDAView'), { ssr: false });
+const AIAnalysisView = dynamic(() => import('./components/AIAnalysisView'), { ssr: false });
+const PerformanceAnalyticsOverview = dynamic(() => import('./components/performance-analytics/PerformanceAnalyticsOverview'), { ssr: false });
+const FocusBoard = dynamic(() => import('./components/performance-analytics/FocusBoard'), { ssr: false });
+const TrendExplorer = dynamic(() => import('./components/performance-analytics/TrendExplorer'), { ssr: false });
+const AnomalyInbox = dynamic(() => import('./components/performance-analytics/AnomalyInbox'), { ssr: false });
+const OpportunityWorkspace = dynamic(() => import('./components/performance-analytics/OpportunityWorkspace'), { ssr: false });
 const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
 const FinancialScoreView = dynamic(() => import('./components/FinancialScoreView'), { ssr: false });
 import GoalsView from './components/GoalsView';
@@ -103,7 +112,7 @@ function FinancialScorePage() {
   const [showMFAVerification, setShowMFAVerification] = useState(false);
   const [mfaUserId, setMfaUserId] = useState('');
   const [mfaUserEmail, setMfaUserEmail] = useState('');
-  const [mfaTrustDurationDays, setMfaTrustDurationDays] = useState(180);
+  const [trustDurationDays, setTrustDurationDays] = useState<number | null>(null);
   
   // State - Consultants
   const [consultants, setConsultants] = useState<Consultant[]>([]);
@@ -147,6 +156,10 @@ function FinancialScorePage() {
   };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
+  const [selectingCompanyId, setSelectingCompanyId] = useState<string | null>(null);
+  const [companyPickerError, setCompanyPickerError] = useState('');
+  const [companyPickerPromptedThisSession, setCompanyPickerPromptedThisSession] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -251,14 +264,19 @@ function FinancialScorePage() {
   const [newCompanyUserEmail, setNewCompanyUserEmail] = useState('');
   const [newCompanyUserPhone, setNewCompanyUserPhone] = useState('');
   const [newCompanyUserPassword, setNewCompanyUserPassword] = useState('');
+  const [existingCompanyUserName, setExistingCompanyUserName] = useState('');
+  const [existingCompanyUserEmail, setExistingCompanyUserEmail] = useState('');
   // Separate state for Assessment Users (no phone field)
   const [newAssessmentUserName, setNewAssessmentUserName] = useState('');
   const [newAssessmentUserTitle, setNewAssessmentUserTitle] = useState('');
   const [newAssessmentUserEmail, setNewAssessmentUserEmail] = useState('');
   const [newAssessmentUserPassword, setNewAssessmentUserPassword] = useState('');
+  const [existingAssessmentUserName, setExistingAssessmentUserName] = useState('');
+  const [existingAssessmentUserEmail, setExistingAssessmentUserEmail] = useState('');
   
   // State - Company Details
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false);
+  const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
   const [editingCompanyId, setEditingCompanyId] = useState('');
   const [companyAddressStreet, setCompanyAddressStreet] = useState('');
   const [companyAddressCity, setCompanyAddressCity] = useState('');
@@ -266,17 +284,22 @@ function FinancialScorePage() {
   const [companyAddressZip, setCompanyAddressZip] = useState('');
   const [companyAddressCountry, setCompanyAddressCountry] = useState('USA');
   const [companyIndustrySector, setCompanyIndustrySector] = useState<number | ''>('');
+  const [accountingSystem, setAccountingSystem] = useState('');
+  const [companySizeCategory, setCompanySizeCategory] = useState('DEFAULT');
+  const [industrySectorCategory, setIndustrySectorCategory] = useState('01');
   const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
-  const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false);
+  // const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false); // Financial Score section removed from sidebar
   
   // State - Default Pricing
   const [defaultBusinessMonthlyPrice, setDefaultBusinessMonthlyPrice] = useState(195);
   const [defaultBusinessQuarterlyPrice, setDefaultBusinessQuarterlyPrice] = useState(500);
   const [defaultBusinessAnnualPrice, setDefaultBusinessAnnualPrice] = useState(1750);
+  const [defaultBusinessSetupFee, setDefaultBusinessSetupFee] = useState(0);
   const [defaultConsultantMonthlyPrice, setDefaultConsultantMonthlyPrice] = useState(195);
   const [defaultConsultantQuarterlyPrice, setDefaultConsultantQuarterlyPrice] = useState(500);
   const [defaultConsultantAnnualPrice, setDefaultConsultantAnnualPrice] = useState(1750);
+  const [defaultConsultantSetupFee, setDefaultConsultantSetupFee] = useState(0);
   
   // State - Projections
   const [defaultBestCaseRevMult, setDefaultBestCaseRevMult] = useState(1.5);
@@ -298,7 +321,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -312,11 +335,92 @@ function FinancialScorePage() {
     return allowedViews.includes(view);
   };
 
+  // Company user access control (non-admin company users only).
+  const COMPANY_USER_SECTIONS = ['company-dashboard', 'performance-analytics', 'valuation', 'financial-statements', 'management-assessment'] as const;
+  const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
+  const isCompanyAdmin = isCompanyUser && (currentUser as any)?.companyRole === 'admin';
+  const allowedSectionsForCompanyUser = useMemo(() => {
+    const raw = (currentUser as any)?.sidebarAccess;
+    if (!isCompanyUser || isCompanyAdmin) return null;
+    // If missing, default to full access to avoid locking out users due to legacy data.
+    if (!Array.isArray(raw)) return COMPANY_USER_SECTIONS as unknown as string[];
+    return raw as string[];
+  }, [currentUser, isCompanyUser, isCompanyAdmin]);
+
+  const companyPickerOptions = useMemo(() => {
+    const fromMembership = Array.isArray((currentUser as any)?.accessibleCompanies)
+      ? ((currentUser as any).accessibleCompanies as Array<{ companyId: string; name: string }>)
+          .filter((c) => c?.companyId && c?.name)
+          .map((c) => ({ companyId: c.companyId, name: c.name }))
+      : [];
+    if (fromMembership.length > 0) return fromMembership;
+
+    if (currentUser?.role === 'consultant' && Array.isArray(companies)) {
+      return companies
+        .filter((c) => c?.id && c?.name)
+        .map((c) => ({ companyId: c.id, name: c.name }));
+    }
+    return [];
+  }, [currentUser, companies]);
+
+  const hasValidActiveCompanyForSession = useMemo(() => {
+    const candidateCompanyId =
+      selectedCompanyId ||
+      ((currentUser as any)?.activeCompanyId as string | undefined) ||
+      (currentUser?.companyId as string | undefined) ||
+      '';
+
+    if (!candidateCompanyId || companyPickerOptions.length === 0) return false;
+    return companyPickerOptions.some((option) => option.companyId === candidateCompanyId);
+  }, [selectedCompanyId, currentUser, companyPickerOptions]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser) return;
+    if (currentUser.role === 'siteadmin' || currentUser.userType === 'assessment') return;
+    if (companyPickerPromptedThisSession) return;
+    if (companyPickerOptions.length <= 1) return;
+    if (hasValidActiveCompanyForSession) {
+      setShowCompanyPicker(false);
+      setCompanyPickerError('');
+      return;
+    }
+
+    setCompanyPickerError('');
+    setShowCompanyPicker(true);
+    setCompanyPickerPromptedThisSession(true);
+  }, [
+    isLoggedIn,
+    currentUser,
+    companyPickerPromptedThisSession,
+    companyPickerOptions,
+    hasValidActiveCompanyForSession,
+  ]);
+
+  const viewToCompanySection = (view: string): string | null => {
+    if (view === 'dashboard') return 'company-dashboard';
+    if (view === 'valuation') return 'valuation';
+    if (view === 'financial-statements') return 'financial-statements';
+    if (view === 'daily-alerts') return 'performance-analytics';
+    if (view.startsWith('pa-')) return 'performance-analytics';
+    if (view.startsWith('ma-')) return 'management-assessment';
+    return null;
+  };
+
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
+    const section = viewToCompanySection(view);
+    if (section && isCompanyUser && !isCompanyAdmin) {
+      const allowed = allowedSectionsForCompanyUser || (COMPANY_USER_SECTIONS as unknown as string[]);
+      if (!allowed.includes(section)) {
+        alert('Access Restricted\n\nYour account does not have access to this section.');
+        return;
+      }
+    }
+
     if (isPaymentRequired()) {
-      alert('?? Payment Required\n\nPlease complete your subscription payment before accessing other features.');
-      setAdminDashboardTab('payments');
+      alert('Payment Required\n\nPlease complete your subscription payment before accessing other features.');
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
       setCurrentView('admin');
       return;
     }
@@ -324,23 +428,25 @@ function FinancialScorePage() {
   };
 
   // Handle admin dashboard tab navigation with payment gate
-  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping') => {
-    // Always allow payments tab
+  const handleAdminTabNavigation = (tab: 'company-management' | 'company-settings' | 'payments' | 'import-financials' | 'api-connections' | 'data-review' | 'documents' | 'data-mapping') => {
+    // Payments is now a sub-tab under Company Management
     if (tab === 'payments') {
-      setAdminDashboardTab(tab);
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
       return;
     }
 
     // Block other tabs if payment is required
     if (isPaymentRequired()) {
-      alert('?? Payment Required\n\nPlease complete your subscription payment on the Payments tab before accessing other features.');
-      setAdminDashboardTab('payments');
+      alert('Payment Required\n\nPlease complete your subscription payment in Company Management > Payments before accessing other features.');
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
       return;
     }
     
     // Reset company management sub-tab when switching to company-management
     if (tab === 'company-management') {
-      setCompanyManagementSubTab('details');
+      setCompanyManagementSubTab('profile');
     }
     
     setAdminDashboardTab(tab);
@@ -363,7 +469,8 @@ function FinancialScorePage() {
             userType: user.userType?.toLowerCase(),
             consultantType: user.consultantType, // Preserve consultantType
             consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
-            consultantId: user.consultantId // Preserve consultant ID
+            consultantId: user.consultantId, // Preserve consultant ID
+            sidebarAccess: user.sidebarAccess ?? null,
           };
           
           setCurrentUser(normalizedUser);
@@ -415,8 +522,8 @@ function FinancialScorePage() {
           } else if (normalizedUser.userType === 'assessment') {
             setCurrentView('ma-welcome');
           } else if (normalizedUser.userType === 'company') {
-            // Company users see the same dashboard as consultants
-            setCurrentView('admin');
+            // Company users land on Daily Alerts.
+            setCurrentView('daily-alerts');
             // Load the company data for this user
             if (user.companyId) {
               setSelectedCompanyId(user.companyId);
@@ -514,13 +621,23 @@ function FinancialScorePage() {
       setCurrentView(newView as any);
     }
   };
-  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'data-mapping' | 'goals' | 'payments'>('company-management');
+  const [adminDashboardTab, setAdminDashboardTab] = useState<'company-management' | 'company-settings' | 'import-financials' | 'api-connections' | 'data-review' | 'documents' | 'data-mapping' | 'goals' | 'payments'>('company-management');
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
-  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile'>('details');
-  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list'>('company-list');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation'>('profile');
+  const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
+  const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
+
+  // Back-compat: if something sets the legacy top-level 'payments' tab,
+  // redirect it into Company Management > Payments.
+  useEffect(() => {
+    if (adminDashboardTab === 'payments') {
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
+    }
+  }, [adminDashboardTab]);
   const [expandedBusinessIds, setExpandedBusinessIds] = useState<Set<string>>(new Set());
   const [editingPricing, setEditingPricing] = useState<{[key: string]: any}>({});
   const [editingConsultantInfo, setEditingConsultantInfo] = useState<{[key: string]: any}>({});
@@ -535,7 +652,7 @@ function FinancialScorePage() {
   const [editingAffiliate, setEditingAffiliate] = useState<any>(null);
   const [showAddAffiliateForm, setShowAddAffiliateForm] = useState(false);
   const [expandedAffiliateId, setExpandedAffiliateId] = useState<string | null>(null);
-  const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: ''});
+  const [newAffiliateCode, setNewAffiliateCode] = useState({code: '', description: '', maxUses: '', expiresAt: '', monthlyPrice: '', quarterlyPrice: '', annualPrice: '', setupFee: ''});
   const [editingAffiliateCode, setEditingAffiliateCode] = useState<any>(null);
   
   // Team management state
@@ -631,8 +748,50 @@ function FinancialScorePage() {
   const [subscriptionMonthlyPrice, setSubscriptionMonthlyPrice] = useState<number | undefined>();
   const [subscriptionQuarterlyPrice, setSubscriptionQuarterlyPrice] = useState<number | undefined>();
   const [subscriptionAnnualPrice, setSubscriptionAnnualPrice] = useState<number | undefined>();
+  const [subscriptionSetupFee, setSubscriptionSetupFee] = useState<number | undefined>();
 
   // Affiliate pricing cache removed - pricing now stored permanently in database
+
+  // Payments tab (now under Company Management) uses these derived values.
+  const paymentsSelectedCompany = useMemo(() => {
+    if (!selectedCompanyId) return null;
+    return Array.isArray(companies) ? (companies.find(c => c.id === selectedCompanyId) || null) : null;
+  }, [companies, selectedCompanyId]);
+
+  const paymentsPricing = useMemo(() => {
+    const isBusinessUser =
+      currentUser?.userType === 'company' ||
+      currentUser?.userType === 'COMPANY' ||
+      (currentUser?.role === 'user' && !currentUser?.consultantId);
+
+    const defaultMonthly = isBusinessUser ? (defaultBusinessMonthlyPrice ?? 195) : (defaultConsultantMonthlyPrice ?? 195);
+    const defaultQuarterly = isBusinessUser ? (defaultBusinessQuarterlyPrice ?? 500) : (defaultConsultantQuarterlyPrice ?? 500);
+    const defaultAnnual = isBusinessUser ? (defaultBusinessAnnualPrice ?? 1750) : (defaultConsultantAnnualPrice ?? 1750);
+    const defaultSetupFee = isBusinessUser ? (defaultBusinessSetupFee ?? 0) : (defaultConsultantSetupFee ?? 0);
+
+    return {
+      monthly: subscriptionMonthlyPrice ?? defaultMonthly,
+      quarterly: subscriptionQuarterlyPrice ?? defaultQuarterly,
+      annual: subscriptionAnnualPrice ?? defaultAnnual,
+      setupFee: subscriptionSetupFee ?? defaultSetupFee,
+    };
+  }, [
+    subscriptionMonthlyPrice,
+    subscriptionQuarterlyPrice,
+    subscriptionAnnualPrice,
+    subscriptionSetupFee,
+    defaultBusinessMonthlyPrice,
+    defaultBusinessQuarterlyPrice,
+    defaultBusinessAnnualPrice,
+    defaultBusinessSetupFee,
+    defaultConsultantMonthlyPrice,
+    defaultConsultantQuarterlyPrice,
+    defaultConsultantAnnualPrice,
+    defaultConsultantSetupFee,
+    currentUser?.userType,
+    currentUser?.role,
+    currentUser?.consultantId,
+  ]);
 
   // Check if payment is required for the current company
   // Payment is required if ANY of the 3 subscription prices are > $0
@@ -653,6 +812,7 @@ function FinancialScorePage() {
     let monthly = selectedCompany.subscriptionMonthlyPrice;
     let quarterly = selectedCompany.subscriptionQuarterlyPrice;
     let annual = selectedCompany.subscriptionAnnualPrice;
+    let setupFee = (selectedCompany as any).subscriptionSetupFee;
 
     // Fall back to userDefinedAllocations if dedicated fields are null/undefined
     if ((monthly === null || monthly === undefined) &&
@@ -676,14 +836,15 @@ function FinancialScorePage() {
     }
 
     // Check if explicitly free (all prices are exactly $0 OR isFree flag is true)
-    if (isExplicitlyFree || (monthly === 0 && quarterly === 0 && annual === 0)) {
-      console.log('?? Company has $0 pricing - no payment required', { monthly, quarterly, annual, isExplicitlyFree });
+    const effectiveSetupFee = setupFee ?? subscriptionSetupFee ?? 0;
+    if (isExplicitlyFree || (monthly === 0 && quarterly === 0 && annual === 0 && effectiveSetupFee === 0)) {
+      console.log('?? Company has $0 pricing - no payment required', { monthly, quarterly, annual, setupFee: effectiveSetupFee, isExplicitlyFree });
       return false;
     }
 
     // If ANY price is > $0, payment is required
-    if ((monthly ?? 0) > 0 || (quarterly ?? 0) > 0 || (annual ?? 0) > 0) {
-      console.log('?? Payment required - non-zero pricing detected', { monthly, quarterly, annual });
+    if ((monthly ?? 0) > 0 || (quarterly ?? 0) > 0 || (annual ?? 0) > 0 || effectiveSetupFee > 0) {
+      console.log('?? Payment required - non-zero pricing detected', { monthly, quarterly, annual, setupFee: effectiveSetupFee });
       return true;
     }
 
@@ -695,9 +856,9 @@ function FinancialScorePage() {
 
     // Default: no payment required (shouldn't reach here, but safe fallback)
     return false;
-  }, [selectedCompanyId, currentUser, companies]);
+  }, [selectedCompanyId, currentUser, companies, subscriptionSetupFee]);
 
-  // State - Management Assessment
+  // State - Team Assessment
   const [assessmentResponses, setAssessmentResponses] = useState<AssessmentResponses>({});
   const [assessmentNotes, setAssessmentNotes] = useState<AssessmentNotes>({});
   const [assessmentRecords, setAssessmentRecords] = useState<AssessmentRecord[]>([]);
@@ -710,7 +871,7 @@ function FinancialScorePage() {
 
   // State - Expense Analysis
   const [selectedExpenseItem, setSelectedExpenseItem] = useState<string>('total-expenses');
-  const [selectedExpenseItems, setSelectedExpenseItems] = useState<string[]>(['total-expenses', 'cogs-total', 'payroll', 'rent']);
+  const [selectedExpenseItems, setSelectedExpenseItems] = useState<string[]>(['total-expenses', 'cogs-total', 'payroll', 'rent', 'total-operating-expenses-pct']);
   
   // Helper function to get full display name for trend items
   const getTrendItemDisplayName = (item: string): string => {
@@ -747,6 +908,7 @@ function FinancialScorePage() {
     // Fallback for items not in centralized mapping
     const fallbackNames: { [key: string]: string } = {
       'total-expenses': 'Total Expenses',
+      'total-operating-expenses-pct': 'Total Operating Expenses (%)',
       'cogs-total': getFieldDisplayName('cogsTotal'),
       'cogs-payroll': getFieldDisplayName('cogsPayroll'),
       'cogs-owner-pay': getFieldDisplayName('cogsOwnerPay'),
@@ -783,6 +945,53 @@ function FinancialScorePage() {
   
   // State - CSV Trial Balance Data
   const [csvTrialBalanceData, setCsvTrialBalanceData] = useState<any>(null);
+  const [latestFinancialSource, setLatestFinancialSource] = useState<string | null>(null);
+  const [hasSavedCsvInLocalStorage, setHasSavedCsvInLocalStorage] = useState(false);
+
+  const handleTrialBalanceCsvSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('?? CSV File selected');
+    const file = e.target.files?.[0];
+    if (!file) {
+      console.log('? No file selected');
+      return;
+    }
+
+    console.log('? File:', file.name, 'Size:', file.size, 'Company:', selectedCompanyId);
+    console.log('?? Current User:', currentUser?.email || 'NOT SET');
+
+    try {
+      console.log('?? Reading file text...');
+      const text = await file.text();
+      console.log('? File read, length:', text.length);
+
+      console.log('?? Parsing Trial Balance CSV...');
+      const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
+      console.log('? Parsed successfully:', parsed);
+
+      const csvData = {
+        ...parsed,
+        _companyId: selectedCompanyId,
+        fileName: file.name,
+      };
+
+      console.log('?? Setting csvTrialBalanceData state...');
+      setCsvTrialBalanceData(csvData);
+
+      console.log('?? Saving to localStorage...');
+      localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
+      setHasSavedCsvInLocalStorage(true);
+
+      setError(null);
+      console.log('? CSV upload complete!');
+    } catch (err: any) {
+      console.error('? Error parsing CSV:', err);
+      setError(`Failed to parse Trial Balance CSV: ${err.message}`);
+      setCsvTrialBalanceData(null);
+    } finally {
+      // allow re-selecting the same file
+      e.target.value = '';
+    }
+  };
 
   // State - QuickBooks Connection
   const [qbConnected, setQbConnected] = useState(false);
@@ -793,7 +1002,32 @@ function FinancialScorePage() {
   const [xeroLastSync, setXeroLastSync] = useState<Date | null>(null);
   const [xeroSyncing, setXeroSyncing] = useState(false);
   const [xeroError, setXeroError] = useState<string | null>(null);
-
+  
+  // State - Infor M3 Connection
+  const [inforConnected, setInforConnected] = useState(false);
+  const [inforStatus, setInforStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
+  const [inforLastSync, setInforLastSync] = useState<Date | null>(null);
+  const [inforError, setInforError] = useState<string | null>(null);
+  const [inforBusy, setInforBusy] = useState(false);
+  const [inforCredentials, setInforCredentials] = useState({
+    tenantId: '',
+    clientName: '',
+    clientId: '',
+    clientSecret: '',
+    ionApiBaseUrl: '',
+    ssoBaseUrl: '',
+    oauthAuthPath: '',
+    oauthTokenPath: '',
+    oauthRevokePath: '',
+    serviceAccountAccessKey: '',
+    serviceAccountSecretKey: '',
+  });
+  const [inforProbePath, setInforProbePath] = useState('/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData');
+  const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
+  const [inforCaoPulling, setInforCaoPulling] = useState(false);
+  const [inforCaoMessage, setInforCaoMessage] = useState<string | null>(null);
+  const [inforLastCaoPullAt, setInforLastCaoPullAt] = useState<Date | null>(null);
+  const [inforLastCaoPulledBy, setInforLastCaoPulledBy] = useState<string | null>(null);
   // State - Financial Statements
   const [statementType, setStatementType] = useState<'income-statement' | 'balance-sheet' | 'income-statement-percent'>('income-statement');
   const [statementPeriod, setStatementPeriod] = useState<'current-month' | 'current-quarter' | 'last-12-months' | 'ytd' | 'last-year' | 'last-3-years'>('current-month');
@@ -833,7 +1067,6 @@ function FinancialScorePage() {
   // State - Custom Print Package
   const [printPackageSelections, setPrintPackageSelections] = useState({
     mda: false,
-    financialScore: false,
     priorityRatios: false,
     workingCapital: false,
     dashboard: false,
@@ -845,6 +1078,8 @@ function FinancialScorePage() {
     balanceSheet3YearsAnnual: false,
     profile: false
   });
+  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [isPrintingPackage, setIsPrintingPackage] = useState(false);
 
   const handleExportMdaToWord = async (executiveSummaryText: string, mdaAnalysis: { strengths: string[]; weaknesses: string[]; insights: string[] }) => {
     try {
@@ -890,7 +1125,10 @@ function FinancialScorePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const consultantId = currentUser?.consultantId;
-    if (adminDashboardTab === 'payments' && consultantId && selectedCompanyId) {
+    const isPaymentsActive =
+      (adminDashboardTab === 'company-management' && companyManagementSubTab === 'payments') ||
+      adminDashboardTab === 'payments'; // Back-compat if any legacy state sets it
+    if (isPaymentsActive && consultantId && selectedCompanyId) {
       const refreshCompanyData = async () => {
         try {
           const fetchedCompanies = await companiesApi.getAll(consultantId);
@@ -901,12 +1139,15 @@ function FinancialScorePage() {
       };
       refreshCompanyData();
     }
-  }, [adminDashboardTab, selectedCompanyId]);
+  }, [adminDashboardTab, companyManagementSubTab, selectedCompanyId]);
 
   // Load subscription details when accessing payments tab
   useEffect(() => {
     const loadSubscriptionDetails = async () => {
-      if (adminDashboardTab === 'payments' && selectedCompanyId) {
+      const isPaymentsActive =
+        (adminDashboardTab === 'company-management' && companyManagementSubTab === 'payments') ||
+        adminDashboardTab === 'payments'; // Back-compat if any legacy state sets it
+      if (isPaymentsActive && selectedCompanyId) {
         setLoadingSubscription(true);
         try {
           const response = await fetch(`/api/subscriptions?companyId=${selectedCompanyId}`);
@@ -927,7 +1168,7 @@ function FinancialScorePage() {
     };
 
     loadSubscriptionDetails();
-  }, [adminDashboardTab, selectedCompanyId]);
+  }, [adminDashboardTab, companyManagementSubTab, selectedCompanyId]);
 
   // Update payment method handler
   const handleUpdatePaymentMethod = async (e: React.FormEvent) => {
@@ -963,7 +1204,7 @@ function FinancialScorePage() {
       const result = await response.json();
       
       if (result.success) {
-        alert('? Payment method updated successfully!');
+        alert('Payment method updated successfully!');
         setShowUpdatePaymentModal(false);
         // Reset form
         setUpdatePaymentData({
@@ -984,11 +1225,11 @@ function FinancialScorePage() {
           setActiveSubscription(subData.subscription);
         }
       } else {
-        alert(`? Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
+        alert(`Failed to update payment method\n\n${result.error || 'Please try again or contact support.'}`);
       }
     } catch (error) {
       console.error('Update payment method error:', error);
-      alert('? An error occurred while updating your payment method. Please try again.');
+      alert('An error occurred while updating your payment method. Please try again.');
     } finally {
       setUpdatingPayment(false);
     }
@@ -998,26 +1239,38 @@ function FinancialScorePage() {
   const handleDeleteCompany = async () => {
     if (!companyToDelete) return;
 
+    const normalizedRole = String(currentUser?.role || '').toUpperCase();
+    const canDeleteCompany = normalizedRole === 'CONSULTANT' || normalizedRole === 'SITEADMIN';
+    if (!canDeleteCompany) {
+      alert('Only consultants and site admins can delete companies.');
+      setShowDeleteConfirmation(false);
+      setCompanyToDelete(null);
+      return;
+    }
+
     console.log('Attempting to delete company:', companyToDelete);
 
     try {
       const response = await fetch(`/api/companies/${companyToDelete.companyId}`, {
         method: 'DELETE',
+        headers: {
+          'x-confirm-delete': 'true',
+        },
       });
 
       console.log('Delete response status:', response.status);
       const result = await response.json();
       console.log('Delete result:', result);
 
-      // Handle both success and 404 (company already deleted/hidden)
+      // Only update local UI after server confirms success.
       if (result.success || response.status === 404) {
         const message = result.hidden
-          ? `? Company "${companyToDelete.companyName}" has been removed from your dashboard.`
+          ? `Company "${companyToDelete.companyName}" has been removed from your dashboard.`
           : result.softDelete
-          ? `?? Company "${companyToDelete.companyName}" has been marked as deleted (temporary workaround). It will be fully removed after the next deployment.`
+          ? `Company "${companyToDelete.companyName}" has been marked as deleted.`
           : result.success
-          ? `? Company "${companyToDelete.companyName}" has been deleted successfully.`
-          : `? Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
+          ? `Company "${companyToDelete.companyName}" has been deleted successfully.`
+          : `Company "${companyToDelete.companyName}" has been removed (already deleted from database).`;
 
         alert(message);
 
@@ -1057,41 +1310,14 @@ function FinancialScorePage() {
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       } else {
-        // Even if the server says it failed, still remove from UI for better UX
-        console.log('Server reported failure, but removing from UI anyway for better user experience');
-
-        safeSetCompanies(Array.isArray(companies) ? companies.filter(c => c.id !== companyToDelete.companyId) : []);
-
-        // Clear localStorage companies data to prevent reappearance on navigation
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('fs_companies');
-          console.log('??ï¸ Cleared localStorage companies data after deletion (server error)');
-        }
-
-        // Force reload companies from API to ensure deletion took effect
-        if (currentUser?.role === 'consultant' && currentUser?.consultantId) {
-          console.log('?? Reloading companies from API after deletion (server error)');
-          setTimeout(async () => {
-            try {
-              const { companies: freshCompanies } = await companiesApi.getAll(currentUser.consultantId);
-              safeSetCompanies(freshCompanies || []);
-              console.log('? Reloaded companies after deletion (server error):', freshCompanies?.length || 0, 'companies');
-            } catch (error) {
-              console.error('? Failed to reload companies after deletion (server error):', error);
-            }
-          }, 1000); // Small delay to ensure deletion is processed
-        }
-
-        setConsultants(Array.isArray(consultants) ? consultants.filter(c => c.id !== companyToDelete.businessId) : []);
-
-        alert(`? Company "${companyToDelete.companyName}" has been removed from your view. (Server update may be pending)`);
-
+        const errorMessage = result?.error || 'Delete request was rejected by the server.';
+        alert(`Could not delete company "${companyToDelete.companyName}". ${errorMessage}`);
         setShowDeleteConfirmation(false);
         setCompanyToDelete(null);
       }
     } catch (error) {
       console.error('Error deleting company:', error);
-      alert('? An error occurred while deleting the company');
+      alert('An error occurred while deleting the company');
     }
   };
 
@@ -1161,6 +1387,8 @@ function FinancialScorePage() {
         setCurrentView('siteadmin');
       } else if (user.role === 'consultant') {
         setCurrentView('consultant-dashboard');
+      } else if ((user.userType || '').toLowerCase() === 'company') {
+        setCurrentView('daily-alerts');
       } else {
         setCurrentView('upload');
       }
@@ -1325,6 +1553,7 @@ function FinancialScorePage() {
       
       // Load CSV Trial Balance data from localStorage
       const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
+      setHasSavedCsvInLocalStorage(!!savedCsvData);
       if (savedCsvData && !csvTrialBalanceData) {
         try {
           const parsed = JSON.parse(savedCsvData);
@@ -1452,43 +1681,71 @@ function FinancialScorePage() {
 
   // Load all companies and users when Businesses tab is opened in site admin
   useEffect(() => {
+    let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const loadBusinessesData = async () => {
+      if (cancelled) return;
+      setSiteAdminBusinessesLoading(true);
+
+      try {
+        const loadWithRetry = async (url: string, maxAttempts = 5) => {
+          let lastError: Error | null = null;
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+              const res = await fetch(url, { cache: 'no-store' });
+              if (!res.ok) {
+                throw new Error(`Request failed (${res.status}) for ${url}`);
+              }
+              return await res.json();
+            } catch (error: any) {
+              lastError = error instanceof Error ? error : new Error(String(error));
+              if (attempt < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, Math.min(1500 * attempt, 4000)));
+              }
+            }
+          }
+          throw lastError || new Error(`Failed request for ${url}`);
+        };
+
+        const [companiesData, usersData] = await Promise.all([
+          loadWithRetry('/api/companies'),
+          loadWithRetry('/api/users'),
+        ]);
+
+        if (!Array.isArray(companiesData?.companies)) {
+          throw new Error('Invalid companies response payload');
+        }
+        if (!Array.isArray(usersData?.users)) {
+          throw new Error('Invalid users response payload');
+        }
+
+        if (cancelled) return;
+        safeSetCompanies(companiesData.companies);
+        setUsers(usersData.users);
+        setSiteAdminBusinessesLoading(false);
+      } catch (err) {
+        console.error('? Error loading businesses tab data, retrying:', err);
+        if (!cancelled) {
+          // Keep previous data rendered and retry again shortly.
+          setSiteAdminBusinessesLoading(true);
+          retryTimeout = setTimeout(loadBusinessesData, 3000);
+        }
+      }
+    };
+
     if (siteAdminTab === 'businesses' && currentView === 'siteadmin' && currentUser?.role === 'siteadmin') {
       console.log('?? Loading all companies and users for site admin businesses tab...');
-      
-      // Load companies
-      fetch('/api/companies')
-        .then(res => res.json())
-        .then(data => {
-          if (data.companies && Array.isArray(data.companies)) {
-            safeSetCompanies(data.companies);
-            console.log(`? Loaded ${data.companies.length} companies for businesses tab`);
-          } else {
-            console.warn('?? No companies array in response:', data);
-            safeSetCompanies([]);
-          }
-        })
-        .catch(err => {
-          console.error('? Error loading companies for businesses tab:', err);
-          safeSetCompanies([]);
-        });
-      
-      // Load users to find business users
-      fetch('/api/users')
-        .then(res => res.json())
-        .then(data => {
-          if (data.users && Array.isArray(data.users)) {
-            setUsers(data.users);
-            console.log(`? Loaded ${data.users.length} users for businesses tab`);
-          } else {
-            console.warn('?? No users array in response:', data);
-            setUsers([]);
-          }
-        })
-        .catch(err => {
-          console.error('? Error loading users for businesses tab:', err);
-          setUsers([]);
-        });
+      loadBusinessesData();
     }
+
+    return () => {
+      cancelled = true;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+      setSiteAdminBusinessesLoading(false);
+    };
   }, [siteAdminTab, currentView, currentUser?.role]);
 
   // Load default pricing on page load and when Default Pricing tab is opened
@@ -1501,19 +1758,23 @@ function FinancialScorePage() {
           setDefaultBusinessMonthlyPrice(data.settings.businessMonthlyPrice ?? 195);
           setDefaultBusinessQuarterlyPrice(data.settings.businessQuarterlyPrice ?? 500);
           setDefaultBusinessAnnualPrice(data.settings.businessAnnualPrice ?? 1750);
+          setDefaultBusinessSetupFee(data.settings.businessSetupFee ?? 0);
           setDefaultConsultantMonthlyPrice(data.settings.consultantMonthlyPrice ?? 195);
           setDefaultConsultantQuarterlyPrice(data.settings.consultantQuarterlyPrice ?? 500);
           setDefaultConsultantAnnualPrice(data.settings.consultantAnnualPrice ?? 1750);
+          setDefaultConsultantSetupFee(data.settings.consultantSetupFee ?? 0);
           console.log('? Loaded default pricing from SystemSettings:', {
             business: {
               monthly: data.settings.businessMonthlyPrice ?? 195,
               quarterly: data.settings.businessQuarterlyPrice ?? 500,
-              annual: data.settings.businessAnnualPrice ?? 1750
+              annual: data.settings.businessAnnualPrice ?? 1750,
+              setupFee: data.settings.businessSetupFee ?? 0,
             },
             consultant: {
               monthly: data.settings.consultantMonthlyPrice ?? 195,
               quarterly: data.settings.consultantQuarterlyPrice ?? 500,
-              annual: data.settings.consultantAnnualPrice ?? 1750
+              annual: data.settings.consultantAnnualPrice ?? 1750,
+              setupFee: data.settings.consultantSetupFee ?? 0,
             }
           });
         }
@@ -1533,9 +1794,12 @@ function FinancialScorePage() {
     const success = urlParams.get('success');
     const error = urlParams.get('error');
 
-    // Set view if specified
+    // Set view if specified (e.g. from Support page Team Assessment link)
     if (view === 'admin') {
       setCurrentView('admin');
+    }
+    if (view === 'ma-welcome') {
+      handleNavigation('ma-welcome');
     }
 
     // Set admin dashboard tab if specified
@@ -1614,7 +1878,7 @@ function FinancialScorePage() {
           return newUsers;
         });
         
-        // Load financial records
+          // Load financial records
         const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
         const companyName = selectedCompany?.name || 'Unknown';
         console.log(`?? LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
@@ -1626,9 +1890,18 @@ function FinancialScorePage() {
         if (!records || records.length === 0) {
           console.log(`?? No records found - clearing aiMappings too`);
           setAiMappings([]);
+          setLatestFinancialSource(null);
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
           console.log(`?? Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
+          // Track data source for UI branching (CSV vs API connections).
+          // Prefer explicit columnMapping.source; fallback to heuristics for older records.
+          const inferredCsv =
+            latestRecord?.rawData &&
+            typeof latestRecord.rawData === 'object' &&
+            !Array.isArray(latestRecord.rawData) &&
+            (latestRecord.rawData.accountsByType || latestRecord.rawData.accounts || latestRecord.rawData.dates);
+          setLatestFinancialSource(latestRecord?.columnMapping?.source || (inferredCsv ? 'csv_trial_balance' : null));
           
           // Check if this is QuickBooks data and extract raw QB financial statements
           if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
@@ -1646,6 +1919,7 @@ function FinancialScorePage() {
               _companyId: selectedCompanyId,
               _recordId: latestRecord.id
             });
+            setLatestFinancialSource(latestRecord?.columnMapping?.source || 'quickbooks');
             console.log(`?? Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
             // Force re-render of Financial Statements view
             setDataRefreshKey(prev => prev + 1);
@@ -1882,13 +2156,15 @@ function FinancialScorePage() {
               id: company.id,
               monthly: company.subscriptionMonthlyPrice,
               quarterly: company.subscriptionQuarterlyPrice,
-              annual: company.subscriptionAnnualPrice
+              annual: company.subscriptionAnnualPrice,
+              setupFee: (company as any).subscriptionSetupFee
             });
 
             // Load pricing from database (try dedicated fields first, then userDefinedAllocations)
             let monthly = company.subscriptionMonthlyPrice;
             let quarterly = company.subscriptionQuarterlyPrice;
             let annual = company.subscriptionAnnualPrice;
+            const setupFee = (company as any).subscriptionSetupFee;
 
             // If dedicated pricing fields are null/undefined, try userDefinedAllocations backup
             if ((monthly === null || monthly === undefined) &&
@@ -1916,6 +2192,7 @@ function FinancialScorePage() {
               setSubscriptionMonthlyPrice(monthly);
               setSubscriptionQuarterlyPrice(quarterly);
               setSubscriptionAnnualPrice(annual);
+              setSubscriptionSetupFee(setupFee ?? 0);
               console.log('? Loaded existing company pricing from database (preserved from registration):', { monthly, quarterly, annual, isFree: monthly === 0 && quarterly === 0 && annual === 0 });
             } else if (isExplicitlyFree) {
               // Explicitly free (affiliate code with $0 pricing)
@@ -1923,6 +2200,7 @@ function FinancialScorePage() {
               setSubscriptionMonthlyPrice(0);
               setSubscriptionQuarterlyPrice(0);
               setSubscriptionAnnualPrice(0);
+              setSubscriptionSetupFee(0);
             } else {
               // No pricing data = company was created before pricing was saved
               // This should only happen for very old companies - use current default pricing
@@ -1943,15 +2221,20 @@ function FinancialScorePage() {
                     const defaultAnnual = isBusinessUser
                       ? (data.settings.businessAnnualPrice ?? 1750)
                       : (data.settings.consultantAnnualPrice ?? 1750);
+                    const defaultSetupFee = isBusinessUser
+                      ? (data.settings.businessSetupFee ?? 0)
+                      : (data.settings.consultantSetupFee ?? 0);
                     setSubscriptionMonthlyPrice(defaultMonthly);
                     setSubscriptionQuarterlyPrice(defaultQuarterly);
                     setSubscriptionAnnualPrice(defaultAnnual);
-                    console.log('? Loaded default pricing for company without saved pricing:', { defaultMonthly, defaultQuarterly, defaultAnnual, isBusinessUser });
+                    setSubscriptionSetupFee(defaultSetupFee);
+                    console.log('? Loaded default pricing for company without saved pricing:', { defaultMonthly, defaultQuarterly, defaultAnnual, defaultSetupFee, isBusinessUser });
                   } else {
                     // Fallback to hardcoded defaults
                     setSubscriptionMonthlyPrice(195);
                     setSubscriptionQuarterlyPrice(500);
                     setSubscriptionAnnualPrice(1750);
+                    setSubscriptionSetupFee(0);
                   }
                 })
                 .catch(err => {
@@ -1960,6 +2243,7 @@ function FinancialScorePage() {
                   setSubscriptionMonthlyPrice(195);
                   setSubscriptionQuarterlyPrice(500);
                   setSubscriptionAnnualPrice(1750);
+                  setSubscriptionSetupFee(0);
                 });
             }
 
@@ -1977,6 +2261,11 @@ function FinancialScorePage() {
         await checkQBStatus(selectedCompanyId);
         // Check Xero connection status
         await checkXeroStatus(selectedCompanyId);
+        // Infor M3 setup/status is restricted to site admins.
+        if (String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' && company?.accountingSystem === 'INFOR_M3') {
+          await checkInforM3Status(selectedCompanyId);
+          await fetchInforLastCaoPull(selectedCompanyId);
+        }
       } catch (error) {
         console.error('Error loading company data:', error);
       }
@@ -2060,22 +2349,22 @@ function FinancialScorePage() {
         }));
         setConsultants(mappedConsultants);
         
-        // Also load all companies and users for display
-        const allCompanies: any[] = [];
-        const allUsers: any[] = [];
-        for (const consultant of loadedConsultants || []) {
-          if (consultant.companies) {
-            allCompanies.push(...consultant.companies);
+        // Always load full company records so consultant cards have complete fields
+        // (e.g., accountingSystem) required by Site Admin integration containers.
+        const companiesRes = await fetch('/api/companies', { cache: 'no-store' });
+        if (companiesRes.ok) {
+          const companiesData = await companiesRes.json();
+          if (Array.isArray(companiesData?.companies)) {
+            safeSetCompanies(companiesData.companies);
           }
         }
-        safeSetCompanies(allCompanies);
       } catch (error) {
         console.error('Error loading consultants:', error);
       }
     };
     
     loadConsultants();
-  }, [currentUser]);
+  }, [currentUser, siteAdminTab]);
 
   // Load financial data when company is selected
   useEffect(() => {
@@ -2415,7 +2704,9 @@ function FinancialScorePage() {
     setLoginError('');
     setIsLoading(true);
     
-    if (!loginEmail || !loginPassword) {
+    const normalizedEmail = (loginEmail || '').toLowerCase().trim();
+
+    if (!normalizedEmail || !loginPassword) {
       setLoginError('Please enter both email and password');
       setIsLoading(false);
       return;
@@ -2424,13 +2715,23 @@ function FinancialScorePage() {
     try {
       // First, create NextAuth session for API authentication
       const { signIn, getSession } = await import('next-auth/react');
-      const signInResult = await signIn('credentials', {
-        email: loginEmail,
-        password: loginPassword,
-        redirect: false,
-      });
+      let signInResult: any = null;
+      try {
+        signInResult = await signIn('credentials', {
+          email: normalizedEmail,
+          password: loginPassword,
+          redirect: false,
+        });
+      } catch (e) {
+        console.error('❌ NextAuth signIn threw:', e);
+        setLoginError(`Login failed (auth session). Please try again.`);
+        setIsLoading(false);
+        return;
+      }
       
       if (signInResult?.error || !signInResult?.ok) {
+        console.warn('⚠️ NextAuth signIn failed:', signInResult);
+        // NextAuth returns opaque error codes; keep message user-friendly.
         setLoginError('Invalid email or password');
         setIsLoading(false);
         return;
@@ -2453,11 +2754,26 @@ function FinancialScorePage() {
       const loginResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+        body: JSON.stringify({ email: normalizedEmail, password: loginPassword }),
       });
       
       if (!loginResponse.ok) {
-        setLoginError('Invalid email or password');
+        let loginErrorMessage = 'Invalid email or password';
+        try {
+          const errorData = await loginResponse.json();
+          if (loginResponse.status >= 500) {
+            loginErrorMessage =
+              'Login service is temporarily unavailable. Please try again in a moment.';
+          } else if (typeof errorData?.error === 'string' && errorData.error.trim()) {
+            loginErrorMessage = errorData.error;
+          }
+        } catch {
+          if (loginResponse.status >= 500) {
+            loginErrorMessage =
+              'Login service is temporarily unavailable. Please try again in a moment.';
+          }
+        }
+        setLoginError(loginErrorMessage);
         setIsLoading(false);
         return;
       }
@@ -2468,8 +2784,8 @@ function FinancialScorePage() {
       if (loginData.mfaEnrollmentRequired) {
         console.log('?? MFA enrollment required');
         setMfaUserId(loginData.userId);
-        setMfaUserEmail(loginData.email || loginEmail);
-        setMfaTrustDurationDays(Number(loginData.trustDurationDays) || 180);
+        setMfaUserEmail(loginData.email || normalizedEmail);
+        setTrustDurationDays(loginData.trustDurationDays || null);
         setShowMFAEnrollment(true);
         setIsLoading(false);
         return;
@@ -2479,8 +2795,8 @@ function FinancialScorePage() {
       if (loginData.mfaRequired) {
         console.log('?? MFA verification required');
         setMfaUserId(loginData.userId);
-        setMfaUserEmail(loginEmail);
-        setMfaTrustDurationDays(Number(loginData.trustDurationDays) || 180);
+        setMfaUserEmail(normalizedEmail);
+        setTrustDurationDays(loginData.trustDurationDays || null);
         setShowMFAVerification(true);
         setIsLoading(false);
         return;
@@ -2497,7 +2813,8 @@ function FinancialScorePage() {
         consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
         consultantType: user.consultantType, // Preserve consultant type
         consultantId: user.consultantId, // Preserve consultant ID
-        isPrimaryContact: user.isPrimaryContact // Preserve primary contact status
+        isPrimaryContact: user.isPrimaryContact, // Preserve primary contact status
+        sidebarAccess: user.sidebarAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -2519,8 +2836,8 @@ function FinancialScorePage() {
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
       } else if (normalizedUser.userType === 'company') {
-        // Company users see the same dashboard as consultants
-        setCurrentView('admin');
+        // Company users land on Daily Alerts.
+        setCurrentView('daily-alerts');
       } else {
         setCurrentView('upload');
       }
@@ -2642,7 +2959,8 @@ function FinancialScorePage() {
         consultantCompanyName: user.consultantCompanyName,
         consultantType: user.consultantType,
         consultantId: user.consultantId,
-        isPrimaryContact: user.isPrimaryContact
+        isPrimaryContact: user.isPrimaryContact,
+        sidebarAccess: user.sidebarAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -2675,16 +2993,16 @@ function FinancialScorePage() {
               console.log('✅ Loaded company after MFA enrollment:', companyData.companies[0].name);
               // Delay setting view to allow React to complete state updates
               setTimeout(() => {
-                setCurrentView('admin');
+                setCurrentView('daily-alerts');
                 setAdminDashboardTab('company-management');
               }, 100);
             }
           } catch (error) {
             console.error('Error loading company after MFA enrollment:', error);
-            setTimeout(() => setCurrentView('admin'), 100);
+            setTimeout(() => setCurrentView('daily-alerts'), 100);
           }
         } else {
-          setTimeout(() => setCurrentView('admin'), 100);
+          setTimeout(() => setCurrentView('daily-alerts'), 100);
         }
       } else {
         setCurrentView('upload');
@@ -2706,6 +3024,7 @@ function FinancialScorePage() {
   const handleMFAVerificationComplete = async () => {
     console.log('? MFA verification completed');
     setShowMFAVerification(false);
+    setTrustDurationDays(null);
     
     // After verification, continue with normal login flow
     try {
@@ -2735,7 +3054,8 @@ function FinancialScorePage() {
         consultantCompanyName: user.consultantCompanyName,
         consultantType: user.consultantType,
         consultantId: user.consultantId,
-        isPrimaryContact: user.isPrimaryContact
+        isPrimaryContact: user.isPrimaryContact,
+        sidebarAccess: user.sidebarAccess ?? null,
       };
       
       setCurrentUser(normalizedUser);
@@ -2768,16 +3088,16 @@ function FinancialScorePage() {
               console.log('✅ Loaded company after MFA verification:', companyData.companies[0].name);
               // Delay setting view to allow React to complete state updates
               setTimeout(() => {
-                setCurrentView('admin');
+                setCurrentView('daily-alerts');
                 setAdminDashboardTab('company-management');
               }, 100);
             }
           } catch (error) {
             console.error('Error loading company after MFA verification:', error);
-            setTimeout(() => setCurrentView('admin'), 100);
+            setTimeout(() => setCurrentView('daily-alerts'), 100);
           }
         } else {
-          setTimeout(() => setCurrentView('admin'), 100);
+          setTimeout(() => setCurrentView('daily-alerts'), 100);
         }
       } else {
         setCurrentView('upload');
@@ -2802,7 +3122,7 @@ function FinancialScorePage() {
     setShowMFAEnrollment(false);
     setMfaUserId('');
     setMfaUserEmail('');
-    setMfaTrustDurationDays(180);
+    setTrustDurationDays(null);
     setLoginError('Login cancelled');
   };
 
@@ -2865,25 +3185,62 @@ function FinancialScorePage() {
       // Small delay to ensure session is fully propagated
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Normalize role and userType to lowercase for frontend compatibility
+      // Check MFA requirements after registration
+      const loginResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
+      });
+
+      if (!loginResponse.ok) {
+        setLoginError('Registration successful but login failed. Please try logging in.');
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+
+      const loginData = await loginResponse.json();
+
+      if (loginData.mfaEnrollmentRequired) {
+        setMfaUserId(loginData.userId);
+        setMfaUserEmail(loginData.email || loginEmail);
+        setTrustDurationDays(loginData.trustDurationDays || null);
+        setShowMFAEnrollment(true);
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+
+      if (loginData.mfaRequired) {
+        setMfaUserId(loginData.userId);
+        setMfaUserEmail(loginEmail);
+        setTrustDurationDays(loginData.trustDurationDays || null);
+        setShowMFAVerification(true);
+        setIsRegistering(false);
+        setIsLoading(false);
+        return;
+      }
+
+      const { user: loginUser } = loginData;
       const normalizedUser = {
-        ...user,
-        role: user.role.toLowerCase(),
-        userType: user.userType?.toLowerCase(),
-        consultantType: user.consultantType, // Preserve consultant type
-        consultantCompanyName: user.consultantCompanyName, // Preserve consultant company name
-        consultantId: user.consultantId // Preserve consultant ID
+        ...loginUser,
+        role: loginUser.role.toLowerCase(),
+        userType: loginUser.userType?.toLowerCase(),
+        consultantType: loginUser.consultantType,
+        consultantCompanyName: loginUser.consultantCompanyName,
+        consultantId: loginUser.consultantId,
+        sidebarAccess: (loginUser as any).sidebarAccess ?? null,
       };
-      
+
       setCurrentUser(normalizedUser);
       setIsLoggedIn(true);
       setCurrentView('consultant-dashboard');
       
       // Clear any stale company data and load fresh data for the new consultant
       safeSetCompanies([]);
-      if (user.consultantId) {
+      if (loginUser.consultantId) {
         try {
-          const { companies: consultantCompanies } = await companiesApi.getAll(user.consultantId);
+          const { companies: consultantCompanies } = await companiesApi.getAll(loginUser.consultantId);
           safeSetCompanies(consultantCompanies || []);
         } catch (error) {
           console.error('Failed to load companies after registration:', error);
@@ -2929,6 +3286,14 @@ function FinancialScorePage() {
     setIsLoggedIn(false);
     setCurrentView('login');
     setSelectedCompanyId('');
+    setShowCompanyPicker(false);
+    setSelectingCompanyId(null);
+    setCompanyPickerError('');
+    setCompanyPickerPromptedThisSession(false);
+    setExistingCompanyUserName('');
+    setExistingCompanyUserEmail('');
+    setExistingAssessmentUserName('');
+    setExistingAssessmentUserEmail('');
     setRawRows([]);
     setMapping({ date: '' });
     setFile(null);
@@ -3037,36 +3402,93 @@ function FinancialScorePage() {
       return;
     }
     
+    const trimmedName = newCompanyName.trim();
+    const trimmedAffiliateCode = selectedAffiliateCodeForNewCompany?.trim();
+
     setIsLoading(true);
     try {
       console.log('Creating company:', {
-        name: newCompanyName,
+        name: trimmedName,
         consultantId: currentUser.consultantId,
-        affiliateCode: selectedAffiliateCodeForNewCompany || undefined,
-        affiliateCodeRaw: selectedAffiliateCodeForNewCompany,
-        affiliateCodeUpper: selectedAffiliateCodeForNewCompany?.toUpperCase()
+        affiliateCode: trimmedAffiliateCode || undefined,
+        affiliateCodeRaw: trimmedAffiliateCode,
+        affiliateCodeUpper: trimmedAffiliateCode?.toUpperCase(),
       });
+
       const { company } = await companiesApi.create({
-        name: newCompanyName,
+        name: trimmedName,
         consultantId: currentUser.consultantId,
-        affiliateCode: selectedAffiliateCodeForNewCompany || undefined
+        affiliateCode: trimmedAffiliateCode ? trimmedAffiliateCode.toUpperCase() : undefined,
       });
+
       console.log('Company created:', company);
-      console.log('Company pricing in response:', {
-        monthly: company.subscriptionMonthlyPrice,
-        quarterly: company.subscriptionQuarterlyPrice,
-        annual: company.subscriptionAnnualPrice,
-        hasPricing: !!(company.subscriptionMonthlyPrice || company.subscriptionQuarterlyPrice || company.subscriptionAnnualPrice)
-      });
       safeSetCompanies(Array.isArray(companies) ? [...companies, company] : [company]);
+
       setNewCompanyName('');
       setSelectedAffiliateCodeForNewCompany('');
-      
+
       // Automatically select the newly created company
       setSelectedCompanyId(company.id);
 
-      // Redirect to payments tab for new company setup
-      setAdminDashboardTab('payments');
+      // Existing behavior (non-modal flows): send user to payments for setup.
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('payments');
+
+      alert('Company created successfully!');
+    } catch (error) {
+      console.error('Error creating company:', error);
+      alert(error instanceof ApiError ? error.message : 'Failed to create company');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openAddCompanyModal = () => {
+    // Prevent stale input from previous attempts.
+    setNewCompanyName('');
+    setSelectedAffiliateCodeForNewCompany('');
+    setShowAddCompanyModal(true);
+  };
+
+  const addCompanyFromConsultantModal = async () => {
+    if (!currentUser) {
+      alert('Please login again.');
+      return;
+    }
+    if (!currentUser.consultantId) {
+      alert('Error: No consultant ID found. Please log out and log back in.');
+      console.error('Current user:', currentUser);
+      return;
+    }
+
+    const trimmedName = newCompanyName.trim();
+    const trimmedAffiliateCode = selectedAffiliateCodeForNewCompany?.trim();
+
+    if (!trimmedName) {
+      alert('Please enter a company name');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { company } = await companiesApi.create({
+        name: trimmedName,
+        consultantId: currentUser.consultantId,
+        affiliateCode: trimmedAffiliateCode ? trimmedAffiliateCode.toUpperCase() : undefined,
+      });
+
+      safeSetCompanies(Array.isArray(companies) ? [...companies, company] : [company]);
+
+      // Clear and close modal before navigation to avoid flicker.
+      setNewCompanyName('');
+      setSelectedAffiliateCodeForNewCompany('');
+      setShowAddCompanyModal(false);
+
+      // Select and redirect to Company Management -> Profile for the new company.
+      setSelectedCompanyId(company.id);
+      setCurrentView('admin');
+      setAdminDashboardTab('company-management');
+      setCompanyManagementSubTab('profile');
 
       alert('Company created successfully!');
     } catch (error) {
@@ -3419,6 +3841,348 @@ function FinancialScorePage() {
     }
   };
 
+  // Infor M3 Functions
+  const checkInforM3Status = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/infor-m3/status?companyId=${companyId}`);
+      const data = await response.json();
+
+      if (data.connected) {
+        setInforConnected(true);
+        setInforStatus(data.status);
+        setInforLastSync(data.lastSyncAt ? new Date(data.lastSyncAt) : null);
+        setInforError(data.errorMessage || null);
+      } else {
+        setInforConnected(false);
+        setInforStatus('NOT_CONNECTED');
+        setInforLastSync(null);
+        setInforError(null);
+      }
+      return data;
+    } catch (error) {
+      console.error('Failed to check Infor M3 status:', error);
+      setInforError('Failed to check Infor M3 connection status');
+      return null;
+    }
+  };
+
+  const loadInforM3Credentials = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/infor-m3/credentials?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok) return;
+      if (!data?.credentials) return;
+      setInforCredentials({
+        tenantId: data.credentials.tenantId || '',
+        clientName: data.credentials.clientName || '',
+        clientId: data.credentials.clientId || '',
+        clientSecret: data.credentials.clientSecret || '',
+        ionApiBaseUrl: data.credentials.ionApiBaseUrl || '',
+        ssoBaseUrl: data.credentials.ssoBaseUrl || '',
+        oauthAuthPath: data.credentials.oauthAuthPath || '',
+        oauthTokenPath: data.credentials.oauthTokenPath || '',
+        oauthRevokePath: data.credentials.oauthRevokePath || '',
+        serviceAccountAccessKey: data.credentials.serviceAccountAccessKey || '',
+        serviceAccountSecretKey: data.credentials.serviceAccountSecretKey || '',
+      });
+    } catch (error) {
+      console.error('Failed to load Infor M3 credentials:', error);
+    }
+  };
+
+  const connectInforM3 = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) {
+      alert('Please select a company first');
+      return;
+    }
+
+    const requiredFields: Array<keyof typeof inforCredentials> = [
+      'tenantId',
+      'clientId',
+      'clientSecret',
+      'ionApiBaseUrl',
+      'ssoBaseUrl',
+      'serviceAccountAccessKey',
+      'serviceAccountSecretKey',
+    ];
+    const missing = requiredFields.filter((field) => !inforCredentials[field]?.trim());
+    if (missing.length > 0) {
+      alert(`Missing required Infor M3 fields: ${missing.join(', ')}`);
+      return;
+    }
+
+    setInforBusy(true);
+    setInforError(null);
+    setInforProbeSummary(null);
+    try {
+      const response = await fetch('/api/infor-m3/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          ...inforCredentials,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.details || data.error || 'Infor M3 connect failed');
+      }
+
+      await checkInforM3Status(companyId);
+      alert('Infor M3 credentials validated and saved for this company.');
+    } catch (error: any) {
+      console.error('Infor M3 connect error:', error);
+      const message = error?.message || 'Failed to connect Infor M3';
+      setInforError(message);
+      alert(`Failed to connect Infor M3:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+    }
+  };
+
+  const saveInforM3Credentials = async (
+    targetCompanyId?: string,
+    schedule?: { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }
+  ) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) {
+      alert('Please select a company first');
+      return;
+    }
+
+    const requiredFields: Array<keyof typeof inforCredentials> = [
+      'tenantId',
+      'clientId',
+      'clientSecret',
+      'ionApiBaseUrl',
+      'ssoBaseUrl',
+      'serviceAccountAccessKey',
+      'serviceAccountSecretKey',
+    ];
+    const missing = requiredFields.filter((field) => !inforCredentials[field]?.trim());
+    if (missing.length > 0) {
+      alert(`Missing required Infor M3 fields: ${missing.join(', ')}`);
+      return;
+    }
+
+    setInforBusy(true);
+    setInforError(null);
+    try {
+      const response = await fetch('/api/infor-m3/save-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          ...inforCredentials,
+          ...(schedule ? { frequency: schedule.frequency, pullTime: schedule.pullTime } : {}),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.details || data.error || 'Save failed');
+      }
+      await checkInforM3Status(companyId);
+      alert('Infor M3 credentials saved for this company.');
+    } catch (error: any) {
+      const message = error?.message || 'Failed to save Infor M3 credentials';
+      setInforError(message);
+      alert(`Failed to save Infor M3 credentials:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+    }
+  };
+
+  const testInforM3Token = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+    setInforBusy(true);
+    setInforError(null);
+    try {
+      const response = await fetch(`/api/infor-m3/test-token?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.details || data.error || 'Token test failed');
+      }
+      alert(`Infor M3 token test passed. Token endpoint: ${data.tokenEndpoint}`);
+    } catch (error: any) {
+      console.error('Infor M3 token test error:', error);
+      const message = error?.message || 'Failed to test Infor M3 token';
+      setInforError(message);
+      alert(`Infor M3 token test failed:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+    }
+  };
+
+  const probeInforM3 = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+    if (!inforProbePath.trim()) {
+      alert('Please enter an Infor M3 probe path');
+      return;
+    }
+    setInforBusy(true);
+    setInforError(null);
+    try {
+      const response = await fetch(
+        `/api/infor-m3/probe?companyId=${companyId}&path=${encodeURIComponent(inforProbePath.trim())}`
+      );
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.details || data.error || 'Probe failed');
+      }
+
+      const summary = `Probe OK (${data.status}) - ${data.url}`;
+      setInforProbeSummary(summary);
+      alert(summary);
+    } catch (error: any) {
+      console.error('Infor M3 probe error:', error);
+      const message = error?.message || 'Failed to probe Infor M3 endpoint';
+      setInforError(message);
+      setInforProbeSummary(null);
+      alert(`Infor M3 probe failed:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+    }
+  };
+
+  const disconnectInforM3 = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+    if (!confirm('Are you sure you want to disconnect Infor M3?')) {
+      return;
+    }
+
+    setInforBusy(true);
+    try {
+      const response = await fetch('/api/infor-m3/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.details || data.error || 'Disconnect failed');
+      }
+
+      setInforConnected(false);
+      setInforStatus('NOT_CONNECTED');
+      setInforLastSync(null);
+      setInforError(null);
+      setInforProbeSummary(null);
+      alert('Infor M3 disconnected successfully');
+    } catch (error: any) {
+      console.error('Infor M3 disconnect error:', error);
+      alert('Failed to disconnect Infor M3: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setInforBusy(false);
+    }
+  };
+
+  const runInforM3OperationalSync = async (
+    targetCompanyId?: string,
+    frequency: 'daily' | 'weekly' | 'monthly' = 'daily'
+  ) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+    setInforBusy(true);
+    setInforError(null);
+    try {
+      const response = await fetch('/api/infor-m3/operational-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, frequency }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        const details = Array.isArray(data?.errors) && data.errors.length > 0
+          ? data.errors.join('\n')
+          : data?.details || data?.error || 'Operational sync failed';
+        throw new Error(details);
+      }
+      await checkInforM3Status(companyId);
+      alert(`Infor M3 operational sync complete. Records created: ${data.recordsCreated ?? 0}.`);
+    } catch (error: any) {
+      const message = error?.message || 'Failed to run Infor M3 operational sync';
+      setInforError(message);
+      alert(`Infor M3 operational sync failed:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+    }
+  };
+
+  const runPlatformOperationalSync = async (
+    targetCompanyId?: string,
+    frequency: 'daily' | 'weekly' | 'monthly' = 'daily'
+  ) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+
+    try {
+      const response = await fetch('/api/operational-sync/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, frequency }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        const details =
+          Array.isArray(data?.errors) && data.errors.length > 0
+            ? data.errors.join('\n')
+            : data?.details || data?.error || 'Operational sync failed';
+        throw new Error(details);
+      }
+      alert(`Operational sync complete. Records created: ${data.recordsCreated ?? 0}.`);
+    } catch (error: any) {
+      alert(`Operational sync failed:\n\n${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const pullInforMonthlyCao = async () => {
+    if (!selectedCompanyId) return;
+    setInforCaoPulling(true);
+    setInforCaoMessage(null);
+    try {
+      const response = await fetch('/api/infor-m3/sync-coa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: selectedCompanyId }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Monthly COA pull failed');
+      }
+      await fetchInforLastCaoPull(selectedCompanyId);
+      setInforCaoMessage(
+        `Monthly COA pull complete. Program: ${data.accountsProgram}. Records imported: ${data.recordsImported ?? 0}.`
+      );
+    } catch (error: any) {
+      const message = error?.message || 'Monthly COA pull failed';
+      setInforCaoMessage(`Error: ${message}`);
+    } finally {
+      setInforCaoPulling(false);
+    }
+  };
+
+  const fetchInforLastCaoPull = async (companyId: string) => {
+    try {
+      const response = await fetch(`/api/infor-m3/sync-coa?companyId=${companyId}`);
+      const data = await response.json();
+      if (!response.ok || !data?.ok || !data?.hasData) {
+        setInforLastCaoPullAt(null);
+        setInforLastCaoPulledBy(null);
+        return;
+      }
+      setInforLastCaoPullAt(data.lastPullAt ? new Date(data.lastPullAt) : null);
+      setInforLastCaoPulledBy(typeof data.pulledByEmail === 'string' ? data.pulledByEmail : null);
+    } catch (error) {
+      console.error('Failed to fetch last Infor COA pull:', error);
+      setInforLastCaoPullAt(null);
+      setInforLastCaoPulledBy(null);
+    }
+  };
+
   const getCompanyUsers = (companyId: string, userType?: 'company' | 'assessment') => {
     if (userType) {
       return users.filter(u => u.companyId === companyId && u.role === 'user' && u.userType === userType);
@@ -3426,25 +4190,78 @@ function FinancialScorePage() {
     return users.filter(u => u.companyId === companyId && u.role === 'user');
   };
   const getCurrentCompany = () => Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+  const handleCompanyUpdated = (updatedCompany: any) => {
+    if (!updatedCompany?.id) return;
+    setCompanies((prev) => {
+      const prevCompanies = Array.isArray(prev) ? prev : [];
+      const exists = prevCompanies.some((c: any) => c.id === updatedCompany.id);
+      if (!exists) return [...prevCompanies, updatedCompany];
+      return prevCompanies.map((c: any) => (c.id === updatedCompany.id ? { ...c, ...updatedCompany } : c));
+    });
+  };
 
-  const handleSelectCompany = (companyId: string) => {
+  const applyActiveCompany = async (companyId: string) => {
+    await authApi.selectCompany(companyId);
+    setSelectedCompanyId(companyId);
+    setExpandedCompanyInfoId(companyId);
+    setCurrentUser((prev) => {
+      if (!prev) return prev;
+      const membership = Array.isArray(prev.accessibleCompanies)
+        ? prev.accessibleCompanies.find((c) => c.companyId === companyId)
+        : undefined;
+      return {
+        ...prev,
+        companyId,
+        activeCompanyId: companyId,
+        companyRole: (membership?.companyRole as any) ?? prev.companyRole,
+        sidebarAccess: (membership?.sidebarAccess as any) ?? prev.sidebarAccess,
+      };
+    });
+  };
+
+  const handleSelectCompany = async (companyId: string) => {
     const company = Array.isArray(companies) ? companies.find(c => c.id === companyId) : undefined;
     if (!company) return;
-    
-    // Select the company
-    setSelectedCompanyId(companyId);
-    
-    // Navigate to Consultant Dashboard to show company details
-    setCurrentView('admin');
-    
-    // Automatically expand this company's section
-    setExpandedCompanyInfoId(companyId);
+    try {
+      await applyActiveCompany(companyId);
+      // Navigate to Company Management for the selected company.
+      setCurrentView('admin');
+      setShowCompanyPicker(false);
+      setCompanyPickerError('');
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Failed to switch company';
+      setCompanyPickerError(message);
+      alert(message);
+    }
+  };
+
+  const handleConfirmCompanyPicker = async (companyId: string) => {
+    setSelectingCompanyId(companyId);
+    setCompanyPickerError('');
+    try {
+      await applyActiveCompany(companyId);
+      setShowCompanyPicker(false);
+      if (currentUser?.role === 'consultant') {
+        setCurrentView('consultant-dashboard');
+      } else if (currentUser?.userType === 'company') {
+        setCurrentView('daily-alerts');
+      }
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Failed to set active company';
+      setCompanyPickerError(message);
+    } finally {
+      setSelectingCompanyId(null);
+    }
   };
 
   const saveCompanyDetails = async () => {
     if (!companyIndustrySector) { 
       alert('Please select an industry sector'); 
       return; 
+    }
+    if (!accountingSystem) {
+      alert('Please select an accounting system');
+      return;
     }
     setIsLoading(true);
     try {
@@ -3454,7 +4271,10 @@ function FinancialScorePage() {
         addressState: companyAddressState,
         addressZip: companyAddressZip,
         addressCountry: companyAddressCountry,
-        industrySector: companyIndustrySector as number
+        industrySector: companyIndustrySector as number,
+        accountingSystem,
+        companySizeCategory: companySizeCategory || null,
+        industrySectorCategory: industrySectorCategory || null
       });
       safeSetCompanies(Array.isArray(companies) ? companies.map(c => c.id === editingCompanyId ? { ...c, ...company } : c) : [company]);
       setSelectedCompanyId(editingCompanyId);
@@ -3470,6 +4290,9 @@ function FinancialScorePage() {
       setCompanyAddressZip('');
       setCompanyAddressCountry('USA');
       setCompanyIndustrySector('');
+      setAccountingSystem('');
+      setCompanySizeCategory('DEFAULT');
+      setIndustrySectorCategory('01');
       
       // Stay on Consultant Dashboard
       setCurrentView('admin');
@@ -3487,7 +4310,13 @@ function FinancialScorePage() {
     }
     setIsLoading(true);
     try {
-      const { company } = await companiesApi.updatePricing(selectedCompanyId, subscriptionMonthlyPrice || 0, subscriptionQuarterlyPrice || 0, subscriptionAnnualPrice || 0);
+      const { company } = await companiesApi.updatePricing(
+        selectedCompanyId,
+        subscriptionMonthlyPrice || 0,
+        subscriptionQuarterlyPrice || 0,
+        subscriptionAnnualPrice || 0,
+        subscriptionSetupFee || 0
+      );
       
       console.log('?? Subscription pricing saved:', company);
       
@@ -3500,7 +4329,7 @@ function FinancialScorePage() {
         safeSetCompanies(allCompanies);
       }
       
-      alert('? Subscription pricing saved successfully!');
+      alert('Subscription pricing saved successfully!');
     } catch (error) {
       console.error('? Error saving subscription pricing:', error);
       alert(error instanceof ApiError ? error.message : 'Failed to save subscription pricing');
@@ -3517,8 +4346,8 @@ function FinancialScorePage() {
     const phone = userType === 'company' ? newCompanyUserPhone : undefined; // Phone only for company users
     const password = userType === 'company' ? newCompanyUserPassword : newAssessmentUserPassword;
     
-    if (!name || !email || !password) { 
-      alert('Please fill all required fields (Name, Email, Password)'); 
+    if (!name || !email) { 
+      alert('Please fill required fields (Name, Email)'); 
       return; 
     }
     
@@ -3529,7 +4358,7 @@ function FinancialScorePage() {
       console.log('Filtered company users:', users.filter(u => u.companyId === companyId && u.userType === 'company'));
       console.log('Filtered assessment users:', users.filter(u => u.companyId === companyId && u.userType === 'assessment'));
       
-      const { user } = await usersApi.create({
+      const { user, linkedExistingUser } = await usersApi.create({
         name,
         title,
         email,
@@ -3565,14 +4394,20 @@ function FinancialScorePage() {
         setNewAssessmentUserPassword('');
       }
       
-      alert(`${userType === 'company' ? 'Company' : 'Assessment'} user created successfully!`);
+      if (linkedExistingUser) {
+        alert(`Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`);
+      } else {
+        alert(`${userType === 'company' ? 'Company' : 'Assessment'} user created successfully!`);
+      }
     } catch (error) {
       console.error('Error creating user:', error);
       if (error instanceof ApiError) {
-        if (error.message.includes('already registered')) {
-          alert(`?? Email already in use\n\n"${email}" is already registered in the system.\n\nPlease use a different email address.`);
+        if (error.message.includes('already has access to this company')) {
+          alert(`User already has access\n\n"${email}" already has access to this company.`);
+        } else if (error.message.includes('already registered')) {
+          alert(`Email already in use\n\n"${email}" is already registered in the system.\n\nTip: leave password blank and add this email to grant company access.`);
         } else if (error.message.includes('Password does not meet requirements')) {
-          alert('?? Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+          alert('Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
         } else {
           alert(error.message);
         }
@@ -3584,12 +4419,96 @@ function FinancialScorePage() {
     }
   };
 
-  const deleteUser = async (userId: string) => {
+  const grantExistingUserAccess = async (
+    companyId: string,
+    userType: 'company' | 'assessment' = 'company',
+  ) => {
+    const name =
+      userType === 'company' ? existingCompanyUserName.trim() : existingAssessmentUserName.trim();
+    const email =
+      userType === 'company' ? existingCompanyUserEmail.trim() : existingAssessmentUserEmail.trim();
+    if (!name) {
+      alert('Please enter the user name.');
+      return;
+    }
+    if (!email) {
+      alert('Please enter an email to grant access.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { user, linkedExistingUser } = await usersApi.create({
+        name,
+        email,
+        password: undefined,
+        companyId,
+        userType: userType.toUpperCase() as 'COMPANY' | 'ASSESSMENT',
+      });
+
+      const normalizedUser = {
+        ...user,
+        companyId,
+        role: user.role.toLowerCase(),
+        // Show in the selected section immediately after grant.
+        userType: userType.toLowerCase(),
+      };
+      setUsers((prev) => {
+        const existingIndex = prev.findIndex(
+          (u) => u.id === normalizedUser.id && u.companyId === companyId
+        );
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = { ...next[existingIndex], ...normalizedUser };
+          return next;
+        }
+        return [...prev, normalizedUser];
+      });
+
+      if (linkedExistingUser) {
+        alert(
+          `Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`,
+        );
+      } else {
+        alert(`User created and added:\n\n${email}`);
+      }
+
+      if (userType === 'company') {
+        setExistingCompanyUserName('');
+        setExistingCompanyUserEmail('');
+      } else {
+        setExistingAssessmentUserName('');
+        setExistingAssessmentUserEmail('');
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.message.includes('already has access to this company')) {
+          alert(`User already has access\n\n"${email}" already has access to this company.`);
+        } else if (error.message.toLowerCase().includes('password is required')) {
+          alert(
+            `No existing account found for:\n\n${email}\n\nUse "Create New User" and set a password to create this user.`,
+          );
+        } else {
+          alert(error.message);
+        }
+      } else {
+        alert('Failed to grant access');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteUser = async (userId: string, companyId?: string) => {
     if (!confirm('Delete this user?')) return;
     setIsLoading(true);
     try {
-      await usersApi.delete(userId);
-      setUsers(users.filter(u => u.id !== userId));
+      await usersApi.delete(userId, companyId);
+      setUsers((prev) =>
+        prev.filter((u) =>
+          companyId ? !(u.id === userId && u.companyId === companyId) : u.id !== userId
+        )
+      );
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to delete user');
     } finally {
@@ -3656,7 +4575,7 @@ function FinancialScorePage() {
       setNewConsultantCompanyWebsite('');
     } catch (error) {
       if (error instanceof ApiError && error.message.includes('Password does not meet requirements')) {
-        alert('?? Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
+        alert('Password does not meet requirements:\n\n• At least 8 characters\n• One uppercase letter (A-Z)\n• One lowercase letter (a-z)\n• One number (0-9)\n• One special character (!@#$%^&*)\n\nPlease create a stronger password.');
       } else {
         alert(error instanceof ApiError ? error.message : 'Failed to add consultant');
       }
@@ -3665,9 +4584,9 @@ function FinancialScorePage() {
     }
   };
 
-  const updateCompanyPricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number }) => {
+  const updateCompanyPricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number; setupFee: number }) => {
     try {
-      await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual);
+      await companiesApi.updatePricing(companyId, pricing.monthly, pricing.quarterly, pricing.annual, pricing.setupFee);
       
       // Update local state
       safeSetCompanies(Array.isArray(companies) ? companies.map(c => 
@@ -3677,6 +4596,7 @@ function FinancialScorePage() {
               subscriptionMonthlyPrice: pricing.monthly,
               subscriptionQuarterlyPrice: pricing.quarterly,
               subscriptionAnnualPrice: pricing.annual,
+              subscriptionSetupFee: pricing.setupFee,
               selectedSubscriptionPlan: null // Reset selected plan when pricing changes
             } 
           : c
@@ -3689,7 +4609,7 @@ function FinancialScorePage() {
         return newState;
       });
       
-      alert('? Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
+      alert('Pricing updated successfully! The business will see the new pricing on their next login or when they refresh.');
     } catch (error) {
       alert(error instanceof ApiError ? error.message : 'Failed to update pricing');
     }
@@ -4704,6 +5624,43 @@ function FinancialScorePage() {
   // Main Logged-In View with Header
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
+  const selectedAccountingSystem = company?.accountingSystem || '';
+  const selectedAccountingSystemLabel = (() => {
+    switch (selectedAccountingSystem) {
+      case 'ACUMATICA':
+        return 'Acumatica';
+      case 'CERTINIA':
+        return 'Certinia';
+      case 'CSV_FILE':
+        return 'CSV file';
+      case 'DYNAMICS':
+        return 'Dynamics';
+      case 'EPICOR':
+        return 'Epicor';
+      case 'FUSION_CLOUD':
+        return 'Fusion Cloud';
+      case 'IFS':
+        return 'IFS';
+      case 'INFOR_M3':
+        return 'Infor M3';
+      case 'NETSUITE':
+        return 'NetSuite';
+      case 'QAD':
+        return 'QAD';
+      case 'QUICKBOOKS':
+        return 'QuickBooks Online';
+      case 'QUICKBOOKS_DESKTOP':
+        return 'QuickBooks Desktop';
+      case 'SAGE':
+        return 'Sage';
+      case 'SAGE_INTACCT':
+        return 'Sage Intacct';
+      case 'XERO':
+        return 'Xero';
+      default:
+        return selectedAccountingSystem ? selectedAccountingSystem : 'Not set';
+    }
+  })();
 
   // Custom Print Package Handler
   const handleGeneratePrintPackage = () => {
@@ -4719,9 +5676,6 @@ function FinancialScorePage() {
     
     if (printPackageSelections.mda) {
       printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)' });
-    }
-    if (printPackageSelections.financialScore) {
-      printQueue.push({ view: 'fs-score', title: 'Financial Score' });
     }
     if (printPackageSelections.priorityRatios) {
       printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios' });
@@ -4785,10 +5739,13 @@ function FinancialScorePage() {
       return;
     }
 
+    setIsPrintingPackage(true);
+
     // Print each report in sequence with a delay
     let currentIndex = 0;
     const printNext = () => {
       if (currentIndex >= printQueue.length) {
+        setIsPrintingPackage(false);
         alert('All reports have been sent to print!');
         return;
       }
@@ -4810,13 +5767,14 @@ function FinancialScorePage() {
         setCurrentView(report.view as any);
       }
 
-      // Wait for render then print
+      // Wait for view transition/render to settle before printing
+      const renderDelayMs = report.view === 'dashboard' ? 1500 : 1000;
       setTimeout(() => {
         window.print();
         currentIndex++;
-        // Wait for print dialog to close before next one
-        setTimeout(printNext, 1000);
-      }, 500);
+        // Give the browser time to close print dialog before next report
+        setTimeout(printNext, 1200);
+      }, renderDelayMs);
     };
 
     printNext();
@@ -4872,6 +5830,7 @@ function FinancialScorePage() {
             userId={mfaUserId}
             userEmail={mfaUserEmail}
             onComplete={handleMFAEnrollmentComplete}
+            trustDurationDays={trustDurationDays || undefined}
           />
         )}
         
@@ -4883,6 +5842,7 @@ function FinancialScorePage() {
             trustDurationDays={mfaTrustDurationDays}
             onSuccess={handleMFAVerificationComplete}
             onCancel={handleMFACancel}
+            trustDurationDays={trustDurationDays || undefined}
           />
         )}
       </>
@@ -4890,26 +5850,131 @@ function FinancialScorePage() {
   }
 
   return (
-    <div style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="app-shell" style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Toaster />
       <InactivityLogout 
         isLoggedIn={isLoggedIn}
         userEmail={currentUser?.email}
         onLogout={handleLogout}
       />
-      <Header
-        currentUser={currentUser}
-        currentView={currentView}
-        setCurrentView={setCurrentView}
-        handleLogout={handleLogout}
-        handleNavigation={handleNavigation}
-      />
+      <style>{`
+        @media print {
+          @page {
+            size: ${isPrintingPackage ? printOrientation : 'auto'};
+          }
+
+          html,
+          body,
+          .app-shell {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+
+          .app-shell .app-global-header,
+          .app-shell .app-left-sidebar,
+          .app-shell header,
+          .app-shell aside,
+          .app-shell footer,
+          .app-shell [role="navigation"] {
+            display: none !important;
+          }
+
+          .app-shell-content {
+            margin-top: 0 !important;
+            height: auto !important;
+            display: block !important;
+            overflow: visible !important;
+          }
+
+          .app-shell-main {
+            padding-top: 0 !important;
+            overflow: visible !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+          }
+        }
+      `}</style>
+      <div className="app-global-header">
+        <Header
+          currentUser={currentUser}
+          currentView={currentView}
+          setCurrentView={setCurrentView as any}
+          handleLogout={handleLogout}
+          handleNavigation={handleNavigation}
+        />
+      </div>
+
+      {showCompanyPicker && companyPickerOptions.length > 1 && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            zIndex: 2200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              width: 'min(540px, 96vw)',
+              background: 'white',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              boxShadow: '0 16px 40px rgba(15, 23, 42, 0.25)',
+              padding: '18px',
+            }}
+          >
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>Select Company</div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '6px' }}>
+              Choose which company to access for this session.
+            </div>
+
+            <div style={{ marginTop: '14px', display: 'grid', gap: '8px' }}>
+              {companyPickerOptions.map((option) => {
+                const isActive = selectedCompanyId === option.companyId;
+                const isSelecting = selectingCompanyId === option.companyId;
+                return (
+                  <button
+                    key={option.companyId}
+                    onClick={() => handleConfirmCompanyPicker(option.companyId)}
+                    disabled={Boolean(selectingCompanyId)}
+                    style={{
+                      textAlign: 'left',
+                      border: isActive ? '2px solid #1f70c1' : '1px solid #dbe2ea',
+                      background: isActive ? '#eff6ff' : '#ffffff',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      cursor: selectingCompanyId ? 'not-allowed' : 'pointer',
+                      opacity: selectingCompanyId && !isSelecting ? 0.6 : 1,
+                      fontWeight: 700,
+                      color: '#0f172a',
+                    }}
+                  >
+                    {option.name}
+                    {isSelecting ? ' (Switching...)' : isActive ? ' (Current)' : ''}
+                  </button>
+                );
+              })}
+            </div>
+
+            {companyPickerError && (
+              <div style={{ marginTop: '12px', fontSize: '13px', color: '#b91c1c' }}>{companyPickerError}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area with Sidebar */}
-      <div style={{ display: 'flex', overflow: 'hidden', marginTop: '70px', height: 'calc(100vh - 70px)' }}>
+      <div className="app-shell-content" style={{ display: 'flex', overflow: 'hidden', marginTop: '70px', height: 'calc(100vh - 70px)' }}>
         {/* Left Navigation Sidebar - Not for Site Admin */}
         {currentUser?.role !== 'siteadmin' && !(currentUser?.userType === 'assessment') && (
-        <aside style={{ 
+        <aside className="app-left-sidebar" style={{ 
           width: '280px', 
           background: 'white', 
           borderRight: '2px solid #e2e8f0', 
@@ -4945,8 +6010,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.border = '1px solid #bae6fd';
                 }}
               >
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#0c4a6e', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Company</div>
-                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1e40af' }}>
+                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1F70C1' }}>
                   {companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || 'Loading...' : '')}
                 </div>
                 {/* Show Advisor Name for Company Users */}
@@ -4954,7 +6018,7 @@ function FinancialScorePage() {
                   const consultant = consultants.find(c => c.id === currentUser.consultantId);
                   if (consultant?.companyName) {
                     return (
-                      <div style={{ fontSize: '12px', color: '#667eea', marginTop: '6px', fontWeight: '500' }}>
+                      <div style={{ fontSize: '12px', color: '#1F70C1', marginTop: '6px', fontWeight: '500' }}>
                         {consultant.companyName}
                       </div>
                     );
@@ -4966,410 +6030,110 @@ function FinancialScorePage() {
           )}
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
-            {/* Valuation Section */}
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => setCurrentView('valuation')}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: currentView === 'valuation' ? '#667eea' : '#1e293b',
-                  textTransform: 'uppercase', 
+            {currentUser?.userType !== 'assessment' && null}
+
+            {/* Analysis Section */}
+            <div style={{ marginBottom: '16px' }}>
+              <h3
+                onClick={() => handleNavigation('operations')}
+                style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: currentView === 'operations' ? '#1F70C1' : '#1e293b',
+                  textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '1px 24px',
-                  marginBottom: '1px',
+                  margin: '6px 0 8px 0',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
-                  borderLeft: currentView === 'valuation' ? '4px solid #667eea' : '4px solid transparent'
+                  whiteSpace: 'nowrap'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
-                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'valuation' ? '#667eea' : '#1e293b'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#1F70C1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = currentView === 'operations' ? '#1F70C1' : '#1e293b';
+                }}
               >
-                Valuation
+                {currentView === 'operations' && '› '}OPERATIONS DASHBOARD
               </h3>
-            </div>
 
-            {/* Financial Statements Section */}
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => setCurrentView('financial-statements')}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: currentView === 'financial-statements' ? '#667eea' : '#1e293b',
-                  textTransform: 'uppercase', 
+              <h3
+                onClick={() => handleNavigation('pa-overview')}
+                style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: currentView.startsWith('pa-') ? '#1F70C1' : '#1e293b',
+                  textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '1px 24px',
-                  marginBottom: '1px',
+                  marginBottom: '8px',
                   cursor: 'pointer',
-                  transition: 'color 0.2s',
-                  borderLeft: currentView === 'financial-statements' ? '4px solid #667eea' : '4px solid transparent'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#667eea'}
-                onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'financial-statements' ? '#667eea' : '#1e293b'}
-              >
-                Financial Statements
-              </h3>
-            </div>
-
-            {/* Financial Score Section */}
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => setIsFinancialScoreExpanded(!isFinancialScoreExpanded)}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
                   transition: 'color 0.2s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
-                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = currentView.startsWith('pa-') ? '#1F70C1' : '#1e293b';
+                }}
               >
-                <span>Financial Score</span>
-                <span style={{ fontSize: '12px', color: '#667eea' }}>{isFinancialScoreExpanded ? '-' : '+'}</span>
+                {currentView === 'pa-overview' && '› '}Operations Analysis
               </h3>
-              {isFinancialScoreExpanded && (
+              {(!isCompanyUser || isCompanyAdmin || (allowedSectionsForCompanyUser || []).includes('performance-analytics')) && (
                 <div style={{ paddingLeft: '28px' }}>
-                  <div
-                    onClick={() => setCurrentView('fs-intro')}
-                    style={{
-                      fontSize: '14px',
-                      color: currentView === 'fs-intro' ? '#667eea' : '#475569',
-                      padding: '4px 12px',
-                      cursor: 'pointer',
-                      borderRadius: '6px',
-                      marginBottom: '4px',
-                      background: currentView === 'fs-intro' ? '#ede9fe' : 'transparent',
-                      fontWeight: currentView === 'fs-intro' ? '600' : '400',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (currentView !== 'fs-intro') {
-                        e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentView !== 'fs-intro') {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#475569';
-                      }
-                    }}
-                  >
-                    {currentView === 'fs-intro' && '? '}Introduction
-                  </div>
-                  <div
-                    onClick={() => setCurrentView('fs-score')}
-                    style={{
-                      fontSize: '14px',
-                      color: currentView === 'fs-score' ? '#667eea' : '#475569',
-                      padding: '8px 12px',
-                      cursor: 'pointer',
-                      borderRadius: '6px',
-                      marginBottom: '4px',
-                      background: currentView === 'fs-score' ? '#ede9fe' : 'transparent',
-                      fontWeight: currentView === 'fs-score' ? '600' : '400',
-                      transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (currentView !== 'fs-score') {
-                        e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentView !== 'fs-score') {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#475569';
-                      }
-                    }}
-                  >
-                    {currentView === 'fs-score' && '? '}Financial Score
-                  </div>
+                  {[
+                    { id: 'pa-critical-issues', label: 'Critical Issues' },
+                    { id: 'pa-focus-board', label: 'Major Trends' },
+                    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
+                    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
+                    { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
+                  ].map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleNavigation(item.id)}
+                      style={{
+                        fontSize: '16px',
+                        color: currentView === item.id ? '#1F70C1' : '#475569',
+                        padding: '6px 12px',
+                        cursor: 'pointer',
+                        borderRadius: '6px',
+                        marginBottom: '4px',
+                        background: currentView === item.id ? '#e0f2fe' : 'transparent',
+                        fontWeight: currentView === item.id ? '600' : '400',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (currentView !== item.id) {
+                          e.currentTarget.style.background = '#f8fafc';
+                          e.currentTarget.style.color = '#1F70C1';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (currentView !== item.id) {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.color = '#475569';
+                        }
+                      }}
+                    >
+                      {currentView === item.id && '› '}{item.label}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
 
-            {/* Management Assessment Section - For Assessment Users, Company Users, and Consultants */}
-            {((currentUser?.role === 'user' && (currentUser?.userType === 'assessment' || currentUser?.userType === 'company')) || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  transition: 'color 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
-                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                }}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
-              >
-                <span>Management Assessment</span>
-                <span style={{ fontSize: '12px', color: '#667eea' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
-              </h3>
-              {isManagementAssessmentExpanded && (
-                <div style={{ paddingLeft: '28px' }}>
-                <div
-                  onClick={() => setCurrentView('ma-welcome')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-welcome' ? '#667eea' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-welcome' ? '#ede9fe' : 'transparent',
-                    fontWeight: currentView === 'ma-welcome' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-welcome') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-welcome') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-welcome' && '? '}Welcome
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-questionnaire')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-questionnaire' ? '#667eea' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-questionnaire' ? '#ede9fe' : 'transparent',
-                    fontWeight: currentView === 'ma-questionnaire' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-questionnaire') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-questionnaire') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-questionnaire' && '? '}Questionnaire
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-your-results')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-your-results' ? '#667eea' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-your-results' ? '#ede9fe' : 'transparent',
-                    fontWeight: currentView === 'ma-your-results' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-your-results') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-your-results') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-your-results' && '? '}{currentUser?.role === 'consultant' ? 'Results' : 'Your Results'}
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-scores-summary')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-scores-summary' ? '#667eea' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-scores-summary' ? '#ede9fe' : 'transparent',
-                    fontWeight: currentView === 'ma-scores-summary' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-scores-summary') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-scores-summary') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-scores-summary' && '? '}Scores Summary
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-scoring-guide')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-scoring-guide' ? '#667eea' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-scoring-guide' ? '#ede9fe' : 'transparent',
-                    fontWeight: currentView === 'ma-scoring-guide' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-scoring-guide') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-scoring-guide') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-scoring-guide' && '? '}Scoring Guide
-                </div>
-                <div
-                  onClick={() => setCurrentView('ma-charts')}
-                  style={{
-                    fontSize: '14px',
-                    color: currentView === 'ma-charts' ? '#667eea' : '#475569',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderRadius: '6px',
-                    marginBottom: '4px',
-                    background: currentView === 'ma-charts' ? '#ede9fe' : 'transparent',
-                    fontWeight: currentView === 'ma-charts' ? '600' : '400',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentView !== 'ma-charts') {
-                      e.currentTarget.style.background = '#f8fafc';
-                      e.currentTarget.style.color = '#667eea';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentView !== 'ma-charts') {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#475569';
-                    }
-                  }}
-                >
-                  {currentView === 'ma-charts' && '? '}Charts
-                </div>
-              </div>
-              )}
-            </div>
-            )}
+            {/* Financial Score Section - removed from sidebar; functionality commented out below */}
 
-            {/* Digital Presence Analysis  Section */}
-            {((currentUser?.role === 'user' && (currentUser?.userType === 'assessment' || currentUser?.userType === 'company')) || currentUser?.role === 'consultant') && (
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => {
-                  // Navigate to https://www.digi-presence.com
-                  window.open('https://www.digi-presence.com', '_blank');
-                }}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  transition: 'color 0.2s',
-                  borderLeft: '4px solid #f59e0b'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
-                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                }}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
-              >
-                Digital Presence Analysis 
-              </h3>
-            </div>
-            )}
-
-            {/* Custom Print Section - For Consultants and Company Users only */}
-            {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-              <div style={{ marginBottom: '1px' }}>
-                <h3 
-                  onClick={() => setCurrentView('custom-print')}
-                  style={{ 
-                    fontSize: '14px', 
-                    fontWeight: '700', 
-                    color: currentView === 'custom-print' ? '#667eea' : '#1e293b',
-                    textTransform: 'uppercase', 
-                    letterSpacing: '0.5px',
-                    padding: '1px 24px',
-                    marginBottom: '1px',
-                    cursor: 'pointer',
-                    transition: 'color 0.2s',
-                    borderLeft: currentView === 'custom-print' ? '4px solid #667eea' : '4px solid transparent'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#667eea';
-                    e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                  }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#667eea' : '#1e293b'}
-                >
-                  Custom Print
-                </h3>
-              </div>
-            )}
+            {/* Team Assessment - moved to Support page; link there goes to /?view=ma-welcome */}
 
             {/* Company Dashboard Section - For Business Users (Company Users) */}
-            {currentUser?.role === 'user' && currentUser?.userType === 'company' && (
+            {currentUser?.role === 'user' && currentUser?.userType === 'company' && (!allowedSectionsForCompanyUser || allowedSectionsForCompanyUser.includes('company-dashboard')) && (
               <div style={{ marginBottom: '12px' }}>
                 <h3 
                   onClick={() => {
                     if (selectedCompanyId) {
-                      setCurrentView('dashboard');
+                      handleNavigation('dashboard');
                     } else {
                       setCurrentView('admin');
                       setAdminDashboardTab('company-management');
@@ -5378,49 +6142,78 @@ function FinancialScorePage() {
                   style={{ 
                     fontSize: '14px', 
                     fontWeight: '700', 
-                    color: (currentView === 'dashboard' || currentView === 'admin') ? '#667eea' : '#1e293b',
+                    color: (currentView === 'dashboard' || currentView === 'admin') ? '#1F70C1' : '#1e293b',
                     textTransform: 'uppercase', 
                     letterSpacing: '0.5px',
                     padding: '8px 24px',
                     marginBottom: '8px',
                     cursor: 'pointer',
                     transition: 'color 0.2s',
-                    borderLeft: (currentView === 'dashboard' || currentView === 'admin') ? '4px solid #667eea' : '4px solid transparent'
+                    borderLeft: (currentView === 'dashboard' || currentView === 'admin') ? '4px solid #1F70C1' : '4px solid transparent'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#667eea';
+                    e.currentTarget.style.color = '#1F70C1';
                     e.currentTarget.title = 'Company Dashboard';
                   }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'dashboard' || currentView === 'admin') ? '#667eea' : '#1e293b'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'dashboard' || currentView === 'admin') ? '#1F70C1' : '#1e293b'}
                 >
                   Company Dashboard
                 </h3>
               </div>
             )}
 
-            {/* User/Consultant Name Display - Now acts as dashboard link */}
-            <div 
-              onClick={() => {
-                if (currentUser?.role === 'consultant') {
-                  setCurrentView('consultant-dashboard');
-                } else if (currentUser?.userType === 'company') {
-                  setCurrentView('admin');
-                }
-              }}
-              style={{ 
-                marginTop: 'auto', 
-                paddingTop: '16px', 
-                paddingBottom: '8px', 
-                borderTop: '1px solid #e2e8f0', 
-                paddingLeft: '24px', 
-                paddingRight: '24px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                borderRadius: '6px',
-                marginLeft: '0',
-                marginRight: '0',
-                marginBottom: '0'
-              }}
+            {/* Bottom section: Print Packages + User/Consultant - grouped at bottom of sidebar */}
+            <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
+              {/* Print Packages Section - For Consultants and Company Users only */}
+              {(currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
+                <div style={{ marginBottom: '1px' }}>
+                  <h3 
+                    onClick={() => setCurrentView('custom-print')}
+                    style={{ 
+                      fontSize: '14px', 
+                      fontWeight: '700', 
+                      color: currentView === 'custom-print' ? '#1F70C1' : '#1e293b',
+                      textTransform: 'uppercase', 
+                      letterSpacing: '0.5px',
+                      padding: '1px 24px',
+                      marginBottom: '1px',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                      borderLeft: currentView === 'custom-print' ? '4px solid #1F70C1' : '4px solid transparent'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#1F70C1';
+                      e.currentTarget.title = 'Print Packages';
+                    }}
+                    onMouseLeave={(e) => e.currentTarget.style.color = currentView === 'custom-print' ? '#1F70C1' : '#1e293b'}
+                  >
+                    Print Packages
+                  </h3>
+                </div>
+              )}
+
+              {/* User/Consultant Name Display - Now acts as dashboard link */}
+              <div 
+                onClick={() => {
+                  if (currentUser?.role === 'consultant') {
+                    setCurrentView('consultant-dashboard');
+                  } else if (currentUser?.userType === 'company') {
+                    setCurrentView('admin');
+                  }
+                }}
+                style={{ 
+                  paddingTop: '16px', 
+                  paddingBottom: '8px', 
+                  borderTop: '1px solid #e2e8f0', 
+                  paddingLeft: '24px', 
+                  paddingRight: '24px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  borderRadius: '6px',
+                  marginLeft: '0',
+                  marginRight: '0',
+                  marginBottom: '0'
+                }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = '#f0f9ff';
               }}
@@ -5434,43 +6227,13 @@ function FinancialScorePage() {
               <div style={{ 
                 fontSize: '14px', 
                 fontWeight: '600', 
-                color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#667eea' : '#1e293b',
+                color: (currentView === 'admin' || currentView === 'consultant-dashboard') ? '#1F70C1' : '#1e293b',
                 paddingLeft: '24px',
                 transition: 'color 0.2s'
               }}>
                 {currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
               </div>
             </div>
-
-            {/* User Info and Logout Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-              <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Logged in as
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                  {currentUser?.name}
-                </div>
-                <button 
-                  onClick={handleLogout} 
-                  style={{ 
-                    width: '100%',
-                    padding: '10px 16px', 
-                    background: '#ef4444', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '8px', 
-                    fontSize: '14px', 
-                    fontWeight: '600', 
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
-                >
-                  🚪 LOGOUT
-                </button>
-              </div>
             </div>
 
             {/* Support Section */}
@@ -5483,7 +6246,7 @@ function FinancialScorePage() {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#667eea',
+                  color: '#1F70C1',
                   textDecoration: 'none',
                   padding: '12px 24px',
                   transition: 'all 0.2s',
@@ -5491,12 +6254,12 @@ function FinancialScorePage() {
                   margin: '0 12px'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
+                  e.currentTarget.style.background = '#e0f2fe';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
               >
                 📞 SUPPORT
@@ -5506,9 +6269,9 @@ function FinancialScorePage() {
         </aside>
         )}
 
-        {/* Assessment User Sidebar - Only Management Assessment */}
+        {/* Assessment User Sidebar - Only Team Assessment */}
         {currentUser?.userType === 'assessment' && (
-        <aside style={{ 
+        <aside className="app-left-sidebar" style={{ 
           width: '280px', 
           background: 'white', 
           borderRight: '2px solid #e2e8f0', 
@@ -5518,11 +6281,11 @@ function FinancialScorePage() {
         }}>
           <div style={{ padding: '0 24px', marginBottom: '12px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Navigation</h2>
-            <p style={{ fontSize: '12px', color: '#64748b' }}>Management Assessment</p>
+            <p style={{ fontSize: '12px', color: '#64748b' }}>Team Assessment</p>
           </div>
           
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
-            {/* Management Assessment Section */}
+            {/* Team Assessment Section */}
             <div style={{ marginBottom: '1px' }}>
               <h3 
                 onClick={() => setIsManagementAssessmentExpanded(!isManagementAssessmentExpanded)}
@@ -5541,13 +6304,13 @@ function FinancialScorePage() {
                   transition: 'color 0.2s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.style.color = '#1F70C1';
                   e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
                 }}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
               >
-                <span>Management Assessment</span>
-                <span style={{ fontSize: '12px', color: '#667eea' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
+                <span>Team Assessment</span>
+                <span style={{ fontSize: '12px', color: '#1F70C1' }}>{isManagementAssessmentExpanded ? '-' : '+'}</span>
               </h3>
               {isManagementAssessmentExpanded && (
                 <div style={{ paddingLeft: '28px' }}>
@@ -5555,19 +6318,19 @@ function FinancialScorePage() {
                     onClick={() => handleViewChange('ma-welcome')}
                     style={{
                       fontSize: '14px',
-                      color: currentView === 'ma-welcome' ? '#667eea' : '#475569',
+                      color: currentView === 'ma-welcome' ? '#1F70C1' : '#475569',
                       padding: '8px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'ma-welcome' ? '#ede9fe' : 'transparent',
+                      background: currentView === 'ma-welcome' ? '#e0f2fe' : 'transparent',
                       fontWeight: currentView === 'ma-welcome' ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
                       if (currentView !== 'ma-welcome') {
                         e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
+                        e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -5583,19 +6346,19 @@ function FinancialScorePage() {
                     onClick={() => handleViewChange('ma-questionnaire')}
                     style={{
                       fontSize: '14px',
-                      color: currentView === 'ma-questionnaire' ? '#667eea' : '#475569',
+                      color: currentView === 'ma-questionnaire' ? '#1F70C1' : '#475569',
                       padding: '8px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'ma-questionnaire' ? '#ede9fe' : 'transparent',
+                      background: currentView === 'ma-questionnaire' ? '#e0f2fe' : 'transparent',
                       fontWeight: currentView === 'ma-questionnaire' ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
                       if (currentView !== 'ma-questionnaire') {
                         e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
+                        e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -5611,19 +6374,19 @@ function FinancialScorePage() {
                     onClick={() => handleViewChange('ma-your-results')}
                     style={{
                       fontSize: '14px',
-                      color: currentView === 'ma-your-results' ? '#667eea' : '#475569',
+                      color: currentView === 'ma-your-results' ? '#1F70C1' : '#475569',
                       padding: '8px 12px',
                       cursor: 'pointer',
                       borderRadius: '6px',
                       marginBottom: '4px',
-                      background: currentView === 'ma-your-results' ? '#ede9fe' : 'transparent',
+                      background: currentView === 'ma-your-results' ? '#e0f2fe' : 'transparent',
                       fontWeight: currentView === 'ma-your-results' ? '600' : '400',
                       transition: 'all 0.2s'
                     }}
                     onMouseEnter={(e) => {
                       if (currentView !== 'ma-your-results') {
                         e.currentTarget.style.background = '#f8fafc';
-                        e.currentTarget.style.color = '#667eea';
+                        e.currentTarget.style.color = '#1F70C1';
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -5639,66 +6402,6 @@ function FinancialScorePage() {
               )}
             </div>
 
-            {/* Digital Presence Analysis  Section */}
-            <div style={{ marginBottom: '1px' }}>
-              <h3 
-                onClick={() => {
-                  // Navigate to https://www.digi-presence.com
-                  window.open('https://www.digi-presence.com', '_blank');
-                }}
-                style={{ 
-                  fontSize: '14px', 
-                  fontWeight: '700', 
-                  color: '#1e293b',
-                  textTransform: 'uppercase', 
-                  letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '1px',
-                  cursor: 'pointer',
-                  transition: 'color 0.2s',
-                  borderLeft: '4px solid #f59e0b'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#667eea';
-                  e.currentTarget.title = 'Opens Digital Presence Analysis in new tab';
-                }}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#1e293b'}
-              >
-                Digital Presence Analysis 
-              </h3>
-            </div>
-
-            {/* User Info and Logout Section */}
-            <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-              <div style={{ padding: '12px 24px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Logged in as
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                  {currentUser?.name}
-                </div>
-                <button 
-                  onClick={handleLogout} 
-                  style={{ 
-                    width: '100%',
-                    padding: '10px 16px', 
-                    background: '#ef4444', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '8px', 
-                    fontSize: '14px', 
-                    fontWeight: '600', 
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
-                >
-                  🚪 LOGOUT
-                </button>
-              </div>
-            </div>
-
             {/* Support Section */}
             <div style={{ marginTop: '0', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
               <a
@@ -5709,7 +6412,7 @@ function FinancialScorePage() {
                   display: 'block',
                   fontSize: '14px',
                   fontWeight: '600',
-                  color: '#667eea',
+                  color: '#1F70C1',
                   textDecoration: 'none',
                   padding: '12px 24px',
                   transition: 'all 0.2s',
@@ -5717,12 +6420,12 @@ function FinancialScorePage() {
                   margin: '0 12px'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#ede9fe';
-                  e.currentTarget.style.color = '#4338ca';
+                  e.currentTarget.style.background = '#e0f2fe';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#667eea';
+                  e.currentTarget.style.color = '#1F70C1';
                 }}
               >
                 📞 SUPPORT
@@ -5733,8 +6436,8 @@ function FinancialScorePage() {
         )}
 
         {/* Main Content Area */}
-        <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: '8px' }}>
-          {/* Restrict access for assessment users - only show Management Assessment views */}
+        <main className="app-shell-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: '8px' }}>
+          {/* Restrict access for assessment users - only show Team Assessment views */}
           {(!(currentUser?.userType === 'assessment') || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
           {/* Site Administration */}
@@ -5756,12 +6459,17 @@ function FinancialScorePage() {
               setDefaultBusinessQuarterlyPrice={setDefaultBusinessQuarterlyPrice}
               defaultBusinessAnnualPrice={defaultBusinessAnnualPrice}
               setDefaultBusinessAnnualPrice={setDefaultBusinessAnnualPrice}
+              defaultBusinessSetupFee={defaultBusinessSetupFee}
+              setDefaultBusinessSetupFee={setDefaultBusinessSetupFee}
               defaultConsultantMonthlyPrice={defaultConsultantMonthlyPrice}
               setDefaultConsultantMonthlyPrice={setDefaultConsultantMonthlyPrice}
               defaultConsultantQuarterlyPrice={defaultConsultantQuarterlyPrice}
               setDefaultConsultantQuarterlyPrice={setDefaultConsultantQuarterlyPrice}
               defaultConsultantAnnualPrice={defaultConsultantAnnualPrice}
               setDefaultConsultantAnnualPrice={setDefaultConsultantAnnualPrice}
+              defaultConsultantSetupFee={defaultConsultantSetupFee}
+              setDefaultConsultantSetupFee={setDefaultConsultantSetupFee}
+              updateCompanyPricing={updateCompanyPricing}
               affiliates={affiliates}
               setAffiliates={setAffiliates}
               showAddAffiliateForm={showAddAffiliateForm}
@@ -5823,6 +6531,25 @@ function FinancialScorePage() {
               setSelectedCompanyId={setSelectedCompanyId}
               setCompanyToDelete={setCompanyToDelete}
               setShowDeleteConfirmation={setShowDeleteConfirmation}
+              inforConnected={inforConnected}
+              inforStatus={inforStatus}
+              inforLastSync={inforLastSync}
+              inforError={inforError}
+              inforBusy={inforBusy}
+              inforCredentials={inforCredentials}
+              setInforCredentials={setInforCredentials}
+              inforProbePath={inforProbePath}
+              setInforProbePath={setInforProbePath}
+              inforProbeSummary={inforProbeSummary}
+              checkInforM3Status={checkInforM3Status}
+              loadInforM3Credentials={loadInforM3Credentials}
+              saveInforM3Credentials={saveInforM3Credentials}
+              connectInforM3={connectInforM3}
+              testInforM3Token={testInforM3Token}
+              probeInforM3={probeInforM3}
+              disconnectInforM3={disconnectInforM3}
+              runInforM3OperationalSync={runInforM3OperationalSync}
+              runPlatformOperationalSync={runPlatformOperationalSync}
               newSiteAdminFirstName={newSiteAdminFirstName}
               setNewSiteAdminFirstName={setNewSiteAdminFirstName}
               newSiteAdminLastName={newSiteAdminLastName}
@@ -5833,6 +6560,7 @@ function FinancialScorePage() {
               setNewSiteAdminPassword={setNewSiteAdminPassword}
               showAddSiteAdminForm={showAddSiteAdminForm}
               setShowAddSiteAdminForm={setShowAddSiteAdminForm}
+              businessesLoading={siteAdminBusinessesLoading}
             />
           )}
 
@@ -5865,7 +6593,8 @@ function FinancialScorePage() {
                         gap: '8px'
                       }}
                     >
-                      ? Return to Site Admin
+                      <ArrowLeft size={16} aria-hidden="true" />
+                      <span>Return to Site Admin</span>
                     </button>
                   </div>
                 </div>
@@ -5892,12 +6621,13 @@ function FinancialScorePage() {
                 selectedCompanyId={selectedCompanyId}
                 monthly={monthly}
                 companyName={companyName}
+                onAddCompany={openAddCompanyModal}
               />
             </div>
           )}
 
           {/* Admin Dashboard */}
-          {currentView === 'admin' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
+          {currentView === 'admin' && (currentUser?.role === 'siteadmin' || currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
           {/* Exit Preview Mode button (only when site admin is previewing) */}
           {siteAdminViewingAs && (
@@ -5925,13 +6655,23 @@ function FinancialScorePage() {
                   gap: '8px'
                 }}
               >
-                ? Back to Site Admin
+                <ArrowLeft size={16} aria-hidden="true" />
+                <span>Back to Site Admin</span>
               </button>
             </div>
           )}
           
           {/* Tab Navigation */}
-          <div className="dashboard-tabs-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
+          <div
+            className="dashboard-tabs-print-hide"
+            style={{
+              display: 'flex',
+              gap: '8px',
+              // Data Mapping needs to sit tight to the content below.
+              marginBottom: (adminDashboardTab === 'data-mapping' || adminDashboardTab === 'data-review') ? '4px' : '12px',
+              borderBottom: '2px solid #e2e8f0'
+            }}
+          >
             <button
               onClick={() => handleAdminTabNavigation('company-management')}
               style={{
@@ -5948,23 +6688,6 @@ function FinancialScorePage() {
               }}
             >
               Company Management
-            </button>
-            <button
-              onClick={() => handleAdminTabNavigation('payments')}
-              style={{
-                padding: '12px 24px',
-                background: adminDashboardTab === 'payments' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'payments' ? 'white' : '#64748b',
-                border: 'none',
-                borderBottom: adminDashboardTab === 'payments' ? '3px solid #667eea' : '3px solid transparent',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
-                transition: 'all 0.2s'
-              }}
-            >
-              Payments
             </button>
             <button
               onClick={() => handleAdminTabNavigation('api-connections')}
@@ -6034,6 +6757,23 @@ function FinancialScorePage() {
             >
               Data Review
             </button>
+            <button
+              onClick={() => handleAdminTabNavigation('documents')}
+              style={{
+                padding: '12px 24px',
+                background: adminDashboardTab === 'documents' ? '#667eea' : 'transparent',
+                color: adminDashboardTab === 'documents' ? 'white' : '#64748b',
+                border: 'none',
+                borderBottom: adminDashboardTab === 'documents' ? '3px solid #667eea' : '3px solid transparent',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                borderRadius: '8px 8px 0 0',
+                transition: 'all 0.2s'
+              }}
+            >
+              Documents
+            </button>
           </div>
           
           {/* Company Management Tab */}
@@ -6059,6 +6799,9 @@ function FinancialScorePage() {
               setSelectedAffiliateCodeForNewCompany={setSelectedAffiliateCodeForNewCompany}
               setCompanyAddressCountry={setCompanyAddressCountry}
               setCompanyIndustrySector={setCompanyIndustrySector}
+              setAccountingSystem={setAccountingSystem}
+              setCompanySizeCategory={setCompanySizeCategory}
+              setIndustrySectorCategory={setIndustrySectorCategory}
               setShowCompanyDetailsModal={setShowCompanyDetailsModal}
               deleteUser={deleteUser}
               newCompanyUserName={newCompanyUserName}
@@ -6072,6 +6815,10 @@ function FinancialScorePage() {
               newCompanyUserPassword={newCompanyUserPassword}
               setNewCompanyUserPassword={setNewCompanyUserPassword}
               addUser={addUser}
+              existingCompanyUserName={existingCompanyUserName}
+              setExistingCompanyUserName={setExistingCompanyUserName}
+              existingCompanyUserEmail={existingCompanyUserEmail}
+              setExistingCompanyUserEmail={setExistingCompanyUserEmail}
               newAssessmentUserName={newAssessmentUserName}
               setNewAssessmentUserName={setNewAssessmentUserName}
               newAssessmentUserTitle={newAssessmentUserTitle}
@@ -6080,6 +6827,11 @@ function FinancialScorePage() {
               setNewAssessmentUserEmail={setNewAssessmentUserEmail}
               newAssessmentUserPassword={newAssessmentUserPassword}
               setNewAssessmentUserPassword={setNewAssessmentUserPassword}
+              existingAssessmentUserName={existingAssessmentUserName}
+              setExistingAssessmentUserName={setExistingAssessmentUserName}
+              existingAssessmentUserEmail={existingAssessmentUserEmail}
+              setExistingAssessmentUserEmail={setExistingAssessmentUserEmail}
+              grantExistingUserAccess={grantExistingUserAccess}
               setSelectedCompanyId={setSelectedCompanyId}
               company={company}
               companyProfiles={companyProfiles}
@@ -6087,7 +6839,32 @@ function FinancialScorePage() {
               monthly={monthly}
               trendData={trendData}
               setIsLoading={setIsLoading}
+              onCompanyUpdated={handleCompanyUpdated}
+              paymentsSelectedCompany={paymentsSelectedCompany}
+              selectedSubscriptionPlan={selectedSubscriptionPlan}
+              setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
+              activeSubscription={activeSubscription}
+              setActiveSubscription={setActiveSubscription}
+              loadingSubscription={loadingSubscription}
+              setShowCheckoutModal={setShowCheckoutModal}
+              setShowUpdatePaymentModal={setShowUpdatePaymentModal}
+              subscriptionMonthlyPrice={paymentsPricing.monthly}
+              subscriptionQuarterlyPrice={paymentsPricing.quarterly}
+              subscriptionAnnualPrice={paymentsPricing.annual}
+              subscriptionSetupFee={paymentsPricing.setupFee}
             />
+          )}
+
+          {/* Documents Tab */}
+          {adminDashboardTab === 'documents' && selectedCompanyId && (
+            <DocumentsTab selectedCompanyId={selectedCompanyId} />
+          )}
+
+          {!selectedCompanyId && adminDashboardTab === 'documents' && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage documents.</p>
+            </div>
           )}
 
           {/* LOB Settings Tab */}
@@ -6108,9 +6885,9 @@ function FinancialScorePage() {
               {/* QuickBooks Data Verification Section */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks Data Verification</h2>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    ? Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
+                    Imported from QuickBooks - {loadedMonthlyData.length} months of data verified
                   </p>
 
                   {/* Summary Stats */}
@@ -6201,7 +6978,7 @@ function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
                       • All {loadedMonthlyData.length} months have complete data<br/>
                       • Income Statement fields populated: Revenue, Expenses, COGS<br/>
@@ -6225,7 +7002,7 @@ function FinancialScorePage() {
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Financial Data</h3>
                   <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: '8px', width: '100%', cursor: 'pointer' }} />
                   {error && <div style={{ padding: '12px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px' }}>{error}</div>}
-                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>? Loaded: {file.name}</div>}
+                  {file && <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>Loaded: {file.name}</div>}
                 </div>
 
               {file && columns.length > 0 && (
@@ -6313,7 +7090,10 @@ function FinancialScorePage() {
 
               {/* Trial Balance Import Section */}
               <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>?? Trial Balance Import</h2>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <FileSpreadsheet size={20} />
+                  Trial Balance Import
+                </h2>
                 
                 <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
                   <p style={{ fontSize: '14px', color: '#065f46', lineHeight: '1.6', margin: 0 }}>
@@ -6343,7 +7123,7 @@ function FinancialScorePage() {
                         // Save to localStorage for persistence across sessions
                         localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
                         setError(null);
-                        alert(`? Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
+                        alert(`Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
                       } catch (err: any) {
                         setError(`Failed to parse Trial Balance CSV: ${err.message}`);
                         setCsvTrialBalanceData(null);
@@ -6451,9 +7231,49 @@ function FinancialScorePage() {
               <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
                 Connect to accounting platforms to automatically import financial data for {companyName || 'your company'}.
               </p>
+              <div style={{ marginBottom: '16px', padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', color: '#475569' }}>
+                Selected Accounting System: <span style={{ fontWeight: '700', color: '#1e293b' }}>{selectedAccountingSystemLabel}</span>
+              </div>
 
-              {/* QuickBooks Connection */}
+              {!selectedAccountingSystem && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
+                  Please select an Accounting System on the Company Profile page to enable the correct connector.
+                </div>
+              )}
+
+              {selectedAccountingSystem === 'CSV_FILE' && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '13px', color: '#065f46' }}>
+                  CSV file does not require an API connection. Use the Trial Balance CSV upload in Data Mapping (or Excel Import) to load data.
+                </div>
+              )}
+
+              {selectedAccountingSystem &&
+                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                  <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
+                    {selectedAccountingSystemLabel} is not supported yet.
+                  </div>
+                )}
+
+              {selectedAccountingSystem &&
+                ['QUICKBOOKS_DESKTOP', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAGE_INTACCT'].includes(selectedAccountingSystem) && (
+                  <div style={{ marginBottom: '16px', padding: '12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', fontSize: '13px', color: '#0c4a6e' }}>
+                    {String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' ? (
+                      <>
+                        {selectedAccountingSystemLabel} configuration is managed in <strong>Site Administration &gt; Consultants/Businesses</strong> for this company.
+                        Use that admin-only section to save credentials, programs, and schedule settings.
+                      </>
+                    ) : (
+                      <>
+                        {selectedAccountingSystemLabel} is configured by your administrator.
+                        This page shows operational status/actions only; contact your administrator for credential or program changes.
+                      </>
+                    )}
+                  </div>
+                )}
+
+              {selectedAccountingSystem === 'QUICKBOOKS' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+              {/* QuickBooks Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '24px', fontWeight: '700', color: '#2ca01c' }}>QB</div>
@@ -6473,7 +7293,7 @@ function FinancialScorePage() {
                     border: `1px solid ${qbConnected && qbStatus === 'ACTIVE' ? '#10b981' : qbStatus === 'ERROR' ? '#ef4444' : qbStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {qbConnected && qbStatus === 'ACTIVE' ? '? Connected' : qbStatus === 'ERROR' ? '? Error' : qbStatus === 'EXPIRED' ? '?? Token Expired' : '?? Status: Not Connected'}
+                      {qbConnected && qbStatus === 'ACTIVE' ? 'Connected' : qbStatus === 'ERROR' ? 'Error' : qbStatus === 'EXPIRED' ? 'Token Expired' : 'Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: qbConnected && qbStatus === 'ACTIVE' ? '#065f46' : qbStatus === 'ERROR' ? '#991b1b' : qbStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -6547,9 +7367,11 @@ function FinancialScorePage() {
                   )}
                 </div>
               </div>
+              )}
 
-              {/* Xero Connection */}
+              {selectedAccountingSystem === 'XERO' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0' }}>
+              {/* Xero Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '24px', fontWeight: '700', color: '#13B5EA' }}>X</div>
@@ -6569,7 +7391,7 @@ function FinancialScorePage() {
                     border: `1px solid ${xeroConnected && xeroStatus === 'ACTIVE' ? '#10b981' : xeroStatus === 'ERROR' ? '#ef4444' : xeroStatus === 'EXPIRED' ? '#f97316' : '#fbbf24'}` 
                   }}>
                     <div style={{ fontSize: '12px', fontWeight: '600', color: xeroConnected && xeroStatus === 'ACTIVE' ? '#065f46' : xeroStatus === 'ERROR' ? '#991b1b' : xeroStatus === 'EXPIRED' ? '#9a3412' : '#92400e', marginBottom: '4px' }}>
-                      {xeroConnected && xeroStatus === 'ACTIVE' ? '? Connected' : xeroStatus === 'ERROR' ? '? Error' : xeroStatus === 'EXPIRED' ? '?? Token Expired' : '?? Status: Not Connected'}
+                      {xeroConnected && xeroStatus === 'ACTIVE' ? 'Connected' : xeroStatus === 'ERROR' ? 'Error' : xeroStatus === 'EXPIRED' ? 'Token Expired' : 'Status: Not Connected'}
                     </div>
                     <div style={{ fontSize: '12px', color: xeroConnected && xeroStatus === 'ACTIVE' ? '#065f46' : xeroStatus === 'ERROR' ? '#991b1b' : xeroStatus === 'EXPIRED' ? '#9a3412' : '#92400e' }}>
                       {xeroError || (xeroConnected && xeroStatus === 'ACTIVE' ? (xeroLastSync ? `Last synced: ${xeroLastSync.toLocaleString()}` : 'Ready to sync') : xeroStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
@@ -6643,13 +7465,68 @@ function FinancialScorePage() {
                   )}
                 </div>
               </div>
+              )}
+
+              {selectedAccountingSystem === 'INFOR_M3' && (
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '16px', border: '2px solid #e2e8f0' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                    Infor M3 Monthly COA Pull
+                  </h3>
+                  <div style={{ marginBottom: '12px', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    Infor M3 credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
+                    This action triggers a monthly Chart of Accounts pull using the <strong>Accounts</strong> MI Program configured for this company.
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <button
+                      onClick={pullInforMonthlyCao}
+                      disabled={inforCaoPulling}
+                      style={{
+                        padding: '10px 16px',
+                        background: inforCaoPulling ? '#94a3b8' : '#1d4ed8',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: inforCaoPulling ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {inforCaoPulling ? 'Pulling COA...' : 'Pull Monthly COA Data'}
+                    </button>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>
+                      Requires Accounts MI Program in Site Admin &gt; Businesses.
+                    </span>
+                  </div>
+                  <div style={{ marginTop: '10px', fontSize: '12px', color: '#475569' }}>
+                    <strong>Last COA pull:</strong>{' '}
+                    {inforLastCaoPullAt ? inforLastCaoPullAt.toLocaleString() : 'Not yet run'}
+                    {'  '}|{'  '}
+                    <strong>Pulled by:</strong> {inforLastCaoPulledBy || 'N/A'}
+                  </div>
+                  {inforCaoMessage && (
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        background: inforCaoMessage.startsWith('Error:') ? '#fee2e2' : '#d1fae5',
+                        color: inforCaoMessage.startsWith('Error:') ? '#991b1b' : '#065f46',
+                        border: `1px solid ${inforCaoMessage.startsWith('Error:') ? '#fecaca' : '#86efac'}`,
+                      }}
+                    >
+                      {inforCaoMessage}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* QuickBooks Data Verification */}
               {loadedMonthlyData && loadedMonthlyData.length > 0 && qbRawData && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>? QuickBooks Data Verification</h3>
+                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks Data Verification</h3>
                   <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>
-                    ? Synced successfully - {loadedMonthlyData.length} months of data imported
+                    Synced successfully - {loadedMonthlyData.length} months of data imported
                   </p>
 
                   {/* Summary Stats */}
@@ -6811,7 +7688,7 @@ function FinancialScorePage() {
                   </div>
 
                   <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '16px', border: '1px solid #86efac', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>? Data Quality Check</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Data Quality Check</div>
                     <div style={{ fontSize: '13px', color: '#059669' }}>
                       • All {loadedMonthlyData.length} months have complete data<br/>
                       • Income Statement: Revenue, Expenses, COGS populated<br/>
@@ -6843,7 +7720,7 @@ function FinancialScorePage() {
                       onMouseEnter={(e) => e.currentTarget.style.background = '#5568d3'}
                       onMouseLeave={(e) => e.currentTarget.style.background = '#667eea'}
                     >
-                      <span>??</span>
+                      <FileSpreadsheet size={16} />
                       <span>Proceed to AI Account Mapping ?</span>
                     </button>
                   </div>
@@ -6851,8 +7728,9 @@ function FinancialScorePage() {
               )}
 
 
-              {/* Sage Connection */}
+              {(selectedAccountingSystem === 'SAGE' || selectedAccountingSystem === 'SAGE_INTACCT') && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0', opacity: 0.6 }}>
+              {/* Sage Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#00a851' }}>S</div>
@@ -6866,9 +7744,11 @@ function FinancialScorePage() {
                   Coming Soon
                 </div>
               </div>
+              )}
 
-              {/* NetSuite Connection */}
+              {selectedAccountingSystem === 'NETSUITE' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', marginBottom: '20px', border: '2px solid #e2e8f0', opacity: 0.6 }}>
+              {/* NetSuite Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#E91C24' }}>NS</div>
@@ -6882,9 +7762,11 @@ function FinancialScorePage() {
                   Coming Soon
                 </div>
               </div>
+              )}
 
-              {/* Dynamics Connection */}
+              {selectedAccountingSystem === 'DYNAMICS' && (
               <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', opacity: 0.6 }}>
+              {/* Dynamics Connection */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ width: '60px', height: '60px', background: 'white', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #e2e8f0' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: '#0078D4' }}>D</div>
@@ -6898,14 +7780,8 @@ function FinancialScorePage() {
                   Coming Soon
                 </div>
               </div>
+              )}
 
-              <div style={{ marginTop: '24px', padding: '16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px' }}>
-                <p style={{ fontSize: '13px', color: '#0c4a6e', margin: 0, lineHeight: '1.6' }}>
-                  <strong>Note:</strong> API connections allow automatic synchronization of financial data. Once connected, 
-                  you can schedule automatic imports or manually trigger data pulls. All connections use OAuth 2.0 for 
-                  secure authentication and are encrypted in transit and at rest.
-                </p>
-              </div>
             </div>
           )}
 
@@ -6920,145 +7796,6 @@ function FinancialScorePage() {
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
               <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to review financial data.</p>
-            </div>
-          )}
-
-          {/* Payments Tab */}
-          {adminDashboardTab === 'payments' && selectedCompanyId && (() => {
-            const selectedCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
-            
-            // Get pricing directly from company data (not state variables)
-            let monthlyPrice = selectedCompany?.subscriptionMonthlyPrice;
-            let quarterlyPrice = selectedCompany?.subscriptionQuarterlyPrice;
-            let annualPrice = selectedCompany?.subscriptionAnnualPrice;
-            
-            // Fall back to userDefinedAllocations if dedicated fields are null/undefined
-            if ((monthlyPrice === null || monthlyPrice === undefined) &&
-                selectedCompany?.userDefinedAllocations?.subscriptionPricing) {
-              monthlyPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.monthly;
-              quarterlyPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.quarterly;
-              annualPrice = selectedCompany.userDefinedAllocations.subscriptionPricing.annual;
-            }
-            
-            // Check if company has explicit free pricing (isFree flag in userDefinedAllocations)
-            const userDefinedPricing = (selectedCompany as any)?.userDefinedAllocations?.subscriptionPricing;
-            const isExplicitlyFree = userDefinedPricing?.isFree === true;
-            
-            // Determine final pricing values
-            let finalMonthlyPrice: number;
-            let finalQuarterlyPrice: number;
-            let finalAnnualPrice: number;
-            
-            // Normalize pricing values to numbers (handle string "0" and number 0)
-            // Also handle the case where values might be 0, "0", or null/undefined
-            const normalizedMonthly = monthlyPrice != null ? Number(monthlyPrice) : null;
-            const normalizedQuarterly = quarterlyPrice != null ? Number(quarterlyPrice) : null;
-            const normalizedAnnual = annualPrice != null ? Number(annualPrice) : null;
-            
-            // Determine final pricing values
-            // Check if all prices are explicitly 0 (free pricing) - handle both string "0" and number 0
-            // Also check raw values in case normalization didn't work
-            const allPricesAreZero = (normalizedMonthly === 0 && normalizedQuarterly === 0 && normalizedAnnual === 0) ||
-                                    (monthlyPrice === 0 && quarterlyPrice === 0 && annualPrice === 0);
-            
-            // Check if pricing is null/undefined and no userDefinedAllocations (use default pricing)
-            const pricingIsMissing = normalizedMonthly === null && normalizedQuarterly === null && normalizedAnnual === null && !userDefinedPricing;
-            
-            // CRITICAL: If company has $0 pricing, always use $0 (don't fall back to defaults)
-            if (isExplicitlyFree || allPricesAreZero) {
-              // Explicitly free (affiliate code with $0 pricing) - use $0
-              finalMonthlyPrice = 0;
-              finalQuarterlyPrice = 0;
-              finalAnnualPrice = 0;
-              console.log('? Company has $0 pricing - setting all prices to 0');
-            } else if (pricingIsMissing) {
-              // Company was created without affiliate code - use default pricing from SystemSettings
-              // For business users, use business pricing defaults; for consultants, use consultant defaults
-              const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
-              if (isBusinessUser) {
-                // Use business pricing defaults from SystemSettings (loaded in state)
-                finalMonthlyPrice = defaultBusinessMonthlyPrice ?? 195;
-                finalQuarterlyPrice = defaultBusinessQuarterlyPrice ?? 500;
-                finalAnnualPrice = defaultBusinessAnnualPrice ?? 1750;
-              } else {
-                // Consultant pricing from SystemSettings (loaded in state)
-                finalMonthlyPrice = defaultConsultantMonthlyPrice ?? 195;
-                finalQuarterlyPrice = defaultConsultantQuarterlyPrice ?? 500;
-                finalAnnualPrice = defaultConsultantAnnualPrice ?? 1750;
-              }
-            } else {
-              // Has pricing data - use it (or defaults for any null/undefined values)
-              // For business users, use business defaults; for consultants, use consultant defaults
-              const isBusinessUser = currentUser?.userType === 'company' || currentUser?.userType === 'COMPANY' || (currentUser?.role === 'user' && !currentUser?.consultantId);
-              const defaultMonthly = isBusinessUser ? (defaultBusinessMonthlyPrice ?? 195) : (defaultConsultantMonthlyPrice ?? 195);
-              const defaultQuarterly = isBusinessUser ? (defaultBusinessQuarterlyPrice ?? 500) : (defaultConsultantQuarterlyPrice ?? 500);
-              const defaultAnnual = isBusinessUser ? (defaultBusinessAnnualPrice ?? 1750) : (defaultConsultantAnnualPrice ?? 1750);
-              
-              // Use normalized values if they exist, but preserve 0 values (don't replace 0 with defaults)
-              finalMonthlyPrice = (normalizedMonthly !== null && normalizedMonthly !== undefined) 
-                ? normalizedMonthly 
-                : ((monthlyPrice === 0) ? 0 : defaultMonthly);
-              finalQuarterlyPrice = (normalizedQuarterly !== null && normalizedQuarterly !== undefined) 
-                ? normalizedQuarterly 
-                : ((quarterlyPrice === 0) ? 0 : defaultQuarterly);
-              finalAnnualPrice = (normalizedAnnual !== null && normalizedAnnual !== undefined) 
-                ? normalizedAnnual 
-                : ((annualPrice === 0) ? 0 : defaultAnnual);
-              
-              // Double-check: if all final prices are 0, ensure they stay 0
-              if (finalMonthlyPrice === 0 && finalQuarterlyPrice === 0 && finalAnnualPrice === 0) {
-                console.log('? All final prices are 0 - confirming free pricing');
-              }
-            }
-            
-            // Debug logging
-            console.log('?? PaymentsTab Pricing Debug:', {
-              companyId: selectedCompanyId,
-              companyName: selectedCompany?.name,
-              fromCompany: {
-                monthly: selectedCompany?.subscriptionMonthlyPrice,
-                quarterly: selectedCompany?.subscriptionQuarterlyPrice,
-                annual: selectedCompany?.subscriptionAnnualPrice
-              },
-              fromUserDefined: userDefinedPricing,
-              isExplicitlyFree,
-              rawValues: { monthlyPrice, quarterlyPrice, annualPrice },
-              normalizedValues: { normalizedMonthly, normalizedQuarterly, normalizedAnnual },
-              allPricesAreZero,
-              pricingIsMissing,
-              finalValues: { finalMonthlyPrice, finalQuarterlyPrice, finalAnnualPrice },
-              isFree: isExplicitlyFree || allPricesAreZero || (finalMonthlyPrice === 0 && finalQuarterlyPrice === 0 && finalAnnualPrice === 0),
-              defaultPricing: {
-                business: { monthly: defaultBusinessMonthlyPrice, quarterly: defaultBusinessQuarterlyPrice, annual: defaultBusinessAnnualPrice },
-                consultant: { monthly: defaultConsultantMonthlyPrice, quarterly: defaultConsultantQuarterlyPrice, annual: defaultConsultantAnnualPrice }
-              },
-              userType: currentUser?.userType,
-              role: currentUser?.role,
-              consultantId: currentUser?.consultantId
-            });
-            
-            return (
-              <PaymentsTab
-                selectedCompany={selectedCompany}
-                selectedSubscriptionPlan={selectedSubscriptionPlan}
-                setSelectedSubscriptionPlan={setSelectedSubscriptionPlan}
-                activeSubscription={activeSubscription}
-                setActiveSubscription={setActiveSubscription}
-                loadingSubscription={loadingSubscription}
-                setShowCheckoutModal={setShowCheckoutModal}
-                setShowUpdatePaymentModal={setShowUpdatePaymentModal}
-                selectedCompanyId={selectedCompanyId}
-                subscriptionMonthlyPrice={finalMonthlyPrice}
-                subscriptionQuarterlyPrice={finalQuarterlyPrice}
-                subscriptionAnnualPrice={finalAnnualPrice}
-              />
-            );
-          })()}
-
-          {!selectedCompanyId && adminDashboardTab === 'payments' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to manage subscription and payments.</p>
             </div>
           )}
         </div>
@@ -7087,6 +7824,7 @@ function FinancialScorePage() {
         <OperationsTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
+          industrySectorCategory={company?.industrySectorCategory || null}
         />
       )}
 
@@ -7095,6 +7833,21 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
           <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view operational data.</p>
+        </div>
+      )}
+
+      {/* Daily Alerts View */}
+      {currentView === 'daily-alerts' && selectedCompanyId && (
+        <DailyAlertsView
+          companyId={selectedCompanyId}
+          companyName={companyName || ''}
+          onNavigate={handleNavigation}
+        />
+      )}
+      {currentView === 'daily-alerts' && !selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view daily alerts.</p>
         </div>
       )}
 
@@ -7108,6 +7861,11 @@ function FinancialScorePage() {
                              (subscriptionAnnualPrice ?? 0);
             const planPeriod = selectedSubscriptionPlan === 'monthly' ? '/month' :
                               selectedSubscriptionPlan === 'quarterly' ? '/quarter' : '/year';
+            const setupFee = paymentsPricing.setupFee ?? 0;
+            const firstRecurringBillDatePreview = addMonthsClamped(
+              new Date(),
+              billingIntervalMonths(selectedSubscriptionPlan as 'monthly' | 'quarterly' | 'annual')
+            );
 
             return (
               <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
@@ -7122,24 +7880,39 @@ function FinancialScorePage() {
                     </button>
                   </div>
 
-                  {/* Selected Plan Summary */}
-                  <div style={{ background: '#f0f9ff', border: '2px solid #667eea', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>Selected Plan</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  {/* Setup Fee + Recurring Summary */}
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '24px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#334155', marginBottom: '10px' }}>Order Summary</div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', textTransform: 'capitalize' }}>{selectedSubscriptionPlan} Plan</div>
-                        <div style={{ fontSize: '13px', color: '#64748b' }}>Billed {selectedSubscriptionPlan}</div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b' }}>Setup fee (due today)</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>One-time onboarding charge</div>
                       </div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>
+                      <div style={{ fontSize: '18px', fontWeight: '800', color: '#10b981' }}>${setupFee.toFixed(2)}</div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e293b', textTransform: 'capitalize' }}>{selectedSubscriptionPlan} subscription</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>
+                          ${planPrice.toFixed(2)}{planPeriod} starting{' '}
+                          {firstRecurringBillDatePreview.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: '800', color: '#667eea' }}>
                         ${planPrice.toFixed(2)}
-                        <span style={{ fontSize: '14px', fontWeight: '500', color: '#64748b' }}>{planPeriod}</span>
+                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748b' }}>{planPeriod}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* USAePay Payment Form */}
                   <div style={{ marginBottom: '20px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px' }}>?? Payment Information</h3>
+                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CreditCard size={16} />
+                      Payment Information
+                    </h3>
                     
                     {/* Payment Form */}
                     <form onSubmit={async (e) => {
@@ -7151,6 +7924,7 @@ function FinancialScorePage() {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
+                            // Note: server charges setup fee and schedules recurring; amount is used as a fallback for recurring pricing.
                             amount: planPrice,
                             companyId: selectedCompanyId,
                             subscriptionPlan: `${selectedSubscriptionPlan} Plan`,
@@ -7172,17 +7946,20 @@ function FinancialScorePage() {
                         const result = await response.json();
                         
                         if (result.success) {
-                          alert(`? Payment successful!\n\nTransaction ID: ${result.transactionId}\n\nThe subscription has been activated.`);
+                          const scheduleMsg = result.recurringScheduled
+                            ? `Recurring billing scheduled. First recurring payment: ${new Date(result.firstRecurringBillDate).toLocaleDateString()}`
+                            : `Setup fee paid, but recurring billing could not be scheduled automatically. Please use admin retry.`;
+                          alert(`Payment successful!\n\nTransaction ID: ${result.transactionId || 'n/a'}\n\n${scheduleMsg}`);
                           setShowCheckoutModal(false);
                           setSelectedSubscriptionPlan(null);
                           // Refresh companies to show updated subscription
                           loadAllCompanies();
                         } else {
-                          alert(`? Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
+                          alert(`Payment failed\n\n${result.error || 'Please try again or contact support.'}`);
                         }
                       } catch (error) {
                         console.error('Payment error:', error);
-                        alert('? An error occurred while processing your payment. Please try again.');
+                        alert('An error occurred while processing your payment. Please try again.');
                       }
                     }}>
                       {/* Card Information Section */}
@@ -7252,7 +8029,10 @@ function FinancialScorePage() {
                       
                       {/* Billing Address Section */}
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>?? Billing Address</h4>
+                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <MapPin size={16} />
+                          Billing Address
+                        </h4>
                         
                         <div style={{ marginBottom: '12px' }}>
                           <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#475569', marginBottom: '6px' }}>Street Address</label>
@@ -7318,11 +8098,12 @@ function FinancialScorePage() {
                       {/* Payment Summary */}
                       <div style={{ background: '#eff6ff', border: '2px solid #3b82f6', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Total Amount:</span>
-                          <span style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>${planPrice.toFixed(2)}</span>
+                          <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Due Today:</span>
+                          <span style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>${setupFee.toFixed(2)}</span>
                         </div>
                         <p style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', marginBottom: 0 }}>
-                          {selectedSubscriptionPlan} plan - Billed {planPeriod}
+                          Setup fee charged today. Recurring {selectedSubscriptionPlan} subscription begins on{' '}
+                          {firstRecurringBillDatePreview.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.
                         </p>
                       </div>
                       
@@ -7364,14 +8145,14 @@ function FinancialScorePage() {
                             gap: '8px'
                           }}
                         >
-                          💳 Complete Payment - ${planPrice.toFixed(2)}
+                          💳 {setupFee > 0 ? `Complete Setup Fee Payment - $${setupFee.toFixed(2)}` : 'Save Payment Method & Schedule'}
                         </button>
                       </div>
                     </form>
                     
                     {/* Security Notice */}
                     <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>??</span>
+                      <Lock size={16} color="#059669" />
                       <span style={{ fontSize: '12px', fontWeight: '500', color: '#059669' }}>
                         Secured by USAePay - Your payment information is encrypted
                       </span>
@@ -7381,7 +8162,7 @@ function FinancialScorePage() {
                   {/* Security Notice */}
                   <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '16px' }}>??</span>
+                      <Lock size={16} color="#059669" />
                       <span style={{ fontSize: '13px', fontWeight: '500', color: '#059669' }}>
                         Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                       </span>
@@ -7542,7 +8323,7 @@ function FinancialScorePage() {
 
                   {/* Security Notice */}
                   <div style={{ background: '#d1fae5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '12px', marginBottom: '20px', display: 'flex', alignItems: 'start', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>??</span>
+                    <Lock size={18} color="#065f46" />
                     <span style={{ fontSize: '13px', color: '#065f46', lineHeight: '1.5' }}>
                       Secure payment processing via USAePay. Your card data is encrypted and never stored on our servers.
                     </span>
@@ -7594,7 +8375,10 @@ function FinancialScorePage() {
                           Updating...
                         </>
                       ) : (
-                        '?? Update Payment Method'
+                        <>
+                          <CreditCard size={16} />
+                          Update Payment Method
+                        </>
                       )}
                     </button>
                   </div>
@@ -7606,126 +8390,109 @@ function FinancialScorePage() {
           {/* Data Mapping Tab - Content rendered through Financial Statements conditional below */}
 
           {!selectedCompanyId && adminDashboardTab === 'data-mapping' && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to map QuickBooks accounts.</p>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to map accounts.</p>
             </div>
           )}
 
           {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !csvTrialBalanceData && !qbRawData && (
-            <div style={{ background: 'white', borderRadius: '12px', padding: '32px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
-                <p style={{ fontSize: '14px', color: '#94a3b8' }}>Sync QuickBooks/Xero data or upload a Trial Balance CSV to map accounts.</p>
+                <p style={{ fontSize: '14px', color: '#94a3b8' }}>
+                  Selected Accounting System: {selectedAccountingSystemLabel}. Connect your accounting system or upload a Trial Balance CSV to map accounts.
+                </p>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', maxWidth: '1100px', margin: '0 auto' }}>
-                {/* QuickBooks Option */}
-                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '24px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>??</div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>QuickBooks API</div>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
-                  <button
-                    onClick={() => setAdminDashboardTab('api-connections')}
-                    style={{
-                      padding: '10px 20px',
-                      background: '#667eea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Connect QuickBooks
-                  </button>
-                </div>
+              <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+                {(() => {
+                  if (selectedAccountingSystem === 'QUICKBOOKS') {
+                    return (
+                      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '2px solid #e2e8f0', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                          <DollarSign size={32} color="#667eea" />
+                        </div>
+                        <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>QuickBooks API</div>
+                        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Connect to QuickBooks Online to sync your financial data automatically.</p>
+                        <button
+                          onClick={() => setAdminDashboardTab('api-connections')}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#667eea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Connect QuickBooks
+                        </button>
+                      </div>
+                    );
+                  }
 
-                {/* Xero Option */}
-                <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '24px', border: '2px solid #fed7aa', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>??</div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Xero API</div>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Connect to Xero to sync your financial data automatically.</p>
-                  <button
-                    onClick={() => setAdminDashboardTab('api-connections')}
-                    style={{
-                      padding: '10px 20px',
-                      background: '#fb923c',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Connect Xero
-                  </button>
-                </div>
-                
-                {/* Trial Balance Upload Option */}
-                <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '24px', border: '2px solid #86efac' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px', textAlign: 'center' }}>??</div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#065f46', marginBottom: '8px', textAlign: 'center' }}>Trial Balance CSV</div>
-                  <p style={{ fontSize: '13px', color: '#047857', marginBottom: '16px', textAlign: 'center' }}>Upload a CSV with Acct Type, Acct ID, Description, and date columns.</p>
-                  <input 
-                    type="file" 
-                    accept=".csv" 
-                    onChange={async (e) => {
-                      console.log('?? CSV File selected');
-                      const file = e.target.files?.[0];
-                      if (!file) {
-                        console.log('? No file selected');
-                        return;
-                      }
-                      
-                      console.log('? File:', file.name, 'Size:', file.size, 'Company:', selectedCompanyId);
-                      console.log('?? Current User:', currentUser?.email || 'NOT SET');
-                      
-                      try {
-                        console.log('?? Reading file text...');
-                        const text = await file.text();
-                        console.log('? File read, length:', text.length);
-                        
-                        console.log('?? Parsing Trial Balance CSV...');
-                        const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
-                        console.log('? Parsed successfully:', parsed);
-                        
-                        const csvData = {
-                          ...parsed,
-                          _companyId: selectedCompanyId,
-                          fileName: file.name,
-                        };
-                        
-                        console.log('?? Setting csvTrialBalanceData state...');
-                        setCsvTrialBalanceData(csvData);
-                        
-                        console.log('?? Saving to localStorage...');
-                        localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
-                        
-                        setError(null);
-                        console.log('? CSV upload complete!');
-                      } catch (err: any) {
-                        console.error('? Error parsing CSV:', err);
-                        setError(`Failed to parse Trial Balance CSV: ${err.message}`);
-                        setCsvTrialBalanceData(null);
-                      }
-                    }} 
-                    style={{ 
-                      padding: '12px', 
-                      border: '2px dashed #10b981', 
-                      borderRadius: '8px', 
-                      width: '100%', 
-                      cursor: 'pointer', 
-                      background: 'white',
-                      fontSize: '13px'
-                    }} 
-                  />
-                  {error && error.includes('Trial Balance') && (
-                    <div style={{ padding: '8px', background: '#fee2e2', color: '#991b1b', borderRadius: '6px', marginTop: '12px', fontSize: '12px' }}>{error}</div>
-                  )}
-                </div>
+                  if (selectedAccountingSystem === 'XERO') {
+                    return (
+                      <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '16px', border: '2px solid #fed7aa', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                          <TrendingUp size={32} color="#fb923c" />
+                        </div>
+                        <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>Xero API</div>
+                        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Connect to Xero to sync your financial data automatically.</p>
+                        <button
+                          onClick={() => setAdminDashboardTab('api-connections')}
+                          style={{
+                            padding: '10px 20px',
+                            background: '#fb923c',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Connect Xero
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  // CSV Trial Balance option: always available and used as the fallback for "not supported yet".
+                  const isUnsupported =
+                    !!selectedAccountingSystem &&
+                    !['CSV_FILE', 'QUICKBOOKS', 'XERO'].includes(selectedAccountingSystem);
+
+                  return (
+                    <div style={{ background: isUnsupported ? '#fff7ed' : '#f0fdf4', borderRadius: '12px', padding: '16px', border: `2px solid ${isUnsupported ? '#fed7aa' : '#86efac'}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                        <FileSpreadsheet size={32} color={isUnsupported ? '#fb923c' : '#10b981'} />
+                      </div>
+                      <div style={{ fontSize: '16px', fontWeight: '600', color: isUnsupported ? '#9a3412' : '#065f46', marginBottom: '6px', textAlign: 'center' }}>
+                        {isUnsupported ? `${selectedAccountingSystemLabel} (Not supported yet)` : 'Trial Balance CSV'}
+                      </div>
+                      <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px', textAlign: 'center' }}>
+                        Upload your Trial Balance CSV to start account mapping.
+                      </p>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleTrialBalanceCsvSelected}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          border: '2px dashed #10b981',
+                          borderRadius: '8px',
+                          background: '#ffffff',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -7737,25 +8504,39 @@ function FinancialScorePage() {
             // Get accounts for mapping from CSV data (if available)
             const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
             const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
+            const shouldShowCsvReupload =
+              !qbRawData &&
+              (hasCsvData || hasSavedCsvInLocalStorage || latestFinancialSource === 'csv_trial_balance');
 
             return (
-              <div key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`} style={{ maxWidth: '1800px', margin: '0 auto', padding: '32px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>?? Account Mapping</h1>
+              <div
+                key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`}
+                style={{
+                  maxWidth: '1800px',
+                  margin: '0 auto',
+                  // Pull the section up to reduce the large perceived gap under the admin tabs.
+                  marginTop: '-52px',
+                  padding: '0px 32px 16px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Account Mapping</h1>
                   {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
                 </div>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '6px' }}>
+                  Accounting System: <span style={{ fontWeight: '700', color: '#475569' }}>{selectedAccountingSystemLabel}</span>
+                </div>
+                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
                   {hasCsvData
                     ? `Map Trial Balance accounts to your standardized financial fields - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} - ${csvTrialBalanceData.dates?.length || 0} periods`
                     : `${aiMappings.length} saved account mappings loaded from database`
                   }
                 </p>
 
-
                 {/* AI-Assisted Mapping Section for CSV */}
                 {hasCsvData && (
-                <div style={{ marginBottom: '32px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
                         <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
@@ -7822,12 +8603,12 @@ function FinancialScorePage() {
                       >
                         {isGeneratingMappings ? (
                           <>
-                            <span>??</span>
+                            <Upload size={16} />
                             <span>Generating Mappings...</span>
                           </>
                         ) : (
                           <>
-                            <span>??</span>
+                            <TrendingUp size={16} />
                             <span>Generate AI Mappings</span>
                           </>
                         )}
@@ -7835,7 +8616,7 @@ function FinancialScorePage() {
                     </div>
 
                     {/* Account Summary by Type */}
-                    <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                    <div style={{ marginTop: '12px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                       <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Type:</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {Object.entries(csvTrialBalanceData.accountsByType || {}).map(([type, accounts]: [string, any]) => (
@@ -7858,8 +8639,8 @@ function FinancialScorePage() {
 
                 {/* AI-Assisted Mapping Section for API synced accounts (QuickBooks/Xero) */}
                 {!hasCsvData && aiMappings.length > 0 && aiMappings.filter(m => m.targetField === 'unmapped').length > 0 && (
-                <div style={{ marginBottom: '32px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
                         <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
@@ -7924,12 +8705,12 @@ function FinancialScorePage() {
                       >
                         {isGeneratingMappings ? (
                           <>
-                            <span>??</span>
+                            <Upload size={16} />
                             <span>Generating Mappings...</span>
                           </>
                         ) : (
                           <>
-                            <span>??</span>
+                            <TrendingUp size={16} />
                             <span>Generate AI Mappings</span>
                           </>
                         )}
@@ -7966,8 +8747,8 @@ function FinancialScorePage() {
 
                 {/* Mapping Results Section */}
                 {showMappingSection && aiMappings.length > 0 && (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '32px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                         Account Mappings ({aiMappings.length} accounts)
                       </h2>
@@ -7985,11 +8766,11 @@ function FinancialScorePage() {
                     />
 
                     {/* Save Mappings Section */}
-                    <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+                    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
                       {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
                         <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #93c5fd' }}>
                           <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
-                            <span style={{ fontSize: '16px' }}>??</span>
+                            <span style={{ fontSize: '16px' }}></span>
                             <div>
                               <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>Xero/QuickBooks Data Detected</div>
                               <p style={{ fontSize: '12px', color: '#1e40af', margin: 0 }}>
@@ -7999,7 +8780,7 @@ function FinancialScorePage() {
                           </div>
                         </div>
                       )}
-                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
                           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
                           <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
@@ -8078,7 +8859,7 @@ function FinancialScorePage() {
                               // Update local state
                               setLoadedMonthlyData(processedData);
 
-                                alert(`? Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                                alert(`Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
                               } catch (error: any) {
                                 console.error('Error processing CSV data:', error);
                                 alert('Failed to process CSV data: ' + error.message);
@@ -8099,7 +8880,7 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                             }}
                           >
-                            {isProcessingMonthlyData ? 'Processing...' : '?? Process & Save Monthly Data'}
+                            {isProcessingMonthlyData ? 'Processing...' : 'Process & Save Monthly Data'}
                           </button>
                           )}
                           
@@ -8128,13 +8909,13 @@ function FinancialScorePage() {
                                 const result = await response.json();
                                 
                                 if (result.success) {
-                                  alert(`? ${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
+                                  alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
                                   // Switch to Data Review tab
                                   setAdminDashboardTab('data-review');
                                   // Trigger data reload by updating qbLastSync (this triggers the useEffect)
                                   setQbLastSync(Date.now());
                                 } else {
-                                  alert(`? Failed to reprocess: ${result.error}`);
+                                  alert(`Failed to reprocess: ${result.error}`);
                                 }
                               } catch (error: any) {
                                 console.error('Reprocess error:', error);
@@ -8156,7 +8937,7 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isProcessingMonthlyData ? 'Processing...' : '?? Apply Mappings to Data'}
+                            {isProcessingMonthlyData ? 'Processing...' : 'Apply Mappings to Data'}
                           </button>
                           )}
                           
@@ -8218,7 +8999,7 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
                             }}
                           >
-                            {isSavingMappings ? 'Saving...' : '?? Save Mappings'}
+                            {isSavingMappings ? 'Saving...' : 'Save Mappings'}
                           </button>
                         </div>
                       </div>
@@ -8314,7 +9095,25 @@ function FinancialScorePage() {
         setCompanyAddressCountry={setCompanyAddressCountry}
         companyIndustrySector={companyIndustrySector}
         setCompanyIndustrySector={setCompanyIndustrySector}
+        accountingSystem={accountingSystem}
+        setAccountingSystem={setAccountingSystem}
+        companySizeCategory={companySizeCategory}
+        setCompanySizeCategory={setCompanySizeCategory}
+        industrySectorCategory={industrySectorCategory}
+        setIndustrySectorCategory={setIndustrySectorCategory}
         onSave={saveCompanyDetails}
+      />
+
+      {/* Consultant: Add Company Modal */}
+      <AddCompanyModal
+        show={showAddCompanyModal}
+        onClose={() => setShowAddCompanyModal(false)}
+        companyName={newCompanyName}
+        setCompanyName={setNewCompanyName}
+        affiliateCode={selectedAffiliateCodeForNewCompany}
+        setAffiliateCode={setSelectedAffiliateCodeForNewCompany}
+        onSave={addCompanyFromConsultantModal}
+        isLoading={isLoading}
       />
 
       {/* Content Area - Requires Company Selection */}
@@ -8347,79 +9146,18 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Financial Score - Introduction View */}
-      {currentView === 'fs-intro' && (
+      {/* Financial Score - Introduction View - DISABLED (commented out) */}
+      {/* {currentView === 'fs-intro' && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '32px', textAlign: 'center' }}>Introduction to the Corelytics Financial Score</h1>
-            
-            <div style={{ fontSize: '16px', color: '#475569', lineHeight: '1.8', maxWidth: '900px', margin: '0 auto' }}>
-              <p style={{ marginBottom: '20px' }}>
-                We would like to introduce to you the emerging standard score for small and medium businesses. It is called the <strong>Corelytics Financial Score (CFS)</strong>. On a scale of 1 to 100, 100 indicates a company that is firing on all cylinders and building value at a steady clip; a score of zero indicates no operations. The scores in between have a lot to say about the general health of any company being measured.
-              </p>
-              
-              <p style={{ marginBottom: '32px' }}>
-                The score tells a lot about a company's financial stability and their potential value in the market regardless of specific industry.
-              </p>
-              
-              <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '32px', marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>Approximate Interpretation of Corelytics Financial Scores:</h2>
-                
-                <div style={{ display: 'grid', gap: '20px' }}>
-                  <div style={{ background: '#d1fae5', borderRadius: '8px', padding: '20px', border: '2px solid #10b981' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#065f46', marginBottom: '12px' }}>80 — 100: Strong Financial Performance</div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#064e3b', fontSize: '15px', lineHeight: '1.6' }}>
-                      <li>Good growth and good balance</li>
-                      <li>In a good position for considering an M&A transaction</li>
-                      <li>Excellent time to expand offerings and invest in R&D</li>
-                    </ul>
-                  </div>
-                  
-                  <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '20px', border: '2px solid #3b82f6' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e40af', marginBottom: '12px' }}>50 — 80: Good Fundamentals</div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#1e3a8a', fontSize: '15px', lineHeight: '1.6' }}>
-                      <li>In a good position for revenue growth</li>
-                      <li>Needs to focus on bringing costs down as volume grows</li>
-                    </ul>
-                  </div>
-                  
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', border: '2px solid #f59e0b' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#92400e', marginBottom: '12px' }}>30 — 50: Basic Problems</div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#78350f', fontSize: '15px', lineHeight: '1.6' }}>
-                      <li>Cost structure issues; not in a position to grow</li>
-                      <li>Improvements needed in operations and process controls</li>
-                      <li>Growth without operating improvements could do significant harm</li>
-                    </ul>
-                  </div>
-                  
-                  <div style={{ background: '#fee2e2', borderRadius: '8px', padding: '20px', border: '2px solid #ef4444' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#991b1b', marginBottom: '12px' }}>0 — 30: Serious Performance Problems</div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#7f1d1d', fontSize: '15px', lineHeight: '1.6' }}>
-                      <li>Problems exist which may not be correctable</li>
-                      <li>Some form of major restructuring or liquidation may be best</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              
-              <p style={{ marginBottom: '20px' }}>
-                These scores are both <strong>diagnostic</strong> and <strong>prescriptive</strong>. They are diagnostic in that they identify a fundamental level of performance and related potential problems; prescriptive in that they point to specific actions that should be taken to remedy identified problems or take advantage of opportunities.
-              </p>
-              
-              <div style={{ background: '#ede9fe', borderRadius: '12px', padding: '24px', marginTop: '32px' }}>
-                <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#5b21b6', marginBottom: '16px' }}>The Overall Score is Based On:</h3>
-                <ul style={{ margin: 0, paddingLeft: '20px', color: '#6b21a8', fontSize: '15px', lineHeight: '1.8' }}>
-                  <li>Long-term and short-term trends in revenue growth and expense growth</li>
-                  <li>Trends in asset and liability growth</li>
-                </ul>
-              </div>
-            </div>
+            ...
           </div>
         </div>
-      )}
+      )} */}
 
-      {/* Financial Score Trends View */}
-      {currentView === 'fs-score' && selectedCompanyId && trendData.length > 0 && (
+      {/* Financial Score Trends View - DISABLED (commented out) */}
+      {/* {currentView === 'fs-score' && selectedCompanyId && trendData.length > 0 && (
         <FinancialScoreView
           monthly={monthly}
           trendData={trendData}
@@ -8435,7 +9173,7 @@ function FinancialScorePage() {
           alr1={alr1}
           alrGrowth={alrGrowth}
         />
-      )}
+      )} */}
 
       {/* Formula Popup Modal */}
       {showFormulaPopup && KPI_FORMULAS[showFormulaPopup] && (
@@ -8550,7 +9288,7 @@ function FinancialScorePage() {
       )}
 
       {/* Custom Dashboard View */}
-      {currentView === 'dashboard' && selectedCompanyId && trendData.length > 0 && (
+      {currentView === 'dashboard' && selectedCompanyId && (
         <DashboardView
           monthly={monthly}
           trendData={trendData}
@@ -8578,6 +9316,8 @@ function FinancialScorePage() {
           companyName={companyName || ''}
           benchmarks={benchmarks}
           onFormulaClick={(formula) => setShowFormulaPopup(formula)}
+          initialTab={kpiDashboardTab}
+          prefetchedMonthlyData={monthly as any}
         />
       )}
 
@@ -8608,6 +9348,15 @@ function FinancialScorePage() {
         />
       )}
 
+      {/* AI Analysis View */}
+      {currentView === 'ai-analysis' && selectedCompanyId && (
+        <AIAnalysisView
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+          monthly={monthly as any}
+        />
+      )}
+
       {/* Projections View */}
       {/* Projections View */}
       {currentView === 'projections' && selectedCompanyId && (
@@ -8630,19 +9379,74 @@ function FinancialScorePage() {
         />
       )}
 
+      {currentView === 'profile' && selectedCompanyId && (
+        <ProfileTab
+          selectedCompanyId={selectedCompanyId}
+          currentUser={currentUser}
+          company={company}
+          companyProfiles={companyProfiles}
+          setCompanyProfiles={setCompanyProfiles}
+          monthly={monthly}
+          trendData={trendData}
+          isLoading={isLoading}
+          setIsLoading={setIsLoading}
+          setEditingCompanyId={setEditingCompanyId}
+          setCompanyAddressStreet={setCompanyAddressStreet}
+          setCompanyAddressCity={setCompanyAddressCity}
+          setCompanyAddressState={setCompanyAddressState}
+          setCompanyAddressZip={setCompanyAddressZip}
+          setCompanyAddressCountry={setCompanyAddressCountry}
+          setCompanyIndustrySector={setCompanyIndustrySector}
+          setAccountingSystem={setAccountingSystem}
+          setCompanySizeCategory={setCompanySizeCategory}
+          setIndustrySectorCategory={setIndustrySectorCategory}
+          setShowCompanyDetailsModal={setShowCompanyDetailsModal}
+        />
+      )}
+
       {/* Working Capital View */}
       {/* Working Capital View */}
       {currentView === 'working-capital' && selectedCompanyId && (
         <WorkingCapitalTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
+          prefetchedMonthlyData={monthly as any}
         />
+      )}
+
+      {currentView === 'pa-overview' && selectedCompanyId && (
+        <PerformanceAnalyticsOverview companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-critical-issues' && selectedCompanyId && (
+        <OperationsTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          industrySectorCategory={company?.industrySectorCategory || null}
+          viewMode="overview-only"
+        />
+      )}
+
+      {currentView === 'pa-focus-board' && selectedCompanyId && (
+        <FocusBoard companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-trend-explorer' && selectedCompanyId && (
+        <TrendExplorer companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-anomaly-inbox' && selectedCompanyId && (
+        <AnomalyInbox companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'pa-opportunity-workspace' && selectedCompanyId && (
+        <OpportunityWorkspace companyId={selectedCompanyId} />
       )}
 
       {/* Valuation View */}
       {currentView === 'valuation' && selectedCompanyId && monthly.length > 0 && (
-        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Business Valuation</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
@@ -8691,9 +9495,8 @@ function FinancialScorePage() {
                   transition: 'all 0.3s ease'
                 }}
               >
-                {valuationSaveStatus === 'saving' ? '?? Saving...' : valuationSaveStatus === 'saved' ? '? Saved!' : valuationSaveStatus === 'error' ? '? Error' : 'Save Settings'}
+                {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save Settings'}
               </button>
-              {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
             </div>
           </div>
           
@@ -8754,10 +9557,10 @@ function FinancialScorePage() {
             return (
               <>
                 {/* Overview Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '32px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>SDE Valuation</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>SDE Valuation</h3>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981', marginBottom: '4px' }}>
                       ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
@@ -8765,9 +9568,9 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>EBITDA Valuation</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea', marginBottom: '8px' }}>
+                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>EBITDA Valuation</h3>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
                       ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
@@ -8775,9 +9578,9 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #f59e0b' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>DCF Valuation</h3>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b', marginBottom: '8px' }}>
+                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #f59e0b' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>DCF Valuation</h3>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b', marginBottom: '4px' }}>
                       ${Math.round(dcfValue).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b' }}>
@@ -8787,13 +9590,13 @@ function FinancialScorePage() {
                 </div>
                 
                 {/* SDE Method */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Seller's Discretionary Earnings (SDE) Method
                   </h2>
                   
-                  <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
-                    <div style={{ marginBottom: '16px' }}>
+                  <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ marginBottom: '8px' }}>
                       <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
                       <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${(ttmSDE / 1000).toFixed(0)}K</div>
                     </div>
@@ -8805,8 +9608,8 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                       SDE Multiple: {sdeMultiplier.toFixed(1)}x
                     </label>
                     <input 
@@ -8816,7 +9619,7 @@ function FinancialScorePage() {
                       step="0.1" 
                       value={sdeMultiplier} 
                       onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))} 
-                      style={{ width: '100%', marginBottom: '8px' }} 
+                      style={{ width: '100%', marginBottom: '4px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
                       <span>Typical Range: 1.5x - 4.0x</span>
@@ -8824,11 +9627,11 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
                       Estimated Business Value (SDE)
                     </div>
-                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#10b981' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
                       ${Math.round(sdeValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
@@ -8838,15 +9641,15 @@ function FinancialScorePage() {
                 </div>
                 
                 {/* EBITDA Method */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     EBITDA Multiple Method
                   </h2>
                   
-                  <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months EBITDA</div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>${(ttmEBITDA / 1000).toFixed(0)}K</div>
+                  <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months EBITDA</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>${(ttmEBITDA / 1000).toFixed(0)}K</div>
                     </div>
                     
                     <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
@@ -8858,8 +9661,8 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                       EBITDA Multiple: {ebitdaMultiplier.toFixed(1)}x
                     </label>
                     <input 
@@ -8869,7 +9672,7 @@ function FinancialScorePage() {
                       step="0.1" 
                       value={ebitdaMultiplier} 
                       onChange={(e) => setEbitdaMultiplier(parseFloat(e.target.value))} 
-                      style={{ width: '100%', marginBottom: '8px' }} 
+                      style={{ width: '100%', marginBottom: '4px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
                       <span>Typical Range: 3.0x - 8.0x</span>
@@ -8877,11 +9680,11 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
                       Estimated Business Value (EBITDA)
                     </div>
-                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#667eea' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>
                       ${Math.round(ebitdaValuation).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
@@ -8891,13 +9694,13 @@ function FinancialScorePage() {
                 </div>
                 
                 {/* DCF Method */}
-                <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Discounted Cash Flow (DCF) Method
                   </h2>
                   
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', marginBottom: '20px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
+                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '10px' }}>
                       <div>
                         <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Rate</div>
                         <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{growth_24mo.toFixed(1)}%</div>
@@ -8921,10 +9724,10 @@ function FinancialScorePage() {
                   </div>
                   
                   {/* Free Cash Flow Calculation */}
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '20px', marginBottom: '20px', border: '1px solid #fcd34d' }}>
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{ fontSize: '14px', color: '#92400e', marginBottom: '8px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>${(ttmFreeCashFlow / 1000).toFixed(0)}K</div>
+                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', marginBottom: '12px', border: '1px solid #fcd34d' }}>
+                    <div style={{ marginBottom: '10px' }}>
+                      <div style={{ fontSize: '13px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>${(ttmFreeCashFlow / 1000).toFixed(0)}K</div>
                     </div>
                     
                     <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
@@ -8964,8 +9767,8 @@ function FinancialScorePage() {
                   </div>
                   
                   {/* Adjustable Parameters */}
-                  <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                       Discount Rate (WACC): {dcfDiscountRate.toFixed(1)}%
                     </label>
                     <input 
@@ -8984,8 +9787,8 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
                       Terminal Growth Rate: {dcfTerminalGrowth.toFixed(1)}%
                     </label>
                     <input 
@@ -8995,7 +9798,7 @@ function FinancialScorePage() {
                       step="0.5" 
                       value={dcfTerminalGrowth} 
                       onChange={(e) => setDcfTerminalGrowth(parseFloat(e.target.value))} 
-                      style={{ width: '100%', marginBottom: '8px' }} 
+                      style={{ width: '100%', marginBottom: '4px' }} 
                     />
                     <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
                       <span>Conservative: 0-2%</span>
@@ -9004,11 +9807,11 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
                       Estimated Business Value (DCF)
                     </div>
-                    <div style={{ fontSize: '36px', fontWeight: '700', color: '#f59e0b' }}>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
                       ${Math.round(dcfValue).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>
@@ -9027,6 +9830,8 @@ function FinancialScorePage() {
         <CashFlowTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
+          initialDisplay={cashFlowDisplay}
+          prefetchedMonthlyData={monthly as any}
         />
       )}
 
@@ -9038,7 +9843,7 @@ function FinancialScorePage() {
         if (!qbRawData._companyId || qbRawData._companyId !== selectedCompanyId) {
           console.error(`?? SECURITY BLOCK: Data mismatch! Selected: ${selectedCompanyId}, Data companyId: ${qbRawData._companyId || 'MISSING'}`);
           return <div style={{ padding: '48px', textAlign: 'center' }}>
-            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>? Loading company data...</div>
+            <div style={{ fontSize: '18px', color: '#ef4444', marginBottom: '12px' }}>Loading company data...</div>
             <div style={{ fontSize: '14px', color: '#64748b' }}>Please wait while we fetch the correct financial data.</div>
           </div>;
         }
@@ -9309,7 +10114,6 @@ function FinancialScorePage() {
           <style>{`
             @media print {
               @page {
-                size: portrait;
                 margin: 0.2in 0.3in;
               }
               
@@ -9535,7 +10339,24 @@ function FinancialScorePage() {
               </div>
               
               {/* Print Button */}
-              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+                <select
+                  className="no-print"
+                  value={printOrientation}
+                  onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+                  style={{
+                    padding: '10px 12px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    color: '#1e293b',
+                    background: 'white',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="portrait">Portrait</option>
+                  <option value="landscape">Landscape</option>
+                </select>
                 <button
                   onClick={() => window.print()}
                   style={{
@@ -12016,7 +12837,7 @@ function FinancialScorePage() {
         </div>
       )}
 
-      {/* Management Assessment - Questionnaire View */}
+      {/* Team Assessment - Questionnaire View */}
       {(() => {
         const hasCompanyId = selectedCompanyId || currentUser?.companyId;
         const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
@@ -12038,13 +12859,13 @@ function FinancialScorePage() {
       })() && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Management Assessment Questionnaire</h1>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Team Assessment Questionnaire</h1>
             {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
           </div>
           
           {currentUser?.role === 'consultant' && (
             <div style={{ background: '#fffbeb', border: '2px solid #fbbf24', borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>? Consultant View Only</h3>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>Consultant View Only</h3>
               <p style={{ fontSize: '14px', color: '#78350f', margin: 0 }}>
                 As a consultant, you can view this questionnaire but cannot fill it out. Only company users can complete assessments. 
                 Navigate to "View Assessments" in the Administrator Dashboard to see user responses.
@@ -12182,7 +13003,7 @@ function FinancialScorePage() {
           </>
           )}
 
-      {/* Management Assessment - Your Results View */}
+      {/* Team Assessment - Your Results View */}
       {currentView === 'ma-your-results' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <MAYourResultsView
           selectedCompanyId={selectedCompanyId}
@@ -12195,8 +13016,8 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Management Assessment Views - Available to all users including assessment users */}
-          {/* Management Assessment - Welcome View */}
+      {/* Team Assessment Views - Available to all users including assessment users */}
+          {/* Team Assessment - Welcome View */}
       {currentView === 'ma-welcome' && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <MAWelcomeView
           companyName={companyName}
@@ -12205,7 +13026,7 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Management Assessment - Scores Summary View */}
+      {/* Team Assessment - Scores Summary View */}
       {currentView === 'ma-scores-summary' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <MAScoresSummaryView
           selectedCompanyId={selectedCompanyId}
@@ -12214,12 +13035,12 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Management Assessment - Scoring Guide View */}
+      {/* Team Assessment - Scoring Guide View */}
       {currentView === 'ma-scoring-guide' && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <MAScoringGuideView />
       )}
 
-      {/* Management Assessment - Charts View */}
+      {/* Team Assessment - Charts View */}
       {currentView === 'ma-charts' && selectedCompanyId && ((currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant') && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '32px' }}>Assessment Charts</h1>
@@ -12412,6 +13233,20 @@ function FinancialScorePage() {
             <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
               Select the reports you want to include in your custom print package
             </p>
+
+            <div style={{ marginBottom: '24px', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                Print Orientation
+              </label>
+              <select
+                value={printOrientation}
+                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
+                style={{ width: '220px', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', background: 'white', cursor: 'pointer' }}
+              >
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
+            </div>
             
             <div style={{ marginBottom: '32px' }}>
               {/* MD&A Report */}
@@ -12426,22 +13261,6 @@ function FinancialScorePage() {
                   <div>
                     <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>MD&A (Management Discussion & Analysis)</div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Includes all 3 tabs: Key Metrics, Analysis, and Recommendations</div>
-                  </div>
-                </label>
-              </div>
-
-              {/* Financial Score */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={printPackageSelections.financialScore}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, financialScore: e.target.checked})}
-                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
-                  />
-                  <div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Financial Score</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Score summary and trends</div>
                   </div>
                 </label>
               </div>
@@ -12622,7 +13441,6 @@ function FinancialScorePage() {
                 onClick={() => {
                   setPrintPackageSelections({
                     mda: false,
-                    financialScore: false,
                     priorityRatios: false,
                     workingCapital: false,
                     dashboard: false,
@@ -12662,7 +13480,7 @@ function FinancialScorePage() {
             {/* Info Box */}
             <div style={{ marginTop: '32px', padding: '16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px' }}>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <span style={{ fontSize: '20px' }}>??</span>
+                <AlertCircle size={20} color="#1e40af" />
                 <div style={{ fontSize: '14px', color: '#1e40af', lineHeight: '1.6' }}>
                   <strong>How it works:</strong> Select the reports you want to include, then click "Generate Print Package" to create a combined PDF with all selected reports in a single document ready for printing.
                 </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { sum } from '../../utils/financial';
 
 // LineChart Component
@@ -35,19 +35,16 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const minValue = filteredValues.length > 0 ? Math.min(...filteredValues) : Math.min(...values);
   const maxValue = filteredValues.length > 0 ? Math.max(...filteredValues) : Math.max(...values);
   
-  const yMaxCalc = yMax || Math.ceil(maxValue * 1.1);
-  const yMinCalc = yMax ? 0 : Math.floor(minValue * 0.9);
-  const range = yMaxCalc - yMinCalc;
-  
+  let yMaxCalc = yMax || Math.ceil(maxValue * 1.1);
+  let yMinCalc = yMax ? 0 : Math.floor(minValue * 0.9);
+  let range = yMaxCalc - yMinCalc;
+
   if (range === 0 || !Number.isFinite(range)) {
-    return (
-      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '15px' }}>{title}</h3>
-        <p style={{ fontSize: '14px', color: '#64748b', textAlign: 'center', padding: '40px 0' }}>
-          Unable to display chart - insufficient data variation
-        </p>
-      </div>
-    );
+    const baseline = Number.isFinite(minValue) ? minValue : 0;
+    const pad = Math.max(Math.abs(baseline) * 0.05, 1);
+    yMinCalc = baseline - pad;
+    yMaxCalc = baseline + pad;
+    range = yMaxCalc - yMinCalc;
   }
 
   const width = compact ? 500 : 1100;
@@ -64,9 +61,10 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   });
 
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
 
   return (
-    <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', position: 'relative' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', margin: 0 }}>{title}</h3>
         {showFormulaButton && onFormulaClick && (
@@ -173,9 +171,20 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           </>
         )}
         {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="5" fill={p.isOutOfRange ? '#ef4444' : color} stroke="white" strokeWidth="2">
-            <title>{`${p.month}: ${formatter ? formatter(p.value) : p.value.toFixed(1)}${p.isOutOfRange ? ' (out of range)' : ''}`}</title>
-          </circle>
+          <g key={i}>
+            <circle
+              cx={p.x}
+              cy={p.y}
+              r="8"
+              fill="transparent"
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={() => setHoveredPoint(i)}
+              onMouseLeave={() => setHoveredPoint(null)}
+            />
+            <circle cx={p.x} cy={p.y} r="5" fill={p.isOutOfRange ? '#ef4444' : color} stroke="white" strokeWidth="2" pointerEvents="none">
+              <title>{`${p.month}: ${formatter ? formatter(p.value) : p.value.toFixed(1)}${p.isOutOfRange ? ' (out of range)' : ''}`}</title>
+            </circle>
+          </g>
         ))}
         {points.map((p, i) => {
           // Determine label format based on prop (default to semi-annual)
@@ -253,6 +262,27 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           }
         })}
       </svg>
+      {hoveredPoint !== null && points[hoveredPoint] && (
+        <div
+          style={{
+            position: 'absolute',
+            left: points[hoveredPoint].x + 12,
+            top: points[hoveredPoint].y - 8,
+            background: 'rgba(30, 41, 59, 0.95)',
+            color: 'white',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            fontWeight: '600',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            pointerEvents: 'none',
+            zIndex: 10
+          }}
+        >
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '2px' }}>{points[hoveredPoint].month}</div>
+          <div>{formatter ? formatter(points[hoveredPoint].value) : points[hoveredPoint].value.toFixed(1)}</div>
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: benchmarkValue != null ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginTop: '5px', padding: '3px 12px', background: 'white', borderRadius: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>CURRENT:</div>

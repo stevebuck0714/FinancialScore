@@ -160,10 +160,20 @@ export interface Company {
   addressZip?: string;
   addressCountry?: string;
   industrySector?: number;
+  accountingSystem?: string;
+  companySizeCategory?: string;
+  industrySectorCategory?: string;
   subscriptionMonthlyPrice?: number;
   subscriptionQuarterlyPrice?: number;
   subscriptionAnnualPrice?: number;
+  subscriptionSetupFee?: number;
   selectedSubscriptionPlan?: string | null;
+  tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
+  tier1SupportConsultantId?: string | null;
+  tier1SupportContactEmail?: string | null;
+  hasRealOperationalData?: boolean;
+  realDataActivatedAt?: string | null;
+  forceOperationalMockData?: boolean;
 }
 
 export interface CompanyProfile {
@@ -246,6 +256,13 @@ export interface User {
   email: string;
   password: string;
   companyId: string;
+  activeCompanyId?: string;
+  accessibleCompanies?: Array<{
+    companyId: string;
+    name: string;
+    companyRole?: string | null;
+    sidebarAccess?: any;
+  }>;
   consultantId?: string;
   consultantType?: string;
   consultantCompanyName?: string;

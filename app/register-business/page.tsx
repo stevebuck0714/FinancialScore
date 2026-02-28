@@ -563,6 +563,7 @@ export default function RegisterBusinessWelcome() {
                             <div>Monthly: ${validatedAffiliate.monthlyPrice}/month</div>
                             <div>Quarterly: ${validatedAffiliate.quarterlyPrice}/quarter</div>
                             <div>Annual: ${validatedAffiliate.annualPrice}/year</div>
+                            <div>Setup Fee: ${validatedAffiliate.setupFee ?? 0} one-time</div>
                           </div>
                         </div>
                       )}

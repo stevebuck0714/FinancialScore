@@ -368,7 +368,7 @@ export default function FinancialScorePage() {
       <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '40px 20px' }}>
         <div style={{ maxWidth: '480px', margin: '0 auto', background: 'white', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: '40px' }}>
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{ fontSize: '48px', fontWeight: '700', color: '#667eea', marginBottom: '16px', letterSpacing: '-1px' }}>
+            <div style={{ fontSize: '48px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', letterSpacing: '-1px' }}>
               Corelytics<sup style={{ fontSize: '18px', fontWeight: '400' }}>TM</sup>
             </div>
             <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Business Evaluation Tool</h1>
@@ -902,7 +902,7 @@ export default function FinancialScorePage() {
           <div style={{ padding: '32px' }}>
             <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
               <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                Financial Dashboard
+                Financial KPI's
               </h1>
               <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
                 {companyName || 'Your Company'} - Overview of financial performance

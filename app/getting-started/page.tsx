@@ -397,7 +397,7 @@ export default function GettingStartedPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
               <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h4 style={{ color: '#667eea', marginBottom: '12px' }}>📈 Financial Ratios</h4>
+                <h4 style={{ color: '#1F70C1', marginBottom: '12px' }}>📈 Financial Ratios</h4>
                 <ul style={{ fontSize: '14px', color: '#475569', marginLeft: '16px', lineHeight: '1.8' }}>
                   <li>Liquidity Ratios (Current, Quick)</li>
                   <li>Profitability Ratios (Margins, ROA, ROE)</li>
@@ -406,7 +406,7 @@ export default function GettingStartedPage() {
                 </ul>
               </div>
               <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h4 style={{ color: '#667eea', marginBottom: '12px' }}>💰 Working Capital</h4>
+                <h4 style={{ color: '#1F70C1', marginBottom: '12px' }}>💰 Working Capital</h4>
                 <ul style={{ fontSize: '14px', color: '#475569', marginLeft: '16px', lineHeight: '1.8' }}>
                   <li>Cash conversion cycle</li>
                   <li>Days sales outstanding (DSO)</li>
@@ -415,7 +415,7 @@ export default function GettingStartedPage() {
                 </ul>
               </div>
               <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h4 style={{ color: '#667eea', marginBottom: '12px' }}>📊 Projections</h4>
+                <h4 style={{ color: '#1F70C1', marginBottom: '12px' }}>📊 Projections</h4>
                 <ul style={{ fontSize: '14px', color: '#475569', marginLeft: '16px', lineHeight: '1.8' }}>
                   <li>Revenue forecasting</li>
                   <li>Expense projections</li>

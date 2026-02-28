@@ -5,6 +5,7 @@ import { validatePassword } from '@/lib/password-validator';
 import { requireAuth, validateCompanyAccess, isSiteAdmin, requireCompanyAccess } from '@/lib/tenant-security';
 import { auditUserOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import { createUserSchema, validateInput } from '@/lib/validation-schemas';
+import { grantUserCompanyAccess } from '@/lib/user-company-access';
 
 // GET users for a company (or all users if no companyId provided - for site admin)
 export async function GET(request: NextRequest) {
@@ -38,31 +39,97 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build where clause
-    const where: any = {};
-    if (companyId) {
-      where.companyId = companyId;
-    }
-    if (userType) {
-      where.userType = userType;
-    }
+    let users: Array<{
+      id: string;
+      name: string;
+      title: string | null;
+      phone: string | null;
+      email: string;
+      userType: any;
+      role: any;
+      companyRole: string | null;
+      sidebarAccess: any;
+      companyId: string | null;
+      createdAt: Date;
+    }> = [];
 
-    const users = await prisma.user.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        title: true,
-        phone: true,
-        email: true,
-        userType: true,
-        role: true,
-        companyRole: true,
-        companyId: true,
-        createdAt: true
-      },
-      orderBy: { name: 'asc' }
-    });
+    if (companyId) {
+      const memberships = await prisma.userCompanyAccess.findMany({
+        where: {
+          companyId,
+          ...(userType ? { user: { userType: userType as any } } : {}),
+        },
+        select: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              title: true,
+              phone: true,
+              email: true,
+              userType: true,
+              role: true,
+              companyId: true,
+              createdAt: true,
+              companyRole: true,
+              sidebarAccess: true,
+            },
+          },
+          companyRole: true,
+          sidebarAccess: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      users = memberships.map((m) => ({
+        ...m.user,
+        companyId,
+        companyRole: m.companyRole || m.user.companyRole,
+        sidebarAccess: (m.sidebarAccess ?? m.user.sidebarAccess) as any,
+      }));
+
+      if (users.length === 0) {
+        const fallbackUsers = await prisma.user.findMany({
+          where: {
+            companyId,
+            ...(userType ? { userType: userType as any } : {}),
+          },
+          select: {
+            id: true,
+            name: true,
+            title: true,
+            phone: true,
+            email: true,
+            userType: true,
+            role: true,
+            companyRole: true,
+            sidebarAccess: true,
+            companyId: true,
+            createdAt: true,
+          },
+          orderBy: { name: 'asc' },
+        });
+        users = fallbackUsers;
+      }
+    } else {
+      users = await prisma.user.findMany({
+        where: userType ? { userType: userType as any } : undefined,
+        select: {
+          id: true,
+          name: true,
+          title: true,
+          phone: true,
+          email: true,
+          userType: true,
+          role: true,
+          companyRole: true,
+          sidebarAccess: true,
+          companyId: true,
+          createdAt: true,
+        },
+        orderBy: { name: 'asc' },
+      });
+    }
 
     return NextResponse.json({ users });
   } catch (error) {
@@ -78,6 +145,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    // Treat blank password as "not provided" for existing-user linking flow.
+    if (typeof body?.password === 'string' && body.password.trim() === '') {
+      body.password = undefined;
+    }
     
     // SECURITY: Validate input
     const validation = validateInput(createUserSchema, body);
@@ -106,10 +177,19 @@ export async function POST(request: NextRequest) {
     // Only Consultants, Site Admins, and Company Admins can add users
     if (userContext.role === 'USER') {
       // Regular company users must be Company Admins to add users
-      const requestingUser = await prisma.user.findUnique({
+      const membership = await prisma.userCompanyAccess.findUnique({
+        where: {
+          userId_companyId: {
+            userId: userContext.userId,
+            companyId,
+          },
+        },
+        select: { companyRole: true },
+      });
+      const requestingUser = membership || (await prisma.user.findUnique({
         where: { id: userContext.userId },
         select: { companyRole: true }
-      });
+      }));
 
       if (requestingUser?.companyRole !== 'admin') {
         await auditForbiddenAccess('User', companyId, 'CREATE');
@@ -129,9 +209,53 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
+      // Preserve existing identity; if it has no display name yet, fill it from input.
+      if ((!existingUser.name || !existingUser.name.trim()) && name.trim()) {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { name: name.trim() },
+        });
+      }
+
+      // Existing identity: grant access to this company (no new password needed).
+      const grant = await grantUserCompanyAccess({
+        userId: existingUser.id,
+        companyId,
+        companyRole: userType === 'COMPANY' ? 'user' : undefined,
+      });
+
+      if (!grant.created) {
+        return NextResponse.json(
+          { error: 'User already has access to this company' },
+          { status: 409 }
+        );
+      }
+
+      await auditUserOperation('USER_COMPANY_ACCESS_GRANTED', existingUser.id, {
+        email: existingUser.email,
+        companyId,
+        userType,
+      });
+
+      const linkedUser = await prisma.user.findUnique({
+        where: { id: existingUser.id },
+        select: {
+          id: true,
+          name: true,
+          title: true,
+          phone: true,
+          email: true,
+          userType: true,
+          role: true,
+          companyId: true,
+          consultantId: true,
+          createdAt: true,
+        },
+      });
+
       return NextResponse.json(
-        { error: 'Email already registered' },
-        { status: 409 }
+        { user: linkedUser, linkedExistingUser: true },
+        { status: 201 }
       );
     }
 
@@ -150,6 +274,24 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    if (!password) {
+      return NextResponse.json(
+        { error: 'Password is required when creating a new user' },
+        { status: 400 }
+      );
+    }
+
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return NextResponse.json(
+        {
+          error: 'Password does not meet requirements',
+          details: passwordValidation.errors,
+        },
+        { status: 400 }
+      );
     }
 
     const passwordHash = await hashPassword(password);
@@ -186,6 +328,12 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    await grantUserCompanyAccess({
+      userId: user.id,
+      companyId,
+      companyRole: userType === 'COMPANY' ? 'user' : undefined,
+    });
+
     // AUDIT: Log user creation
     await auditUserOperation('USER_CREATED', user.id, {
       email: user.email,
@@ -208,6 +356,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const requestedCompanyId = searchParams.get('companyId');
 
     if (!id) {
       return NextResponse.json(
@@ -219,7 +368,7 @@ export async function DELETE(request: NextRequest) {
     // SECURITY: First, check if user exists and get their companyId
     const targetUser = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, companyId: true, role: true }
+      select: { id: true, email: true, companyId: true, consultantId: true, role: true }
     });
 
     if (!targetUser) {
@@ -229,41 +378,80 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // SECURITY: Validate access to company or user
-    let userContext;
-    if (targetUser.companyId) {
-      try {
-        userContext = await requireCompanyAccess(targetUser.companyId);
-      } catch (error) {
-        await auditForbiddenAccess('User', id, 'DELETE');
-        return NextResponse.json(
-          { error: 'Forbidden: Access to this user denied' },
-          { status: 403 }
-        );
-      }
-    } else {
-      userContext = await requireAuth();
-    }
+    // SECURITY: Validate caller identity first; action-specific authorization follows.
+    const userContext = await requireAuth();
 
     // SECURITY: Check if user has permission to delete users
     // Only Consultants, Site Admins, and Company Admins can delete users
-    if (userContext.role === 'USER' && targetUser.companyId) {
-      const requestingUser = await prisma.user.findUnique({
-        where: { id: userContext.userId },
-        select: { companyRole: true }
-      });
+    const memberships = await prisma.userCompanyAccess.findMany({
+      where: { userId: id },
+      select: { companyId: true, companyRole: true, sidebarAccess: true },
+      orderBy: { createdAt: 'asc' },
+    });
 
-      if (requestingUser?.companyRole !== 'admin') {
+    const context = userContext;
+    const activeCompanyId = context.companyId || null;
+    const targetCompanyForAction =
+      requestedCompanyId ||
+      activeCompanyId ||
+      targetUser.companyId ||
+      memberships[0]?.companyId ||
+      null;
+    const membershipForActionCompany = targetCompanyForAction
+      ? memberships.find((m) => m.companyId === targetCompanyForAction)
+      : null;
+
+    if (!targetCompanyForAction && context.role !== 'SITEADMIN') {
+      await auditForbiddenAccess('User', id, 'DELETE');
+      return NextResponse.json(
+        { error: 'Forbidden: No company scope for this delete action' },
+        { status: 403 }
+      );
+    }
+
+    if (userContext.role === 'USER') {
+      const callerMembership = targetCompanyForAction
+        ? await prisma.userCompanyAccess.findUnique({
+        where: {
+          userId_companyId: {
+            userId: userContext.userId,
+            companyId: targetCompanyForAction,
+          },
+        },
+        select: { companyRole: true },
+      })
+        : null;
+      if (callerMembership?.companyRole !== 'admin') {
         await auditForbiddenAccess('User', id, 'DELETE');
         return NextResponse.json(
           { error: 'Forbidden: Only Company Admins can delete users' },
           { status: 403 }
         );
       }
+
+      if (
+        targetCompanyForAction &&
+        !memberships.some((m) => m.companyId === targetCompanyForAction) &&
+        targetUser.companyId !== targetCompanyForAction
+      ) {
+        await auditForbiddenAccess('User', id, 'DELETE');
+        return NextResponse.json(
+          { error: 'Forbidden: Target user is not in this company' },
+          { status: 403 }
+        );
+      }
+    } else if (userContext.role === 'CONSULTANT' && targetCompanyForAction) {
+      const hasAccess = await validateCompanyAccess(targetCompanyForAction);
+      if (!hasAccess) {
+        await auditForbiddenAccess('User', id, 'DELETE');
+        return NextResponse.json(
+          { error: 'Forbidden: Access to this user denied' },
+          { status: 403 }
+        );
+      }
     }
 
     // SECURITY: Prevent users from deleting themselves
-    const context = userContext;
     if (context.userId === id) {
       return NextResponse.json(
         { error: 'Cannot delete your own account' },
@@ -280,18 +468,57 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Delete the user
-    await prisma.user.delete({
-      where: { id }
-    });
+    // In Manage Users, "delete user" means disconnect this user from this company only.
+    // Keep the underlying identity (email/password) so the user can be re-granted later.
+    if (targetCompanyForAction) {
+      if (membershipForActionCompany) {
+        await prisma.userCompanyAccess.delete({
+          where: {
+            userId_companyId: {
+              userId: id,
+              companyId: membershipForActionCompany.companyId,
+            },
+          },
+        });
+      } else if (targetUser.companyId !== targetCompanyForAction) {
+        return NextResponse.json(
+          { error: 'User is not linked to this company' },
+          { status: 404 }
+        );
+      }
 
-    // AUDIT: Log user deletion
-    await auditUserOperation('USER_DELETED', id, {
-      email: targetUser.email,
-      role: targetUser.role,
-    });
+      // Recompute remaining memberships after disconnect for canonical user fields.
+      const remainingMemberships = await prisma.userCompanyAccess.findMany({
+        where: { userId: id },
+        select: { companyId: true, companyRole: true, sidebarAccess: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      const firstRemaining = remainingMemberships[0];
 
-    return NextResponse.json({ success: true });
+      const shouldClearLegacyCompany = targetUser.companyId === targetCompanyForAction;
+      await prisma.user.update({
+        where: { id },
+        data: shouldClearLegacyCompany
+          ? {
+              companyId: firstRemaining?.companyId || null,
+              companyRole: firstRemaining?.companyRole || null,
+              sidebarAccess: (firstRemaining?.sidebarAccess as any) ?? null,
+            }
+          : {},
+      });
+
+      await auditUserOperation('USER_COMPANY_ACCESS_REVOKED', id, {
+        email: targetUser.email,
+        companyId: targetCompanyForAction,
+      });
+
+      return NextResponse.json({ success: true, revokedAccessOnly: true });
+    }
+
+    return NextResponse.json(
+      { error: 'Company context is required for this action' },
+      { status: 400 }
+    );
   } catch (error) {
     console.error('Error deleting user:', error);
     return NextResponse.json(
