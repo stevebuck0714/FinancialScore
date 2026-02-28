@@ -65,8 +65,10 @@ export async function middleware(request: NextRequest) {
                    request.headers.get('x-real-ip') || 
                    'unknown'
   
-  // Apply rate limiting to all API routes
-  if (pathname.startsWith('/api')) {
+  // Apply API rate limiting in production only.
+  // Dev/staging testing flows can generate many auth/session calls quickly.
+  const shouldApplyRateLimit = process.env.NODE_ENV === 'production'
+  if (pathname.startsWith('/api') && shouldApplyRateLimit) {
     const rateLimit = checkRateLimit(clientIp, pathname)
     
     if (!rateLimit.allowed) {

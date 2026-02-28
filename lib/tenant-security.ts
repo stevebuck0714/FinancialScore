@@ -17,6 +17,18 @@ export interface UserContext {
   consultantId: string | null
 }
 
+function getUserCompanyAccessDelegate():
+  | {
+      findUnique: (...args: any[]) => Promise<any>;
+      findMany: (...args: any[]) => Promise<any[]>;
+    }
+  | null {
+  const delegate = (prisma as any).userCompanyAccess
+  if (!delegate) return null
+  if (typeof delegate.findUnique !== 'function' || typeof delegate.findMany !== 'function') return null
+  return delegate
+}
+
 /**
  * Get the current authenticated user's context from request headers
  * Headers are set by middleware.ts after validating JWT token
@@ -96,7 +108,9 @@ export async function validateCompanyAccess(targetCompanyId: string): Promise<bo
   if (context.role === 'USER') {
     if (context.companyId === targetCompanyId) return true
     await ensureLegacyCompanyAccess(context.userId)
-    const membership = await prisma.userCompanyAccess.findUnique({
+    const userCompanyAccess = getUserCompanyAccessDelegate()
+    if (!userCompanyAccess) return false
+    const membership = await userCompanyAccess.findUnique({
       where: {
         userId_companyId: {
           userId: context.userId,
@@ -118,7 +132,9 @@ export async function validateCompanyAccess(targetCompanyId: string): Promise<bo
       return true
     }
     await ensureLegacyCompanyAccess(context.userId)
-    const membership = await prisma.userCompanyAccess.findUnique({
+    const userCompanyAccess = getUserCompanyAccessDelegate()
+    if (!userCompanyAccess) return false
+    const membership = await userCompanyAccess.findUnique({
       where: {
         userId_companyId: {
           userId: context.userId,
@@ -202,10 +218,13 @@ export async function validateUserAccess(targetUserId: string): Promise<boolean>
   // Users in same company can access each other (e.g., for team features)
   if (context.role === 'USER') {
     await ensureLegacyCompanyAccess(context.userId)
-    const myMemberships = await prisma.userCompanyAccess.findMany({
-      where: { userId: context.userId },
-      select: { companyId: true },
-    })
+    const userCompanyAccess = getUserCompanyAccessDelegate()
+    const myMemberships = userCompanyAccess
+      ? await userCompanyAccess.findMany({
+          where: { userId: context.userId },
+          select: { companyId: true },
+        })
+      : []
     const myCompanyIds = new Set(myMemberships.map((m) => m.companyId))
     if (context.companyId) myCompanyIds.add(context.companyId)
 
@@ -215,10 +234,12 @@ export async function validateUserAccess(targetUserId: string): Promise<boolean>
     })
     if (!targetUser) return false
 
-    const targetMemberships = await prisma.userCompanyAccess.findMany({
-      where: { userId: targetUser.id },
-      select: { companyId: true },
-    })
+    const targetMemberships = userCompanyAccess
+      ? await userCompanyAccess.findMany({
+          where: { userId: targetUser.id },
+          select: { companyId: true },
+        })
+      : []
     const targetCompanyIds = new Set(targetMemberships.map((m) => m.companyId))
     if (targetUser.companyId) targetCompanyIds.add(targetUser.companyId)
 
@@ -314,10 +335,13 @@ export async function getAccessibleCompanyIds(): Promise<string[]> {
       select: { id: true }
     })
     await ensureLegacyCompanyAccess(context.userId)
-    const memberships = await prisma.userCompanyAccess.findMany({
-      where: { userId: context.userId },
-      select: { companyId: true },
-    })
+    const userCompanyAccess = getUserCompanyAccessDelegate()
+    const memberships = userCompanyAccess
+      ? await userCompanyAccess.findMany({
+          where: { userId: context.userId },
+          select: { companyId: true },
+        })
+      : []
     const idSet = new Set([
       ...consultantCompanies.map(c => c.id),
       ...memberships.map(m => m.companyId),
@@ -328,10 +352,13 @@ export async function getAccessibleCompanyIds(): Promise<string[]> {
   // Users have access to their own company only
   if (context.role === 'USER') {
     await ensureLegacyCompanyAccess(context.userId)
-    const memberships = await prisma.userCompanyAccess.findMany({
-      where: { userId: context.userId },
-      select: { companyId: true },
-    })
+    const userCompanyAccess = getUserCompanyAccessDelegate()
+    const memberships = userCompanyAccess
+      ? await userCompanyAccess.findMany({
+          where: { userId: context.userId },
+          select: { companyId: true },
+        })
+      : []
     const ids = memberships.map((m) => m.companyId)
     if (ids.length > 0) return ids
     if (context.companyId) return [context.companyId]
