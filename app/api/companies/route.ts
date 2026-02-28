@@ -5,6 +5,19 @@ import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger"
 import { sendAccountingSystemSelectionNotification } from "@/lib/email";
 
 async function hasCompanyColumn(columnName: string): Promise<boolean> {
+  // Guard against generated Prisma client drift:
+  // if the local Prisma client doesn't know a field, selecting it will throw
+  // even if the DB column exists.
+  const runtimeCompanyModel = ((prisma as any)?._runtimeDataModel?.models?.Company || null) as
+    | { fields?: Array<{ name?: string }> }
+    | null;
+  if (runtimeCompanyModel?.fields?.length) {
+    const supportsField = runtimeCompanyModel.fields.some((field) => field?.name === columnName);
+    if (!supportsField) {
+      return false;
+    }
+  }
+
   try {
     const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>`
       SELECT EXISTS(
@@ -73,6 +86,9 @@ export async function GET(request: NextRequest) {
       where.id = companyId;
     }
 
+    const includeIndustrySectorCategory = await hasCompanyColumn("industrySectorCategory");
+    const includeAccountingSystem = await hasCompanyColumn("accountingSystem");
+    const includeCompanySizeCategory = await hasCompanyColumn("companySizeCategory");
     const includeSetupFee = await hasCompanyColumn("subscriptionSetupFee");
     const includeTier1SupportOwner = await hasCompanyColumn("tier1SupportOwner");
     const includeTier1SupportConsultantId = await hasCompanyColumn("tier1SupportConsultantId");
@@ -653,9 +669,9 @@ export async function POST(request: NextRequest) {
           addressZip,
           addressCountry,
           industrySector,
-          industrySectorCategory: industrySectorCategory || null,
-          accountingSystem: accountingSystem || null,
-          companySizeCategory: companySizeCategory || null,
+          ...(includeIndustrySectorCategory ? { industrySectorCategory: industrySectorCategory || null } : {}),
+          ...(includeAccountingSystem ? { accountingSystem: accountingSystem || null } : {}),
+          ...(includeCompanySizeCategory ? { companySizeCategory: companySizeCategory || null } : {}),
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES WORK IN BOTH ENVIRONMENTS
           // Always store pricing fields regardless of environment for affiliate codes
           // Ensure $0 values are stored as 0, not null
@@ -711,9 +727,9 @@ export async function POST(request: NextRequest) {
           addressZip: true,
           addressCountry: true,
           industrySector: true,
-          industrySectorCategory: true,
-          accountingSystem: true,
-          companySizeCategory: true,
+          ...(includeIndustrySectorCategory ? { industrySectorCategory: true } : {}),
+          ...(includeAccountingSystem ? { accountingSystem: true } : {}),
+          ...(includeCompanySizeCategory ? { companySizeCategory: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           subscriptionMonthlyPrice: true,
