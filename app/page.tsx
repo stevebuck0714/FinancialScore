@@ -5924,18 +5924,17 @@ function FinancialScorePage() {
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {currentUser?.userType !== 'assessment' && null}
 
-            {/* Analysis Section */}
-            <div style={{ marginBottom: '16px' }}>
+            <div style={{ marginBottom: '6px' }}>
               <h3
-                onClick={() => handleNavigation('operations')}
+                onClick={() => handleNavigation('ai-analysis')}
                 style={{
                   fontSize: '16px',
                   fontWeight: '700',
-                  color: currentView === 'operations' ? '#1F70C1' : '#1e293b',
+                  color: currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '1px 24px',
-                  margin: '6px 0 8px 0',
+                  margin: '0 0 8px 0',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
                   whiteSpace: 'nowrap'
@@ -5944,12 +5943,15 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#1F70C1';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.color = currentView === 'operations' ? '#1F70C1' : '#1e293b';
+                  e.currentTarget.style.color = currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b';
                 }}
               >
-                {currentView === 'operations' && '› '}OPERATIONS DASHBOARD
+                {currentView === 'ai-analysis' && '› '}ASK CORELYTICS
               </h3>
+            </div>
 
+            {/* Analysis Section */}
+            <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={() => handleNavigation('pa-overview')}
                 style={{
@@ -5970,48 +5972,74 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = currentView.startsWith('pa-') ? '#1F70C1' : '#1e293b';
                 }}
               >
-                {currentView === 'pa-overview' && '› '}Operations Analysis
+                {currentView === 'pa-overview' && '› '}Expert Analysis
               </h3>
               {(!isCompanyUser || isCompanyAdmin || (allowedSectionsForCompanyUser || []).includes('performance-analytics')) && (
-                <div style={{ paddingLeft: '28px' }}>
-                  {[
-                    { id: 'pa-critical-issues', label: 'Critical Issues' },
-                    { id: 'pa-focus-board', label: 'Major Trends' },
-                    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
-                    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
-                    { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
-                  ].map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={() => handleNavigation(item.id)}
-                      style={{
-                        fontSize: '16px',
-                        color: currentView === item.id ? '#1F70C1' : '#475569',
-                        padding: '6px 12px',
-                        cursor: 'pointer',
-                        borderRadius: '6px',
-                        marginBottom: '4px',
-                        background: currentView === item.id ? '#e0f2fe' : 'transparent',
-                        fontWeight: currentView === item.id ? '600' : '400',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (currentView !== item.id) {
-                          e.currentTarget.style.background = '#f8fafc';
-                          e.currentTarget.style.color = '#1F70C1';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (currentView !== item.id) {
-                          e.currentTarget.style.background = 'transparent';
-                          e.currentTarget.style.color = '#475569';
-                        }
-                      }}
-                    >
-                      {currentView === item.id && '› '}{item.label}
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div style={{ paddingLeft: '28px' }}>
+                    {[
+                      { id: 'pa-critical-issues', label: 'Critical Issues' },
+                      { id: 'pa-focus-board', label: 'Major Trends' },
+                      { id: 'pa-trend-explorer', label: 'Trend Explorer' },
+                      { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
+                      { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
+                    ].map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => handleNavigation(item.id)}
+                        style={{
+                          fontSize: '16px',
+                          color: currentView === item.id ? '#1F70C1' : '#475569',
+                          padding: '6px 12px',
+                          cursor: 'pointer',
+                          borderRadius: '6px',
+                          marginBottom: '4px',
+                          background: currentView === item.id ? '#e0f2fe' : 'transparent',
+                          fontWeight: currentView === item.id ? '600' : '400',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (currentView !== item.id) {
+                            e.currentTarget.style.background = '#f8fafc';
+                            e.currentTarget.style.color = '#1F70C1';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (currentView !== item.id) {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.color = '#475569';
+                          }
+                        }}
+                      >
+                        {currentView === item.id && '› '}{item.label}
+                      </div>
+                    ))}
+                  </div>
+                  <h3
+                    onClick={() => handleNavigation('mda')}
+                    style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: currentView === 'mda' ? '#1F70C1' : '#1e293b',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      padding: '1px 24px',
+                      margin: '6px 0 8px 0',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                      whiteSpace: 'normal',
+                      lineHeight: '1.25'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#1F70C1';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = currentView === 'mda' ? '#1F70C1' : '#1e293b';
+                    }}
+                  >
+                    {currentView === 'mda' && '› '}MANAGEMENT DISCUSSION AND ANALYSIS
+                  </h3>
+                </>
               )}
             </div>
 
@@ -6156,6 +6184,17 @@ function FinancialScorePage() {
               >
                 📞 SUPPORT
               </a>
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: '#1e293b',
+                  padding: '8px 24px 0 24px',
+                  margin: '0 12px'
+                }}
+              >
+                Powered by Corelytics
+              </div>
             </div>
           </nav>
         </aside>

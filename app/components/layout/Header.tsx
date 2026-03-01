@@ -166,9 +166,6 @@ export default function Header({
           >
             {headerCompanyName}
           </div>
-          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px', lineHeight: 1.1 }}>
-            Powered by Corelytics
-          </div>
         </div>
         <div style={{ width: '28px', minWidth: '28px', flexShrink: 0 }} />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
@@ -190,12 +187,12 @@ export default function Header({
                   textAlign: 'center'
                 }}
               >
-                COMPANY PULSE
+                BUSINESS PULSE
               </button>
               <button
-                onClick={() => handleNavigation('ai-analysis')}
+                onClick={() => handleNavigation('operations')}
                 style={{
-                  background: currentView === 'ai-analysis' ? '#eef2ff' : 'none',
+                  background: currentView === 'operations' ? '#eef2ff' : 'none',
                   border: 'none',
                   fontSize: '16px',
                   fontWeight: '600',
@@ -203,12 +200,12 @@ export default function Header({
                   cursor: 'pointer',
                   padding: '8px 12px',
                   borderRadius: '6px',
-                  borderBottom: currentView === 'ai-analysis' ? '3px solid #000' : '3px solid transparent',
+                  borderBottom: currentView === 'operations' ? '3px solid #000' : '3px solid transparent',
                   lineHeight: '1.1',
                   textAlign: 'center'
                 }}
               >
-                Ask Corelytics
+                OPERATIONAL DASHBOARD
               </button>
               <button
                 onClick={() => canAccess('company-dashboard') && handleNavigation('dashboard')}
@@ -228,29 +225,10 @@ export default function Header({
                   opacity: canAccess('company-dashboard') ? 1 : 0.4
                 }}
               >
-                <span style={{ whiteSpace: 'nowrap' }}>Financial KPI&apos;s</span>
+                <span style={{ whiteSpace: 'normal', lineHeight: '1.1' }}>FINANCIAL DASHBOARD</span>
               </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-            <button
-              onClick={() => handleNavigation('mda')}
-              style={{
-                background: currentView === 'mda' ? '#eef2ff' : 'none',
-                border: 'none',
-                fontSize: '16px',
-                fontWeight: '600',
-                color: '#000',
-                cursor: 'pointer',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                borderBottom: currentView === 'mda' ? '3px solid #000' : '3px solid transparent',
-                textAlign: 'center',
-                lineHeight: '1.1',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              MD&A
-            </button>
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowFinancialReportsMenu((prev) => !prev)}
@@ -273,7 +251,7 @@ export default function Header({
                 aria-haspopup="menu"
                 aria-expanded={showFinancialReportsMenu}
               >
-                <span>Financial Reports</span>
+                <span>FINANCIAL REPORTS</span>
                 <span style={{ fontSize: '12px' }}>▾</span>
               </button>
               {showFinancialReportsMenu && (
@@ -321,26 +299,6 @@ export default function Header({
               )}
             </div>
             <button
-              onClick={() => handleNavigation('valuation')}
-              disabled={!canAccess('valuation')}
-              title={!canAccess('valuation') ? 'Access restricted' : undefined}
-              style={{
-                background: currentView === 'valuation' ? '#eef2ff' : 'none',
-                border: 'none',
-                fontSize: '16px',
-                fontWeight: '600',
-                color: '#000',
-                cursor: canAccess('valuation') ? 'pointer' : 'not-allowed',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                borderBottom: currentView === 'valuation' ? '3px solid #000' : '3px solid transparent',
-                whiteSpace: 'nowrap',
-                opacity: canAccess('valuation') ? 1 : 0.4
-              }}
-            >
-              Valuation
-            </button>
-            <button
               onClick={() => handleNavigation('financial-statements')}
               disabled={!canAccess('financial-statements')}
               title={!canAccess('financial-statements') ? 'Access restricted' : undefined}
@@ -358,7 +316,27 @@ export default function Header({
                 opacity: canAccess('financial-statements') ? 1 : 0.4
               }}
             >
-              Financial Statements
+              FINANCIAL STATMENTS
+            </button>
+            <button
+              onClick={() => handleNavigation('valuation')}
+              disabled={!canAccess('valuation')}
+              title={!canAccess('valuation') ? 'Access restricted' : undefined}
+              style={{
+                background: currentView === 'valuation' ? '#eef2ff' : 'none',
+                border: 'none',
+                fontSize: '16px',
+                fontWeight: '600',
+                color: '#000',
+                cursor: canAccess('valuation') ? 'pointer' : 'not-allowed',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                borderBottom: currentView === 'valuation' ? '3px solid #000' : '3px solid transparent',
+                whiteSpace: 'nowrap',
+                opacity: canAccess('valuation') ? 1 : 0.4
+              }}
+            >
+              VALUATION
             </button>
             </div>
           </nav>
