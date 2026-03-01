@@ -316,7 +316,7 @@ export default function Header({
                 opacity: canAccess('financial-statements') ? 1 : 0.4
               }}
             >
-              FINANCIAL STATMENTS
+              FINANCIAL STATEMENTS
             </button>
             <button
               onClick={() => handleNavigation('valuation')}
