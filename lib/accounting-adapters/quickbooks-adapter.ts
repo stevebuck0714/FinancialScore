@@ -137,11 +137,24 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  private parseOptionalMoney(value: unknown): number | null {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(/,/g, '');
+    if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null;
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
   private extractNumericColumns(colData: any[]): number[] {
     if (!Array.isArray(colData)) return [];
     return colData
-      .map((col: any) => this.parseMoney(col?.value))
-      .filter((value) => Number.isFinite(value) && value !== 0);
+      .map((col: any) => this.parseOptionalMoney(col?.value))
+      .filter((value): value is number => value !== null);
   }
 
   private parseAgingBucketsFromColData(colData: any[]): {
@@ -166,6 +179,82 @@ export class QuickBooksAdapter implements AccountingAdapter {
         : current + days1to30 + days31to60 + days61to90 + days90plus;
 
     return { current, days1to30, days31to60, days61to90, days90plus, total };
+  }
+
+  private extractAgingTotals(rows: any[]): {
+    total: number;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+  } {
+    const summedFromData = {
+      total: 0,
+      current: 0,
+      days1to30: 0,
+      days31to60: 0,
+      days61to90: 0,
+      days90plus: 0,
+    };
+    let hasDataRows = false;
+    const summaryCandidates: Array<{
+      total: number;
+      current: number;
+      days1to30: number;
+      days31to60: number;
+      days61to90: number;
+      days90plus: number;
+    }> = [];
+
+    const walk = (inputRows: any[]) => {
+      for (const row of inputRows || []) {
+        if (!row || typeof row !== 'object') continue;
+
+        if (Array.isArray(row.ColData) && row.type === 'Data') {
+          const parsed = this.parseAgingBucketsFromColData(row.ColData);
+          if (parsed) {
+            hasDataRows = true;
+            summedFromData.total += parsed.total;
+            summedFromData.current += parsed.current;
+            summedFromData.days1to30 += parsed.days1to30;
+            summedFromData.days31to60 += parsed.days31to60;
+            summedFromData.days61to90 += parsed.days61to90;
+            summedFromData.days90plus += parsed.days90plus;
+          }
+        }
+
+        if (Array.isArray(row.Summary?.ColData)) {
+          const summaryParsed = this.parseAgingBucketsFromColData(row.Summary.ColData);
+          if (summaryParsed) {
+            summaryCandidates.push({
+              total: summaryParsed.total,
+              current: summaryParsed.current,
+              days1to30: summaryParsed.days1to30,
+              days31to60: summaryParsed.days31to60,
+              days61to90: summaryParsed.days61to90,
+              days90plus: summaryParsed.days90plus,
+            });
+          }
+        }
+
+        const nestedRows = Array.isArray(row.Rows?.Row) ? row.Rows.Row : [];
+        if (nestedRows.length) walk(nestedRows);
+      }
+    };
+
+    walk(rows || []);
+
+    if (hasDataRows && summedFromData.total > 0) {
+      return summedFromData;
+    }
+
+    if (summaryCandidates.length > 0) {
+      summaryCandidates.sort((a, b) => b.total - a.total);
+      return summaryCandidates[0];
+    }
+
+    return summedFromData;
   }
 
   private tryParseDateString(value: string): Date | null {
@@ -339,35 +428,16 @@ export class QuickBooksAdapter implements AccountingAdapter {
       
       // Parse the report data (QuickBooks returns complex nested structure)
       const rows = data.Rows?.Row || [];
-      let totalAR = 0;
-      let current = 0;
-      let days1to30 = 0;
-      let days31to60 = 0;
-      let days61to90 = 0;
-      let days90plus = 0;
-      
-      // QuickBooks AR Aging has columns: Current, 1-30, 31-60, 61-90, 91+, Total
-      rows.forEach((row: any) => {
-        if (row.type === 'Data' && row.ColData) {
-          const parsed = this.parseAgingBucketsFromColData(row.ColData);
-          if (!parsed) return;
-          current += parsed.current;
-          days1to30 += parsed.days1to30;
-          days31to60 += parsed.days31to60;
-          days61to90 += parsed.days61to90;
-          days90plus += parsed.days90plus;
-          totalAR += parsed.total;
-        }
-      });
+      const totals = this.extractAgingTotals(rows);
       
       return {
         asOfDate: date,
-        totalAR,
-        current,
-        days1to30,
-        days31to60,
-        days61to90,
-        days90plus
+        totalAR: totals.total,
+        current: totals.current,
+        days1to30: totals.days1to30,
+        days31to60: totals.days31to60,
+        days61to90: totals.days61to90,
+        days90plus: totals.days90plus
       };
     } catch (error) {
       console.error('Error fetching AR aging from QuickBooks:', error);
@@ -390,34 +460,16 @@ export class QuickBooksAdapter implements AccountingAdapter {
       const data = await response.json();
       
       const rows = data.Rows?.Row || [];
-      let totalAP = 0;
-      let current = 0;
-      let days1to30 = 0;
-      let days31to60 = 0;
-      let days61to90 = 0;
-      let days90plus = 0;
-      
-      rows.forEach((row: any) => {
-        if (row.type === 'Data' && row.ColData) {
-          const parsed = this.parseAgingBucketsFromColData(row.ColData);
-          if (!parsed) return;
-          current += parsed.current;
-          days1to30 += parsed.days1to30;
-          days31to60 += parsed.days31to60;
-          days61to90 += parsed.days61to90;
-          days90plus += parsed.days90plus;
-          totalAP += parsed.total;
-        }
-      });
+      const totals = this.extractAgingTotals(rows);
       
       return {
         asOfDate: date,
-        totalAP,
-        current,
-        days1to30,
-        days31to60,
-        days61to90,
-        days90plus
+        totalAP: totals.total,
+        current: totals.current,
+        days1to30: totals.days1to30,
+        days31to60: totals.days31to60,
+        days61to90: totals.days61to90,
+        days90plus: totals.days90plus
       };
     } catch (error) {
       console.error('Error fetching AP aging from QuickBooks:', error);
