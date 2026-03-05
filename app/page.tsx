@@ -9899,6 +9899,46 @@ function FinancialScorePage() {
             const qualityOfEarnings = ttmEbitdaAnalysis + qoeTotalAdjustments;
             const ttmSDE = qualityOfEarnings;
             const sdeValuation = ttmSDE * sdeMultiplier;
+
+            const getYearFromMonthValue = (monthValue: unknown): number | null => {
+              if (monthValue instanceof Date && !isNaN(monthValue.getTime())) {
+                return monthValue.getFullYear();
+              }
+              if (typeof monthValue === 'string') {
+                const yearMatch = monthValue.match(/\b(20\d{2}|19\d{2})\b/);
+                if (yearMatch) return Number(yearMatch[1]);
+                const parsed = new Date(monthValue);
+                if (!isNaN(parsed.getTime())) return parsed.getFullYear();
+              }
+              return null;
+            };
+
+            const annualRevenueEbitdaData = (() => {
+              const byYear = new Map<number, { revenue: number; ebitda: number }>();
+              for (const m of monthly) {
+                const year = getYearFromMonthValue((m as any)?.month);
+                if (!year) continue;
+                const revenue = Number((m as any)?.revenue) || 0;
+                const cogs = Number((m as any)?.cogsTotal) || 0;
+                const expense = Number((m as any)?.expense) || 0;
+                const interest = Number((m as any)?.interestExpense) || 0;
+                const da = Number((m as any)?.depreciationAmortization) || 0;
+                const ebitda = revenue - cogs - expense + interest + da;
+                const prev = byYear.get(year) || { revenue: 0, ebitda: 0 };
+                byYear.set(year, {
+                  revenue: prev.revenue + revenue,
+                  ebitda: prev.ebitda + ebitda,
+                });
+              }
+              return Array.from(byYear.entries())
+                .map(([year, totals]) => ({
+                  year,
+                  revenue: totals.revenue,
+                  ebitdaMargin: totals.revenue !== 0 ? (totals.ebitda / totals.revenue) * 100 : 0,
+                }))
+                .sort((a, b) => a.year - b.year)
+                .slice(-7);
+            })();
             
             return (
               <>
@@ -10208,6 +10248,200 @@ function FinancialScorePage() {
                         <span>Adjustment</span>
                         <span style={{ fontWeight: 700 }}>{formatDollars(oneTimeRevenueAdj)}</span>
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>
+                        EBITDA Margin and Total Revenue
+                      </div>
+                      {annualRevenueEbitdaData.length > 0 ? (
+                        <svg viewBox="0 0 760 320" style={{ width: '100%', height: 'auto' }}>
+                          {(() => {
+                            const width = 760;
+                            const height = 320;
+                            const pad = { top: 28, right: 56, bottom: 42, left: 56 };
+                            const chartW = width - pad.left - pad.right;
+                            const chartH = height - pad.top - pad.bottom;
+                            const maxRevenue = Math.max(...annualRevenueEbitdaData.map(d => d.revenue), 1);
+                            const maxMargin = Math.max(...annualRevenueEbitdaData.map(d => d.ebitdaMargin), 1);
+                            const xStep = chartW / annualRevenueEbitdaData.length;
+                            const barW = Math.min(56, xStep * 0.55);
+                            const linePoints = annualRevenueEbitdaData.map((d, idx) => {
+                              const x = pad.left + xStep * idx + xStep / 2;
+                              const y = pad.top + chartH - (Math.max(0, d.ebitdaMargin) / maxMargin) * chartH;
+                              return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
+                            }).join(' ');
+
+                            return (
+                              <>
+                                <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+                                <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+                                <line x1={width - pad.right} y1={pad.top} x2={width - pad.right} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="1" />
+                                {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+                                  const y = pad.top + chartH - chartH * pct;
+                                  const leftVal = Math.round((maxRevenue * pct) / 1_000_000);
+                                  const rightVal = (maxMargin * pct).toFixed(1);
+                                  return (
+                                    <g key={pct}>
+                                      <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                                      <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">${leftVal}M</text>
+                                      <text x={width - pad.right + 8} y={y + 4} textAnchor="start" fontSize="10" fill="#64748b">{rightVal}%</text>
+                                    </g>
+                                  );
+                                })}
+                                {annualRevenueEbitdaData.map((d, idx) => {
+                                  const centerX = pad.left + xStep * idx + xStep / 2;
+                                  const barH = (d.revenue / maxRevenue) * chartH;
+                                  const barY = pad.top + chartH - barH;
+                                  const marginY = pad.top + chartH - (Math.max(0, d.ebitdaMargin) / maxMargin) * chartH;
+                                  return (
+                                    <g key={d.year}>
+                                      <rect x={centerX - barW / 2} y={barY} width={barW} height={barH} fill="#1d76c3" rx="3" />
+                                      <text x={centerX} y={barY + 16} textAnchor="middle" fontSize="10" fill="white" fontWeight="700">
+                                        ${Math.round(d.revenue / 1_000_000)}
+                                      </text>
+                                      <circle cx={centerX} cy={marginY} r="4" fill="#5fbcd3" stroke="white" strokeWidth="1.5" />
+                                      <text x={centerX} y={marginY - 8} textAnchor="middle" fontSize="10" fill="#0f766e" fontWeight="700">
+                                        {d.ebitdaMargin.toFixed(1)}%
+                                      </text>
+                                      <text x={centerX} y={height - pad.bottom + 16} textAnchor="middle" fontSize="10" fill="#475569">
+                                        {d.year}
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+                                <path d={linePoints} fill="none" stroke="#5fbcd3" strokeWidth="2.5" />
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      ) : (
+                        <div style={{ fontSize: '12px', color: '#64748b', padding: '24px 0' }}>
+                          Not enough data to render chart.
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>
+                        QoE Waterfall Bridge
+                      </div>
+                      <svg viewBox="0 0 760 320" style={{ width: '100%', height: 'auto' }}>
+                        {(() => {
+                          const width = 760;
+                          const height = 320;
+                          const pad = { top: 24, right: 20, bottom: 58, left: 70 };
+                          const chartW = width - pad.left - pad.right;
+                          const chartH = height - pad.top - pad.bottom;
+                          const steps = [
+                            { label: 'EBITDA', type: 'base' as const, value: ttmEbitdaAnalysis },
+                            { label: 'Compensation adj.', type: 'delta' as const, value: qoeOwnerSalaryAdjustment },
+                            { label: 'Personal exp.', type: 'delta' as const, value: qoePersonalAutoLease },
+                            { label: 'Non-Recurring', type: 'delta' as const, value: qoeOneTimeExpenses },
+                            { label: 'One-time rev', type: 'delta' as const, value: qoeOneTimeRevenue },
+                            { label: 'Quality of Earnings', type: 'total' as const, value: qualityOfEarnings },
+                          ];
+
+                          let running = 0;
+                          const bars = steps.map((step) => {
+                            if (step.type === 'base') {
+                              running = step.value;
+                              return { ...step, start: 0, end: step.value };
+                            }
+                            if (step.type === 'delta') {
+                              const start = running;
+                              running = running + step.value;
+                              return { ...step, start, end: running };
+                            }
+                            return { ...step, start: 0, end: step.value };
+                          });
+
+                          const extentValues = [0, ...bars.flatMap((b) => [b.start, b.end])];
+                          const minY = Math.min(...extentValues);
+                          const maxY = Math.max(...extentValues);
+                          const range = Math.max(1, maxY - minY);
+                          const yOf = (v: number) => pad.top + chartH - ((v - minY) / range) * chartH;
+                          const zeroY = yOf(0);
+
+                          const xStep = chartW / bars.length;
+                          const barW = Math.min(80, xStep * 0.62);
+
+                          return (
+                            <>
+                              {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+                                const val = minY + range * pct;
+                                const y = yOf(val);
+                                return (
+                                  <g key={pct}>
+                                    <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                                    <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
+                                      {`$${Math.round(val / 1000).toLocaleString()}K`}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                              <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="#94a3b8" strokeWidth="1.5" />
+                              <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+
+                              {bars.map((bar, idx) => {
+                                const cx = pad.left + xStep * idx + xStep / 2;
+                                const yTop = yOf(Math.max(bar.start, bar.end));
+                                const yBottom = yOf(Math.min(bar.start, bar.end));
+                                const isIncrease = bar.end >= bar.start;
+                                const fill =
+                                  bar.type === 'base' || bar.type === 'total'
+                                    ? '#1d76c3'
+                                    : isIncrease
+                                      ? '#10b981'
+                                      : '#ef4444';
+                                const delta = bar.end - bar.start;
+                                return (
+                                  <g key={bar.label}>
+                                    <rect
+                                      x={cx - barW / 2}
+                                      y={yTop}
+                                      width={barW}
+                                      height={Math.max(2, yBottom - yTop)}
+                                      fill={fill}
+                                      rx="3"
+                                    />
+                                    <text
+                                      x={cx}
+                                      y={yTop - 6}
+                                      textAnchor="middle"
+                                      fontSize="10"
+                                      fill="#334155"
+                                      fontWeight="700"
+                                    >
+                                      {bar.type === 'delta'
+                                        ? `${delta >= 0 ? '+' : '-'}$${Math.round(Math.abs(delta) / 1000).toLocaleString()}K`
+                                        : `$${Math.round(bar.end / 1000).toLocaleString()}K`}
+                                    </text>
+                                    <text x={cx} y={height - pad.bottom + 14} textAnchor="middle" fontSize="9" fill="#475569">
+                                      {bar.label}
+                                    </text>
+                                    {idx < bars.length - 1 && (
+                                      <line
+                                        x1={cx + barW / 2}
+                                        y1={yOf(bar.end)}
+                                        x2={pad.left + xStep * (idx + 1) + xStep / 2 - barW / 2}
+                                        y2={yOf(bar.end)}
+                                        stroke="#94a3b8"
+                                        strokeWidth="1.5"
+                                        strokeDasharray="4,3"
+                                      />
+                                    )}
+                                  </g>
+                                );
+                              })}
+                            </>
+                          );
+                        })()}
+                      </svg>
                     </div>
                   </div>
                 </div>
