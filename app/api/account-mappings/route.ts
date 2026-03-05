@@ -179,6 +179,7 @@ export async function POST(request: NextRequest) {
         qbAccountCode: m.qbAccountCode || null,
         qbAccountClassification: m.qbAccountClassification || null,
         targetField: m.targetField,
+        allocationMethod: m.allocationMethod || "manual",
         confidence: m.confidence || "medium",
         lobAllocations: m.lobAllocations || null,
       })),
