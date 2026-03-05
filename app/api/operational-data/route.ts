@@ -136,7 +136,9 @@ export async function GET(request: NextRequest) {
       await activateRealOperationalData(companyId);
       hasRealOperationalData = true;
     }
-    const shouldUseMockData = company.forceOperationalMockData || !hasRealOperationalData;
+    // Mock data is now an explicit opt-in only.
+    // If "Use Real Data" is selected and no records exist yet, APIs return empty datasets.
+    const shouldUseMockData = company.forceOperationalMockData === true;
 
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
 
