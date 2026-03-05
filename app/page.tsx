@@ -876,6 +876,24 @@ function FinancialScorePage() {
   const [dcfDiscountRate, setDcfDiscountRate] = useState(10.0);
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
   const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
+  const [sdeManualInputs, setSdeManualInputs] = useState<{
+    personalTravel?: number;
+    familyPayroll?: number;
+    autoLeases?: number;
+    mealsEntertainment?: number;
+    clubDues?: number;
+    legalSettlements?: number;
+    majorRepairs?: number;
+    consulting?: number;
+    erpInstall?: number;
+    relocation?: number;
+    covidCosts?: number;
+    assetSales?: number;
+    insuranceProceeds?: number;
+    oneTimeContract?: number;
+    marketReplacementSalary?: number;
+  }>({});
 
   // State - Goals
   const [expenseGoals, setExpenseGoals] = useState<{[key: string]: number}>({});
@@ -1425,6 +1443,7 @@ function FinancialScorePage() {
   // Load valuation settings when company changes
   useEffect(() => {
     if (selectedCompanyId) {
+      setSdeManualInputs({});
       fetch(`/api/valuation-settings?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
@@ -1433,6 +1452,11 @@ function FinancialScorePage() {
           setEbitdaMultiplier(data.ebitdaMultiplier || 5.0);
           setDcfDiscountRate(data.dcfDiscountRate || 10.0);
           setDcfTerminalGrowth(data.dcfTerminalGrowth || 2.0);
+          setSdeManualInputs(
+            data?.sdeManualInputs && typeof data.sdeManualInputs === 'object'
+              ? data.sdeManualInputs
+              : {}
+          );
         })
         .catch(err => {
           console.error('? Error loading valuation settings:', err);
@@ -1441,6 +1465,7 @@ function FinancialScorePage() {
           setEbitdaMultiplier(5.0);
           setDcfDiscountRate(10.0);
           setDcfTerminalGrowth(2.0);
+          setSdeManualInputs({});
         });
     }
   }, [selectedCompanyId]);
@@ -1981,6 +2006,8 @@ function FinancialScorePage() {
               subcontractors: m.subcontractors || 0,
               rent: m.rent || 0,
               taxLicense: m.taxLicense || 0,
+              stateIncomeTaxes: m.stateIncomeTaxes || 0,
+              federalIncomeTaxes: m.federalIncomeTaxes || 0,
               phoneComm: m.phoneComm || 0,
               infrastructure: m.infrastructure || 0,
               autoTravel: m.autoTravel || 0,
@@ -2062,6 +2089,8 @@ function FinancialScorePage() {
                 subcontractors: m.subcontractors || 0,
                 rent: m.rent || 0,
                 taxLicense: m.taxLicense || 0,
+                stateIncomeTaxes: m.stateIncomeTaxes || 0,
+                federalIncomeTaxes: m.federalIncomeTaxes || 0,
                 phoneComm: m.phoneComm || 0,
                 infrastructure: m.infrastructure || 0,
                 autoTravel: m.autoTravel || 0,
@@ -2603,6 +2632,8 @@ function FinancialScorePage() {
           subcontractors: parseFloat(row[mapping.subcontractors!]) || 0,
           interestExpense: parseFloat(row[mapping.interestExpense!]) || 0,
           depreciationAmortization: parseFloat(row[mapping.depreciationAmortization!]) || 0,
+          stateIncomeTaxes: parseFloat(row[mapping.stateIncomeTaxes!]) || 0,
+          federalIncomeTaxes: parseFloat(row[mapping.federalIncomeTaxes!]) || 0,
           operatingExpenseTotal: parseFloat(row[mapping.operatingExpenseTotal!]) || 0,
           nonOperatingIncome: parseFloat(row[mapping.nonOperatingIncome!]) || 0,
           extraordinaryItems: parseFloat(row[mapping.extraordinaryItems!]) || 0,
@@ -2712,6 +2743,8 @@ function FinancialScorePage() {
       if (!mapping.subcontractors && n.includes('contractors') && n.includes('distribution')) mapping.subcontractors = col;
       if (!mapping.interestExpense && n.includes('interest')) mapping.interestExpense = col;
       if (!mapping.depreciationAmortization && n.includes('depreciation')) mapping.depreciationAmortization = col;
+      if (!mapping.stateIncomeTaxes && ((n.includes('state') && n.includes('incometax')) || n === 'stateincometaxes')) mapping.stateIncomeTaxes = col;
+      if (!mapping.federalIncomeTaxes && ((n.includes('federal') && n.includes('incometax')) || n === 'federalincometaxes')) mapping.federalIncomeTaxes = col;
       if (!mapping.operatingExpenseTotal && n.includes('operating') && n.includes('expense') && n.includes('total')) mapping.operatingExpenseTotal = col;
       if (!mapping.nonOperatingIncome && (n.includes('nonoperating') || n.includes('nonoperatng')) && n.includes('income')) mapping.nonOperatingIncome = col;
       if (!mapping.extraordinaryItems && (n.includes('extraordinary') || n.includes('extraordinaryitems'))) mapping.extraordinaryItems = col;
@@ -9519,10 +9552,136 @@ function FinancialScorePage() {
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Business Valuation</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
+                id="valuation-save-settings-btn"
                 onClick={async () => {
                   console.log('?? Saving valuation settings for company:', selectedCompanyId);
                   setValuationSaveStatus('saving');
                   try {
+                    const last12 = monthly.slice(-12);
+                    const sumTtmField = (fieldName: string): number =>
+                      last12.reduce((sum, month) => sum + (Number((month as any)?.[fieldName]) || 0), 0);
+                    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const sumTtmByKeywords = (
+                      keywords: string[],
+                      breakdownTypes: Array<'expense' | 'revenue'> = ['expense', 'revenue']
+                    ): number => {
+                      const normalizedKeywords = keywords.map(normalize);
+                      return last12.reduce((sum, month) => {
+                        const buckets: Array<Record<string, unknown>> = [];
+                        if (breakdownTypes.includes('expense') && (month as any)?.expenseBreakdown && typeof (month as any).expenseBreakdown === 'object') {
+                          buckets.push((month as any).expenseBreakdown);
+                        }
+                        if (breakdownTypes.includes('revenue') && (month as any)?.revenueBreakdown && typeof (month as any).revenueBreakdown === 'object') {
+                          buckets.push((month as any).revenueBreakdown);
+                        }
+                        let monthSum = 0;
+                        for (const bucket of buckets) {
+                          for (const [key, rawValue] of Object.entries(bucket)) {
+                            const normalizedKey = normalize(key);
+                            if (normalizedKeywords.some((kw) => normalizedKey.includes(kw))) {
+                              monthSum += Number(rawValue) || 0;
+                            }
+                          }
+                        }
+                        return sum + monthSum;
+                      }, 0);
+                    };
+
+                    const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
+                    const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
+                    const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
+                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
+                    const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+                    const ttmStateTaxes = last12.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+                    const ttmFederalTaxes = last12.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                    const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
+                    const ttmTaxesAnalysis = ttmStateTaxes + ttmFederalTaxes;
+                    const ttmNetIncomeAfterTax = ttmNetIncome - ttmTaxesAnalysis;
+                    const ttmDepreciationBreakdown = sumTtmByKeywords(['depreciation'], ['expense']);
+                    const ttmAmortizationBreakdown = sumTtmByKeywords(['amortization'], ['expense']);
+                    const ttmDepreciationOnly = ttmDepreciationBreakdown > 0 ? ttmDepreciationBreakdown : ttmDepreciation;
+                    const ttmAmortizationOnly = ttmAmortizationBreakdown > 0 ? ttmAmortizationBreakdown : 0;
+                    const ttmEbitdaAnalysis = ttmNetIncomeAfterTax + ttmInterest + ttmTaxesAnalysis + ttmDepreciationOnly + ttmAmortizationOnly;
+
+                    const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
+                    const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
+                    const effectiveMarketReplacementSalary = Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
+                    const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary;
+
+                    const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
+                    const majorRepairs = sumTtmByKeywords(['majorrepair', 'majorrepairs'], ['expense']);
+                    const consultingExpense = sumTtmByKeywords(['consulting'], ['expense']);
+                    const erpInstall = sumTtmByKeywords(['erpinstall', 'erpimplementation'], ['expense']);
+                    const relocation = sumTtmByKeywords(['relocation', 'movingexpense'], ['expense']);
+                    const covidCosts = sumTtmByKeywords(['covid'], ['expense']);
+                    const effectiveLegalSettlements = sdeManualInputs.legalSettlements ?? legalSettlements;
+                    const effectiveMajorRepairs = sdeManualInputs.majorRepairs ?? majorRepairs;
+                    const effectiveConsulting = sdeManualInputs.consulting ?? consultingExpense;
+                    const effectiveErpInstall = sdeManualInputs.erpInstall ?? erpInstall;
+                    const effectiveRelocation = sdeManualInputs.relocation ?? relocation;
+                    const effectiveCovidCosts = sdeManualInputs.covidCosts ?? covidCosts;
+                    const nonRecurringExpenseAdj =
+                      effectiveLegalSettlements +
+                      effectiveMajorRepairs +
+                      effectiveConsulting +
+                      effectiveErpInstall +
+                      effectiveRelocation +
+                      effectiveCovidCosts;
+
+                    const personalTravel = sumTtmByKeywords(['personaltravel'], ['expense']);
+                    const familyPayroll = sumTtmByKeywords(['familypayroll'], ['expense']);
+                    const autoLeases = sumTtmByKeywords(['autolease', 'vehiclelease'], ['expense']);
+                    const mealsAndEntertainmentAdj = sumTtmField('mealsEntertainment');
+                    const clubDues = sumTtmByKeywords(['clubdues'], ['expense']);
+                    const effectivePersonalTravel = sdeManualInputs.personalTravel ?? personalTravel;
+                    const effectiveFamilyPayroll = sdeManualInputs.familyPayroll ?? familyPayroll;
+                    const effectiveAutoLeases = sdeManualInputs.autoLeases ?? autoLeases;
+                    const effectiveMealsEntertainment = sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj;
+                    const effectiveClubDues = sdeManualInputs.clubDues ?? clubDues;
+                    const personalDiscretionaryAdj =
+                      effectivePersonalTravel +
+                      effectiveFamilyPayroll +
+                      effectiveAutoLeases +
+                      effectiveMealsEntertainment +
+                      effectiveClubDues;
+
+                    const assetSales = sumTtmByKeywords(['assetsale', 'gainonsale'], ['revenue']);
+                    const insuranceProceeds = sumTtmByKeywords(['insuranceproceed'], ['revenue']);
+                    const oneTimeContract = sumTtmByKeywords(['onetimecontract'], ['revenue']);
+                    const effectiveAssetSales = sdeManualInputs.assetSales ?? assetSales;
+                    const effectiveInsuranceProceeds = sdeManualInputs.insuranceProceeds ?? insuranceProceeds;
+                    const effectiveOneTimeContract = sdeManualInputs.oneTimeContract ?? oneTimeContract;
+                    const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract;
+
+                    const qoeOwnerSalaryAdjustment = coreSellerAdjustment;
+                    const qoePersonalAutoLease = personalDiscretionaryAdj;
+                    const qoeOneTimeExpenses = nonRecurringExpenseAdj;
+                    const qoeOneTimeRevenue = -oneTimeRevenueAdj;
+                    const qoeTotalAdjustments = qoeOwnerSalaryAdjustment + qoePersonalAutoLease + qoeOneTimeExpenses + qoeOneTimeRevenue;
+                    const qualityOfEarnings = ttmEbitdaAnalysis + qoeTotalAdjustments;
+
+                    const sdeAnalysisTotals = {
+                      ttmNetIncomeAfterTax,
+                      ttmInterest,
+                      ttmTaxesAnalysis,
+                      ttmDepreciationOnly,
+                      ttmAmortizationOnly,
+                      ttmEbitdaAnalysis,
+                      ownerSalaryAdj,
+                      ownersDrawAdj,
+                      marketReplacementSalary: effectiveMarketReplacementSalary,
+                      coreSellerAdjustment,
+                      personalDiscretionaryAdj,
+                      nonRecurringExpenseAdj,
+                      oneTimeRevenueAdj,
+                      qoeOwnerSalaryAdjustment,
+                      qoePersonalAutoLease,
+                      qoeOneTimeExpenses,
+                      qoeOneTimeRevenue,
+                      qoeTotalAdjustments,
+                      qualityOfEarnings,
+                    };
+
                     const response = await fetch('/api/valuation-settings', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -9531,7 +9690,9 @@ function FinancialScorePage() {
                         sdeMultiplier,
                         ebitdaMultiplier,
                         dcfDiscountRate,
-                        dcfTerminalGrowth
+                        dcfTerminalGrowth,
+                        sdeManualInputs,
+                        sdeAnalysisTotals,
                       })
                     });
                     const result = await response.json();
@@ -9577,21 +9738,17 @@ function FinancialScorePage() {
             const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
             const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
             const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+            const ttmStateTaxes = last12.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+            const ttmFederalTaxes = last12.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
             
             // Calculate Net Income correctly: Revenue - COGS - Operating Expenses
             const ttmGrossProfit = ttmRevenue - ttmCOGS;
             const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
-            
             // Calculate EBITDA: Net Income + Interest + Taxes + Depreciation + Amortization
             const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
             // Note: We don't have a separate tax field, so this is technically EBIT if taxes are in 'expense'
             
-            // Calculate SDE using ACTUAL Owner Base Pay from income statement
-            const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
-            const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
-            
             // Calculate valuations
-            const sdeValuation = ttmSDE * sdeMultiplier;
             const ebitdaValuation = ttmEBITDA * ebitdaMultiplier;
             
             // Calculate Free Cash Flow (FCF) for DCF
@@ -9622,58 +9779,184 @@ function FinancialScorePage() {
             }
             const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
             dcfValue += terminalValue / Math.pow(1 + discountRate, 5);
+
+            const sumTtmField = (fieldName: string): number =>
+              last12.reduce((sum, month) => sum + (Number((month as any)?.[fieldName]) || 0), 0);
+
+            const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            const sumTtmByKeywords = (
+              keywords: string[],
+              breakdownTypes: Array<'expense' | 'revenue'> = ['expense', 'revenue']
+            ): number => {
+              const normalizedKeywords = keywords.map(normalize);
+              return last12.reduce((sum, month) => {
+                const buckets: Array<Record<string, unknown>> = [];
+                if (breakdownTypes.includes('expense') && (month as any)?.expenseBreakdown && typeof (month as any).expenseBreakdown === 'object') {
+                  buckets.push((month as any).expenseBreakdown);
+                }
+                if (breakdownTypes.includes('revenue') && (month as any)?.revenueBreakdown && typeof (month as any).revenueBreakdown === 'object') {
+                  buckets.push((month as any).revenueBreakdown);
+                }
+
+                let monthSum = 0;
+                for (const bucket of buckets) {
+                  for (const [key, rawValue] of Object.entries(bucket)) {
+                    const normalizedKey = normalize(key);
+                    if (normalizedKeywords.some((kw) => normalizedKey.includes(kw))) {
+                      monthSum += Number(rawValue) || 0;
+                    }
+                  }
+                }
+                return sum + monthSum;
+              }, 0);
+            };
+
+            const formatDollars = (value: number): string => {
+              if (!Number.isFinite(value) || Math.abs(value) < 0.5) return '$-';
+              const roundedAbs = Math.round(Math.abs(value)).toLocaleString();
+              return value < 0 ? `($${roundedAbs})` : `$${roundedAbs}`;
+            };
+
+            const formatInputDollars = (value: number): string => {
+              const rounded = Math.round(Number(value) || 0);
+              const abs = Math.abs(rounded).toLocaleString();
+              return rounded < 0 ? `-$${abs}` : `$${abs}`;
+            };
+
+            const parseInputDollars = (raw: string): number => {
+              const cleaned = raw.replace(/[^0-9-]/g, '');
+              if (!cleaned || cleaned === '-') return 0;
+              return Math.round(Number(cleaned) || 0);
+            };
+
+            // SDE analysis values (TTM from active company's monthly master data)
+            const ttmDepreciationBreakdown = sumTtmByKeywords(['depreciation'], ['expense']);
+            const ttmAmortizationBreakdown = sumTtmByKeywords(['amortization'], ['expense']);
+            const ttmTaxesAnalysis = ttmStateTaxes + ttmFederalTaxes;
+            const ttmNetIncomeAfterTax = ttmNetIncome - ttmTaxesAnalysis;
+            const ttmDepreciationOnly = ttmDepreciationBreakdown > 0 ? ttmDepreciationBreakdown : ttmDepreciation;
+            const ttmAmortizationOnly = ttmAmortizationBreakdown > 0 ? ttmAmortizationBreakdown : 0;
+            const ttmEbitdaAnalysis = ttmNetIncomeAfterTax + ttmInterest + ttmTaxesAnalysis + ttmDepreciationOnly + ttmAmortizationOnly;
+
+            const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
+            const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
+            const marketReplacementSalaryAdj = 0;
+            const effectiveMarketReplacementSalary =
+              Math.abs(sdeManualInputs.marketReplacementSalary ?? marketReplacementSalaryAdj);
+            const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary;
+
+            const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
+            const majorRepairs = sumTtmByKeywords(['majorrepair', 'majorrepairs'], ['expense']);
+            const consultingExpense = sumTtmByKeywords(['consulting'], ['expense']);
+            const erpInstall = sumTtmByKeywords(['erpinstall', 'erpimplementation'], ['expense']);
+            const relocation = sumTtmByKeywords(['relocation', 'movingexpense'], ['expense']);
+            const covidCosts = sumTtmByKeywords(['covid'], ['expense']);
+            const effectiveLegalSettlements = sdeManualInputs.legalSettlements ?? legalSettlements;
+            const effectiveMajorRepairs = sdeManualInputs.majorRepairs ?? majorRepairs;
+            const effectiveConsulting = sdeManualInputs.consulting ?? consultingExpense;
+            const effectiveErpInstall = sdeManualInputs.erpInstall ?? erpInstall;
+            const effectiveRelocation = sdeManualInputs.relocation ?? relocation;
+            const effectiveCovidCosts = sdeManualInputs.covidCosts ?? covidCosts;
+            const nonRecurringExpenseAdj =
+              effectiveLegalSettlements +
+              effectiveMajorRepairs +
+              effectiveConsulting +
+              effectiveErpInstall +
+              effectiveRelocation +
+              effectiveCovidCosts;
+
+            const personalTravel = sumTtmByKeywords(['personaltravel'], ['expense']);
+            const familyPayroll = sumTtmByKeywords(['familypayroll'], ['expense']);
+            const autoLeases = sumTtmByKeywords(['autolease', 'vehiclelease'], ['expense']);
+            const mealsAndEntertainmentAdj = sumTtmField('mealsEntertainment');
+            const clubDues = sumTtmByKeywords(['clubdues'], ['expense']);
+            const effectivePersonalTravel = sdeManualInputs.personalTravel ?? personalTravel;
+            const effectiveFamilyPayroll = sdeManualInputs.familyPayroll ?? familyPayroll;
+            const effectiveAutoLeases = sdeManualInputs.autoLeases ?? autoLeases;
+            const effectiveMealsEntertainment = sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj;
+            const effectiveClubDues = sdeManualInputs.clubDues ?? clubDues;
+            const personalDiscretionaryAdj =
+              effectivePersonalTravel +
+              effectiveFamilyPayroll +
+              effectiveAutoLeases +
+              effectiveMealsEntertainment +
+              effectiveClubDues;
+
+            const assetSales = sumTtmByKeywords(['assetsale', 'gainonsale'], ['revenue']);
+            const insuranceProceeds = sumTtmByKeywords(['insuranceproceed'], ['revenue']);
+            const oneTimeContract = sumTtmByKeywords(['onetimecontract'], ['revenue']);
+            const effectiveAssetSales = sdeManualInputs.assetSales ?? assetSales;
+            const effectiveInsuranceProceeds = sdeManualInputs.insuranceProceeds ?? insuranceProceeds;
+            const effectiveOneTimeContract = sdeManualInputs.oneTimeContract ?? oneTimeContract;
+            const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract;
+
+            const qoeOwnerSalaryAdjustment = coreSellerAdjustment;
+            const qoePersonalAutoLease = personalDiscretionaryAdj;
+            const qoeOneTimeExpenses = nonRecurringExpenseAdj;
+            const qoeOneTimeRevenue = -oneTimeRevenueAdj;
+            const qoeTotalAdjustments = qoeOwnerSalaryAdjustment + qoePersonalAutoLease + qoeOneTimeExpenses + qoeOneTimeRevenue;
+            const qualityOfEarnings = ttmEbitdaAnalysis + qoeTotalAdjustments;
+            const ttmSDE = qualityOfEarnings;
+            const sdeValuation = ttmSDE * sdeMultiplier;
             
             return (
               <>
-                {/* Overview Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
-                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>SDE Valuation</h3>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981', marginBottom: '4px' }}>
-                      ${Math.round(sdeValuation).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>EBITDA Valuation</h3>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
-                      ${Math.round(ebitdaValuation).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #f59e0b' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>DCF Valuation</h3>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b', marginBottom: '4px' }}>
-                      ${Math.round(dcfValue).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      5-year @ {dcfDiscountRate.toFixed(1)}% discount, {dcfTerminalGrowth.toFixed(1)}% terminal
-                    </div>
-                  </div>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                  {[
+                    { id: 'sde' as const, label: 'SDE' },
+                    { id: 'ebitda' as const, label: 'EBITDA Multiple' },
+                    { id: 'dcf' as const, label: 'DCF' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setValuationMethodTab(tab.id)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        background: valuationMethodTab === tab.id ? '#667eea' : '#f1f5f9',
+                        color: valuationMethodTab === tab.id ? 'white' : '#334155'
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
                 
                 {/* SDE Method */}
+                {valuationMethodTab === 'sde' && (
+                <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Seller's Discretionary Earnings (SDE) Method
                   </h2>
                   
-                  <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                    <div style={{ marginBottom: '8px' }}>
-                      <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${(ttmSDE / 1000).toFixed(0)}K</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
+                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${(ttmSDE / 1000).toFixed(0)}K</div>
+                      </div>
+                      
+                      <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                        <strong>Calculation:</strong> Quality of Earnings: EBITDA + QoE Adjustments = ${(ttmEbitdaAnalysis / 1000).toFixed(0)}K + ${(qoeTotalAdjustments / 1000).toFixed(0)}K
+                      </div>
                     </div>
-                    
-                    <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                      <strong>Calculation:</strong> EBITDA + Owner Base Pay + Discretionary Expenses
-                      <br/>
-                      = ${(ttmEBITDA / 1000).toFixed(0)}K + ${(ttmOwnerBasePay / 1000).toFixed(0)}K
+
+                    <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+                        Estimated Business Value (SDE)
+                      </div>
+                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
+                        ${Math.round(sdeValuation).toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                        Range: ${Math.round(ttmSDE * 1.5).toLocaleString()} - ${Math.round(ttmSDE * 4.0).toLocaleString()}
+                      </div>
                     </div>
                   </div>
                   
@@ -9696,20 +9979,243 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-                      Estimated Business Value (SDE)
+                </div>
+
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                      SDE Analysis
+                    </h2>
+                    <button
+                      onClick={() => {
+                        const saveButton = document.getElementById('valuation-save-settings-btn') as HTMLButtonElement | null;
+                        saveButton?.click();
+                      }}
+                      disabled={valuationSaveStatus === 'saving'}
+                      style={{
+                        padding: '8px 16px',
+                        background: valuationSaveStatus === 'saved' ? '#10b981' : valuationSaveStatus === 'error' ? '#ef4444' : valuationSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: valuationSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save SDE Analysis'}
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>EBITDA, Trailing 12 Months</div>
+                      {[
+                        ['Net Income', formatDollars(ttmNetIncomeAfterTax)],
+                        ['Interest', formatDollars(ttmInterest)],
+                        ['Taxes', formatDollars(ttmTaxesAnalysis)],
+                        ['Depreciation', formatDollars(ttmDepreciationOnly)],
+                        ['Amortization', formatDollars(ttmAmortizationOnly)],
+                        ['EBITDA', formatDollars(ttmEbitdaAnalysis)],
+                      ].map(([label, value]) => {
+                        const isAdjustmentRow = label.toLowerCase().includes('adjustment');
+                        const isEbitdaRow = label === 'EBITDA';
+                        return (
+                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: (isAdjustmentRow || isEbitdaRow) ? 700 : 400 }}>
+                            <span>{label}</span>
+                            <span style={{ fontWeight: (isAdjustmentRow || isEbitdaRow) ? 700 : 600 }}>{value}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
-                      ${Math.round(sdeValuation).toLocaleString()}
+
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>1. Owner Compensation Adjustment</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Replace owner pay with market salary.</div>
+                      {[
+                        ['Owner salary', formatDollars(ownerSalaryAdj), 'readonly'],
+                        ['Owners Draw', formatDollars(ownersDrawAdj), 'readonly'],
+                        ['Market replacement salary', effectiveMarketReplacementSalary, 'input'],
+                        ['Adjustment', formatDollars(coreSellerAdjustment), 'readonly-adjustment'],
+                      ].map(([label, value, rowType]) => {
+                        const isAdjustmentRow = label.toLowerCase().includes('adjustment');
+                        if (rowType === 'input') {
+                          return (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                              <span>{label}</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatInputDollars(Number(value) || 0)}
+                                onChange={(e) => {
+                                  const parsed = parseInputDollars(e.target.value);
+                                  setSdeManualInputs((prev) => ({ ...prev, marketReplacementSalary: Math.abs(parsed) }));
+                                }}
+                                style={{
+                                  width: '130px',
+                                  textAlign: 'right',
+                                  padding: '3px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: 600
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: isAdjustmentRow ? 700 : 400 }}>
+                            <span>{label}</span>
+                            <span style={{ fontWeight: isAdjustmentRow ? 700 : 600 }}>{value}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      Range: ${Math.round(ttmSDE * 1.5).toLocaleString()} - ${Math.round(ttmSDE * 4.0).toLocaleString()}
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>2. Personal / Discretionary Expenses</div>
+                      {[
+                        ['personal travel', effectivePersonalTravel, 'personalTravel'],
+                        ['family payroll', effectiveFamilyPayroll, 'familyPayroll'],
+                        ['auto leases', effectiveAutoLeases, 'autoLeases'],
+                        ['meals & entertainment', effectiveMealsEntertainment, 'mealsEntertainment'],
+                        ['club dues', effectiveClubDues, 'clubDues'],
+                      ].map(([label, value, key]) => (
+                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                          <span>{label}</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatInputDollars(Number(value) || 0)}
+                            onChange={(e) => {
+                              const parsed = parseInputDollars(e.target.value);
+                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                            }}
+                            style={{
+                              width: '130px',
+                              textAlign: 'right',
+                              padding: '3px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
+                        <span>Adjustment</span>
+                        <span style={{ fontWeight: 700 }}>{formatDollars(personalDiscretionaryAdj)}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>QoE Adjustments</div>
+                      {[
+                        ['1. Owner Compensation Adjustment', formatDollars(qoeOwnerSalaryAdjustment)],
+                        ['2. Personal / Discretionary Expenses', formatDollars(qoePersonalAutoLease)],
+                        ['3. Non-Recurring Expenses', formatDollars(qoeOneTimeExpenses)],
+                        ['4. One-Time Revenue', formatDollars(qoeOneTimeRevenue)],
+                        ['Total adjustments', formatDollars(qoeTotalAdjustments)],
+                      ].map(([label, value]) => {
+                        const isAdjustmentRow =
+                          label.toLowerCase().includes('adjustment') &&
+                          label !== '1. Owner Compensation Adjustment';
+                        return (
+                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: isAdjustmentRow ? 700 : 400 }}>
+                            <span>{label}</span>
+                            <span style={{ fontWeight: isAdjustmentRow ? 700 : 600 }}>{value}</span>
+                          </div>
+                        );
+                      })}
+                      <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Quality of Earnings</span>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#10b981' }}>{formatDollars(qualityOfEarnings)}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>3. Non-Recurring Expenses</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>One-time items.</div>
+                      {[
+                        ['legal settlements', effectiveLegalSettlements, 'legalSettlements'],
+                        ['major repairs', effectiveMajorRepairs, 'majorRepairs'],
+                        ['consulting', effectiveConsulting, 'consulting'],
+                        ['ERP install', effectiveErpInstall, 'erpInstall'],
+                        ['relocation', effectiveRelocation, 'relocation'],
+                        ['COVID costs', effectiveCovidCosts, 'covidCosts'],
+                      ].map(([label, value, key]) => (
+                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                          <span>{label}</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatInputDollars(Number(value) || 0)}
+                            onChange={(e) => {
+                              const parsed = parseInputDollars(e.target.value);
+                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                            }}
+                            style={{
+                              width: '130px',
+                              textAlign: 'right',
+                              padding: '3px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
+                        <span>Adjustment</span>
+                        <span style={{ fontWeight: 700 }}>{formatDollars(nonRecurringExpenseAdj)}</span>
+                      </div>
+                    </div>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>4. One-Time Revenue</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Remove revenue that will not repeat.</div>
+                      {[
+                        ['asset sales', effectiveAssetSales, 'assetSales'],
+                        ['insurance proceeds', effectiveInsuranceProceeds, 'insuranceProceeds'],
+                        ['one-time contract', effectiveOneTimeContract, 'oneTimeContract'],
+                      ].map(([label, value, key]) => (
+                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                          <span>{label}</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatInputDollars(Number(value) || 0)}
+                            onChange={(e) => {
+                              const parsed = parseInputDollars(e.target.value);
+                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                            }}
+                            style={{
+                              width: '130px',
+                              textAlign: 'right',
+                              padding: '3px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
+                        <span>Adjustment</span>
+                        <span style={{ fontWeight: 700 }}>{formatDollars(oneTimeRevenueAdj)}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
+                </>
+                )}
                 
                 {/* EBITDA Method */}
+                {valuationMethodTab === 'ebitda' && (
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     EBITDA Multiple Method
@@ -9761,8 +10267,10 @@ function FinancialScorePage() {
                     </div>
                   </div>
                 </div>
+                )}
                 
                 {/* DCF Method */}
+                {valuationMethodTab === 'dcf' && (
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Discounted Cash Flow (DCF) Method
@@ -9888,6 +10396,7 @@ function FinancialScorePage() {
                     </div>
                   </div>
                 </div>
+                )}
               </>
             );
           })()}
