@@ -177,15 +177,15 @@ export default function TrendAnalysisView({
                   case 'Cash':
                     return m.cash || 0;
                   case 'Current Assets':
-                    return m.currentAssets || 0;
+                    return m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
                   case 'Fixed Assets':
                     return m.fixedAssets || 0;
                   case 'Total Assets':
                     return m.totalAssets || 0;
                   case 'Accounts Payable':
-                    return m.accountsPayable || 0;
+                    return m.ap || 0;
                   case 'Long Term Debt':
-                    return m.longTermDebt || 0;
+                    return m.ltd || 0;
                   case 'Total Equity':
                     return m.totalEquity || 0;
                   case 'Net Income':

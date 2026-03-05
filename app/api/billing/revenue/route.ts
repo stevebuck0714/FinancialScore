@@ -13,36 +13,6 @@ import {
 // GET - Get revenue dashboard data (revenue sharing model)
 export async function GET(request: NextRequest) {
   try {
-    // Fetch all companies (subscription fields don't exist in production DB)
-    const companies = await prisma.company.findMany({
-      select: {
-        id: true,
-        name: true,
-        consultantId: true
-        // subscription fields don't exist in production DB
-        // selectedSubscriptionPlan: true,
-        // subscriptionMonthlyPrice: true,
-        // subscriptionQuarterlyPrice: true,
-        // subscriptionAnnualPrice: true,
-        // subscriptionStatus: true
-      }
-    });
-
-    // Since subscription fields don't exist, use default revenue calculations
-    // Assume standard pricing: $195/month for consultants, $195/month for direct (can be adjusted)
-    const defaultMonthlyPrice = 195;
-
-    // Separate consultant companies vs. direct businesses
-    const consultantCompanies = companies.filter(c => c.consultantId);
-    const directCompanies = companies.filter(c => !c.consultantId);
-
-    // Calculate revenue based on company count * default pricing
-    const totalMRR = companies.length * defaultMonthlyPrice;
-    const totalARR = totalMRR * 12;
-
-    const consultantMRR = consultantCompanies.length * defaultMonthlyPrice;
-    const directMRR = directCompanies.length * defaultMonthlyPrice;
-
     // Get current month revenue (actual payments received)
     const currentMonthRange = getCurrentMonthRange();
     const currentMonthRecords = await prisma.revenueRecord.findMany({
@@ -62,6 +32,12 @@ export async function GET(request: NextRequest) {
     const currentMonthDirectRevenue = currentMonthRecords
       .filter(r => !r.consultantId)
       .reduce((sum, r) => sum + r.amount, 0);
+
+    // MRR/ARR derived from actual current month revenue
+    const totalMRR = currentMonthRevenue;
+    const totalARR = totalMRR * 12;
+    const consultantMRR = currentMonthConsultantRevenue;
+    const directMRR = currentMonthDirectRevenue;
 
     // Get previous month revenue for comparison
     const previousMonthRange = getPreviousMonthRange();
@@ -88,12 +64,18 @@ export async function GET(request: NextRequest) {
     const totalPendingPayables = pendingPayables.reduce((sum, p) => sum + p.payableAmount, 0);
     const pendingPayablesCount = pendingPayables.length;
 
-    // Calculate platform revenue (what you keep)
-    // For consultant companies: assume 50/50 split
-    // For direct companies: 100%
-    const consultantSplit = 0.5; // 50% goes to consultant, 50% to platform
-    const platformRevenue = currentMonthDirectRevenue +
-      (currentMonthConsultantRevenue * (1 - consultantSplit));
+    // Platform revenue = total revenue minus what's owed to consultants
+    const platformRevenue = currentMonthRevenue - totalPendingPayables;
+
+    // Count only companies that have paid (have at least one received revenue record)
+    const payingCompanyIds = await prisma.revenueRecord.findMany({
+      where: { paymentStatus: 'received' },
+      select: { companyId: true, consultantId: true },
+      distinct: ['companyId'],
+    });
+    const consultantCompaniesCount = payingCompanyIds.filter(r => r.consultantId).length;
+    const directCompaniesCount = payingCompanyIds.filter(r => !r.consultantId).length;
+    const activeCompaniesCount = payingCompanyIds.length;
 
     return NextResponse.json({
       totalMRR,
@@ -108,9 +90,9 @@ export async function GET(request: NextRequest) {
       totalPendingPayables,
       pendingPayablesCount,
       platformRevenue,
-      activeCompaniesCount: companies.length,
-      consultantCompaniesCount: consultantCompanies.length,
-      directCompaniesCount: directCompanies.length
+      activeCompaniesCount,
+      consultantCompaniesCount,
+      directCompaniesCount
     });
   } catch (error) {
     console.error('Error fetching revenue data:', error);

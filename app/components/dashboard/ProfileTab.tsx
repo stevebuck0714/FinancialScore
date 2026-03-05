@@ -4,6 +4,7 @@ import React from 'react';
 import { INDUSTRY_SECTORS } from '../../../data/industrySectors';
 import { profilesApi, companiesApi, ApiError } from '@/lib/api-client';
 import { ACCOUNTING_SYSTEMS, COMPANY_SIZES, INDUSTRY_SECTORS as INDUSTRY_SECTOR_OPTIONS } from '../../../lib/constants/company-options';
+import { US_STATES } from '../../constants';
 import type { Company, CompanyProfile, MonthlyDataRow, User } from '../../types';
 
 interface ProfileTabProps {
@@ -173,6 +174,14 @@ export default function ProfileTab({
       alert('Please select an Accounting System before saving.');
       return;
     }
+    if (!companyIndustrySectorCode) {
+      alert('Please select an Industry Sector before saving.');
+      return;
+    }
+    if (!companyIndustryGroup) {
+      alert('Please select an Industry Group before saving.');
+      return;
+    }
     setIsLoading(true);
     try {
       const companyUpdatePayload: any = {
@@ -183,12 +192,9 @@ export default function ProfileTab({
         addressCountry: companyAddressCountry || '',
         accountingSystem: companyAccountingSystem,
         companySizeCategory: companySize || null,
-        industrySectorCategory: companyIndustrySectorCode || null
+        industrySectorCategory: companyIndustrySectorCode || null,
+        industrySector: Number(companyIndustryGroup)
       };
-      // Industry Group is optional; only send if selected so the API doesn't reject it.
-      if (companyIndustryGroup) {
-        companyUpdatePayload.industrySector = Number(companyIndustryGroup);
-      }
 
       const [, companyUpdateResult] = await Promise.all([
         profilesApi.save(selectedCompanyId, profile!),
@@ -361,13 +367,16 @@ export default function ProfileTab({
               <span style={{ fontWeight: '600' }}>State / ZIP:</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <input
-                type="text"
+              <select
                 value={companyAddressState}
                 onChange={(e) => setCompanyAddressState(e.target.value)}
-                placeholder="State"
-                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-              />
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', cursor: 'pointer', backgroundColor: 'white' }}
+              >
+                <option value="">State</option>
+                {US_STATES.filter(s => s.code !== '').map(state => (
+                  <option key={state.code} value={state.code}>{state.code} - {state.name}</option>
+                ))}
+              </select>
               <input
                 type="text"
                 value={companyAddressZip}
@@ -421,7 +430,7 @@ export default function ProfileTab({
               </select>
             </div>
             <div>
-              <span style={{ fontWeight: '600' }}>Industry Sector:</span>
+              <span style={{ fontWeight: '600' }}>Industry Sector: <span style={{ color: '#ef4444' }}>*</span></span>
             </div>
             <div>
               <select
@@ -434,8 +443,8 @@ export default function ProfileTab({
                 ))}
               </select>
             </div>
-            <div>
-              <span style={{ fontWeight: '600' }}>Industry Group:</span>
+            <div style={{ alignSelf: 'start', paddingTop: '8px' }}>
+              <span style={{ fontWeight: '600' }}>Industry Group: <span style={{ color: '#ef4444' }}>*</span></span>
             </div>
             <div>
               <select

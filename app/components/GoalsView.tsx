@@ -167,6 +167,14 @@ export default function GoalsView({
     return sum / expenseMonthlyTotals.length;
   }, [expenseMonthlyTotals]);
 
+  const cogsGoalTotal = React.useMemo(() => {
+    return cogsCategories.reduce((sum, cat) => sum + (expenseGoals[cat.key] || 0), 0);
+  }, [cogsCategories, expenseGoals]);
+
+  const expenseGoalTotal = React.useMemo(() => {
+    return expenseCategories.reduce((sum, cat) => sum + (expenseGoals[cat.key] || 0), 0);
+  }, [expenseCategories, expenseGoals]);
+
   // Save goals to database
   const handleSave = async () => {
     if (!selectedCompanyId) {
@@ -386,8 +394,8 @@ export default function GoalsView({
                 <td style={{ textAlign: 'right', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
                   {cogsTotalAverage.toFixed(1)}%
                 </td>
-                <td style={{ textAlign: 'center', padding: '16px 12px' }}>
-                  {/* Empty cell for goal column */}
+                <td style={{ textAlign: 'center', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: cogsGoalTotal > 0 ? '#667eea' : '#94a3b8' }}>
+                  {cogsGoalTotal > 0 ? `${cogsGoalTotal.toFixed(1)}%` : '—'}
                 </td>
               </tr>
             )}
@@ -476,8 +484,8 @@ export default function GoalsView({
                 <td style={{ textAlign: 'right', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>
                   {expenseTotalAverage.toFixed(1)}%
                 </td>
-                <td style={{ textAlign: 'center', padding: '16px 12px' }}>
-                  {/* Empty cell for goal column */}
+                <td style={{ textAlign: 'center', padding: '16px 12px', fontSize: '16px', fontWeight: '700', color: expenseGoalTotal > 0 ? '#667eea' : '#94a3b8' }}>
+                  {expenseGoalTotal > 0 ? `${expenseGoalTotal.toFixed(1)}%` : '—'}
                 </td>
               </tr>
             )}
