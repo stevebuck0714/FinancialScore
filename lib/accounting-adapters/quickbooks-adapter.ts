@@ -137,6 +137,37 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  private extractNumericColumns(colData: any[]): number[] {
+    if (!Array.isArray(colData)) return [];
+    return colData
+      .map((col: any) => this.parseMoney(col?.value))
+      .filter((value) => Number.isFinite(value) && value !== 0);
+  }
+
+  private parseAgingBucketsFromColData(colData: any[]): {
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+    total: number;
+  } | null {
+    const numericValues = this.extractNumericColumns(colData);
+    if (numericValues.length < 5) return null;
+
+    const current = numericValues[0] || 0;
+    const days1to30 = numericValues[1] || 0;
+    const days31to60 = numericValues[2] || 0;
+    const days61to90 = numericValues[3] || 0;
+    const days90plus = numericValues[4] || 0;
+    const total =
+      numericValues.length >= 6
+        ? numericValues[5]
+        : current + days1to30 + days31to60 + days61to90 + days90plus;
+
+    return { current, days1to30, days31to60, days61to90, days90plus, total };
+  }
+
   private tryParseDateString(value: string): Date | null {
     const trimmed = String(value || '').trim();
     if (!trimmed) return null;
@@ -302,7 +333,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       
       // QuickBooks API for AR Aging Summary report
       const response = await this.makeRequest(
-        `/reports/AgedReceivables?date_macro=Today&aging_period=30`
+        `/reports/AgedReceivables?as_of_date=${dateStr}&aging_period=30&minorversion=65`
       );
       const data = await response.json();
       
@@ -318,15 +349,14 @@ export class QuickBooksAdapter implements AccountingAdapter {
       // QuickBooks AR Aging has columns: Current, 1-30, 31-60, 61-90, 91+, Total
       rows.forEach((row: any) => {
         if (row.type === 'Data' && row.ColData) {
-          const cols = row.ColData;
-          if (cols.length >= 6) {
-            current += parseFloat(cols[0]?.value || '0');
-            days1to30 += parseFloat(cols[1]?.value || '0');
-            days31to60 += parseFloat(cols[2]?.value || '0');
-            days61to90 += parseFloat(cols[3]?.value || '0');
-            days90plus += parseFloat(cols[4]?.value || '0');
-            totalAR += parseFloat(cols[5]?.value || '0');
-          }
+          const parsed = this.parseAgingBucketsFromColData(row.ColData);
+          if (!parsed) return;
+          current += parsed.current;
+          days1to30 += parsed.days1to30;
+          days31to60 += parsed.days31to60;
+          days61to90 += parsed.days61to90;
+          days90plus += parsed.days90plus;
+          totalAR += parsed.total;
         }
       });
       
@@ -351,10 +381,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
   async getAPAgingReport(asOfDate?: Date): Promise<APAgingData> {
     try {
       const date = asOfDate || new Date();
+      const dateStr = date.toISOString().split('T')[0];
       
       // QuickBooks API for AP Aging Summary report
       const response = await this.makeRequest(
-        `/reports/AgedPayables?date_macro=Today&aging_period=30`
+        `/reports/AgedPayables?as_of_date=${dateStr}&aging_period=30&minorversion=65`
       );
       const data = await response.json();
       
@@ -368,15 +399,14 @@ export class QuickBooksAdapter implements AccountingAdapter {
       
       rows.forEach((row: any) => {
         if (row.type === 'Data' && row.ColData) {
-          const cols = row.ColData;
-          if (cols.length >= 6) {
-            current += parseFloat(cols[0]?.value || '0');
-            days1to30 += parseFloat(cols[1]?.value || '0');
-            days31to60 += parseFloat(cols[2]?.value || '0');
-            days61to90 += parseFloat(cols[3]?.value || '0');
-            days90plus += parseFloat(cols[4]?.value || '0');
-            totalAP += parseFloat(cols[5]?.value || '0');
-          }
+          const parsed = this.parseAgingBucketsFromColData(row.ColData);
+          if (!parsed) return;
+          current += parsed.current;
+          days1to30 += parsed.days1to30;
+          days31to60 += parsed.days31to60;
+          days61to90 += parsed.days61to90;
+          days90plus += parsed.days90plus;
+          totalAP += parsed.total;
         }
       });
       
@@ -400,23 +430,33 @@ export class QuickBooksAdapter implements AccountingAdapter {
    */
   async getCustomerSales(startDate: Date, endDate: Date): Promise<CustomerSalesData[]> {
     try {
-      // Query for invoices in the date range
+      // Query for invoices and sales receipts in the date range.
+      // Many QBO companies post direct sales as SalesReceipt instead of Invoice.
       const startStr = startDate.toISOString().split('T')[0];
       const endStr = endDate.toISOString().split('T')[0];
-      
-      const query = `SELECT * FROM Invoice WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`;
-      const response = await this.makeRequest(`/query?query=${encodeURIComponent(query)}`);
-      const data = await response.json();
-      
-      const invoices = data.QueryResponse?.Invoice || [];
+
+      const invoiceQuery = `SELECT * FROM Invoice WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`;
+      const salesReceiptQuery = `SELECT * FROM SalesReceipt WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`;
+      const [invoiceResponse, salesReceiptResponse] = await Promise.all([
+        this.makeRequest(`/query?query=${encodeURIComponent(invoiceQuery)}`),
+        this.makeRequest(`/query?query=${encodeURIComponent(salesReceiptQuery)}`),
+      ]);
+      const [invoiceData, salesReceiptData] = await Promise.all([
+        invoiceResponse.json(),
+        salesReceiptResponse.json(),
+      ]);
+
+      const invoices = invoiceData.QueryResponse?.Invoice || [];
+      const salesReceipts = salesReceiptData.QueryResponse?.SalesReceipt || [];
+      const salesDocuments = [...invoices, ...salesReceipts];
       
       // Group by customer
       const customerMap = new Map<string, CustomerSalesData>();
       
-      invoices.forEach((invoice: any) => {
-        const customerId = invoice.CustomerRef?.value;
-        const customerName = invoice.CustomerRef?.name || 'Unknown';
-        const amount = invoice.TotalAmt || 0;
+      salesDocuments.forEach((saleDoc: any) => {
+        const customerId = saleDoc.CustomerRef?.value;
+        const customerName = saleDoc.CustomerRef?.name || 'Unknown';
+        const amount = saleDoc.TotalAmt || 0;
         
         if (!customerMap.has(customerId)) {
           customerMap.set(customerId, {
