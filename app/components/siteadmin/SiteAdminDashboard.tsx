@@ -1778,17 +1778,7 @@ export default function SiteAdminDashboard(props: any) {
                                     <div key={company.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '8px' : '0' }}>
                                         <div style={{ flex: 1 }}>
-                                          <h5 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>{company.name}</h5>
-                                          <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>
-                                            <span style={{ fontWeight: '600' }}>ID:</span> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company.id}</span>
-                                          </div>
-                                          <div style={{ fontSize: '13px', color: '#64748b' }}>
-                                            <span style={{ fontWeight: '600' }}>Industry:</span> {
-                                              company.industrySector 
-                                                ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` 
-                                                : 'Not set'
-                                            }
-                                          </div>
+                                          <h5 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '0' }}>{company.name}</h5>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                           <div style={{ fontSize: '13px', fontWeight: '700', color: '#667eea' }}>
@@ -1866,7 +1856,8 @@ export default function SiteAdminDashboard(props: any) {
                                                 }}
                                               >
                                                 <div><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
-                                                <div><strong>Industry:</strong> {company?.industrySector || 'Not set'}</div>
+                                                <div><strong>ID:</strong> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company?.id}</span></div>
+                                                <div><strong>Industry:</strong> {company?.industrySector ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` : 'Not set'}</div>
                                                 <div><strong>Type:</strong> Consultant Business</div>
                                                 <div><strong>Address Street:</strong> {company?.addressStreet || 'Not provided'}</div>
                                                 <div><strong>Address City:</strong> {company?.addressCity || 'Not provided'}</div>
@@ -1882,55 +1873,6 @@ export default function SiteAdminDashboard(props: any) {
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                                 <div>
                                                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
-                                                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                                    Configuration for <strong>{company.name}</strong>
-                                                  </div>
-                                                  <div style={{ marginTop: '10px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc' }}>
-                                                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
-                                                      Operational Data Mode
-                                                    </div>
-                                                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-                                                      {company.forceOperationalMockData
-                                                        ? 'Demo mode is ON. Mock data is being served.'
-                                                        : company.hasRealOperationalData
-                                                          ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
-                                                          : 'Demo mode is active until real operational data is detected.'}
-                                                    </div>
-                                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                      <button
-                                                        onClick={() => saveOperationalDataMode(company.id, true)}
-                                                        disabled={savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData}
-                                                        style={{
-                                                          padding: '6px 10px',
-                                                          background: company.forceOperationalMockData ? '#0f766e' : 'white',
-                                                          color: company.forceOperationalMockData ? 'white' : '#0f766e',
-                                                          border: '1px solid #0f766e',
-                                                          borderRadius: '6px',
-                                                          fontSize: '12px',
-                                                          fontWeight: '600',
-                                                          cursor: savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData ? 'not-allowed' : 'pointer',
-                                                        }}
-                                                      >
-                                                        Force Demo Mode
-                                                      </button>
-                                                      <button
-                                                        onClick={() => saveOperationalDataMode(company.id, false)}
-                                                        disabled={savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData}
-                                                        style={{
-                                                          padding: '6px 10px',
-                                                          background: !company.forceOperationalMockData ? '#1d4ed8' : 'white',
-                                                          color: !company.forceOperationalMockData ? 'white' : '#1d4ed8',
-                                                          border: '1px solid #1d4ed8',
-                                                          borderRadius: '6px',
-                                                          fontSize: '12px',
-                                                          fontWeight: '600',
-                                                          cursor: savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData ? 'not-allowed' : 'pointer',
-                                                        }}
-                                                      >
-                                                        Use Real Data
-                                                      </button>
-                                                    </div>
-                                                  </div>
                                                 </div>
                                                 {company.accountingSystem === 'INFOR_M3' && (
                                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
@@ -2127,6 +2069,55 @@ export default function SiteAdminDashboard(props: any) {
                                                     </button>
                                                   </div>
                                                 )}
+                                              </div>
+
+                                              <div style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', marginBottom: '10px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                                                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
+                                                    Operational Data Mode
+                                                  </div>
+                                                  <div style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', flex: 1 }}>
+                                                    {company.forceOperationalMockData
+                                                      ? 'Demo mode is ON. Mock data is being served.'
+                                                      : company.hasRealOperationalData
+                                                        ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                        : 'Demo mode is active until real operational data is detected.'}
+                                                  </div>
+                                                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
+                                                    <button
+                                                      onClick={() => saveOperationalDataMode(company.id, true)}
+                                                      disabled={savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData}
+                                                      style={{
+                                                        padding: '6px 10px',
+                                                        background: company.forceOperationalMockData ? '#0f766e' : 'white',
+                                                        color: company.forceOperationalMockData ? 'white' : '#0f766e',
+                                                        border: '1px solid #0f766e',
+                                                        borderRadius: '6px',
+                                                        fontSize: '12px',
+                                                        fontWeight: '600',
+                                                        cursor: savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                      }}
+                                                    >
+                                                      Force Demo Mode
+                                                    </button>
+                                                    <button
+                                                      onClick={() => saveOperationalDataMode(company.id, false)}
+                                                      disabled={savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData}
+                                                      style={{
+                                                        padding: '6px 10px',
+                                                        background: !company.forceOperationalMockData ? '#1d4ed8' : 'white',
+                                                        color: !company.forceOperationalMockData ? 'white' : '#1d4ed8',
+                                                        border: '1px solid #1d4ed8',
+                                                        borderRadius: '6px',
+                                                        fontSize: '12px',
+                                                        fontWeight: '600',
+                                                        cursor: savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                      }}
+                                                    >
+                                                      Use Real Data
+                                                    </button>
+                                                  </div>
+                                                </div>
                                               </div>
 
                                               {company.accountingSystem === 'INFOR_M3' ? (
@@ -3831,55 +3822,6 @@ export default function SiteAdminDashboard(props: any) {
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                       <div>
                                         <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
-                                        <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                          Infor M3 credentials for <strong>{businessCompany.name}</strong>
-                                        </div>
-                                        <div style={{ marginTop: '10px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc' }}>
-                                          <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
-                                            Operational Data Mode
-                                          </div>
-                                          <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-                                            {businessCompany.forceOperationalMockData
-                                              ? 'Demo mode is ON. Mock data is being served.'
-                                              : businessCompany.hasRealOperationalData
-                                                ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${new Date(businessCompany.realDataActivatedAt).toLocaleString()})` : ''}.`
-                                                : 'Demo mode is active until real operational data is detected.'}
-                                          </div>
-                                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                            <button
-                                              onClick={() => saveOperationalDataMode(businessCompany.id, true)}
-                                              disabled={savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData}
-                                              style={{
-                                                padding: '6px 10px',
-                                                background: businessCompany.forceOperationalMockData ? '#0f766e' : 'white',
-                                                color: businessCompany.forceOperationalMockData ? 'white' : '#0f766e',
-                                                border: '1px solid #0f766e',
-                                                borderRadius: '6px',
-                                                fontSize: '12px',
-                                                fontWeight: '600',
-                                                cursor: savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
-                                              }}
-                                            >
-                                              Force Demo Mode
-                                            </button>
-                                            <button
-                                              onClick={() => saveOperationalDataMode(businessCompany.id, false)}
-                                              disabled={savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData}
-                                              style={{
-                                                padding: '6px 10px',
-                                                background: !businessCompany.forceOperationalMockData ? '#1d4ed8' : 'white',
-                                                color: !businessCompany.forceOperationalMockData ? 'white' : '#1d4ed8',
-                                                border: '1px solid #1d4ed8',
-                                                borderRadius: '6px',
-                                                fontSize: '12px',
-                                                fontWeight: '600',
-                                                cursor: savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
-                                              }}
-                                            >
-                                              Use Real Data
-                                            </button>
-                                          </div>
-                                        </div>
                                       </div>
                                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
                                         <input
@@ -3941,6 +3883,55 @@ export default function SiteAdminDashboard(props: any) {
                                         >
                                           Disconnect
                                         </button>
+                                      </div>
+                                    </div>
+
+                                    <div style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', marginBottom: '10px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
+                                          Operational Data Mode
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', flex: 1 }}>
+                                          {businessCompany.forceOperationalMockData
+                                            ? 'Demo mode is ON. Mock data is being served.'
+                                            : businessCompany.hasRealOperationalData
+                                              ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${new Date(businessCompany.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                              : 'Demo mode is active until real operational data is detected.'}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
+                                          <button
+                                            onClick={() => saveOperationalDataMode(businessCompany.id, true)}
+                                            disabled={savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData}
+                                            style={{
+                                              padding: '6px 10px',
+                                              background: businessCompany.forceOperationalMockData ? '#0f766e' : 'white',
+                                              color: businessCompany.forceOperationalMockData ? 'white' : '#0f766e',
+                                              border: '1px solid #0f766e',
+                                              borderRadius: '6px',
+                                              fontSize: '12px',
+                                              fontWeight: '600',
+                                              cursor: savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                            }}
+                                          >
+                                            Force Demo Mode
+                                          </button>
+                                          <button
+                                            onClick={() => saveOperationalDataMode(businessCompany.id, false)}
+                                            disabled={savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData}
+                                            style={{
+                                              padding: '6px 10px',
+                                              background: !businessCompany.forceOperationalMockData ? '#1d4ed8' : 'white',
+                                              color: !businessCompany.forceOperationalMockData ? 'white' : '#1d4ed8',
+                                              border: '1px solid #1d4ed8',
+                                              borderRadius: '6px',
+                                              fontSize: '12px',
+                                              fontWeight: '600',
+                                              cursor: savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                            }}
+                                          >
+                                            Use Real Data
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
 
