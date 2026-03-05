@@ -8561,6 +8561,12 @@ function FinancialScorePage() {
             // Get accounts for mapping from CSV data (if available)
             const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
             const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
+            const mappedApiSourceLabel =
+              selectedAccountingSystem === 'QUICKBOOKS'
+                ? 'QuickBooks'
+                : selectedAccountingSystem === 'XERO'
+                  ? 'Xero'
+                  : selectedAccountingSystemLabel || 'accounting';
 
             return (
               <div
@@ -8848,7 +8854,7 @@ function FinancialScorePage() {
                           <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
                             <span style={{ fontSize: '16px' }}></span>
                             <div>
-                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>Xero/QuickBooks Data Detected</div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>{mappedApiSourceLabel} Data Detected</div>
                               <p style={{ fontSize: '12px', color: '#1e40af', margin: 0 }}>
                                 Your financial data is imported. After saving mappings, click <strong>"Apply Mappings to Data"</strong> to create detailed expense breakdowns, then view in <strong>Data Review</strong> tab!
                               </p>
@@ -8860,7 +8866,7 @@ function FinancialScorePage() {
                         <div>
                           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
                           <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                            {csvTrialBalanceData ? 'Save your mappings, then process the CSV data to create monthly records.' : 'Save your mappings to apply them to your Xero/QuickBooks data.'}
+                            {csvTrialBalanceData ? 'Save your mappings, then process the CSV data to create monthly records.' : `Save your mappings to apply them to your ${mappedApiSourceLabel} data.`}
                           </p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>

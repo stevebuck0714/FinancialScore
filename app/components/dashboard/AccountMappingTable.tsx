@@ -51,14 +51,36 @@ export default function AccountMappingTable({
     setIsClient(true);
   }, []);
 
-  // Group mappings by classification
+  const normalizeClassification = (value?: string): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' => {
+    const normalized = (value || '').trim().toLowerCase();
+    if (!normalized) return 'other';
+    if (normalized === 'revenue' || normalized === 'income' || normalized.includes('revenue') || normalized.includes('income')) {
+      return 'revenue';
+    }
+    if (
+      normalized === 'cost of goods sold' ||
+      normalized === 'costofgoodssold' ||
+      normalized === 'cogs' ||
+      normalized.includes('cost of goods sold') ||
+      normalized.includes('cogs')
+    ) {
+      return 'cogs';
+    }
+    if (normalized === 'expense' || normalized.includes('expense')) return 'expense';
+    if (normalized === 'asset' || normalized.includes('asset')) return 'asset';
+    if (normalized === 'liability' || normalized.includes('liabil')) return 'liability';
+    if (normalized === 'equity' || normalized.includes('equity')) return 'equity';
+    return 'other';
+  };
+
+  // Group mappings by normalized classification
   const groupedMappings = {
-    revenue: mappings.filter(m => m.qbAccountClassification === 'Revenue'),
-    cogs: mappings.filter(m => m.qbAccountClassification === 'Cost of Goods Sold'),
-    expense: mappings.filter(m => m.qbAccountClassification === 'Expense'),
-    asset: mappings.filter(m => m.qbAccountClassification === 'Asset'),
-    liability: mappings.filter(m => m.qbAccountClassification === 'Liability'),
-    equity: mappings.filter(m => m.qbAccountClassification === 'Equity')
+    revenue: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'revenue'),
+    cogs: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'cogs'),
+    expense: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'expense'),
+    asset: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'asset'),
+    liability: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'liability'),
+    equity: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'equity')
   };
 
   const sections = [
