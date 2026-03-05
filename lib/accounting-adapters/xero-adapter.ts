@@ -374,6 +374,14 @@ export class XeroAdapter implements AccountingAdapter {
   async syncAll(frequency: 'daily' | 'weekly' | 'monthly'): Promise<SyncResult> {
     const errors: string[] = [];
     let recordsCreated = 0;
+    const moduleCounts = {
+      cash: 0,
+      arAging: 0,
+      apAging: 0,
+      customers: 0,
+      products: 0,
+      inventory: 0,
+    };
     
     try {
       const today = new Date();
@@ -397,6 +405,7 @@ export class XeroAdapter implements AccountingAdapter {
             }
           });
           recordsCreated++;
+          moduleCounts.cash++;
         }
       } catch (error: any) {
         errors.push(`Cash sync failed: ${error.message}`);
@@ -434,6 +443,7 @@ export class XeroAdapter implements AccountingAdapter {
           }
         });
         recordsCreated++;
+        moduleCounts.arAging++;
       } catch (error: any) {
         errors.push(`AR Aging sync failed: ${error.message}`);
       }
@@ -470,6 +480,7 @@ export class XeroAdapter implements AccountingAdapter {
           }
         });
         recordsCreated++;
+        moduleCounts.apAging++;
       } catch (error: any) {
         errors.push(`AP Aging sync failed: ${error.message}`);
       }
@@ -494,6 +505,7 @@ export class XeroAdapter implements AccountingAdapter {
             }
           });
           recordsCreated++;
+          moduleCounts.customers++;
         }
       } catch (error: any) {
         errors.push(`Customer sales sync failed: ${error.message}`);
@@ -522,6 +534,7 @@ export class XeroAdapter implements AccountingAdapter {
             }
           });
           recordsCreated++;
+          moduleCounts.products++;
         }
       } catch (error: any) {
         errors.push(`Product sales sync failed: ${error.message}`);
@@ -545,6 +558,7 @@ export class XeroAdapter implements AccountingAdapter {
             }
           });
           recordsCreated++;
+          moduleCounts.inventory++;
         }
       } catch (error: any) {
         errors.push(`Inventory sync failed: ${error.message}`);
@@ -553,6 +567,7 @@ export class XeroAdapter implements AccountingAdapter {
       return {
         success: errors.length === 0,
         recordsCreated,
+        moduleCounts,
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date()
       };
@@ -560,6 +575,7 @@ export class XeroAdapter implements AccountingAdapter {
       return {
         success: false,
         recordsCreated,
+        moduleCounts,
         errors: [error.message],
         timestamp: new Date()
       };

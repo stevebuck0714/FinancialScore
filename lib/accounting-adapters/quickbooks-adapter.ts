@@ -677,6 +677,14 @@ export class QuickBooksAdapter implements AccountingAdapter {
   async syncAll(frequency: 'daily' | 'weekly' | 'monthly'): Promise<SyncResult> {
     const errors: string[] = [];
     let recordsCreated = 0;
+    const moduleCounts = {
+      cash: 0,
+      arAging: 0,
+      apAging: 0,
+      customers: 0,
+      products: 0,
+      inventory: 0,
+    };
     
     try {
       const today = new Date();
@@ -715,6 +723,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
               })),
             });
             recordsCreated += balancesForDay.length;
+            moduleCounts.cash += balancesForDay.length;
           }
         } else {
           await prisma.cashSnapshot.deleteMany({
@@ -739,6 +748,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
               }
             });
             recordsCreated++;
+            moduleCounts.cash++;
           }
         }
       } catch (error: any) {
@@ -777,6 +787,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
           }
         });
         recordsCreated++;
+        moduleCounts.arAging++;
       } catch (error: any) {
         errors.push(`AR Aging sync failed: ${error.message}`);
       }
@@ -813,6 +824,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
           }
         });
         recordsCreated++;
+        moduleCounts.apAging++;
       } catch (error: any) {
         errors.push(`AP Aging sync failed: ${error.message}`);
       }
@@ -844,6 +856,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
               })),
             });
             recordsCreated += bucket.rows.length;
+            moduleCounts.customers += bucket.rows.length;
           }
         } else {
           const yesterday = new Date(today);
@@ -864,6 +877,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
               }
             });
             recordsCreated++;
+            moduleCounts.customers++;
           }
         }
       } catch (error: any) {
@@ -894,6 +908,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
               }
             });
             recordsCreated++;
+            moduleCounts.products++;
           }
         } catch (error: any) {
           if (this.isOptionalProductSalesError(error)) {
@@ -924,6 +939,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
             }
           });
           recordsCreated++;
+          moduleCounts.inventory++;
         }
       } catch (error: any) {
         errors.push(`Inventory sync failed: ${error.message}`);
@@ -932,6 +948,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       return {
         success: errors.length === 0,
         recordsCreated,
+        moduleCounts,
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date()
       };
@@ -939,6 +956,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       return {
         success: false,
         recordsCreated,
+        moduleCounts,
         errors: [error.message],
         timestamp: new Date()
       };

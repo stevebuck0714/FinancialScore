@@ -4213,7 +4213,22 @@ function FinancialScorePage() {
             : data?.details || data?.error || 'Operational sync failed';
         throw new Error(details);
       }
-      alert(`Operational sync complete. Records created: ${data.recordsCreated ?? 0}.`);
+      const moduleCounts =
+        data?.moduleCounts && typeof data.moduleCounts === 'object'
+          ? data.moduleCounts as Record<string, number>
+          : null;
+      const moduleLines = moduleCounts
+        ? [
+            `Cash: ${Number(moduleCounts.cash || 0)}`,
+            `AR Aging: ${Number(moduleCounts.arAging || 0)}`,
+            `AP Aging: ${Number(moduleCounts.apAging || 0)}`,
+            `Customers: ${Number(moduleCounts.customers || 0)}`,
+            `Products: ${Number(moduleCounts.products || 0)}`,
+            `Inventory: ${Number(moduleCounts.inventory || 0)}`,
+          ]
+        : [];
+      const details = moduleLines.length ? `\n\nBy module:\n${moduleLines.join('\n')}` : '';
+      alert(`Operational sync complete. Records created: ${data.recordsCreated ?? 0}.${details}`);
     } catch (error: any) {
       alert(`Operational sync failed:\n\n${error?.message || 'Unknown error'}`);
     }

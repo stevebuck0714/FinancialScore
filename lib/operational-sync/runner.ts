@@ -13,6 +13,14 @@ export type SyncFrequency = 'daily' | 'weekly' | 'monthly';
 export type OperationalSyncResult = {
   success: boolean;
   recordsCreated: number;
+  moduleCounts?: {
+    cash: number;
+    arAging: number;
+    apAging: number;
+    customers: number;
+    products: number;
+    inventory: number;
+  };
   errors: string[];
 };
 
@@ -62,6 +70,7 @@ export async function runOperationalSyncForConnection(
     return {
       success: result.success,
       recordsCreated: result.recordsCreated,
+      moduleCounts: result.moduleCounts,
       errors: normalizeErrors(result.errors),
     };
   }

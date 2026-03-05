@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
       platform,
       frequency,
       recordsCreated: result.recordsCreated,
+      moduleCounts: result.moduleCounts,
       errors: result.errors,
     });
   } catch (error) {

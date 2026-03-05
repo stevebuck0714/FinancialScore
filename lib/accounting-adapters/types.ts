@@ -66,6 +66,14 @@ export interface InventoryData {
 export interface SyncResult {
   success: boolean;
   recordsCreated: number;
+  moduleCounts?: {
+    cash: number;
+    arAging: number;
+    apAging: number;
+    customers: number;
+    products: number;
+    inventory: number;
+  };
   errors?: string[];
   timestamp: Date;
 }
