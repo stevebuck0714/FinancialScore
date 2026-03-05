@@ -250,12 +250,19 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
   };
 
   const handleEdit = (loan: Loan) => {
+    const rawLoanAmount = typeof loan.loanAmount === 'string'
+      ? parseFloat(loan.loanAmount.replace(/,/g, ''))
+      : Number(loan.loanAmount ?? 0);
+    const rawInterestRate = typeof loan.interestRate === 'string'
+      ? parseFloat(loan.interestRate.replace(/,/g, ''))
+      : Number(loan.interestRate ?? 0);
+
     setFormData({
       loanName: loan.loanName,
       loanIdNumber: loan.loanIdNumber || '',
       lenderName: loan.lenderName,
-      loanAmount: loan.loanAmount,
-      interestRate: loan.interestRate || 0,
+      loanAmount: Number.isFinite(rawLoanAmount) ? Math.round(rawLoanAmount) : 0,
+      interestRate: Number.isFinite(rawInterestRate) ? Number(rawInterestRate.toFixed(2)) : 0,
       termMonths: loan.termMonths || 0,
       startDate: typeof loan.startDate === 'string' ? loan.startDate.split('T')[0] : new Date(loan.startDate).toISOString().split('T')[0],
       endDate: loan.endDate ? (typeof loan.endDate === 'string' ? loan.endDate.split('T')[0] : new Date(loan.endDate).toISOString().split('T')[0]) : '',
@@ -331,8 +338,7 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b' }}>Loan Management</h2>
+      <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '16px' }}>
         <button
           onClick={() => setIsAddingLoan(!isAddingLoan)}
           style={{ padding: '8px 16px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}
@@ -350,12 +356,12 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
       {/* Add/Edit Form */}
       {isAddingLoan && (
         <form onSubmit={handleSubmit} style={{ marginBottom: '16px' }}>
-          <div style={{ background: 'white', borderRadius: '6px', padding: '16px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
+          <div style={{ background: 'white', borderRadius: '6px', padding: '10px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>
               {editingLoanId ? 'Edit Loan' : 'Add New Loan'}
             </h3>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '10px 16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '6px 10px' }}>
               <FormRow label="Loan Name" htmlFor="loanName" required>
                 <input
                   id="loanName"
@@ -393,23 +399,30 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
               <FormRow label="Loan Amount" htmlFor="loanAmount" required>
                 <input
                   id="loanAmount"
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="numeric"
                   required
-                  value={formData.loanAmount}
-                  onChange={(e) => setFormData({ ...formData, loanAmount: parseFloat(e.target.value) || 0 })}
+                  value={`$${Math.round(Number(formData.loanAmount || 0)).toLocaleString('en-US')}`}
+                  onChange={(e) => {
+                    const digitsOnly = e.target.value.replace(/[^\d]/g, '');
+                    setFormData({ ...formData, loanAmount: Math.round(parseFloat(digitsOnly) || 0) });
+                  }}
+                  onBlur={() => setFormData({ ...formData, loanAmount: Math.round(Number(formData.loanAmount || 0)) })}
                   style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
-                  placeholder="0.00"
+                  placeholder="$0"
                 />
               </FormRow>
 
               <FormRow label="Interest Rate (%)" htmlFor="interestRate">
                 <input
                   id="interestRate"
-                  type="number"
-                  step="0.01"
-                  value={formData.interestRate}
-                  onChange={(e) => setFormData({ ...formData, interestRate: parseFloat(e.target.value) || 0 })}
+                  type="text"
+                  value={Number(formData.interestRate || 0).toFixed(2)}
+                  onChange={(e) => {
+                    const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+                    setFormData({ ...formData, interestRate: parseFloat(cleaned) || 0 });
+                  }}
+                  onBlur={() => setFormData({ ...formData, interestRate: Number(Number(formData.interestRate || 0).toFixed(2)) })}
                   style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                   placeholder="0.00"
                 />
@@ -488,32 +501,14 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                 />
               </FormRow>
 
-              <div style={{ gridColumn: '1 / -1', marginTop: '6px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
+              <div style={{ gridColumn: '1 / -1', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid #e5e7eb' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '8px' }}>
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>Search Loan Documents</div>
                     <div style={{ fontSize: '12px', color: '#64748b' }}>
                       Pick a loan document uploaded in Documents, then ask a question (e.g., “list financial covenants”).
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => window.open('/?view=admin', '_blank', 'noreferrer')}
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: '8px',
-                      border: '1px solid #e2e8f0',
-                      background: '#fff',
-                      color: '#0f172a',
-                      fontSize: '12px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title="Open Documents tab in a new window"
-                  >
-                    Open Documents
-                  </button>
                 </div>
 
                 {loanDocsError && (
@@ -522,8 +517,8 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '110px', fontSize: '12px', fontWeight: 600, color: '#475569' }}>Loan doc</div>
                       <select
@@ -560,7 +555,7 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
                     <input
                       value={loanDocQuestion}
                       onChange={(e) => setLoanDocQuestion(e.target.value)}
@@ -627,7 +622,7 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', marginTop: '14px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 onClick={resetForm}
@@ -657,12 +652,12 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
           {loans.map((loan) => (
             <div
               key={loan.id}
-              style={{ background: 'white', borderRadius: '6px', padding: '16px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', cursor: 'pointer' }}
+              style={{ background: 'white', borderRadius: '6px', padding: '6px 8px', border: '2px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', cursor: 'pointer' }}
               onClick={() => onLoanSelected && onLoanSelected(loan)}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '6px' }}>
                 <div style={{ flex: 1 }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>{loan.loanName}</h3>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '2px', lineHeight: 1.2 }}>{loan.loanName}</h3>
                   {loan.loanIdNumber && (
                     <p style={{ fontSize: '12px', color: '#64748b' }}>ID: {loan.loanIdNumber}</p>
                   )}
@@ -670,60 +665,57 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                 {getStatusBadge(loan.status)}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
-                <div>
-                  <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Lender</p>
-                  <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.lenderName}</p>
-                </div>
-                <div>
-                  <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Amount</p>
-                  <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{formatCurrency(loan.loanAmount)}</p>
-                </div>
-                <div>
-                  <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Type</p>
-                  <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.loanType.replace('_', ' ')}</p>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: loan.notes ? '12px' : '0' }}>
-                {loan.interestRate && (
+              <div style={{ overflowX: 'auto', marginBottom: loan.notes ? '6px' : '0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(110px, 1fr))', gap: '6px', minWidth: '680px' }}>
                   <div>
-                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Rate</p>
-                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.interestRate}%</p>
+                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Lender</p>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.lenderName}</p>
                   </div>
-                )}
-                <div>
-                  <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Start Date</p>
-                  <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{formatDate(loan.startDate)}</p>
-                </div>
-                {loan.endDate && (
                   <div>
-                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Maturity</p>
-                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{formatDate(loan.endDate)}</p>
+                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Amount</p>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{formatCurrency(loan.loanAmount)}</p>
                   </div>
-                )}
+                  <div>
+                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Type</p>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.loanType.replace('_', ' ')}</p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Rate</p>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>
+                      {typeof loan.interestRate === 'number' ? `${loan.interestRate.toFixed(2)}%` : 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Start Date</p>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{formatDate(loan.startDate)}</p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>Maturity</p>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: '#1e293b' }}>{loan.endDate ? formatDate(loan.endDate) : 'N/A'}</p>
+                  </div>
+                </div>
               </div>
 
               {loan.notes && (
-                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px', borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>{loan.notes}</p>
+                <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '6px', borderTop: '1px solid #e5e7eb', paddingTop: '6px' }}>{loan.notes}</p>
               )}
 
-              <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', gap: '6px', paddingTop: '6px', borderTop: '1px solid #e5e7eb' }} onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => handleEdit(loan)}
-                  style={{ padding: '6px 12px', fontSize: '13px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500' }}
+                  style={{ padding: '5px 10px', fontSize: '12px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500' }}
                 >
                   Edit
                 </button>
                 <button
                   onClick={() => handleDelete(loan.id)}
-                  style={{ padding: '6px 12px', fontSize: '13px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500' }}
+                  style={{ padding: '5px 10px', fontSize: '12px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500' }}
                 >
                   Delete
                 </button>
                 <button
                   onClick={() => onLoanSelected && onLoanSelected(loan)}
-                  style={{ padding: '6px 12px', fontSize: '13px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500', marginLeft: 'auto' }}
+                  style={{ padding: '5px 10px', fontSize: '12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500', marginLeft: 'auto' }}
                 >
                   View Covenants
                 </button>

@@ -1169,7 +1169,7 @@ export default function CovenantsTab({
           { id: 'details', label: 'Details' },
           { id: 'alerts', label: 'Alerts' },
           { id: 'settings', label: 'Settings' },
-          { id: 'add-loan', label: 'Add a Loan', icon: <Building2 size={16} /> }
+          { id: 'add-loan', label: 'ADD/EDIT a Loan', icon: <Building2 size={16} /> }
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1707,9 +1707,6 @@ export default function CovenantsTab({
 
           {/* Loan Information */}
           <div style={{ background: 'white', borderRadius: '8px', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-              Loan Information
-            </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '4px' }}>
@@ -1849,7 +1846,7 @@ export default function CovenantsTab({
             <div style={{ marginBottom: '16px' }}>
               <div style={{ marginBottom: '12px' }}>
                 <div style={{ fontSize: '14px', color: '#374151', fontWeight: '600', marginBottom: '8px' }}>
-                  📋 How Consultants Set Covenant Requirements:
+                  📋 How to Set Covenant Requirements:
                 </div>
                 <div style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
                   <strong>Step 1:</strong> Check "Applicable" for covenants included in your client's loan agreement<br/>
