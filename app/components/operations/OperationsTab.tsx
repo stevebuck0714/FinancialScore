@@ -557,9 +557,32 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     loading: { border: '#e2e8f0', bg: '#f8fafc', badgeBg: '#f1f5f9', badgeColor: '#475569', label: 'Loading' },
   };
 
+  const hasRealModuleData = (type?: OpsDataType): boolean => {
+    if (!type) return false;
+    const dataset =
+      type === 'ar-aging'
+        ? arData
+        : type === 'ap-aging'
+          ? apData
+          : type === 'cash'
+            ? cashData
+            : type === 'inventory'
+              ? inventoryData
+              : type === 'customers'
+                ? customerData
+                : type === 'products'
+                  ? productData
+                  : null;
+    return Array.isArray(dataset?.records) && dataset.records.length > 0;
+  };
+
   const getMonitorInsight = (card: MonitorCard): { headline: string; detail: string; severity: CardSeverity } => {
-    if (!arData?.summary || !apData?.summary || !cashData?.summary) {
-      return { headline: 'Calculating from operational data...', detail: card.trigger, severity: smartCardsLoading ? 'loading' : 'normal' };
+    if (card.dataType && !hasRealModuleData(card.dataType)) {
+      return {
+        headline: 'No real data for this module yet',
+        detail: 'Run operational sync and expand date range to populate this signal.',
+        severity: 'loading',
+      };
     }
 
     const arSummary = arData.summary || {};
@@ -679,20 +702,53 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
         severity: change <= -10 ? 'warning' : 'normal',
       };
     }
+    if (card.dataType === 'inventory') {
+      const totalValue = Number(inventorySummary.totalValue || 0);
+      const itemCount = Number(inventorySummary.itemCount || 0);
+      return {
+        headline: `Inventory ${formatCurrency(totalValue)}`,
+        detail: `${itemCount} items with tracked value`,
+        severity: totalValue > 0 ? 'normal' : 'loading',
+      };
+    }
+    if (card.dataType === 'products') {
+      const products = Array.isArray(productData?.summary?.topProducts) ? productData.summary.topProducts : [];
+      const avgMargin = products.length
+        ? products.reduce((sum: number, row: any) => sum + Number(row.grossMarginPct || 0), 0) / products.length
+        : 0;
+      return {
+        headline: `Avg product margin ${avgMargin.toFixed(1)}%`,
+        detail: `${products.length} products with sales rows`,
+        severity: products.length ? 'normal' : 'loading',
+      };
+    }
+    if (card.dataType === 'customers') {
+      const customers = Array.isArray(customerData?.summary?.topCustomers) ? customerData.summary.topCustomers : [];
+      const totalRevenue = customers.reduce((sum: number, row: any) => sum + Number(row.totalRevenue || 0), 0);
+      return {
+        headline: `${customers.length} customers with sales`,
+        detail: `Revenue tracked ${formatCurrency(totalRevenue)}`,
+        severity: customers.length ? 'normal' : 'loading',
+      };
+    }
 
-    return { headline: 'Signal configured for this sector', detail: card.trigger, severity: 'normal' };
+    return {
+      headline: 'No real data-backed signal available',
+      detail: 'This card is hidden until a mapped module has real records.',
+      severity: 'loading',
+    };
   };
 
   const getInvestigateInsight = (playbook: InvestigatePlaybook): InvestigateInsight => {
-    if (!arData?.summary || !apData?.summary || !cashData?.summary) {
+    if (playbook.dataType && !hasRealModuleData(playbook.dataType)) {
       return {
-        whyNow: 'Preparing signals from live operational data...',
-        impact: 'Impact pending data refresh',
+        whyNow: 'No real data for this module yet',
+        impact: 'Run operational sync and widen date range to generate investigate outputs',
         drivers: [],
         startHere: playbook.path,
         owner: 'Ops Team',
         eta: '1-2 days',
-        freshness: 'Refreshing',
+        freshness: 'No records',
         confidence: 'Low',
         severity: smartCardsLoading ? 'loading' : 'normal',
       };
@@ -856,24 +912,63 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       };
     }
 
-    const fallbackSeverity: CardSeverity =
-      playbook.dataType === 'ar-aging'
-        ? Number(arSummary.over30Pct || 0) >= 30 ? 'warning' : 'normal'
-        : playbook.dataType === 'ap-aging'
-          ? Number(apSummary.over30Pct || 0) >= 30 ? 'warning' : 'normal'
-          : playbook.dataType === 'cash'
-            ? Number(cashSummary.changePercent || 0) <= -8 ? 'warning' : 'normal'
-            : 'normal';
+    if (playbook.dataType === 'products') {
+      const products = Array.isArray(productsSummary.topProducts) ? productsSummary.topProducts : [];
+      const avgMargin = products.length
+        ? products.reduce((sum: number, row: any) => sum + Number(row.grossMarginPct || 0), 0) / products.length
+        : 0;
+      return {
+        whyNow: `Product margin context ${avgMargin.toFixed(1)}% across ${products.length} items`,
+        impact: playbook.outcome,
+        drivers: products.slice(0, 3).map((row: any) => `${row.name} (${formatCurrency(Number(row.totalRevenue || 0))})`),
+        startHere: playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: products.length ? 'Medium' : 'Low',
+        severity: products.length ? 'normal' : 'loading',
+      };
+    }
+    if (playbook.dataType === 'inventory') {
+      const totalValue = Number(inventorySummary.totalValue || 0);
+      const itemCount = Number(inventorySummary.itemCount || 0);
+      return {
+        whyNow: `Inventory snapshot ${formatCurrency(totalValue)} across ${itemCount} items`,
+        impact: playbook.outcome,
+        drivers: [],
+        startHere: playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: itemCount > 0 ? 'Medium' : 'Low',
+        severity: itemCount > 0 ? 'normal' : 'loading',
+      };
+    }
+    if (playbook.dataType === 'customers') {
+      const topCustomers = (Array.isArray(customersSummary.topCustomers) ? customersSummary.topCustomers : []).slice(0, 3);
+      return {
+        whyNow: `Customer sales rows present for ${topCustomers.length} leading accounts`,
+        impact: playbook.outcome,
+        drivers: topCustomers.map((row: any) => `${row.name} (${formatCurrency(Number(row.totalRevenue || 0))})`),
+        startHere: playbook.path,
+        owner: ownerMeta.owner,
+        eta: ownerMeta.eta,
+        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        confidence: topCustomers.length ? 'Medium' : 'Low',
+        severity: topCustomers.length ? 'normal' : 'loading',
+      };
+    }
+
     return {
-      whyNow: 'Playbook ready with current period context',
-      impact: playbook.outcome,
+      whyNow: 'No real data-backed investigate output yet',
+      impact: 'This playbook is unavailable until real records exist for its module',
       drivers: [],
       startHere: playbook.path,
       owner: ownerMeta.owner,
       eta: ownerMeta.eta,
-      freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
-      confidence: 'Medium',
-      severity: fallbackSeverity,
+      freshness: 'No records',
+      confidence: 'Low',
+      severity: 'loading',
     };
   };
 

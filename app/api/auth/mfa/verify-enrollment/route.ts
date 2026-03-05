@@ -127,8 +127,17 @@ export async function POST(request: NextRequest) {
         }).catch(err => {
           console.error('⚠️ Failed to send trusted device email notification:', err);
         });
-      } catch (error) {
-        console.error('⚠️ Failed to create trusted device after enrollment:', error);
+      } catch (error: any) {
+        console.error('❌ Trusted device persistence failed after MFA enrollment:', error);
+        return NextResponse.json(
+          {
+            error:
+              'MFA enrollment succeeded, but trusted device could not be saved. Please try again.',
+            code: 'TRUSTED_DEVICE_SAVE_FAILED',
+            details: error?.message || 'Unknown trusted-device error',
+          },
+          { status: 500 }
+        );
       }
     }
 

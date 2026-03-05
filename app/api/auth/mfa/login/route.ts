@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
   try {
     const appScope = getMfaAppScope(request);
     const acceptedAppScopes = getAcceptedMfaAppScopes(request);
-    const { userId, token, isBackupCode, rememberDevice } = await request.json();
+    const { userId, token, isBackupCode, rememberDevice, trustDurationDays } = await request.json();
 
     if (!userId || !token) {
       return NextResponse.json(
@@ -139,9 +139,8 @@ export async function POST(request: NextRequest) {
       try {
         console.log('🔐 Creating trusted device for user:', userId);
         const { token: deviceToken, device, trustDurationDays: effectiveTrustDurationDays } =
-          await createTrustedDevice(userId, request);
-        
-        // Set cookie with device token
+          await createTrustedDevice(userId, request, trustDurationDays);
+
         const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();
         response.cookies.set(
           getMfaDeviceCookieName(userId),
@@ -149,9 +148,13 @@ export async function POST(request: NextRequest) {
           getMfaDeviceCookieOptions(request, trustDurationDaysValue * 24 * 60 * 60)
         );
 
-        console.log('✅ Trusted device created:', device.deviceName);
+        console.log('✅ Trusted device created:', {
+          userId,
+          deviceName: device.deviceName,
+          trustDurationDays: trustDurationDaysValue,
+          requestHost: request.nextUrl.hostname,
+        });
 
-        // Send email notification (non-blocking)
         const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
         sendTrustedDeviceNotification({
           to: user.email,
@@ -163,11 +166,18 @@ export async function POST(request: NextRequest) {
           manageDevicesLink: `${baseUrl}/settings/security`
         }).catch(err => {
           console.error('⚠️ Failed to send trusted device email notification:', err);
-          // Don't fail the login if email fails
         });
-      } catch (error) {
-        console.error('⚠️ Failed to create trusted device:', error);
-        // Don't fail the login if trusted device creation fails
+      } catch (error: any) {
+        console.error('❌ Trusted device persistence failed during MFA login:', error);
+        return NextResponse.json(
+          {
+            error:
+              'MFA verification passed, but trusted device could not be saved. Please try again.',
+            code: 'TRUSTED_DEVICE_SAVE_FAILED',
+            details: error?.message || 'Unknown trusted-device error',
+          },
+          { status: 500 }
+        );
       }
     }
 

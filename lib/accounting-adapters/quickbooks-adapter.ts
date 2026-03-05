@@ -137,6 +137,66 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  private tryParseDateString(value: string): Date | null {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return null;
+
+    // Handle date ranges like "2026-01-01 - 2026-01-31" by taking the end.
+    const rangeParts = trimmed.split(' - ');
+    const candidate = (rangeParts.length > 1 ? rangeParts[rangeParts.length - 1] : trimmed).trim();
+
+    const parsed = new Date(`${candidate}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) {
+      parsed.setHours(0, 0, 0, 0);
+      return parsed;
+    }
+
+    // Try native parsing as fallback.
+    const parsedNative = new Date(candidate);
+    if (!Number.isNaN(parsedNative.getTime())) {
+      parsedNative.setHours(0, 0, 0, 0);
+      return parsedNative;
+    }
+
+    return null;
+  }
+
+  private extractColumnDate(column: any): Date | null {
+    if (!column || typeof column !== 'object') return null;
+
+    const directCandidates: string[] = [];
+    if (typeof column.ColTitle === 'string') directCandidates.push(column.ColTitle);
+    if (typeof column.value === 'string') directCandidates.push(column.value);
+
+    const meta = column.MetaData;
+    if (Array.isArray(meta)) {
+      for (const entry of meta) {
+        if (entry && typeof entry === 'object') {
+          if (typeof (entry as any).value === 'string') directCandidates.push((entry as any).value);
+          if (typeof (entry as any).Name === 'string') directCandidates.push((entry as any).Name);
+        } else if (typeof entry === 'string') {
+          directCandidates.push(entry);
+        }
+      }
+    } else if (meta && typeof meta === 'object' && typeof (meta as any).value === 'string') {
+      directCandidates.push((meta as any).value);
+    }
+
+    for (const candidate of directCandidates) {
+      const parsed = this.tryParseDateString(candidate);
+      if (parsed) return parsed;
+    }
+
+    const json = JSON.stringify(column);
+    const isoMatch = json.match(/\b\d{4}-\d{2}-\d{2}\b/);
+    if (isoMatch?.[0]) {
+      const parsedIso = this.tryParseDateString(isoMatch[0]);
+      if (parsedIso) return parsedIso;
+    }
+
+    return null;
+  }
+
   private normalizeDay(date: Date): Date {
     const copy = new Date(date);
     copy.setHours(0, 0, 0, 0);
@@ -187,15 +247,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
         .map((column, index) => ({ column, index }))
         .filter((entry) => entry.index > 0)
         .map((entry) => {
-          const colTitle =
-            typeof entry.column?.ColTitle === 'string' && entry.column.ColTitle.trim()
-              ? entry.column.ColTitle.trim()
-              : typeof entry.column?.MetaData?.value === 'string'
-                ? entry.column.MetaData.value
-                : '';
-          const parsed = new Date(`${colTitle}T00:00:00`);
-          if (Number.isNaN(parsed.getTime())) return null;
-          parsed.setHours(0, 0, 0, 0);
+          const parsed = this.extractColumnDate(entry.column);
+          if (!parsed) return null;
           return { index: entry.index, date: parsed };
         })
         .filter((entry): entry is { index: number; date: Date } => Boolean(entry));
@@ -394,6 +447,62 @@ export class QuickBooksAdapter implements AccountingAdapter {
       console.error('Error fetching customer sales from QuickBooks:', error);
       throw error;
     }
+  }
+
+  private async getCustomerSalesDailyBuckets(
+    startDate: Date,
+    endDate: Date
+  ): Promise<Array<{ snapshotDate: Date; rows: CustomerSalesData[] }>> {
+    const startStr = this.formatDate(startDate);
+    const endStr = this.formatDate(endDate);
+    const query = `SELECT * FROM Invoice WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`;
+    const response = await this.makeRequest(`/query?query=${encodeURIComponent(query)}`);
+    const data = await response.json();
+    const invoices = data.QueryResponse?.Invoice || [];
+
+    const byDateAndCustomer = new Map<string, Map<string, CustomerSalesData>>();
+
+    for (const invoice of invoices) {
+      const txnDateRaw = typeof invoice?.TxnDate === 'string' ? invoice.TxnDate : '';
+      const txnDate = this.tryParseDateString(txnDateRaw);
+      if (!txnDate) continue;
+      const dayKey = this.formatDate(txnDate);
+
+      const customerId = String(invoice?.CustomerRef?.value || '');
+      const customerName = String(invoice?.CustomerRef?.name || 'Unknown');
+      const amount = Number(invoice?.TotalAmt || 0);
+      const customerKey = `${customerId}::${customerName}`;
+
+      if (!byDateAndCustomer.has(dayKey)) byDateAndCustomer.set(dayKey, new Map());
+      const byCustomer = byDateAndCustomer.get(dayKey)!;
+      if (!byCustomer.has(customerKey)) {
+        byCustomer.set(customerKey, {
+          customerId: customerId || undefined,
+          customerName,
+          revenue: 0,
+          invoiceCount: 0,
+          avgInvoiceSize: 0,
+          period: txnDate,
+        });
+      }
+
+      const row = byCustomer.get(customerKey)!;
+      row.revenue += amount;
+      row.invoiceCount += 1;
+    }
+
+    const results: Array<{ snapshotDate: Date; rows: CustomerSalesData[] }> = [];
+    const sortedDays = Array.from(byDateAndCustomer.keys()).sort();
+    for (const dayKey of sortedDays) {
+      const snapshotDate = this.normalizeDay(new Date(`${dayKey}T00:00:00`));
+      const rows = Array.from(byDateAndCustomer.get(dayKey)!.values()).map((row) => ({
+        ...row,
+        avgInvoiceSize: row.invoiceCount > 0 ? row.revenue / row.invoiceCount : 0,
+        period: snapshotDate,
+      }));
+      results.push({ snapshotDate, rows });
+    }
+    return results;
   }
   
   /**
@@ -618,24 +727,52 @@ export class QuickBooksAdapter implements AccountingAdapter {
       
       // 4. Sync Customer Sales (yesterday's data)
       try {
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        
-        const customerSales = await this.getCustomerSales(yesterday, yesterday);
-        for (const sale of customerSales) {
-          await prisma.customerSalesSnapshot.create({
-            data: {
-              companyId: this.config.companyId,
-              snapshotDate: today,
-              frequency,
-              customerId: sale.customerId,
-              customerName: sale.customerName,
-              revenue: sale.revenue,
-              invoiceCount: sale.invoiceCount,
-              avgInvoiceSize: sale.avgInvoiceSize
-            }
-          });
-          recordsCreated++;
+        if (frequency === 'daily') {
+          const startDate = this.resolveCashHistoryStartDate(today);
+          const buckets = await this.getCustomerSalesDailyBuckets(startDate, today);
+          for (const bucket of buckets) {
+            await prisma.customerSalesSnapshot.deleteMany({
+              where: {
+                companyId: this.config.companyId,
+                frequency,
+                snapshotDate: bucket.snapshotDate,
+              },
+            });
+            if (!bucket.rows.length) continue;
+            await prisma.customerSalesSnapshot.createMany({
+              data: bucket.rows.map((sale) => ({
+                companyId: this.config.companyId,
+                snapshotDate: bucket.snapshotDate,
+                frequency,
+                customerId: sale.customerId,
+                customerName: sale.customerName,
+                revenue: sale.revenue,
+                invoiceCount: sale.invoiceCount,
+                avgInvoiceSize: sale.avgInvoiceSize,
+              })),
+            });
+            recordsCreated += bucket.rows.length;
+          }
+        } else {
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          
+          const customerSales = await this.getCustomerSales(yesterday, yesterday);
+          for (const sale of customerSales) {
+            await prisma.customerSalesSnapshot.create({
+              data: {
+                companyId: this.config.companyId,
+                snapshotDate: today,
+                frequency,
+                customerId: sale.customerId,
+                customerName: sale.customerName,
+                revenue: sale.revenue,
+                invoiceCount: sale.invoiceCount,
+                avgInvoiceSize: sale.avgInvoiceSize
+              }
+            });
+            recordsCreated++;
+          }
         }
       } catch (error: any) {
         errors.push(`Customer sales sync failed: ${error.message}`);
