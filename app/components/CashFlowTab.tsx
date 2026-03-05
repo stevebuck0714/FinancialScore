@@ -97,8 +97,9 @@ export default function CashFlowTab({
     
     // Financing Activities
     const changeInDebt = (curr.ltd || 0) - (prev.ltd || 0);
+    const changeInLOC = (curr.loc || 0) - (prev.loc || 0);
     const changeInEquity = (curr.totalEquity || 0) - (prev.totalEquity || 0);
-    const financingCashFlow = changeInDebt + changeInEquity;
+    const financingCashFlow = changeInDebt + changeInLOC + changeInEquity;
     
     // Net Change and FCF
     const netCashChange = operatingCashFlow + investingCashFlow + financingCashFlow;
@@ -138,6 +139,7 @@ export default function CashFlowTab({
       capitalExpenditures,
       investingCashFlow,
       changeInDebt,
+      changeInLOC,
       changeInEquity,
       financingCashFlow,
       netCashChange,
@@ -178,6 +180,7 @@ export default function CashFlowTab({
         capitalExpenditures: quarter.reduce((sum, d) => sum + d.capitalExpenditures, 0),
         investingCashFlow: quarter.reduce((sum, d) => sum + d.investingCashFlow, 0),
         changeInDebt: quarter.reduce((sum, d) => sum + d.changeInDebt, 0),
+        changeInLOC: quarter.reduce((sum, d) => sum + d.changeInLOC, 0),
         changeInEquity: quarter.reduce((sum, d) => sum + d.changeInEquity, 0),
         financingCashFlow: quarter.reduce((sum, d) => sum + d.financingCashFlow, 0),
         netCashChange: quarter.reduce((sum, d) => sum + d.netCashChange, 0),
@@ -226,6 +229,7 @@ export default function CashFlowTab({
           capitalExpenditures: yearData.reduce((sum, d) => sum + d.capitalExpenditures, 0),
           investingCashFlow: yearData.reduce((sum, d) => sum + d.investingCashFlow, 0),
           changeInDebt: yearData.reduce((sum, d) => sum + d.changeInDebt, 0),
+          changeInLOC: yearData.reduce((sum, d) => sum + d.changeInLOC, 0),
           changeInEquity: yearData.reduce((sum, d) => sum + d.changeInEquity, 0),
           financingCashFlow: yearData.reduce((sum, d) => sum + d.financingCashFlow, 0),
           netCashChange: yearData.reduce((sum, d) => sum + d.netCashChange, 0),
@@ -256,8 +260,9 @@ export default function CashFlowTab({
     const capitalExpenditures = changeInFixedAssets + depreciation;
     const investingCashFlow = -capitalExpenditures;
     const changeInDebt = (curr.ltd || 0) - (prev.ltd || 0);
+    const changeInLOC = (curr.loc || 0) - (prev.loc || 0);
     const changeInEquity = (curr.totalEquity || 0) - (prev.totalEquity || 0);
-    const financingCashFlow = changeInDebt + changeInEquity;
+    const financingCashFlow = changeInDebt + changeInLOC + changeInEquity;
     const freeCashFlow = operatingCashFlow - Math.max(0, capitalExpenditures);
     const cashFlowMargin = (curr.revenue || 0) > 0 ? (operatingCashFlow / (curr.revenue || 1)) * 100 : 0;
     return { operatingCashFlow, investingCashFlow, financingCashFlow, freeCashFlow, cashFlowMargin };
@@ -475,7 +480,7 @@ export default function CashFlowTab({
                 <strong>Definition:</strong> Cash from or to investors and creditors. Includes debt proceeds/repayments and equity contributions/distributions.
               </p>
               <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#475569', fontFamily: 'monospace', background: '#f1f5f9', padding: '8px', borderRadius: '4px' }}>
-                <strong>Formula:</strong> Change in Debt + Change in Equity
+                <strong>Formula:</strong> Change in Debt + Change in Line of Credit + Change in Equity
               </p>
               <p style={{ margin: '0', fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
                 <strong>Example:</strong> If the company received $20,000 in new loans and distributed $5,000 to owners, then Financing CF = $20,000 - $5,000 = <strong>$15,000</strong>
@@ -842,6 +847,14 @@ export default function CashFlowTab({
                 {displayData.map((cf, i) => (
                   <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInDebt >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
                     ${Math.round(cf.changeInDebt).toLocaleString()}
+                  </td>
+                ))}
+              </tr>
+              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', paddingLeft: '24px' }}>Change in Line of Credit</td>
+                {displayData.map((cf, i) => (
+                  <td key={i} style={{ padding: '8px 10px', fontSize: '12px', color: cf.changeInLOC >= 0 ? '#10b981' : '#ef4444', textAlign: 'right' }}>
+                    ${Math.round(cf.changeInLOC).toLocaleString()}
                   </td>
                 ))}
               </tr>
