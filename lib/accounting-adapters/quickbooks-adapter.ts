@@ -93,6 +93,26 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return settings;
   }
 
+  private isProgramEnabled(dataDomain: string): boolean {
+    const metadata =
+      this.config.connectionMetadata &&
+      typeof this.config.connectionMetadata === 'object' &&
+      !Array.isArray(this.config.connectionMetadata)
+        ? (this.config.connectionMetadata as Record<string, unknown>)
+        : {};
+    const programs = Array.isArray(metadata.quickbooksOnlinePrograms) ? metadata.quickbooksOnlinePrograms : [];
+    if (!programs.length) return true;
+
+    const normalizedTarget = dataDomain.trim().toLowerCase();
+    const match = programs.find((entry: any) => {
+      const entryDomain = String(entry?.dataDomain || '').trim().toLowerCase();
+      return entryDomain === normalizedTarget;
+    }) as any;
+
+    if (!match) return true;
+    return match.enabled !== false;
+  }
+
   private parseStartDateFromSettings(): Date | null {
     const settings = this.getOperationalSettings();
     const raw = typeof settings.initialSyncStartDate === 'string' ? settings.initialSyncStartDate.trim() : '';
@@ -158,7 +178,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
 
       const response = await this.makeRequest(
-        `/reports/BalanceSheet?start_date=${this.formatDate(chunkStart)}&end_date=${this.formatDate(chunkEnd)}&summarize_column_by=Day&minorversion=65`
+        `/reports/BalanceSheet?start_date=${this.formatDate(chunkStart)}&end_date=${this.formatDate(chunkEnd)}&summarize_column_by=Days&minorversion=65`
       );
       const report = await response.json();
 
@@ -622,31 +642,39 @@ export class QuickBooksAdapter implements AccountingAdapter {
       }
       
       // 5. Sync Product Sales (yesterday's data)
-      try {
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        
-        const productSales = await this.getProductSales(yesterday, yesterday);
-        for (const product of productSales) {
-          await prisma.productSalesSnapshot.create({
-            data: {
-              companyId: this.config.companyId,
-              snapshotDate: today,
-              frequency,
-              itemId: product.itemId,
-              itemName: product.itemName,
-              sku: product.sku,
-              quantitySold: product.quantitySold,
-              revenue: product.revenue,
-              cogs: product.cogs,
-              grossMargin: product.grossMargin,
-              grossMarginPct: product.grossMarginPct
-            }
-          });
-          recordsCreated++;
+      if (this.isProgramEnabled('Products')) {
+        try {
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          
+          const productSales = await this.getProductSales(yesterday, yesterday);
+          for (const product of productSales) {
+            await prisma.productSalesSnapshot.create({
+              data: {
+                companyId: this.config.companyId,
+                snapshotDate: today,
+                frequency,
+                itemId: product.itemId,
+                itemName: product.itemName,
+                sku: product.sku,
+                quantitySold: product.quantitySold,
+                revenue: product.revenue,
+                cogs: product.cogs,
+                grossMargin: product.grossMargin,
+                grossMarginPct: product.grossMarginPct
+              }
+            });
+            recordsCreated++;
+          }
+        } catch (error: any) {
+          if (this.isOptionalProductSalesError(error)) {
+            console.warn('Skipping product sales sync (optional program or QBO permission):', error?.message || error);
+          } else {
+            errors.push(`Product sales sync failed: ${error.message}`);
+          }
         }
-      } catch (error: any) {
-        errors.push(`Product sales sync failed: ${error.message}`);
+      } else {
+        console.log('Skipping product sales sync: Products program disabled in QuickBooks Online settings.');
       }
       
       // 6. Sync Inventory
@@ -713,6 +741,21 @@ export class QuickBooksAdapter implements AccountingAdapter {
     }
     
     return response;
+  }
+
+  private isOptionalProductSalesError(error: unknown): boolean {
+    const message = String((error as any)?.message || '').toLowerCase();
+    return (
+      message.includes('salesbyproduct') ||
+      message.includes('product') ||
+      message.includes('item') ||
+      message.includes('sku') ||
+      message.includes('does not track') ||
+      message.includes('not track') ||
+      message.includes('permission denied') ||
+      message.includes('insufficient permission') ||
+      message.includes('access denied')
+    );
   }
 
 }
