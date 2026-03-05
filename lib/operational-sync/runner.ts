@@ -88,9 +88,15 @@ export async function runOperationalSyncForConnection(
       return syncQuickBooksDesktopOperationalPayload(connection.companyId, frequency, payload);
     }
     const adapter = await AdapterFactory.createFromConnection(connection.id);
-    const isConnected = await adapter.testConnection();
+    let isConnected = false;
+    try {
+      isConnected = await adapter.testConnection();
+    } catch (error: any) {
+      const message = error?.message || 'Connection test failed';
+      return { success: false, recordsCreated: 0, errors: [message] };
+    }
     if (!isConnected) {
-      return { success: false, recordsCreated: 0, errors: ['Connection test failed'] };
+      return { success: false, recordsCreated: 0, errors: ['Connection test failed.'] };
     }
     const result = await adapter.syncAll(frequency);
     await pruneCompanyOperationalData(connection.companyId);

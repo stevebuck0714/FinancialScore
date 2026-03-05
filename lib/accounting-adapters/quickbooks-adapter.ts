@@ -32,12 +32,20 @@ export class QuickBooksAdapter implements AccountingAdapter {
    * Test if the connection is valid
    */
   async testConnection(): Promise<boolean> {
+    if (!this.config.accessToken) {
+      throw new Error('QuickBooks access token is missing on this connection.');
+    }
+    if (!this.config.realmId) {
+      throw new Error('QuickBooks realmId is missing on this connection. Reconnect QuickBooks for this company.');
+    }
+
     try {
-      const response = await this.makeRequest('/query?query=SELECT * FROM CompanyInfo');
-      return response.ok;
-    } catch (error) {
-      console.error('QuickBooks connection test failed:', error);
-      return false;
+      await this.makeRequest(`/companyinfo/${this.config.realmId}?minorversion=65`);
+      return true;
+    } catch (error: any) {
+      const message = error?.message || 'Unknown QuickBooks connection error';
+      console.error('QuickBooks connection test failed:', message);
+      throw new Error(`QuickBooks connection test failed: ${message}`);
     }
   }
   
@@ -141,7 +149,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
     }
 
     const chunkStart = new Date(startDate);
-    const maxChunkDays = 90;
+    // Keep day-level report windows small; large ranges are frequently rejected by QBO.
+    const maxChunkDays = 30;
 
     while (chunkStart <= endDate) {
       const chunkEnd = new Date(chunkStart);
@@ -149,7 +158,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
 
       const response = await this.makeRequest(
-        `/reports/BalanceSheet?start_date=${this.formatDate(chunkStart)}&end_date=${this.formatDate(chunkEnd)}&summarize_column_by=Day`
+        `/reports/BalanceSheet?start_date=${this.formatDate(chunkStart)}&end_date=${this.formatDate(chunkEnd)}&summarize_column_by=Day&minorversion=65`
       );
       const report = await response.json();
 
@@ -683,6 +692,9 @@ export class QuickBooksAdapter implements AccountingAdapter {
    * Make authenticated request to QuickBooks API
    */
   private async makeRequest(endpoint: string): Promise<Response> {
+    if (!this.config.realmId) {
+      throw new Error('QuickBooks realmId is missing on this connection.');
+    }
     const url = `${this.baseUrl}/${this.config.realmId}${endpoint}`;
     
     const response = await fetch(url, {
@@ -695,7 +707,9 @@ export class QuickBooksAdapter implements AccountingAdapter {
     
     if (!response.ok) {
       // TODO: Implement token refresh logic if 401
-      throw new Error(`QuickBooks API error: ${response.status} ${response.statusText}`);
+      const body = await response.text().catch(() => '');
+      const detail = body ? ` - ${body.slice(0, 500)}` : '';
+      throw new Error(`QuickBooks API error: ${response.status} ${response.statusText}${detail}`);
     }
     
     return response;
