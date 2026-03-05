@@ -1080,6 +1080,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Online settings');
       }
+      await loadQboSettings(companyId);
       alert('QuickBooks Online settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save QuickBooks Online settings: ${error?.message || 'Unknown error'}`);

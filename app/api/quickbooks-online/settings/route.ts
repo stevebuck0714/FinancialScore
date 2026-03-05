@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         status: true,
+        syncFrequency: true,
         lastSyncAt: true,
         errorMessage: true,
         connectionMetadata: true,
@@ -119,7 +120,16 @@ export async function GET(request: NextRequest) {
         ? (connection.connectionMetadata as Record<string, unknown>)
         : {};
 
-    const settings = sanitizeSettings(metadata.quickbooksOnlineSettings || defaultSettings);
+    const legacySettings = {
+      syncFrequency: typeof connection?.syncFrequency === 'string' ? connection.syncFrequency : defaultSettings.syncFrequency,
+      syncTime: asString(metadata.operationalPullTime) || defaultSettings.syncTime,
+      initialSyncStartDate: asString(metadata.initialSyncStartDate),
+      incrementalSync: asString(metadata.incrementalSync),
+      webhookEnabled: asString(metadata.webhookEnabled),
+      cdcEnabled: asString(metadata.cdcEnabled),
+      reconciliationEnabled: asString(metadata.reconciliationEnabled),
+    };
+    const settings = sanitizeSettings(metadata.quickbooksOnlineSettings || legacySettings || defaultSettings);
     const programs = sanitizePrograms(metadata.quickbooksOnlinePrograms || defaultPrograms);
 
     return NextResponse.json({
@@ -219,6 +229,8 @@ export async function POST(request: NextRequest) {
       ok: true,
       companyId,
       message: 'QuickBooks Online settings saved for this company.',
+      settings,
+      programs,
     });
   } catch (error: any) {
     const message = error?.message || 'Failed to save QuickBooks Online settings';
