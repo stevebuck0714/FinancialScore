@@ -3,11 +3,28 @@ import { QuickBooksAdapter } from './quickbooks-adapter';
 import { XeroAdapter } from './xero-adapter';
 import prisma from '@/lib/prisma';
 import { AccountingPlatform } from '@prisma/client';
+import { decryptOAuthToken } from '@/lib/encryption';
 
 /**
  * Factory for creating platform-specific accounting adapters
  */
 export class AdapterFactory {
+  private static decryptTokenForPlatform(platform: AccountingPlatform, token?: string | null): string | undefined {
+    if (!token) return undefined;
+
+    // OAuth-backed platforms persist encrypted tokens in DB.
+    if (platform === 'QUICKBOOKS' || platform === 'XERO') {
+      try {
+        return decryptOAuthToken(token);
+      } catch {
+        // Backward compatibility: if token is already plaintext, use as-is.
+        return token;
+      }
+    }
+
+    return token;
+  }
+
   /**
    * Create an adapter for a specific accounting connection
    */
@@ -30,8 +47,8 @@ export class AdapterFactory {
     const config: AdapterConfig = {
       companyId: connection.companyId,
       connectionId: connection.id,
-      accessToken: connection.accessToken,
-      refreshToken: connection.refreshToken || undefined,
+      accessToken: this.decryptTokenForPlatform(connection.platform, connection.accessToken) || connection.accessToken,
+      refreshToken: this.decryptTokenForPlatform(connection.platform, connection.refreshToken),
       realmId: connection.realmId || undefined,
       tenantId: connection.tenantId || undefined,
       organizationId: connection.organizationId || undefined
