@@ -536,36 +536,6 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                         zIndex: 1,
                       }}
                     >
-                      {getFieldDisplayName('loc')}
-                    </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
-                      <td
-                        key={idx}
-                        style={{
-                          padding: "8px 10px",
-                          textAlign: "right",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        $
-                        {(m.loc || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td
-                      style={{
-                        padding: "8px 10px",
-                        paddingLeft: "20px",
-                        position: "sticky",
-                        left: 0,
-                        background: "white",
-                        zIndex: 1,
-                      }}
-                    >
                       {getFieldDisplayName('ownerBasePay')}
                     </td>
                     {monthly.slice(-36).map((m: any, idx: number) => (
@@ -1727,6 +1697,36 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                       >
                         $
                         {(m.ap || 0).toLocaleString("en-US", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td
+                      style={{
+                        padding: "8px 10px",
+                        paddingLeft: "20px",
+                        position: "sticky",
+                        left: 0,
+                        background: "white",
+                        zIndex: 1,
+                      }}
+                    >
+                      {getFieldDisplayName('loc')}
+                    </td>
+                    {monthly.slice(-36).map((m: any, idx: number) => (
+                      <td
+                        key={idx}
+                        style={{
+                          padding: "8px 10px",
+                          textAlign: "right",
+                          fontFamily: "monospace",
+                        }}
+                      >
+                        $
+                        {(m.loc || 0).toLocaleString("en-US", {
                           minimumFractionDigits: 0,
                           maximumFractionDigits: 0,
                         })}
