@@ -351,6 +351,51 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// PATCH user (site admin only)
+export async function PATCH(request: NextRequest) {
+  try {
+    const context = await requireAuth();
+    if (context.role !== 'SITEADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { id, ...updateFields } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: 'User ID required' }, { status: 400 });
+    }
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!targetUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const updateData: any = {};
+    if (updateFields.name !== undefined) updateData.name = updateFields.name;
+    if (updateFields.email !== undefined) updateData.email = updateFields.email;
+    if (updateFields.phone !== undefined) updateData.phone = updateFields.phone;
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: { id: true, name: true, email: true, phone: true },
+    });
+
+    return NextResponse.json({ user: updatedUser });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 // DELETE user
 export async function DELETE(request: NextRequest) {
   try {

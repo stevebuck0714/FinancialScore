@@ -67,6 +67,89 @@ export default function SiteAdminDashboard(props: any) {
   const [savingTier1RoutingCompanyId, setSavingTier1RoutingCompanyId] = React.useState<string | null>(null);
   const [savingOperationalDataModeCompanyId, setSavingOperationalDataModeCompanyId] = React.useState<string | null>(null);
 
+  const [editingBusinessInfoByCompany, setEditingBusinessInfoByCompany] = React.useState<
+    Record<string, { email: string; name: string; phone: string; addressStreet: string; addressCity: string; addressState: string; addressZip: string; addressCountry: string }>
+  >({});
+  const [savingBusinessInfoCompanyId, setSavingBusinessInfoCompanyId] = React.useState<string | null>(null);
+
+  const getBusinessInfoDraft = (company: any, user: any) => {
+    if (editingBusinessInfoByCompany[company?.id]) return editingBusinessInfoByCompany[company.id];
+    return {
+      email: user?.email || '',
+      name: user?.name || '',
+      phone: user?.phone || '',
+      addressStreet: company?.addressStreet || '',
+      addressCity: company?.addressCity || '',
+      addressState: company?.addressState || '',
+      addressZip: company?.addressZip || '',
+      addressCountry: company?.addressCountry || '',
+    };
+  };
+
+  const saveBusinessInfo = async (companyId: string, userId: string, draft: { email: string; name: string; phone: string; addressStreet: string; addressCity: string; addressState: string; addressZip: string; addressCountry: string }) => {
+    setSavingBusinessInfoCompanyId(companyId);
+    try {
+      const companyRes = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          addressStreet: draft.addressStreet,
+          addressCity: draft.addressCity,
+          addressState: draft.addressState,
+          addressZip: draft.addressZip,
+          addressCountry: draft.addressCountry,
+        }),
+      });
+      if (!companyRes.ok) {
+        const err = await companyRes.json();
+        throw new Error(err?.error || 'Failed to update company info');
+      }
+      const companyData = await companyRes.json();
+
+      const userRes = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: userId,
+          email: draft.email,
+          name: draft.name,
+          phone: draft.phone,
+        }),
+      });
+      if (!userRes.ok) {
+        const err = await userRes.json();
+        throw new Error(err?.error || 'Failed to update user info');
+      }
+      const userData = await userRes.json();
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((c: any) =>
+              c.id === companyId
+                ? { ...c, ...companyData.company }
+                : c
+            )
+          : prev
+      );
+
+      const userObj = users.find((u: any) => u.id === userId);
+      if (userObj && userData.user) {
+        Object.assign(userObj, userData.user);
+      }
+
+      setEditingBusinessInfoByCompany((prev) => {
+        const next = { ...prev };
+        delete next[companyId];
+        return next;
+      });
+    } catch (error: any) {
+      alert(error.message || 'Failed to save business info');
+    } finally {
+      setSavingBusinessInfoCompanyId(null);
+    }
+  };
+
   const getEffectiveTier1Routing = (company: any): { owner: 'CORELYTICS' | 'CONSULTANT'; consultantId: string; supportEmail: string } => {
     const ownerRaw =
       typeof company?.tier1SupportOwner === 'string'
@@ -84,9 +167,9 @@ export default function SiteAdminDashboard(props: any) {
         : '';
     const consultantId = consultantIdRaw || (typeof company?.consultantId === 'string' ? company.consultantId : '') || '';
     const supportEmail =
-      typeof company?.tier1SupportContactEmail === 'string'
+      typeof company?.tier1SupportContactEmail === 'string' && company.tier1SupportContactEmail.trim()
         ? company.tier1SupportContactEmail.trim()
-        : '';
+        : owner === 'CORELYTICS' ? 'support@corelytics.com' : '';
     return { owner, consultantId, supportEmail };
   };
 
@@ -105,7 +188,7 @@ export default function SiteAdminDashboard(props: any) {
           id: companyId,
           tier1SupportOwner: owner,
           tier1SupportConsultantId: owner === 'CONSULTANT' ? consultantId : null,
-          tier1SupportContactEmail: owner === 'CONSULTANT' ? (supportEmail || null) : null,
+          tier1SupportContactEmail: supportEmail || (owner === 'CORELYTICS' ? 'support@corelytics.com' : null),
         }),
       });
       const data = await response.json();
@@ -3678,146 +3761,199 @@ export default function SiteAdminDashboard(props: any) {
                             {/* Expanded Details */}
                             {isExpanded && (
                               <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '8px' }}>
-                                <div style={{ marginBottom: '10px', padding: '10px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                                  <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Tier 1 Support Routing</h4>
-                                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-                                    Current: <strong>{effectiveTier1Routing.owner === 'CONSULTANT' ? 'Consultant' : 'Corelytics'}</strong>
-                                    {effectiveTier1Routing.owner === 'CONSULTANT' && (
-                                      <span>
-                                        {' '}
-                                        ({currentSupportConsultant?.fullName || currentSupportConsultant?.companyName || 'Consultant'})
-                                      </span>
-                                    )}
-                                    {effectiveTier1Routing.owner === 'CONSULTANT' && effectiveTier1Routing.supportEmail && (
-                                      <span> - {effectiveTier1Routing.supportEmail}</span>
-                                    )}
-                                  </div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: '8px', alignItems: 'end' }}>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Tier 1 Owner
-                                      </label>
-                                      <select
-                                        value={tier1RoutingDraft.owner}
-                                        onChange={(e) =>
-                                          setEditingTier1RoutingByCompany((prev) => ({
-                                            ...prev,
-                                            [businessCompany.id]: {
-                                              owner: e.target.value === 'CONSULTANT' ? 'CONSULTANT' : 'CORELYTICS',
-                                              consultantId:
-                                                e.target.value === 'CONSULTANT'
-                                                  ? (tier1RoutingDraft.consultantId || businessCompany.consultantId || '')
-                                                  : '',
-                                              supportEmail:
-                                                e.target.value === 'CONSULTANT' ? tier1RoutingDraft.supportEmail : '',
-                                            },
-                                          }))
-                                        }
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
-                                      >
-                                        <option value="CORELYTICS">Corelytics</option>
-                                        <option value="CONSULTANT">Consultant</option>
-                                      </select>
-                                    </div>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Consultant
-                                      </label>
-                                      <select
-                                        value={tier1RoutingDraft.consultantId}
-                                        disabled={tier1RoutingDraft.owner !== 'CONSULTANT'}
-                                        onChange={(e) =>
-                                          setEditingTier1RoutingByCompany((prev) => ({
-                                            ...prev,
-                                            [businessCompany.id]: {
-                                              owner: tier1RoutingDraft.owner,
-                                              consultantId: e.target.value,
-                                              supportEmail:
-                                                tier1RoutingDraft.supportEmail ||
-                                                (supportConsultants.find((c: any) => c.id === e.target.value)?.email || ''),
-                                            },
-                                          }))
-                                        }
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', background: tier1RoutingDraft.owner !== 'CONSULTANT' ? '#f1f5f9' : 'white' }}
-                                      >
-                                        <option value="">Select consultant</option>
-                                        {supportConsultants.map((consultant: any) => (
-                                          <option key={consultant.id} value={consultant.id}>
-                                            {consultant.companyName || consultant.fullName}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                    <div>
-                                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                                        Tier 1 Contact Email
-                                      </label>
-                                      <input
-                                        type="email"
-                                        value={tier1RoutingDraft.supportEmail}
-                                        disabled={tier1RoutingDraft.owner !== 'CONSULTANT'}
-                                        onChange={(e) =>
-                                          setEditingTier1RoutingByCompany((prev) => ({
-                                            ...prev,
-                                            [businessCompany.id]: {
-                                              owner: tier1RoutingDraft.owner,
-                                              consultantId: tier1RoutingDraft.consultantId,
-                                              supportEmail: e.target.value,
-                                            },
-                                          }))
-                                        }
-                                        placeholder="tier1@consultant.com"
-                                        style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', background: tier1RoutingDraft.owner !== 'CONSULTANT' ? '#f1f5f9' : 'white' }}
-                                      />
-                                    </div>
-                                    <button
-                                      onClick={() =>
-                                        saveTier1Routing(
-                                          businessCompany.id,
-                                          tier1RoutingDraft.owner,
-                                          tier1RoutingDraft.consultantId,
-                                          tier1RoutingDraft.supportEmail
-                                        )
-                                      }
-                                      disabled={savingTier1RoutingCompanyId === businessCompany.id}
-                                      style={{ padding: '6px 12px', background: savingTier1RoutingCompanyId === businessCompany.id ? '#94a3b8' : '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: savingTier1RoutingCompanyId === businessCompany.id ? 'not-allowed' : 'pointer' }}
-                                    >
-                                      {savingTier1RoutingCompanyId === businessCompany.id ? 'Saving...' : 'Save'}
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        setEditingTier1RoutingByCompany((prev) => {
-                                          const next = { ...prev };
-                                          delete next[businessCompany.id];
-                                          return next;
-                                        })
-                                      }
-                                      style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                                    >
-                                      Reset
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {businessCompany?.accountingSystem === 'INFOR_M3' ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
-                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
-                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
-                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
-                                        <div><strong>Type:</strong> Standalone Business</div>
-                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
-                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
-                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
-                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
-                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
+                                {/* Business Information */}
+                                {(() => {
+                                  const biDraft = getBusinessInfoDraft(businessCompany, businessUser);
+                                  const biEditing = !!editingBusinessInfoByCompany[businessCompany.id];
+                                  const biSaving = savingBusinessInfoCompanyId === businessCompany.id;
+                                  const setBiField = (field: string, value: string) =>
+                                    setEditingBusinessInfoByCompany((prev) => ({
+                                      ...prev,
+                                      [businessCompany.id]: { ...biDraft, [field]: value },
+                                    }));
+                                  const inputStyle = { width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' };
+                                  const labelStyle = { fontSize: '11px', fontWeight: '600' as const, color: '#475569', display: 'block', marginBottom: '4px' };
+                                  return (
+                                    <div style={{ marginBottom: '10px', padding: '10px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Business Information</h4>
+                                        <div style={{ display: 'flex', gap: '6px' }}>
+                                          <button
+                                            onClick={() => saveBusinessInfo(businessCompany.id, businessUser?.id, biDraft)}
+                                            disabled={biSaving || !biEditing}
+                                            style={{ padding: '6px 12px', background: biEditing ? '#334155' : '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: biEditing && !biSaving ? 'pointer' : 'not-allowed' }}
+                                          >
+                                            {biSaving ? 'Saving...' : 'Save'}
+                                          </button>
+                                          {biEditing && (
+                                            <button
+                                              onClick={() => setEditingBusinessInfoByCompany((prev) => { const next = { ...prev }; delete next[businessCompany.id]; return next; })}
+                                              style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                            >
+                                              Reset
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {/* Row 1: Company Name, Industry, Type */}
+                                      <div style={{ display: 'flex', gap: '16px', marginBottom: '6px', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <label style={labelStyle}>Company Name:</label>
+                                          <span style={{ fontSize: '13px', color: '#1e293b' }}>{businessCompany?.name || 'Not found'}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <label style={labelStyle}>Industry:</label>
+                                          <span style={{ fontSize: '13px', color: '#1e293b' }}>{businessCompany?.industrySector || 'Not set'}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <label style={labelStyle}>Type:</label>
+                                          <span style={{ fontSize: '13px', color: '#1e293b' }}>Standalone Business</span>
+                                        </div>
+                                      </div>
+                                      {/* Row 2: Email, Name, Phone */}
+                                      <div style={{ display: 'flex', gap: '16px', marginBottom: '6px', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>Email:</label>
+                                          <input type="email" value={biDraft.email} onChange={(e) => setBiField('email', e.target.value)} style={inputStyle} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>Name:</label>
+                                          <input type="text" value={biDraft.name} onChange={(e) => setBiField('name', e.target.value)} style={inputStyle} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>Phone:</label>
+                                          <input type="text" value={biDraft.phone} onChange={(e) => setBiField('phone', e.target.value)} style={inputStyle} />
+                                        </div>
+                                      </div>
+                                      {/* Row 3: Address */}
+                                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 2 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>Street:</label>
+                                          <input type="text" value={biDraft.addressStreet} onChange={(e) => setBiField('addressStreet', e.target.value)} style={inputStyle} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>City:</label>
+                                          <input type="text" value={biDraft.addressCity} onChange={(e) => setBiField('addressCity', e.target.value)} style={inputStyle} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>State:</label>
+                                          <input type="text" value={biDraft.addressState} onChange={(e) => setBiField('addressState', e.target.value)} style={inputStyle} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>ZIP:</label>
+                                          <input type="text" value={biDraft.addressZip} onChange={(e) => setBiField('addressZip', e.target.value)} style={inputStyle} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>Country:</label>
+                                          <input type="text" value={biDraft.addressCountry} onChange={(e) => setBiField('addressCountry', e.target.value)} style={inputStyle} />
+                                        </div>
+                                      </div>
+                                      {/* Row 4: Tier 1 Support Routing */}
+                                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginTop: '6px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>Tier 1 Owner:</label>
+                                          <select
+                                            value={tier1RoutingDraft.owner}
+                                            onChange={(e) =>
+                                              setEditingTier1RoutingByCompany((prev) => ({
+                                                ...prev,
+                                                [businessCompany.id]: {
+                                                  owner: e.target.value === 'CONSULTANT' ? 'CONSULTANT' : 'CORELYTICS',
+                                                  consultantId:
+                                                    e.target.value === 'CONSULTANT'
+                                                      ? (tier1RoutingDraft.consultantId || businessCompany.consultantId || '')
+                                                      : '',
+                                                  supportEmail:
+                                                    e.target.value === 'CONSULTANT' ? tier1RoutingDraft.supportEmail : 'support@corelytics.com',
+                                                },
+                                              }))
+                                            }
+                                            style={inputStyle}
+                                          >
+                                            <option value="CORELYTICS">Corelytics</option>
+                                            <option value="CONSULTANT">Consultant</option>
+                                          </select>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>Consultant:</label>
+                                          <select
+                                            value={tier1RoutingDraft.consultantId}
+                                            disabled={tier1RoutingDraft.owner !== 'CONSULTANT'}
+                                            onChange={(e) =>
+                                              setEditingTier1RoutingByCompany((prev) => ({
+                                                ...prev,
+                                                [businessCompany.id]: {
+                                                  owner: tier1RoutingDraft.owner,
+                                                  consultantId: e.target.value,
+                                                  supportEmail:
+                                                    tier1RoutingDraft.supportEmail ||
+                                                    (supportConsultants.find((c: any) => c.id === e.target.value)?.email || ''),
+                                                },
+                                              }))
+                                            }
+                                            style={{ ...inputStyle, background: tier1RoutingDraft.owner !== 'CONSULTANT' ? '#f1f5f9' : 'white' }}
+                                          >
+                                            <option value="">Select consultant</option>
+                                            {supportConsultants.map((consultant: any) => (
+                                              <option key={consultant.id} value={consultant.id}>
+                                                {consultant.companyName || consultant.fullName}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                                          <label style={{ ...labelStyle, whiteSpace: 'nowrap', marginBottom: 0 }}>Contact Email:</label>
+                                          <input
+                                            type="email"
+                                            value={tier1RoutingDraft.supportEmail}
+                                            disabled={tier1RoutingDraft.owner !== 'CONSULTANT'}
+                                            onChange={(e) =>
+                                              setEditingTier1RoutingByCompany((prev) => ({
+                                                ...prev,
+                                                [businessCompany.id]: {
+                                                  owner: tier1RoutingDraft.owner,
+                                                  consultantId: tier1RoutingDraft.consultantId,
+                                                  supportEmail: e.target.value,
+                                                },
+                                              }))
+                                            }
+                                            placeholder="tier1@consultant.com"
+                                            style={{ ...inputStyle, background: tier1RoutingDraft.owner !== 'CONSULTANT' ? '#f1f5f9' : 'white' }}
+                                          />
+                                        </div>
+                                        <button
+                                          onClick={() =>
+                                            saveTier1Routing(
+                                              businessCompany.id,
+                                              tier1RoutingDraft.owner,
+                                              tier1RoutingDraft.consultantId,
+                                              tier1RoutingDraft.supportEmail
+                                            )
+                                          }
+                                          disabled={savingTier1RoutingCompanyId === businessCompany.id}
+                                          style={{ padding: '6px 12px', background: savingTier1RoutingCompanyId === businessCompany.id ? '#94a3b8' : '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: savingTier1RoutingCompanyId === businessCompany.id ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+                                        >
+                                          {savingTier1RoutingCompanyId === businessCompany.id ? 'Saving...' : 'Save'}
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            setEditingTier1RoutingByCompany((prev) => {
+                                              const next = { ...prev };
+                                              delete next[businessCompany.id];
+                                              return next;
+                                            })
+                                          }
+                                          style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                        >
+                                          Reset
+                                        </button>
                                       </div>
                                     </div>
+                                  );
+                                })()}
 
+                                {businessCompany?.accountingSystem === 'INFOR_M3' ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                       <div>
@@ -4173,24 +4309,7 @@ export default function SiteAdminDashboard(props: any) {
                                     </div>
                                   </div>
                                 ) : businessCompany?.accountingSystem === 'QUICKBOOKS' ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
-                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
-                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
-                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
-                                        <div><strong>Type:</strong> Standalone Business</div>
-                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
-                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
-                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
-                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
-                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
-                                      </div>
-                                    </div>
-
+                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                         <div>
@@ -4396,24 +4515,7 @@ export default function SiteAdminDashboard(props: any) {
                                     </div>
                                   </div>
                                 ) : businessCompany?.accountingSystem === 'QUICKBOOKS_DESKTOP' ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
-                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
-                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
-                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
-                                        <div><strong>Type:</strong> Standalone Business</div>
-                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
-                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
-                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
-                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
-                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
-                                      </div>
-                                    </div>
-
+                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                         <div>
@@ -4641,24 +4743,7 @@ export default function SiteAdminDashboard(props: any) {
                                     </div>
                                   </div>
                                 ) : businessCompany?.accountingSystem === 'DYNAMICS' || businessCompany?.accountingSystem === 'DYNAMICS365' ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
-                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
-                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
-                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
-                                        <div><strong>Type:</strong> Standalone Business</div>
-                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
-                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
-                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
-                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
-                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
-                                      </div>
-                                    </div>
-
+                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                         <div>
@@ -4836,24 +4921,7 @@ export default function SiteAdminDashboard(props: any) {
                                     </div>
                                   </div>
                                 ) : businessCompany?.accountingSystem === 'ACUMATICA' ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
-                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
-                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
-                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
-                                        <div><strong>Type:</strong> Standalone Business</div>
-                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
-                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
-                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
-                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
-                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
-                                      </div>
-                                    </div>
-
+                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                         <div>
@@ -5033,24 +5101,7 @@ export default function SiteAdminDashboard(props: any) {
                                     </div>
                                   </div>
                                 ) : businessCompany?.accountingSystem === 'SAGE_INTACCT' || businessCompany?.accountingSystem === 'SAGE' ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
-                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
-                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
-                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
-                                        <div><strong>Type:</strong> Standalone Business</div>
-                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
-                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
-                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
-                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
-                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
-                                      </div>
-                                    </div>
-
+                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                         <div>
@@ -5228,24 +5279,7 @@ export default function SiteAdminDashboard(props: any) {
                                     </div>
                                   </div>
                                 ) : businessCompany?.accountingSystem === 'ODOO' ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
-                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
-                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
-                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
-                                        <div><strong>Type:</strong> Standalone Business</div>
-                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
-                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
-                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
-                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
-                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
-                                      </div>
-                                    </div>
-
+                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                         <div>
@@ -5429,26 +5463,7 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     </div>
                                   </div>
-                                ) : (
-                                  <div style={{ marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
-                                      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
-                                      <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.6' }}>
-                                        <div><strong>Company Name:</strong> {businessCompany?.name || 'Not found'}</div>
-                                        <div><strong>Industry:</strong> {businessCompany?.industrySector || 'Not set'}</div>
-                                        <div><strong>Type:</strong> Standalone Business</div>
-                                        <div><strong>Email:</strong> {businessUser?.email || 'Not found'}</div>
-                                        <div><strong>Name:</strong> {businessUser?.name || 'Not found'}</div>
-                                        <div><strong>Phone:</strong> {businessUser?.phone || 'Not provided'}</div>
-                                        <div><strong>Address Street:</strong> {businessCompany?.addressStreet || 'Not provided'}</div>
-                                        <div><strong>Address City:</strong> {businessCompany?.addressCity || 'Not provided'}</div>
-                                        <div><strong>Address State:</strong> {businessCompany?.addressState || 'Not provided'}</div>
-                                        <div><strong>Address ZIP:</strong> {businessCompany?.addressZip || 'Not provided'}</div>
-                                        <div><strong>Address Country:</strong> {businessCompany?.addressCountry || 'Not provided'}</div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
+                                ) : null}
 
                                 {/* Subscription Pricing */}
                                 <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px' }}>
