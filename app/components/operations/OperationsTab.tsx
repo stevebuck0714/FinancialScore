@@ -18,7 +18,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
-import { getSectorArApFallbacks, getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
+import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 
@@ -102,21 +102,6 @@ const MOCK_CUSTOMER_INVOICES = [
   { customerName: 'Urban Apparel', invoiceNo: '1058', date: 'Aug 7, 2025', dueDate: 'Sep 6, 2025', currency: 'USD', amountCurrency: 3809, amountHome: 2821.48, amountDueHome: 0 },
   { customerName: 'Urban Apparel', invoiceNo: '1009', date: 'Jun 1, 2025', dueDate: 'Jul 1, 2025', currency: 'USD', amountCurrency: 449, amountHome: 332.59, amountDueHome: 0 },
   { customerName: 'Urban Apparel', invoiceNo: '1048', date: 'May 16, 2025', dueDate: 'Jun 15, 2025', currency: 'USD', amountCurrency: 363, amountHome: 268.89, amountDueHome: 0 }
-];
-const TOP_CUSTOMERS_OVERRIDE = [
-  { name: 'GlobalTech Industries', totalRevenue: 312509 },
-  { name: 'Smith & Associates', totalRevenue: 191948 },
-  { name: 'Premier Solutions LLC', totalRevenue: 184322 },
-  { name: 'Acme Corporation', totalRevenue: 162950 },
-  { name: 'Regional Services Inc', totalRevenue: 132784 },
-  { name: 'Harbor Industrial', totalRevenue: 117800 }
-];
-const OTHER_CUSTOMERS_OVERRIDE = [
-  { name: 'Evergreen Supply Co.', totalRevenue: 74200 },
-  { name: 'Summit Equipment', totalRevenue: 68950 },
-  { name: 'Valley Precision', totalRevenue: 65500 },
-  { name: 'Northwind Parts', totalRevenue: 61200 },
-  { name: 'Brightline Services', totalRevenue: 58400 }
 ];
 const MOCK_AP_VENDORS = [
   { vendorName: 'Blue Ridge Materials', current: 5200, days1to30: 1800, days31to60: 900, days61to90: 600, days90plus: 300 },
@@ -1301,6 +1286,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     if (!customerData) return null;
 
     const { records, summary } = customerData;
+    const summaryTopCustomers = Array.isArray(summary?.topCustomers) ? summary.topCustomers : [];
+    const rankedCustomers = summaryTopCustomers
+      .map((customer: any) => ({
+        name: customer?.name || 'Unknown Customer',
+        totalRevenue: Number(customer?.totalRevenue || 0),
+        totalInvoices: Number(customer?.totalInvoices || 0),
+      }))
+      .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
 
     // Aggregate data by period for trend chart
     const periodTrend = records.reduce((acc: any, record: any) => {
@@ -1326,81 +1319,27 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Customers</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
-              {summary.topCustomers.length}
+              {rankedCustomers.length}
             </div>
           </div>
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Revenue</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
-              {formatCurrency(summary.topCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0))}
+              {formatCurrency(rankedCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0))}
             </div>
           </div>
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Invoices</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
-              {summary.topCustomers.reduce((sum: number, c: any) => sum + c.totalInvoices, 0)}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings</div>
-            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>MTD</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(420000)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>QTD</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(1260000)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>YTD</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(4860000)}</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog $</div>
-            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Total</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(2840000)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Due 30</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(940000)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Due 60</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(1120000)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Due 90</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(780000)}</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog concentration</div>
-            <div style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>
-              Top 5 customers = 56.8%
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings trend (3-month slope)</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>+${formatCurrency(420000).replace('$', '')}/mo</span>
-              <span style={{ color: '#16a34a', fontWeight: 700 }}>↑</span>
+              {rankedCustomers.reduce((sum: number, c: any) => sum + c.totalInvoices, 0)}
             </div>
           </div>
         </div>
 
         {(() => {
-          const fillNeeded = Math.max(0, 10 - TOP_CUSTOMERS_OVERRIDE.length);
-          const filler = OTHER_CUSTOMERS_OVERRIDE.slice(0, fillNeeded);
-          const topTen = [...TOP_CUSTOMERS_OVERRIDE, ...filler].map((customer) => {
+          const topTenRaw = rankedCustomers.slice(0, 10);
+          const allOtherRaw = rankedCustomers.slice(10);
+          const topTen = topTenRaw.map((customer) => {
             const bookingsYtd = customer.totalRevenue;
             const bookingsQtd = Math.round(bookingsYtd * 0.34);
             const bookingsMtd = Math.round(bookingsQtd * 0.45);
@@ -1418,30 +1357,38 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
               backlog30,
               backlog60,
               backlog90,
-              trend
+              trend,
             };
           });
-          const remainingOthers = OTHER_CUSTOMERS_OVERRIDE.slice(fillNeeded);
-          const otherAggregate = remainingOthers.reduce(
-            (acc, customer) => {
-              acc.bookingsYtd += customer.totalRevenue;
-              return acc;
-            },
-            { bookingsYtd: 0 }
-          );
-          const allOther = {
-            customerName: 'All other',
-            bookingsYtd: otherAggregate.bookingsYtd,
-            bookingsQtd: Math.round(otherAggregate.bookingsYtd * 0.34),
-            bookingsMtd: Math.round(otherAggregate.bookingsYtd * 0.15),
-            backlogTotal: Math.round(otherAggregate.bookingsYtd * 0.58),
-            backlog30: Math.round(otherAggregate.bookingsYtd * 0.19),
-            backlog60: Math.round(otherAggregate.bookingsYtd * 0.22),
-            backlog90: Math.round(otherAggregate.bookingsYtd * 0.17),
-            trend: Math.round(otherAggregate.bookingsYtd * 0.01 / 1000)
-          };
-          const demandRows = [...topTen, allOther];
+
+          const allOtherRevenue = allOtherRaw.reduce((sum, customer) => sum + customer.totalRevenue, 0);
+          const allOtherRow =
+            allOtherRevenue > 0
+              ? {
+                  customerName: 'All other',
+                  bookingsYtd: allOtherRevenue,
+                  bookingsQtd: Math.round(allOtherRevenue * 0.34),
+                  bookingsMtd: Math.round(allOtherRevenue * 0.15),
+                  backlogTotal: Math.round(allOtherRevenue * 0.58),
+                  backlog30: Math.round(allOtherRevenue * 0.19),
+                  backlog60: Math.round(allOtherRevenue * 0.22),
+                  backlog90: Math.round(allOtherRevenue * 0.17),
+                  trend: Math.round((allOtherRevenue * 0.01) / 1000),
+                }
+              : null;
+
+          const demandRows = allOtherRow ? [...topTen, allOtherRow] : topTen;
+          const totalBookingsMtd = demandRows.reduce((sum, row) => sum + row.bookingsMtd, 0);
+          const totalBookingsQtd = demandRows.reduce((sum, row) => sum + row.bookingsQtd, 0);
+          const totalBookingsYtd = demandRows.reduce((sum, row) => sum + row.bookingsYtd, 0);
           const backlogTotalAll = demandRows.reduce((sum, row) => sum + row.backlogTotal, 0);
+          const due30Total = demandRows.reduce((sum, row) => sum + row.backlog30, 0);
+          const due60Total = demandRows.reduce((sum, row) => sum + row.backlog60, 0);
+          const due90Total = demandRows.reduce((sum, row) => sum + row.backlog90, 0);
+          const top5Backlog = demandRows.slice(0, 5).reduce((sum, row) => sum + row.backlogTotal, 0);
+          const top5BacklogPct = backlogTotalAll > 0 ? (top5Backlog / backlogTotalAll) * 100 : 0;
+          const monthlyTrend = demandRows.reduce((sum, row) => sum + row.trend, 0);
+
           const sortedRows = [...demandRows].sort((a, b) => {
             const dir = demandSortDir === 'asc' ? 1 : -1;
             switch (demandSortKey) {
@@ -1456,7 +1403,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
               case 'backlog60':
                 return (a.backlog60 - b.backlog60) * dir;
               case 'shareBacklog':
-                return ((a.backlogTotal / backlogTotalAll) - (b.backlogTotal / backlogTotalAll)) * dir;
+                return ((a.backlogTotal / Math.max(1, backlogTotalAll)) - (b.backlogTotal / Math.max(1, backlogTotalAll))) * dir;
               case 'trend':
                 return (a.trend - b.trend) * dir;
               case 'backlogTotal':
@@ -1464,6 +1411,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                 return (a.backlogTotal - b.backlogTotal) * dir;
             }
           });
+
           const handleSort = (key: typeof demandSortKey) => {
             if (demandSortKey === key) {
               setDemandSortDir(demandSortDir === 'asc' ? 'desc' : 'asc');
@@ -1472,7 +1420,92 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
               setDemandSortDir('desc');
             }
           };
+
+          const tableCustomers = topTenRaw.map((customer) => ({
+            ...customer,
+            totalInvoices: Math.max(1, Math.round(customer.totalInvoices || customer.totalRevenue / 10000)),
+          }));
+          const chartCustomers = tableCustomers;
+          const chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
+
+          const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent }: any) => {
+            const radius = outerRadius + 16;
+            const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
+            const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
+            return (
+              <text
+                x={x}
+                y={y}
+                fill="#475569"
+                textAnchor={x > cx ? 'start' : 'end'}
+                dominantBaseline="central"
+                style={{ fontSize: '11px', fontWeight: 600 }}
+              >
+                {`${(percent * 100).toFixed(1)}%`}
+              </text>
+            );
+          };
+
           return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings</div>
+            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>MTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(totalBookingsMtd)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>QTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(totalBookingsQtd)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>YTD</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(totalBookingsYtd)}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog $</div>
+            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(backlogTotalAll)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 30</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(due30Total)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 60</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(due60Total)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Due 90</span>
+                <span style={{ fontWeight: 700 }}>{formatCurrency(due90Total)}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog concentration</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>
+              Top 5 customers = {top5BacklogPct.toFixed(1)}%
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings trend (3-month slope)</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>
+                {monthlyTrend >= 0 ? '+' : '-'}${Math.abs(monthlyTrend)}k/mo
+              </span>
+              <span style={{ color: monthlyTrend >= 0 ? '#16a34a' : '#ef4444', fontWeight: 700 }}>
+                {monthlyTrend >= 0 ? '↑' : '↓'}
+              </span>
+            </div>
+          </div>
+        </div>
+
             <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -1526,34 +1559,6 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                 </table>
               </div>
             </div>
-          );
-        })()}
-
-        {(() => {
-          const tableCustomers = TOP_CUSTOMERS_OVERRIDE.map((customer) => ({
-            ...customer,
-            totalInvoices: Math.max(1, Math.round(customer.totalRevenue / 10000))
-          }));
-          const chartCustomers = tableCustomers;
-          const chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
-          const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent }: any) => {
-            const radius = outerRadius + 16;
-            const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
-            const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
-            return (
-              <text
-                x={x}
-                y={y}
-                fill="#475569"
-                textAnchor={x > cx ? 'start' : 'end'}
-                dominantBaseline="central"
-                style={{ fontSize: '11px', fontWeight: 600 }}
-              >
-                {`${(percent * 100).toFixed(1)}%`}
-              </text>
-            );
-          };
-          return (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
               {/* Top Customers Table */}
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -1628,6 +1633,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                 </div>
               </div>
             </div>
+            </>
           );
         })()}
       </div>
@@ -1643,9 +1649,12 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     if (!arData) return null;
 
     const { records, summary } = arData;
-    const sectorFallback = getSectorArApFallbacks(industrySectorCategory);
+    const arCurrentPct = Number(summary?.currentPct ?? 0);
+    const arOver30Pct = Number(summary?.over30Pct ?? 0);
+    const arOver90Pct = Number(summary?.over90Pct ?? 0);
+    const arDso = Number(summary?.dso ?? 0);
     const latestRecord = records[0];
-    const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || sectorFallback.unpaidByCustomer).map((row: any) => ({
+    const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || []).map((row: any) => ({
       customerName: row.customerName || row.name,
       current: row.current || 0,
       days1to30: row.days1to30 || 0,
@@ -1659,14 +1668,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .sort((a, b) => b.totalDue - a.totalDue)
       .slice(0, 10);
     const unpaidTotal = unpaidByCustomer.reduce((sum, item) => sum + item.totalDue, 0);
-    const invoices = (summary?.unpaidInvoices || sectorFallback.unpaidInvoices).map((row: any) => ({
+    const invoices = (summary?.unpaidInvoices || []).map((row: any) => ({
       customerName: row.customerName || row.customer,
       customerNumber: row.customerNumber || row.customerId || row.customerNo || '-',
       invoiceDate: row.invoiceDate || row.date,
       dueDate: row.dueDate,
       amountDue: row.amountDue || row.balance || 0,
     }));
-    const paidByCustomer = (summary?.paidInvoices || sectorFallback.paidInvoices)
+    const paidByCustomer = (summary?.paidInvoices || [])
       .map((row: any) => ({
         customerName: row.customerName || row.customer,
         currentMonth: row.currentMonth || 0,
@@ -1676,7 +1685,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .sort((a: any, b: any) => b.last12Months - a.last12Months)
       .slice(0, 10);
     const paidTotal = paidByCustomer.reduce((sum: number, item: any) => sum + item.last12Months, 0);
-    const customerInvoiceRows = (summary?.customerInvoices || sectorFallback.customerInvoices).map((row: any) => ({
+    const customerInvoiceRows = (summary?.customerInvoices || []).map((row: any) => ({
       customerName: row.customerName || row.customer,
       invoiceNo: row.invoiceNo || row.invoiceNumber,
       date: row.date,
@@ -1745,26 +1754,26 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {summary.currentPct.toFixed(1)}%
-                {summary.currentPct >= 70 ? <ArrowUp size={20} /> : <ArrowDown size={20} color="#ef4444" />}
+                {arCurrentPct.toFixed(1)}%
+                {arCurrentPct >= 70 ? <ArrowUp size={20} /> : <ArrowDown size={20} color="#ef4444" />}
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 30 Days</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
-                {summary.over30Pct.toFixed(1)}%
+                {arOver30Pct.toFixed(1)}%
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 90 Days</div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: summary.over90Pct > 5 ? '#ef4444' : '#64748b' }}>
-                {summary.over90Pct.toFixed(1)}%
+              <div style={{ fontSize: '28px', fontWeight: '700', color: arOver90Pct > 5 ? '#ef4444' : '#64748b' }}>
+                {arOver90Pct.toFixed(1)}%
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>DSO (Days)</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
-                {summary.dso.toFixed(0)}
+                {arDso.toFixed(0)}
               </div>
             </div>
           </div>
@@ -2246,9 +2255,12 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     if (!apData) return null;
 
     const { records, summary } = apData;
-    const sectorFallback = getSectorArApFallbacks(industrySectorCategory);
+    const apCurrentPct = Number(summary?.currentPct ?? 0);
+    const apOver30Pct = Number(summary?.over30Pct ?? 0);
+    const apOver90Pct = Number(summary?.over90Pct ?? 0);
+    const apDpo = Number(summary?.dpo ?? 0);
     const latestRecord = records[0];
-    const apVendors = (summary?.breakdown || summary?.unpaidByVendor || sectorFallback.unpaidByVendor).map((row: any) => ({
+    const apVendors = (summary?.breakdown || summary?.unpaidByVendor || []).map((row: any) => ({
       vendorName: row.vendorName || row.name,
       current: row.current || 0,
       days1to30: row.days1to30 || 0,
@@ -2262,14 +2274,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .sort((a, b) => b.totalDue - a.totalDue)
       .slice(0, 10);
     const unpaidVendorTotal = unpaidByVendor.reduce((sum, item) => sum + item.totalDue, 0);
-    const unpaidBills = (summary?.unpaidBills || sectorFallback.unpaidBills).map((row: any) => ({
+    const unpaidBills = (summary?.unpaidBills || []).map((row: any) => ({
       vendorName: row.vendorName || row.vendor,
       billNo: row.billNo || row.billNumber,
       date: row.date,
       dueDate: row.dueDate,
       amountDue: row.amountDue || row.balance || 0,
     }));
-    const paidBills = (summary?.paidBills || sectorFallback.paidBills)
+    const paidBills = (summary?.paidBills || [])
       .map((row: any) => ({
         vendorName: row.vendorName || row.vendor,
         currentMonth: row.currentMonth || 0,
@@ -2279,7 +2291,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .sort((a: any, b: any) => b.last12Months - a.last12Months)
       .slice(0, 10);
     const paidBillsTotal = paidBills.reduce((sum: number, item: any) => sum + item.last12Months, 0);
-    const vendorBillRows = (summary?.vendorBills || sectorFallback.vendorBills).map((row: any) => ({
+    const vendorBillRows = (summary?.vendorBills || []).map((row: any) => ({
       vendorName: row.vendorName || row.vendor,
       billNo: row.billNo || row.billNumber,
       date: row.date,
@@ -2338,25 +2350,25 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Current %</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
-                {summary.currentPct.toFixed(1)}%
+                {apCurrentPct.toFixed(1)}%
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 30 Days</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
-                {summary.over30Pct.toFixed(1)}%
+                {apOver30Pct.toFixed(1)}%
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Over 90 Days</div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: summary.over90Pct > 5 ? '#ef4444' : '#64748b' }}>
-                {summary.over90Pct.toFixed(1)}%
+              <div style={{ fontSize: '28px', fontWeight: '700', color: apOver90Pct > 5 ? '#ef4444' : '#64748b' }}>
+                {apOver90Pct.toFixed(1)}%
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>DPO (Days)</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
-                {summary.dpo.toFixed(0)}
+                {apDpo.toFixed(0)}
               </div>
             </div>
           </div>
@@ -3336,25 +3348,15 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
 
     const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
     const lineIndex: Record<string, Record<string, number>> = {};
-    const lineAccountIndex: Record<string, Record<string, Record<string, number>>> = {};
     mappedLines.forEach((line: any) => {
       const targetField = String(line.targetField || '').trim();
-      const sourceAccountName = String(line.sourceAccountName || '').trim();
       if (!targetField) return;
       const dateLabel = new Date(line.snapshotDate).toLocaleDateString();
       lineIndex[targetField] ||= {};
       lineIndex[targetField][dateLabel] =
         Number(lineIndex[targetField][dateLabel] || 0) + Number(line.amount || 0);
-      if (sourceAccountName) {
-        lineAccountIndex[targetField] ||= {};
-        lineAccountIndex[targetField][sourceAccountName] ||= {};
-        lineAccountIndex[targetField][sourceAccountName][dateLabel] =
-          Number(lineAccountIndex[targetField][sourceAccountName][dateLabel] || 0) + Number(line.amount || 0);
-      }
     });
 
-    const fieldHasAnyValue = (field: string): boolean =>
-      statementDays.some((day) => Number((day as any)[field] || 0) !== 0);
     const mappedFieldHasAnyValue = (field: string): boolean =>
       Object.values(lineIndex[field] || {}).some((value) => Number(value || 0) !== 0);
 
@@ -3362,72 +3364,123 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       .filter((field) => field.startsWith('rev_') && mappedFieldHasAnyValue(field))
       .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
     const legacyCogsFields = ['cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther']
-      .filter((field) => fieldHasAnyValue(field) || mappedFieldHasAnyValue(field));
+      .filter((field) => mappedFieldHasAnyValue(field));
     const dynamicCogsFields = Object.keys(lineIndex)
       .filter((field) => field.startsWith('cogs_') && field !== 'cogs_total' && mappedFieldHasAnyValue(field))
       .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
+    const cogsDetailFields = [...legacyCogsFields, ...dynamicCogsFields];
     const operatingExpenseFields = [
       'payroll', 'ownerBasePay', 'ownersRetirement', 'benefits', 'insurance', 'professionalFees',
-      'subcontractors', 'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
-      'salesExpense', 'marketing', 'trainingCert', 'mealsEntertainment', 'otherExpense',
-    ].filter((field) => fieldHasAnyValue(field) || mappedFieldHasAnyValue(field));
+      'subcontractors', 'rent', 'utilities', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
+      'salesExpense', 'marketing', 'trainingCert', 'mealsEntertainment', 'interestExpense',
+      'depreciationAmortization', 'otherExpense',
+    ].filter((field) => mappedFieldHasAnyValue(field));
 
-    const buildAccountDetailRows = (targetFields: string[]): StatementRowDef[] => {
-      const mergedByAccount: Record<string, Record<string, number>> = {};
-      targetFields.forEach((targetField) => {
-        const accountMap = lineAccountIndex[targetField] || {};
-        Object.entries(accountMap).forEach(([accountName, valuesByDate]) => {
-          mergedByAccount[accountName] ||= {};
-          Object.entries(valuesByDate).forEach(([dateLabel, amount]) => {
-            mergedByAccount[accountName][dateLabel] =
-              Number(mergedByAccount[accountName][dateLabel] || 0) + Number(amount || 0);
-          });
-        });
-      });
-      return Object.keys(mergedByAccount)
-        .sort((a, b) => {
-          const totalA = Object.values(mergedByAccount[a]).reduce((sum, v) => sum + Number(v || 0), 0);
-          const totalB = Object.values(mergedByAccount[b]).reduce((sum, v) => sum + Number(v || 0), 0);
-          return Math.abs(totalB) - Math.abs(totalA);
-        })
-        .map((accountName) => ({
-          label: `  ${accountName}`,
-          styleType: 'normal' as const,
-          valuesByDate: mergedByAccount[accountName],
-        }));
-    };
+    const dateLabels = statementDays.map((day) => day.dateLabel);
+    const getMappedValue = (field: string, dateLabel: string): number =>
+      Number(lineIndex[field]?.[dateLabel] || 0);
+    const sumFieldsForDate = (fields: string[], dateLabel: string): number =>
+      fields.reduce((sum, field) => sum + getMappedValue(field, dateLabel), 0);
+    const buildSeriesFromDateLabels = (calculator: (dateLabel: string) => number): Record<string, number> =>
+      dateLabels.reduce<Record<string, number>>((acc, dateLabel) => {
+        acc[dateLabel] = calculator(dateLabel);
+        return acc;
+      }, {});
 
-    const accountRevenueDetailRows = buildAccountDetailRows(['revenue', ...revenueDetailFields]);
-    const accountCogsDetailRows = buildAccountDetailRows([
-      'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
-      ...legacyCogsFields,
-      ...dynamicCogsFields,
-    ]);
-    const accountOpexDetailRows = buildAccountDetailRows([
-      'expense',
-      ...operatingExpenseFields,
-    ]);
+    const revenueByDate = buildSeriesFromDateLabels((dateLabel) =>
+      revenueDetailFields.length > 0
+        ? sumFieldsForDate(revenueDetailFields, dateLabel)
+        : getMappedValue('revenue', dateLabel)
+    );
+    const cogsTotalByDate = buildSeriesFromDateLabels((dateLabel) =>
+      cogsDetailFields.length > 0
+        ? sumFieldsForDate(cogsDetailFields, dateLabel)
+        : getMappedValue('cogsTotal', dateLabel)
+    );
+    const totalOperatingExpensesByDate = buildSeriesFromDateLabels((dateLabel) =>
+      operatingExpenseFields.length > 0
+        ? sumFieldsForDate(operatingExpenseFields, dateLabel)
+        : getMappedValue('expense', dateLabel)
+    );
+    const grossProfitByDate = buildSeriesFromDateLabels(
+      (dateLabel) => Number(revenueByDate[dateLabel] || 0) - Number(cogsTotalByDate[dateLabel] || 0)
+    );
+    const operatingIncomeByDate = buildSeriesFromDateLabels(
+      (dateLabel) => Number(grossProfitByDate[dateLabel] || 0) - Number(totalOperatingExpensesByDate[dateLabel] || 0)
+    );
+    const nonOperatingIncomeByDate = buildSeriesFromDateLabels((dateLabel) => {
+      const mapped = getMappedValue('nonOperatingIncome', dateLabel);
+      if (mapped !== 0) return mapped;
+      const day = statementDays.find((d) => d.dateLabel === dateLabel);
+      return Number(day?.nonOperatingIncome || 0);
+    });
+    const extraordinaryItemsByDate = buildSeriesFromDateLabels((dateLabel) => {
+      const mapped = getMappedValue('extraordinaryItems', dateLabel);
+      if (mapped !== 0) return mapped;
+      const day = statementDays.find((d) => d.dateLabel === dateLabel);
+      return Number(day?.extraordinaryItems || 0);
+    });
+    const stateIncomeTaxesByDate = buildSeriesFromDateLabels((dateLabel) => {
+      const mapped = getMappedValue('stateIncomeTaxes', dateLabel);
+      if (mapped !== 0) return mapped;
+      const day = statementDays.find((d) => d.dateLabel === dateLabel);
+      return Number(day?.stateIncomeTaxes || 0);
+    });
+    const federalIncomeTaxesByDate = buildSeriesFromDateLabels((dateLabel) => {
+      const mapped = getMappedValue('federalIncomeTaxes', dateLabel);
+      if (mapped !== 0) return mapped;
+      const day = statementDays.find((d) => d.dateLabel === dateLabel);
+      return Number(day?.federalIncomeTaxes || 0);
+    });
+    const incomeBeforeTaxByDate = buildSeriesFromDateLabels(
+      (dateLabel) =>
+        Number(operatingIncomeByDate[dateLabel] || 0) +
+        Number(nonOperatingIncomeByDate[dateLabel] || 0) +
+        Number(extraordinaryItemsByDate[dateLabel] || 0)
+    );
+    const netIncomeByDate = buildSeriesFromDateLabels(
+      (dateLabel) =>
+        Number(incomeBeforeTaxByDate[dateLabel] || 0) -
+        Number(stateIncomeTaxesByDate[dateLabel] || 0) -
+        Number(federalIncomeTaxesByDate[dateLabel] || 0)
+    );
 
     const incomeRowDefs: StatementRowDef[] = [
-      { key: 'revenue', label: getFieldDisplayName('revenue'), styleType: 'section' }, // Total Revenue
-      ...accountRevenueDetailRows,
+      { label: 'Total Revenue', styleType: 'section', valuesByDate: revenueByDate },
+      ...revenueDetailFields.map((field) => ({
+        label: `  ${getFieldDisplayName(field)}`,
+        styleType: 'normal' as const,
+        valuesByDate: lineIndex[field],
+      })),
       { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
-      ...accountCogsDetailRows,
-      { key: 'cogsTotal', label: getFieldDisplayName('cogsTotal'), styleType: 'subtotal' }, // Total COGS
-      { key: 'grossProfit', label: 'GROSS PROFIT', styleType: 'subtotal' },
+      ...legacyCogsFields.map((field) => ({
+        label: `  ${getFieldDisplayName(field)}`,
+        styleType: 'normal' as const,
+        valuesByDate: lineIndex[field],
+      })),
+      ...dynamicCogsFields.map((field) => ({
+        label: `  ${getFieldDisplayName(field)}`,
+        styleType: 'normal' as const,
+        valuesByDate: lineIndex[field],
+      })),
+      { label: 'Total COGS', styleType: 'subtotal', valuesByDate: cogsTotalByDate },
+      { label: 'GROSS PROFIT', styleType: 'subtotal', valuesByDate: grossProfitByDate },
       { label: 'Operating Expenses', styleType: 'section', suppressValues: true },
-      ...accountOpexDetailRows,
-      { key: 'expense', label: getFieldDisplayName('totalOperatingExpenses'), styleType: 'subtotal' }, // Total Operating Expenses
-      { key: 'operatingIncome', label: getFieldDisplayName('operatingIncome'), styleType: 'subtotal' },
+      ...operatingExpenseFields.map((field) => ({
+        label: `  ${getFieldDisplayName(field)}`,
+        styleType: 'normal' as const,
+        valuesByDate: lineIndex[field],
+      })),
+      { label: 'Total Operating Expenses', styleType: 'subtotal', valuesByDate: totalOperatingExpensesByDate },
+      { label: 'Operating Income', styleType: 'subtotal', valuesByDate: operatingIncomeByDate },
       { label: 'Other Income/(Expense)', styleType: 'section', suppressValues: true },
-      { key: 'interestExpense', label: getFieldDisplayName('interestExpense'), styleType: 'normal' },
-      { key: 'nonOperatingIncome', label: getFieldDisplayName('nonOperatingIncome'), styleType: 'normal' },
-      { key: 'extraordinaryItems', label: getFieldDisplayName('extraordinaryItems'), styleType: 'normal' },
-      { key: 'incomeBeforeTax', label: getFieldDisplayName('incomeBeforeTax'), styleType: 'subtotal' },
+      { label: getFieldDisplayName('nonOperatingIncome'), styleType: 'normal', valuesByDate: nonOperatingIncomeByDate },
+      { label: getFieldDisplayName('extraordinaryItems'), styleType: 'normal', valuesByDate: extraordinaryItemsByDate },
+      { label: getFieldDisplayName('incomeBeforeTax'), styleType: 'subtotal', valuesByDate: incomeBeforeTaxByDate },
       { label: 'Income Taxes', styleType: 'section', suppressValues: true },
-      { key: 'stateIncomeTaxes', label: `  ${getFieldDisplayName('stateIncomeTaxes')}`, styleType: 'normal' },
-      { key: 'federalIncomeTaxes', label: `  ${getFieldDisplayName('federalIncomeTaxes')}`, styleType: 'normal' },
-      { key: 'netIncome', label: getFieldDisplayName('netIncome'), styleType: 'total' },
+      { label: `  ${getFieldDisplayName('stateIncomeTaxes')}`, styleType: 'normal', valuesByDate: stateIncomeTaxesByDate },
+      { label: `  ${getFieldDisplayName('federalIncomeTaxes')}`, styleType: 'normal', valuesByDate: federalIncomeTaxesByDate },
+      { label: getFieldDisplayName('netIncome'), styleType: 'total', valuesByDate: netIncomeByDate },
     ];
 
     const balanceRowDefs: StatementRowDef[] = [
