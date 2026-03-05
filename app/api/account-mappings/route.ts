@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getAllowedTargetFieldSet } from "@/lib/constants/sector-target-fields";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +24,25 @@ export async function GET(request: NextRequest) {
       orderBy: { qbAccount: "asc" },
     });
 
-    // Get the company's saved LOB names
+    // Get company context (LOB names + sector category)
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { linesOfBusiness: true },
+      select: { linesOfBusiness: true, industrySectorCategory: true },
+    });
+
+    const allowedTargetFields = getAllowedTargetFieldSet(company?.industrySectorCategory || '01');
+    const invalidMappings = mappings.filter(
+      (m: any) => m.targetField && m.targetField.trim() !== "" && !allowedTargetFields.has(m.targetField),
+    );
+    const sanitizedMappings = mappings.map((m: any) => {
+      if (!m.targetField || m.targetField.trim() === "" || allowedTargetFields.has(m.targetField)) {
+        return m;
+      }
+      return {
+        ...m,
+        invalidTargetField: m.targetField,
+        targetField: "",
+      };
     });
 
     console.log(
@@ -47,9 +63,16 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      mappings,
+      mappings: sanitizedMappings,
       linesOfBusiness: company?.linesOfBusiness || [],
       userDefinedAllocations: [], // Not available in current schema
+      industrySectorCategory: company?.industrySectorCategory || '01',
+      invalidMappings: invalidMappings.map((m: any) => ({
+        qbAccount: m.qbAccount,
+        invalidTargetField: m.targetField,
+        qbAccountClassification: m.qbAccountClassification,
+      })),
+      invalidMappingsCount: invalidMappings.length,
     });
   } catch (error: any) {
     console.error("❌ Error fetching mappings:", error);
@@ -78,10 +101,40 @@ export async function POST(request: NextRequest) {
     console.log(`Saving ${mappings.length} mappings for company ${companyId}`);
     console.log("First few mappings:", mappings.slice(0, 3));
 
+    // Resolve company sector for sector-specific Revenue/COGS validation.
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, industrySectorCategory: true },
+    });
+    if (!company) {
+      return NextResponse.json(
+        { error: "Company not found" },
+        { status: 404 },
+      );
+    }
+
+    const allowedTargetFields = getAllowedTargetFieldSet(company.industrySectorCategory || '01');
+
     // Filter out mappings with empty targetField (unmapped accounts)
     const validMappings = mappings.filter(
-      (m: any) => m.targetField && m.targetField.trim() !== "",
+      (m: any) => m.targetField && m.targetField.trim() !== "" && m.targetField !== "unmapped",
     );
+    const invalidMappings = validMappings.filter((m: any) => !allowedTargetFields.has(m.targetField));
+    if (invalidMappings.length > 0) {
+      return NextResponse.json(
+        {
+          error: "One or more mappings use target fields that are not allowed for this company sector.",
+          details: invalidMappings.slice(0, 10).map((m: any) => ({
+            qbAccount: m.qbAccount,
+            targetField: m.targetField,
+            classification: m.qbAccountClassification,
+          })),
+          invalidCount: invalidMappings.length,
+          industrySectorCategory: company.industrySectorCategory || '01',
+        },
+        { status: 400 },
+      );
+    }
     console.log(
       `Filtered to ${validMappings.length} valid mappings (removed ${mappings.length - validMappings.length} unmapped accounts)`,
     );

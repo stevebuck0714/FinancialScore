@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 
 interface AccountMapping {
   qbAccount: string;
@@ -21,6 +22,7 @@ interface AccountMappingTableProps {
   mappings: AccountMapping[];
   linesOfBusiness: LOBData[];
   userDefinedAllocations?: { lobName: string; percentage: number }[];
+  industrySectorCategory?: string | null;
   onMappingChange: (index: number, updates: Partial<AccountMapping>) => void;
 }
 
@@ -28,6 +30,7 @@ export default function AccountMappingTable({
   mappings,
   linesOfBusiness,
   userDefinedAllocations = [],
+  industrySectorCategory,
   onMappingChange
 }: AccountMappingTableProps) {
 
@@ -71,63 +74,7 @@ export default function AccountMappingTable({
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const targetFieldOptions = {
-    revenue: [
-      { value: 'revenue', label: 'Revenue' },
-    ],
-    cogs: [
-      { value: 'cogsPayroll', label: 'COGS - Payroll' },
-      { value: 'cogsOwnerPay', label: 'COGS - Owner Pay' },
-      { value: 'cogsContractors', label: 'COGS - Contractors' },
-      { value: 'cogsMaterials', label: 'COGS - Materials' },
-      { value: 'cogsCommissions', label: 'COGS - Commissions' },
-      { value: 'cogsOther', label: 'COGS - Other' },
-    ],
-    expense: [
-      { value: 'payroll', label: 'Payroll' },
-      { value: 'ownerBasePay', label: 'Owner Base Pay' },
-      { value: 'benefits', label: 'Benefits' },
-      { value: 'insurance', label: 'Insurance' },
-      { value: 'professionalFees', label: 'Professional Fees' },
-      { value: 'subcontractors', label: 'Subcontractors' },
-      { value: 'rent', label: 'Rent' },
-      { value: 'taxLicense', label: 'Tax & License' },
-      { value: 'stateIncomeTaxes', label: 'State Income Taxes' },
-      { value: 'federalIncomeTaxes', label: 'Federal Income Taxes' },
-      { value: 'phoneComm', label: 'Phone & Comm' },
-      { value: 'infrastructure', label: 'Infrastructure' },
-      { value: 'autoTravel', label: 'Auto & Travel' },
-      { value: 'salesExpense', label: 'Sales & Marketing' },
-      { value: 'marketing', label: 'Marketing' },
-      { value: 'trainingCert', label: 'Training & Cert' },
-      { value: 'mealsEntertainment', label: 'Meals & Entertainment' },
-      { value: 'interestExpense', label: 'Interest Expense' },
-      { value: 'depreciationAmortization', label: 'Depreciation' },
-      { value: 'otherExpense', label: 'Other Expense' },
-    ],
-    asset: [
-      { value: 'cash', label: 'Cash' },
-      { value: 'ar', label: 'A/R' },
-      { value: 'inventory', label: 'Inventory' },
-      { value: 'otherCA', label: 'Other Current Assets' },
-      { value: 'fixedAssets', label: 'Fixed Assets' },
-      { value: 'otherAssets', label: 'Other Assets' },
-    ],
-    liability: [
-      { value: 'ap', label: 'A/P' },
-      { value: 'otherCL', label: 'Other Current Liab' },
-      { value: 'ltd', label: 'Long Term Debt' },
-    ],
-    equity: [
-      { value: 'ownersCapital', label: "Owner's Capital" },
-      { value: 'ownersDraw', label: "Owner's Draw" },
-      { value: 'commonStock', label: 'Common Stock' },
-      { value: 'preferredStock', label: 'Preferred Stock' },
-      { value: 'retainedEarnings', label: 'Retained Earnings' },
-      { value: 'additionalPaidInCapital', label: 'Add. Paid-In Capital' },
-      { value: 'treasuryStock', label: 'Treasury Stock' },
-    ]
-  };
+  const targetFieldOptions = getTargetFieldOptions(industrySectorCategory || undefined);
 
   const getFieldLabel = (value: string): string => {
     const allOptions = Object.values(targetFieldOptions).flat();

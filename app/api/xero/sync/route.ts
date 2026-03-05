@@ -6,6 +6,32 @@ import { emitSyncStatus } from '@/lib/websocket-emit';
 
 export const dynamic = 'force-dynamic';
 
+function applyMappedValue(data: Record<string, any>, targetField: string | null | undefined, amount: number): boolean {
+  if (!targetField || targetField === 'unmapped') return false;
+  if (targetField.startsWith('rev_')) {
+    if (!data.revenueBreakdown || typeof data.revenueBreakdown !== 'object') data.revenueBreakdown = {};
+    data.revenueBreakdown[targetField] = (Number(data.revenueBreakdown[targetField]) || 0) + amount;
+    data.revenue = (data.revenue || 0) + amount;
+    return true;
+  }
+  if (targetField.startsWith('cogs_')) {
+    if (!data.cogsBreakdown || typeof data.cogsBreakdown !== 'object') data.cogsBreakdown = {};
+    data.cogsBreakdown[targetField] = (Number(data.cogsBreakdown[targetField]) || 0) + amount;
+    return true;
+  }
+  if (data[targetField] === undefined) {
+    return false;
+  }
+  data[targetField] += amount;
+  return true;
+}
+
+function sumSectorCogs(data: Record<string, any>): number {
+  return Object.keys(data)
+    .filter((key) => key.startsWith('cogs_'))
+    .reduce((sum, key) => sum + (Number(data[key]) || 0), 0);
+}
+
 /**
  * Production-ready Xero sync: Fetches invoices and bank transactions
  * Works for both demo and production Xero accounts
@@ -291,7 +317,8 @@ export async function POST(request: NextRequest) {
         benefits: 0, insurance: 0, professionalFees: 0, subcontractors: 0, rent: 0,
         taxLicense: 0, phoneComm: 0, infrastructure: 0, autoTravel: 0, salesExpense: 0,
         marketing: 0, trainingCert: 0, mealsEntertainment: 0, interestExpense: 0,
-        depreciationAmortization: 0, otherExpense: 0, expense: 0,
+        depreciationAmortization: 0, otherExpense: 0, expense: 0, revenueBreakdown: {}, cogsBreakdown: {},
+        loc: 0,
       };
     }
 
@@ -329,10 +356,7 @@ export async function POST(request: NextRequest) {
           }
           
           // Apply the mapping
-          if (targetField && targetField !== 'unmapped') {
-            if (data.hasOwnProperty(targetField)) {
-              data[targetField] += amount;
-            }
+          if (applyMappedValue(data, targetField, amount)) {
           } else {
             // Priority 3: Fallback based on invoice type
             if (inv.type === 'ACCREC') data.revenue += amount;
@@ -379,10 +403,7 @@ export async function POST(request: NextRequest) {
           }
           
           // Apply the mapping
-          if (targetField && targetField !== 'unmapped') {
-            if (data.hasOwnProperty(targetField)) {
-              data[targetField] += amount;
-            }
+          if (applyMappedValue(data, targetField, amount)) {
           } else {
             // Priority 3: Fallback based on transaction type
             if (tx.type === 'RECEIVE') data.revenue += amount;
@@ -434,8 +455,9 @@ export async function POST(request: NextRequest) {
     
     // Calculate totals and add Balance Sheet
     monthlyData.forEach((data) => {
-      data.cogsTotal = data.cogsPayroll + data.cogsOwnerPay + data.cogsContractors + 
-                       data.cogsMaterials + data.cogsCommissions + data.cogsOther;
+      data.cogsTotal = data.cogsPayroll + data.cogsOwnerPay + data.cogsContractors +
+                       data.cogsMaterials + data.cogsCommissions + data.cogsOther +
+                       sumSectorCogs(data);
       
       data.expense = data.payroll + data.ownerBasePay + data.benefits + data.insurance +
                      data.professionalFees + data.subcontractors + data.rent + data.taxLicense +
@@ -447,9 +469,10 @@ export async function POST(request: NextRequest) {
       data.cash = totalCash;
       data.ar = totalAR;
       data.ap = totalAP;
+      data.loc = 0;
       data.tca = totalCash + totalAR;
       data.totalAssets = totalAssets;
-      data.tcl = totalAP;
+      data.tcl = totalAP + (data.loc || 0);
       data.totalLiab = totalLiabilities;
       data.totalEquity = totalEquity;
       data.totalLAndE = totalLiabilities + totalEquity;
@@ -488,7 +511,7 @@ export async function POST(request: NextRequest) {
         
         if (bsResponse.body.rows) {
           // Parse Balance Sheet for this specific month
-          let monthCash = 0, monthAR = 0, monthAP = 0, monthInventory = 0;
+          let monthCash = 0, monthAR = 0, monthAP = 0, monthLOC = 0, monthInventory = 0;
           let monthFixedAssets = 0, monthTotalAssets = 0, monthTotalLiab = 0, monthEquity = 0;
           
           function parseBSRows(rows: any[]): void {
@@ -505,6 +528,7 @@ export async function POST(request: NextRequest) {
                   else if (title.includes('inventory')) monthInventory = Math.max(monthInventory, value);
                   else if (title.includes('fixed asset')) monthFixedAssets = Math.max(monthFixedAssets, value);
                   else if (title.includes('total asset')) monthTotalAssets = Math.max(monthTotalAssets, value);
+                  else if (title.includes('line of credit') || title.includes('credit line')) monthLOC = Math.max(monthLOC, value);
                   else if (title.includes('payable')) monthAP = Math.max(monthAP, value);
                   else if (title.includes('total liabilit')) monthTotalLiab = Math.max(monthTotalLiab, value);
                   else if (title.includes('equity')) monthEquity = Math.max(monthEquity, value);
@@ -523,12 +547,13 @@ export async function POST(request: NextRequest) {
             monthData.ar = monthAR;
             monthData.inventory = monthInventory;
             monthData.ap = monthAP;
+            monthData.loc = monthLOC;
             monthData.fixedAssets = monthFixedAssets;
             monthData.totalAssets = monthTotalAssets || (monthCash + monthAR + monthInventory + monthFixedAssets);
-            monthData.totalLiab = monthTotalLiab || monthAP;
+            monthData.totalLiab = monthTotalLiab || (monthAP + monthLOC);
             monthData.totalEquity = monthEquity || (monthData.totalAssets - monthData.totalLiab);
             monthData.tca = monthCash + monthAR + monthInventory;
-            monthData.tcl = monthAP;
+            monthData.tcl = monthAP + monthLOC;
             monthData.totalLAndE = monthData.totalLiab + monthData.totalEquity;
             
             console.log(`  ${monthEndStr}: Assets=$${monthData.totalAssets.toFixed(2)}, Liab=$${monthData.totalLiab.toFixed(2)}, Equity=$${monthData.totalEquity.toFixed(2)}`);
@@ -605,6 +630,8 @@ export async function POST(request: NextRequest) {
             ar: m.ar || 0,
             inventory: m.inventory || 0,
             ap: m.ap || 0,
+            loc: m.loc || 0,
+            otherCL: m.otherCL || 0,
             tca: m.tca || 0,
             fixedAssets: m.fixedAssets || 0,
             totalAssets: m.totalAssets || 0,

@@ -39,11 +39,19 @@ export async function GET(request: NextRequest) {
       const inventory = month.inventory || 0;
       const otherCA = month.otherCA || 0;
       const ap = month.ap || 0;
+      const loc = month.loc || 0;
       const otherCL = month.otherCL || 0;
 
       // Some legacy master-data shapes omitted tca/tcl; provide explicit fields with safe fallbacks.
       const tca = month.tca ?? (cash + ar + inventory + otherCA);
-      const tcl = month.tcl ?? (ap + otherCL);
+      const tcl = month.tcl ?? (ap + loc + otherCL);
+
+      const revenueBreakdown = month.revenueBreakdown && typeof month.revenueBreakdown === 'object'
+        ? month.revenueBreakdown
+        : {};
+      const cogsBreakdown = month.cogsBreakdown && typeof month.cogsBreakdown === 'object'
+        ? month.cogsBreakdown
+        : {};
 
       return {
       date: month.monthDate,
@@ -86,6 +94,7 @@ export async function GET(request: NextRequest) {
       otherAssets: month.otherAssets || 0,
       totalAssets: month.totalAssets || 0,
       ap,
+      loc,
       otherCL,
       tcl,
       ltd: month.ltd || 0,
@@ -98,9 +107,11 @@ export async function GET(request: NextRequest) {
       additionalPaidInCapital: month.additionalPaidInCapital || 0,
       treasuryStock: month.treasuryStock || 0,
       totalEquity: month.totalEquity || 0,
-      revenueBreakdown: month.revenueBreakdown,
+      revenueBreakdown,
       expenseBreakdown: month.expenseBreakdown,
-      cogsBreakdown: month.cogsBreakdown
+      cogsBreakdown,
+      ...revenueBreakdown,
+      ...cogsBreakdown
       };
     });
 

@@ -50,6 +50,7 @@ export type Mappings = {
   totalAssets?: string;
   // Balance Sheet - Liabilities & Equity
   ap?: string;
+  loc?: string;
   otherCL?: string;
   tcl?: string;
   ltd?: string;
@@ -79,6 +80,7 @@ export type NormalRow = {
   otherAssets: number;
   totalAssets: number;
   ap: number;
+  loc: number;
   otherCL: number;
   tcl: number;
   ltd: number;
@@ -133,6 +135,7 @@ export type MonthlyDataRow = {
   fixedAssets: number;
   otherAssets: number;
   ap: number;
+  loc: number;
   otherCL: number;
   tcl: number;
   ltd: number;

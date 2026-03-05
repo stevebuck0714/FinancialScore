@@ -633,6 +633,7 @@ const ImportFinancialsTab: React.FC<ImportFinancialsTabProps> = ({
                   Liabilities & Other
                 </h4>
                 {renderColumnSelector("Accounts Payable", "ap")}
+                {renderColumnSelector("Line of Credit", "loc")}
                 {renderColumnSelector("Other Current Liabilities", "otherCL")}
                 {renderColumnSelector("Total Current Liabilities", "tcl")}
                 {renderColumnSelector("Long Term Debt", "ltd")}

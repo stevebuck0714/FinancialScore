@@ -42,6 +42,7 @@ export const BS_LAST_DAY_FIELDS = [
   'otherAssets',
   'totalAssets',
   'ap',
+  'loc',
   'otherCL',
   'tcl',
   'ltd',

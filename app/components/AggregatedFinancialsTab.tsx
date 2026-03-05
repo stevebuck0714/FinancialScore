@@ -59,6 +59,7 @@ function calculateAggregatedValues(monthly: any[], period: string) {
   // Aggregate values across the period
   const aggregated = {
     revenue: 0,
+    cogs: 0,
     cogsPayroll: 0,
     cogsOwnerPay: 0,
     cogsContractors: 0,
@@ -84,10 +85,18 @@ function calculateAggregatedValues(monthly: any[], period: string) {
     extraordinaryItems: 0,
     stateIncomeTaxes: 0,
     federalIncomeTaxes: 0,
+    revenueDetails: {} as Record<string, number>,
+    cogsDetails: {} as Record<string, number>,
+  };
+
+  const addDetail = (bucket: Record<string, number>, key: string, value: number) => {
+    if (!key || !Number.isFinite(value) || value === 0) return;
+    bucket[key] = (Number(bucket[key]) || 0) + value;
   };
 
   for (const month of filteredMonthly) {
     aggregated.revenue += Number(month.revenue) || 0;
+    aggregated.cogs += Number(month.cogsTotal) || 0;
     aggregated.cogsPayroll += Number(month.cogsPayroll) || 0;
     aggregated.cogsOwnerPay += Number(month.cogsOwnerPay) || 0;
     aggregated.cogsContractors += Number(month.cogsContractors) || 0;
@@ -111,6 +120,43 @@ function calculateAggregatedValues(monthly: any[], period: string) {
     aggregated.interestExpense += Number(month.interestExpense) || 0;
     aggregated.nonOperatingIncome += Number(month.nonOperatingIncome) || 0;
     aggregated.extraordinaryItems += Number(month.extraordinaryItems) || 0;
+
+    // Legacy detail fields
+    addDetail(aggregated.cogsDetails, 'cogsPayroll', Number(month.cogsPayroll) || 0);
+    addDetail(aggregated.cogsDetails, 'cogsOwnerPay', Number(month.cogsOwnerPay) || 0);
+    addDetail(aggregated.cogsDetails, 'cogsContractors', Number(month.cogsContractors) || 0);
+    addDetail(aggregated.cogsDetails, 'cogsMaterials', Number(month.cogsMaterials) || 0);
+    addDetail(aggregated.cogsDetails, 'cogsCommissions', Number(month.cogsCommissions) || 0);
+    addDetail(aggregated.cogsDetails, 'cogsOther', Number(month.cogsOther) || 0);
+
+    // Sector detail fields from flat monthly shape
+    const hasFlatRevenueFields = Object.keys(month).some((key) => key.startsWith('rev_'));
+    const hasFlatCogsFields = Object.keys(month).some((key) => key.startsWith('cogs_') && key !== 'cogs_total');
+    Object.entries(month).forEach(([key, rawValue]: [string, any]) => {
+      const value = Number(rawValue) || 0;
+      if (key.startsWith('rev_')) {
+        addDetail(aggregated.revenueDetails, key, value);
+      }
+      if (key.startsWith('cogs_')) {
+        addDetail(aggregated.cogsDetails, key, value);
+      }
+    });
+
+    // Fallback to breakdown payload only if flat prefixed fields are absent.
+    if (!hasFlatRevenueFields && month.revenueBreakdown && typeof month.revenueBreakdown === 'object') {
+      Object.entries(month.revenueBreakdown).forEach(([key, rawValue]: [string, any]) => {
+        if (key.startsWith('rev_')) {
+          addDetail(aggregated.revenueDetails, key, Number(rawValue) || 0);
+        }
+      });
+    }
+    if (!hasFlatCogsFields && month.cogsBreakdown && typeof month.cogsBreakdown === 'object') {
+      Object.entries(month.cogsBreakdown).forEach(([key, rawValue]: [string, any]) => {
+        if (key.startsWith('cogs_') && key !== 'cogs_total') {
+          addDetail(aggregated.cogsDetails, key, Number(rawValue) || 0);
+        }
+      });
+    }
     
     // Parse income taxes - use EXACT same pattern as DataReviewTab (line 1272-1386)
     // DataReviewTab accesses: (m.stateIncomeTaxes || 0) and (m.federalIncomeTaxes || 0)
@@ -128,8 +174,13 @@ function calculateAggregatedValues(monthly: any[], period: string) {
   
 
   // Calculate derived values
-  aggregated.cogs = aggregated.cogsPayroll + aggregated.cogsOwnerPay + aggregated.cogsContractors +
-                    aggregated.cogsMaterials + aggregated.cogsCommissions + aggregated.cogsOther;
+  if (!aggregated.cogs || aggregated.cogs === 0) {
+    const detailCogs = Object.values(aggregated.cogsDetails).reduce((sum, v) => sum + (Number(v) || 0), 0);
+    aggregated.cogs = detailCogs > 0
+      ? detailCogs
+      : aggregated.cogsPayroll + aggregated.cogsOwnerPay + aggregated.cogsContractors +
+        aggregated.cogsMaterials + aggregated.cogsCommissions + aggregated.cogsOther;
+  }
   
   aggregated.totalOpex = aggregated.payroll + aggregated.benefits + aggregated.insurance +
                          aggregated.professionalFees + aggregated.subcontractors + aggregated.rent +
@@ -182,9 +233,15 @@ function calculateAggregatedValues(monthly: any[], period: string) {
 // Income Statement Component
 function IncomeStatement({ aggregated }: { aggregated: any }) {
   const fmt = (val: number) => val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const revenueDetailEntries = Object.entries(aggregated.revenueDetails || {})
+    .filter(([, value]: any) => Number(value) > 0)
+    .sort((a: any, b: any) => getFieldDisplayName(String(a[0])).localeCompare(getFieldDisplayName(String(b[0]))));
+  const cogsDetailEntries = Object.entries(aggregated.cogsDetails || {})
+    .filter(([, value]: any) => Number(value) > 0)
+    .sort((a: any, b: any) => getFieldDisplayName(String(a[0])).localeCompare(getFieldDisplayName(String(b[0]))));
 
   return (
-    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', whiteSpace: 'nowrap' }}>
       <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
         <div style={{ fontSize: '14px', color: '#64748b' }}>{aggregated.periodLabel}</div>
@@ -196,47 +253,23 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
           <span style={{ fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('revenue')}</span>
           <span style={{ fontWeight: '600', color: '#1e293b' }}>${fmt(aggregated.revenue)}</span>
         </div>
+        {revenueDetailEntries.map(([field, value]: any) => (
+          <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+            <span style={{ color: '#475569' }}>{getFieldDisplayName(String(field))}</span>
+            <span style={{ color: '#475569' }}>${fmt(Number(value) || 0)}</span>
+          </div>
+        ))}
       </div>
 
       {/* COGS Section */}
       <div style={{ marginBottom: '12px' }}>
         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{getFieldDisplayName('costOfGoodsSold')}</div>
-        {aggregated.cogsPayroll > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-            <span style={{ color: '#475569' }}>{getFieldDisplayName('cogsPayroll')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.cogsPayroll)}</span>
+        {cogsDetailEntries.map(([field, value]: any) => (
+          <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+            <span style={{ color: '#475569' }}>{getFieldDisplayName(String(field))}</span>
+            <span style={{ color: '#475569' }}>${fmt(Number(value) || 0)}</span>
           </div>
-        )}
-        {aggregated.cogsOwnerPay > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-            <span style={{ color: '#475569' }}>{getFieldDisplayName('cogsOwnerPay')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.cogsOwnerPay)}</span>
-          </div>
-        )}
-        {aggregated.cogsContractors > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-            <span style={{ color: '#475569' }}>{getFieldDisplayName('cogsContractors')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.cogsContractors)}</span>
-          </div>
-        )}
-        {aggregated.cogsMaterials > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-            <span style={{ color: '#475569' }}>{getFieldDisplayName('cogsMaterials')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.cogsMaterials)}</span>
-          </div>
-        )}
-        {aggregated.cogsCommissions > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-            <span style={{ color: '#475569' }}>{getFieldDisplayName('cogsCommissions')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.cogsCommissions)}</span>
-          </div>
-        )}
-        {aggregated.cogsOther > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-            <span style={{ color: '#475569' }}>{getFieldDisplayName('cogsOther')}</span>
-            <span style={{ color: '#475569' }}>${fmt(aggregated.cogsOther)}</span>
-          </div>
-        )}
+        ))}
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
           <span style={{ fontWeight: '600', color: '#1e293b' }}>{getFieldDisplayName('cogsTotal')}</span>
           <span style={{ fontWeight: '600', color: '#1e293b' }}>${fmt(aggregated.cogs)}</span>

@@ -17,13 +17,13 @@ export const FIELD_DISPLAY_NAMES: Record<string, string> = {
   revenue: 'Total Revenue',
   
   // COGS
-  cogsPayroll: 'COGS - Payroll',
-  cogsOwnerPay: 'COGS - Owner Pay',
-  cogsContractors: 'COGS - Contractors',
-  cogsMaterials: 'COGS - Materials',
-  cogsCommissions: 'COGS - Commissions',
-  cogsOther: 'COGS - Other',
-  cogsTotal: 'COGS - Total',
+  cogsPayroll: 'Payroll',
+  cogsOwnerPay: 'Owner Pay',
+  cogsContractors: 'Contractors',
+  cogsMaterials: 'Materials',
+  cogsCommissions: 'Commissions',
+  cogsOther: 'Other',
+  cogsTotal: 'Total COGS',
   
   // Calculated fields
   grossProfit: 'GROSS PROFIT',
@@ -70,6 +70,7 @@ export const FIELD_DISPLAY_NAMES: Record<string, string> = {
   
   // Balance Sheet - Liabilities
   ap: 'Accounts Payable',
+  loc: 'Line of Credit',
   otherCL: 'Other Current Liabilities',
   tcl: 'Total Current Liabilities',
   ltd: 'Long-term Debt',
@@ -99,7 +100,27 @@ export const FIELD_DISPLAY_NAMES: Record<string, string> = {
  * Returns the field name itself if no mapping exists (for backwards compatibility).
  */
 export function getFieldDisplayName(fieldName: string): string {
-  return FIELD_DISPLAY_NAMES[fieldName] || fieldName;
+  const mapped = FIELD_DISPLAY_NAMES[fieldName];
+  if (mapped) return mapped;
+
+  if (fieldName.startsWith('rev_')) {
+    return fieldName
+      .replace(/^rev_/, '')
+      .split('_')
+      .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+      .join(' ');
+  }
+
+  if (fieldName.startsWith('cogs_')) {
+    const label = fieldName
+      .replace(/^cogs_/, '')
+      .split('_')
+      .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+      .join(' ');
+    return label;
+  }
+
+  return fieldName;
 }
 
 /**

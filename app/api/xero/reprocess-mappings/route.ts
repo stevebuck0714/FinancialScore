@@ -5,6 +5,32 @@ import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
 
+function applyMappedValue(details: Record<string, any>, targetField: string | null | undefined, amount: number): boolean {
+  if (!targetField || targetField === 'unmapped') return false;
+  if (targetField.startsWith('rev_')) {
+    if (!details.revenueBreakdown || typeof details.revenueBreakdown !== 'object') details.revenueBreakdown = {};
+    details.revenueBreakdown[targetField] = (Number(details.revenueBreakdown[targetField]) || 0) + Math.abs(amount);
+    details.revenue = (details.revenue || 0) + Math.abs(amount);
+    return true;
+  }
+  if (targetField.startsWith('cogs_')) {
+    if (!details.cogsBreakdown || typeof details.cogsBreakdown !== 'object') details.cogsBreakdown = {};
+    details.cogsBreakdown[targetField] = (Number(details.cogsBreakdown[targetField]) || 0) + Math.abs(amount);
+    return true;
+  }
+  if (details[targetField] === undefined) {
+    return false;
+  }
+  details[targetField] += Math.abs(amount);
+  return true;
+}
+
+function sumSectorCogs(details: Record<string, any>): number {
+  return Object.keys(details)
+    .filter((key) => key.startsWith('cogs_'))
+    .reduce((sum, key) => sum + (Number(details[key]) || 0), 0);
+}
+
 /**
  * Reprocess Xero data with account mappings
  * This fetches account-level transactions and applies mappings to create detailed monthly breakdowns
@@ -272,6 +298,8 @@ function parseTrialBalanceDetails(trialBalance: any, mappingLookup: Map<string, 
     cogsCommissions: 0,
     cogsOther: 0,
     cogsTotal: 0,
+    cogsBreakdown: {},
+    revenueBreakdown: {},
     payroll: 0,
     ownerBasePay: 0,
     benefits: 0,
@@ -291,6 +319,7 @@ function parseTrialBalanceDetails(trialBalance: any, mappingLookup: Map<string, 
     depreciationAmortization: 0,
     otherExpense: 0,
     expense: 0,
+    loc: 0,
   };
 
   console.log('  🔍 Parsing Trial Balance...');
@@ -317,8 +346,7 @@ function parseTrialBalanceDetails(trialBalance: any, mappingLookup: Map<string, 
           accountsFound++;
           const targetField = mappingLookup.get(accountName.toLowerCase());
           
-          if (targetField && targetField !== 'unmapped' && details.hasOwnProperty(targetField)) {
-            details[targetField] += Math.abs(value);
+          if (applyMappedValue(details, targetField, value)) {
             accountsMapped++;
             console.log(`  ✅ ${accountName} (${accountCode}) $${value.toFixed(0)} → ${targetField}`);
           } else if (accountName.length > 3) {
@@ -342,8 +370,9 @@ function parseTrialBalanceDetails(trialBalance: any, mappingLookup: Map<string, 
   console.log(`  📊 Found ${accountsFound} accounts, mapped ${accountsMapped} to target fields`);
 
   // Calculate totals
-  details.cogsTotal = details.cogsPayroll + details.cogsOwnerPay + details.cogsContractors + 
-                      details.cogsMaterials + details.cogsCommissions + details.cogsOther;
+  details.cogsTotal = details.cogsPayroll + details.cogsOwnerPay + details.cogsContractors +
+                      details.cogsMaterials + details.cogsCommissions + details.cogsOther +
+                      sumSectorCogs(details);
   
   details.expense = details.payroll + details.ownerBasePay + details.benefits + details.insurance +
                     details.professionalFees + details.subcontractors + details.rent + details.taxLicense +
@@ -369,6 +398,8 @@ function parseAccountDetails(plData: any, mappingLookup: Map<string, string>): a
     cogsCommissions: 0,
     cogsOther: 0,
     cogsTotal: 0,
+    cogsBreakdown: {},
+    revenueBreakdown: {},
     payroll: 0,
     ownerBasePay: 0,
     benefits: 0,
@@ -388,6 +419,7 @@ function parseAccountDetails(plData: any, mappingLookup: Map<string, string>): a
     depreciationAmortization: 0,
     otherExpense: 0,
     expense: 0,
+    loc: 0,
   };
 
   console.log('  🔍 Parsing P&L report structure...');
@@ -427,8 +459,7 @@ function parseAccountDetails(plData: any, mappingLookup: Map<string, string>): a
           accountsFound++;
           const targetField = mappingLookup.get(accountName.toLowerCase());
           
-          if (targetField && targetField !== 'unmapped' && details.hasOwnProperty(targetField)) {
-            details[targetField] += Math.abs(value);
+          if (applyMappedValue(details, targetField, value)) {
             accountsMapped++;
             console.log(`${indent}✅ ${accountName} ($${value.toFixed(2)}) → ${targetField}`);
           } else {
@@ -460,8 +491,9 @@ function parseAccountDetails(plData: any, mappingLookup: Map<string, string>): a
   console.log(`  📊 Found ${accountsFound} accounts, mapped ${accountsMapped} to target fields`);
 
   // Calculate totals
-  details.cogsTotal = details.cogsPayroll + details.cogsOwnerPay + details.cogsContractors + 
-                      details.cogsMaterials + details.cogsCommissions + details.cogsOther;
+  details.cogsTotal = details.cogsPayroll + details.cogsOwnerPay + details.cogsContractors +
+                      details.cogsMaterials + details.cogsCommissions + details.cogsOther +
+                      sumSectorCogs(details);
   
   details.expense = details.payroll + details.ownerBasePay + details.benefits + details.insurance +
                     details.professionalFees + details.subcontractors + details.rent + details.taxLicense +

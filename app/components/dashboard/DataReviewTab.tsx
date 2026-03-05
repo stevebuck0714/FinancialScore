@@ -75,6 +75,51 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
 
   // Use master data as monthly data
   const monthly = monthlyData;
+  const displayedMonths = monthly.slice(-36);
+
+  const formatDynamicFieldLabel = (field: string): string => {
+    if (field.startsWith("rev_")) {
+      return field
+        .replace(/^rev_/, "")
+        .split("_")
+        .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+        .join(" ");
+    }
+    if (field.startsWith("cogs_")) {
+      const label = field
+        .replace(/^cogs_/, "")
+        .split("_")
+        .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+        .join(" ");
+      return label;
+    }
+    return getFieldDisplayName(field);
+  };
+
+  const hasNonZeroValue = (field: string): boolean =>
+    displayedMonths.some((m: any) => Number(m[field] || 0) !== 0);
+
+  const sectorRevenueFields = Array.from(
+    new Set(
+      displayedMonths.flatMap((m: any) =>
+        Object.keys(m).filter((key) => key.startsWith("rev_") && Number(m[key] || 0) !== 0),
+      ),
+    ),
+  ).sort((a, b) => formatDynamicFieldLabel(a).localeCompare(formatDynamicFieldLabel(b)));
+
+  const legacyCogsFields = ["cogsPayroll", "cogsOwnerPay", "cogsContractors", "cogsMaterials", "cogsCommissions", "cogsOther"].filter(
+    hasNonZeroValue,
+  );
+  const sectorCogsFields = Array.from(
+    new Set(
+      displayedMonths.flatMap((m: any) =>
+        Object.keys(m).filter(
+          (key) => key.startsWith("cogs_") && key !== "cogs_total" && Number(m[key] || 0) !== 0,
+        ),
+      ),
+    ),
+  ).sort((a, b) => formatDynamicFieldLabel(a).localeCompare(formatDynamicFieldLabel(b)));
+  const cogsDetailFields = [...legacyCogsFields, ...sectorCogsFields];
 
   // Format month as MM-YYYY
   const formatMonth = (monthValue: any): string => {
@@ -204,7 +249,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                     >
                       Item
                     </th>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
+                    {displayedMonths.map((m: any, idx: number) => (
                       <th
                         key={idx}
                         style={{
@@ -239,7 +284,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                     >
                       {getFieldDisplayName('revenue')}
                     </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
+                    {displayedMonths.map((m: any, idx: number) => (
                       <td
                         key={idx}
                         style={{
@@ -257,6 +302,40 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                       </td>
                     ))}
                   </tr>
+
+                  {/* Revenue Detail (sector-specific mapped categories) */}
+                  {sectorRevenueFields.map((field) => (
+                    <tr key={field} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td
+                        style={{
+                          padding: "8px 10px",
+                          paddingLeft: "20px",
+                          position: "sticky",
+                          left: 0,
+                          background: "white",
+                          zIndex: 1,
+                        }}
+                      >
+                        {formatDynamicFieldLabel(field)}
+                      </td>
+                      {displayedMonths.map((m: any, idx: number) => (
+                        <td
+                          key={idx}
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "right",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          $
+                          {(m[field] || 0).toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
 
                   {/* COGS Detail */}
                   <tr
@@ -277,190 +356,42 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                     >
                       {getFieldDisplayName('costOfGoodsSold')}
                     </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
+                    {displayedMonths.map((m: any, idx: number) => (
                       <td key={idx} style={{ padding: "8px 10px" }}></td>
                     ))}
                   </tr>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td
-                      style={{
-                        padding: "8px 10px",
-                        paddingLeft: "20px",
-                        position: "sticky",
-                        left: 0,
-                        background: "white",
-                        zIndex: 1,
-                      }}
-                    >
-                      {getFieldDisplayName('cogsPayroll')}
-                    </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
+                  {cogsDetailFields.map((field) => (
+                    <tr key={field} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td
-                        key={idx}
                         style={{
                           padding: "8px 10px",
-                          textAlign: "right",
-                          fontFamily: "monospace",
+                          paddingLeft: "20px",
+                          position: "sticky",
+                          left: 0,
+                          background: "white",
+                          zIndex: 1,
                         }}
                       >
-                        $
-                        {(m.cogsPayroll || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                        {formatDynamicFieldLabel(field)}
                       </td>
-                    ))}
-                  </tr>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td
-                      style={{
-                        padding: "8px 10px",
-                        paddingLeft: "20px",
-                        position: "sticky",
-                        left: 0,
-                        background: "white",
-                        zIndex: 1,
-                      }}
-                    >
-                      {getFieldDisplayName('cogsOwnerPay')}
-                    </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
-                      <td
-                        key={idx}
-                        style={{
-                          padding: "8px 10px",
-                          textAlign: "right",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        $
-                        {(m.cogsOwnerPay || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td
-                      style={{
-                        padding: "8px 10px",
-                        paddingLeft: "20px",
-                        position: "sticky",
-                        left: 0,
-                        background: "white",
-                        zIndex: 1,
-                      }}
-                    >
-                      {getFieldDisplayName('cogsContractors')}
-                    </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
-                      <td
-                        key={idx}
-                        style={{
-                          padding: "8px 10px",
-                          textAlign: "right",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        $
-                        {(m.cogsContractors || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td
-                      style={{
-                        padding: "8px 10px",
-                        paddingLeft: "20px",
-                        position: "sticky",
-                        left: 0,
-                        background: "white",
-                        zIndex: 1,
-                      }}
-                    >
-                      {getFieldDisplayName('cogsMaterials')}
-                    </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
-                      <td
-                        key={idx}
-                        style={{
-                          padding: "8px 10px",
-                          textAlign: "right",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        $
-                        {(m.cogsMaterials || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td
-                      style={{
-                        padding: "8px 10px",
-                        paddingLeft: "20px",
-                        position: "sticky",
-                        left: 0,
-                        background: "white",
-                        zIndex: 1,
-                      }}
-                    >
-                      {getFieldDisplayName('cogsCommissions')}
-                    </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
-                      <td
-                        key={idx}
-                        style={{
-                          padding: "8px 10px",
-                          textAlign: "right",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        $
-                        {(m.cogsCommissions || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td
-                      style={{
-                        padding: "8px 10px",
-                        paddingLeft: "20px",
-                        position: "sticky",
-                        left: 0,
-                        background: "white",
-                        zIndex: 1,
-                      }}
-                    >
-                      {getFieldDisplayName('cogsOther')}
-                    </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
-                      <td
-                        key={idx}
-                        style={{
-                          padding: "8px 10px",
-                          textAlign: "right",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        $
-                        {(m.cogsOther || 0).toLocaleString("en-US", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
-                      </td>
-                    ))}
-                  </tr>
+                      {displayedMonths.map((m: any, idx: number) => (
+                        <td
+                          key={idx}
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "right",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          $
+                          {(m[field] || 0).toLocaleString("en-US", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          })}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
                   <tr
                     style={{
                       borderBottom: "2px solid #e2e8f0",
@@ -479,7 +410,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                     >
                       {getFieldDisplayName('cogsTotal')}
                     </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => (
+                    {displayedMonths.map((m: any, idx: number) => (
                       <td
                         key={idx}
                         style={{
@@ -518,7 +449,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                     >
                       {getFieldDisplayName('grossProfit')}
                     </td>
-                    {monthly.slice(-36).map((m: any, idx: number) => {
+                    {displayedMonths.map((m: any, idx: number) => {
                       const grossProfit = (m.revenue || 0) - (m.cogsTotal || 0);
                       return (
                         <td
@@ -588,6 +519,36 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                       >
                         $
                         {(m.payroll || 0).toLocaleString("en-US", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td
+                      style={{
+                        padding: "8px 10px",
+                        paddingLeft: "20px",
+                        position: "sticky",
+                        left: 0,
+                        background: "white",
+                        zIndex: 1,
+                      }}
+                    >
+                      {getFieldDisplayName('loc')}
+                    </td>
+                    {monthly.slice(-36).map((m: any, idx: number) => (
+                      <td
+                        key={idx}
+                        style={{
+                          padding: "8px 10px",
+                          textAlign: "right",
+                          fontFamily: "monospace",
+                        }}
+                      >
+                        $
+                        {(m.loc || 0).toLocaleString("en-US", {
                           minimumFractionDigits: 0,
                           maximumFractionDigits: 0,
                         })}

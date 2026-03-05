@@ -4,19 +4,13 @@
     "date": "2023-02-28T07:00:00.000Z",
     "month": "2023-02",
     "revenue": 94943.21,
-    "revenueBreakdown": {
-      "Unallocated": 2460.4100000000003
-    },
     "cogsPayroll": 39455.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 6952.45,
+    "cogsMaterials": 14267.9,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 56689.06,
-    "cogsBreakdown": {
-      "Unallocated": 47853.61
-    },
+    "cogsOther": 1520,
+    "cogsTotal": 56689.060000000005,
     "payroll": 28673.579999999998,
     "ownerBasePay": 0,
     "benefits": 1103.92,
@@ -62,17 +56,6 @@
     "treasuryStock": 0,
     "totalEquity": 229001.01,
     "totalLAndE": 421949.59,
-    "rev_billable_service_revenue": 68286.66,
-    "rev_retainer_revenue": 3842,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 252,
-    "rev_success_performance_fees": 4197,
-    "rev_other_revenue": 15406.25,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 396.61,
-    "cogs_project_specific_travel_and_expenses": 149,
-    "cogs_reimbursable_direct_costs": 6274.84,
-    "cogs_other_cogs": 1520,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 276315.71
@@ -107,44 +90,14 @@
       "retainedEarnings": {
         "Unallocated": 135173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 68286.66
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3842
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 252
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4197
-      },
-      "rev_other_revenue": {
-        "Unallocated": 15406.25
-      },
       "revenue": {
-        "Unallocated": 2460.4100000000003
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 396.61
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 149
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6274.84
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 1520
+        "Unallocated": 94943.21
       },
       "cogsMaterials": {
-        "Unallocated": 6952.45
+        "Unallocated": 14267.9
+      },
+      "cogsOther": {
+        "Unallocated": 1520
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -198,8 +151,14 @@
         "Unallocated": 4812.8
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 94943.21
+    },
     "expenseBreakdown": {
       "Unallocated": 53383.310000000005
+    },
+    "cogsBreakdown": {
+      "Unallocated": 56689.06
     }
   },
   {
@@ -207,19 +166,13 @@
     "date": "2023-03-31T07:00:00.000Z",
     "month": "2023-03",
     "revenue": 121012.64,
-    "revenueBreakdown": {
-      "Unallocated": 28491.510000000002
-    },
     "cogsPayroll": 41388.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 26463.45,
+    "cogsMaterials": 34103.31,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 1520,
     "cogsTotal": 78457.47,
-    "cogsBreakdown": {
-      "Unallocated": 69297.61
-    },
     "payroll": 27926.48,
     "ownerBasePay": 0,
     "benefits": 502.1,
@@ -265,17 +218,6 @@
     "treasuryStock": 0,
     "totalEquity": 253546.73,
     "totalLAndE": 457267.35,
-    "rev_billable_service_revenue": 71283.5,
-    "rev_retainer_revenue": 3842,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 252,
-    "rev_success_performance_fees": 4522.24,
-    "rev_other_revenue": 12122.5,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 396.61,
-    "cogs_project_specific_travel_and_expenses": 149,
-    "cogs_reimbursable_direct_costs": 6599.25,
-    "cogs_other_cogs": 1520,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 314790.7
@@ -310,44 +252,14 @@
       "retainedEarnings": {
         "Unallocated": 150173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 71283.5
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3842
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 252
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4522.24
-      },
-      "rev_other_revenue": {
-        "Unallocated": 12122.5
-      },
       "revenue": {
-        "Unallocated": 28491.510000000002
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 396.61
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 149
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6599.25
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 1520
+        "Unallocated": 121012.64
       },
       "cogsMaterials": {
-        "Unallocated": 26463.45
+        "Unallocated": 34103.31
+      },
+      "cogsOther": {
+        "Unallocated": 1520
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -398,8 +310,14 @@
         "Unallocated": 10185
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 121012.64
+    },
     "expenseBreakdown": {
       "Unallocated": 47255.979999999996
+    },
+    "cogsBreakdown": {
+      "Unallocated": 78457.47
     }
   },
   {
@@ -407,19 +325,13 @@
     "date": "2023-04-30T07:00:00.000Z",
     "month": "2023-04",
     "revenue": 123732.28,
-    "revenueBreakdown": {
-      "Unallocated": 29589.350000000002
-    },
     "cogsPayroll": 41010.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 15594.91,
+    "cogsMaterials": 23234.77,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 1520,
     "cogsTotal": 67210.93000000001,
-    "cogsBreakdown": {
-      "Unallocated": 58051.07
-    },
     "payroll": 27772.359999999997,
     "ownerBasePay": 0,
     "benefits": 2294.45,
@@ -465,17 +377,6 @@
     "treasuryStock": 0,
     "totalEquity": 325311.84,
     "totalLAndE": 564069.91,
-    "rev_billable_service_revenue": 66556.66,
-    "rev_retainer_revenue": 3792,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 252,
-    "rev_success_performance_fees": 3724,
-    "rev_other_revenue": 19319.38,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 396.61,
-    "cogs_project_specific_travel_and_expenses": 149,
-    "cogs_reimbursable_direct_costs": 6599.25,
-    "cogs_other_cogs": 1520,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 311930.06
@@ -513,44 +414,14 @@
       "retainedEarnings": {
         "Unallocated": 165173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 66556.66
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3792
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 252
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3724
-      },
-      "rev_other_revenue": {
-        "Unallocated": 19319.38
-      },
       "revenue": {
-        "Unallocated": 29589.350000000002
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 396.61
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 149
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6599.25
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 1520
+        "Unallocated": 123732.28
       },
       "cogsMaterials": {
-        "Unallocated": 15594.91
+        "Unallocated": 23234.77
+      },
+      "cogsOther": {
+        "Unallocated": 1520
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -601,8 +472,14 @@
         "Unallocated": 11300
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 123732.28
+    },
     "expenseBreakdown": {
       "Unallocated": 46336.01999999998
+    },
+    "cogsBreakdown": {
+      "Unallocated": 67210.93
     }
   },
   {
@@ -610,19 +487,13 @@
     "date": "2023-05-31T07:00:00.000Z",
     "month": "2023-05",
     "revenue": 136639.17,
-    "revenueBreakdown": {
-      "Unallocated": 47879.369999999995
-    },
     "cogsPayroll": 40614.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 31717.81,
+    "cogsMaterials": 39361.06,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 3372.15,
     "cogsTotal": 84793.37,
-    "cogsBreakdown": {
-      "Unallocated": 73777.97
-    },
     "payroll": 27573.639999999996,
     "ownerBasePay": 0,
     "benefits": 1094.08,
@@ -668,17 +539,6 @@
     "treasuryStock": 0,
     "totalEquity": 361676.37,
     "totalLAndE": 594894.73,
-    "rev_billable_service_revenue": 66556.66,
-    "rev_retainer_revenue": 3792,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 252,
-    "rev_success_performance_fees": 3751.5,
-    "rev_other_revenue": 13908.75,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 149,
-    "cogs_reimbursable_direct_costs": 6599.25,
-    "cogs_other_cogs": 3372.15,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 319540.66000000003
@@ -716,44 +576,14 @@
       "retainedEarnings": {
         "Unallocated": 180173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 66556.66
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3792
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 252
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3751.5
-      },
-      "rev_other_revenue": {
-        "Unallocated": 13908.75
-      },
       "revenue": {
-        "Unallocated": 47879.369999999995
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 149
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6599.25
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 3372.15
+        "Unallocated": 136639.17
       },
       "cogsMaterials": {
-        "Unallocated": 31717.81
+        "Unallocated": 39361.06
+      },
+      "cogsOther": {
+        "Unallocated": 3372.15
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -804,8 +634,14 @@
         "Unallocated": 10400
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 136639.17
+    },
     "expenseBreakdown": {
       "Unallocated": 46805.15999999999
+    },
+    "cogsBreakdown": {
+      "Unallocated": 84793.37
     }
   },
   {
@@ -813,19 +649,13 @@
     "date": "2023-06-30T07:00:00.000Z",
     "month": "2023-06",
     "revenue": 118056.84999999999,
-    "revenueBreakdown": {
-      "Unallocated": 29328.05
-    },
     "cogsPayroll": 41132.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 24820.73,
+    "cogsMaterials": 32678.23,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2002.14,
     "cogsTotal": 77258.53,
-    "cogsBreakdown": {
-      "Unallocated": 67398.89
-    },
     "payroll": 27882.309999999998,
     "ownerBasePay": 0,
     "benefits": 965.08,
@@ -871,17 +701,6 @@
     "treasuryStock": 0,
     "totalEquity": 365850.61,
     "totalLAndE": 614721.79,
-    "rev_billable_service_revenue": 65514.66,
-    "rev_retainer_revenue": 3792,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 252,
-    "rev_success_performance_fees": 3300,
-    "rev_other_revenue": 15371.25,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 149,
-    "cogs_reimbursable_direct_costs": 6813.5,
-    "cogs_other_cogs": 2002.14,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 327341.52
@@ -919,44 +738,14 @@
       "retainedEarnings": {
         "Unallocated": 195173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 65514.66
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3792
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 252
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3300
-      },
-      "rev_other_revenue": {
-        "Unallocated": 15371.25
-      },
       "revenue": {
-        "Unallocated": 29328.05
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 149
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6813.5
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2002.14
+        "Unallocated": 118056.84999999999
       },
       "cogsMaterials": {
-        "Unallocated": 24820.73
+        "Unallocated": 32678.23
+      },
+      "cogsOther": {
+        "Unallocated": 2002.14
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -1010,8 +799,14 @@
         "Unallocated": 3610
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 118056.84999999999
+    },
     "expenseBreakdown": {
       "Unallocated": 50364.10999999999
+    },
+    "cogsBreakdown": {
+      "Unallocated": 77258.53
     }
   },
   {
@@ -1019,19 +814,13 @@
     "date": "2023-07-31T07:00:00.000Z",
     "month": "2023-07",
     "revenue": 118066.87,
-    "revenueBreakdown": {
-      "Unallocated": 28462.57
-    },
     "cogsPayroll": 41361.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 28820.449999999997,
+    "cogsMaterials": 37065.869999999995,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 1763.96,
     "cogsTotal": 81636.99,
-    "cogsBreakdown": {
-      "Unallocated": 71627.61
-    },
     "payroll": 27773.010000000002,
     "ownerBasePay": 0,
     "benefits": 965.08,
@@ -1077,18 +866,6 @@
     "treasuryStock": 0,
     "totalEquity": 356195.69,
     "totalLAndE": 620082.02,
-    "rev_billable_service_revenue": 66179.66,
-    "rev_retainer_revenue": 3792,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 252,
-    "rev_success_performance_fees": 3190,
-    "rev_reimbursable_expenses": 163,
-    "rev_other_revenue": 15528.75,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 149,
-    "cogs_reimbursable_direct_costs": 7201.42,
-    "cogs_other_cogs": 1763.96,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 335337.4
@@ -1126,47 +903,14 @@
       "retainedEarnings": {
         "Unallocated": 210173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 66179.66
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3792
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 252
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3190
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 163
-      },
-      "rev_other_revenue": {
-        "Unallocated": 15528.75
-      },
       "revenue": {
-        "Unallocated": 28462.57
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 149
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 7201.42
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 1763.96
+        "Unallocated": 118066.87
       },
       "cogsMaterials": {
-        "Unallocated": 28820.449999999997
+        "Unallocated": 37065.869999999995
+      },
+      "cogsOther": {
+        "Unallocated": 1763.96
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -1220,8 +964,14 @@
         "Unallocated": 3610
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 118066.87
+    },
     "expenseBreakdown": {
       "Unallocated": 49760.1
+    },
+    "cogsBreakdown": {
+      "Unallocated": 81636.98999999999
     }
   },
   {
@@ -1229,19 +979,13 @@
     "date": "2023-08-31T07:00:00.000Z",
     "month": "2023-08",
     "revenue": 109589.64,
-    "revenueBreakdown": {
-      "Unallocated": 23731.089999999997
-    },
     "cogsPayroll": 17844.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 17472.35,
+    "cogsMaterials": 37384.57000000001,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 58416.69,
-    "cogsBreakdown": {
-      "Unallocated": 36762.51
-    },
+    "cogsOther": 1741.96,
+    "cogsTotal": 58416.69000000001,
     "payroll": 29060.1,
     "ownerBasePay": 0,
     "benefits": 965.08,
@@ -1287,18 +1031,6 @@
     "treasuryStock": 0,
     "totalEquity": 356649.04000000004,
     "totalLAndE": 594322.65,
-    "rev_billable_service_revenue": 64239.41,
-    "rev_retainer_revenue": 3640,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 252,
-    "rev_success_performance_fees": 3051.5,
-    "rev_reimbursable_expenses": 163,
-    "rev_other_revenue": 14013.75,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 149,
-    "cogs_reimbursable_direct_costs": 18868.22,
-    "cogs_other_cogs": 1741.96,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 343533.18
@@ -1336,47 +1068,14 @@
       "retainedEarnings": {
         "Unallocated": 225173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 64239.41
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3640
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 252
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3051.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 163
-      },
-      "rev_other_revenue": {
-        "Unallocated": 14013.75
-      },
       "revenue": {
-        "Unallocated": 23731.089999999997
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 149
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 18868.22
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 1741.96
+        "Unallocated": 109589.64
       },
       "cogsMaterials": {
-        "Unallocated": 17472.35
+        "Unallocated": 37384.57000000001
+      },
+      "cogsOther": {
+        "Unallocated": 1741.96
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -1433,8 +1132,14 @@
         "Unallocated": -26859.4
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 109589.64
+    },
     "expenseBreakdown": {
       "Unallocated": 20458.429999999993
+    },
+    "cogsBreakdown": {
+      "Unallocated": 58416.69000000001
     }
   },
   {
@@ -1442,19 +1147,13 @@
     "date": "2023-09-30T07:00:00.000Z",
     "month": "2023-09",
     "revenue": 95832.73000000001,
-    "revenueBreakdown": {
-      "Unallocated": 10720.02
-    },
     "cogsPayroll": 43146.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1885.83,
-    "cogsMaterials": 16510.19,
+    "cogsMaterials": 23437.36,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 1751.47,
     "cogsTotal": 70220.99,
-    "cogsBreakdown": {
-      "Unallocated": 61542.35
-    },
     "payroll": 30561.57,
     "ownerBasePay": 0,
     "benefits": 965.08,
@@ -1500,18 +1199,6 @@
     "treasuryStock": 0,
     "totalEquity": 396743.95,
     "totalLAndE": 609860.87,
-    "rev_billable_service_revenue": 63845.41,
-    "rev_retainer_revenue": 3640,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 377,
-    "rev_success_performance_fees": 2502.16,
-    "rev_reimbursable_expenses": 293,
-    "rev_other_revenue": 13956.25,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 189,
-    "cogs_reimbursable_direct_costs": 5843.17,
-    "cogs_other_cogs": 1751.47,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 353011.54000000004
@@ -1549,47 +1236,14 @@
       "retainedEarnings": {
         "Unallocated": 240173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 63845.41
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3640
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 377
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2502.16
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 293
-      },
-      "rev_other_revenue": {
-        "Unallocated": 13956.25
-      },
       "revenue": {
-        "Unallocated": 10720.02
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 189
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5843.17
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 1751.47
+        "Unallocated": 95832.73000000001
       },
       "cogsMaterials": {
-        "Unallocated": 16510.19
+        "Unallocated": 23437.36
+      },
+      "cogsOther": {
+        "Unallocated": 1751.47
       },
       "cogsContractors": {
         "Unallocated": 1885.83
@@ -1637,8 +1291,14 @@
         "Unallocated": 1630.28
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 95832.73000000001
+    },
     "expenseBreakdown": {
       "Unallocated": 58060.49
+    },
+    "cogsBreakdown": {
+      "Unallocated": 70220.99
     }
   },
   {
@@ -1646,19 +1306,13 @@
     "date": "2023-10-31T07:00:00.000Z",
     "month": "2023-10",
     "revenue": 97408.8,
-    "revenueBreakdown": {
-      "Unallocated": 8974.840000000002
-    },
     "cogsPayroll": 39904.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 14287.95,
+    "cogsMaterials": 21215.12,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 1751.47,
     "cogsTotal": 64316.75,
-    "cogsBreakdown": {
-      "Unallocated": 55638.11
-    },
     "payroll": 29235.829999999998,
     "ownerBasePay": 0,
     "benefits": 965.08,
@@ -1704,18 +1358,6 @@
     "treasuryStock": 0,
     "totalEquity": 376440.26,
     "totalLAndE": 618845.04,
-    "rev_billable_service_revenue": 62463.82,
-    "rev_retainer_revenue": 3490,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 125,
-    "rev_success_performance_fees": 2354.5,
-    "rev_reimbursable_expenses": 293,
-    "rev_other_revenue": 19208.75,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 189,
-    "cogs_reimbursable_direct_costs": 5843.17,
-    "cogs_other_cogs": 1751.47,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 360544.55000000005
@@ -1753,47 +1395,14 @@
       "retainedEarnings": {
         "Unallocated": 255173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 62463.82
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3490
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 125
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2354.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 293
-      },
-      "rev_other_revenue": {
-        "Unallocated": 19208.75
-      },
       "revenue": {
-        "Unallocated": 8974.840000000002
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 189
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5843.17
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 1751.47
+        "Unallocated": 97408.8
       },
       "cogsMaterials": {
-        "Unallocated": 14287.95
+        "Unallocated": 21215.12
+      },
+      "cogsOther": {
+        "Unallocated": 1751.47
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -1841,8 +1450,14 @@
         "Unallocated": 4601.01
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 97408.8
+    },
     "expenseBreakdown": {
       "Unallocated": 50165.509999999995
+    },
+    "cogsBreakdown": {
+      "Unallocated": 64316.75
     }
   },
   {
@@ -1850,19 +1465,13 @@
     "date": "2023-11-30T07:00:00.000Z",
     "month": "2023-11",
     "revenue": 115240.75000000001,
-    "revenueBreakdown": {
-      "Unallocated": 24992.27
-    },
     "cogsPayroll": 38246.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 25172.21,
+    "cogsMaterials": 32146.38,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 73580.5,
-    "cogsBreakdown": {
-      "Unallocated": 64864.37
-    },
+    "cogsOther": 1741.96,
+    "cogsTotal": 73580.50000000001,
     "payroll": 29073.109999999997,
     "ownerBasePay": 0,
     "benefits": 1982.71,
@@ -1908,18 +1517,6 @@
     "treasuryStock": 0,
     "totalEquity": 417608.35,
     "totalLAndE": 637976.96,
-    "rev_billable_service_revenue": 62463.82,
-    "rev_retainer_revenue": 3440,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 374,
-    "rev_success_performance_fees": 2354.5,
-    "rev_reimbursable_expenses": 293,
-    "rev_other_revenue": 20824.27,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 189,
-    "cogs_reimbursable_direct_costs": 5890.17,
-    "cogs_other_cogs": 1741.96,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 369370.51
@@ -1957,47 +1554,14 @@
       "retainedEarnings": {
         "Unallocated": 270173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 62463.82
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3440
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 374
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2354.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 293
-      },
-      "rev_other_revenue": {
-        "Unallocated": 20824.27
-      },
       "revenue": {
-        "Unallocated": 24992.27
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 189
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5890.17
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 1741.96
+        "Unallocated": 115240.75000000001
       },
       "cogsMaterials": {
-        "Unallocated": 25172.21
+        "Unallocated": 32146.38
+      },
+      "cogsOther": {
+        "Unallocated": 1741.96
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -2051,8 +1615,14 @@
         "Unallocated": 2741
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 115240.75000000001
+    },
     "expenseBreakdown": {
       "Unallocated": 54845.31
+    },
+    "cogsBreakdown": {
+      "Unallocated": 73580.5
     }
   },
   {
@@ -2060,19 +1630,13 @@
     "date": "2023-12-31T07:00:00.000Z",
     "month": "2023-12",
     "revenue": 127507.93,
-    "revenueBreakdown": {
-      "Unallocated": 43739.32
-    },
     "cogsPayroll": 41373.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 36755.97,
+    "cogsMaterials": 43730.14,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 3496.1,
     "cogsTotal": 90045.40000000001,
-    "cogsBreakdown": {
-      "Unallocated": 79575.13
-    },
     "payroll": 29253.319999999996,
     "ownerBasePay": 0,
     "benefits": 2147.26,
@@ -2118,18 +1682,6 @@
     "treasuryStock": 0,
     "totalEquity": 352409.98,
     "totalLAndE": 564539.6599999999,
-    "rev_billable_service_revenue": 65087.12,
-    "rev_retainer_revenue": 3440,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 374,
-    "rev_success_performance_fees": 2896.5,
-    "rev_reimbursable_expenses": 557,
-    "rev_other_revenue": 10915.1,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 189,
-    "cogs_reimbursable_direct_costs": 5890.17,
-    "cogs_other_cogs": 3496.1,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 379654.56000000006
@@ -2164,47 +1716,14 @@
       "retainedEarnings": {
         "Unallocated": 285173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 65087.12
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3440
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 374
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2896.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 557
-      },
-      "rev_other_revenue": {
-        "Unallocated": 10915.1
-      },
       "revenue": {
-        "Unallocated": 43739.32
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 189
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5890.17
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 3496.1
+        "Unallocated": 127507.93
       },
       "cogsMaterials": {
-        "Unallocated": 36755.97
+        "Unallocated": 43730.14
+      },
+      "cogsOther": {
+        "Unallocated": 3496.1
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -2261,8 +1780,14 @@
         "Unallocated": 3984
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 127507.93
+    },
     "expenseBreakdown": {
       "Unallocated": 54995.49
+    },
+    "cogsBreakdown": {
+      "Unallocated": 90045.4
     }
   },
   {
@@ -2270,19 +1795,13 @@
     "date": "2024-01-31T07:00:00.000Z",
     "month": "2024-01",
     "revenue": 116012.74,
-    "revenueBreakdown": {
-      "Unallocated": 31456.53
-    },
     "cogsPayroll": 41438.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 30091.489999999998,
+    "cogsMaterials": 37065.66,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 82213.78,
-    "cogsBreakdown": {
-      "Unallocated": 72975.65
-    },
+    "cogsOther": 2263.96,
+    "cogsTotal": 82213.78000000001,
     "payroll": 29406.909999999996,
     "ownerBasePay": 0,
     "benefits": 2528.56,
@@ -2328,18 +1847,6 @@
     "treasuryStock": 0,
     "totalEquity": 361055.04,
     "totalLAndE": 599179.04,
-    "rev_billable_service_revenue": 72263.82,
-    "rev_retainer_revenue": 4380,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 374,
-    "rev_success_performance_fees": 2432.5,
-    "rev_reimbursable_expenses": 557,
-    "rev_other_revenue": 4050,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 189,
-    "cogs_reimbursable_direct_costs": 5890.17,
-    "cogs_other_cogs": 2263.96,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 393097.03
@@ -2374,47 +1881,14 @@
       "retainedEarnings": {
         "Unallocated": 300173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 72263.82
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4380
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 374
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2432.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 557
-      },
-      "rev_other_revenue": {
-        "Unallocated": 4050
-      },
       "revenue": {
-        "Unallocated": 31456.53
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 189
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5890.17
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2263.96
+        "Unallocated": 116012.74
       },
       "cogsMaterials": {
-        "Unallocated": 30091.489999999998
+        "Unallocated": 37065.66
+      },
+      "cogsOther": {
+        "Unallocated": 2263.96
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -2468,8 +1942,14 @@
         "Unallocated": 3984
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 116012.74
+    },
     "expenseBreakdown": {
       "Unallocated": 59958.15
+    },
+    "cogsBreakdown": {
+      "Unallocated": 82213.78
     }
   },
   {
@@ -2477,19 +1957,13 @@
     "date": "2024-02-29T07:00:00.000Z",
     "month": "2024-02",
     "revenue": 192364.15,
-    "revenueBreakdown": {
-      "Unallocated": 107885.93999999999
-    },
     "cogsPayroll": 41707.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 105952.36,
+    "cogsMaterials": 112926.53,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 158650.03000000003,
-    "cogsBreakdown": {
-      "Unallocated": 149105.52000000002
-    },
+    "cogsOther": 2570.34,
+    "cogsTotal": 158650.03,
     "payroll": 28491.53,
     "ownerBasePay": 0,
     "benefits": 2522.74,
@@ -2535,18 +2009,6 @@
     "treasuryStock": 0,
     "totalEquity": 434250.17,
     "totalLAndE": 702693.61,
-    "rev_billable_service_revenue": 72352.82,
-    "rev_retainer_revenue": 4181,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 374,
-    "rev_success_performance_fees": 2464.5,
-    "rev_reimbursable_expenses": 557,
-    "rev_other_revenue": 4050,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 400,
-    "cogs_project_specific_travel_and_expenses": 189,
-    "cogs_reimbursable_direct_costs": 5890.17,
-    "cogs_other_cogs": 2570.34,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 401536.31
@@ -2584,47 +2046,14 @@
       "retainedEarnings": {
         "Unallocated": 315173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 72352.82
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4181
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 374
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2464.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 557
-      },
-      "rev_other_revenue": {
-        "Unallocated": 4050
-      },
       "revenue": {
-        "Unallocated": 107885.93999999999
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 400
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 189
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5890.17
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2570.34
+        "Unallocated": 192364.15
       },
       "cogsMaterials": {
-        "Unallocated": 105952.36
+        "Unallocated": 112926.53
+      },
+      "cogsOther": {
+        "Unallocated": 2570.34
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -2681,8 +2110,14 @@
         "Unallocated": 3984
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 192364.15
+    },
     "expenseBreakdown": {
       "Unallocated": 64465.46999999999
+    },
+    "cogsBreakdown": {
+      "Unallocated": 158650.03
     }
   },
   {
@@ -2690,19 +2125,13 @@
     "date": "2024-03-31T07:00:00.000Z",
     "month": "2024-03",
     "revenue": 109812.84000000001,
-    "revenueBreakdown": {
-      "Unallocated": 25163.63
-    },
     "cogsPayroll": 39843.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 22648.809999999998,
+    "cogsMaterials": 29921.57,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 73577.83,
-    "cogsBreakdown": {
-      "Unallocated": 63937.97
-    },
+    "cogsOther": 2367.1,
+    "cogsTotal": 73577.83000000002,
     "payroll": 28215.37,
     "ownerBasePay": 0,
     "benefits": 2499.6099999999997,
@@ -2748,18 +2177,6 @@
     "treasuryStock": 0,
     "totalEquity": 498470.88999999996,
     "totalLAndE": 756628.1799999999,
-    "rev_billable_service_revenue": 72143.82,
-    "rev_retainer_revenue": 4431,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 374,
-    "rev_success_performance_fees": 2594.5,
-    "rev_reimbursable_expenses": 557,
-    "rev_other_revenue": 4050,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 450,
-    "cogs_project_specific_travel_and_expenses": 249,
-    "cogs_reimbursable_direct_costs": 6078.76,
-    "cogs_other_cogs": 2367.1,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 410852.54
@@ -2797,47 +2214,14 @@
       "retainedEarnings": {
         "Unallocated": 330173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 72143.82
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4431
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 374
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2594.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 557
-      },
-      "rev_other_revenue": {
-        "Unallocated": 4050
-      },
       "revenue": {
-        "Unallocated": 25163.63
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 450
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 249
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6078.76
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2367.1
+        "Unallocated": 109812.84000000001
       },
       "cogsMaterials": {
-        "Unallocated": 22648.809999999998
+        "Unallocated": 29921.57
+      },
+      "cogsOther": {
+        "Unallocated": 2367.1
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -2888,8 +2272,14 @@
         "Unallocated": 9998
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 109812.84000000001
+    },
     "expenseBreakdown": {
       "Unallocated": 52470.98999999999
+    },
+    "cogsBreakdown": {
+      "Unallocated": 73577.83
     }
   },
   {
@@ -2897,19 +2287,13 @@
     "date": "2024-04-30T07:00:00.000Z",
     "month": "2024-04",
     "revenue": 105716.39000000001,
-    "revenueBreakdown": {
-      "Unallocated": 19971.18
-    },
     "cogsPayroll": 41179.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 23896.86,
+    "cogsMaterials": 31169.620000000003,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2647.1,
     "cogsTotal": 76441.88,
-    "cogsBreakdown": {
-      "Unallocated": 66522.02
-    },
     "payroll": 28290.32,
     "ownerBasePay": 0,
     "benefits": 2502.52,
@@ -2955,18 +2339,6 @@
     "treasuryStock": 0,
     "totalEquity": 520057.26,
     "totalLAndE": 762478.5900000001,
-    "rev_billable_service_revenue": 73584.82,
-    "rev_retainer_revenue": 3981,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 374,
-    "rev_success_performance_fees": 2699.5,
-    "rev_reimbursable_expenses": 557,
-    "rev_other_revenue": 4050,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 450,
-    "cogs_project_specific_travel_and_expenses": 249,
-    "cogs_reimbursable_direct_costs": 6078.76,
-    "cogs_other_cogs": 2647.1,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 421270.08
@@ -3004,47 +2376,14 @@
       "retainedEarnings": {
         "Unallocated": 345173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 73584.82
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3981
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 374
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2699.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 557
-      },
-      "rev_other_revenue": {
-        "Unallocated": 4050
-      },
       "revenue": {
-        "Unallocated": 19971.18
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 450
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 249
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6078.76
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2647.1
+        "Unallocated": 105716.39000000001
       },
       "cogsMaterials": {
-        "Unallocated": 23896.86
+        "Unallocated": 31169.620000000003
+      },
+      "cogsOther": {
+        "Unallocated": 2647.1
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -3095,8 +2434,14 @@
         "Unallocated": 9358
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 105716.39000000001
+    },
     "expenseBreakdown": {
       "Unallocated": 50859.09
+    },
+    "cogsBreakdown": {
+      "Unallocated": 76441.88
     }
   },
   {
@@ -3104,19 +2449,13 @@
     "date": "2024-05-31T07:00:00.000Z",
     "month": "2024-05",
     "revenue": 105021.31,
-    "revenueBreakdown": {
-      "Unallocated": 18842.1
-    },
     "cogsPayroll": 41059.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 22843.3,
+    "cogsMaterials": 30116.059999999998,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2817.1,
     "cogsTotal": 75438.32,
-    "cogsBreakdown": {
-      "Unallocated": 65348.46
-    },
     "payroll": 28114.48,
     "ownerBasePay": 0,
     "benefits": 2496.46,
@@ -3162,18 +2501,6 @@
     "treasuryStock": 0,
     "totalEquity": 503457.22,
     "totalLAndE": 758552.27,
-    "rev_billable_service_revenue": 73160.82,
-    "rev_retainer_revenue": 3981,
-    "rev_project_based_revenue": 498.89,
-    "rev_licensing_ip_revenue": 1148,
-    "rev_success_performance_fees": 2783.5,
-    "rev_reimbursable_expenses": 557,
-    "rev_other_revenue": 4050,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 450,
-    "cogs_project_specific_travel_and_expenses": 249,
-    "cogs_reimbursable_direct_costs": 6078.76,
-    "cogs_other_cogs": 2817.1,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 429414.8
@@ -3211,47 +2538,14 @@
       "retainedEarnings": {
         "Unallocated": 360173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 73160.82
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3981
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 498.89
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1148
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 2783.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 557
-      },
-      "rev_other_revenue": {
-        "Unallocated": 4050
-      },
       "revenue": {
-        "Unallocated": 18842.1
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 450
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 249
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6078.76
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2817.1
+        "Unallocated": 105021.31
       },
       "cogsMaterials": {
-        "Unallocated": 22843.3
+        "Unallocated": 30116.059999999998
+      },
+      "cogsOther": {
+        "Unallocated": 2817.1
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -3302,8 +2596,14 @@
         "Unallocated": 8897
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 105021.31
+    },
     "expenseBreakdown": {
       "Unallocated": 47831.409999999996
+    },
+    "cogsBreakdown": {
+      "Unallocated": 75438.32
     }
   },
   {
@@ -3311,19 +2611,13 @@
     "date": "2024-06-30T07:00:00.000Z",
     "month": "2024-06",
     "revenue": 99838.52999999998,
-    "revenueBreakdown": {
-      "Unallocated": 8688.51
-    },
     "cogsPayroll": 36412.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 15995.4,
+    "cogsMaterials": 23268.16,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2827.1,
     "cogsTotal": 63953.420000000006,
-    "cogsBreakdown": {
-      "Unallocated": 53853.56
-    },
     "payroll": 28116.18,
     "ownerBasePay": 0,
     "benefits": 2747.46,
@@ -3369,18 +2663,6 @@
     "treasuryStock": 0,
     "totalEquity": 520267.54,
     "totalLAndE": 770766.33,
-    "rev_billable_service_revenue": 72763.62,
-    "rev_retainer_revenue": 3981,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1058,
-    "rev_success_performance_fees": 3192.5,
-    "rev_reimbursable_expenses": 557,
-    "rev_other_revenue": 9050,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 450,
-    "cogs_project_specific_travel_and_expenses": 249,
-    "cogs_reimbursable_direct_costs": 6078.76,
-    "cogs_other_cogs": 2827.1,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 444229.60000000003
@@ -3418,47 +2700,14 @@
       "retainedEarnings": {
         "Unallocated": 375173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 72763.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 3981
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1058
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3192.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 557
-      },
-      "rev_other_revenue": {
-        "Unallocated": 9050
-      },
       "revenue": {
-        "Unallocated": 8688.51
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 450
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 249
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6078.76
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2827.1
+        "Unallocated": 99838.52999999998
       },
       "cogsMaterials": {
-        "Unallocated": 15995.4
+        "Unallocated": 23268.16
+      },
+      "cogsOther": {
+        "Unallocated": 2827.1
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -3512,8 +2761,14 @@
         "Unallocated": 2988
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 99838.52999999998
+    },
     "expenseBreakdown": {
       "Unallocated": 56771.19
+    },
+    "cogsBreakdown": {
+      "Unallocated": 63953.42
     }
   },
   {
@@ -3521,19 +2776,13 @@
     "date": "2024-07-31T07:00:00.000Z",
     "month": "2024-07",
     "revenue": 112294.71999999999,
-    "revenueBreakdown": {
-      "Unallocated": 22331.2
-    },
     "cogsPayroll": 35958.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 19776.66,
+    "cogsMaterials": 27384.25,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2482.1,
     "cogsTotal": 67270.51000000001,
-    "cogsBreakdown": {
-      "Unallocated": 57180.82
-    },
     "payroll": 28570.149999999998,
     "ownerBasePay": 0,
     "benefits": 2170.1,
@@ -3579,17 +2828,6 @@
     "treasuryStock": 0,
     "totalEquity": 505785.98,
     "totalLAndE": 769144.32,
-    "rev_billable_service_revenue": 75662.37,
-    "rev_retainer_revenue": 4174,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1658.75,
-    "rev_success_performance_fees": 3199.5,
-    "rev_reimbursable_expenses": 671,
-    "rev_other_revenue": 4050,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 450,
-    "cogs_reimbursable_direct_costs": 6662.59,
-    "cogs_other_cogs": 2482.1,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 442338.58
@@ -3627,44 +2865,14 @@
       "retainedEarnings": {
         "Unallocated": 390173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 75662.37
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4174
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1658.75
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3199.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 671
-      },
-      "rev_other_revenue": {
-        "Unallocated": 4050
-      },
       "revenue": {
-        "Unallocated": 22331.2
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 450
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6662.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2482.1
+        "Unallocated": 112294.71999999999
       },
       "cogsMaterials": {
-        "Unallocated": 19776.66
+        "Unallocated": 27384.25
+      },
+      "cogsOther": {
+        "Unallocated": 2482.1
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -3718,8 +2926,14 @@
         "Unallocated": 2988
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 112294.71999999999
+    },
     "expenseBreakdown": {
       "Unallocated": 58168.59999999999
+    },
+    "cogsBreakdown": {
+      "Unallocated": 67270.51000000001
     }
   },
   {
@@ -3727,19 +2941,13 @@
     "date": "2024-08-31T07:00:00.000Z",
     "month": "2024-08",
     "revenue": 121521.38999999998,
-    "revenueBreakdown": {
-      "Unallocated": 30053.06
-    },
     "cogsPayroll": 10406.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 19988.339999999997,
+    "cogsMaterials": 26695.690000000002,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 41029.95,
-    "cogsBreakdown": {
-      "Unallocated": 31840.5
-    },
+    "cogsOther": 2482.1,
+    "cogsTotal": 41029.950000000004,
     "payroll": 46081.009999999995,
     "ownerBasePay": 0,
     "benefits": 9506.11,
@@ -3785,17 +2993,6 @@
     "treasuryStock": 0,
     "totalEquity": 488536.07999999996,
     "totalLAndE": 784980.94,
-    "rev_billable_service_revenue": 77256.62,
-    "rev_retainer_revenue": 4188,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1674.31,
-    "rev_success_performance_fees": 3194.5,
-    "rev_reimbursable_expenses": 557,
-    "rev_other_revenue": 4050,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 450,
-    "cogs_reimbursable_direct_costs": 5762.35,
-    "cogs_other_cogs": 2482.1,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 454668.58
@@ -3833,44 +3030,14 @@
       "retainedEarnings": {
         "Unallocated": 405173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 77256.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4188
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1674.31
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3194.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 557
-      },
-      "rev_other_revenue": {
-        "Unallocated": 4050
-      },
       "revenue": {
-        "Unallocated": 30053.06
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 450
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5762.35
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2482.1
+        "Unallocated": 121521.38999999998
       },
       "cogsMaterials": {
-        "Unallocated": 19988.339999999997
+        "Unallocated": 26695.690000000002
+      },
+      "cogsOther": {
+        "Unallocated": 2482.1
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -3927,8 +3094,14 @@
         "Unallocated": -20669
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 121521.38999999998
+    },
     "expenseBreakdown": {
       "Unallocated": 67955.36
+    },
+    "cogsBreakdown": {
+      "Unallocated": 41029.950000000004
     }
   },
   {
@@ -3936,19 +3109,13 @@
     "date": "2024-09-30T07:00:00.000Z",
     "month": "2024-09",
     "revenue": 118966.67,
-    "revenueBreakdown": {
-      "Unallocated": 29582.840000000004
-    },
     "cogsPayroll": 36644.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 34416.82,
+    "cogsMaterials": 42024.41,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2482.1,
     "cogsTotal": 82596.67000000001,
-    "cogsBreakdown": {
-      "Unallocated": 72506.98000000001
-    },
     "payroll": 32743.839999999997,
     "ownerBasePay": 0,
     "benefits": 3001.8100000000004,
@@ -3994,17 +3161,6 @@
     "treasuryStock": 0,
     "totalEquity": 520665.45999999996,
     "totalLAndE": 788615.9099999999,
-    "rev_billable_service_revenue": 75728.12,
-    "rev_retainer_revenue": 4466,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1674.31,
-    "rev_success_performance_fees": 3160.5,
-    "rev_reimbursable_expenses": 957,
-    "rev_other_revenue": 2850,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 450,
-    "cogs_reimbursable_direct_costs": 6662.59,
-    "cogs_other_cogs": 2482.1,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 459502.65
@@ -4042,44 +3198,14 @@
       "retainedEarnings": {
         "Unallocated": 420173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 75728.12
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4466
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1674.31
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3160.5
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 957
-      },
-      "rev_other_revenue": {
-        "Unallocated": 2850
-      },
       "revenue": {
-        "Unallocated": 29582.840000000004
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 450
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6662.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2482.1
+        "Unallocated": 118966.67
       },
       "cogsMaterials": {
-        "Unallocated": 34416.82
+        "Unallocated": 42024.41
+      },
+      "cogsOther": {
+        "Unallocated": 2482.1
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -4133,8 +3259,14 @@
         "Unallocated": 4156
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 118966.67
+    },
     "expenseBreakdown": {
       "Unallocated": 64478.49
+    },
+    "cogsBreakdown": {
+      "Unallocated": 82596.67000000001
     }
   },
   {
@@ -4142,19 +3274,13 @@
     "date": "2024-10-31T07:00:00.000Z",
     "month": "2024-10",
     "revenue": 154367.17999999996,
-    "revenueBreakdown": {
-      "Unallocated": 45551.88999999999
-    },
     "cogsPayroll": 39779.33,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 25483.6,
+    "cogsMaterials": 35141.19,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2585.34,
     "cogsTotal": 78951.69,
-    "cogsBreakdown": {
-      "Unallocated": 66708.76000000001
-    },
     "payroll": 33946.89,
     "ownerBasePay": 0,
     "benefits": 3094.33,
@@ -4200,17 +3326,6 @@
     "treasuryStock": 0,
     "totalEquity": 527770.6799999999,
     "totalLAndE": 813988.5799999998,
-    "rev_billable_service_revenue": 80934.62,
-    "rev_retainer_revenue": 4757.5,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1699.31,
-    "rev_success_performance_fees": 3402.8,
-    "rev_reimbursable_expenses": 972,
-    "rev_other_revenue": 16501.16,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 2500,
-    "cogs_reimbursable_direct_costs": 6662.59,
-    "cogs_other_cogs": 2585.34,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 479459.08
@@ -4248,44 +3363,14 @@
       "retainedEarnings": {
         "Unallocated": 435173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 80934.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4757.5
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1699.31
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3402.8
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 972
-      },
-      "rev_other_revenue": {
-        "Unallocated": 16501.16
-      },
       "revenue": {
-        "Unallocated": 45551.88999999999
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 2500
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6662.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2585.34
+        "Unallocated": 154367.17999999996
       },
       "cogsMaterials": {
-        "Unallocated": 25483.6
+        "Unallocated": 35141.19
+      },
+      "cogsOther": {
+        "Unallocated": 2585.34
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -4339,8 +3424,14 @@
         "Unallocated": 4156
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 154367.17999999996
+    },
     "expenseBreakdown": {
       "Unallocated": 71624.16
+    },
+    "cogsBreakdown": {
+      "Unallocated": 78951.69
     }
   },
   {
@@ -4348,19 +3439,13 @@
     "date": "2024-11-30T07:00:00.000Z",
     "month": "2024-11",
     "revenue": 162773.67,
-    "revenueBreakdown": {
-      "Unallocated": 56318.189999999995
-    },
     "cogsPayroll": 45066,
     "cogsOwnerPay": 0,
     "cogsContractors": 1445.83,
-    "cogsMaterials": 37645.14,
+    "cogsMaterials": 47302.729999999996,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2585.34,
     "cogsTotal": 96399.9,
-    "cogsBreakdown": {
-      "Unallocated": 84156.97
-    },
     "payroll": 33268.31,
     "ownerBasePay": 0,
     "benefits": 2012.15,
@@ -4406,17 +3491,6 @@
     "treasuryStock": 0,
     "totalEquity": 555985.1499999999,
     "totalLAndE": 825345.2,
-    "rev_billable_service_revenue": 83060.62,
-    "rev_retainer_revenue": 4559.5,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1699.31,
-    "rev_success_performance_fees": 3550.3,
-    "rev_reimbursable_expenses": 1026,
-    "rev_other_revenue": 12011.85,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 2500,
-    "cogs_reimbursable_direct_costs": 6662.59,
-    "cogs_other_cogs": 2585.34,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 493897.32
@@ -4454,44 +3528,14 @@
       "retainedEarnings": {
         "Unallocated": 450173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 83060.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4559.5
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1699.31
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3550.3
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 1026
-      },
-      "rev_other_revenue": {
-        "Unallocated": 12011.85
-      },
       "revenue": {
-        "Unallocated": 56318.189999999995
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 2500
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6662.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2585.34
+        "Unallocated": 162773.67
       },
       "cogsMaterials": {
-        "Unallocated": 37645.14
+        "Unallocated": 47302.729999999996
+      },
+      "cogsOther": {
+        "Unallocated": 2585.34
       },
       "cogsContractors": {
         "Unallocated": 1445.83
@@ -4545,28 +3589,28 @@
         "Unallocated": 4156
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 162773.67
+    },
     "expenseBreakdown": {
       "Unallocated": 55411.09
+    },
+    "cogsBreakdown": {
+      "Unallocated": 96399.9
     }
   },
   {
     "monthDate": "2024-12-31T07:00:00.000Z",
     "date": "2024-12-31T07:00:00.000Z",
     "month": "2024-12",
-    "revenue": 141571.21,
-    "revenueBreakdown": {
-      "Unallocated": 25233.7
-    },
+    "revenue": 159487.06,
     "cogsPayroll": 45927,
     "cogsOwnerPay": 0,
     "cogsContractors": 2176.41,
-    "cogsMaterials": 27322.1,
+    "cogsMaterials": 36979.69,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2735.34,
     "cogsTotal": 87818.44,
-    "cogsBreakdown": {
-      "Unallocated": 75425.51
-    },
     "payroll": 28516.64,
     "ownerBasePay": 0,
     "benefits": 3146.1400000000003,
@@ -4612,17 +3656,6 @@
     "treasuryStock": 0,
     "totalEquity": 566273.23,
     "totalLAndE": 832642.6799999999,
-    "rev_billable_service_revenue": 83090.62,
-    "rev_retainer_revenue": 4585.5,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1699.31,
-    "rev_success_performance_fees": 3747,
-    "rev_reimbursable_expenses": 1185,
-    "rev_other_revenue": 21482.18,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 2500,
-    "cogs_reimbursable_direct_costs": 6662.59,
-    "cogs_other_cogs": 2735.34,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 487168.45
@@ -4660,44 +3693,14 @@
       "retainedEarnings": {
         "Unallocated": 465173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 83090.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4585.5
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1699.31
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 3747
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 1185
-      },
-      "rev_other_revenue": {
-        "Unallocated": 21482.18
-      },
       "revenue": {
-        "Unallocated": 25233.7
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 2500
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6662.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2735.34
+        "Unallocated": 159487.06
       },
       "cogsMaterials": {
-        "Unallocated": 27322.1
+        "Unallocated": 36979.69
+      },
+      "cogsOther": {
+        "Unallocated": 2735.34
       },
       "cogsContractors": {
         "Unallocated": 2176.41
@@ -4754,28 +3757,28 @@
         "Unallocated": 5541
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 159487.06
+    },
     "expenseBreakdown": {
       "Unallocated": 59667.15
+    },
+    "cogsBreakdown": {
+      "Unallocated": 87818.44
     }
   },
   {
     "monthDate": "2025-01-31T07:00:00.000Z",
     "date": "2025-01-31T07:00:00.000Z",
     "month": "2025-01",
-    "revenue": 155395.21999999997,
-    "revenueBreakdown": {
-      "Unallocated": 40527.29000000001
-    },
+    "revenue": 160983.28999999998,
     "cogsPayroll": 50595,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 38250.92,
+    "cogsMaterials": 46788.51,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2585.34,
     "cogsTotal": 100699.43,
-    "cogsBreakdown": {
-      "Unallocated": 89576.5
-    },
     "payroll": 25125.13,
     "ownerBasePay": 0,
     "benefits": 2233.3599999999997,
@@ -4821,17 +3824,6 @@
     "treasuryStock": 0,
     "totalEquity": 610234.0499999999,
     "totalLAndE": 876966.6199999999,
-    "rev_billable_service_revenue": 83235.62,
-    "rev_retainer_revenue": 4610.5,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1729.31,
-    "rev_success_performance_fees": 4855.6,
-    "rev_reimbursable_expenses": 2010,
-    "rev_other_revenue": 17879,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_reimbursable_direct_costs": 6662.59,
-    "cogs_other_cogs": 2585.34,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 521263.79000000004
@@ -4869,44 +3861,14 @@
       "retainedEarnings": {
         "Unallocated": 480173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 83235.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4610.5
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1729.31
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4855.6
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2010
-      },
-      "rev_other_revenue": {
-        "Unallocated": 17879
-      },
       "revenue": {
-        "Unallocated": 40527.29000000001
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6662.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2585.34
+        "Unallocated": 160983.28999999998
       },
       "cogsMaterials": {
-        "Unallocated": 38250.92
+        "Unallocated": 46788.51
+      },
+      "cogsOther": {
+        "Unallocated": 2585.34
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -4960,28 +3922,28 @@
         "Unallocated": 5541
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 160983.28999999998
+    },
     "expenseBreakdown": {
       "Unallocated": 54113.16000000001
+    },
+    "cogsBreakdown": {
+      "Unallocated": 100699.43000000001
     }
   },
   {
     "monthDate": "2025-02-28T07:00:00.000Z",
     "date": "2025-02-28T07:00:00.000Z",
     "month": "2025-02",
-    "revenue": 148814.22999999998,
-    "revenueBreakdown": {
-      "Unallocated": 38195.27999999999
-    },
+    "revenue": 158856.74,
     "cogsPayroll": 49364,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 36021.03,
+    "cogsMaterials": 44558.62,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2585.34,
     "cogsTotal": 97238.54000000001,
-    "cogsBreakdown": {
-      "Unallocated": 86115.61
-    },
     "payroll": 21498.350000000002,
     "ownerBasePay": 0,
     "benefits": 2579.95,
@@ -5027,17 +3989,6 @@
     "treasuryStock": 0,
     "totalEquity": 612263.79,
     "totalLAndE": 874858.8500000001,
-    "rev_billable_service_revenue": 84770.62,
-    "rev_retainer_revenue": 4665.5,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1729.31,
-    "rev_success_performance_fees": 5749.6,
-    "rev_reimbursable_expenses": 2175,
-    "rev_other_revenue": 10981.02,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_reimbursable_direct_costs": 6662.59,
-    "cogs_other_cogs": 2585.34,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 517957.95999999996
@@ -5075,44 +4026,14 @@
       "retainedEarnings": {
         "Unallocated": 495173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 84770.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4665.5
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1729.31
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 5749.6
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2175
-      },
-      "rev_other_revenue": {
-        "Unallocated": 10981.02
-      },
       "revenue": {
-        "Unallocated": 38195.27999999999
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6662.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2585.34
+        "Unallocated": 158856.74
       },
       "cogsMaterials": {
-        "Unallocated": 36021.03
+        "Unallocated": 44558.62
+      },
+      "cogsOther": {
+        "Unallocated": 2585.34
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -5169,28 +4090,28 @@
         "Unallocated": 5541
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 158856.74
+    },
     "expenseBreakdown": {
       "Unallocated": 51960.14
+    },
+    "cogsBreakdown": {
+      "Unallocated": 97238.54000000001
     }
   },
   {
     "monthDate": "2025-03-31T07:00:00.000Z",
     "date": "2025-03-31T07:00:00.000Z",
     "month": "2025-03",
-    "revenue": 139307.90999999997,
-    "revenueBreakdown": {
-      "Unallocated": 17313.58
-    },
+    "revenue": 171759.58,
     "cogsPayroll": 49880,
     "cogsOwnerPay": 0,
     "cogsContractors": 501.16,
-    "cogsMaterials": 16509.68,
+    "cogsMaterials": 25047.27,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 78063.79,
-    "cogsBreakdown": {
-      "Unallocated": 66890.84
-    },
+    "cogsOther": 2635.36,
+    "cogsTotal": 78063.79000000001,
     "payroll": 20606.329999999998,
     "ownerBasePay": 0,
     "benefits": 2479.65,
@@ -5236,17 +4157,6 @@
     "treasuryStock": 0,
     "totalEquity": 605302.64,
     "totalLAndE": 875937.26,
-    "rev_billable_service_revenue": 84864.62,
-    "rev_retainer_revenue": 4992.5,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1729.31,
-    "rev_success_performance_fees": 5811.6,
-    "rev_reimbursable_expenses": 2175,
-    "rev_other_revenue": 21873.4,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_reimbursable_direct_costs": 6662.59,
-    "cogs_other_cogs": 2635.36,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 518345.72
@@ -5284,44 +4194,14 @@
       "retainedEarnings": {
         "Unallocated": 510173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 84864.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4992.5
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1729.31
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 5811.6
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2175
-      },
-      "rev_other_revenue": {
-        "Unallocated": 21873.4
-      },
       "revenue": {
-        "Unallocated": 17313.58
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 6662.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2635.36
+        "Unallocated": 171759.58
       },
       "cogsMaterials": {
-        "Unallocated": 16509.68
+        "Unallocated": 25047.27
+      },
+      "cogsOther": {
+        "Unallocated": 2635.36
       },
       "cogsContractors": {
         "Unallocated": 501.16
@@ -5372,28 +4252,28 @@
         "Unallocated": 12410
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 171759.58
+    },
     "expenseBreakdown": {
       "Unallocated": 46647.01999999999
+    },
+    "cogsBreakdown": {
+      "Unallocated": 78063.79000000001
     }
   },
   {
     "monthDate": "2025-04-30T07:00:00.000Z",
     "date": "2025-04-30T07:00:00.000Z",
     "month": "2025-04",
-    "revenue": 147940.64,
-    "revenueBreakdown": {
-      "Unallocated": 25402.54
-    },
+    "revenue": 168802.41,
     "cogsPayroll": 50993.57,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 27768.66,
+    "cogsMaterials": 35510.99,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2785.36,
     "cogsTotal": 90020.5,
-    "cogsBreakdown": {
-      "Unallocated": 79492.81
-    },
     "payroll": 20610.899999999998,
     "ownerBasePay": 0,
     "benefits": 2425.54,
@@ -5439,17 +4319,6 @@
     "treasuryStock": 0,
     "totalEquity": 620822.2,
     "totalLAndE": 891515.8699999999,
-    "rev_billable_service_revenue": 85462.62,
-    "rev_retainer_revenue": 4992.5,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1951.81,
-    "rev_success_performance_fees": 6074.6,
-    "rev_reimbursable_expenses": 2175,
-    "rev_other_revenue": 21333.67,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_reimbursable_direct_costs": 5867.33,
-    "cogs_other_cogs": 2785.36,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 533710.73
@@ -5487,44 +4356,14 @@
       "retainedEarnings": {
         "Unallocated": 525173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 85462.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 4992.5
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1951.81
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 6074.6
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2175
-      },
-      "rev_other_revenue": {
-        "Unallocated": 21333.67
-      },
       "revenue": {
-        "Unallocated": 25402.54
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5867.33
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2785.36
+        "Unallocated": 168802.41
       },
       "cogsMaterials": {
-        "Unallocated": 27768.66
+        "Unallocated": 35510.99
+      },
+      "cogsOther": {
+        "Unallocated": 2785.36
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -5575,28 +4414,28 @@
         "Unallocated": 12410
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 168802.41
+    },
     "expenseBreakdown": {
       "Unallocated": 45834.18
+    },
+    "cogsBreakdown": {
+      "Unallocated": 90020.5
     }
   },
   {
     "monthDate": "2025-05-31T07:00:00.000Z",
     "date": "2025-05-31T07:00:00.000Z",
     "month": "2025-05",
-    "revenue": 149065.11,
-    "revenueBreakdown": {
-      "Unallocated": 21018.89
-    },
+    "revenue": 178340.47999999998,
     "cogsPayroll": 56358.79,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 22500.43,
+    "cogsMaterials": 30242.760000000002,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2635.36,
     "cogsTotal": 89967.49,
-    "cogsBreakdown": {
-      "Unallocated": 79589.8
-    },
     "payroll": 20609.2,
     "ownerBasePay": 0,
     "benefits": 2335.98,
@@ -5642,17 +4481,6 @@
     "treasuryStock": 0,
     "totalEquity": 645698.89,
     "totalLAndE": 925531.02,
-    "rev_billable_service_revenue": 87032.62,
-    "rev_retainer_revenue": 2526,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1981.81,
-    "rev_success_performance_fees": 4121.55,
-    "rev_reimbursable_expenses": 2175,
-    "rev_other_revenue": 29661.34,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_reimbursable_direct_costs": 5867.33,
-    "cogs_other_cogs": 2635.36,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 568731.38
@@ -5690,44 +4518,14 @@
       "retainedEarnings": {
         "Unallocated": 540173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 87032.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 2526
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1981.81
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4121.55
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2175
-      },
-      "rev_other_revenue": {
-        "Unallocated": 29661.34
-      },
       "revenue": {
-        "Unallocated": 21018.89
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5867.33
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2635.36
+        "Unallocated": 178340.47999999998
       },
       "cogsMaterials": {
-        "Unallocated": 22500.43
+        "Unallocated": 30242.760000000002
+      },
+      "cogsOther": {
+        "Unallocated": 2635.36
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -5778,28 +4576,28 @@
         "Unallocated": 12410
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 178340.47999999998
+    },
     "expenseBreakdown": {
       "Unallocated": 51442.37
+    },
+    "cogsBreakdown": {
+      "Unallocated": 89967.49
     }
   },
   {
     "monthDate": "2025-06-30T07:00:00.000Z",
     "date": "2025-06-30T07:00:00.000Z",
     "month": "2025-06",
-    "revenue": 147972.9,
-    "revenueBreakdown": {
-      "Unallocated": 26545.11
-    },
+    "revenue": 172276.37,
     "cogsPayroll": 57222.75,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 23631.89,
+    "cogsMaterials": 31374.22,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 3085.36,
     "cogsTotal": 92412.91,
-    "cogsBreakdown": {
-      "Unallocated": 81585.22
-    },
     "payroll": 20609.21,
     "ownerBasePay": 0,
     "benefits": 2639.76,
@@ -5845,17 +4643,6 @@
     "treasuryStock": 0,
     "totalEquity": 617151.19,
     "totalLAndE": 908776.76,
-    "rev_billable_service_revenue": 86617.62,
-    "rev_retainer_revenue": 2526,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1981.81,
-    "rev_success_performance_fees": 4146.55,
-    "rev_reimbursable_expenses": 2224,
-    "rev_other_revenue": 23383.91,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_reimbursable_direct_costs": 5867.33,
-    "cogs_other_cogs": 3085.36,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 549899.38
@@ -5893,44 +4680,14 @@
       "retainedEarnings": {
         "Unallocated": 555173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 86617.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 2526
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1981.81
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4146.55
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2224
-      },
-      "rev_other_revenue": {
-        "Unallocated": 23383.91
-      },
       "revenue": {
-        "Unallocated": 26545.11
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5867.33
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 3085.36
+        "Unallocated": 172276.37
       },
       "cogsMaterials": {
-        "Unallocated": 23631.89
+        "Unallocated": 31374.22
+      },
+      "cogsOther": {
+        "Unallocated": 3085.36
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -5984,28 +4741,28 @@
         "Unallocated": 4156
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 172276.37
+    },
     "expenseBreakdown": {
       "Unallocated": 46717.38000000001
+    },
+    "cogsBreakdown": {
+      "Unallocated": 92412.91
     }
   },
   {
     "monthDate": "2025-07-31T07:00:00.000Z",
     "date": "2025-07-31T07:00:00.000Z",
     "month": "2025-07",
-    "revenue": 161269.40000000002,
-    "revenueBreakdown": {
-      "Unallocated": 42849.09
-    },
+    "revenue": 176050.53000000003,
     "cogsPayroll": 58175.16,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 35640.9,
+    "cogsMaterials": 43383.229999999996,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 105224.33000000002,
-    "cogsBreakdown": {
-      "Unallocated": 94546.64000000001
-    },
+    "cogsOther": 2935.36,
+    "cogsTotal": 105224.33,
     "payroll": 20533.06,
     "ownerBasePay": 0,
     "benefits": 1952.2800000000002,
@@ -6051,17 +4808,6 @@
     "treasuryStock": 0,
     "totalEquity": 665094.62,
     "totalLAndE": 951049.33,
-    "rev_billable_service_revenue": 87256.62,
-    "rev_retainer_revenue": 2946,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 1981.81,
-    "rev_success_performance_fees": 4487.55,
-    "rev_reimbursable_expenses": 2224,
-    "rev_other_revenue": 18976.43,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_reimbursable_direct_costs": 5867.33,
-    "cogs_other_cogs": 2935.36,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 588921.9
@@ -6099,44 +4845,14 @@
       "retainedEarnings": {
         "Unallocated": 570173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 87256.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 2946
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 1981.81
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4487.55
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2224
-      },
-      "rev_other_revenue": {
-        "Unallocated": 18976.43
-      },
       "revenue": {
-        "Unallocated": 42849.09
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 5867.33
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2935.36
+        "Unallocated": 176050.53000000003
       },
       "cogsMaterials": {
-        "Unallocated": 35640.9
+        "Unallocated": 43383.229999999996
+      },
+      "cogsOther": {
+        "Unallocated": 2935.36
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -6190,28 +4906,28 @@
         "Unallocated": 4156
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 176050.53000000003
+    },
     "expenseBreakdown": {
       "Unallocated": 49960.16999999999
+    },
+    "cogsBreakdown": {
+      "Unallocated": 105224.33
     }
   },
   {
     "monthDate": "2025-08-31T07:00:00.000Z",
     "date": "2025-08-31T07:00:00.000Z",
     "month": "2025-08",
-    "revenue": 168293.16,
-    "revenueBreakdown": {
-      "Unallocated": 49070.14
-    },
-    "cogsPayroll": 46790.17,
+    "revenue": 172639.90000000002,
+    "cogsPayroll": 59290.17,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 38711.17,
+    "cogsMaterials": 42119.9,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 79958.55,
-    "cogsBreakdown": {
-      "Unallocated": 86231.92
-    },
+    "cogsOther": 3385.36,
+    "cogsTotal": 105526.01,
     "payroll": 34227.23,
     "ownerBasePay": 0,
     "benefits": 3870.75,
@@ -6221,7 +4937,7 @@
     "rent": 5338.66,
     "taxLicense": -27601,
     "stateIncomeTaxes": -5350,
-    "federalIncomeTaxes": -135697,
+    "federalIncomeTaxes": -35697,
     "phoneComm": 1672.46,
     "infrastructure": 371.16,
     "autoTravel": 3364.39,
@@ -6257,17 +4973,6 @@
     "treasuryStock": 0,
     "totalEquity": 641913.37,
     "totalLAndE": 959809.76,
-    "rev_billable_service_revenue": 87951.62,
-    "rev_retainer_revenue": 2946,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 2429.98,
-    "rev_success_performance_fees": 4576.45,
-    "rev_reimbursable_expenses": 2224,
-    "rev_other_revenue": 18547.07,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_reimbursable_direct_costs": -11533.73,
-    "cogs_other_cogs": 3385.36,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 570575.16
@@ -6305,50 +5010,20 @@
       "retainedEarnings": {
         "Unallocated": 585173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 87951.62
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 2946
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 2429.98
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4576.45
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2224
-      },
-      "rev_other_revenue": {
-        "Unallocated": 18547.07
-      },
       "revenue": {
-        "Unallocated": 49070.14
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": -11533.73
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 3385.36
+        "Unallocated": 172639.90000000002
       },
       "cogsMaterials": {
-        "Unallocated": 38711.17
+        "Unallocated": 42119.9
+      },
+      "cogsOther": {
+        "Unallocated": 3385.36
       },
       "cogsContractors": {
         "Unallocated": 730.58
       },
       "cogsPayroll": {
-        "Unallocated": 46790.17
+        "Unallocated": 59290.17
       },
       "insurance": {
         "Unallocated": 674.56
@@ -6393,34 +5068,34 @@
         "Unallocated": 3640.16
       },
       "federalIncomeTaxes": {
-        "Unallocated": -135697
+        "Unallocated": -35697
       },
       "taxLicense": {
         "Unallocated": -27601
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 172639.90000000002
+    },
     "expenseBreakdown": {
       "Unallocated": 35616.05
+    },
+    "cogsBreakdown": {
+      "Unallocated": 105526.01000000001
     }
   },
   {
     "monthDate": "2025-09-30T07:00:00.000Z",
     "date": "2025-09-30T07:00:00.000Z",
     "month": "2025-09",
-    "revenue": 134925.67,
-    "revenueBreakdown": {
-      "Unallocated": 30033.15
-    },
+    "revenue": 165506.33,
     "cogsPayroll": 65914.35,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 29425.14,
+    "cogsMaterials": 36237.729999999996,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 106088.14000000001,
-    "cogsBreakdown": {
-      "Unallocated": 96070.07
-    },
+    "cogsOther": 3205.48,
+    "cogsTotal": 106088.14,
     "payroll": 26702.920000000002,
     "ownerBasePay": 0,
     "benefits": 2547.58,
@@ -6466,17 +5141,6 @@
     "treasuryStock": 0,
     "totalEquity": 710062.33,
     "totalLAndE": 1002420.1299999999,
-    "rev_billable_service_revenue": 82869.12,
-    "rev_retainer_revenue": 2747,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 2645.81,
-    "rev_success_performance_fees": 4491.45,
-    "rev_reimbursable_expenses": 2222,
-    "rev_other_revenue": 9369.24,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1696,
-    "cogs_reimbursable_direct_costs": 4621.59,
-    "cogs_other_cogs": 3205.48,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 609833.9800000001
@@ -6514,44 +5178,14 @@
       "retainedEarnings": {
         "Unallocated": 600173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 82869.12
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 2747
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 2645.81
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4491.45
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2222
-      },
-      "rev_other_revenue": {
-        "Unallocated": 9369.24
-      },
       "revenue": {
-        "Unallocated": 30033.15
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1696
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 4621.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 3205.48
+        "Unallocated": 165506.33
       },
       "cogsMaterials": {
-        "Unallocated": 29425.14
+        "Unallocated": 36237.729999999996
+      },
+      "cogsOther": {
+        "Unallocated": 3205.48
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -6605,28 +5239,28 @@
         "Unallocated": 4156
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 165506.33
+    },
     "expenseBreakdown": {
       "Unallocated": 61763.77000000002
+    },
+    "cogsBreakdown": {
+      "Unallocated": 106088.14000000001
     }
   },
   {
     "monthDate": "2025-10-31T07:00:00.000Z",
     "date": "2025-10-31T07:00:00.000Z",
     "month": "2025-10",
-    "revenue": 130197.45999999999,
-    "revenueBreakdown": {
-      "Unallocated": 21437.129999999997
-    },
+    "revenue": 169429.27,
     "cogsPayroll": 61849.82,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 21231,
+    "cogsMaterials": 27827.57,
     "cogsCommissions": 0,
-    "cogsOther": 0,
+    "cogsOther": 2825.4,
     "cogsTotal": 93233.37,
-    "cogsBreakdown": {
-      "Unallocated": 83811.4
-    },
     "payroll": 26132.34,
     "ownerBasePay": 0,
     "benefits": 2951.2799999999997,
@@ -6672,17 +5306,6 @@
     "treasuryStock": 0,
     "totalEquity": 696172.46,
     "totalLAndE": 998500.11,
-    "rev_billable_service_revenue": 85535.12,
-    "rev_retainer_revenue": 2747,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 2675.81,
-    "rev_success_performance_fees": 4465.45,
-    "rev_reimbursable_expenses": 2222,
-    "rev_other_revenue": 10567.05,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1479.98,
-    "cogs_reimbursable_direct_costs": 4621.59,
-    "cogs_other_cogs": 2825.4,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 592229.99
@@ -6720,44 +5343,14 @@
       "retainedEarnings": {
         "Unallocated": 615173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 85535.12
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 2747
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 2675.81
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4465.45
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2222
-      },
-      "rev_other_revenue": {
-        "Unallocated": 10567.05
-      },
       "revenue": {
-        "Unallocated": 21437.129999999997
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1479.98
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 4621.59
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2825.4
+        "Unallocated": 169429.27
       },
       "cogsMaterials": {
-        "Unallocated": 21231
+        "Unallocated": 27827.57
+      },
+      "cogsOther": {
+        "Unallocated": 2825.4
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -6811,28 +5404,28 @@
         "Unallocated": 4156
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 169429.27
+    },
     "expenseBreakdown": {
       "Unallocated": 54040.590000000004
+    },
+    "cogsBreakdown": {
+      "Unallocated": 93233.37
     }
   },
   {
     "monthDate": "2025-11-30T07:00:00.000Z",
     "date": "2025-11-30T07:00:00.000Z",
     "month": "2025-11",
-    "revenue": 153920.94,
-    "revenueBreakdown": {
-      "Unallocated": 24245.63
-    },
-    "cogsPayroll": 52745.10999999999,
+    "revenue": 199500.33000000002,
+    "cogsPayroll": 58745.11,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 20051.82,
+    "cogsMaterials": 36925.82,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 78526.90999999999,
-    "cogsBreakdown": {
-      "Unallocated": 73527.51
-    },
+    "cogsOther": 2825.4,
+    "cogsTotal": 99226.91,
     "payroll": 32314.03,
     "ownerBasePay": 0,
     "benefits": 4834.07,
@@ -6878,17 +5471,6 @@
     "treasuryStock": 0,
     "totalEquity": 725921.1399999999,
     "totalLAndE": 1025610.1099999999,
-    "rev_billable_service_revenue": 93051.73,
-    "rev_retainer_revenue": 2747,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 2675.81,
-    "rev_success_performance_fees": 4932.95,
-    "rev_reimbursable_expenses": 2271,
-    "rev_other_revenue": 23448.92,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_project_specific_travel_and_expenses": 299,
-    "cogs_other_cogs": 2825.4,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 609703.9299999999
@@ -6929,50 +5511,20 @@
       "retainedEarnings": {
         "Unallocated": 630173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 93051.73
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 2747
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 2675.81
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 4932.95
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2271
-      },
-      "rev_other_revenue": {
-        "Unallocated": 23448.92
-      },
       "revenue": {
-        "Unallocated": 24245.63
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 299
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2825.4
+        "Unallocated": 199500.33000000002
       },
       "cogsMaterials": {
-        "Unallocated": 20051.82
+        "Unallocated": 36925.82
+      },
+      "cogsOther": {
+        "Unallocated": 2825.4
       },
       "cogsContractors": {
         "Unallocated": 730.58
       },
       "cogsPayroll": {
-        "Unallocated": 52745.10999999999
+        "Unallocated": 58745.11
       },
       "insurance": {
         "Unallocated": 694.39
@@ -7017,28 +5569,28 @@
         "Unallocated": 2286.17
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 199500.33000000002
+    },
     "expenseBreakdown": {
       "Unallocated": 55423.34
+    },
+    "cogsBreakdown": {
+      "Unallocated": 99226.91
     }
   },
   {
     "monthDate": "2025-12-31T07:00:00.000Z",
     "date": "2025-12-31T07:00:00.000Z",
     "month": "2025-12",
-    "revenue": 129381.67,
-    "revenueBreakdown": {
-      "Unallocated": 8522.71
-    },
+    "revenue": 194717.53,
     "cogsPayroll": 58849.94,
     "cogsOwnerPay": 0,
     "cogsContractors": 730.58,
-    "cogsMaterials": 16829.21,
+    "cogsMaterials": 23898.22,
     "cogsCommissions": 0,
-    "cogsOther": 0,
-    "cogsTotal": 86304.14000000001,
-    "cogsBreakdown": {
-      "Unallocated": 76409.73000000001
-    },
+    "cogsOther": 2825.4,
+    "cogsTotal": 86304.14,
     "payroll": 26368.100000000002,
     "ownerBasePay": 0,
     "benefits": 3763.59,
@@ -7084,18 +5636,6 @@
     "treasuryStock": 0,
     "totalEquity": 728907.7899999999,
     "totalLAndE": 1033501.8599999999,
-    "rev_billable_service_revenue": 82816.39,
-    "rev_retainer_revenue": 2777,
-    "rev_project_based_revenue": 547.9,
-    "rev_licensing_ip_revenue": 2675.81,
-    "rev_success_performance_fees": 5581.48,
-    "rev_reimbursable_expenses": 2303,
-    "rev_other_revenue": 24157.38,
-    "cogs_direct_billable_labor": 495,
-    "cogs_subcontractor_fees": 1380,
-    "cogs_project_specific_travel_and_expenses": 299,
-    "cogs_reimbursable_direct_costs": 4895.01,
-    "cogs_other_cogs": 2825.4,
     "lobBreakdowns": {
       "cash": {
         "Unallocated": 621183.09
@@ -7136,47 +5676,14 @@
       "retainedEarnings": {
         "Unallocated": 645173.6
       },
-      "rev_billable_service_revenue": {
-        "Unallocated": 82816.39
-      },
-      "rev_retainer_revenue": {
-        "Unallocated": 2777
-      },
-      "rev_project_based_revenue": {
-        "Unallocated": 547.9
-      },
-      "rev_licensing_ip_revenue": {
-        "Unallocated": 2675.81
-      },
-      "rev_success_performance_fees": {
-        "Unallocated": 5581.48
-      },
-      "rev_reimbursable_expenses": {
-        "Unallocated": 2303
-      },
-      "rev_other_revenue": {
-        "Unallocated": 24157.38
-      },
       "revenue": {
-        "Unallocated": 8522.71
-      },
-      "cogs_direct_billable_labor": {
-        "Unallocated": 495
-      },
-      "cogs_subcontractor_fees": {
-        "Unallocated": 1380
-      },
-      "cogs_project_specific_travel_and_expenses": {
-        "Unallocated": 299
-      },
-      "cogs_reimbursable_direct_costs": {
-        "Unallocated": 4895.01
-      },
-      "cogs_other_cogs": {
-        "Unallocated": 2825.4
+        "Unallocated": 194717.53
       },
       "cogsMaterials": {
-        "Unallocated": 16829.21
+        "Unallocated": 23898.22
+      },
+      "cogsOther": {
+        "Unallocated": 2825.4
       },
       "cogsContractors": {
         "Unallocated": 730.58
@@ -7233,8 +5740,14 @@
         "Unallocated": 9411
       }
     },
+    "revenueBreakdown": {
+      "Unallocated": 194717.53
+    },
     "expenseBreakdown": {
       "Unallocated": 64328.07
+    },
+    "cogsBreakdown": {
+      "Unallocated": 86304.14000000001
     }
   }
 ]

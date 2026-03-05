@@ -114,11 +114,34 @@ export async function POST(request: NextRequest) {
               throw new Error(`Invalid date: ${dateValue}`);
             }
             
+            const derivedRevenueBreakdown =
+              month.revenueBreakdown && typeof month.revenueBreakdown === "object"
+                ? month.revenueBreakdown
+                : Object.keys(month).reduce((acc: Record<string, number>, key) => {
+                    if (key.startsWith("rev_")) {
+                      const value = Number(month[key] || 0);
+                      if (value !== 0) acc[key] = value;
+                    }
+                    return acc;
+                  }, {});
+
+            const derivedCogsBreakdown =
+              month.cogsBreakdown && typeof month.cogsBreakdown === "object"
+                ? month.cogsBreakdown
+                : Object.keys(month).reduce((acc: Record<string, number>, key) => {
+                    if (key.startsWith("cogs_")) {
+                      const value = Number(month[key] || 0);
+                      if (value !== 0) acc[key] = value;
+                    }
+                    return acc;
+                  }, {});
+
             return {
             companyId: companyId,
             monthDate: parsedDate,
             revenue: month.revenue || 0,
-            revenueBreakdown: month.revenueBreakdown || null,
+            revenueBreakdown:
+              Object.keys(derivedRevenueBreakdown).length > 0 ? derivedRevenueBreakdown : null,
             expense: month.expense || 0,
             expenseBreakdown: month.expenseBreakdown || null,
             cogsPayroll: month.cogsPayroll || 0,
@@ -128,7 +151,7 @@ export async function POST(request: NextRequest) {
             cogsCommissions: month.cogsCommissions || 0,
             cogsOther: month.cogsOther || 0,
             cogsTotal: month.cogsTotal || 0,
-            cogsBreakdown: month.cogsBreakdown || null,
+            cogsBreakdown: Object.keys(derivedCogsBreakdown).length > 0 ? derivedCogsBreakdown : null,
             payroll: month.payroll || 0,
             ownerBasePay: month.ownerBasePay || 0,
             benefits: month.benefits || 0,
@@ -160,6 +183,7 @@ export async function POST(request: NextRequest) {
             otherAssets: month.otherAssets || 0,
             totalAssets: month.totalAssets || 0,
             ap: month.ap || 0,
+            loc: month.loc || 0,
             otherCL: month.otherCL || 0,
             tcl: month.tcl || 0,
             ltd: month.ltd || 0,

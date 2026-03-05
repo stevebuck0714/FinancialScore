@@ -86,6 +86,7 @@ export function FinancialDataProvider({ children }: FinancialDataProviderProps) 
       otherAssets: m.otherAssets || 0,
       totalAssets: m.totalAssets || 0,
       ap: m.ap || 0,
+      loc: m.loc || 0,
       otherCL: m.otherCL || 0,
       tcl: m.tcl || 0,
       ltd: m.ltd || 0,

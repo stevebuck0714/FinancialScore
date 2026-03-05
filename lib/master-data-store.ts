@@ -198,6 +198,7 @@ export class MasterDataStore {
 
   private formatLabel(key: string): string {
     return key
+      .replace(/_/g, ' ')
       .replace(/([A-Z])/g, ' $1') // Add spaces before capital letters
       .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
       .trim();

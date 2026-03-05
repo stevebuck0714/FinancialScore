@@ -183,6 +183,125 @@ function confidenceToNumeric(conf: string): number {
   }
 }
 
+type TargetFieldCandidate = { value: string; label?: string };
+
+function normalizeTargetFieldCandidates(raw: any): TargetFieldCandidate[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === 'string') return { value: item, label: item };
+      if (typeof item === 'object' && typeof item.value === 'string') {
+        return { value: item.value, label: typeof item.label === 'string' ? item.label : item.value };
+      }
+      return null;
+    })
+    .filter((item): item is TargetFieldCandidate => Boolean(item));
+}
+
+function pickBestSectorTargetField(
+  accountName: string,
+  candidates: TargetFieldCandidate[],
+  prefix: 'rev_' | 'cogs_',
+): string | null {
+  const options = candidates.filter((c) => c.value.startsWith(prefix));
+  if (options.length === 0) return null;
+
+  const name = accountName.toLowerCase();
+
+  const scoreOption = (label: string) => {
+    const normalized = label.toLowerCase();
+    const tokens = normalized
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 3 && !['and', 'the', 'for', 'with', 'other', 'revenue', 'cogs', 'cost'].includes(t));
+
+    // Expand label intent with practical synonyms so account names can match sector categories.
+    const synonyms = new Set<string>(tokens);
+    if (/\bsubscription\b/.test(normalized)) {
+      ['subscription', 'recurring', 'mrr', 'annual', 'monthly', 'plan', 'seat', 'user'].forEach((s) => synonyms.add(s));
+    }
+    if (/\bsupport\b|\bmaintenance\b/.test(normalized)) {
+      ['support', 'maintenance', 'managed', 'care', 'backup', 'hosted', 'security', 'monitoring', 'helpdesk', 'voice'].forEach((s) =>
+        synonyms.add(s),
+      );
+    }
+    if (/\bimplementation\b|\bsetup\b/.test(normalized)) {
+      ['implementation', 'setup', 'onboarding', 'migration', 'deployment', 'install', 'project', 'tm', 't&m', 'time', 'materials'].forEach(
+        (s) => synonyms.add(s),
+      );
+    }
+    if (/\blicensing\b/.test(normalized)) {
+      ['license', 'licensing', 'software', 'hardware', 'saas', 'seat', 'subscription'].forEach((s) => synonyms.add(s));
+    }
+    if (/\bdata\b|\banalytics\b/.test(normalized)) {
+      ['data', 'analytics', 'reporting', 'insight', 'bi', 'labtech'].forEach((s) => synonyms.add(s));
+    }
+    if (/\badvertising\b/.test(normalized)) {
+      ['ad', 'ads', 'advertising', 'sponsor', 'sponsorship'].forEach((s) => synonyms.add(s));
+    }
+    if (/\bother\b/.test(normalized)) {
+      ['other', 'misc', 'miscellaneous', 'reimbursed', 'reimbursement', 'referral'].forEach((s) => synonyms.add(s));
+    }
+
+    let score = 0;
+    for (const token of synonyms) {
+      if (name.includes(token)) score += 3;
+    }
+    if (name.includes(normalized)) score += 10;
+    if (normalized.includes('other') || normalized.includes('misc')) score += 0.5;
+    return score;
+  };
+
+  let best = options[0];
+  let bestScore = -1;
+  for (const option of options) {
+    const score = scoreOption(option.label || option.value);
+    if (score > bestScore) {
+      best = option;
+      bestScore = score;
+    }
+  }
+
+  if (bestScore <= 0) {
+    // If no direct signal, avoid overusing "Other" unless account name explicitly suggests it.
+    const explicitOther = /\b(other|misc|miscellaneous|reimbursed|referral)\b/.test(name);
+    if (explicitOther) {
+      const other = options.find((o) => (o.label || o.value).toLowerCase().includes('other'));
+      return (other || best).value;
+    }
+    const nonOther = options.find((o) => !(o.label || o.value).toLowerCase().includes('other'));
+    return (nonOther || best).value;
+  }
+  return best.value;
+}
+
+function remapLegacyToSectorField(
+  accountName: string,
+  classification: string,
+  targetField: string,
+  candidates: TargetFieldCandidate[],
+): string {
+  const cls = (classification || '').toLowerCase();
+  const isRevenue = cls.includes('revenue') || cls.includes('income');
+  const isCogs = cls.includes('cost of goods') || cls.includes('cogs');
+
+  if (targetField === 'revenue' || targetField.startsWith('rev_') || isRevenue) {
+    const picked = pickBestSectorTargetField(accountName, candidates, 'rev_');
+    if (picked) return picked;
+  }
+
+  if (
+    ['cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 'cogsTotal'].includes(targetField) ||
+    targetField.startsWith('cogs_') ||
+    isCogs
+  ) {
+    const picked = pickBestSectorTargetField(accountName, candidates, 'cogs_');
+    if (picked) return picked;
+  }
+
+  return targetField;
+}
+
 /**
  * Enhanced AI Mapping API
  * Combines keyword matching with machine learning from historical data
@@ -190,7 +309,8 @@ function confidenceToNumeric(conf: string): number {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { qbAccountsWithClass, companyId } = body;
+    const { qbAccountsWithClass, companyId, targetFields } = body;
+    const targetFieldCandidates = normalizeTargetFieldCandidates(targetFields);
 
     if (!qbAccountsWithClass || !Array.isArray(qbAccountsWithClass)) {
       return NextResponse.json(
@@ -266,10 +386,16 @@ export async function POST(request: NextRequest) {
       }
 
       if (bestMapping && bestMapping.targetField) {
+        const sectorAwareTargetField = remapLegacyToSectorField(
+          accountName,
+          classification,
+          bestMapping.targetField,
+          targetFieldCandidates,
+        );
         mappings.push({
           qbAccount: accountName,
           qbAccountClassification: classification,
-          targetField: bestMapping.targetField,
+          targetField: sectorAwareTargetField,
           confidence: bestMapping.confidence,
           reasoning: bestMapping.reasoning,
           source
