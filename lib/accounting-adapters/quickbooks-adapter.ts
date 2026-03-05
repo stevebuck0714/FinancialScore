@@ -66,6 +66,149 @@ export class QuickBooksAdapter implements AccountingAdapter {
       throw error;
     }
   }
+
+  private getOperationalSettings(): Record<string, unknown> {
+    const metadata =
+      this.config.connectionMetadata &&
+      typeof this.config.connectionMetadata === 'object' &&
+      !Array.isArray(this.config.connectionMetadata)
+        ? (this.config.connectionMetadata as Record<string, unknown>)
+        : {};
+
+    const settings =
+      metadata.quickbooksOnlineSettings &&
+      typeof metadata.quickbooksOnlineSettings === 'object' &&
+      !Array.isArray(metadata.quickbooksOnlineSettings)
+        ? (metadata.quickbooksOnlineSettings as Record<string, unknown>)
+        : {};
+
+    return settings;
+  }
+
+  private parseStartDateFromSettings(): Date | null {
+    const settings = this.getOperationalSettings();
+    const raw = typeof settings.initialSyncStartDate === 'string' ? settings.initialSyncStartDate.trim() : '';
+    if (!raw) return null;
+    const parsed = new Date(`${raw}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    parsed.setHours(0, 0, 0, 0);
+    return parsed;
+  }
+
+  private formatDate(date: Date): string {
+    return date.toISOString().slice(0, 10);
+  }
+
+  private parseMoney(value: unknown): number {
+    if (typeof value === 'number') return value;
+    if (typeof value !== 'string') return 0;
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    const normalized = trimmed.replace(/,/g, '');
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private normalizeDay(date: Date): Date {
+    const copy = new Date(date);
+    copy.setHours(0, 0, 0, 0);
+    return copy;
+  }
+
+  private resolveCashHistoryStartDate(today: Date): Date {
+    const maxWindowStart = new Date(today);
+    maxWindowStart.setFullYear(maxWindowStart.getFullYear() - 3);
+    maxWindowStart.setHours(0, 0, 0, 0);
+
+    const configuredStart = this.parseStartDateFromSettings();
+    if (!configuredStart) return maxWindowStart;
+    return configuredStart > maxWindowStart ? configuredStart : maxWindowStart;
+  }
+
+  private async getDailyCashHistory(
+    startDate: Date,
+    endDate: Date,
+    bankAccounts: CashBalance[]
+  ): Promise<Map<string, CashBalance[]>> {
+    const history = new Map<string, CashBalance[]>();
+    if (bankAccounts.length === 0) return history;
+
+    const knownById = new Map<string, CashBalance>();
+    const knownByName = new Map<string, CashBalance>();
+    for (const account of bankAccounts) {
+      if (account.accountId) knownById.set(account.accountId, account);
+      if (account.accountName) knownByName.set(account.accountName, account);
+    }
+
+    const chunkStart = new Date(startDate);
+    const maxChunkDays = 90;
+
+    while (chunkStart <= endDate) {
+      const chunkEnd = new Date(chunkStart);
+      chunkEnd.setDate(chunkEnd.getDate() + (maxChunkDays - 1));
+      if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
+
+      const response = await this.makeRequest(
+        `/reports/BalanceSheet?start_date=${this.formatDate(chunkStart)}&end_date=${this.formatDate(chunkEnd)}&summarize_column_by=Day`
+      );
+      const report = await response.json();
+
+      const columns: any[] = Array.isArray(report?.Columns?.Column) ? report.Columns.Column : [];
+      const dateColumns = columns
+        .map((column, index) => ({ column, index }))
+        .filter((entry) => entry.index > 0)
+        .map((entry) => {
+          const colTitle =
+            typeof entry.column?.ColTitle === 'string' && entry.column.ColTitle.trim()
+              ? entry.column.ColTitle.trim()
+              : typeof entry.column?.MetaData?.value === 'string'
+                ? entry.column.MetaData.value
+                : '';
+          const parsed = new Date(`${colTitle}T00:00:00`);
+          if (Number.isNaN(parsed.getTime())) return null;
+          parsed.setHours(0, 0, 0, 0);
+          return { index: entry.index, date: parsed };
+        })
+        .filter((entry): entry is { index: number; date: Date } => Boolean(entry));
+
+      const rows = Array.isArray(report?.Rows?.Row) ? report.Rows.Row : [];
+      const stack: any[] = [...rows];
+      while (stack.length) {
+        const row = stack.pop();
+        if (!row || typeof row !== 'object') continue;
+
+        if (row.type === 'Section' && row.Rows && Array.isArray(row.Rows.Row)) {
+          stack.push(...row.Rows.Row);
+        }
+
+        if (row.type !== 'Data' || !Array.isArray(row.ColData) || row.ColData.length === 0) continue;
+
+        const name = typeof row.ColData[0]?.value === 'string' ? row.ColData[0].value : '';
+        const id = typeof row.ColData[0]?.id === 'string' ? row.ColData[0].id : '';
+        const knownAccount = (id && knownById.get(id)) || (name && knownByName.get(name));
+        if (!knownAccount) continue;
+
+        for (const column of dateColumns) {
+          const value = this.parseMoney(row.ColData[column.index]?.value);
+          const key = this.formatDate(column.date);
+          const existing = history.get(key) || [];
+          existing.push({
+            accountId: knownAccount.accountId,
+            accountName: knownAccount.accountName,
+            accountNumber: knownAccount.accountNumber,
+            currency: knownAccount.currency,
+            balance: value,
+            asOfDate: column.date,
+          });
+          history.set(key, existing);
+        }
+      }
+
+      chunkStart.setDate(chunkStart.getDate() + maxChunkDays);
+    }
+
+    return history;
+  }
   
   /**
    * Get Accounts Receivable Aging Report
@@ -312,21 +455,61 @@ export class QuickBooksAdapter implements AccountingAdapter {
       // 1. Sync cash balances
       try {
         const cashBalances = await this.getCashBalances();
-        for (const balance of cashBalances) {
-          await prisma.cashSnapshot.create({
-            data: {
+        if (frequency === 'daily') {
+          const startDate = this.resolveCashHistoryStartDate(today);
+          const cashHistory = await this.getDailyCashHistory(startDate, today, cashBalances);
+          const dates = Array.from(cashHistory.keys()).sort();
+
+          for (const dayKey of dates) {
+            const snapshotDate = this.normalizeDay(new Date(`${dayKey}T00:00:00`));
+            const balancesForDay = cashHistory.get(dayKey) || [];
+            await prisma.cashSnapshot.deleteMany({
+              where: {
+                companyId: this.config.companyId,
+                frequency,
+                snapshotDate,
+              },
+            });
+            if (balancesForDay.length === 0) continue;
+            await prisma.cashSnapshot.createMany({
+              data: balancesForDay.map((balance) => ({
+                companyId: this.config.companyId,
+                snapshotDate,
+                frequency,
+                accountId: balance.accountId,
+                accountName: balance.accountName,
+                accountNumber: balance.accountNumber,
+                cashBalance: balance.balance,
+                changeAmount: null,
+                changePercent: null,
+              })),
+            });
+            recordsCreated += balancesForDay.length;
+          }
+        } else {
+          await prisma.cashSnapshot.deleteMany({
+            where: {
               companyId: this.config.companyId,
-              snapshotDate: today,
               frequency,
-              accountId: balance.accountId,
-              accountName: balance.accountName,
-              accountNumber: balance.accountNumber,
-              cashBalance: balance.balance,
-              changeAmount: null,
-              changePercent: null
-            }
+              snapshotDate: today,
+            },
           });
-          recordsCreated++;
+          for (const balance of cashBalances) {
+            await prisma.cashSnapshot.create({
+              data: {
+                companyId: this.config.companyId,
+                snapshotDate: today,
+                frequency,
+                accountId: balance.accountId,
+                accountName: balance.accountName,
+                accountNumber: balance.accountNumber,
+                cashBalance: balance.balance,
+                changeAmount: null,
+                changePercent: null
+              }
+            });
+            recordsCreated++;
+          }
         }
       } catch (error: any) {
         errors.push(`Cash sync failed: ${error.message}`);
@@ -335,8 +518,23 @@ export class QuickBooksAdapter implements AccountingAdapter {
       // 2. Sync AR Aging
       try {
         const arAging = await this.getARAgingReport();
-        await prisma.aRAgingSnapshot.create({
-          data: {
+        await prisma.aRAgingSnapshot.upsert({
+          where: {
+            companyId_snapshotDate_frequency: {
+              companyId: this.config.companyId,
+              snapshotDate: today,
+              frequency
+            }
+          },
+          update: {
+            totalAR: arAging.totalAR,
+            current: arAging.current,
+            days1to30: arAging.days1to30,
+            days31to60: arAging.days31to60,
+            days61to90: arAging.days61to90,
+            days90plus: arAging.days90plus
+          },
+          create: {
             companyId: this.config.companyId,
             snapshotDate: today,
             frequency,
@@ -356,8 +554,23 @@ export class QuickBooksAdapter implements AccountingAdapter {
       // 3. Sync AP Aging
       try {
         const apAging = await this.getAPAgingReport();
-        await prisma.aPAgingSnapshot.create({
-          data: {
+        await prisma.aPAgingSnapshot.upsert({
+          where: {
+            companyId_snapshotDate_frequency: {
+              companyId: this.config.companyId,
+              snapshotDate: today,
+              frequency
+            }
+          },
+          update: {
+            totalAP: apAging.totalAP,
+            current: apAging.current,
+            days1to30: apAging.days1to30,
+            days31to60: apAging.days31to60,
+            days61to90: apAging.days61to90,
+            days90plus: apAging.days90plus
+          },
+          create: {
             companyId: this.config.companyId,
             snapshotDate: today,
             frequency,
@@ -487,5 +700,6 @@ export class QuickBooksAdapter implements AccountingAdapter {
     
     return response;
   }
+
 }
 

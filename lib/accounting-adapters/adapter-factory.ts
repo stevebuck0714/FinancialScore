@@ -51,7 +51,8 @@ export class AdapterFactory {
       refreshToken: this.decryptTokenForPlatform(connection.platform, connection.refreshToken),
       realmId: connection.realmId || undefined,
       tenantId: connection.tenantId || undefined,
-      organizationId: connection.organizationId || undefined
+      organizationId: connection.organizationId || undefined,
+      connectionMetadata: connection.connectionMetadata || undefined,
     };
     
     // Return platform-specific adapter

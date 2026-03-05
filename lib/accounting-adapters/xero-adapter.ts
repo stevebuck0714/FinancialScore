@@ -405,8 +405,23 @@ export class XeroAdapter implements AccountingAdapter {
       // 2. Sync AR Aging
       try {
         const arAging = await this.getARAgingReport();
-        await prisma.aRAgingSnapshot.create({
-          data: {
+        await prisma.aRAgingSnapshot.upsert({
+          where: {
+            companyId_snapshotDate_frequency: {
+              companyId: this.config.companyId,
+              snapshotDate: today,
+              frequency
+            }
+          },
+          update: {
+            totalAR: arAging.totalAR,
+            current: arAging.current,
+            days1to30: arAging.days1to30,
+            days31to60: arAging.days31to60,
+            days61to90: arAging.days61to90,
+            days90plus: arAging.days90plus
+          },
+          create: {
             companyId: this.config.companyId,
             snapshotDate: today,
             frequency,
@@ -426,8 +441,23 @@ export class XeroAdapter implements AccountingAdapter {
       // 3. Sync AP Aging
       try {
         const apAging = await this.getAPAgingReport();
-        await prisma.aPAgingSnapshot.create({
-          data: {
+        await prisma.aPAgingSnapshot.upsert({
+          where: {
+            companyId_snapshotDate_frequency: {
+              companyId: this.config.companyId,
+              snapshotDate: today,
+              frequency
+            }
+          },
+          update: {
+            totalAP: apAging.totalAP,
+            current: apAging.current,
+            days1to30: apAging.days1to30,
+            days31to60: apAging.days31to60,
+            days61to90: apAging.days61to90,
+            days90plus: apAging.days90plus
+          },
+          create: {
             companyId: this.config.companyId,
             snapshotDate: today,
             frequency,
