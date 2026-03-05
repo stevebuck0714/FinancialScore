@@ -22,6 +22,37 @@ type FindingInput = {
   payload: Record<string, any>;
 };
 
+const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
+
+function normalizeForMatch(value: string): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function extractFocusTerms(goals: Record<string, any>): string[] {
+  const raw = goals?.[OPERATIONAL_FOCUS_KEY];
+  if (!raw || typeof raw !== 'object') return [];
+  const values = Object.values(raw)
+    .map((v) => String(v || '').trim().toLowerCase())
+    .filter((v) => v.length > 0);
+  return Array.from(new Set(values));
+}
+
+function findFocusMatch(text: string, focusTerms: string[]): string | null {
+  const normalized = normalizeForMatch(text);
+  if (!normalized) return null;
+  for (const term of focusTerms) {
+    if (term && normalized.includes(term)) return term;
+  }
+  return null;
+}
+
+function escalateSeverity(current?: string): string {
+  const normalized = normalizeForMatch(current || 'medium');
+  if (normalized === 'low') return 'medium';
+  if (normalized === 'medium') return 'high';
+  return current || 'high';
+}
+
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
 
 function getDefaultDateRange(frequency: string) {
@@ -633,6 +664,7 @@ export async function POST(request: NextRequest) {
       loadGoals('OperationalGoal', companyId),
     ]);
     const operationalGoalValues = operationalGoals[0]?.goals || {};
+    const focusTerms = extractFocusTerms(operationalGoalValues);
 
     const accountMappings = await safeFindMany(
       'account mappings',
@@ -2600,6 +2632,26 @@ export async function POST(request: NextRequest) {
       if (finding.type === 'opportunity' && playbook.sector !== 'DEFAULT') {
         finding.payload.sector = playbook.sector;
         finding.payload.sectorLabel = playbook.label;
+      }
+
+      if (focusTerms.length > 0) {
+        const focusText = [
+          finding.metric || '',
+          String(finding.payload?.title || ''),
+          String(finding.payload?.summary || ''),
+          String(finding.payload?.likelyCause || ''),
+          String(finding.payload?.whyNow || ''),
+        ].join(' | ');
+        const matchedTerm = findFocusMatch(focusText, focusTerms);
+        if (matchedTerm) {
+          finding.severity = escalateSeverity(finding.severity);
+          finding.payload = {
+            ...finding.payload,
+            priorityFocus: true,
+            priorityFocusTerm: matchedTerm,
+            priorityFocusReason: 'Matches Operational Focus Areas watchlist',
+          };
+        }
       }
     }
 

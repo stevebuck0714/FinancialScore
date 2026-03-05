@@ -14,6 +14,7 @@ type AlertItem = {
   itemLabel?: string;
   priorityScore?: number;
   bucket?: 'attention' | 'monitoring';
+  priorityFocusTerm?: string;
 };
 
 interface DailyAlertsViewProps {
@@ -48,6 +49,7 @@ type PreviewSpec = {
 };
 
 const RESOLVED_STATUSES = new Set(['resolved', 'realized', 'closed', 'done', 'complete', 'completed']);
+const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
 
 function asNumber(value: unknown): number {
   const n = Number(value);
@@ -74,6 +76,24 @@ function daysSince(isoDate?: string): number {
   const t = new Date(isoDate).getTime();
   if (!Number.isFinite(t)) return 999;
   return Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
+}
+
+function extractPriorityFocusTerms(goals: any): string[] {
+  const raw = goals?.[OPERATIONAL_FOCUS_KEY];
+  if (!raw || typeof raw !== 'object') return [];
+  const terms = Object.values(raw)
+    .map((v) => String(v || '').trim().toLowerCase())
+    .filter((v) => v.length > 0);
+  return Array.from(new Set(terms));
+}
+
+function findPriorityFocusMatch(alert: AlertItem, focusTerms: string[]): string | null {
+  if (focusTerms.length === 0) return null;
+  const haystack = `${alert.title} ${alert.detail} ${alert.itemLabel || ''}`.toLowerCase();
+  for (const term of focusTerms) {
+    if (term && haystack.includes(term)) return term;
+  }
+  return null;
 }
 
 function scoreAlert(alert: AlertItem): number {
@@ -143,12 +163,21 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           return response.json();
         };
 
-        const [arData, apData, cashData, findingsData] = await Promise.all([
+        const fetchOperationalGoals = async () => {
+          const params = new URLSearchParams({ companyId });
+          const response = await fetch(`/api/operational-goals?${params}`);
+          if (!response.ok) return { goals: {} };
+          return response.json();
+        };
+
+        const [arData, apData, cashData, findingsData, operationalGoalsData] = await Promise.all([
           fetchOps('ar-aging'),
           fetchOps('ap-aging'),
           fetchOps('cash'),
           fetchFindings(),
+          fetchOperationalGoals(),
         ]);
+        const priorityFocusTerms = extractPriorityFocusTerms(operationalGoalsData?.goals || {});
 
         const built: AlertItem[] = [];
 
@@ -329,16 +358,32 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             });
           });
 
+        priorityFocusTerms.slice(0, 10).forEach((term) => {
+          built.push({
+            id: `priority-focus-${term}-${endDate}`,
+            source: 'unresolved',
+            title: 'Priority Focus Watch',
+            detail: `${term} is configured as a daily priority focus area.`,
+            owner: 'Ops/Finance Owner',
+            drillView: 'pa-overview',
+            updatedAt: endDate,
+            itemLabel: term,
+          });
+        });
+
         const sourceRank: Record<AlertItem['source'], number> = {
           'daily-change': 3,
           'open-critical': 2,
           unresolved: 1,
         };
         const scored = built.map((alert) => {
-          const priorityScore = scoreAlert(alert);
+          const baseScore = scoreAlert(alert);
+          const priorityFocusTerm = findPriorityFocusMatch(alert, priorityFocusTerms) || undefined;
+          const priorityScore = Math.min(100, baseScore + (priorityFocusTerm ? 20 : 0));
           return {
             ...alert,
             priorityScore,
+            priorityFocusTerm,
             bucket: priorityScore >= 70 ? 'attention' : 'monitoring',
           } as AlertItem;
         });

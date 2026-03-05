@@ -40,6 +40,19 @@ type ContextResponse = {
    companyId: string;
  }
  
+const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
+
+function sanitizeFocusValues(raw: any): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {};
+  const cleaned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string') {
+      cleaned[key] = value;
+    }
+  }
+  return cleaned;
+}
+
  const formatDate = (value: string | null) => {
    if (!value) return '—';
    const date = new Date(value);
@@ -53,6 +66,28 @@ type ContextResponse = {
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [runMessage, setRunMessage] = useState<string | null>(null);
   const [monthsWindow, setMonthsWindow] = useState(24);
+  const [operationalFocusValues, setOperationalFocusValues] = useState<Record<string, string>>({});
+  const [focusLoaded, setFocusLoaded] = useState(false);
+  const lastSavedFocusJsonRef = React.useRef<string>('');
+
+  const persistOperationalFocusValues = async () => {
+    if (!companyId || !context) return;
+    const focusJson = JSON.stringify(operationalFocusValues);
+    if (focusJson === lastSavedFocusJsonRef.current) return;
+    const mergedGoals = {
+      ...(context.goals?.operational || {}),
+      [OPERATIONAL_FOCUS_KEY]: operationalFocusValues,
+    };
+    const response = await fetch('/api/operational-goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId, goals: mergedGoals }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to save operational focus values');
+    }
+    lastSavedFocusJsonRef.current = focusJson;
+  };
  
    useEffect(() => {
      let isMounted = true;
@@ -75,8 +110,15 @@ type ContextResponse = {
           message += ` [${response.status}]`;
           throw new Error(message);
         }
-         const data = await response.json();
-         if (isMounted) setContext(data);
+        const data = await response.json();
+        if (isMounted) {
+          const savedFocus = sanitizeFocusValues(data?.goals?.operational?.[OPERATIONAL_FOCUS_KEY]);
+          const savedFocusJson = JSON.stringify(savedFocus);
+          setOperationalFocusValues(savedFocus);
+          lastSavedFocusJsonRef.current = savedFocusJson;
+          setFocusLoaded(true);
+          setContext(data);
+        }
        } catch (err: any) {
          if (isMounted) setError(err.message || 'Failed to load context');
        } finally {
@@ -93,10 +135,27 @@ type ContextResponse = {
      };
   }, [companyId, monthsWindow]);
 
+  useEffect(() => {
+    if (!focusLoaded || !companyId || !context) return;
+    const focusJson = JSON.stringify(operationalFocusValues);
+    if (focusJson === lastSavedFocusJsonRef.current) return;
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        await persistOperationalFocusValues();
+      } catch (error) {
+        console.error('Failed to save operational focus values', error);
+      }
+    }, 450);
+
+    return () => clearTimeout(timeoutId);
+  }, [operationalFocusValues, focusLoaded, companyId, context]);
+
   const runAgents = async () => {
     setRunStatus('running');
     setRunMessage(null);
     try {
+      await persistOperationalFocusValues();
       const response = await fetch('/api/performance-analytics/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -149,7 +208,7 @@ type ContextResponse = {
 
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-      <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Operations Analysis</h1>
+      <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Operational Data</h1>
       <p style={{ marginTop: '12px', fontSize: '15px', color: '#475569' }}>
         Benchmarks and analysis use Industry Group data. Operational profile is shown separately.
       </p>
@@ -219,42 +278,55 @@ type ContextResponse = {
        </div>
  
        <div style={{ marginTop: '32px' }}>
-         <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Data Coverage</h2>
-         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-           {[
-             { label: 'COA Monthly', range: context.ranges.financials },
-             { label: 'Cash', range: context.ranges.cash },
-             { label: 'AR Aging', range: context.ranges.ar },
-             { label: 'AP Aging', range: context.ranges.ap },
-             { label: 'Customers', range: context.ranges.customers },
-             { label: 'Products', range: context.ranges.products },
-             { label: 'Inventory', range: context.ranges.inventory },
-           ].map((item) => (
-             <div key={item.label} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
-               <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>{item.label}</div>
-               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                 {item.range.count} records • {formatDate(item.range.start)} → {formatDate(item.range.end)}
-               </div>
-             </div>
-           ))}
-         </div>
-       </div>
- 
-       <div style={{ marginTop: '32px' }}>
          <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Operational Focus Areas</h2>
-         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
-           {context.operationalProfile.groups.map((group) => (
-             <div key={group.category} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white' }}>
-               <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>
-                 {group.category}
+         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
+           {[
+            'Liquidity',
+            'Working Capital',
+            'Demand',
+            'Fulfillment',
+            'Unit Economics',
+           ].map((group) => (
+            <div key={group} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white' }}>
+               <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>
+                {group}
                </div>
-               <div style={{ marginTop: '6px', fontSize: '13px', color: '#1e293b' }}>
-                 {group.items.join(', ')}
-               </div>
+              {[1, 2].map((row) => (
+                <div key={row} style={{ marginBottom: row === 1 ? '6px' : 0 }}>
+                  <input
+                    type="text"
+                    value={operationalFocusValues[`${group}_row${row}`] || ''}
+                    onChange={(e) => setOperationalFocusValues(prev => ({ ...prev, [`${group}_row${row}`]: e.target.value }))}
+                    style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', boxSizing: 'border-box', backgroundColor: '#f8fafc' }}
+                  />
+                </div>
+              ))}
              </div>
            ))}
          </div>
        </div>
+
+      <div style={{ marginTop: '32px' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Data Coverage</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+          {[
+            { label: 'COA Monthly', range: context.ranges.financials },
+            { label: 'Cash', range: context.ranges.cash },
+            { label: 'AR Aging', range: context.ranges.ar },
+            { label: 'AP Aging', range: context.ranges.ap },
+            { label: 'Customers', range: context.ranges.customers },
+            { label: 'Products', range: context.ranges.products },
+            { label: 'Inventory', range: context.ranges.inventory },
+          ].map((item) => (
+            <div key={item.label} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>{item.label}</div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                {item.range.count} records • {formatDate(item.range.start)} → {formatDate(item.range.end)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div style={{ marginTop: '32px' }}>
         <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>Definitions</h2>
