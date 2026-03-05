@@ -9740,10 +9740,12 @@ function FinancialScorePage() {
             const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
             const ttmStateTaxes = last12.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
             const ttmFederalTaxes = last12.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+            const ttmTotalIncomeTaxes = ttmStateTaxes + ttmFederalTaxes;
             
             // Calculate Net Income correctly: Revenue - COGS - Operating Expenses
             const ttmGrossProfit = ttmRevenue - ttmCOGS;
             const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
+            const ttmNetIncomeAfterTaxForDcf = ttmNetIncome - ttmTotalIncomeTaxes;
             // Calculate EBITDA: Net Income + Interest + Taxes + Depreciation + Amortization
             const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
             // Note: We don't have a separate tax field, so this is technically EBIT if taxes are in 'expense'
@@ -9766,7 +9768,7 @@ function FinancialScorePage() {
             const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
             
             // Free Cash Flow using ACTUAL depreciation
-            const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
+            const ttmFreeCashFlow = ttmNetIncomeAfterTaxForDcf + ttmDepreciation - changeInWC - ttmCapEx;
             
             // DCF calculation with adjustable parameters using FCF
             const growthRate = growth_24mo / 100;
@@ -10510,69 +10512,75 @@ function FinancialScorePage() {
                     Discounted Cash Flow (DCF) Method
                   </h2>
                   
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '10px' }}>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Rate</div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{growth_24mo.toFixed(1)}%</div>
-                        <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Used for 5-year projection</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '10px' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Rate</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{growth_24mo.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Used for 5-year projection</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Discount Rate</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfDiscountRate.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Risk-adjusted rate</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Terminal Growth</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfTerminalGrowth.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Perpetuity growth</div>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Discount Rate</div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfDiscountRate.toFixed(1)}%</div>
-                        <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Risk-adjusted rate</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Terminal Growth</div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfTerminalGrowth.toFixed(1)}%</div>
-                        <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Perpetuity growth</div>
+                      
+                      <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.6', marginBottom: '16px' }}>
+                        5-year free cash flow projection based on historical growth rate, discounted to present value. Includes terminal value calculation for perpetuity beyond forecast period.
                       </div>
                     </div>
                     
-                    <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.6', marginBottom: '16px' }}>
-                      5-year free cash flow projection based on historical growth rate, discounted to present value. Includes terminal value calculation for perpetuity beyond forecast period.
-                    </div>
-                  </div>
-                  
-                  {/* Free Cash Flow Calculation */}
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', marginBottom: '12px', border: '1px solid #fcd34d' }}>
-                    <div style={{ marginBottom: '10px' }}>
-                      <div style={{ fontSize: '13px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
-                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>${(ttmFreeCashFlow / 1000).toFixed(0)}K</div>
-                    </div>
-                    
-                    <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
+                    {/* Free Cash Flow Calculation */}
+                    <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', border: '1px solid #fcd34d' }}>
+                      <div style={{ marginBottom: '10px' }}>
+                        <div style={{ fontSize: '13px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</div>
+                      </div>
+                      
+                      <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>TTM Revenue</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmRevenue / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmRevenue).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>- COGS</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmCOGS / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmCOGS).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>- Operating Expenses</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmExpense / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmExpense).toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span>- Income Taxes</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmTotalIncomeTaxes).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '6px', borderBottom: '1px solid #fcd34d' }}>
                         <span style={{ fontWeight: '600' }}>= Net Income</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmNetIncome / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmNetIncomeAfterTaxForDcf).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>+ Depreciation/Amortization</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmDepreciation / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmDepreciation).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>- Change in Working Capital</span>
-                        <span style={{ fontWeight: '600' }}>${(changeInWC / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(changeInWC).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px solid #fcd34d' }}>
                         <span>- Capital Expenditures</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmCapEx / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmCapEx).toLocaleString()}</span>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-                        <span style={{ fontWeight: '700' }}>= Free Cash Flow</span>
-                        <span style={{ fontWeight: '700', color: '#f59e0b' }}>${(ttmFreeCashFlow / 1000).toFixed(0)}K</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                          <span style={{ fontWeight: '700' }}>= Free Cash Flow</span>
+                          <span style={{ fontWeight: '700', color: '#f59e0b' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -12555,8 +12563,18 @@ function FinancialScorePage() {
                 const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                 const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
                 const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                const stateIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
-                const federalIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                const stateIncomeTaxes = periodMonths.reduce((sum, m) => {
+                  const raw = (m as any).stateIncomeTaxes;
+                  if (raw === null || raw === undefined) return sum;
+                  const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/,/g, ''));
+                  return sum + (Number.isFinite(parsed) ? parsed : 0);
+                }, 0);
+                const federalIncomeTaxes = periodMonths.reduce((sum, m) => {
+                  const raw = (m as any).federalIncomeTaxes;
+                  if (raw === null || raw === undefined) return sum;
+                  const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/,/g, ''));
+                  return sum + (Number.isFinite(parsed) ? parsed : 0);
+                }, 0);
                 const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
                 const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
                 
@@ -12658,6 +12676,33 @@ function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>{extraordinaryItems >= 0 ? '$' : '($'}{Math.abs(extraordinaryItems).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}{extraordinaryItems < 0 ? ')' : ''}</span>
                           </div>
                         )}
+                      </div>
+
+                      {/* Income Before Tax */}
+                      <div style={{ marginBottom: '12px', background: '#f1f5f9', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontWeight: '700', color: '#0f172a' }}>Income Before Tax</span>
+                          <span style={{ fontWeight: '700', color: '#0f172a' }}>
+                            ${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Income Taxes */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Taxes</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>State Income Taxes</span>
+                          <span style={{ color: '#475569' }}>
+                            ({Math.abs(stateIncomeTaxes).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Federal Income Taxes</span>
+                          <span style={{ color: '#475569' }}>
+                            ({Math.abs(federalIncomeTaxes).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                          </span>
+                        </div>
                       </div>
 
                       {/* Net Income */}
