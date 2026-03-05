@@ -3283,11 +3283,13 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       const grossProfit = revenue - cogsTotal;
       const opex = Number(row.expense || 0);
       const operatingIncome = grossProfit - opex;
+      const interestExpense = Number(row.interestExpense || 0);
       const nonOperatingIncome = Number(row.nonOperatingIncome || 0);
       const extraordinaryItems = Number(row.extraordinaryItems || 0);
+      const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
       const stateIncomeTaxes = Number(row.stateIncomeTaxes || 0);
       const federalIncomeTaxes = Number(row.federalIncomeTaxes || 0);
-      const netIncome = operatingIncome + nonOperatingIncome + extraordinaryItems - stateIncomeTaxes - federalIncomeTaxes;
+      const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
       return {
         dateLabel: new Date(row.snapshotDate).toLocaleDateString(),
         revenue,
@@ -3295,8 +3297,10 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
         grossProfit,
         expense: opex,
         operatingIncome,
+        interestExpense,
         nonOperatingIncome,
         extraordinaryItems,
+        incomeBeforeTax,
         stateIncomeTaxes,
         federalIncomeTaxes,
         netIncome,
@@ -3309,11 +3313,13 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
         otherAssets: Number(row.otherAssets || 0),
         totalAssets: Number(row.totalAssets || 0),
         ap: Number(row.ap || 0),
+        loc: Number(row.loc || 0),
         otherCL: Number(row.otherCL || 0),
         tcl: Number(row.tcl || 0),
         ltd: Number(row.ltd || 0),
         totalLiab: Number(row.totalLiab || 0),
         ownersCapital: Number(row.ownersCapital || 0),
+        ownersDraw: Number(row.ownersDraw || 0),
         retainedEarnings: Number(row.retainedEarnings || 0),
         totalEquity: Number(row.totalEquity || 0),
         totalLAndE: Number(row.totalLAndE || 0),
@@ -3325,81 +3331,128 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       label: string;
       styleType?: 'normal' | 'section' | 'subtotal' | 'total';
       valuesByDate?: Record<string, number>;
+      suppressValues?: boolean;
     };
 
     const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
-    const lineIndex: Record<string, Record<string, Record<string, number>>> = {};
+    const lineIndex: Record<string, Record<string, number>> = {};
+    const lineAccountIndex: Record<string, Record<string, Record<string, number>>> = {};
     mappedLines.forEach((line: any) => {
       const targetField = String(line.targetField || '').trim();
       const sourceAccountName = String(line.sourceAccountName || '').trim();
-      if (!targetField || !sourceAccountName) return;
+      if (!targetField) return;
       const dateLabel = new Date(line.snapshotDate).toLocaleDateString();
       lineIndex[targetField] ||= {};
-      lineIndex[targetField][sourceAccountName] ||= {};
-      lineIndex[targetField][sourceAccountName][dateLabel] =
-        Number(lineIndex[targetField][sourceAccountName][dateLabel] || 0) + Number(line.amount || 0);
+      lineIndex[targetField][dateLabel] =
+        Number(lineIndex[targetField][dateLabel] || 0) + Number(line.amount || 0);
+      if (sourceAccountName) {
+        lineAccountIndex[targetField] ||= {};
+        lineAccountIndex[targetField][sourceAccountName] ||= {};
+        lineAccountIndex[targetField][sourceAccountName][dateLabel] =
+          Number(lineAccountIndex[targetField][sourceAccountName][dateLabel] || 0) + Number(line.amount || 0);
+      }
     });
 
-    const buildDetailRows = (targetFields: string[]): StatementRowDef[] => {
+    const fieldHasAnyValue = (field: string): boolean =>
+      statementDays.some((day) => Number((day as any)[field] || 0) !== 0);
+    const mappedFieldHasAnyValue = (field: string): boolean =>
+      Object.values(lineIndex[field] || {}).some((value) => Number(value || 0) !== 0);
+
+    const revenueDetailFields = Object.keys(lineIndex)
+      .filter((field) => field.startsWith('rev_') && mappedFieldHasAnyValue(field))
+      .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
+    const legacyCogsFields = ['cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther']
+      .filter((field) => fieldHasAnyValue(field) || mappedFieldHasAnyValue(field));
+    const dynamicCogsFields = Object.keys(lineIndex)
+      .filter((field) => field.startsWith('cogs_') && field !== 'cogs_total' && mappedFieldHasAnyValue(field))
+      .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
+    const operatingExpenseFields = [
+      'payroll', 'ownerBasePay', 'ownersRetirement', 'benefits', 'insurance', 'professionalFees',
+      'subcontractors', 'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
+      'salesExpense', 'marketing', 'trainingCert', 'mealsEntertainment', 'otherExpense',
+    ].filter((field) => fieldHasAnyValue(field) || mappedFieldHasAnyValue(field));
+
+    const buildAccountDetailRows = (targetFields: string[]): StatementRowDef[] => {
       const mergedByAccount: Record<string, Record<string, number>> = {};
       targetFields.forEach((targetField) => {
-        const accountMap = lineIndex[targetField] || {};
+        const accountMap = lineAccountIndex[targetField] || {};
         Object.entries(accountMap).forEach(([accountName, valuesByDate]) => {
           mergedByAccount[accountName] ||= {};
           Object.entries(valuesByDate).forEach(([dateLabel, amount]) => {
-            mergedByAccount[accountName][dateLabel] = Number(mergedByAccount[accountName][dateLabel] || 0) + Number(amount || 0);
+            mergedByAccount[accountName][dateLabel] =
+              Number(mergedByAccount[accountName][dateLabel] || 0) + Number(amount || 0);
           });
         });
       });
-      const sortedAccountNames = Object.keys(mergedByAccount).sort((a, b) => {
-        const totalA = Object.values(mergedByAccount[a]).reduce((sum, v) => sum + Number(v || 0), 0);
-        const totalB = Object.values(mergedByAccount[b]).reduce((sum, v) => sum + Number(v || 0), 0);
-        return Math.abs(totalB) - Math.abs(totalA);
-      });
-      return sortedAccountNames.map((accountName) => ({
-        label: `  ${accountName}`,
-        styleType: 'normal',
-        valuesByDate: mergedByAccount[accountName],
-      }));
+      return Object.keys(mergedByAccount)
+        .sort((a, b) => {
+          const totalA = Object.values(mergedByAccount[a]).reduce((sum, v) => sum + Number(v || 0), 0);
+          const totalB = Object.values(mergedByAccount[b]).reduce((sum, v) => sum + Number(v || 0), 0);
+          return Math.abs(totalB) - Math.abs(totalA);
+        })
+        .map((accountName) => ({
+          label: `  ${accountName}`,
+          styleType: 'normal' as const,
+          valuesByDate: mergedByAccount[accountName],
+        }));
     };
 
-    const revenueDetailRows = buildDetailRows(['revenue']);
-    const cogsDetailRows = buildDetailRows(['cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther']);
-    const opexDetailRows = buildDetailRows(['expense', 'payroll', 'ownerBasePay', 'benefits', 'insurance', 'professionalFees', 'subcontractors', 'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel', 'salesExpense', 'marketing', 'trainingCert', 'mealsEntertainment', 'otherExpense']);
-    const assetDetailRows = buildDetailRows(['cash', 'ar', 'inventory', 'otherCA', 'fixedAssets', 'otherAssets']);
-    const liabilityDetailRows = buildDetailRows(['ap', 'otherCL', 'ltd']);
-    const equityDetailRows = buildDetailRows(['ownersCapital', 'ownersDraw', 'commonStock', 'preferredStock', 'retainedEarnings', 'additionalPaidInCapital', 'treasuryStock', 'totalEquity']);
+    const accountRevenueDetailRows = buildAccountDetailRows(['revenue', ...revenueDetailFields]);
+    const accountCogsDetailRows = buildAccountDetailRows([
+      'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther',
+      ...legacyCogsFields,
+      ...dynamicCogsFields,
+    ]);
+    const accountOpexDetailRows = buildAccountDetailRows([
+      'expense',
+      ...operatingExpenseFields,
+    ]);
 
     const incomeRowDefs: StatementRowDef[] = [
-      { key: 'revenue', label: getFieldDisplayName('revenue'), styleType: 'section' },
-      ...revenueDetailRows,
-      { key: 'cogsTotal', label: getFieldDisplayName('cogsTotal'), styleType: 'section' },
-      ...cogsDetailRows,
-      { key: 'grossProfit', label: getFieldDisplayName('grossProfit'), styleType: 'subtotal' },
-      { key: 'expense', label: getFieldDisplayName('totalOperatingExpenses'), styleType: 'section' },
-      ...opexDetailRows,
-      { key: 'operatingIncome', label: 'Operating Income', styleType: 'subtotal' },
-      { key: 'nonOperatingIncome', label: getFieldDisplayName('nonOperatingIncome'), styleType: 'section' },
+      { key: 'revenue', label: getFieldDisplayName('revenue'), styleType: 'section' }, // Total Revenue
+      ...accountRevenueDetailRows,
+      { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
+      ...accountCogsDetailRows,
+      { key: 'cogsTotal', label: getFieldDisplayName('cogsTotal'), styleType: 'subtotal' }, // Total COGS
+      { key: 'grossProfit', label: 'GROSS PROFIT', styleType: 'subtotal' },
+      { label: 'Operating Expenses', styleType: 'section', suppressValues: true },
+      ...accountOpexDetailRows,
+      { key: 'expense', label: getFieldDisplayName('totalOperatingExpenses'), styleType: 'subtotal' }, // Total Operating Expenses
+      { key: 'operatingIncome', label: getFieldDisplayName('operatingIncome'), styleType: 'subtotal' },
+      { label: 'Other Income/(Expense)', styleType: 'section', suppressValues: true },
+      { key: 'interestExpense', label: getFieldDisplayName('interestExpense'), styleType: 'normal' },
+      { key: 'nonOperatingIncome', label: getFieldDisplayName('nonOperatingIncome'), styleType: 'normal' },
       { key: 'extraordinaryItems', label: getFieldDisplayName('extraordinaryItems'), styleType: 'normal' },
-      { key: 'stateIncomeTaxes', label: getFieldDisplayName('stateIncomeTaxes'), styleType: 'section' },
-      { key: 'federalIncomeTaxes', label: getFieldDisplayName('federalIncomeTaxes'), styleType: 'normal' },
+      { key: 'incomeBeforeTax', label: getFieldDisplayName('incomeBeforeTax'), styleType: 'subtotal' },
+      { label: 'Income Taxes', styleType: 'section', suppressValues: true },
+      { key: 'stateIncomeTaxes', label: `  ${getFieldDisplayName('stateIncomeTaxes')}`, styleType: 'normal' },
+      { key: 'federalIncomeTaxes', label: `  ${getFieldDisplayName('federalIncomeTaxes')}`, styleType: 'normal' },
       { key: 'netIncome', label: getFieldDisplayName('netIncome'), styleType: 'total' },
     ];
 
     const balanceRowDefs: StatementRowDef[] = [
-      { key: 'cash', label: getFieldDisplayName('cash'), styleType: 'section' },
-      ...assetDetailRows,
+      { label: 'Current Assets', styleType: 'section', suppressValues: true },
+      { key: 'cash', label: `  ${getFieldDisplayName('cash')}`, styleType: 'normal' },
+      { key: 'ar', label: `  ${getFieldDisplayName('accountsReceivable')}`, styleType: 'normal' },
+      { key: 'inventory', label: `  ${getFieldDisplayName('inventory')}`, styleType: 'normal' },
+      { key: 'otherCA', label: `  ${getFieldDisplayName('otherCurrentAssets')}`, styleType: 'normal' },
       { key: 'tca', label: getFieldDisplayName('totalCurrentAssets'), styleType: 'subtotal' },
-      { key: 'fixedAssets', label: getFieldDisplayName('fixedAssets'), styleType: 'section' },
-      { key: 'otherAssets', label: getFieldDisplayName('otherAssets'), styleType: 'normal' },
+      { label: 'Long-Term Assets', styleType: 'section', suppressValues: true },
+      { key: 'fixedAssets', label: `  ${getFieldDisplayName('fixedAssets')}`, styleType: 'normal' },
+      { key: 'otherAssets', label: `  ${getFieldDisplayName('otherAssets')}`, styleType: 'normal' },
       { key: 'totalAssets', label: getFieldDisplayName('totalAssets'), styleType: 'total' },
-      { key: 'ap', label: getFieldDisplayName('accountsPayable'), styleType: 'section' },
-      ...liabilityDetailRows,
+      { label: 'Current Liabilities', styleType: 'section', suppressValues: true },
+      { key: 'ap', label: `  ${getFieldDisplayName('accountsPayable')}`, styleType: 'normal' },
+      { key: 'loc', label: `  ${getFieldDisplayName('loc')}`, styleType: 'normal' },
+      { key: 'otherCL', label: `  ${getFieldDisplayName('otherCurrentLiabilities')}`, styleType: 'normal' },
       { key: 'tcl', label: getFieldDisplayName('totalCurrentLiabilities'), styleType: 'subtotal' },
-      { key: 'ltd', label: getFieldDisplayName('longTermDebt'), styleType: 'normal' },
+      { label: 'Long-Term Liabilities', styleType: 'section', suppressValues: true },
+      { key: 'ltd', label: `  ${getFieldDisplayName('longTermDebt')}`, styleType: 'normal' },
       { key: 'totalLiab', label: getFieldDisplayName('totalLiabilities'), styleType: 'subtotal' },
-      { key: 'ownersCapital', label: getFieldDisplayName('ownersCapital'), styleType: 'section' },
-      ...equityDetailRows,
+      { label: 'Equity', styleType: 'section', suppressValues: true },
+      { key: 'ownersCapital', label: `  ${getFieldDisplayName('ownersCapital')}`, styleType: 'normal' },
+      { key: 'ownersDraw', label: `  ${getFieldDisplayName('ownersDraw')}`, styleType: 'normal' },
+      { key: 'retainedEarnings', label: `  ${getFieldDisplayName('retainedEarnings')}`, styleType: 'normal' },
       { key: 'totalEquity', label: getFieldDisplayName('totalEquity'), styleType: 'subtotal' },
       { key: 'totalLAndE', label: getFieldDisplayName('totalLiabilitiesAndEquity'), styleType: 'total' },
     ];
@@ -3565,14 +3618,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                   </tr>
                 </thead>
                 <tbody>
-                  {incomeRowDefs.map((rowDef) => (
-                    <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                  {incomeRowDefs.map((rowDef, rowIndex) => (
+                    <tr key={`${rowDef.label}-${rowIndex}`} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
                       <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
                         {rowDef.label}
                       </td>
                       {statementDays.map((day) => (
                         <td
-                          key={`${String(rowDef.key)}-${day.dateLabel}`}
+                          key={`${rowDef.label}-${day.dateLabel}`}
                           style={{
                             padding: '10px',
                             borderBottom: '1px solid #f1f5f9',
@@ -3583,11 +3636,13 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {formatCurrency(Number(
-                            rowDef.valuesByDate
-                              ? rowDef.valuesByDate[day.dateLabel] || 0
-                              : day[rowDef.key as keyof typeof day] || 0
-                          ))}
+                          {rowDef.suppressValues
+                            ? ''
+                            : formatCurrency(Number(
+                                rowDef.valuesByDate
+                                  ? rowDef.valuesByDate[day.dateLabel] || 0
+                                  : (rowDef.key ? day[rowDef.key as keyof typeof day] : 0) || 0
+                              ))}
                         </td>
                       ))}
                     </tr>
@@ -3611,14 +3666,14 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                   </tr>
                 </thead>
                 <tbody>
-                  {balanceRowDefs.map((rowDef) => (
-                    <tr key={String(rowDef.key)} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                  {balanceRowDefs.map((rowDef, rowIndex) => (
+                    <tr key={`${rowDef.label}-${rowIndex}`} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
                       <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
                         {rowDef.label}
                       </td>
                       {statementDays.map((day) => (
                         <td
-                          key={`${String(rowDef.key)}-${day.dateLabel}`}
+                          key={`${rowDef.label}-${day.dateLabel}`}
                           style={{
                             padding: '10px',
                             borderBottom: '1px solid #f1f5f9',
@@ -3629,11 +3684,13 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {formatCurrency(Number(
-                            rowDef.valuesByDate
-                              ? rowDef.valuesByDate[day.dateLabel] || 0
-                              : day[rowDef.key as keyof typeof day] || 0
-                          ))}
+                          {rowDef.suppressValues
+                            ? ''
+                            : formatCurrency(Number(
+                                rowDef.valuesByDate
+                                  ? rowDef.valuesByDate[day.dateLabel] || 0
+                                  : (rowDef.key ? day[rowDef.key as keyof typeof day] : 0) || 0
+                              ))}
                         </td>
                       ))}
                     </tr>
