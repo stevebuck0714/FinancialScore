@@ -8582,6 +8582,7 @@ function FinancialScorePage() {
                 : selectedAccountingSystem === 'XERO'
                   ? 'Xero'
                   : selectedAccountingSystemLabel || 'accounting';
+            const canReprocessApiData = selectedAccountingSystem === 'XERO';
 
             return (
               <div
@@ -9007,8 +9008,8 @@ function FinancialScorePage() {
                           </button>
                           )}
                           
-                          {/* Reprocess Xero Data button - only show if API-synced data exists */}
-                          {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
+                          {/* Reprocess mapped API data - currently supported for Xero only */}
+                          {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && canReprocessApiData && (
                           <button
                             onClick={async () => {
                               if (!selectedCompanyId) {
@@ -9016,7 +9017,7 @@ function FinancialScorePage() {
                                 return;
                               }
                               
-                              const confirmed = confirm('Reprocess Xero/QuickBooks data with your account mappings?\n\nThis will fetch account-level details and apply your mappings to create detailed expense breakdowns.');
+                              const confirmed = confirm('Reprocess Xero data with your account mappings?\n\nThis will fetch account-level details and apply your mappings to create detailed expense breakdowns.');
                               if (!confirmed) return;
                               
                               setIsProcessingMonthlyData(true);
@@ -9062,6 +9063,15 @@ function FinancialScorePage() {
                           >
                             {isProcessingMonthlyData ? 'Processing...' : 'Apply Mappings to Data'}
                           </button>
+                          )}
+                          {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && !canReprocessApiData && (
+                            <div style={{
+                              marginTop: '8px',
+                              fontSize: '12px',
+                              color: '#64748b'
+                            }}>
+                              Mapping reprocess is currently available for Xero connections only.
+                            </div>
                           )}
                           
                           <button
