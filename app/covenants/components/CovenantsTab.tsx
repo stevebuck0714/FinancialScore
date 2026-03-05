@@ -657,6 +657,7 @@ export default function CovenantsTab({
   const [alerts, setAlerts] = useState<CovenantAlert[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [dismissedDerivedAlertIds, setDismissedDerivedAlertIds] = useState<Set<string>>(new Set());
   const [configCategory, setConfigCategory] = useState<'all' | 'financial' | 'maintenance' | 'negative' | 'affirmative' | 'incurrence'>('all');
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
@@ -919,8 +920,56 @@ export default function CovenantsTab({
 
   const complianceScore = totalCount > 0 ? Math.round(((compliantCount + warningCount * 0.5) / totalCount) * 100) : 100;
 
+  const derivedAlerts = React.useMemo<CovenantAlert[]>(() => {
+    const nowIso = new Date().toISOString();
+    return applicableCovenants
+      .filter((c) => c.status === 'warning' || c.status === 'breached')
+      .map((c) => ({
+        id: `derived-${selectedLoan?.id || 'loan'}-${c.id}`,
+        title: c.status === 'breached' ? `${c.name} breached` : `${c.name} warning`,
+        description:
+          c.status === 'breached'
+            ? `${c.name} is currently below/above the required threshold.`
+            : `${c.name} is approaching its threshold.`,
+        severity: c.status === 'breached' ? 'critical' : 'warning',
+        status: 'active',
+        covenantName: c.name,
+        timestamp: nowIso,
+      }))
+      .filter((a) => !dismissedDerivedAlertIds.has(a.id));
+  }, [applicableCovenants, dismissedDerivedAlertIds, selectedLoan?.id]);
+
+  const effectiveAlerts = React.useMemo<CovenantAlert[]>(() => {
+    const merged: CovenantAlert[] = [...alerts];
+    for (const derived of derivedAlerts) {
+      const alreadyRepresented = merged.some(
+        (existing) =>
+          existing.status === 'active' &&
+          existing.covenantName === derived.covenantName &&
+          existing.severity === derived.severity
+      );
+      if (!alreadyRepresented) merged.push(derived);
+    }
+    return merged;
+  }, [alerts, derivedAlerts]);
+
+  const visibleActiveAlerts = React.useMemo(
+    () => effectiveAlerts
+      .filter((alert) => alertFilter === 'all' || alert.severity === alertFilter)
+      .filter((alert) => alert.status === 'active'),
+    [effectiveAlerts, alertFilter]
+  );
+
   // Function to acknowledge an alert
   const acknowledgeAlert = (alertId: string) => {
+    if (alertId.startsWith('derived-')) {
+      setDismissedDerivedAlertIds((prev) => {
+        const next = new Set(prev);
+        next.add(alertId);
+        return next;
+      });
+      return;
+    }
     setAlerts(prevAlerts =>
       prevAlerts.map(alert =>
         alert.id === alertId
@@ -1533,7 +1582,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#EF4444' }}>
-                  {alerts.filter(a => a.severity === 'critical' && a.status === 'active').length}
+                  {effectiveAlerts.filter(a => a.severity === 'critical' && a.status === 'active').length}
                 </div>
               </div>
             </div>
@@ -1548,7 +1597,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#F59E0B' }}>
-                  {alerts.filter(a => a.severity === 'warning' && a.status === 'active').length}
+                  {effectiveAlerts.filter(a => a.severity === 'warning' && a.status === 'active').length}
                 </div>
               </div>
             </div>
@@ -1563,7 +1612,7 @@ export default function CovenantsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#10B981' }}>
-                  {alerts.filter(a => a.status === 'resolved').length}
+                  {effectiveAlerts.filter(a => a.status === 'resolved').length}
                 </div>
               </div>
             </div>
@@ -1622,10 +1671,7 @@ export default function CovenantsTab({
             </div>
 
             <div style={{ spaceY: '12px' }}>
-              {alerts
-                .filter(alert => alertFilter === 'all' || alert.severity === alertFilter)
-                .filter(alert => alert.status === 'active')
-                .map((alert) => (
+              {visibleActiveAlerts.map((alert) => (
                 <div key={alert.id} style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -1684,7 +1730,7 @@ export default function CovenantsTab({
                 </div>
               ))}
 
-              {alerts.filter(alert => alertFilter === 'all' || alert.severity === alertFilter).filter(alert => alert.status === 'active').length === 0 && (
+              {visibleActiveAlerts.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
                   <CheckCircle size={32} style={{ margin: '0 auto 12px', color: '#10b981' }} />
                   <div style={{ fontSize: '14px' }}>

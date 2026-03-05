@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
 
         const trustDuration = effectiveTrustDurationDays || getTrustDurationDays();
         response.cookies.set(
-          getMfaDeviceCookieName(),
+          getMfaDeviceCookieName(userId),
           deviceToken,
           getMfaDeviceCookieOptions(request, trustDuration * 24 * 60 * 60)
         );

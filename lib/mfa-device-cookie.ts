@@ -3,8 +3,15 @@ import { getMfaCookieDomain } from '@/lib/mfa-cookie-domain';
 
 const MFA_DEVICE_COOKIE_NAME = 'mfa_device_token';
 
-export function getMfaDeviceCookieName(): string {
-  return MFA_DEVICE_COOKIE_NAME;
+function normalizeUserId(userId: string): string {
+  // Cookie names can include alphanumerics and a limited punctuation set.
+  // Keep a conservative subset to avoid invalid names.
+  return userId.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+export function getMfaDeviceCookieName(userId?: string): string {
+  if (!userId) return MFA_DEVICE_COOKIE_NAME;
+  return `${MFA_DEVICE_COOKIE_NAME}_${normalizeUserId(userId)}`;
 }
 
 export function getMfaDeviceCookieOptions(request: NextRequest, maxAgeSeconds: number) {
@@ -21,10 +28,14 @@ export function getMfaDeviceCookieOptions(request: NextRequest, maxAgeSeconds: n
   };
 }
 
-export function clearMfaDeviceCookie(response: NextResponse, request: NextRequest) {
+export function clearMfaDeviceCookie(
+  response: NextResponse,
+  request: NextRequest,
+  userId?: string
+) {
   // Deleting with explicit scope avoids stale cookies when domain/path were set.
   response.cookies.set(
-    MFA_DEVICE_COOKIE_NAME,
+    getMfaDeviceCookieName(userId),
     '',
     getMfaDeviceCookieOptions(request, 0)
   );

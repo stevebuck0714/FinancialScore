@@ -4,7 +4,7 @@ import { verifyPassword } from '@/lib/auth';
 import { auditLoginSuccess, auditLoginFailed, auditMFAOperation } from '@/lib/audit-logger';
 import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-device';
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
-import { clearMfaDeviceCookie, getMfaDeviceCookieName } from '@/lib/mfa-device-cookie';
+import { clearMfaDeviceCookie, getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 
 export async function POST(request: NextRequest) {
@@ -74,6 +74,8 @@ export async function POST(request: NextRequest) {
     const requireMfa = isVercelProd && process.env.DISABLE_MFA !== 'true' && process.env.DISABLE_MFA_DEV !== 'true';
     const appScope = getMfaAppScope(request);
 
+    let legacyTokenToPromote: string | null = null;
+
     if (requireMfa) {
       // SECURITY: MFA is mandatory in production runtime.
       // Trusted-device bypass should still work for previously enrolled users.
@@ -90,13 +92,22 @@ export async function POST(request: NextRequest) {
       }
 
       // Check for trusted device BEFORE requiring MFA challenge.
-      const deviceToken = request.cookies.get(getMfaDeviceCookieName())?.value;
+      const userScopedCookieName = getMfaDeviceCookieName(user.id);
+      const legacyCookieName = getMfaDeviceCookieName();
+      const userScopedToken = request.cookies.get(userScopedCookieName)?.value;
+      const legacyToken = request.cookies.get(legacyCookieName)?.value;
+      const deviceToken = userScopedToken || legacyToken;
       if (deviceToken) {
         console.log('🔍 Checking trusted device token...');
         const validation = await validateTrustedDevice(user.id, deviceToken, request);
         
         if (validation.valid) {
           console.log('✅ Trusted device validated - skipping MFA');
+          // Promote legacy/shared cookie into user-scoped cookie to avoid
+          // cross-account trust invalidation in the same browser.
+          if (!userScopedToken && legacyToken) {
+            legacyTokenToPromote = legacyToken;
+          }
           // Device is trusted, skip MFA and proceed with login
         } else {
           console.log('⚠️ Trusted device validation failed:', validation.reason);
@@ -107,7 +118,10 @@ export async function POST(request: NextRequest) {
             trustDurationDays: getTrustDurationDays(),
             message: 'MFA verification required',
           });
-          clearMfaDeviceCookie(response, request);
+          clearMfaDeviceCookie(response, request, user.id);
+          if (legacyToken) {
+            clearMfaDeviceCookie(response, request);
+          }
           return response;
         }
       } else {
@@ -217,6 +231,16 @@ export async function POST(request: NextRequest) {
         maxAge: 60 * 60 * 24 * 30,
       });
     }
+
+    if (legacyTokenToPromote) {
+      response.cookies.set(
+        getMfaDeviceCookieName(user.id),
+        legacyTokenToPromote,
+        getMfaDeviceCookieOptions(request, getTrustDurationDays() * 24 * 60 * 60)
+      );
+      clearMfaDeviceCookie(response, request);
+    }
+
     return response;
   } catch (error) {
     console.error('❌ Login error:', error);

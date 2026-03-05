@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
         // Set cookie with device token
         const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();
         response.cookies.set(
-          getMfaDeviceCookieName(),
+          getMfaDeviceCookieName(userId),
           deviceToken,
           getMfaDeviceCookieOptions(request, trustDurationDaysValue * 24 * 60 * 60)
         );
