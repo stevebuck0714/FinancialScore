@@ -225,7 +225,8 @@ export async function middleware(request: NextRequest) {
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set('x-user-id', token.id as string || '')
     requestHeaders.set('x-user-email', token.email as string || '')
-    requestHeaders.set('x-user-role', token.role as string || '')
+    const normalizedRole = String(token.role || '').trim().toUpperCase()
+    requestHeaders.set('x-user-role', normalizedRole)
     requestHeaders.set('x-company-id', token.companyId as string || '')
     requestHeaders.set('x-consultant-id', token.consultantId as string || '')
     const activeCompanyCookie = request.cookies.get('fs_active_company')?.value || ''

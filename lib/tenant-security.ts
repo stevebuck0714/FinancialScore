@@ -17,6 +17,15 @@ export interface UserContext {
   consultantId: string | null
 }
 
+function normalizeRole(value: string | null): UserContext['role'] | null {
+  if (!value) return null
+  const normalized = value.trim().toUpperCase()
+  if (normalized === 'SITEADMIN' || normalized === 'CONSULTANT' || normalized === 'USER') {
+    return normalized
+  }
+  return null
+}
+
 function getUserCompanyAccessDelegate():
   | {
       findUnique: (...args: any[]) => Promise<any>;
@@ -38,7 +47,7 @@ export async function getUserContext(): Promise<UserContext | null> {
   
   const userId = headersList.get('x-user-id')
   const email = headersList.get('x-user-email')
-  const role = headersList.get('x-user-role')
+  const role = normalizeRole(headersList.get('x-user-role'))
   const companyId = headersList.get('x-active-company-id') || headersList.get('x-company-id')
   const consultantId = headersList.get('x-consultant-id')
   
@@ -49,7 +58,7 @@ export async function getUserContext(): Promise<UserContext | null> {
   return {
     userId,
     email,
-    role: role as 'SITEADMIN' | 'CONSULTANT' | 'USER',
+    role,
     companyId: companyId || null,
     consultantId: consultantId || null,
   }

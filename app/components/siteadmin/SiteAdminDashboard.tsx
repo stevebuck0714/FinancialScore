@@ -1539,8 +1539,8 @@ export default function SiteAdminDashboard(props: any) {
                                 onClick={() => {
                                   // Save current admin user
                                   setSiteAdminViewingAs(currentUser);
-                                  // CRITICAL: Clear companies to prevent showing all companies
-                                  setCompanies([]);
+                                  // Seed preview with this consultant's companies while background reload runs.
+                                  setCompanies(consultantCompanies);
                                   setLoadedConsultantId(null);
                                   // Switch to viewing this consultant's dashboard
                                   setCurrentUser({
