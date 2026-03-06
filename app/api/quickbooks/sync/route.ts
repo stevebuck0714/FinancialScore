@@ -463,19 +463,42 @@ export async function POST(request: NextRequest) {
       ? `${latestMonth.getFullYear()}-${String(latestMonth.getMonth() + 1).padStart(2, '0')}`
       : null;
 
-    const blockingFailures = validationFailures.filter((f) => f.month !== latestMonthKey);
-    const latestMonthWarnings = validationFailures.filter((f) => f.month === latestMonthKey);
+    let blockingFailures: typeof validationFailures = [];
+    let latestMonthWarnings: typeof validationFailures = [];
+    let nonBlockingHistoricalWarnings: typeof validationFailures = [];
 
     if (validationFailures.length > 0) {
       const uniqueMonths = Array.from(new Set(validationFailures.map((f) => f.month)));
       const monthDates = uniqueMonths.map((month) => new Date(`${month}-01T00:00:00`));
       const salesEvidence = await Promise.all(monthDates.map((monthDate) => fetchSalesEvidenceForMonth(monthDate)));
+      const evidenceByMonth = new Map(salesEvidence.map((entry) => [entry.month, entry]));
+
+      latestMonthWarnings = validationFailures.filter((f) => f.month === latestMonthKey);
+      const historicalCandidates = validationFailures.filter((f) => f.month !== latestMonthKey);
+      blockingFailures = historicalCandidates.filter((f) => {
+        const evidence = evidenceByMonth.get(f.month);
+        return Number(evidence?.combinedTotal || 0) > 0;
+      });
+      nonBlockingHistoricalWarnings = historicalCandidates.filter((f) => {
+        const evidence = evidenceByMonth.get(f.month);
+        return Number(evidence?.combinedTotal || 0) <= 0;
+      });
+
       if (latestMonthWarnings.length > 0) {
         console.warn('⚠️ QBO sync validation warning on latest month (allowed):', {
           traceId: syncTraceId,
           latestMonth: latestMonthKey,
           latestMonthWarnings,
           salesEvidence: salesEvidence.filter((s) => s.month === latestMonthKey),
+        });
+      }
+      if (nonBlockingHistoricalWarnings.length > 0) {
+        console.warn('⚠️ QBO sync non-blocking historical warnings (no sales evidence):', {
+          traceId: syncTraceId,
+          nonBlockingHistoricalWarnings,
+          salesEvidence: salesEvidence.filter((s) =>
+            nonBlockingHistoricalWarnings.some((w) => w.month === s.month)
+          ),
         });
       }
 
@@ -486,6 +509,7 @@ export async function POST(request: NextRequest) {
           traceId: syncTraceId,
           blockingFailures,
           latestMonthWarnings,
+          nonBlockingHistoricalWarnings,
           salesEvidence,
         });
 
@@ -516,6 +540,7 @@ export async function POST(request: NextRequest) {
               traceId: syncTraceId,
               blockingFailures,
               latestMonthWarnings,
+              nonBlockingHistoricalWarnings,
               salesEvidence,
               diagnostics: traceSnapshotBase,
             } as any,
@@ -538,6 +563,7 @@ export async function POST(request: NextRequest) {
           validationFailed: true,
           failedMonths: blockingMonths,
           latestMonthWarnings,
+          nonBlockingHistoricalWarnings,
           salesEvidence,
           intuitTid,
           traceId: syncTraceId,
@@ -562,6 +588,7 @@ export async function POST(request: NextRequest) {
             ...traceSnapshotBase,
             financialRecordId: 'PENDING',
             validationWarnings: latestMonthWarnings,
+            nonBlockingHistoricalWarnings,
           },
         },
         columnMapping: {
@@ -583,6 +610,7 @@ export async function POST(request: NextRequest) {
             ...traceSnapshotBase,
             financialRecordId: financialRecord.id,
             validationWarnings: latestMonthWarnings,
+            nonBlockingHistoricalWarnings,
           },
         } as any,
       },
