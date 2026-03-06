@@ -11562,16 +11562,14 @@ function FinancialScorePage() {
               const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
               
               // Revenue
-              const revenue = currentMonth.revenue || 0;
-              
-              // Cost of Goods Sold
-              const cogsPayroll = currentMonth.cogsPayroll || 0;
-              const cogsOwnerPay = currentMonth.cogsOwnerPay || 0;
-              const cogsContractors = currentMonth.cogsContractors || 0;
-              const cogsMaterials = currentMonth.cogsMaterials || 0;
-              const cogsCommissions = currentMonth.cogsCommissions || 0;
-              const cogsOther = currentMonth.cogsOther || 0;
-              const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+              const {
+                revenue,
+                cogs,
+                revenueDetails,
+                cogsDetails,
+                revenueDetailFields,
+                cogsDetailFields,
+              } = buildIncomeStatementDetails([currentMonth]);
               
               const grossProfit = revenue - cogs;
               const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
@@ -11639,53 +11637,25 @@ function FinancialScorePage() {
                       <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>100.0%</span>
                     </div>
+                    {revenueDetailFields.map((field) => (
+                      <div key={field} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${(Number(revenueDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(Number(revenueDetails[field]) || 0).toFixed(1)}%</span>
+                      </div>
+                    ))}
                   </div>
 
                   {/* COGS Section */}
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Cost of Goods Sold</div>
-                    {cogsPayroll > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Payroll</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsPayroll).toFixed(1)}%</span>
+                    {cogsDetailFields.map((field) => (
+                      <div key={field} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${(Number(cogsDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(Number(cogsDetails[field]) || 0).toFixed(1)}%</span>
                       </div>
-                    )}
-                    {cogsOwnerPay > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Owner Pay</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsOwnerPay).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {cogsContractors > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Contractors</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsContractors).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {cogsMaterials > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Materials</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsMaterials).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {cogsCommissions > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Commissions</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsCommissions).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {cogsOther > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>Other</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsOther).toFixed(1)}%</span>
-                      </div>
-                    )}
+                    ))}
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                       <span style={{ fontWeight: '600', color: '#1e293b', paddingLeft: '20px' }}>Total COGS</span>
                       <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -12759,13 +12729,9 @@ function FinancialScorePage() {
                   const calc = (months: any[], field: string) => months.reduce((sum, m) => sum + (m[field] || 0), 0);
                   const periodsData = displayPeriods.map(p => {
                     const m = p.months;
-                    const revenue = calc(m, 'revenue');
-                    const cogsPayroll = calc(m, 'cogsPayroll');
-                    const cogsOwnerPay = calc(m, 'cogsOwnerPay');
-                    const cogsContractors = calc(m, 'cogsContractors');
-                    const cogsMaterials = calc(m, 'cogsMaterials');
-                    const cogsCommissions = calc(m, 'cogsCommissions');
-                    const cogsOther = calc(m, 'cogsOther');
+                    const detailData = buildIncomeStatementDetails(m);
+                    const revenue = detailData.revenue;
+                    const cogs = detailData.cogs;
                     const payroll = calc(m, 'payroll');
                     const ownerBasePay = calc(m, 'ownerBasePay');
                     const ownersRetirement = calc(m, 'ownersRetirement');
@@ -12781,7 +12747,6 @@ function FinancialScorePage() {
                     const interestExpense = calc(m, 'interestExpense');
                     const nonOperatingIncome = calc(m, 'nonOperatingIncome');
                     const extraordinaryItems = calc(m, 'extraordinaryItems');
-                    const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
                     // Calculate all operating expenses - include all expense fields
                     const benefits = calc(m, 'benefits');
                     const taxLicense = calc(m, 'taxLicense');
@@ -12796,8 +12761,52 @@ function FinancialScorePage() {
                     const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
                     const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
                     const netIncome = incomeBeforeTax - totalIncomeTaxes;
-                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, benefits, taxLicense, phoneComm, mealsEntertainment, otherExpense, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, incomeBeforeTax, stateIncomeTaxes, federalIncomeTaxes, totalIncomeTaxes, netIncome };
+                    return {
+                      label: p.label,
+                      revenue,
+                      cogs,
+                      revenueDetails: detailData.revenueDetails,
+                      cogsDetails: detailData.cogsDetails,
+                      grossProfit,
+                      payroll,
+                      ownerBasePay,
+                      ownersRetirement,
+                      professionalFees,
+                      rent,
+                      infrastructure,
+                      autoTravel,
+                      insurance,
+                      salesExpense,
+                      subcontractors,
+                      depreciationAmortization,
+                      marketing,
+                      benefits,
+                      taxLicense,
+                      phoneComm,
+                      mealsEntertainment,
+                      otherExpense,
+                      totalOpex,
+                      operatingIncome,
+                      interestExpense,
+                      nonOperatingIncome,
+                      extraordinaryItems,
+                      incomeBeforeTax,
+                      stateIncomeTaxes,
+                      federalIncomeTaxes,
+                      totalIncomeTaxes,
+                      netIncome
+                    };
                   });
+                  const cogsDetailFields = Array.from(
+                    new Set(periodsData.flatMap((p: any) => Object.keys(p.cogsDetails || {}))),
+                  ).filter((field) =>
+                    periodsData.some((p: any) => (Number((p.cogsDetails || {})[field]) || 0) !== 0),
+                  );
+                  const revenueDetailFields = Array.from(
+                    new Set(periodsData.flatMap((p: any) => Object.keys(p.revenueDetails || {}))),
+                  ).filter((field) =>
+                    periodsData.some((p: any) => (Number((p.revenueDetails || {})[field]) || 0) !== 0),
+                  );
                   const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                       <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
@@ -12829,13 +12838,23 @@ function FinancialScorePage() {
                           ))}
                         </div>
                         <RowWithPercent label="Revenue" values={periodsData.map(p => p.revenue)} bold />
+                        {revenueDetailFields.map((field) => (
+                          <RowWithPercent
+                            key={field}
+                            label={getFieldDisplayName(field)}
+                            values={periodsData.map((p: any) => Number((p.revenueDetails || {})[field]) || 0)}
+                            indent={20}
+                          />
+                        ))}
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Cost of Goods Sold</div>
-                        {periodsData.some(p => p.cogsPayroll > 0) && <RowWithPercent label="Payroll" values={periodsData.map(p => p.cogsPayroll)} indent={20} />}
-                        {periodsData.some(p => p.cogsOwnerPay > 0) && <RowWithPercent label="Owner Pay" values={periodsData.map(p => p.cogsOwnerPay)} indent={20} />}
-                        {periodsData.some(p => p.cogsContractors > 0) && <RowWithPercent label="Contractors" values={periodsData.map(p => p.cogsContractors)} indent={20} />}
-                        {periodsData.some(p => p.cogsMaterials > 0) && <RowWithPercent label="Materials" values={periodsData.map(p => p.cogsMaterials)} indent={20} />}
-                        {periodsData.some(p => p.cogsCommissions > 0) && <RowWithPercent label="Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
-                        {periodsData.some(p => p.cogsOther > 0) && <RowWithPercent label="Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
+                        {cogsDetailFields.map((field) => (
+                          <RowWithPercent
+                            key={field}
+                            label={getFieldDisplayName(field)}
+                            values={periodsData.map((p: any) => Number((p.cogsDetails || {})[field]) || 0)}
+                            indent={20}
+                          />
+                        ))}
                         <RowWithPercent label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Gross Profit</div>
@@ -12970,15 +12989,14 @@ function FinancialScorePage() {
                   );
                 }
                 
-                const revenue = periodMonths.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                
-                const cogsPayroll = periodMonths.reduce((sum, m) => sum + (m.cogsPayroll || 0), 0);
-                const cogsOwnerPay = periodMonths.reduce((sum, m) => sum + (m.cogsOwnerPay || 0), 0);
-                const cogsContractors = periodMonths.reduce((sum, m) => sum + (m.cogsContractors || 0), 0);
-                const cogsMaterials = periodMonths.reduce((sum, m) => sum + (m.cogsMaterials || 0), 0);
-                const cogsCommissions = periodMonths.reduce((sum, m) => sum + (m.cogsCommissions || 0), 0);
-                const cogsOther = periodMonths.reduce((sum, m) => sum + (m.cogsOther || 0), 0);
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+                const {
+                  revenue,
+                  cogs,
+                  revenueDetails,
+                  cogsDetails,
+                  revenueDetailFields,
+                  cogsDetailFields,
+                } = buildIncomeStatementDetails(periodMonths);
                 
                 const grossProfit = revenue - cogs;
 
@@ -13032,52 +13050,30 @@ function FinancialScorePage() {
                         <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                         <div style={{ textAlign: 'right', color: '#1e293b' }}>100.0%</div>
                       </div>
+                      {revenueDetailFields.map((field) => {
+                        const value = Number(revenueDetails[field]) || 0;
+                        return (
+                          <div key={field} style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ color: '#64748b' }}>{getFieldDisplayName(field)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(value)}</div>
+                          </div>
+                        );
+                      })}
 
                       {/* COGS */}
                       <div style={{ marginTop: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Cost of Goods Sold</div>
-                        {cogsPayroll > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Payroll</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsPayroll)}</div>
-                          </div>
-                        )}
-                        {cogsOwnerPay > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Owner Pay</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOwnerPay)}</div>
-                          </div>
-                        )}
-                        {cogsContractors > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Contractors</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsContractors)}</div>
-                          </div>
-                        )}
-                        {cogsMaterials > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Materials</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsMaterials)}</div>
-                          </div>
-                        )}
-                        {cogsCommissions > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Commissions</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsCommissions)}</div>
-                          </div>
-                        )}
-                        {cogsOther > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>Other</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOther)}</div>
-                          </div>
-                        )}
+                        {cogsDetailFields.map((field) => {
+                          const value = Number(cogsDetails[field]) || 0;
+                          return (
+                            <div key={field} style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b' }}>{getFieldDisplayName(field)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(value)}</div>
+                            </div>
+                          );
+                        })}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <div style={{ color: '#475569' }}>Total COGS</div>
                           <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>

@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+const LAST_ACTIVITY_COOKIE = 'fs_last_activity'
+const AUTH_COOKIE_NAMES = [
+  'next-auth.session-token',
+  '__Secure-next-auth.session-token',
+  '__Host-next-auth.session-token',
+  'authjs.session-token',
+  '__Secure-authjs.session-token',
+  '__Host-authjs.session-token',
+]
+
 // Rate limiting storage (in-memory for now, use Redis in production)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
 
@@ -57,6 +68,55 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000)
 
+async function resolveAuthToken(request: NextRequest) {
+  let token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  })
+
+  if (token) return token
+
+  for (const cookieName of AUTH_COOKIE_NAMES) {
+    token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+      cookieName,
+    })
+    if (token) return token
+  }
+
+  return null
+}
+
+function applyIdleActivityCookie(response: NextResponse) {
+  response.cookies.set(LAST_ACTIVITY_COOKIE, String(Date.now()), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: Math.floor(IDLE_TIMEOUT_MS / 1000),
+  })
+}
+
+function clearSessionCookies(response: NextResponse) {
+  for (const cookieName of AUTH_COOKIE_NAMES) {
+    response.cookies.set(cookieName, '', {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 0,
+    })
+  }
+  response.cookies.set(LAST_ACTIVITY_COOKIE, '', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 0,
+  })
+}
+
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   
@@ -108,6 +168,30 @@ export async function middleware(request: NextRequest) {
   
   // Check if this is a public route
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+  const token = await resolveAuthToken(request)
+
+  const lastActivityRaw = request.cookies.get(LAST_ACTIVITY_COOKIE)?.value
+  const lastActivityMs = lastActivityRaw ? Number.parseInt(lastActivityRaw, 10) : NaN
+  const hasValidLastActivity = Number.isFinite(lastActivityMs)
+  const isIdleExpired = Boolean(token) && hasValidLastActivity && Date.now() - lastActivityMs > IDLE_TIMEOUT_MS
+
+  if (isIdleExpired) {
+    if (pathname.startsWith('/api')) {
+      const response = NextResponse.json(
+        { error: 'Unauthorized', message: 'Session expired due to inactivity. Please log in again.' },
+        { status: 401 }
+      )
+      clearSessionCookies(response)
+      return response
+    }
+
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    url.searchParams.set('sessionExpired', '1')
+    const response = NextResponse.redirect(url)
+    clearSessionCookies(response)
+    return response
+  }
   
   // Debug logging for MFA endpoints
   if (pathname.includes('/mfa/')) {
@@ -119,32 +203,6 @@ export async function middleware(request: NextRequest) {
   }
   
   if (pathname.startsWith('/api') && !isPublicRoute) {
-    // Try default token resolution first, then common cookie-name variants.
-    let token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET,
-    })
-
-    if (!token) {
-      const cookieNamesToTry = [
-        'next-auth.session-token',
-        '__Secure-next-auth.session-token',
-        '__Host-next-auth.session-token',
-        'authjs.session-token',
-        '__Secure-authjs.session-token',
-        '__Host-authjs.session-token',
-      ]
-
-      for (const cookieName of cookieNamesToTry) {
-        token = await getToken({
-          req: request,
-          secret: process.env.NEXTAUTH_SECRET,
-          cookieName,
-        })
-        if (token) break
-      }
-    }
-    
     console.log('🔐 Middleware auth check:', {
       path: pathname,
       hasToken: !!token,
@@ -178,15 +236,20 @@ export async function middleware(request: NextRequest) {
     const fingerprint = Buffer.from(`${clientIp}:${userAgent}`).toString('base64').substring(0, 32)
     requestHeaders.set('x-session-fingerprint', fingerprint)
     
-    return NextResponse.next({
+    const response = NextResponse.next({
       request: {
         headers: requestHeaders,
       },
     })
+    applyIdleActivityCookie(response)
+    return response
   }
   
   // Add security headers to all responses
   const response = NextResponse.next()
+  if (token) {
+    applyIdleActivityCookie(response)
+  }
   
   // Security headers
   response.headers.set('X-Content-Type-Options', 'nosniff')

@@ -14,8 +14,24 @@ export default function WorkingCapitalTab({
   companyName,
   prefetchedMonthlyData,
 }: WorkingCapitalTabProps) {
+  const formatMonthLabel = (rawMonth: unknown, fallbackIndex: number): string => {
+    if (!rawMonth) return `M${fallbackIndex + 1}`;
+    const asString = String(rawMonth).trim();
+    if (!asString) return `M${fallbackIndex + 1}`;
+
+    const parsed = new Date(asString);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    }
+
+    // Keep the source label if parsing fails to avoid "Invalid Date" in charts/tooltips.
+    return asString;
+  };
+
   const monthly = Array.isArray(prefetchedMonthlyData) ? prefetchedMonthlyData : [];
   const [showWCRatioFormula, setShowWCRatioFormula] = React.useState(false);
+  const [showDaysWCFormula, setShowDaysWCFormula] = React.useState(false);
+  const [showCCCFormula, setShowCCCFormula] = React.useState(false);
   const [assetsLiabHover, setAssetsLiabHover] = useState<{ index: number; x: number; y: number; month: string; assets: number; liabilities: number } | null>(null);
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
 
@@ -196,11 +212,65 @@ export default function WorkingCapitalTab({
               <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', minHeight: '24px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#667eea', margin: 0 }}>⏱️ Days Working Capital</h3>
+                  <button
+                    onClick={() => setShowDaysWCFormula(!showDaysWCFormula)}
+                    style={{
+                      background: '#ede9fe',
+                      border: '1px solid #c4b5fd',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      padding: '4px 8px',
+                      color: '#667eea',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#ddd6fe';
+                      e.currentTarget.style.borderColor = '#a78bfa';
+                      e.currentTarget.style.color = '#4f46e5';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#ede9fe';
+                      e.currentTarget.style.borderColor = '#c4b5fd';
+                      e.currentTarget.style.color = '#667eea';
+                    }}
+                    title="Click to view formula"
+                  >
+                    <span style={{ fontSize: '14px' }}>ℹ️</span> Formula
+                  </button>
                 </div>
+                {showDaysWCFormula && (
+                  <div style={{
+                    background: '#f0f9ff',
+                    border: '1px solid #bae6fd',
+                    borderRadius: '6px',
+                    padding: '8px',
+                    marginBottom: '12px',
+                    fontSize: '11px',
+                    color: '#0c4a6e'
+                  }}>
+                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>Formula:</div>
+                    <div style={{ fontFamily: 'monospace', marginBottom: '6px', fontSize: '10px' }}>
+                      Days Working Capital = (Working Capital / Avg Monthly Revenue) × (365 / 12)
+                    </div>
+                    <div style={{ fontSize: '10px', lineHeight: '1.4' }}>
+                      <strong>Explanation:</strong><br />
+                      • Working Capital = Current Assets - Current Liabilities<br />
+                      • Avg Monthly Revenue = average of recent monthly revenue values<br />
+                      • Converts working capital into estimated days of sales coverage
+                    </div>
+                  </div>
+                )}
                 <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '6px' }}>
                   {(() => {
                     const avgRevenue = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0) / Math.max(monthly.slice(-12).length, 1);
-                    const daysWC = workingCapital > 0 && avgRevenue > 0 ? (workingCapital / avgRevenue) * 365 : 0;
+                    const daysPerMonth = 365 / 12;
+                    const daysWC = workingCapital > 0 && avgRevenue > 0 ? (workingCapital / avgRevenue) * daysPerMonth : 0;
                     return daysWC.toFixed(0);
                   })()}
                 </div>
@@ -215,30 +285,91 @@ export default function WorkingCapitalTab({
               <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', minHeight: '24px' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#667eea', margin: 0 }}>🔄 Cash Conversion Cycle</h3>
+                  <button
+                    onClick={() => setShowCCCFormula(!showCCCFormula)}
+                    style={{
+                      background: '#ede9fe',
+                      border: '1px solid #c4b5fd',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      padding: '4px 8px',
+                      color: '#667eea',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      transition: 'all 0.2s',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#ddd6fe';
+                      e.currentTarget.style.borderColor = '#a78bfa';
+                      e.currentTarget.style.color = '#4f46e5';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#ede9fe';
+                      e.currentTarget.style.borderColor = '#c4b5fd';
+                      e.currentTarget.style.color = '#667eea';
+                    }}
+                    title="Click to view formula"
+                  >
+                    <span style={{ fontSize: '14px' }}>ℹ️</span> Formula
+                  </button>
                 </div>
+                {showCCCFormula && (
+                  <div style={{
+                    background: '#f0f9ff',
+                    border: '1px solid #bae6fd',
+                    borderRadius: '6px',
+                    padding: '8px',
+                    marginBottom: '12px',
+                    fontSize: '11px',
+                    color: '#0c4a6e'
+                  }}>
+                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>Formulas:</div>
+                    <div style={{ fontFamily: 'monospace', marginBottom: '6px', fontSize: '10px' }}>
+                      CCC = DIO + DSO - DPO
+                    </div>
+                    <div style={{ fontFamily: 'monospace', marginBottom: '6px', fontSize: '10px' }}>
+                      DIO = (Inventory / Monthly COGS) × Days in Month
+                    </div>
+                    <div style={{ fontFamily: 'monospace', marginBottom: '6px', fontSize: '10px' }}>
+                      DSO = (AR / Monthly Sales) × Days in Month
+                    </div>
+                    <div style={{ fontFamily: 'monospace', marginBottom: '6px', fontSize: '10px' }}>
+                      DPO = (AP / Monthly COGS) × Days in Month
+                    </div>
+                    <div style={{ fontSize: '10px', lineHeight: '1.4' }}>
+                      <strong>Explanation:</strong><br />
+                      • DIO = time inventory sits before being sold<br />
+                      • DSO = time to collect receivables from customers<br />
+                      • DPO = time you take to pay suppliers<br />
+                      • Lower CCC usually means faster cash recovery
+                    </div>
+                  </div>
+                )}
                 {(() => {
-                  // Calculate LTM values
-                  const last12 = monthly.slice(-12);
-                  const ltmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                  const ltmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
-
-                  // Calculate averages for balance sheet items (current + previous month / 2)
+                  // Single-month method:
+                  // DSO = (AR / monthly sales) * days in month
+                  // DIO = (Inventory / monthly COGS) * days in month
+                  // DPO = (AP / monthly COGS) * days in month
                   const curr = lastMonth;
-                  const prev = monthly.length > 1 ? monthly[monthly.length - 2] : lastMonth;
-                  
-                  const avgInventory = ((curr.inventory || 0) + (prev.inventory || 0)) / 2;
-                  const avgAR = ((curr.ar || 0) + (prev.ar || 0)) / 2;
-                  const avgAP = ((curr.ap || 0) + (prev.ap || 0)) / 2;
-                  
-                  // Calculate turnover ratios
-                  const inventoryTurnover = avgInventory > 0 ? ltmCOGS / avgInventory : 0;
-                  const receivablesTurnover = avgAR > 0 ? ltmRevenue / avgAR : 0;
-                  const payablesTurnover = avgAP > 0 ? ltmCOGS / avgAP : 0;
-                  
-                  // Calculate days metrics
-                  const DIO = inventoryTurnover > 0 ? 365 / inventoryTurnover : 0;
-                  const DSO = receivablesTurnover > 0 ? 365 / receivablesTurnover : 0;
-                  const DPO = payablesTurnover > 0 ? 365 / payablesTurnover : 0;
+                  const ar = Number(curr.ar || 0);
+                  const inventory = Number(curr.inventory || 0);
+                  const ap = Math.abs(Number(curr.ap || 0));
+                  const monthlyRevenue = Number(curr.revenue || 0);
+                  const monthlyCOGS = Math.abs(Number(curr.cogsTotal || 0));
+
+                  const monthDate = curr.month ? new Date(String(curr.month)) : null;
+                  const daysInMonth =
+                    monthDate && !Number.isNaN(monthDate.getTime())
+                      ? new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate()
+                      : 30;
+
+                  const DIO = inventory > 0 && monthlyCOGS > 0 ? (inventory / monthlyCOGS) * daysInMonth : 0;
+                  const DSO = ar > 0 && monthlyRevenue > 0 ? (ar / monthlyRevenue) * daysInMonth : 0;
+                  const DPO = ap > 0 && monthlyCOGS > 0 ? (ap / monthlyCOGS) * daysInMonth : 0;
                   const CCC = DIO + DSO - DPO;
 
                   return (
@@ -341,7 +472,7 @@ export default function WorkingCapitalTab({
               const wc = currentAssets - currentLiab;
 
               return {
-                month: month.month ? new Date(month.month).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : `M${index + 1}`,
+                month: formatMonthLabel(month.month, index),
                 workingCapital: wc / 1000, // Convert to thousands
                 currentAssets: currentAssets / 1000,
                 currentLiabilities: currentLiab / 1000
@@ -374,7 +505,7 @@ export default function WorkingCapitalTab({
         <div style={{ height: '450px', position: 'relative', width: '100%' }}>
           <SimpleChart
             data={monthly.slice(-36).map((month, index) => ({
-              month: month.month ? new Date(month.month).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : `M${index + 1}`,
+              month: formatMonthLabel(month.month, index),
               cash: (month.cash || 0) / 1000
             }))}
             valueKey="cash"
@@ -397,7 +528,7 @@ export default function WorkingCapitalTab({
               const currentAssets = month.tca || ((month.cash || 0) + (month.ar || 0) + (month.inventory || 0) + (month.otherCA || 0));
               const currentLiab = Math.abs(month.tcl || ((month.ap || 0) + (month.otherCL || 0)));
               return {
-                month: month.month ? new Date(month.month).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : `M${index + 1}`,
+                month: formatMonthLabel(month.month, index),
                 assets: currentAssets / 1000,
                 liabilities: currentLiab / 1000
               };
@@ -543,7 +674,7 @@ export default function WorkingCapitalTab({
         <div style={{ height: '450px', position: 'relative', width: '100%' }}>
           <SimpleChart
             data={monthly.slice(-36).map((month, index) => ({
-              month: month.month ? new Date(month.month).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : `M${index + 1}`,
+              month: formatMonthLabel(month.month, index),
               inventory: (month.inventory || 0) / 1000
             }))}
             valueKey="inventory"
