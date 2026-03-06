@@ -269,6 +269,17 @@ export function createMonthlyRecords(
   // Helper function to extract value from a row by column index
   function getRowValue(rows: any[], sectionName: string, colIndex: number, logMatches: boolean = false): number {
     for (const row of rows) {
+      if (row?.type === 'Data' && Array.isArray(row.ColData)) {
+        const rowLabel = String(row.ColData[0]?.value || '');
+        if (rowLabel.toLowerCase().includes(sectionName.toLowerCase())) {
+          const raw = row.ColData[colIndex]?.value;
+          const dataValue = Math.abs(parseQbNumber(raw));
+          if (dataValue > bestValue) {
+            bestValue = dataValue;
+          }
+        }
+      }
+
       if (row.type === 'Section' && row.Header) {
         const headerValue = row.Header.ColData?.[0]?.value || '';
         
