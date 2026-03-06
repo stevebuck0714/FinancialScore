@@ -3,10 +3,12 @@ export type OpsDataType = 'customers' | 'ar-aging' | 'ap-aging' | 'products' | '
 type ModuleDefinition = {
   key: string;
   label: string;
-  dataType: OpsDataType;
+  dataType?: OpsDataType;
 };
 
 const MODULE_DEFINITIONS: ModuleDefinition[] = [
+  { key: 'working_capital_forecast', label: 'Working Capital Forecast' },
+  { key: 'working-capital-forecast', label: 'Working Capital Forecast' },
   { key: 'daily_financials', label: 'Daily Financials', dataType: 'daily-financials' },
   { key: 'daily-financials', label: 'Daily Financials', dataType: 'daily-financials' },
   { key: 'cash', label: 'Cash', dataType: 'cash' },

@@ -18,6 +18,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
+import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
 import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
@@ -351,6 +352,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     new Set([
       ...(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash']),
       'daily_financials',
+      'working_capital_forecast',
     ])
   );
   const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', ...availableModuleTabs];
@@ -408,7 +410,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   }, [industrySectorCategory]);
 
   useEffect(() => {
-    if (activeTab !== 'overview' && activeTab !== 'dashboard') {
+    if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
       loadTabData(activeTab);
     }
   }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
@@ -1026,7 +1028,15 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   };
 
   const renderFilters = () => {
-    if (isOverviewOnly || activeTab === 'overview' || activeTab === 'dashboard') return null;
+    if (
+      isOverviewOnly ||
+      activeTab === 'overview' ||
+      activeTab === 'dashboard' ||
+      activeTab === 'working_capital_forecast' ||
+      activeTab === 'working-capital-forecast'
+    ) {
+      return null;
+    }
 
     return (
       <div style={{ 
@@ -3898,6 +3908,9 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
   };
 
   const renderModuleTabContent = (moduleKey: string) => {
+    if (moduleKey === 'working_capital_forecast' || moduleKey === 'working-capital-forecast') {
+      return <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} />;
+    }
     const dataType = mapModuleToDataType(moduleKey);
     if (dataType === 'customers') return renderCustomers();
     if (dataType === 'ar-aging') return renderARaging();
