@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 type QuickBooksOnlineSettings = {
   syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
   syncTime: string;
+  operationalSyncMode: 'BACKFILL' | 'INCREMENTAL';
   initialSyncStartDate: string;
   incrementalSync: 'YES' | 'NO' | '';
   webhookEnabled: 'YES' | 'NO' | '';
@@ -23,6 +24,7 @@ type QuickBooksOnlineProgram = {
 const defaultSettings: QuickBooksOnlineSettings = {
   syncFrequency: 'daily',
   syncTime: '08:00',
+  operationalSyncMode: 'BACKFILL',
   initialSyncStartDate: '',
   incrementalSync: 'YES',
   webhookEnabled: 'YES',
@@ -58,6 +60,7 @@ function sanitizeSettings(value: unknown): QuickBooksOnlineSettings {
     syncFrequency:
       syncFrequency === 'daily' || syncFrequency === 'weekly' || syncFrequency === 'monthly' ? syncFrequency : '',
     syncTime: asString(src.syncTime) || '08:00',
+    operationalSyncMode: asString(src.operationalSyncMode).toUpperCase() === 'INCREMENTAL' ? 'INCREMENTAL' : 'BACKFILL',
     initialSyncStartDate: asString(src.initialSyncStartDate),
     incrementalSync: yesNo(src.incrementalSync),
     webhookEnabled: yesNo(src.webhookEnabled),
@@ -123,6 +126,7 @@ export async function GET(request: NextRequest) {
     const legacySettings = {
       syncFrequency: typeof connection?.syncFrequency === 'string' ? connection.syncFrequency : defaultSettings.syncFrequency,
       syncTime: asString(metadata.operationalPullTime) || defaultSettings.syncTime,
+      operationalSyncMode: asString(metadata.operationalSyncMode) || defaultSettings.operationalSyncMode,
       initialSyncStartDate: asString(metadata.initialSyncStartDate),
       incrementalSync: asString(metadata.incrementalSync),
       webhookEnabled: asString(metadata.webhookEnabled),
@@ -203,6 +207,7 @@ export async function POST(request: NextRequest) {
       quickbooksOnlineSettings: settings,
       quickbooksOnlinePrograms: programs,
       operationalPullTime: settings.syncTime || '08:00',
+      operationalSyncMode: settings.operationalSyncMode,
       operationalScheduleUpdatedAt: new Date().toISOString(),
       quickbooksOnlineLastUpdatedAt: new Date().toISOString(),
     };

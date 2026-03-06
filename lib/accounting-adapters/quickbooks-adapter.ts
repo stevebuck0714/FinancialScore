@@ -17,6 +17,7 @@ import prisma from '@/lib/prisma';
  */
 export class QuickBooksAdapter implements AccountingAdapter {
   readonly platform = 'QUICKBOOKS';
+  private static readonly DAILY_INCREMENTAL_LOOKBACK_DAYS = 90;
   
   private config: AdapterConfig;
   private baseUrl: string;
@@ -121,6 +122,12 @@ export class QuickBooksAdapter implements AccountingAdapter {
     if (Number.isNaN(parsed.getTime())) return null;
     parsed.setHours(0, 0, 0, 0);
     return parsed;
+  }
+
+  private getOperationalSyncMode(): 'BACKFILL' | 'INCREMENTAL' {
+    const settings = this.getOperationalSettings();
+    const raw = typeof settings.operationalSyncMode === 'string' ? settings.operationalSyncMode.trim().toUpperCase() : '';
+    return raw === 'INCREMENTAL' ? 'INCREMENTAL' : 'BACKFILL';
   }
 
   private formatDate(date: Date): string {
@@ -323,14 +330,24 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return copy;
   }
 
-  private resolveCashHistoryStartDate(today: Date): Date {
-    const maxWindowStart = new Date(today);
-    maxWindowStart.setFullYear(maxWindowStart.getFullYear() - 3);
-    maxWindowStart.setHours(0, 0, 0, 0);
+  private resolveCashHistoryStartDate(
+    today: Date,
+    frequency: 'daily' | 'weekly' | 'monthly'
+  ): Date {
+    const defaultBackfillStart = new Date(today);
+    defaultBackfillStart.setFullYear(defaultBackfillStart.getFullYear() - 3);
+    defaultBackfillStart.setHours(0, 0, 0, 0);
+
+    let targetStart = defaultBackfillStart;
+    if (frequency === 'daily' && this.getOperationalSyncMode() === 'INCREMENTAL') {
+      targetStart = new Date(today);
+      targetStart.setDate(targetStart.getDate() - QuickBooksAdapter.DAILY_INCREMENTAL_LOOKBACK_DAYS);
+      targetStart.setHours(0, 0, 0, 0);
+    }
 
     const configuredStart = this.parseStartDateFromSettings();
-    if (!configuredStart) return maxWindowStart;
-    return configuredStart > maxWindowStart ? configuredStart : maxWindowStart;
+    if (!configuredStart) return targetStart;
+    return configuredStart > targetStart ? configuredStart : targetStart;
   }
 
   private async getDailyCashHistory(
@@ -996,7 +1013,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       try {
         const cashBalances = await this.getCashBalances();
         if (frequency === 'daily') {
-          const startDate = this.resolveCashHistoryStartDate(today);
+          const startDate = this.resolveCashHistoryStartDate(today, frequency);
           const cashHistory = await this.getDailyCashHistory(startDate, today, cashBalances);
           const dates = Array.from(cashHistory.keys()).sort();
 
@@ -1133,7 +1150,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
 
       // 3b. Sync AR/AP transaction-level facts for drilldowns
       try {
-        const detailStartDate = this.resolveCashHistoryStartDate(today);
+        const detailStartDate = this.resolveCashHistoryStartDate(today, frequency);
         const arDetailCount = await this.syncARTransactionFacts(detailStartDate, today, frequency);
         recordsCreated += arDetailCount;
         moduleCounts.arAging += arDetailCount;
@@ -1141,7 +1158,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
         errors.push(`AR transaction sync failed: ${error.message}`);
       }
       try {
-        const detailStartDate = this.resolveCashHistoryStartDate(today);
+        const detailStartDate = this.resolveCashHistoryStartDate(today, frequency);
         const apDetailCount = await this.syncAPTransactionFacts(detailStartDate, today, frequency);
         recordsCreated += apDetailCount;
         moduleCounts.apAging += apDetailCount;
@@ -1152,7 +1169,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       // 4. Sync Customer Sales (yesterday's data)
       try {
         if (frequency === 'daily') {
-          const startDate = this.resolveCashHistoryStartDate(today);
+          const startDate = this.resolveCashHistoryStartDate(today, frequency);
           const buckets = await this.getCustomerSalesDailyBuckets(startDate, today);
           for (const bucket of buckets) {
             await prisma.customerSalesSnapshot.deleteMany({

@@ -429,6 +429,7 @@ export default function SiteAdminDashboard(props: any) {
       {
         syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
         syncTime: string;
+        operationalSyncMode: 'BACKFILL' | 'INCREMENTAL';
         initialSyncStartDate: string;
         incrementalSync: 'YES' | 'NO' | '';
         webhookEnabled: 'YES' | 'NO' | '';
@@ -566,6 +567,7 @@ export default function SiteAdminDashboard(props: any) {
   const defaultQboSettings = {
     syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
     syncTime: '08:00',
+    operationalSyncMode: 'BACKFILL' as 'BACKFILL' | 'INCREMENTAL',
     initialSyncStartDate: '',
     incrementalSync: 'YES' as 'YES' | 'NO' | '',
     webhookEnabled: 'YES' as 'YES' | 'NO' | '',
@@ -2360,6 +2362,17 @@ export default function SiteAdminDashboard(props: any) {
                                                             </option>
                                                           );
                                                         })}
+                                                      </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <span style={{ fontWeight: 600 }}>Operational History Window</span>
+                                                      <select
+                                                        value={getQboSettings(company.id).operationalSyncMode}
+                                                        onChange={(e) => setQboSetting(company.id, 'operationalSyncMode', e.target.value)}
+                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="BACKFILL">Backfill (up to 3 years each run)</option>
+                                                        <option value="INCREMENTAL">Incremental (last 90 days)</option>
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
@@ -4383,6 +4396,17 @@ export default function SiteAdminDashboard(props: any) {
                                                 </option>
                                               );
                                             })}
+                                          </select>
+                                        </label>
+                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                          <span style={{ fontWeight: 600 }}>Operational History Window</span>
+                                          <select
+                                            value={getQboSettings(businessCompany.id).operationalSyncMode}
+                                            onChange={(e) => setQboSetting(businessCompany.id, 'operationalSyncMode', e.target.value)}
+                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="BACKFILL">Backfill (up to 3 years each run)</option>
+                                            <option value="INCREMENTAL">Incremental (last 90 days)</option>
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
