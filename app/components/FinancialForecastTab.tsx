@@ -132,7 +132,10 @@ export default function FinancialForecastTab({
   );
   const sectorCogsKeys = useMemo(() => {
     const keys = new Set<string>((sectorFieldOptions.cogs || []).map((opt) => String(opt.value)));
-    LEGACY_COGS_KEYS.forEach((k) => keys.add(k));
+    // Only fall back to legacy COGS keys when a sector has no explicit COGS definitions.
+    if (keys.size === 0) {
+      LEGACY_COGS_KEYS.forEach((k) => keys.add(k));
+    }
     return keys;
   }, [sectorFieldOptions.cogs]);
 
@@ -273,10 +276,22 @@ export default function FinancialForecastTab({
   }, [quarterActuals, sectorFieldOptions.revenue]);
 
   const cogsRowKeys = useMemo(() => {
-    const keys = new Set<string>((sectorFieldOptions.cogs || []).map((opt) => String(opt.value)));
-    quarterActuals.forEach((q) => Object.keys(q.cogsDetails || {}).forEach((k) => keys.add(k)));
-    // Preserve legacy non-prefixed rows if they exist in historical data.
-    LEGACY_COGS_KEYS.forEach((k) => keys.add(k));
+    const sectorKeys = new Set<string>((sectorFieldOptions.cogs || []).map((opt) => String(opt.value)));
+    const useSectorDefinedKeys = sectorKeys.size > 0;
+    const keys = new Set<string>(useSectorDefinedKeys ? Array.from(sectorKeys) : []);
+
+    quarterActuals.forEach((q) => {
+      Object.keys(q.cogsDetails || {}).forEach((k) => {
+        if (!useSectorDefinedKeys || sectorKeys.has(k)) {
+          keys.add(k);
+        }
+      });
+    });
+
+    if (!useSectorDefinedKeys) {
+      LEGACY_COGS_KEYS.forEach((k) => keys.add(k));
+    }
+
     return Array.from(keys).sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
   }, [quarterActuals, sectorFieldOptions.cogs]);
 
