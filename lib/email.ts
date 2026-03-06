@@ -52,6 +52,17 @@ interface AccountingSystemSelectionNotificationProps {
   changedByRole: string;
 }
 
+interface SyncFailureNotificationProps {
+  recipients: string[];
+  companyName: string;
+  companyId: string;
+  platform: string;
+  syncType: string;
+  errorSummary: string;
+  errorDetails?: string;
+  actionUrl?: string;
+}
+
 export async function sendPasswordResetEmail({ 
   to, 
   userName, 
@@ -797,6 +808,89 @@ export async function sendAccountingSystemSelectionNotification({
   } catch (error) {
     console.error('❌ Error sending accounting system selection notification:', error);
     return { success: false, error };
+  }
+}
+
+export async function sendSyncFailureNotification({
+  recipients,
+  companyName,
+  companyId,
+  platform,
+  syncType,
+  errorSummary,
+  errorDetails,
+  actionUrl,
+}: SyncFailureNotificationProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping sync failure notification email');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const uniqueRecipients = Array.from(new Set(recipients.map((email) => email.trim().toLowerCase()).filter(Boolean)));
+  if (uniqueRecipients.length === 0) {
+    return { success: false, reason: 'No recipients' };
+  }
+
+  const safeSummary = escapeHtml(errorSummary || 'Sync failed');
+  const safeDetails = escapeHtml(errorDetails || '');
+  const safeCompany = escapeHtml(companyName);
+  const safeCompanyId = escapeHtml(companyId);
+  const safePlatform = escapeHtml(platform);
+  const safeSyncType = escapeHtml(syncType);
+  const safeActionUrl = actionUrl ? escapeHtml(actionUrl) : '';
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: uniqueRecipients,
+      subject: `🚨 Sync failed: ${companyName} (${platform})`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Sync Failure Alert</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="680" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:20px 24px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;color:#b91c1c;font-size:22px;">Sync Failure Alert</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">A scheduled or manual sync failed and may require intervention.</p>
+        </td></tr>
+        <tr><td style="padding:20px 24px;">
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Company:</strong> ${safeCompany}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Company ID:</strong> ${safeCompanyId}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Platform:</strong> ${safePlatform}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Sync Type:</strong> ${safeSyncType}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Error:</strong> ${safeSummary}</p>
+          ${
+            safeDetails
+              ? `<p style="margin:0;color:#334155;font-size:14px;"><strong>Details:</strong> ${safeDetails}</p>`
+              : ''
+          }
+          ${
+            safeActionUrl
+              ? `<p style="margin:14px 0 0;font-size:14px;"><a href="${safeActionUrl}" style="color:#2563eb;text-decoration:none;">Open dashboard and reconnect/retry</a></p>`
+              : ''
+          }
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) {
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+
+    console.log('✅ Sync failure notification sent:', data);
+    return { success: true, data };
+  } catch (sendError) {
+    console.error('❌ Error sending sync failure notification:', sendError);
+    return { success: false, error: sendError };
   }
 }
 

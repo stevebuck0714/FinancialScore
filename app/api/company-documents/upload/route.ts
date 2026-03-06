@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
-import { extractTextFromArrayBuffer } from '@/lib/company-documents/extract-text';
+import { extractTextFromArrayBuffer, sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 
 export const dynamic = 'force-dynamic';
@@ -87,7 +87,7 @@ export async function POST(request: Request): Promise<Response> {
           const p = tokenPayload ? JSON.parse(tokenPayload) : {};
           const companyId = String(p?.companyId || '').trim();
           const category = asCategory(p?.category);
-          const originalFileName = String(p?.originalFileName || '').trim();
+          const originalFileName = sanitizeTextForPostgres(p?.originalFileName || '').trim();
           const uploadedByUserId = String(p?.uploadedByUserId || '').trim();
 
           if (!companyId || !category || !originalFileName || !uploadedByUserId) {
@@ -137,7 +137,7 @@ export async function POST(request: Request): Promise<Response> {
           } else {
             await prisma.companyDocument.update({
               where: { id: doc.id },
-              data: { extractedText: null, extractionStatus: 'FAILED', extractionError: extracted.error },
+              data: { extractedText: null, extractionStatus: 'FAILED', extractionError: sanitizeTextForPostgres(extracted.error) },
             });
           }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
-import { extractTextFromArrayBuffer } from '@/lib/company-documents/extract-text';
+import { extractTextFromArrayBuffer, sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 
 export const dynamic = 'force-dynamic';
@@ -94,12 +94,12 @@ export async function POST(req: NextRequest) {
 
     const companyId = String(body?.companyId || '').trim();
     const category = asCategory(body?.category);
-    const originalFileName = String(body?.originalFileName || '').trim();
+    const originalFileName = sanitizeTextForPostgres(body?.originalFileName || '').trim();
     const blob = body?.blob || {};
 
-    const blobUrl = String(blob?.url || '').trim();
-    const blobPathname = blob?.pathname ? String(blob.pathname).trim() : null;
-    const contentType = blob?.contentType ? String(blob.contentType).trim() : null;
+    const blobUrl = sanitizeTextForPostgres(blob?.url || '').trim();
+    const blobPathname = blob?.pathname ? sanitizeTextForPostgres(blob.pathname).trim() : null;
+    const contentType = blob?.contentType ? sanitizeTextForPostgres(blob.contentType).trim() : null;
     const sizeBytes = typeof blob?.size === 'number' ? Math.trunc(blob.size) : null;
 
     if (!companyId) return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
@@ -182,10 +182,10 @@ export async function POST(req: NextRequest) {
             data: {
               extractedText: null,
               extractionStatus: 'FAILED',
-              extractionError: extracted.error,
+              extractionError: sanitizeTextForPostgres(extracted.error),
               indexStatus: 'FAILED',
               indexedAt: null,
-              indexError: extracted.error || 'Extraction failed (not indexed)',
+              indexError: sanitizeTextForPostgres(extracted.error || 'Extraction failed (not indexed)'),
             },
           });
         }
@@ -200,10 +200,10 @@ export async function POST(req: NextRequest) {
           data: {
             extractedText: null,
             extractionStatus: 'FAILED',
-            extractionError: err?.message || 'Extraction failed',
+            extractionError: sanitizeTextForPostgres(err?.message || 'Extraction failed'),
             indexStatus: 'FAILED',
             indexedAt: null,
-            indexError: err?.message || 'Extraction failed (not indexed)',
+            indexError: sanitizeTextForPostgres(err?.message || 'Extraction failed (not indexed)'),
           },
         });
       }

@@ -1,0 +1,106 @@
+import prisma from '@/lib/prisma';
+import type { AccountingPlatform } from '@prisma/client';
+import { sendSyncFailureNotification } from '@/lib/email';
+
+type NotifySyncFailureParams = {
+  companyId: string;
+  platform: AccountingPlatform;
+  syncType: string;
+  errorSummary: string;
+  errorDetails?: string;
+  dedupeHours?: number;
+};
+
+function buildAlertKey(params: NotifySyncFailureParams): string {
+  const summary = (params.errorSummary || '').trim().toLowerCase().slice(0, 180);
+  return `${params.companyId}|${params.platform}|${params.syncType}|${summary}`;
+}
+
+export async function notifyAdminsOfSyncFailure(params: NotifySyncFailureParams): Promise<{
+  notified: boolean;
+  deduped: boolean;
+  reason?: string;
+}> {
+  try {
+    const dedupeHours = Number.isFinite(params.dedupeHours) ? Number(params.dedupeHours) : 12;
+    const cutoff = new Date(Date.now() - dedupeHours * 60 * 60 * 1000);
+    const alertKey = buildAlertKey(params);
+
+    const recentAlerts = await prisma.apiSyncLog.findMany({
+      where: {
+        companyId: params.companyId,
+        platform: params.platform,
+        syncType: 'sync_failure_alert',
+        createdAt: { gte: cutoff },
+      },
+      select: {
+        errorDetails: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 50,
+    });
+
+    const alreadyAlerted = recentAlerts.some((row) => {
+      const details =
+        row.errorDetails && typeof row.errorDetails === 'object' && !Array.isArray(row.errorDetails)
+          ? (row.errorDetails as Record<string, unknown>)
+          : {};
+      return String(details.alertKey || '') === alertKey;
+    });
+
+    if (alreadyAlerted) {
+      return { notified: false, deduped: true, reason: 'Already alerted in dedupe window' };
+    }
+
+    const [company, admins] = await Promise.all([
+      prisma.company.findUnique({
+        where: { id: params.companyId },
+        select: { id: true, name: true },
+      }),
+      prisma.user.findMany({
+        where: { role: 'SITEADMIN' },
+        select: { email: true },
+      }),
+    ]);
+
+    const recipients = admins.map((a) => (a.email || '').trim().toLowerCase()).filter(Boolean);
+    const actionUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || undefined;
+    const result = await sendSyncFailureNotification({
+      recipients,
+      companyName: company?.name || params.companyId,
+      companyId: params.companyId,
+      platform: params.platform,
+      syncType: params.syncType,
+      errorSummary: params.errorSummary,
+      errorDetails: params.errorDetails,
+      actionUrl,
+    });
+
+    await prisma.apiSyncLog.create({
+      data: {
+        companyId: params.companyId,
+        platform: params.platform,
+        syncType: 'sync_failure_alert',
+        status: result.success ? 'success' : 'error',
+        recordsImported: 0,
+        errorCount: result.success ? 0 : 1,
+        errorDetails: {
+          alertKey,
+          sourceSyncType: params.syncType,
+          errorSummary: params.errorSummary,
+          errorDetails: params.errorDetails || null,
+          recipientsCount: recipients.length,
+          emailSent: Boolean(result.success),
+          reason: (result as any).reason || null,
+        } as any,
+      },
+    });
+
+    return { notified: Boolean(result.success), deduped: false, reason: (result as any).reason };
+  } catch (error: any) {
+    console.error('❌ Failed to notify admins of sync failure:', error);
+    return { notified: false, deduped: false, reason: error?.message || 'Unknown error' };
+  }
+}

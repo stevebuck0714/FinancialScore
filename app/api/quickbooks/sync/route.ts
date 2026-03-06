@@ -10,6 +10,7 @@ import {
   toCanonicalMonthlyFinancial,
   toMonthlyFinancialCreateInput,
 } from '@/lib/financial-canonical';
+import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { emitSyncStatus } from '@/lib/websocket-emit';
 
 // Decrypt OAuth tokens using modern cipher
@@ -625,6 +626,13 @@ export async function POST(request: NextRequest) {
             duration: Date.now() - syncStartTime,
           },
         });
+        await notifyAdminsOfSyncFailure({
+          companyId,
+          platform: 'QUICKBOOKS',
+          syncType: 'manual',
+          errorSummary: validationMessage,
+          errorDetails: `Trace: ${syncTraceId || 'n/a'}`,
+        });
 
         emitSyncStatus(companyId, {
           status: 'error',
@@ -824,6 +832,13 @@ export async function POST(request: NextRequest) {
           intuitTid: intuitTid,
           duration: Date.now() - syncStartTime,
         },
+      });
+      await notifyAdminsOfSyncFailure({
+        companyId,
+        platform: 'QUICKBOOKS',
+        syncType: 'manual',
+        errorSummary: error?.message || 'QuickBooks sync failed',
+        errorDetails: `Trace: ${syncTraceId || 'n/a'}`,
       });
     }
 

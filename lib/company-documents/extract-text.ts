@@ -7,8 +7,13 @@ type ExtractResult =
 
 const MAX_EXTRACTED_CHARS = 400_000;
 
+export function sanitizeTextForPostgres(raw: unknown): string {
+  // Postgres text columns reject NUL bytes; strip them before write.
+  return String(raw || '').replace(/\u0000/g, '');
+}
+
 function clampText(raw: string): string {
-  const s = String(raw || '')
+  const s = sanitizeTextForPostgres(raw)
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();

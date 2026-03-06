@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import prisma from '@/lib/prisma';
+import { sanitizeTextForPostgres } from './extract-text';
 import { chunkDocumentText } from './chunk-text';
 import { embedTexts } from './embeddings';
 
@@ -44,7 +45,7 @@ export async function indexCompanyDocument(params: {
     return { ok: true, indexedChunks: count };
   }
 
-  const fullText = String(doc.extractedText || '').trim();
+  const fullText = sanitizeTextForPostgres(doc.extractedText || '').trim();
   if (!fullText) {
     await prisma.companyDocument.update({
       where: { id: doc.id },
@@ -98,7 +99,7 @@ export async function indexCompanyDocument(params: {
           const c = slice[j];
           const v = vectors[i + j];
           const id = crypto.randomUUID();
-          const text = c.text;
+          const text = sanitizeTextForPostgres(c.text);
           const textHash = sha256Hex(text);
           const vecLit = toVectorLiteral(v);
 
@@ -142,7 +143,7 @@ export async function indexCompanyDocument(params: {
 
     return { ok: true, indexedChunks: chunks.length, embeddingModel: model, embeddingDim };
   } catch (e: any) {
-    const message = e?.message || 'Indexing failed';
+    const message = sanitizeTextForPostgres(e?.message || 'Indexing failed');
     await prisma.companyDocument.update({
       where: { id: doc.id },
       data: { indexStatus: 'FAILED', indexedAt: null, indexError: message },

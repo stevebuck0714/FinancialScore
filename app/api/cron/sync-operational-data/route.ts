@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialRecordsFromMetadata, ingestDailyFinancialSnapshots } from '@/lib/financial/daily-financial-ingest';
+import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 
 function normalizePullTime(value: unknown): string {
   if (typeof value !== 'string') return '08:00';
@@ -161,6 +162,13 @@ export async function GET(request: NextRequest) {
         } else {
           console.error(`⚠️ ${connection.company?.name}: Partial sync with errors:`, syncResult.errors);
           errorCount++;
+          await notifyAdminsOfSyncFailure({
+            companyId: connection.companyId,
+            platform: connection.platform,
+            syncType: 'auto_operational_sync',
+            errorSummary: `Operational sync failed for ${connection.platform}`,
+            errorDetails: (syncResult.errors || []).join(' | ').slice(0, 500),
+          });
         }
         
         // Update last sync timestamp
@@ -190,6 +198,13 @@ export async function GET(request: NextRequest) {
       } catch (error: any) {
         console.error(`❌ Error syncing company ${connection.companyId}:`, error);
         errorCount++;
+        await notifyAdminsOfSyncFailure({
+          companyId: connection.companyId,
+          platform: connection.platform,
+          syncType: 'auto_operational_sync',
+          errorSummary: `Operational sync exception for ${connection.platform}`,
+          errorDetails: String(error?.message || error || 'Unknown error').slice(0, 500),
+        });
         
         results.push({
           companyId: connection.companyId,
