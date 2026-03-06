@@ -367,17 +367,17 @@ export function createMonthlyRecords(
       console.log(`\n🔍 P&L Sections for Month ${colIndex} (${colHeader}):`);
     }
     
-    const revenue = getRowValue(plRows, 'Total Income', colIndex, logSections) || 
-                    getRowValue(plRows, 'Income', colIndex, logSections) || 
-                    getRowValue(plRows, 'Revenue', colIndex, logSections);
+    let revenue = getRowValue(plRows, 'Total Income', colIndex, logSections) || 
+                  getRowValue(plRows, 'Income', colIndex, logSections) || 
+                  getRowValue(plRows, 'Revenue', colIndex, logSections);
     
-    const cogs = getRowValue(plRows, 'Total Cost of Goods Sold', colIndex, logSections) || 
-                 getRowValue(plRows, 'Cost of Goods Sold', colIndex, logSections) || 
-                 getRowValue(plRows, 'COGS', colIndex, logSections);
+    let cogs = getRowValue(plRows, 'Total Cost of Goods Sold', colIndex, logSections) || 
+               getRowValue(plRows, 'Cost of Goods Sold', colIndex, logSections) || 
+               getRowValue(plRows, 'COGS', colIndex, logSections);
     
-    const expense = getRowValue(plRows, 'Total Expenses', colIndex, logSections) || 
-                    getRowValue(plRows, 'Expenses', colIndex, logSections) || 
-                    getRowValue(plRows, 'Operating Expenses', colIndex, logSections);
+    let expense = getRowValue(plRows, 'Total Expenses', colIndex, logSections) || 
+                  getRowValue(plRows, 'Expenses', colIndex, logSections) || 
+                  getRowValue(plRows, 'Operating Expenses', colIndex, logSections);
     
     // Extract Balance Sheet data for this month
     const cash = getRowValue(bsRows, 'Cash', colIndex) || getRowValue(bsRows, 'Checking', colIndex);
@@ -414,7 +414,7 @@ export function createMonthlyRecords(
         }
       }
     }
-    
+
     records.push({
       monthDate,
       revenue,
