@@ -4,6 +4,12 @@ import prisma from '@/lib/prisma';
 import crypto from 'crypto';
 import { createMonthlyRecords } from '@/lib/quickbooks-parser';
 import { CompanyLOB } from '@/lib/lob-allocator';
+import {
+  buildMasterDataRows,
+  findZeroRevenueAnomalies,
+  toCanonicalMonthlyFinancial,
+  toMonthlyFinancialCreateInput,
+} from '@/lib/financial-canonical';
 import { emitSyncStatus } from '@/lib/websocket-emit';
 
 // Decrypt OAuth tokens using modern cipher
@@ -505,11 +511,17 @@ export async function POST(request: NextRequest) {
 
     // Parse monthly financial records with LOB allocations.
     const parsedRecords = createMonthlyRecords(plData, bsData, 'PENDING_FINANCIAL_RECORD', 36, accountMappings as any, companyLOBs);
+    const canonicalRecords = parsedRecords.map((row) =>
+      toCanonicalMonthlyFinancial({
+        ...row,
+        monthDate: row.monthDate,
+      }),
+    );
     const traceSnapshotBase = {
       syncTraceId,
       plColumns: (plColumns || []).map((c: any) => c?.ColTitle || c?.ColType || ''),
       bsColumns: (bsColumns || []).map((c: any) => c?.ColTitle || c?.ColType || ''),
-      parsedTail: parsedRecords.slice(-6).map((row) => ({
+      parsedTail: canonicalRecords.slice(-6).map((row) => ({
         monthDate: row.monthDate?.toISOString?.() || row.monthDate,
         revenue: row.revenue,
         cogsTotal: row.cogsTotal,
@@ -519,17 +531,10 @@ export async function POST(request: NextRequest) {
         totalEquity: row.totalEquity,
       })),
     };
-    const validationFailures = parsedRecords
-      .filter((row) => Number(row.revenue || 0) === 0 && (Number(row.cogsTotal || 0) > 0 || Number(row.expense || 0) > 0))
-      .map((row) => ({
-        month: `${row.monthDate.getFullYear()}-${String(row.monthDate.getMonth() + 1).padStart(2, '0')}`,
-        revenue: Number(row.revenue || 0),
-        cogsTotal: Number(row.cogsTotal || 0),
-        expense: Number(row.expense || 0),
-      }));
+    const validationFailures = findZeroRevenueAnomalies(canonicalRecords);
 
-    const latestMonth = parsedRecords.length
-      ? parsedRecords.reduce((max, row) => (row.monthDate > max ? row.monthDate : max), parsedRecords[0].monthDate)
+    const latestMonth = canonicalRecords.length
+      ? canonicalRecords.reduce((max, row) => (row.monthDate > max ? row.monthDate : max), canonicalRecords[0].monthDate)
       : null;
     const latestMonthKey = latestMonth
       ? `${latestMonth.getFullYear()}-${String(latestMonth.getMonth() + 1).padStart(2, '0')}`
@@ -688,41 +693,10 @@ export async function POST(request: NextRequest) {
       },
     });
     
-    if (parsedRecords.length > 0) {
-      const monthlyRecords = parsedRecords.map(record => ({
-        companyId: companyId,
-        financialRecordId: financialRecord.id,
-        monthDate: record.monthDate,
-        revenue: record.revenue,
-        revenueBreakdown: record.revenueBreakdown,
-        expense: record.expense,
-        expenseBreakdown: record.expenseBreakdown,
-        cogsTotal: record.cogsTotal,
-        cogsBreakdown: record.cogsBreakdown,
-        lobBreakdowns: record.lobBreakdowns,
-        cash: record.cash,
-        ar: record.ar,
-        inventory: record.inventory,
-        otherCA: record.otherCA,
-        tca: record.tca,
-        fixedAssets: record.fixedAssets,
-        otherAssets: record.otherAssets,
-        totalAssets: record.totalAssets,
-        ap: record.ap,
-        otherCL: record.otherCL,
-        tcl: record.tcl,
-        ltd: record.ltd,
-        totalLiab: record.totalLiab,
-        ownersCapital: 0, // TODO: Parse from QB Balance Sheet
-        ownersDraw: 0,
-        commonStock: 0,
-        preferredStock: 0,
-        retainedEarnings: 0,
-        additionalPaidInCapital: 0,
-        treasuryStock: 0,
-        totalEquity: record.totalEquity,
-        totalLAndE: record.totalLAndE,
-      }));
+    if (canonicalRecords.length > 0) {
+      const monthlyRecords = canonicalRecords.map((record) =>
+        toMonthlyFinancialCreateInput(companyId, financialRecord.id, record),
+      );
 
       await prisma.monthlyFinancial.createMany({
         data: monthlyRecords,
@@ -734,59 +708,7 @@ export async function POST(request: NextRequest) {
       try {
         const masterDataPayload = {
           companyId,
-          monthlyData: monthlyRecords.map(record => ({
-            date: record.monthDate.toISOString().split('T')[0], // YYYY-MM-DD format
-            revenue: record.revenue,
-            expense: record.expense,
-            cogsTotal: record.cogsTotal,
-            payroll: 0, // Will be allocated from expense
-            ownerBasePay: 0,
-            benefits: 0,
-            insurance: 0,
-            professionalFees: 0,
-            subcontractors: 0,
-            rent: 0,
-            taxLicense: 0,
-            phoneComm: 0,
-            infrastructure: 0,
-            autoTravel: 0,
-            salesExpense: 0,
-            marketing: 0,
-            trainingCert: 0,
-            mealsEntertainment: 0,
-            interestExpense: 0,
-            depreciationAmortization: 0,
-            otherExpense: 0,
-            nonOperatingIncome: 0,
-            extraordinaryItems: 0,
-            netProfit: 0,
-            cash: record.cash,
-            ar: record.ar,
-            inventory: record.inventory,
-            otherCA: record.otherCA,
-            tca: record.tca,
-            fixedAssets: record.fixedAssets,
-            otherAssets: record.otherAssets,
-            totalAssets: record.totalAssets,
-            ap: record.ap,
-            otherCL: record.otherCL,
-            tcl: record.tcl,
-            ltd: record.ltd,
-            totalLiab: record.totalLiab,
-            ownersCapital: record.ownersCapital,
-            ownersDraw: record.ownersDraw,
-            commonStock: record.commonStock,
-            preferredStock: record.preferredStock,
-            retainedEarnings: record.retainedEarnings,
-            additionalPaidInCapital: record.additionalPaidInCapital,
-            treasuryStock: record.treasuryStock,
-            totalEquity: record.totalEquity,
-            totalLAndE: record.totalLAndE,
-            revenueBreakdown: record.revenueBreakdown,
-            expenseBreakdown: record.expenseBreakdown,
-            cogsBreakdown: record.cogsBreakdown,
-            lobBreakdowns: record.lobBreakdowns
-          })),
+          monthlyData: buildMasterDataRows(canonicalRecords),
           metadata: {
             source: 'quickbooks',
             externalId: realmId,

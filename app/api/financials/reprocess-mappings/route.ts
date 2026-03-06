@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,38 +86,107 @@ export async function POST(request: NextRequest) {
     }
 
     if (configuredPlatform === 'INFOR_M3') {
-      const origin = new URL(request.url).origin;
-      const inforResponse = await fetch(`${origin}/api/infor-m3/sync-coa`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          cookie: request.headers.get('cookie') || '',
+      const connection = await prisma.accountingConnection.findUnique({
+        where: {
+          companyId_platform: {
+            companyId: String(companyId),
+            platform: 'INFOR_M3',
+          },
         },
-        body: JSON.stringify({ companyId }),
-        cache: 'no-store',
+        select: {
+          connectionMetadata: true,
+        },
       });
-      const payload = await inforResponse.json().catch(() => ({}));
-      const success = Boolean((payload as any)?.ok) && inforResponse.ok;
+
+      const metadata =
+        connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
+          ? (connection.connectionMetadata as Record<string, unknown>)
+          : {};
+      const financialPayload =
+        metadata.inforM3FinancialPayload && typeof metadata.inforM3FinancialPayload === 'object'
+          ? (metadata.inforM3FinancialPayload as Record<string, unknown>)
+          : null;
+
+      if (!financialPayload) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'No Infor M3 financial payload is available yet. Push financial payload first, then reprocess.',
+          },
+          { status: 400 },
+        );
+      }
+
+      const result = await ingestFinancialPayload({
+        companyId: String(companyId),
+        platform: 'INFOR_M3',
+        source: 'infor-m3',
+        payload: financialPayload,
+        syncType: 'reprocess_financial_payload',
+      });
+
       return NextResponse.json(
         {
-          success,
-          message: success
+          success: result.ok,
+          message: result.ok
             ? 'Infor M3 reprocess completed successfully.'
-            : (payload as any)?.error || 'Infor M3 reprocess failed.',
-          ...payload,
+            : result.error || 'Infor M3 reprocess failed.',
+          ...result,
         },
-        { status: inforResponse.status },
+        { status: result.status },
       );
     }
 
     if (configuredPlatform === 'QUICKBOOKS_DESKTOP') {
+      const connection = await prisma.accountingConnection.findUnique({
+        where: {
+          companyId_platform: {
+            companyId: String(companyId),
+            platform: 'QUICKBOOKS',
+          },
+        },
+        select: {
+          connectionMetadata: true,
+        },
+      });
+
+      const metadata =
+        connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
+          ? (connection.connectionMetadata as Record<string, unknown>)
+          : {};
+      const financialPayload =
+        metadata.quickbooksDesktopFinancialPayload && typeof metadata.quickbooksDesktopFinancialPayload === 'object'
+          ? (metadata.quickbooksDesktopFinancialPayload as Record<string, unknown>)
+          : null;
+
+      if (!financialPayload) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'No QuickBooks Desktop financial payload is available yet. Push financial payload from Desktop host first, then reprocess.',
+          },
+          { status: 400 },
+        );
+      }
+
+      const result = await ingestFinancialPayload({
+        companyId: String(companyId),
+        platform: 'QUICKBOOKS',
+        source: 'quickbooks-desktop',
+        payload: financialPayload,
+        syncType: 'reprocess_financial_payload',
+      });
+
       return NextResponse.json(
         {
-          success: false,
-          error:
-            'QuickBooks Desktop reprocess requires a Desktop Web Connector/agent payload push. Trigger sync from the desktop host, then refresh mappings.',
+          success: result.ok,
+          message: result.ok
+            ? 'QuickBooks Desktop reprocess completed successfully.'
+            : result.error || 'QuickBooks Desktop reprocess failed.',
+          ...result,
         },
-        { status: 501 },
+        { status: result.status },
       );
     }
 

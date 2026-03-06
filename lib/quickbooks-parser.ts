@@ -28,6 +28,7 @@ export interface ParsedFinancialData {
   expenseBreakdown?: any;
   cogsBreakdown?: any;
   lobBreakdowns?: any;
+  [key: string]: any;
 }
 
 /**
@@ -427,6 +428,17 @@ export function createMonthlyRecords(
       }
     }
 
+    const mappedFieldTotals =
+      lobData?.totals && typeof lobData.totals === 'object'
+        ? Object.entries(lobData.totals).reduce((acc, [field, value]) => {
+            // Keep report-level totals as source of truth; only populate category fields from mappings.
+            if (['revenue', 'expense', 'cogsTotal'].includes(field)) return acc;
+            const numeric = Number(value || 0);
+            acc[field] = Number.isFinite(numeric) ? Math.abs(numeric) : 0;
+            return acc;
+          }, {} as Record<string, number>)
+        : {};
+
     records.push({
       monthDate,
       revenue,
@@ -452,6 +464,7 @@ export function createMonthlyRecords(
       expenseBreakdown: lobData?.expenseBreakdown || null,
       cogsBreakdown: lobData?.cogsBreakdown || null,
       lobBreakdowns: lobData ? roundAllBreakdowns(lobData.breakdowns) : null,
+      ...mappedFieldTotals,
     });
   }
 
