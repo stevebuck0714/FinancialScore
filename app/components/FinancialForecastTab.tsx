@@ -11,7 +11,7 @@ interface FinancialForecastTabProps {
   prefetchedMonthlyData?: any[];
 }
 
-type ForecastTab = 'inputs' | 'income-statement';
+type ForecastTab = 'inputs' | 'income-statement' | 'graphs';
 
 type QuarterMeta = {
   key: string;
@@ -39,6 +39,11 @@ const OPEX_FIELDS: Array<{ key: string; label: string }> = [
 
 const LEGACY_COGS_KEYS = ['cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther'];
 const INCOME_TAX_PCT_KEY = 'incomeTaxesTotal';
+const STACKED_BAR_COLORS = [
+  '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4',
+  '#84cc16', '#f97316', '#ec4899', '#0ea5e9', '#22c55e', '#a855f7',
+  '#64748b', '#0f766e', '#a16207',
+];
 
 function parseMonthDate(row: any): Date | null {
   const dateLike = row?.date ?? row?.monthDate;
@@ -610,6 +615,312 @@ export default function FinancialForecastTab({
     return collapsed;
   }, [forecastRows, incomeStatementExpandLast2Years]);
 
+  const revenueGraphPoints = useMemo(() => {
+    const actual = actualQuarters.slice(-3).map((q) => ({
+      label: q.label,
+      values: revenueRowKeys.map((key) => Number(q.revenueDetails?.[key]) || 0),
+      isActual: true,
+    }));
+    const forecast = forecastRows.slice(0, 12).map((row) => ({
+      label: row.label,
+      values: revenueRowKeys.map((key) => Number(row.revenueDetails?.[key]) || 0),
+      isActual: false,
+    }));
+    return [...actual, ...forecast].map((p) => ({
+      ...p,
+      total: p.values.reduce((sum, v) => sum + v, 0),
+    }));
+  }, [actualQuarters, forecastRows, revenueRowKeys]);
+
+  const cogsGraphPoints = useMemo(() => {
+    const actual = actualQuarters.slice(-3).map((q) => ({
+      label: q.label,
+      values: cogsRowKeys.map((key) => Number(q.cogsDetails?.[key]) || 0),
+      isActual: true,
+    }));
+    const forecast = forecastRows.slice(0, 12).map((row) => ({
+      label: row.label,
+      values: cogsRowKeys.map((key) => Number(row.cogsDetails?.[key]) || 0),
+      isActual: false,
+    }));
+    return [...actual, ...forecast].map((p) => ({
+      ...p,
+      total: p.values.reduce((sum, v) => sum + v, 0),
+    }));
+  }, [actualQuarters, forecastRows, cogsRowKeys]);
+
+  const totalsLineGraphPoints = useMemo(() => {
+    const actual = actualQuarters.slice(-3).map((q) => {
+      const totalRevenue = Number(q.revenue) || 0;
+      const totalCogs = Object.values(q.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+      const totalOpex = Object.values(q.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+        const grossProfit = totalRevenue - totalCogs;
+      return {
+        label: q.label,
+        isActual: true,
+        totalRevenue,
+        totalCogs,
+          grossProfit,
+        totalOpex,
+      };
+    });
+    const forecast = forecastRows.slice(0, 12).map((row) => ({
+      label: row.label,
+      isActual: false,
+      totalRevenue: Number(row.totalRevenue) || 0,
+      totalCogs: Number(row.totalCogs) || 0,
+        grossProfit: Number(row.grossProfit) || 0,
+      totalOpex: Number(row.totalOpex) || 0,
+    }));
+    return [...actual, ...forecast];
+  }, [actualQuarters, forecastRows]);
+
+  const renderStackedBarChart = (
+    title: string,
+    rowKeys: string[],
+    points: Array<{ label: string; values: number[]; total: number; isActual: boolean }>,
+  ) => {
+    if (!points.length || !rowKeys.length) {
+      return (
+        <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+          <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>{title}</h4>
+          <div style={{ fontSize: '13px', color: '#64748b' }}>No data available.</div>
+        </div>
+      );
+    }
+
+    const width = 760;
+    const height = 340;
+    const padding = { top: 20, right: 12, bottom: 70, left: 58 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+    const maxTotal = Math.max(1, ...points.map((p) => p.total));
+    const yMax = maxTotal * 1.1;
+    const yRange = Math.max(1, yMax);
+    const barSlot = chartWidth / points.length;
+    const barWidth = Math.max(8, barSlot * 0.72);
+    const colorByKey = new Map<string, string>(rowKeys.map((k, idx) => [k, STACKED_BAR_COLORS[idx % STACKED_BAR_COLORS.length]]));
+    const yTicks = Array.from({ length: 5 }, (_, i) => (yMax * i) / 4);
+
+    return (
+      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+        <h4 style={{ margin: '0 0 10px 0', color: '#1e293b', fontSize: '15px', fontWeight: 700 }}>{title}</h4>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: 'auto' }}>
+          {yTicks.map((tick, idx) => {
+            const y = padding.top + chartHeight - (tick / yRange) * chartHeight;
+            return (
+              <g key={`yt-${idx}`}>
+                <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                <text x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
+                  ${(tick / 1000).toFixed(0)}K
+                </text>
+              </g>
+            );
+          })}
+          <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+          <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+          {points.map((point, pointIdx) => {
+            const x = padding.left + pointIdx * barSlot + (barSlot - barWidth) / 2;
+            let cumulative = 0;
+            return (
+              <g key={`bar-${point.label}-${pointIdx}`}>
+                {point.isActual && (
+                  <rect
+                    x={x - 2}
+                    y={padding.top}
+                    width={barWidth + 4}
+                    height={chartHeight}
+                    fill="#e2e8f0"
+                    opacity={0.22}
+                  />
+                )}
+                {point.values.map((segmentValue, segIdx) => {
+                  if (segmentValue <= 0) return null;
+                  const segHeight = (segmentValue / yRange) * chartHeight;
+                  const y = padding.top + chartHeight - ((cumulative + segmentValue) / yRange) * chartHeight;
+                  cumulative += segmentValue;
+                  const rowKey = rowKeys[segIdx];
+                  const fill = colorByKey.get(rowKey) || '#94a3b8';
+                  return (
+                    <rect key={`seg-${pointIdx}-${rowKey}`} x={x} y={y} width={barWidth} height={segHeight} fill={fill}>
+                      <title>{`${point.label} • ${getFieldDisplayName(rowKey)}: $${segmentValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+                    </rect>
+                  );
+                })}
+              </g>
+            );
+          })}
+          {points.map((point, idx) => {
+            const x = padding.left + idx * barSlot + barSlot / 2;
+            const show = idx === 0 || idx === points.length - 1 || idx % 2 === 0;
+            if (!show) return null;
+            return (
+              <text key={`xl-${point.label}-${idx}`} x={x} y={height - padding.bottom + 18} textAnchor="middle" fontSize="11" fill="#64748b">
+                {point.label}
+              </text>
+            );
+          })}
+          {points.length > 3 && (
+            <line
+              x1={padding.left + 3 * barSlot}
+              y1={padding.top}
+              x2={padding.left + 3 * barSlot}
+              y2={height - padding.bottom}
+              stroke="#94a3b8"
+              strokeDasharray="4,4"
+              strokeWidth="1"
+            />
+          )}
+        </svg>
+        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+          Shaded bars = actual quarters (3), then forecast quarters (12).
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', marginTop: '10px' }}>
+          {rowKeys.map((rowKey) => (
+            <div key={`lg-${title}-${rowKey}`} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+              <span style={{ width: '10px', height: '10px', background: colorByKey.get(rowKey), borderRadius: '2px', display: 'inline-block' }} />
+              <span>{getFieldDisplayName(rowKey)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTotalsLineChart = (
+    title: string,
+    points: Array<{
+      label: string;
+      isActual: boolean;
+      totalRevenue: number;
+      totalCogs: number;
+      grossProfit: number;
+      totalOpex: number;
+    }>,
+  ) => {
+    if (!points.length) {
+      return (
+        <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+          <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>{title}</h4>
+          <div style={{ fontSize: '13px', color: '#64748b' }}>No data available.</div>
+        </div>
+      );
+    }
+
+    const series = [
+      { key: 'totalRevenue', label: 'Total Revenue', color: '#2563eb' },
+      { key: 'totalCogs', label: 'Total COGS', color: '#f59e0b' },
+      { key: 'grossProfit', label: 'Gross Profit', color: '#16a34a' },
+      { key: 'totalOpex', label: 'Total Operating Expenses', color: '#8b5cf6' },
+    ] as const;
+
+    const width = 760;
+    const height = 360;
+    const padding = { top: 20, right: 18, bottom: 70, left: 70 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+    const allValues = points.flatMap((p) => [p.totalRevenue, p.totalCogs, p.grossProfit, p.totalOpex]);
+    const minValue = Math.min(0, ...allValues);
+    const maxValue = Math.max(1, ...allValues);
+    const yPad = Math.max((maxValue - minValue) * 0.08, 1);
+    const yMin = minValue - yPad;
+    const yMax = maxValue + yPad;
+    const yRange = Math.max(1, yMax - yMin);
+    const xCount = Math.max(points.length, 1);
+
+    const yTicks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i) / 4);
+    const toX = (idx: number) => padding.left + (xCount <= 1 ? 0 : (idx / (xCount - 1)) * chartWidth);
+    const toY = (val: number) => padding.top + chartHeight - ((val - yMin) / yRange) * chartHeight;
+
+    return (
+      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+        <h4 style={{ margin: '0 0 10px 0', color: '#1e293b', fontSize: '15px', fontWeight: 700 }}>{title}</h4>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: 'auto' }}>
+          {yTicks.map((tick, idx) => {
+            const y = toY(tick);
+            return (
+              <g key={`yt-line-${idx}`}>
+                <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
+                  ${(tick / 1000).toFixed(0)}K
+                </text>
+              </g>
+            );
+          })}
+          <line x1={padding.left} y1={toY(0)} x2={width - padding.right} y2={toY(0)} stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3,3" />
+          <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+          <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+          {points.map((p, idx) => {
+            if (!p.isActual) return null;
+            const x = toX(idx);
+            const slotWidth = chartWidth / xCount;
+            return (
+              <rect
+                key={`actual-bg-${p.label}-${idx}`}
+                x={x - slotWidth / 2}
+                y={padding.top}
+                width={slotWidth}
+                height={chartHeight}
+                fill="#e2e8f0"
+                opacity={0.16}
+              />
+            );
+          })}
+          {series.map((s) => {
+            const path = points
+              .map((p, idx) => {
+                const x = toX(idx);
+                const y = toY(Number(p[s.key]) || 0);
+                return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
+              })
+              .join(' ');
+            return (
+              <g key={`line-${s.key}`}>
+                <path d={path} fill="none" stroke={s.color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                {points.map((p, idx) => (
+                  <circle key={`pt-${s.key}-${idx}`} cx={toX(idx)} cy={toY(Number(p[s.key]) || 0)} r={3.2} fill={s.color}>
+                    <title>{`${p.label} • ${s.label}: $${(Number(p[s.key]) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+                  </circle>
+                ))}
+              </g>
+            );
+          })}
+          {points.map((p, idx) => {
+            const show = idx === 0 || idx === points.length - 1 || idx % 2 === 0;
+            if (!show) return null;
+            return (
+              <text key={`xl-line-${p.label}-${idx}`} x={toX(idx)} y={height - padding.bottom + 18} textAnchor="middle" fontSize="11" fill="#64748b">
+                {p.label}
+              </text>
+            );
+          })}
+          {points.length > 3 && (
+            <line
+              x1={toX(2) + (toX(3) - toX(2)) / 2}
+              y1={padding.top}
+              x2={toX(2) + (toX(3) - toX(2)) / 2}
+              y2={height - padding.bottom}
+              stroke="#94a3b8"
+              strokeDasharray="4,4"
+              strokeWidth="1"
+            />
+          )}
+        </svg>
+        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+          Shaded background = actual quarters (3), then projected quarters (12).
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', marginTop: '10px' }}>
+          {series.map((s) => (
+            <div key={`lg-line-${s.key}`} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+              <span style={{ width: '12px', height: '3px', background: s.color, borderRadius: '2px', display: 'inline-block' }} />
+              <span>{s.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
 
   const tabButtonStyle = (tab: ForecastTab): React.CSSProperties => ({
     padding: '10px 16px',
@@ -685,6 +996,7 @@ export default function FinancialForecastTab({
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         <button style={tabButtonStyle('inputs')} onClick={() => setActiveTab('inputs')}>Inputs</button>
         <button style={tabButtonStyle('income-statement')} onClick={() => setActiveTab('income-statement')}>Income Statement Forecast</button>
+        <button style={tabButtonStyle('graphs')} onClick={() => setActiveTab('graphs')}>Graphs</button>
       </div>
 
       {activeTab === 'inputs' && (
@@ -1302,6 +1614,17 @@ export default function FinancialForecastTab({
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'graphs' && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          <h3 style={{ marginTop: 0, color: '#0f172a' }}>Graphs</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
+            {renderStackedBarChart('Revenue Detail (3Q Actual + 12Q Forecast)', revenueRowKeys, revenueGraphPoints)}
+            {renderStackedBarChart('COGS Detail (3Q Actual + 12Q Forecast)', cogsRowKeys, cogsGraphPoints)}
+            {renderTotalsLineChart('Totals Trend (3Q Actual + 12Q Projection)', totalsLineGraphPoints)}
           </div>
         </div>
       )}
