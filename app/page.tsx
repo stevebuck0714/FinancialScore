@@ -8590,7 +8590,11 @@ function FinancialScorePage() {
                 : selectedAccountingSystem === 'XERO'
                   ? 'Xero'
                   : selectedAccountingSystemLabel || 'accounting';
-            const canReprocessApiData = selectedAccountingSystem === 'XERO';
+            const isCsvMappingWorkflow =
+              hasCsvData ||
+              selectedAccountingSystem === 'CSV_FILE' ||
+              String(latestFinancialSource || '').toLowerCase().includes('csv');
+            const canReprocessApiData = !isCsvMappingWorkflow && loadedMonthlyData && loadedMonthlyData.length > 0;
 
             return (
               <div
@@ -8890,10 +8894,50 @@ function FinancialScorePage() {
                         <div>
                           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
                           <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                            {csvTrialBalanceData ? 'Save your mappings, then process the CSV data to create monthly records.' : `Save your mappings to apply them to your ${mappedApiSourceLabel} data.`}
+                            {csvTrialBalanceData
+                              ? 'Save your mappings, then process the CSV data to create monthly records.'
+                              : hasSavedCsvInLocalStorage
+                                ? 'A saved CSV was found for this company. Load it, then process with your mappings.'
+                                : `Save your mappings to apply them to your ${mappedApiSourceLabel} data.`}
                           </p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                          {!csvTrialBalanceData && hasSavedCsvInLocalStorage && (
+                            <button
+                              onClick={() => {
+                                try {
+                                  const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
+                                  if (!savedCsvData) {
+                                    alert('No saved CSV found for this company.');
+                                    setHasSavedCsvInLocalStorage(false);
+                                    return;
+                                  }
+                                  const parsed = JSON.parse(savedCsvData);
+                                  if (!parsed || parsed._companyId !== selectedCompanyId) {
+                                    alert('Saved CSV does not match the selected company.');
+                                    return;
+                                  }
+                                  setCsvTrialBalanceData(parsed);
+                                  alert(`Loaded saved CSV: ${parsed.fileName || 'Trial Balance CSV'}`);
+                                } catch (err: any) {
+                                  alert(`Failed to load saved CSV: ${err?.message || 'Unknown error'}`);
+                                }
+                              }}
+                              style={{
+                                padding: '8px 16px',
+                                background: '#0ea5e9',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '13px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 6px rgba(14, 165, 233, 0.3)'
+                              }}
+                            >
+                              Load Saved CSV
+                            </button>
+                          )}
                           {/* Only show Process button for CSV data - Xero/QB data is already processed */}
                           {csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId && (
                           <button
@@ -9016,8 +9060,8 @@ function FinancialScorePage() {
                           </button>
                           )}
                           
-                          {/* Reprocess mapped API data - currently supported for Xero only */}
-                          {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && canReprocessApiData && (
+                          {/* Reprocess mapped API data via unified endpoint */}
+                          {canReprocessApiData && (
                           <button
                             onClick={async () => {
                               if (!selectedCompanyId) {
@@ -9025,14 +9069,14 @@ function FinancialScorePage() {
                                 return;
                               }
                               
-                              const confirmed = confirm('Reprocess Xero data with your account mappings?\n\nThis will fetch account-level details and apply your mappings to create detailed expense breakdowns.');
+                              const confirmed = confirm(`Reprocess ${mappedApiSourceLabel} data with your account mappings?\n\nThis will re-run mapping application for the selected accounting source.`);
                               if (!confirmed) return;
                               
                               setIsProcessingMonthlyData(true);
                               try {
-                                console.log('?? Reprocessing Xero/QB data with mappings...');
+                                console.log('?? Reprocessing API data with mappings...');
                                 
-                                const response = await fetch('/api/xero/reprocess-mappings', {
+                                const response = await fetch('/api/financials/reprocess-mappings', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({ companyId: selectedCompanyId })
@@ -9071,15 +9115,6 @@ function FinancialScorePage() {
                           >
                             {isProcessingMonthlyData ? 'Processing...' : 'Apply Mappings to Data'}
                           </button>
-                          )}
-                          {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && !canReprocessApiData && (
-                            <div style={{
-                              marginTop: '8px',
-                              fontSize: '12px',
-                              color: '#64748b'
-                            }}>
-                              Mapping reprocess is currently available for Xero connections only.
-                            </div>
                           )}
                           
                           <button
