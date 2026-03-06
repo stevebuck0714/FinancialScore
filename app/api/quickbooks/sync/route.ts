@@ -1,35 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OAuthClient from 'intuit-oauth';
 import prisma from '@/lib/prisma';
-import crypto from 'crypto';
 import { createMonthlyRecords } from '@/lib/quickbooks-parser';
 import { CompanyLOB } from '@/lib/lob-allocator';
+import { ensureValidOAuthTokens } from '@/lib/oauth-token-manager';
 import { emitSyncStatus } from '@/lib/websocket-emit';
-
-// Decrypt OAuth tokens using modern cipher
-function decryptToken(encryptedToken: string): string {
-  const key = process.env.OAUTH_ENCRYPTION_KEY || 'default-key-change-me-in-prod';
-  const keyBuffer = Buffer.from(key.substring(0, 64), 'hex');
-  // Split IV and encrypted data
-  const parts = encryptedToken.split(':');
-  const iv = Buffer.from(parts[0], 'hex');
-  const encrypted = parts[1];
-  const decipher = crypto.createDecipheriv('aes-256-cbc', keyBuffer, iv);
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
-
-// Encrypt OAuth tokens using modern cipher
-function encryptToken(token: string): string {
-  const key = process.env.OAUTH_ENCRYPTION_KEY || 'default-key-change-me-in-prod';
-  const keyBuffer = Buffer.from(key.substring(0, 64), 'hex');
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv('aes-256-cbc', keyBuffer, iv);
-  let encrypted = cipher.update(token, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return iv.toString('hex') + ':' + encrypted;
-}
 
 export async function POST(request: NextRequest) {
   const syncStartTime = Date.now();
@@ -66,36 +41,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'QuickBooks not connected' }, { status: 400 });
     }
 
-    // Decrypt tokens
-    console.log('🔐 Decrypting tokens...');
-    let accessToken: string;
-    let refreshToken: string;
-    
-    try {
-      accessToken = decryptToken(connection.accessToken);
-      refreshToken = decryptToken(connection.refreshToken);
-      console.log('✅ Tokens decrypted successfully');
-      console.log('Access token length:', accessToken?.length);
-      console.log('Refresh token length:', refreshToken?.length);
-    } catch (decryptError) {
-      console.error('❌ Token decryption failed:', decryptError);
-      await prisma.accountingConnection.update({
-        where: {
-          companyId_platform: {
-            companyId,
-            platform: 'QUICKBOOKS',
-          },
-        },
-        data: {
-          status: 'ERROR',
-          errorMessage: 'Token decryption failed - please reconnect',
-        },
-      });
-      return NextResponse.json({ 
-        error: 'Token decryption failed - please reconnect',
-        needsReconnect: true 
-      }, { status: 401 });
-    }
+    let accessToken = '';
+    let refreshToken = '';
 
     // Initialize OAuth client
     const oauthClient = new OAuthClient({
@@ -105,15 +52,41 @@ export async function POST(request: NextRequest) {
       redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
     });
 
-    // Set the token directly on the client object
-    (oauthClient as any).token = {
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      token_type: 'bearer',
-      expires_in: 3600,
+    const refreshAccessToken = async (reason: string): Promise<void> => {
+      console.log(`🔄 Refreshing QuickBooks token (${reason})...`);
+      const refreshed = await ensureValidOAuthTokens({
+        companyId,
+        platform: 'QUICKBOOKS',
+        forceRefresh: true,
+        refreshReason: reason,
+        onRefreshFailureMessage: 'Token refresh failed - please reconnect',
+        onRefresh: async (tokens) => {
+          (oauthClient as any).token = {
+            access_token: tokens.accessToken,
+            refresh_token: tokens.refreshToken,
+            token_type: 'bearer',
+            expires_in: 3600,
+          };
+          const refreshResponse = await oauthClient.refresh();
+          const newToken = refreshResponse.getJson();
+          return {
+            accessToken: newToken.access_token,
+            refreshToken: newToken.refresh_token || tokens.refreshToken,
+            expiresInSeconds: newToken.expires_in || 3600,
+          };
+        },
+      });
+      accessToken = refreshed.accessToken;
+      refreshToken = refreshed.refreshToken;
+      (oauthClient as any).token = {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        token_type: 'bearer',
+        expires_in: 3600,
+      };
     };
 
-    // Check if token needs refresh (refresh 5 minutes before actual expiry as a buffer)
+    // Check if token needs refresh (refresh 5 minutes before expiry)
     const now = new Date();
     const bufferTime = 5 * 60 * 1000; // 5 minutes in milliseconds
     
@@ -128,54 +101,43 @@ export async function POST(request: NextRequest) {
       console.log('  Time until expiry: Unknown');
     }
     
-    const shouldRefresh = connection.tokenExpiresAt && 
-                         (connection.tokenExpiresAt.getTime() - now.getTime() < bufferTime);
-    
-    if (shouldRefresh) {
-      console.log('🔄 Token expiring soon, refreshing...');
-      try {
-        const refreshResponse = await oauthClient.refresh();
-        const newToken = refreshResponse.getJson();
-
-        // Update tokens in database
-        await prisma.accountingConnection.update({
-          where: {
-            companyId_platform: {
-              companyId,
-              platform: 'QUICKBOOKS',
-            },
-          },
-          data: {
-            accessToken: encryptToken(newToken.access_token),
-            refreshToken: encryptToken(newToken.refresh_token),
-            tokenExpiresAt: new Date(Date.now() + (newToken.expires_in || 3600) * 1000),
-            status: 'ACTIVE',
-            errorMessage: null,
-          },
-        });
-
-        // Update the token on the client
-        (oauthClient as any).token = newToken;
-        console.log('✅ Token refreshed successfully');
-      } catch (refreshError: any) {
-        console.error('❌ Token refresh failed:', refreshError);
-        await prisma.accountingConnection.update({
-          where: {
-            companyId_platform: {
-              companyId,
-              platform: 'QUICKBOOKS',
-            },
-          },
-          data: {
-            status: 'EXPIRED',
-            errorMessage: 'Token refresh failed - please reconnect',
-          },
-        });
-        return NextResponse.json({ 
-          error: 'Token expired - please reconnect',
-          needsReconnect: true 
-        }, { status: 401 });
-      }
+    try {
+      const ensured = await ensureValidOAuthTokens({
+        companyId,
+        platform: 'QUICKBOOKS',
+        bufferMs: bufferTime,
+        refreshReason: 'sync start',
+        onRefreshFailureMessage: 'Token refresh failed - please reconnect',
+        onRefresh: async (tokens) => {
+          (oauthClient as any).token = {
+            access_token: tokens.accessToken,
+            refresh_token: tokens.refreshToken,
+            token_type: 'bearer',
+            expires_in: 3600,
+          };
+          const refreshResponse = await oauthClient.refresh();
+          const newToken = refreshResponse.getJson();
+          return {
+            accessToken: newToken.access_token,
+            refreshToken: newToken.refresh_token || tokens.refreshToken,
+            expiresInSeconds: newToken.expires_in || 3600,
+          };
+        },
+      });
+      accessToken = ensured.accessToken;
+      refreshToken = ensured.refreshToken;
+      (oauthClient as any).token = {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        token_type: 'bearer',
+        expires_in: 3600,
+      };
+    } catch (refreshError: any) {
+      console.error('❌ Token refresh failed:', refreshError);
+      return NextResponse.json({
+        error: 'Token expired - please reconnect',
+        needsReconnect: true,
+      }, { status: 401 });
     }
 
     const realmId = connection.realmId;
@@ -187,6 +149,29 @@ export async function POST(request: NextRequest) {
       ? 'https://sandbox-quickbooks.api.intuit.com'
       : 'https://quickbooks.api.intuit.com';
     const companyUrl = `${baseUrl}/v3/company/${realmId}`;
+    const fetchWithTokenRetry = async (url: string, label: string): Promise<Response> => {
+      let response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
+      if (response.status === 401 || response.status === 403) {
+        console.warn(`⚠️ ${label} returned ${response.status}. Refreshing + retrying once.`);
+        await refreshAccessToken(`${label} ${response.status}`);
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+        });
+      }
+      return response;
+    };
 
     // Calculate date range - use last day of previous month as end date
     const today = new Date();
@@ -214,14 +199,7 @@ export async function POST(request: NextRequest) {
     // Request monthly summarization to get end-of-month data for each month
     const plUrl = `${companyUrl}/reports/ProfitAndLoss?start_date=${dateStart}&end_date=${dateEnd}&accounting_method=Accrual&summarize_column_by=Month&minorversion=65`;
     
-    const plResponse = await fetch(plUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
+    const plResponse = await fetchWithTokenRetry(plUrl, 'ProfitAndLoss');
     
     // Capture intuit_tid from response headers
     intuitTid = plResponse.headers.get('intuit_tid');
@@ -284,14 +262,7 @@ export async function POST(request: NextRequest) {
     // Request monthly summarization to get end-of-month data for each month
     const bsUrl = `${companyUrl}/reports/BalanceSheet?start_date=${dateStart}&end_date=${dateEnd}&summarize_column_by=Month&minorversion=65`;
     
-    const bsResponse = await fetch(bsUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
+    const bsResponse = await fetchWithTokenRetry(bsUrl, 'BalanceSheet');
     
     // Capture intuit_tid from Balance Sheet response
     const bsIntuitTid = bsResponse.headers.get('intuit_tid');
@@ -349,14 +320,7 @@ export async function POST(request: NextRequest) {
     // Fetch Chart of Accounts to get account codes/numbers
     const accountsUrl = `${companyUrl}/query?query=SELECT * FROM Account&minorversion=65`;
     
-    const accountsResponse = await fetch(accountsUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
+    const accountsResponse = await fetchWithTokenRetry(accountsUrl, 'ChartOfAccounts');
     
     let accountsData = null;
     if (accountsResponse.ok) {

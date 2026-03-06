@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { XeroClient } from 'xero-node';
 import prisma from '@/lib/prisma';
-import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
+import { ensureValidOAuthTokens } from '@/lib/oauth-token-manager';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,9 +53,9 @@ export async function POST(request: NextRequest) {
       mappingLookup.set(m.qbAccount.toLowerCase(), m.targetField);
     });
 
-    // Decrypt tokens
-    const accessToken = decryptOAuthToken(connection.accessToken);
-    const refreshToken = decryptOAuthToken(connection.refreshToken);
+    // Resolve valid tokens (refresh with lock if needed)
+    let accessToken = '';
+    let refreshToken = '';
 
     // Initialize Xero client
     const xeroClient = new XeroClient({
@@ -63,13 +63,6 @@ export async function POST(request: NextRequest) {
       clientSecret: process.env.XERO_CLIENT_SECRET || '',
       redirectUris: [process.env.XERO_REDIRECT_URI || 'http://localhost:3000/api/xero/callback'],
       scopes: process.env.XERO_SCOPES?.split(' ') || [],
-    });
-
-    xeroClient.setTokenSet({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      expires_in: 1800,
-      token_type: 'Bearer',
     });
 
     // Check if token needs refresh (Xero tokens expire in 30 minutes)
@@ -80,47 +73,43 @@ export async function POST(request: NextRequest) {
     console.log('  Current time:', now.toISOString());
     console.log('  Token expires at:', connection.tokenExpiresAt?.toISOString() || 'Not set');
     
-    const shouldRefresh = connection.tokenExpiresAt && 
-                         (connection.tokenExpiresAt.getTime() - now.getTime() < bufferTime);
-    
-    if (shouldRefresh || !connection.tokenExpiresAt) {
-      console.log('🔄 Token expiring soon or not set, refreshing...');
-      try {
-        const newTokenSet = await xeroClient.refreshToken();
-        
-        // Update tokens in database
-        await prisma.accountingConnection.update({
-          where: {
-            companyId_platform: {
-              companyId,
-              platform: 'XERO',
-            },
-          },
-          data: {
-            accessToken: encryptOAuthToken(newTokenSet.access_token),
-            refreshToken: encryptOAuthToken(newTokenSet.refresh_token),
-            tokenExpiresAt: new Date(Date.now() + (newTokenSet.expires_in || 1800) * 1000),
-            status: 'ACTIVE',
-            errorMessage: null,
-          },
-        });
-
-        // Update the xero client with new token
-        xeroClient.setTokenSet({
-          access_token: newTokenSet.access_token,
-          refresh_token: newTokenSet.refresh_token,
-          expires_in: newTokenSet.expires_in || 1800,
-          token_type: 'Bearer',
-        });
-
-        console.log('✅ Token refreshed successfully');
-      } catch (refreshError: any) {
-        console.error('❌ Token refresh failed:', refreshError);
-        return NextResponse.json({ 
-          error: 'Token expired and refresh failed - please reconnect Xero',
-          needsReconnect: true 
-        }, { status: 401 });
-      }
+    try {
+      const ensured = await ensureValidOAuthTokens({
+        companyId,
+        platform: 'XERO',
+        bufferMs: bufferTime,
+        refreshReason: 'xero reprocess',
+        onRefreshFailureMessage: 'Token refresh failed - please reconnect Xero',
+        onRefresh: async (tokens) => {
+          xeroClient.setTokenSet({
+            access_token: tokens.accessToken,
+            refresh_token: tokens.refreshToken,
+            expires_in: 1800,
+            token_type: 'Bearer',
+          });
+          const newTokenSet = await xeroClient.refreshToken();
+          return {
+            accessToken: newTokenSet.access_token,
+            refreshToken: newTokenSet.refresh_token || tokens.refreshToken,
+            expiresInSeconds: newTokenSet.expires_in || 1800,
+          };
+        },
+      });
+      accessToken = ensured.accessToken;
+      refreshToken = ensured.refreshToken;
+      xeroClient.setTokenSet({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_in: 1800,
+        token_type: 'Bearer',
+      });
+      console.log('✅ Xero tokens ready for reprocess');
+    } catch (refreshError: any) {
+      console.error('❌ Token refresh failed:', refreshError);
+      return NextResponse.json({
+        error: 'Token expired and refresh failed - please reconnect Xero',
+        needsReconnect: true,
+      }, { status: 401 });
     }
 
     const tenantId = connection.tenantId;

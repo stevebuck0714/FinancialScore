@@ -1,21 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OAuthClient from 'intuit-oauth';
 import prisma from '@/lib/prisma';
-import crypto from 'crypto';
-
-// Encryption for OAuth tokens using modern cipher
-function encryptToken(token: string): string {
-  const key = process.env.OAUTH_ENCRYPTION_KEY || 'default-key-change-me-in-prod';
-  // Create a 32-byte key from the encryption key
-  const keyBuffer = Buffer.from(key.substring(0, 64), 'hex');
-  // Generate a random IV
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv('aes-256-cbc', keyBuffer, iv);
-  let encrypted = cipher.update(token, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  // Prepend IV to encrypted data
-  return iv.toString('hex') + ':' + encrypted;
-}
+import { encryptOAuthToken } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,8 +40,8 @@ export async function GET(request: NextRequest) {
     console.log('   Realm ID:', realmId);
 
     // Encrypt tokens before storing
-    const encryptedAccessToken = encryptToken(token.access_token);
-    const encryptedRefreshToken = encryptToken(token.refresh_token);
+    const encryptedAccessToken = encryptOAuthToken(token.access_token);
+    const encryptedRefreshToken = encryptOAuthToken(token.refresh_token);
 
     // Calculate token expiration
     const expiresIn = token.expires_in || 3600; // Default 1 hour
