@@ -2059,6 +2059,20 @@ function FinancialScorePage() {
           } else {
             // CSV/Trial Balance data - check if it has processed monthly data
             setQbRawData(null);
+            // Hydrate raw Trial Balance payload from latest DB record so Data Mapping
+            // can still show "Process & Save Monthly Data" after page reloads.
+            if (inferredCsv) {
+              const restoredCsvPayload = {
+                ...(latestRecord.rawData || {}),
+                _companyId: selectedCompanyId,
+                fileName:
+                  latestRecord.fileName ||
+                  (latestRecord.rawData && (latestRecord.rawData as any).fileName) ||
+                  'CSV Trial Balance Upload',
+              };
+              setCsvTrialBalanceData(restoredCsvPayload);
+              setHasSavedCsvInLocalStorage(true);
+            }
             
             // If this record has monthlyData, it's a processed Trial Balance - load it like QB data
             if (latestRecord.monthlyData && latestRecord.monthlyData.length > 0) {
