@@ -1060,6 +1060,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to save QuickBooks Desktop settings');
       }
+      await loadQbDesktopSettings(companyId);
       alert('QuickBooks Desktop settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save QuickBooks Desktop settings: ${error?.message || 'Unknown error'}`);
@@ -1101,6 +1102,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to save Dynamics settings');
       }
+      await loadDynamicsSettings(companyId);
       alert('Dynamics settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save Dynamics settings: ${error?.message || 'Unknown error'}`);
@@ -1121,6 +1123,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to save Acumatica settings');
       }
+      await loadAcumaticaSettings(companyId);
       alert('Acumatica settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save Acumatica settings: ${error?.message || 'Unknown error'}`);
@@ -1141,6 +1144,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to save Sage Intacct settings');
       }
+      await loadSageIntacctSettings(companyId);
       alert('Sage Intacct settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save Sage Intacct settings: ${error?.message || 'Unknown error'}`);
@@ -1161,6 +1165,7 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to save Odoo settings');
       }
+      await loadOdooSettings(companyId);
       alert('Odoo settings saved for this company.');
     } catch (error: any) {
       alert(`Failed to save Odoo settings: ${error?.message || 'Unknown error'}`);

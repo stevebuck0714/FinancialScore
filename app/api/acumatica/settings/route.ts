@@ -122,6 +122,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         status: true,
+        syncFrequency: true,
         lastSyncAt: true,
         errorMessage: true,
         connectionMetadata: true,
@@ -132,7 +133,22 @@ export async function GET(request: NextRequest) {
       connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
         ? (connection.connectionMetadata as Record<string, unknown>)
         : {};
-    const settings = sanitizeSettings(metadata.acumaticaSettings || defaultSettings);
+    const legacySettings = {
+      syncFrequency: typeof connection?.syncFrequency === 'string' ? connection.syncFrequency : defaultSettings.syncFrequency,
+      syncTime: asString(metadata.operationalPullTime) || defaultSettings.syncTime,
+      initialSyncStartDate: asString(metadata.initialSyncStartDate),
+      incrementalSync: asString(metadata.incrementalSync),
+    };
+    const platformSettings =
+      metadata.acumaticaSettings &&
+      typeof metadata.acumaticaSettings === 'object' &&
+      !Array.isArray(metadata.acumaticaSettings)
+        ? (metadata.acumaticaSettings as Record<string, unknown>)
+        : {};
+    const settings = sanitizeSettings({
+      ...legacySettings,
+      ...platformSettings,
+    });
     const programs = sanitizePrograms(metadata.acumaticaPrograms || defaultPrograms);
 
     return NextResponse.json({

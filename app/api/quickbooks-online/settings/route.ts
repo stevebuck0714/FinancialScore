@@ -129,7 +129,16 @@ export async function GET(request: NextRequest) {
       cdcEnabled: asString(metadata.cdcEnabled),
       reconciliationEnabled: asString(metadata.reconciliationEnabled),
     };
-    const settings = sanitizeSettings(metadata.quickbooksOnlineSettings || legacySettings || defaultSettings);
+    const platformSettings =
+      metadata.quickbooksOnlineSettings &&
+      typeof metadata.quickbooksOnlineSettings === 'object' &&
+      !Array.isArray(metadata.quickbooksOnlineSettings)
+        ? (metadata.quickbooksOnlineSettings as Record<string, unknown>)
+        : {};
+    const settings = sanitizeSettings({
+      ...legacySettings,
+      ...platformSettings,
+    });
     const programs = sanitizePrograms(metadata.quickbooksOnlinePrograms || defaultPrograms);
 
     return NextResponse.json({

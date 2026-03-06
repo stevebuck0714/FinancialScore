@@ -161,6 +161,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         status: true,
+        syncFrequency: true,
         lastSyncAt: true,
         errorMessage: true,
         connectionMetadata: true,
@@ -171,7 +172,20 @@ export async function GET(request: NextRequest) {
       connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
         ? (connection.connectionMetadata as Record<string, unknown>)
         : {};
-    const settings = sanitizeSettings(metadata.quickbooksDesktopSettings || defaultSettings);
+    const legacySettings = {
+      syncFrequency: typeof connection?.syncFrequency === 'string' ? connection.syncFrequency : defaultSettings.syncFrequency,
+      syncTime: asString(metadata.operationalPullTime) || defaultSettings.syncTime,
+    };
+    const platformSettings =
+      metadata.quickbooksDesktopSettings &&
+      typeof metadata.quickbooksDesktopSettings === 'object' &&
+      !Array.isArray(metadata.quickbooksDesktopSettings)
+        ? (metadata.quickbooksDesktopSettings as Record<string, unknown>)
+        : {};
+    const settings = sanitizeSettings({
+      ...legacySettings,
+      ...platformSettings,
+    });
     const programs = sanitizePrograms(metadata.quickbooksDesktopPrograms || defaultPrograms);
 
     return NextResponse.json({

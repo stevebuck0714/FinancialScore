@@ -114,6 +114,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         status: true,
+        syncFrequency: true,
         lastSyncAt: true,
         errorMessage: true,
         connectionMetadata: true,
@@ -124,7 +125,22 @@ export async function GET(request: NextRequest) {
       connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
         ? (connection.connectionMetadata as Record<string, unknown>)
         : {};
-    const settings = sanitizeSettings(metadata.odooSettings || defaultSettings);
+    const legacySettings = {
+      syncFrequency: typeof connection?.syncFrequency === 'string' ? connection.syncFrequency : defaultSettings.syncFrequency,
+      syncTime: asString(metadata.operationalPullTime) || defaultSettings.syncTime,
+      initialSyncStartDate: asString(metadata.initialSyncStartDate),
+      incrementalSync: asString(metadata.incrementalSync),
+    };
+    const platformSettings =
+      metadata.odooSettings &&
+      typeof metadata.odooSettings === 'object' &&
+      !Array.isArray(metadata.odooSettings)
+        ? (metadata.odooSettings as Record<string, unknown>)
+        : {};
+    const settings = sanitizeSettings({
+      ...legacySettings,
+      ...platformSettings,
+    });
     const programs = sanitizePrograms(metadata.odooPrograms || defaultPrograms);
 
     return NextResponse.json({
