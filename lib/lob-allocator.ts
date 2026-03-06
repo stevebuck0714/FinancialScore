@@ -62,15 +62,22 @@ export function applyLOBAllocations(
   const totals: { [fieldName: string]: number } = {};
   const breakdowns: FieldBreakdowns = {};
 
-  // Create a map for quick lookup of mappings by account name
+  // Create maps for quick lookup of mappings by account name and id.
   const mappingMap = new Map<string, AccountMapping>();
+  const mappingByIdMap = new Map<string, AccountMapping>();
   for (const mapping of accountMappings) {
     mappingMap.set(mapping.qbAccount, mapping);
+    const mappingId = String(mapping.qbAccountId || '').trim();
+    if (mappingId) {
+      mappingByIdMap.set(mappingId, mapping);
+    }
   }
 
   // Process each account value
   for (const accountValue of accountValues) {
-    const mapping = mappingMap.get(accountValue.accountName);
+    const mapping =
+      (accountValue.accountId ? mappingByIdMap.get(String(accountValue.accountId).trim()) : undefined) ||
+      mappingMap.get(accountValue.accountName);
 
     if (!mapping) {
       // No mapping found - skip this account
