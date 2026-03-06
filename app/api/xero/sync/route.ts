@@ -3,6 +3,7 @@ import { XeroClient } from 'xero-node';
 import prisma from '@/lib/prisma';
 import { ensureValidOAuthTokens } from '@/lib/oauth-token-manager';
 import { toCanonicalMonthlyFinancial, toMonthlyFinancialCreateInput } from '@/lib/financial-canonical';
+import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { emitSyncStatus } from '@/lib/websocket-emit';
 
 export const dynamic = 'force-dynamic';
@@ -593,6 +594,24 @@ export async function POST(request: NextRequest) {
     console.error('❌ Xero sync error:', error);
     
     if (companyId) {
+      await prisma.apiSyncLog.create({
+        data: {
+          companyId,
+          platform: 'XERO',
+          syncType: 'manual',
+          status: 'error',
+          recordsImported,
+          errorCount: 1,
+          errorDetails: { message: error?.message || 'Xero sync failed' } as any,
+          duration: Date.now() - syncStartTime,
+        },
+      }).catch(() => undefined);
+      await notifyAdminsOfSyncFailure({
+        companyId,
+        platform: 'XERO',
+        syncType: 'manual',
+        errorSummary: error?.message || 'Xero sync failed',
+      });
       emitSyncStatus(companyId, {
         status: 'error',
         message: `Sync failed: ${error.message}`,

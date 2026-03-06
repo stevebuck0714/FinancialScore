@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AdapterFactory } from '@/lib/accounting-adapters';
 import prisma from '@/lib/prisma';
+import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 
 /**
  * Cron Job: Sync Operational Data
@@ -57,6 +58,11 @@ export async function GET(request: NextRequest) {
           where: { id: companyId },
           select: { name: true }
         });
+        const activeConnection = await prisma.accountingConnection.findFirst({
+          where: { companyId, status: 'ACTIVE' },
+          select: { platform: true },
+        });
+        const platform = activeConnection?.platform || 'QUICKBOOKS';
         
         // Create adapter for this company
         const adapter = await AdapterFactory.createForCompany(companyId);
@@ -86,6 +92,13 @@ export async function GET(request: NextRequest) {
         } else {
           console.error(`⚠️  ${company?.name}: Partial sync with errors:`, syncResult.errors);
           errorCount++;
+          await notifyAdminsOfSyncFailure({
+            companyId,
+            platform,
+            syncType: 'auto_operational_sync',
+            errorSummary: `Operational sync failed for ${platform}`,
+            errorDetails: (syncResult.errors || []).join(' | ').slice(0, 500),
+          });
         }
         
         // Update last sync timestamp
@@ -110,6 +123,18 @@ export async function GET(request: NextRequest) {
       } catch (error: any) {
         console.error(`❌ Error syncing company ${companyId}:`, error);
         errorCount++;
+        const activeConnection = await prisma.accountingConnection.findFirst({
+          where: { companyId, status: 'ACTIVE' },
+          select: { platform: true },
+        });
+        const platform = activeConnection?.platform || 'QUICKBOOKS';
+        await notifyAdminsOfSyncFailure({
+          companyId,
+          platform,
+          syncType: 'auto_operational_sync',
+          errorSummary: `Operational sync exception for ${platform}`,
+          errorDetails: String(error?.message || error || 'Unknown error').slice(0, 500),
+        });
         
         results.push({
           companyId,

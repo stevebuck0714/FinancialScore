@@ -42,6 +42,25 @@ interface BusinessRegistrationProps {
   affiliateCode?: string;
 }
 
+interface AccountingSystemSelectionNotificationProps {
+  recipients: string[];
+  companyName: string;
+  companyId: string;
+  accountingSystem: string;
+  changedByEmail: string;
+  changedByRole: string;
+}
+
+interface SyncFailureNotificationProps {
+  recipients: string[];
+  companyName: string;
+  companyId: string;
+  platform: string;
+  syncType: string;
+  errorSummary: string;
+  errorDetails?: string;
+  actionUrl?: string;
+}
 export async function sendPasswordResetEmail({ 
   to, 
   userName, 
@@ -718,3 +737,225 @@ function getTrustedDeviceNotificationHTML({
   `.trim();
 }
 
+export async function sendAccountingSystemSelectionNotification({
+  recipients,
+  companyName,
+  companyId,
+  accountingSystem,
+  changedByEmail,
+  changedByRole,
+}: AccountingSystemSelectionNotificationProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping accounting system selection notification email');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const uniqueRecipients = Array.from(
+    new Set(recipients.map((email) => email.trim().toLowerCase()).filter(Boolean))
+  );
+  if (uniqueRecipients.length === 0) {
+    return { success: false, reason: 'No recipients' };
+  }
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: uniqueRecipients,
+      subject: `🔔 Accounting system selected for ${companyName}`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Accounting System Selected</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:24px 28px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;font-size:20px;color:#1e293b;">Accounting System Setup Required</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">A company accounting system was selected and may require connector setup.</p>
+        </td></tr>
+        <tr><td style="padding:24px 28px;">
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Company:</strong> ${escapeHtml(companyName)}</p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Company ID:</strong> ${escapeHtml(companyId)}</p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Selected Accounting System:</strong> ${escapeHtml(accountingSystem)}</p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;"><strong>Saved By:</strong> ${escapeHtml(changedByEmail)} (${escapeHtml(changedByRole)})</p>
+          <p style="margin:0;color:#64748b;font-size:13px;">Open Company Management and use the Accounting Integration tab for credential setup.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) {
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+
+    console.log('✅ Accounting system selection notification sent:', data);
+    return { success: true, data };
+  } catch (error) {
+    console.error('❌ Error sending accounting system selection notification:', error);
+    return { success: false, error };
+  }
+}
+
+export async function sendSyncFailureNotification({
+  recipients,
+  companyName,
+  companyId,
+  platform,
+  syncType,
+  errorSummary,
+  errorDetails,
+  actionUrl,
+}: SyncFailureNotificationProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping sync failure notification email');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const uniqueRecipients = Array.from(new Set(recipients.map((email) => email.trim().toLowerCase()).filter(Boolean)));
+  if (uniqueRecipients.length === 0) {
+    return { success: false, reason: 'No recipients' };
+  }
+
+  const safeSummary = escapeHtml(errorSummary || 'Sync failed');
+  const safeDetails = escapeHtml(errorDetails || '');
+  const safeCompany = escapeHtml(companyName);
+  const safeCompanyId = escapeHtml(companyId);
+  const safePlatform = escapeHtml(platform);
+  const safeSyncType = escapeHtml(syncType);
+  const safeActionUrl = actionUrl ? escapeHtml(actionUrl) : '';
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: uniqueRecipients,
+      subject: `🚨 Sync failed: ${companyName} (${platform})`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Sync Failure Alert</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="680" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:20px 24px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;color:#b91c1c;font-size:22px;">Sync Failure Alert</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">A scheduled or manual sync failed and may require intervention.</p>
+        </td></tr>
+        <tr><td style="padding:20px 24px;">
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Company:</strong> ${safeCompany}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Company ID:</strong> ${safeCompanyId}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Platform:</strong> ${safePlatform}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Sync Type:</strong> ${safeSyncType}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Error:</strong> ${safeSummary}</p>
+          ${
+            safeDetails
+              ? `<p style="margin:0;color:#334155;font-size:14px;"><strong>Details:</strong> ${safeDetails}</p>`
+              : ''
+          }
+          ${
+            safeActionUrl
+              ? `<p style="margin:14px 0 0;font-size:14px;"><a href="${safeActionUrl}" style="color:#2563eb;text-decoration:none;">Open dashboard and reconnect/retry</a></p>`
+              : ''
+          }
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) {
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+
+    console.log('✅ Sync failure notification sent:', data);
+    return { success: true, data };
+  } catch (sendError) {
+    console.error('❌ Error sending sync failure notification:', sendError);
+    return { success: false, error: sendError };
+  }
+}
+
+// Support ticket props
+interface SupportTicketProps {
+  subject: string;
+  category: string;
+  priority?: string;
+  description: string;
+  contactName: string;
+  contactEmail: string;
+  companyName: string;
+  pageModule?: string;
+  tier1Owner?: 'CORELYTICS' | 'CONSULTANT';
+  routedToEmail?: string;
+  routedToLabel?: string;
+  tier1ConsultantName?: string;
+}
+
+/**
+ * Send support ticket to support@corelytics.com
+ */
+export async function sendSupportTicket(ticket: SupportTicketProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.error('RESEND_API_KEY not configured - cannot send support ticket');
+    throw new Error('Email service is not configured. Please email support@corelytics.com directly.');
+  }
+
+  const routeRecipient = (ticket.routedToEmail || NOTIFICATION_EMAIL).trim().toLowerCase();
+  const subject = `[Support Ticket] ${ticket.subject}`;
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Support Ticket</title></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; color: #1e293b;">
+  <h2 style="color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 8px;">Support Ticket</h2>
+  <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+    <tr><td style="padding: 8px 0; font-weight: 600; width: 160px;">Subject:</td><td>${escapeHtml(ticket.subject)}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Category:</td><td>${escapeHtml(ticket.category)}</td></tr>
+    ${ticket.priority ? `<tr><td style="padding: 8px 0; font-weight: 600;">Priority:</td><td>${escapeHtml(ticket.priority)}</td></tr>` : ''}
+    <tr><td style="padding: 8px 0; font-weight: 600;">Contact Name:</td><td>${escapeHtml(ticket.contactName)}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Contact Email:</td><td>${escapeHtml(ticket.contactEmail)}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Company Name:</td><td>${escapeHtml(ticket.companyName)}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Tier 1 Owner:</td><td>${escapeHtml(ticket.tier1Owner || 'CORELYTICS')}</td></tr>
+    <tr><td style="padding: 8px 0; font-weight: 600;">Routed To:</td><td>${escapeHtml(ticket.routedToLabel || routeRecipient)}</td></tr>
+    ${ticket.tier1ConsultantName ? `<tr><td style="padding: 8px 0; font-weight: 600;">Tier 1 Consultant:</td><td>${escapeHtml(ticket.tier1ConsultantName)}</td></tr>` : ''}
+    ${ticket.pageModule ? `<tr><td style="padding: 8px 0; font-weight: 600;">Page/Module:</td><td>${escapeHtml(ticket.pageModule)}</td></tr>` : ''}
+  </table>
+  <h3 style="margin-top: 24px; color: #475569;">Description</h3>
+  <div style="background: #f8fafc; padding: 16px; border-radius: 8px; white-space: pre-wrap; line-height: 1.6;">${escapeHtml(ticket.description)}</div>
+  <p style="margin-top: 24px; font-size: 12px; color: #94a3b8;">Submitted via Corelytics Support Center</p>
+</body>
+</html>
+  `.trim();
+
+  const { data, error } = await client.emails.send({
+    from: DEFAULT_FROM,
+    to: [routeRecipient],
+    replyTo: [ticket.contactEmail],
+    subject,
+    html,
+  });
+
+  if (error) {
+    console.error('Resend error:', error);
+    throw new Error(`Failed to send support ticket: ${error.message}`);
+  }
+
+  console.log('Support ticket sent to', routeRecipient, data);
+  return { success: true, data };
+}
+
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  return String(text).replace(/[&<>"']/g, (m) => map[m]);
+}
