@@ -380,7 +380,8 @@ export function createMonthlyRecords(
     
     let revenue = getRowValue(plRows, 'Total Income', colIndex, logSections) || 
                   getRowValue(plRows, 'Income', colIndex, logSections) || 
-                  getRowValue(plRows, 'Revenue', colIndex, logSections);
+                  getRowValue(plRows, 'Revenue', colIndex, logSections) ||
+                  getRowValue(plRows, 'Sales', colIndex, logSections);
     
     let cogs = getRowValue(plRows, 'Total Cost of Goods Sold', colIndex, logSections) || 
                getRowValue(plRows, 'Cost of Goods Sold', colIndex, logSections) || 
