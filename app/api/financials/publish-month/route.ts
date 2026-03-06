@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireCompanyAccess } from '@/lib/tenant-security';
 import { publishMonthFromDailySnapshots } from '@/lib/financial/publish-month-service';
+import prisma from '@/lib/prisma';
 
 function isCronAuthorized(request: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
@@ -29,6 +30,22 @@ export async function POST(request: NextRequest) {
       } catch {
         return NextResponse.json({ error: 'Forbidden: Access to this company denied' }, { status: 403 });
       }
+    }
+
+    // This endpoint is only valid for CSV trial-balance publish workflow.
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { accountingSystem: true },
+    });
+    const accountingSystem = String(company?.accountingSystem || '').toUpperCase();
+    if (accountingSystem !== 'CSV_FILE') {
+      return NextResponse.json(
+        {
+          error:
+            'Publish Monthly Financials is only supported for CSV trial-balance workflow. Use Process/Reprocess for API-connected systems.',
+        },
+        { status: 409 }
+      );
     }
 
     const result = await publishMonthFromDailySnapshots({

@@ -8424,7 +8424,7 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && selectedAccountingSystem === 'CSV_FILE' && (
             <div style={{ maxWidth: '1280px', margin: '-18px auto 6px auto', padding: '0 16px', display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '10px 12px', width: '52%', minWidth: '520px', maxWidth: '640px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'nowrap' }}>
                 <div style={{ minWidth: 0 }}>

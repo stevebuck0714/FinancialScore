@@ -156,6 +156,8 @@ export async function POST(request: NextRequest) {
 
         // Update the token on the client
         (oauthClient as any).token = newToken;
+        accessToken = newToken.access_token || accessToken;
+        refreshToken = newToken.refresh_token || refreshToken;
         console.log('✅ Token refreshed successfully');
       } catch (refreshError: any) {
         console.error('❌ Token refresh failed:', refreshError);

@@ -29,6 +29,16 @@ function getUserCompanyAccessDelegate():
 }
 
 export async function listAccessibleCompaniesForUser(userId: string): Promise<AccessibleCompany[]> {
+  const userContext = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      role: true,
+      companyRole: true,
+      sidebarAccess: true,
+    },
+  });
+  if (!userContext) return [];
+
   const userCompanyAccess = getUserCompanyAccessDelegate();
   if (userCompanyAccess) {
     const memberships = await userCompanyAccess.findMany({
@@ -47,6 +57,33 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
         createdAt: 'asc',
       },
     });
+
+    if (userContext.role === 'SITEADMIN') {
+      const membershipByCompanyId = new Map(
+        memberships.map((m) => [
+          m.companyId,
+          {
+            companyRole: m.companyRole,
+            sidebarAccess: m.sidebarAccess,
+          },
+        ])
+      );
+
+      const allCompanies = await prisma.company.findMany({
+        select: { id: true, name: true },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      return allCompanies.map((company) => {
+        const membership = membershipByCompanyId.get(company.id);
+        return {
+          companyId: company.id,
+          name: company.name,
+          companyRole: membership?.companyRole || userContext.companyRole || 'admin',
+          sidebarAccess: membership?.sidebarAccess ?? userContext.sidebarAccess,
+        };
+      });
+    }
 
     return memberships.map((m) => ({
       companyId: m.companyId,
@@ -85,6 +122,19 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
     },
   });
   if (!user) return [];
+
+  if (user.role === 'SITEADMIN') {
+    const allCompanies = await prisma.company.findMany({
+      select: { id: true, name: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return allCompanies.map((company) => ({
+      companyId: company.id,
+      name: company.name,
+      companyRole: user.companyRole || 'admin',
+      sidebarAccess: user.sidebarAccess,
+    }));
+  }
 
   const idSet = new Set<string>();
   const fallbackCompanies: AccessibleCompany[] = [];

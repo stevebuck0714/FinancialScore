@@ -255,6 +255,19 @@ export function createMonthlyRecords(
 ): ParsedFinancialData[] {
   const records: ParsedFinancialData[] = [];
   
+  const parseQbNumber = (raw: unknown): number => {
+    if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+    if (typeof raw !== 'string') return 0;
+    const trimmed = raw.trim();
+    if (!trimmed) return 0;
+    const normalized = trimmed
+      .replace(/\$/g, '')
+      .replace(/,/g, '')
+      .replace(/\(([^)]+)\)/, '-$1');
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  
   // Extract column headers (dates) from P&L report
   const plColumns = plData?.Columns?.Column || [];
   const bsColumns = bsData?.Columns?.Column || [];
@@ -267,7 +280,35 @@ export function createMonthlyRecords(
   console.log(`Processing ${monthlyColumns.length} months of QB data`);
   
   // Helper function to extract value from a row by column index
+  function collectDataRowSum(inputRows: any[], colIndex: number): number {
+    let total = 0;
+    const rowsToWalk = Array.isArray(inputRows) ? inputRows : [];
+    for (const row of rowsToWalk) {
+      if (!row || typeof row !== 'object') continue;
+      if (row.type === 'Data' && Array.isArray(row.ColData) && row.ColData[colIndex]) {
+        total += Math.abs(parseQbNumber(row.ColData[colIndex].value));
+      }
+      const nested = Array.isArray(row.Rows?.Row) ? row.Rows.Row : [];
+      if (nested.length > 0) {
+        total += collectDataRowSum(nested, colIndex);
+      }
+    }
+    return total;
+  }
+
+  function getSectionAmount(sectionRow: any, colIndex: number): number {
+    const summaryValue =
+      sectionRow?.Summary?.ColData && sectionRow.Summary.ColData[colIndex]
+        ? Math.abs(parseQbNumber(sectionRow.Summary.ColData[colIndex].value))
+        : 0;
+    const nestedRows = Array.isArray(sectionRow?.Rows?.Row) ? sectionRow.Rows.Row : [];
+    const detailSum = collectDataRowSum(nestedRows, colIndex);
+    // Prefer explicit summary if present; otherwise use rolled-up detail rows.
+    return summaryValue > 0 ? summaryValue : detailSum;
+  }
+
   function getRowValue(rows: any[], sectionName: string, colIndex: number, logMatches: boolean = false): number {
+    let bestValue = 0;
     for (const row of rows) {
       if (row.type === 'Section' && row.Header) {
         const headerValue = row.Header.ColData?.[0]?.value || '';
@@ -277,26 +318,22 @@ export function createMonthlyRecords(
         }
         
         if (headerValue.toLowerCase().includes(sectionName.toLowerCase())) {
-          const summaryRow = row.Summary;
-          if (summaryRow && summaryRow.ColData && summaryRow.ColData[colIndex]) {
-            const value = summaryRow.ColData[colIndex].value;
-            const numValue = value ? Math.abs(parseFloat(value)) : 0;
-            
-            if (logMatches && colIndex === 1) {
-              console.log(`  ✓ MATCHED "${sectionName}" in "${headerValue}" - Value: ${numValue}`);
-            }
-            
-            return numValue;
+          const numValue = getSectionAmount(row, colIndex);
+          if (logMatches && colIndex === 1) {
+            console.log(`  ✓ MATCHED "${sectionName}" in "${headerValue}" - Value: ${numValue}`);
+          }
+          if (numValue > bestValue) {
+            bestValue = numValue;
           }
         }
         // Recursively search nested rows
         if (row.Rows && row.Rows.Row) {
           const nestedValue = getRowValue(row.Rows.Row, sectionName, colIndex, logMatches);
-          if (nestedValue > 0) return nestedValue;
+          if (nestedValue > bestValue) bestValue = nestedValue;
         }
       }
     }
-    return 0;
+    return bestValue;
   }
   
   const plRows = Array.isArray(plData?.Rows) ? plData.Rows : (plData?.Rows?.Row || []);

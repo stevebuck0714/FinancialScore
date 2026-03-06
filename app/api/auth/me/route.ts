@@ -44,8 +44,24 @@ export async function GET(request: NextRequest) {
     await ensureLegacyCompanyAccess(user.id);
     const accessibleCompanies = await listAccessibleCompaniesForUser(user.id);
     const cookieActiveCompanyId = request.cookies.get('fs_active_company')?.value;
+    let cookieCompanyId: string | null = null;
+    if (cookieActiveCompanyId) {
+      const inAccessibleList = accessibleCompanies.some((c) => c.companyId === cookieActiveCompanyId);
+      if (inAccessibleList) {
+        cookieCompanyId = cookieActiveCompanyId;
+      } else if (user.role === 'SITEADMIN') {
+        const companyExists = await prisma.company.findUnique({
+          where: { id: cookieActiveCompanyId },
+          select: { id: true },
+        });
+        if (companyExists?.id) {
+          cookieCompanyId = companyExists.id;
+        }
+      }
+    }
+
     const activeCompanyId =
-      accessibleCompanies.find((c) => c.companyId === cookieActiveCompanyId)?.companyId ||
+      cookieCompanyId ||
       accessibleCompanies[0]?.companyId ||
       user.companyId ||
       null;
