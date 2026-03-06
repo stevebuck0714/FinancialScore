@@ -48,13 +48,14 @@ export default function Header({
     { id: 'kpis', label: 'Ratios' },
     { id: 'trend-analysis', label: 'Trends' },
     { id: 'goals', label: 'Goals' },
+    { id: 'financial-forecast', label: 'Financial Forecast' },
     { id: 'projections', label: 'Projections' },
     { id: 'cash-flow', label: 'Cash Flow' },
     { id: 'working-capital', label: 'Working Capital' },
     { id: 'covenants', label: 'Loan Covenants' }
   ];
 
-  const isFinancialReportsView = ['kpis', 'trend-analysis', 'goals', 'projections', 'cash-flow', 'working-capital', 'covenants'].includes(currentView);
+  const isFinancialReportsView = ['kpis', 'trend-analysis', 'goals', 'financial-forecast', 'projections', 'cash-flow', 'working-capital', 'covenants'].includes(currentView);
 
   if (!currentUser) return null;
 

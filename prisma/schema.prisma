@@ -94,11 +94,38 @@ model Company {
   documentChunks             CompanyDocumentChunk[]
   loans                      Loan[]
   xeroTransactions           XeroTransaction[]
+  financialForecastInputSettings FinancialForecastInputSettings?
+  financialForecastBudgetArchives FinancialForecastBudgetArchive[]
   // expenseGoals              ExpenseGoal[]  // Doesn't exist in production DB
   // valuationSettings         ValuationSettings?  // Doesn't exist in production DB
 
   @@index([consultantId])
   @@index([affiliateId])
+}
+
+model FinancialForecastInputSettings {
+  id                 String   @id @default(cuid())
+  companyId          String   @unique
+  revenueGrowthByRow Json
+  cogsPctByRow       Json
+  opexPctByRow       Json
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  company            Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model FinancialForecastBudgetArchive {
+  id        String   @id @default(cuid())
+  companyId String
+  label     String?
+  snapshot  Json
+  createdAt DateTime @default(now())
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([createdAt])
 }
 
 model User {

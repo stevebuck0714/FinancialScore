@@ -60,6 +60,7 @@ const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false }
 const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: false });
 const WorkingCapitalTab = dynamic(() => import('./components/WorkingCapitalTab'), { ssr: false });
 const ProjectionsTab = dynamic(() => import('./components/ProjectionsTab'), { ssr: false });
+const FinancialForecastTab = dynamic(() => import('./components/FinancialForecastTab'), { ssr: false });
 const MDAView = dynamic(() => import('./components/MDAView'), { ssr: false });
 const AIAnalysisView = dynamic(() => import('./components/AIAnalysisView'), { ssr: false });
 const PerformanceAnalyticsOverview = dynamic(() => import('./components/performance-analytics/PerformanceAnalyticsOverview'), { ssr: false });
@@ -318,7 +319,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -2467,6 +2468,7 @@ function FinancialScorePage() {
           
           // Convert API data to the format expected by the app
           const formattedData = monthlyData.map((m: any) => ({
+            ...m,
             date: new Date(m.monthDate),
             month: m.month || new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
             revenue: m.revenue || 0,
@@ -2530,7 +2532,13 @@ function FinancialScorePage() {
             additionalPaidInCapital: m.additionalPaidInCapital || 0,
             treasuryStock: m.treasuryStock || 0,
             totalEquity: m.totalEquity || 0,
-            totalLAndE: m.totalLAndE || 0
+            totalLAndE: m.totalLAndE || 0,
+            revenueBreakdown: m.revenueBreakdown || null,
+            expenseBreakdown: m.expenseBreakdown || null,
+            cogsBreakdown: m.cogsBreakdown || null,
+            ...(m.revenueBreakdown && typeof m.revenueBreakdown === 'object' ? m.revenueBreakdown : {}),
+            ...(m.cogsBreakdown && typeof m.cogsBreakdown === 'object' ? m.cogsBreakdown : {}),
+            lobBreakdowns: m.lobBreakdowns || null,
           }));
           
           console.log('? Loaded', formattedData.length, 'months of financial data from database');
@@ -9496,6 +9504,16 @@ function FinancialScorePage() {
         <ProjectionsTab
           selectedCompanyId={selectedCompanyId}
           companyName={companyName || ''}
+        />
+      )}
+
+      {/* Financial Forecast View (placeholder to be replaced by dedicated forecast page) */}
+      {currentView === 'financial-forecast' && selectedCompanyId && (
+        <FinancialForecastTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+          industrySectorCategory={company?.industrySectorCategory || null}
+          prefetchedMonthlyData={monthly as any}
         />
       )}
 
