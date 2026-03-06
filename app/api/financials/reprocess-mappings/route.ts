@@ -49,6 +49,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(payload, { status: xeroResponse.status });
     }
 
+    if (configuredPlatform === 'QUICKBOOKS') {
+      const latestFinancialRecord = await prisma.financialRecord.findFirst({
+        where: { companyId: String(companyId) },
+        orderBy: { createdAt: 'desc' },
+        select: { uploadedByUserId: true },
+      });
+
+      const fallbackUser = await prisma.user.findFirst({
+        where: { companyId: String(companyId) },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+
+      const userId = latestFinancialRecord?.uploadedByUserId || fallbackUser?.id;
+      if (!userId) {
+        return NextResponse.json(
+          { error: 'Unable to resolve a user for QuickBooks reprocess.' },
+          { status: 400 },
+        );
+      }
+
+      const origin = new URL(request.url).origin;
+      const qboResponse = await fetch(`${origin}/api/quickbooks/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: request.headers.get('cookie') || '',
+        },
+        body: JSON.stringify({ companyId, userId }),
+        cache: 'no-store',
+      });
+      const payload = await qboResponse.json().catch(() => ({}));
+      return NextResponse.json(payload, { status: qboResponse.status });
+    }
+
     return NextResponse.json(
       {
         error: `Reprocess mappings adapter not yet implemented for ${configuredPlatform}.`,
