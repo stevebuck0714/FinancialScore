@@ -113,6 +113,76 @@ export async function POST(request: NextRequest) {
       expires_in: 3600,
     };
 
+    const refreshAccessToken = async (reason: string): Promise<void> => {
+      console.log(`🔄 Refreshing QuickBooks token (${reason})...`);
+      try {
+        const refreshResponse = await oauthClient.refresh();
+        const newToken = refreshResponse.getJson();
+
+        await prisma.accountingConnection.update({
+          where: {
+            companyId_platform: {
+              companyId,
+              platform: 'QUICKBOOKS',
+            },
+          },
+          data: {
+            accessToken: encryptToken(newToken.access_token),
+            refreshToken: encryptToken(newToken.refresh_token || refreshToken),
+            tokenExpiresAt: new Date(Date.now() + (newToken.expires_in || 3600) * 1000),
+            status: 'ACTIVE',
+            errorMessage: null,
+          },
+        });
+
+        (oauthClient as any).token = newToken;
+        accessToken = newToken.access_token || accessToken;
+        refreshToken = newToken.refresh_token || refreshToken;
+        console.log('✅ Token refreshed successfully');
+      } catch (refreshError: any) {
+        console.error('❌ Token refresh failed:', refreshError);
+        await prisma.accountingConnection.update({
+          where: {
+            companyId_platform: {
+              companyId,
+              platform: 'QUICKBOOKS',
+            },
+          },
+          data: {
+            status: 'EXPIRED',
+            errorMessage: 'Token refresh failed - please reconnect',
+          },
+        });
+        throw refreshError;
+      }
+    };
+
+    const fetchWithTokenRetry = async (url: string, label: string): Promise<Response> => {
+      let response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        console.warn(`⚠️ ${label} returned ${response.status}. Attempting one token refresh + retry.`);
+        await refreshAccessToken(`${label} ${response.status}`);
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        });
+      }
+
+      return response;
+    };
+
     // Check if token needs refresh (refresh 5 minutes before actual expiry as a buffer)
     const now = new Date();
     const bufferTime = 5 * 60 * 1000; // 5 minutes in milliseconds
@@ -132,47 +202,9 @@ export async function POST(request: NextRequest) {
                          (connection.tokenExpiresAt.getTime() - now.getTime() < bufferTime);
     
     if (shouldRefresh) {
-      console.log('🔄 Token expiring soon, refreshing...');
       try {
-        const refreshResponse = await oauthClient.refresh();
-        const newToken = refreshResponse.getJson();
-
-        // Update tokens in database
-        await prisma.accountingConnection.update({
-          where: {
-            companyId_platform: {
-              companyId,
-              platform: 'QUICKBOOKS',
-            },
-          },
-          data: {
-            accessToken: encryptToken(newToken.access_token),
-            refreshToken: encryptToken(newToken.refresh_token),
-            tokenExpiresAt: new Date(Date.now() + (newToken.expires_in || 3600) * 1000),
-            status: 'ACTIVE',
-            errorMessage: null,
-          },
-        });
-
-        // Update the token on the client
-        (oauthClient as any).token = newToken;
-        accessToken = newToken.access_token || accessToken;
-        refreshToken = newToken.refresh_token || refreshToken;
-        console.log('✅ Token refreshed successfully');
+        await refreshAccessToken('expiring soon');
       } catch (refreshError: any) {
-        console.error('❌ Token refresh failed:', refreshError);
-        await prisma.accountingConnection.update({
-          where: {
-            companyId_platform: {
-              companyId,
-              platform: 'QUICKBOOKS',
-            },
-          },
-          data: {
-            status: 'EXPIRED',
-            errorMessage: 'Token refresh failed - please reconnect',
-          },
-        });
         return NextResponse.json({ 
           error: 'Token expired - please reconnect',
           needsReconnect: true 
@@ -216,14 +248,15 @@ export async function POST(request: NextRequest) {
     // Request monthly summarization to get end-of-month data for each month
     const plUrl = `${companyUrl}/reports/ProfitAndLoss?start_date=${dateStart}&end_date=${dateEnd}&accounting_method=Accrual&summarize_column_by=Month&minorversion=65`;
     
-    const plResponse = await fetch(plUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
+    let plResponse: Response;
+    try {
+      plResponse = await fetchWithTokenRetry(plUrl, 'ProfitAndLoss');
+    } catch {
+      return NextResponse.json({ 
+        error: 'Token expired - please reconnect',
+        needsReconnect: true 
+      }, { status: 401 });
+    }
     
     // Capture intuit_tid from response headers
     intuitTid = plResponse.headers.get('intuit_tid');
@@ -286,14 +319,15 @@ export async function POST(request: NextRequest) {
     // Request monthly summarization to get end-of-month data for each month
     const bsUrl = `${companyUrl}/reports/BalanceSheet?start_date=${dateStart}&end_date=${dateEnd}&summarize_column_by=Month&minorversion=65`;
     
-    const bsResponse = await fetch(bsUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
+    let bsResponse: Response;
+    try {
+      bsResponse = await fetchWithTokenRetry(bsUrl, 'BalanceSheet');
+    } catch {
+      return NextResponse.json({ 
+        error: 'Token expired - please reconnect',
+        needsReconnect: true 
+      }, { status: 401 });
+    }
     
     // Capture intuit_tid from Balance Sheet response
     const bsIntuitTid = bsResponse.headers.get('intuit_tid');
@@ -351,14 +385,15 @@ export async function POST(request: NextRequest) {
     // Fetch Chart of Accounts to get account codes/numbers
     const accountsUrl = `${companyUrl}/query?query=SELECT * FROM Account&minorversion=65`;
     
-    const accountsResponse = await fetch(accountsUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
+    let accountsResponse: Response;
+    try {
+      accountsResponse = await fetchWithTokenRetry(accountsUrl, 'ChartOfAccounts');
+    } catch {
+      return NextResponse.json({ 
+        error: 'Token expired - please reconnect',
+        needsReconnect: true 
+      }, { status: 401 });
+    }
     
     let accountsData = null;
     if (accountsResponse.ok) {
