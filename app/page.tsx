@@ -8607,7 +8607,17 @@ function FinancialScorePage() {
               hasCsvData ||
               selectedAccountingSystem === 'CSV_FILE' ||
               String(latestFinancialSource || '').toLowerCase().includes('csv');
-            const canReprocessApiData = !isCsvMappingWorkflow && loadedMonthlyData && loadedMonthlyData.length > 0;
+            const showCsvProcessButton =
+              selectedAccountingSystem === 'CSV_FILE' ||
+              hasCsvData ||
+              hasSavedCsvInLocalStorage;
+            const hasSupportedApiReprocessPlatform = ['QUICKBOOKS', 'XERO', 'INFOR_M3', 'QUICKBOOKS_DESKTOP'].includes(
+              String(selectedAccountingSystem || '').toUpperCase()
+            );
+            const showProcessButton =
+              showCsvProcessButton ||
+              hasSupportedApiReprocessPlatform ||
+              Boolean(loadedMonthlyData && loadedMonthlyData.length > 0);
 
             return (
               <div
@@ -8951,8 +8961,8 @@ function FinancialScorePage() {
                               Load Saved CSV
                             </button>
                           )}
-                          {/* Only show Process button for CSV data - Xero/QB data is already processed */}
-                          {csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId && (
+                          {/* Unified process button for all import types */}
+                          {showProcessButton && (
                           <button
                             onClick={async () => {
                               if (!aiMappings || aiMappings.length === 0) {
@@ -8960,98 +8970,140 @@ function FinancialScorePage() {
                                 return;
                               }
 
-                              if (!currentUser) {
-                                alert('User not logged in!');
-                                return;
-                              }
-
-                              setIsProcessingMonthlyData(true);
-                              try {
-                                console.log('?? Processing CSV/Trial Balance data using mappings...');
-                                console.log('?? Total mappings:', aiMappings.length);
-
-                                // Process the CSV data using mappings
-                                const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
-                                const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(csvTrialBalanceData, aiMappings);
-
-                                // Save to database
-                                const response = await fetch('/api/financials', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    companyId: selectedCompanyId,
-                                    uploadedByUserId: currentUser.id,
-                                    fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
-                                    rawData: csvTrialBalanceData,
-                                    columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
-                                    monthlyData: processedData
-                                  })
-                                });
-
-                                if (!response.ok) {
-                                  throw new Error('Failed to save processed data');
+                              if (isCsvMappingWorkflow) {
+                                if (!hasCsvData) {
+                                  alert('Upload a CSV or click "Load Saved CSV" first.');
+                                  return;
+                                }
+                                if (!currentUser) {
+                                  alert('User not logged in!');
+                                  return;
                                 }
 
-                                const result = await response.json();
-                                console.log(`? Processed and saved ${processedData.length} months of CSV data`);
-
-                                // Persist detailed daily post-mapped data for Operations > Daily Financials
+                                setIsProcessingMonthlyData(true);
                                 try {
-                                  const dailyResponse = await fetch('/api/operational-sync/daily-financials', {
+                                  console.log('?? Processing CSV/Trial Balance data using mappings...');
+                                  console.log('?? Total mappings:', aiMappings.length);
+
+                                  // Process the CSV data using mappings
+                                  const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
+                                  const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(csvTrialBalanceData, aiMappings);
+
+                                  // Save to database
+                                  const response = await fetch('/api/financials', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                       companyId: selectedCompanyId,
-                                      platform: 'CSV_TRIAL_BALANCE',
-                                      runId: `csv-map-${Date.now()}`,
-                                      frequency: 'daily',
-                                      records: dailyMapped.dailySnapshots,
-                                      mappedLines: dailyMapped.mappedLines,
-                                    }),
-                                  });
-                                  if (!dailyResponse.ok) {
-                                    const dailyErrorBody = await dailyResponse.json().catch(() => ({}));
-                                    console.error('Failed to persist daily mapped financial data:', dailyErrorBody);
-                                  } else {
-                                    const dailyResult = await dailyResponse.json();
-                                    console.log(`✅ Saved ${dailyResult.recordsIngested || 0} daily snapshots (${dailyMapped.mappedLines.length} mapped lines submitted)`);
-                                  }
-                                } catch (dailySaveError) {
-                                  console.error('Error persisting daily mapped financial data:', dailySaveError);
-                                }
-
-                                // Automatically create master data from the processed data
-                                try {
-                                  console.log('?? Auto-creating master data...');
-                                  const masterDataResponse = await fetch('/api/save-master-file', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      companyId: selectedCompanyId,
+                                      uploadedByUserId: currentUser.id,
+                                      fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
+                                      rawData: csvTrialBalanceData,
+                                      columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
                                       monthlyData: processedData
                                     })
                                   });
 
-                                const masterDataResult = await masterDataResponse.json();
-                                if (masterDataResult.success) {
-                                  console.log(`? Master data auto-created: ${masterDataResult.months} months`);
-                                  // Clear the master data cache so Data Review tab shows updated data
-                                  masterDataStore.clearCompanyCache(selectedCompanyId);
-                                  console.log('?? Master data cache cleared - Data Review will show fresh data');
-                                } else {
-                                  console.error('? Failed to auto-create master data:', masterDataResult.error);
+                                  if (!response.ok) {
+                                    throw new Error('Failed to save processed data');
+                                  }
+
+                                  await response.json();
+                                  console.log(`? Processed and saved ${processedData.length} months of CSV data`);
+
+                                  // Persist detailed daily post-mapped data for Operations > Daily Financials
+                                  try {
+                                    const dailyResponse = await fetch('/api/operational-sync/daily-financials', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        companyId: selectedCompanyId,
+                                        platform: 'CSV_TRIAL_BALANCE',
+                                        runId: `csv-map-${Date.now()}`,
+                                        frequency: 'daily',
+                                        records: dailyMapped.dailySnapshots,
+                                        mappedLines: dailyMapped.mappedLines,
+                                      }),
+                                    });
+                                    if (!dailyResponse.ok) {
+                                      const dailyErrorBody = await dailyResponse.json().catch(() => ({}));
+                                      console.error('Failed to persist daily mapped financial data:', dailyErrorBody);
+                                    } else {
+                                      const dailyResult = await dailyResponse.json();
+                                      console.log(`✅ Saved ${dailyResult.recordsIngested || 0} daily snapshots (${dailyMapped.mappedLines.length} mapped lines submitted)`);
+                                    }
+                                  } catch (dailySaveError) {
+                                    console.error('Error persisting daily mapped financial data:', dailySaveError);
+                                  }
+
+                                  // Automatically create master data from the processed data
+                                  try {
+                                    console.log('?? Auto-creating master data...');
+                                    const masterDataResponse = await fetch('/api/save-master-file', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        companyId: selectedCompanyId,
+                                        monthlyData: processedData
+                                      })
+                                    });
+
+                                    const masterDataResult = await masterDataResponse.json();
+                                    if (masterDataResult.success) {
+                                      console.log(`? Master data auto-created: ${masterDataResult.months} months`);
+                                      // Clear the master data cache so Data Review tab shows updated data
+                                      masterDataStore.clearCompanyCache(selectedCompanyId);
+                                      console.log('?? Master data cache cleared - Data Review will show fresh data');
+                                    } else {
+                                      console.error('? Failed to auto-create master data:', masterDataResult.error);
+                                    }
+                                  } catch (masterDataError) {
+                                    console.error('? Error auto-creating master data:', masterDataError);
+                                  }
+
+                                  // Update local state
+                                  setLoadedMonthlyData(processedData);
+                                  alert(`Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                                } catch (error: any) {
+                                  console.error('Error processing CSV data:', error);
+                                  alert('Failed to process CSV data: ' + error.message);
+                                } finally {
+                                  setIsProcessingMonthlyData(false);
                                 }
-                              } catch (masterDataError) {
-                                console.error('? Error auto-creating master data:', masterDataError);
+                                return;
                               }
 
-                              // Update local state
-                              setLoadedMonthlyData(processedData);
+                              if (!selectedCompanyId) {
+                                alert('No company selected');
+                                return;
+                              }
 
-                                alert(`Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                              const confirmed = confirm(`Reprocess ${mappedApiSourceLabel} data with your account mappings?\n\nThis will re-run mapping application for the selected accounting source.`);
+                              if (!confirmed) return;
+
+                              setIsProcessingMonthlyData(true);
+                              try {
+                                console.log('?? Reprocessing API data with mappings...');
+
+                                const response = await fetch('/api/financials/reprocess-mappings', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ companyId: selectedCompanyId })
+                                });
+
+                                const result = await response.json();
+
+                                if (result.success) {
+                                  alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
+                                  // Switch to Data Review tab
+                                  setAdminDashboardTab('data-review');
+                                  // Trigger data reload by updating qbLastSync (this triggers the useEffect)
+                                  setQbLastSync(Date.now());
+                                } else {
+                                  alert(`Failed to reprocess: ${result.error}`);
+                                }
                               } catch (error: any) {
-                                console.error('Error processing CSV data:', error);
-                                alert('Failed to process CSV data: ' + error.message);
+                                console.error('Reprocess error:', error);
+                                alert('Failed to reprocess data: ' + error.message);
                               } finally {
                                 setIsProcessingMonthlyData(false);
                               }
@@ -9069,64 +9121,11 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                             }}
                           >
-                            {isProcessingMonthlyData ? 'Processing...' : 'Process & Save Monthly Data'}
-                          </button>
-                          )}
-                          
-                          {/* Reprocess mapped API data via unified endpoint */}
-                          {canReprocessApiData && (
-                          <button
-                            onClick={async () => {
-                              if (!selectedCompanyId) {
-                                alert('No company selected');
-                                return;
-                              }
-                              
-                              const confirmed = confirm(`Reprocess ${mappedApiSourceLabel} data with your account mappings?\n\nThis will re-run mapping application for the selected accounting source.`);
-                              if (!confirmed) return;
-                              
-                              setIsProcessingMonthlyData(true);
-                              try {
-                                console.log('?? Reprocessing API data with mappings...');
-                                
-                                const response = await fetch('/api/financials/reprocess-mappings', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ companyId: selectedCompanyId })
-                                });
-                                
-                                const result = await response.json();
-                                
-                                if (result.success) {
-                                  alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
-                                  // Switch to Data Review tab
-                                  setAdminDashboardTab('data-review');
-                                  // Trigger data reload by updating qbLastSync (this triggers the useEffect)
-                                  setQbLastSync(Date.now());
-                                } else {
-                                  alert(`Failed to reprocess: ${result.error}`);
-                                }
-                              } catch (error: any) {
-                                console.error('Reprocess error:', error);
-                                alert('Failed to reprocess data: ' + error.message);
-                              } finally {
-                                setIsProcessingMonthlyData(false);
-                              }
-                            }}
-                            disabled={isProcessingMonthlyData}
-                            style={{
-                              padding: '8px 16px',
-                              background: isProcessingMonthlyData ? '#9ca3af' : '#10b981',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              cursor: isProcessingMonthlyData ? 'not-allowed' : 'pointer',
-                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
-                            }}
-                          >
-                            {isProcessingMonthlyData ? 'Processing...' : 'Apply Mappings to Data'}
+                            {isProcessingMonthlyData
+                              ? 'Processing...'
+                              : isCsvMappingWorkflow
+                                ? 'Process & Save Monthly Data'
+                                : 'Apply Mappings to Data'}
                           </button>
                           )}
                           
