@@ -626,7 +626,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       <div style={{ ...cardStyle, marginBottom: '14px', borderColor: '#cbd5e1', background: '#f8fafc' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Working Capital Forecast (13 Weeks)</div>
+            <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Cash Forecast (12 Weeks)</div>
             <div style={{ color: '#334155', fontSize: '13px' }}>
               Starting balances are sourced from last imported operational data. AR/AP days and inventory turns are auto-seeded from recent history and remain editable.
             </div>

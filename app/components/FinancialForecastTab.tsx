@@ -986,12 +986,7 @@ export default function FinancialForecastTab({
           appearance: textfield;
         }
       `}</style>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '30px', fontWeight: 700, color: '#0f172a', margin: '0 0 8px 0' }}>Financial Forecast</h1>
-        <div style={{ color: '#64748b', fontSize: '14px' }}>
-          Company: {companyName || selectedCompanyId} | Latest Actual Month: {latestMonthLabel}
-        </div>
-      </div>
+      <div style={{ marginBottom: '6px' }} />
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         <button style={tabButtonStyle('inputs')} onClick={() => setActiveTab('inputs')}>Inputs</button>
@@ -1459,7 +1454,7 @@ export default function FinancialForecastTab({
       {activeTab === 'income-statement' && (
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement Forecast</h3>
+            <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
                 onClick={() => setIncomeStatementExpandLast2Years((prev) => !prev)}

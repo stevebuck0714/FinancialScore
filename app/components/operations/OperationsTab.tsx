@@ -18,6 +18,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import OpsDashboard from './OpsDashboard';
+import FinancialForecastTab from '../FinancialForecastTab';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
 import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
@@ -302,6 +303,7 @@ const SECTOR_INVESTIGATE_OVERRIDES: Record<string, InvestigatePlaybook[]> = {
 export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory, viewMode = 'full' }: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
   const [activeTab, setActiveTab] = useState<OpTab>(isOverviewOnly ? 'overview' : 'dashboard');
+  const [activeForecastTab, setActiveForecastTab] = useState<'income-statement-forecast' | 'cash-forecast'>('income-statement-forecast');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -354,8 +356,8 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       'daily_financials',
       'working_capital_forecast',
     ])
-  );
-  const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', ...availableModuleTabs];
+  ).filter((module) => !['cash', 'working_capital_forecast', 'working-capital-forecast'].includes(module));
+  const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', 'forecast', ...availableModuleTabs];
   const moduleTitlesByType = Object.fromEntries(
     orderedDashboardDataTypes
       .map((type) => {
@@ -1032,6 +1034,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       isOverviewOnly ||
       activeTab === 'overview' ||
       activeTab === 'dashboard' ||
+      activeTab === 'forecast' ||
       activeTab === 'working_capital_forecast' ||
       activeTab === 'working-capital-forecast'
     ) {
@@ -3907,7 +3910,64 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
     );
   };
 
+  const renderForecast = () => {
+    return (
+      <div style={{ padding: '8px 32px 32px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+          <button
+            onClick={() => setActiveForecastTab('income-statement-forecast')}
+            style={{
+              padding: '12px 18px',
+              background: activeForecastTab === 'income-statement-forecast' ? '#667eea' : 'transparent',
+              color: activeForecastTab === 'income-statement-forecast' ? 'white' : '#64748b',
+              border: 'none',
+              borderBottom: activeForecastTab === 'income-statement-forecast' ? '3px solid #667eea' : '3px solid transparent',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              borderRadius: '8px 8px 0 0',
+              transition: 'all 0.2s'
+            }}
+          >
+            Income Statement Forecast
+          </button>
+          <button
+            onClick={() => setActiveForecastTab('cash-forecast')}
+            style={{
+              padding: '12px 18px',
+              background: activeForecastTab === 'cash-forecast' ? '#667eea' : 'transparent',
+              color: activeForecastTab === 'cash-forecast' ? 'white' : '#64748b',
+              border: 'none',
+              borderBottom: activeForecastTab === 'cash-forecast' ? '3px solid #667eea' : '3px solid transparent',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              borderRadius: '8px 8px 0 0',
+              transition: 'all 0.2s'
+            }}
+          >
+            Cash Forecast
+          </button>
+        </div>
+
+        {activeForecastTab === 'income-statement-forecast' && (
+          <FinancialForecastTab
+            selectedCompanyId={selectedCompanyId}
+            companyName={companyName}
+            industrySectorCategory={industrySectorCategory || null}
+          />
+        )}
+        {activeForecastTab === 'cash-forecast' && (
+          <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} />
+        )}
+      </div>
+    );
+  };
+
   const renderModuleTabContent = (moduleKey: string) => {
+    if (moduleKey === 'forecast') {
+      return renderForecast();
+    }
     if (moduleKey === 'working_capital_forecast' || moduleKey === 'working-capital-forecast') {
       return <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} />;
     }
@@ -3976,6 +4036,8 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
           >
             {tab === 'dashboard'
               ? 'Ops Dashboard'
+              : tab === 'forecast'
+                ? 'Forecast'
               : getModuleLabel(tab)}
           </button>
         ))}
