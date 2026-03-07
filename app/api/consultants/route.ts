@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 // GET all consultants (site admin only) or single consultant by ID
 export async function GET(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const { searchParams } = new URL(request.url);
     const consultantId = searchParams.get('id');
 
@@ -98,6 +100,7 @@ export async function GET(request: NextRequest) {
 // POST create new consultant
 export async function POST(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const { 
       fullName, email, password, address, phone, type,
       companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite
@@ -205,6 +208,7 @@ export async function POST(request: NextRequest) {
 // PUT update consultant
 export async function PUT(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const { 
       id, fullName, email, address, phone, type,
       companyName, companyAddress1, companyAddress2, companyCity, companyState, companyZip, companyWebsite,
@@ -308,6 +312,7 @@ export async function PUT(request: NextRequest) {
 // DELETE consultant
 export async function DELETE(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

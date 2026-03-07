@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma';
+import { requireAuth, requireSiteAdmin, validateCompanyAccess } from '@/lib/tenant-security';
+import { auditForbiddenAccess } from '@/lib/audit-logger';
 
-const prisma = new PrismaClient();
 
 // MANUAL WORKAROUND: If you need to delete companies immediately,
 // you can run this SQL directly in your database:
@@ -34,6 +35,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const context = await requireAuth();
     const { id: companyId } = await params;
     const body = await request.json();
     const { userDefinedAllocations, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice } = body;
@@ -42,7 +44,17 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
     }
 
+    const hasAccess = await validateCompanyAccess(companyId);
+    if (!hasAccess) {
+      await auditForbiddenAccess('Company', companyId, 'PATCH');
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Access to this company denied' },
+        { status: 403 },
+      );
+    }
+
     console.log(`Updating company ${companyId} pricing`, {
+      requestedBy: context.email,
       hasUserDefinedAllocations: !!userDefinedAllocations,
       subscriptionMonthlyPrice,
       subscriptionQuarterlyPrice,
@@ -99,8 +111,6 @@ export async function PATCH(
       success: false,
       error: error.message
     }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -109,12 +119,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const context = await requireSiteAdmin();
     const { id: companyId } = await params;
 
     if (!companyId) {
       return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
     }
 
+    console.log(`🛡️ Company delete requested by site admin: ${context.email}`);
     console.log(`Processing delete for company ${companyId} in ${process.env.NODE_ENV} environment (VERCEL_ENV: ${process.env.VERCEL_ENV})`);
 
     // PRODUCTION: Actually delete companies from database (same as staging)
@@ -223,20 +235,15 @@ export async function DELETE(
 
   } catch (error: any) {
     console.error('Error in delete operation:', error);
-
-    // Fallback: always return success for UI compatibility
-    return NextResponse.json({
-      success: true,
-      message: 'Company removed from your dashboard.',
-      hidden: true,
-      note: 'Completed for UI compatibility'
-    });
-  } finally {
-    try {
-      await prisma.$disconnect();
-    } catch (e) {
-      // Ignore disconnect errors
-    }
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
+    return NextResponse.json(
+      { success: false, error: error?.message || 'Failed to delete company' },
+      { status },
+    );
   }
 }
 

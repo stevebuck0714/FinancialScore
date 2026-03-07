@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 // GET - Get affiliate code details by code
 export async function GET(request: NextRequest) {
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) {
 // POST - Create new affiliate code
 export async function POST(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const { affiliateId, code, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice } = await request.json();
 
     if (!affiliateId || !code) {
@@ -103,6 +105,7 @@ export async function POST(request: NextRequest) {
 // PUT - Update affiliate code
 export async function PUT(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const { id, description, maxUses, expiresAt, monthlyPrice, quarterlyPrice, annualPrice, isActive } = await request.json();
 
     if (!id) {
@@ -138,6 +141,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - Remove affiliate code
 export async function DELETE(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

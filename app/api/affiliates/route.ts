@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 // GET - Fetch all affiliates with their codes and company counts
 export async function GET() {
   try {
+    await requireSiteAdmin();
     const affiliates = await prisma.affiliate.findMany({
       include: {
         codes: {
@@ -29,6 +31,7 @@ export async function GET() {
 // POST - Create new affiliate
 export async function POST(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const data = await request.json();
 
     const {
@@ -97,6 +100,7 @@ export async function POST(request: NextRequest) {
 // PUT - Update existing affiliate
 export async function PUT(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const data = await request.json();
     const { id, ...updateData } = data;
 
@@ -142,6 +146,7 @@ export async function PUT(request: NextRequest) {
 // DELETE - Remove affiliate
 export async function DELETE(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

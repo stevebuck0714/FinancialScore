@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { validatePassword } from '@/lib/password-validator';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 const prisma = new PrismaClient();
 
 // GET - Fetch all site administrators
 export async function GET() {
   try {
+    await requireSiteAdmin();
     const siteAdmins = await prisma.user.findMany({
       where: {
         role: 'SITEADMIN'
@@ -33,6 +35,7 @@ export async function GET() {
 // POST - Create a new site administrator
 export async function POST(request: Request) {
   try {
+    await requireSiteAdmin();
     const { firstName, lastName, email, password } = await request.json();
 
     // Validate required fields
@@ -99,6 +102,7 @@ export async function POST(request: Request) {
 // DELETE - Delete a site administrator
 export async function DELETE(request: Request) {
   try {
+    await requireSiteAdmin();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

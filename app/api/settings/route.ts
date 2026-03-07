@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 export async function GET(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     // Get default pricing settings
     let settings = await prisma.systemSettings.findUnique({
       where: { key: 'default_pricing' }
@@ -35,6 +37,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    await requireSiteAdmin();
     const {
       businessMonthlyPrice,
       businessQuarterlyPrice,
