@@ -1200,7 +1200,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
                   'Ending Cash (Post LOC)',
                   'Ending LOC',
                   'Available LOC',
-                  'Total Available Liquidity',
+                  'Available Liquidity',
                   'Ending AR',
                   'Ending AP',
                   'Ending Inventory',
