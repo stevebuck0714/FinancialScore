@@ -274,6 +274,18 @@ export async function POST(request: NextRequest) {
     for (const m of uniqueMappings) {
       const targetField =
         m.targetField && m.targetField.trim() !== "" ? m.targetField.trim() : "unmapped";
+      const baseMappingData = {
+        qbAccountId: m.qbAccountId || null,
+        qbAccountCode: m.qbAccountCode || null,
+        qbAccountClassification: m.qbAccountClassification || null,
+        targetField,
+      };
+      const extendedMappingData = {
+        ...baseMappingData,
+        allocationMethod: m.allocationMethod || "manual",
+        confidence: m.confidence || "medium",
+        lobAllocations: m.lobAllocations || null,
+      };
       const existing = await prisma.accountMapping.findUnique({
         where: {
           companyId_qbAccount: {
@@ -284,33 +296,54 @@ export async function POST(request: NextRequest) {
         select: { id: true },
       });
       if (!existing) {
-        await prisma.accountMapping.create({
-          data: {
-            companyId,
-            qbAccount: m.qbAccount,
-            qbAccountId: m.qbAccountId || null,
-            qbAccountCode: m.qbAccountCode || null,
-            qbAccountClassification: m.qbAccountClassification || null,
-            targetField,
-            allocationMethod: m.allocationMethod || "manual",
-            confidence: m.confidence || "medium",
-            lobAllocations: m.lobAllocations || null,
-          },
-        });
+        try {
+          await prisma.accountMapping.create({
+            data: {
+              companyId,
+              qbAccount: m.qbAccount,
+              ...extendedMappingData,
+            },
+          });
+        } catch (createError: any) {
+          const message = String(createError?.message || "");
+          const isCompatFieldError =
+            message.includes("Unknown argument `allocationMethod`") ||
+            message.includes("Unknown argument `confidence`") ||
+            message.includes("Unknown argument `lobAllocations`");
+          if (!isCompatFieldError) throw createError;
+          console.warn(
+            "AccountMapping create fallback: schema/client does not support extended mapping fields in this environment.",
+          );
+          await prisma.accountMapping.create({
+            data: {
+              companyId,
+              qbAccount: m.qbAccount,
+              ...baseMappingData,
+            },
+          });
+        }
         created += 1;
       } else {
-        await prisma.accountMapping.update({
-          where: { id: existing.id },
-          data: {
-            qbAccountId: m.qbAccountId || null,
-            qbAccountCode: m.qbAccountCode || null,
-            qbAccountClassification: m.qbAccountClassification || null,
-            targetField,
-            allocationMethod: m.allocationMethod || "manual",
-            confidence: m.confidence || "medium",
-            lobAllocations: m.lobAllocations || null,
-          },
-        });
+        try {
+          await prisma.accountMapping.update({
+            where: { id: existing.id },
+            data: extendedMappingData,
+          });
+        } catch (updateError: any) {
+          const message = String(updateError?.message || "");
+          const isCompatFieldError =
+            message.includes("Unknown argument `allocationMethod`") ||
+            message.includes("Unknown argument `confidence`") ||
+            message.includes("Unknown argument `lobAllocations`");
+          if (!isCompatFieldError) throw updateError;
+          console.warn(
+            "AccountMapping update fallback: schema/client does not support extended mapping fields in this environment.",
+          );
+          await prisma.accountMapping.update({
+            where: { id: existing.id },
+            data: baseMappingData,
+          });
+        }
         updated += 1;
       }
     }
