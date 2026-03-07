@@ -64,14 +64,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DEV MODE: Skip MFA in development
-    // TEMPORARY: Commented out to test trusted device feature
-    // const isDev = process.env.NODE_ENV === 'development' || process.env.DISABLE_MFA_DEV === 'true';
-    // if (isDev) {
-    //   console.log('🔓 DEV MODE: Skipping MFA check');
-    //   // Skip MFA checks in development
-    // } else {
-    if (true) {
+    // DEV MODE: skip MFA for local development/testing.
+    // In all other environments, enforce MFA.
+    const isDev = process.env.NODE_ENV === 'development' || process.env.DISABLE_MFA_DEV === 'true';
+    if (!isDev) {
       // SECURITY: MFA is mandatory for all users in production
       if (!user.mfaEnabled) {
         console.log('🔒 MFA not enabled - enrollment required');
@@ -116,7 +112,9 @@ export async function POST(request: NextRequest) {
           });
         }
       }
-    } // End of if (true) - was if (isDev) check
+    } else {
+      console.log('🔓 DEV MODE: Skipping MFA check');
+    }
 
     console.log('✅ Login successful');
     

@@ -60,7 +60,6 @@ export async function GET(request: NextRequest) {
         addressCountry: true,
         industrySector: true,
         linesOfBusiness: true,
-        userDefinedAllocations: true,
         createdAt: true,
         // Always include pricing fields - they're needed for payment logic
         subscriptionMonthlyPrice: true,
@@ -508,21 +507,8 @@ export async function POST(request: NextRequest) {
             annualPrice === 0
               ? "free"
               : "active",
-          // Store pricing in userDefinedAllocations (only for affiliate codes, not for default pricing)
-          // Only store userDefinedAllocations if affiliate code was used
-          userDefinedAllocations: useAffiliatePricing ? {
-            subscriptionPricing: {
-              monthly: monthlyPrice ?? 0,
-              quarterly: quarterlyPrice ?? 0,
-              annual: annualPrice ?? 0,
-              isFree:
-                (monthlyPrice ?? 0) === 0 &&
-                (quarterlyPrice ?? 0) === 0 &&
-                (annualPrice ?? 0) === 0,
-              source: "affiliate_code",
-              createdAt: new Date().toISOString(),
-            },
-          } : undefined,
+          // NOTE: userDefinedAllocations is intentionally not written here.
+          // Some production environments do not have that column yet.
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },
@@ -539,7 +525,6 @@ export async function POST(request: NextRequest) {
           addressCountry: true,
           industrySector: true,
           linesOfBusiness: true,
-          userDefinedAllocations: true,
           subscriptionMonthlyPrice: true,
           subscriptionQuarterlyPrice: true,
           subscriptionAnnualPrice: true,
@@ -681,8 +666,8 @@ export async function PATCH(request: NextRequest) {
       updateData.linesOfBusiness = updateFields.linesOfBusiness;
     if (updateFields.headcountAllocations !== undefined)
       updateData.headcountAllocations = updateFields.headcountAllocations;
-    if (updateFields.userDefinedAllocations !== undefined)
-      updateData.userDefinedAllocations = updateFields.userDefinedAllocations;
+    // NOTE: userDefinedAllocations is intentionally not updated here.
+    // Some production environments do not have that column yet.
 
     console.log("🔄 Final update data:", updateData);
 

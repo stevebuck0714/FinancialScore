@@ -35,28 +35,58 @@ export async function PATCH(
 ) {
   try {
     const { id: companyId } = await params;
-    const { userDefinedAllocations } = await request.json();
+    const body = await request.json();
+    const { userDefinedAllocations, subscriptionMonthlyPrice, subscriptionQuarterlyPrice, subscriptionAnnualPrice } = body;
 
     if (!companyId) {
       return NextResponse.json({ success: false, error: 'Company ID is required' }, { status: 400 });
     }
 
-    console.log(`Updating company ${companyId} with userDefinedAllocations:`, userDefinedAllocations);
+    console.log(`Updating company ${companyId} pricing`, {
+      hasUserDefinedAllocations: !!userDefinedAllocations,
+      subscriptionMonthlyPrice,
+      subscriptionQuarterlyPrice,
+      subscriptionAnnualPrice,
+    });
 
-    // Update the company's userDefinedAllocations
+    // NOTE: Do not write userDefinedAllocations here because some production
+    // environments do not have that column yet.
+    const pricingFromAllocations = userDefinedAllocations?.subscriptionPricing;
+    const nextMonthly =
+      subscriptionMonthlyPrice ??
+      pricingFromAllocations?.monthly;
+    const nextQuarterly =
+      subscriptionQuarterlyPrice ??
+      pricingFromAllocations?.quarterly;
+    const nextAnnual =
+      subscriptionAnnualPrice ??
+      pricingFromAllocations?.annual;
+
+    const updateData: any = {};
+    if (nextMonthly !== undefined) updateData.subscriptionMonthlyPrice = nextMonthly;
+    if (nextQuarterly !== undefined) updateData.subscriptionQuarterlyPrice = nextQuarterly;
+    if (nextAnnual !== undefined) updateData.subscriptionAnnualPrice = nextAnnual;
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { success: false, error: "No supported fields provided for update" },
+        { status: 400 },
+      );
+    }
+
     const updatedCompany = await prisma.company.update({
       where: { id: companyId },
-      data: {
-        userDefinedAllocations: userDefinedAllocations
-      },
+      data: updateData,
       select: {
         id: true,
         name: true,
-        userDefinedAllocations: true
+        subscriptionMonthlyPrice: true,
+        subscriptionQuarterlyPrice: true,
+        subscriptionAnnualPrice: true,
       }
     });
 
-    console.log(`Successfully updated company ${companyId} permanent pricing`);
+    console.log(`Successfully updated company ${companyId} pricing`);
 
     return NextResponse.json({
       success: true,
