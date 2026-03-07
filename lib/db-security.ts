@@ -2,12 +2,12 @@
  * Database Security Utilities
  * 
  * CRITICAL: These functions prevent cross-database contamination between:
- * - Production: orange-poetry (PRODUCTION)
+ * - Production: aged-snow (PRODUCTION)
  * - Staging: cold-frost (STAGING)
  * 
  * These safeguards ensure:
- * 1. Production (orange-poetry) NEVER connects to staging (cold-frost)
- * 2. Staging (cold-frost) NEVER connects to production (orange-poetry)
+ * 1. Production (aged-snow) NEVER connects to staging (cold-frost)
+ * 2. Staging (cold-frost) NEVER connects to production (aged-snow)
  * 3. No data sync/replication between databases
  */
 
@@ -21,8 +21,8 @@ export interface DatabaseInfo {
 
 function isVercelProductionRuntime(): boolean {
   // Vercel sets VERCEL=1 and VERCEL_ENV=production|preview|development
-  // CRITICAL: We ONLY allow the production database (orange-poetry) when running on
-  // Vercel's production runtime. Local/dev should NEVER connect to orange-poetry,
+  // CRITICAL: We ONLY allow the production database (aged-snow) when running on
+  // Vercel's production runtime. Local/dev should NEVER connect to aged-snow,
   // even if NODE_ENV is "production".
   return process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
 }
@@ -34,7 +34,7 @@ function isVercelProductionRuntime(): boolean {
 export function validateDatabaseConnection(): DatabaseInfo {
   const databaseUrl = process.env.DATABASE_URL || '';
   
-  const isProduction = databaseUrl.includes('orange-poetry');
+  const isProduction = databaseUrl.includes('aged-snow');
   const isStaging = databaseUrl.includes('cold-frost');
   
   let databaseName = 'unknown';
@@ -42,17 +42,17 @@ export function validateDatabaseConnection(): DatabaseInfo {
   let isAllowed = false;
   
   if (isProduction) {
-    databaseName = 'orange-poetry';
-    label = 'PRODUCTION (orange-poetry)';
+    databaseName = 'aged-snow';
+    label = 'PRODUCTION (aged-snow)';
     // Production DB is ONLY allowed on Vercel production runtime.
-    // Local dev should NEVER be able to connect to orange-poetry.
+    // Local dev should NEVER be able to connect to aged-snow.
     isAllowed = isVercelProductionRuntime();
   } else if (isStaging) {
     databaseName = 'cold-frost';
     label = 'STAGING (cold-frost)';
     // Staging DB is allowed in local dev and Vercel preview/development environments.
     // We also allow it on Vercel production runtime for non-prod projects that deploy with --prod.
-    // The critical invariant is: orange-poetry must never be reachable from local/dev.
+    // The critical invariant is: aged-snow must never be reachable from local/dev.
     isAllowed = true;
   } else if (databaseUrl.includes('file:') || databaseUrl.includes('sqlite')) {
     databaseName = 'sqlite';
@@ -60,9 +60,9 @@ export function validateDatabaseConnection(): DatabaseInfo {
     isAllowed = true; // SQLite is always allowed for local development
   } else if (databaseUrl.includes('neon.tech')) {
     // Generic neon.tech connection - validate by checking the endpoint name
-    if (databaseUrl.includes('orange-poetry')) {
-      databaseName = 'orange-poetry';
-      label = 'PRODUCTION (orange-poetry)';
+    if (databaseUrl.includes('aged-snow')) {
+      databaseName = 'aged-snow';
+      label = 'PRODUCTION (aged-snow)';
       isAllowed = isVercelProductionRuntime();
     } else if (databaseUrl.includes('cold-frost')) {
       databaseName = 'cold-frost';
@@ -70,8 +70,16 @@ export function validateDatabaseConnection(): DatabaseInfo {
       isAllowed = true;
     } else {
       databaseName = 'neon-unknown';
-      label = 'UNKNOWN NEON DATABASE';
-      isAllowed = false; // Unknown neon database - not allowed
+      // Keep strict isolation in non-production runtimes.
+      // In Vercel production runtime, allow unknown Neon hostnames to prevent
+      // auth/login outages when Neon endpoint naming drifts.
+      if (isVercelProductionRuntime()) {
+        label = 'UNKNOWN NEON DATABASE (PRODUCTION RUNTIME ALLOWED)';
+        isAllowed = true;
+      } else {
+        label = 'UNKNOWN NEON DATABASE';
+        isAllowed = false;
+      }
     }
   }
   
@@ -98,9 +106,9 @@ export function enforceDatabaseSecurity(): void {
     // During build, only block production database connections
     // Staging database is allowed during build
     const databaseUrl = process.env.DATABASE_URL || '';
-    if (databaseUrl.includes('orange-poetry') && !isVercelProductionRuntime()) {
+    if (databaseUrl.includes('aged-snow') && !isVercelProductionRuntime()) {
       const error = new Error(
-        `🚨 SECURITY VIOLATION: Production database (orange-poetry) detected during build in non-production environment!\n` +
+        `🚨 SECURITY VIOLATION: Production database (aged-snow) detected during build in non-production environment!\n` +
         `   NODE_ENV: ${process.env.NODE_ENV}\n` +
         `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
         `   VERCEL: ${process.env.VERCEL}\n` +
@@ -123,8 +131,8 @@ export function enforceDatabaseSecurity(): void {
       `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
       `   VERCEL: ${process.env.VERCEL}\n` +
       `   This connection violates database isolation rules.\n` +
-      `   Production (orange-poetry) must ONLY be used on Vercel production runtime.\n` +
-      `   Local/dev/preview must NEVER connect to orange-poetry.`
+      `   Production (aged-snow) must ONLY be used on Vercel production runtime.\n` +
+      `   Local/dev/preview must NEVER connect to aged-snow.`
     );
     console.error(error.message);
     console.error('🚨 DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 80) + '...');
@@ -134,7 +142,7 @@ export function enforceDatabaseSecurity(): void {
   // Additional cross-contamination checks
   if (dbInfo.isProduction && !isVercelProductionRuntime()) {
     const error = new Error(
-      `🚨 CRITICAL SECURITY ERROR: Production database (orange-poetry) detected in non-production environment!\n` +
+      `🚨 CRITICAL SECURITY ERROR: Production database (aged-snow) detected in non-production environment!\n` +
       `   This would allow staging code to modify production data!\n` +
       `   Aborting to prevent data corruption.`
     );
