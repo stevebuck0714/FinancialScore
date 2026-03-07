@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 
@@ -819,6 +819,44 @@ export default function FinancialForecastTab({
       };
     });
   }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow]);
+
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    const firstThreeMonthlyRevenueTotals = forecastRows
+      .filter((row) => row.kind === 'month')
+      .slice(0, 3)
+      .map((row) => Number(row.totalRevenue) || 0);
+    if (firstThreeMonthlyRevenueTotals.length < 3) return;
+    try {
+      localStorage.setItem(
+        `financialForecastRevenueMonthlyBase_${selectedCompanyId}`,
+        JSON.stringify({
+          companyId: selectedCompanyId,
+          updatedAt: new Date().toISOString(),
+          monthTotals: firstThreeMonthlyRevenueTotals,
+          opexMonthTotals: forecastRows
+            .filter((row) => row.kind === 'month')
+            .slice(0, 3)
+            .map((row) => Number(row.totalOpex) || 0),
+          grossMarginMonthPcts: forecastRows
+            .filter((row) => row.kind === 'month')
+            .slice(0, 3)
+            .map((row) => {
+              const revenue = Number(row.totalRevenue) || 0;
+              if (revenue <= 0) return 0;
+              const grossProfit = Number(row.grossProfit) || 0;
+              return (grossProfit / revenue) * 100;
+            }),
+          operatingIncomeMonthTotals: forecastRows
+            .filter((row) => row.kind === 'month')
+            .slice(0, 3)
+            .map((row) => Number(row.operatingIncome) || 0),
+        }),
+      );
+    } catch {
+      // Ignore localStorage errors in restricted browser modes.
+    }
+  }, [selectedCompanyId, forecastRows]);
 
   const incomeStatementColumns = useMemo(() => {
     const base = forecastRows.map((row, idx) => ({

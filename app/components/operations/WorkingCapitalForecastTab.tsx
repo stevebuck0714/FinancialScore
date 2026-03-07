@@ -130,6 +130,45 @@ const normalizeWeeklyDriverList = (raw: any, fallback: WeeklyDriver): WeeklyDriv
   const list = Array.isArray(raw) ? raw : [];
   return Array.from({ length: FORECAST_WEEKS }, (_, idx) => normalizeWeeklyDriver(list[idx], fallback));
 };
+const applyRevenueMonthlyBaseToWeeklySales = (drivers: WeeklyDriver[], monthTotals: number[]): WeeklyDriver[] => {
+  if (!Array.isArray(monthTotals) || monthTotals.length < 3) return drivers;
+  const next = drivers.map((driver) => ({ ...driver }));
+  const month1Weekly = Math.max(0, Math.round((Number(monthTotals[0]) || 0) / 4));
+  const month2Weekly = Math.max(0, Math.round((Number(monthTotals[1]) || 0) / 4));
+  const month3Weekly = Math.max(0, Math.round((Number(monthTotals[2]) || 0) / 4));
+  for (let idx = 0; idx < FORECAST_WEEKS; idx += 1) {
+    if (idx <= 3) next[idx].sales = month1Weekly;
+    else if (idx <= 7) next[idx].sales = month2Weekly;
+    else if (idx <= 11) next[idx].sales = month3Weekly;
+  }
+  return next;
+};
+const applyOpexMonthlyBaseToWeeklyOpex = (drivers: WeeklyDriver[], monthTotals: number[]): WeeklyDriver[] => {
+  if (!Array.isArray(monthTotals) || monthTotals.length < 3) return drivers;
+  const next = drivers.map((driver) => ({ ...driver }));
+  const month1Weekly = Math.max(0, Math.round((Number(monthTotals[0]) || 0) / 4));
+  const month2Weekly = Math.max(0, Math.round((Number(monthTotals[1]) || 0) / 4));
+  const month3Weekly = Math.max(0, Math.round((Number(monthTotals[2]) || 0) / 4));
+  for (let idx = 0; idx < FORECAST_WEEKS; idx += 1) {
+    if (idx <= 3) next[idx].opex = month1Weekly;
+    else if (idx <= 7) next[idx].opex = month2Weekly;
+    else if (idx <= 11) next[idx].opex = month3Weekly;
+  }
+  return next;
+};
+const applyMarginMonthlyBaseToWeeklyMargin = (drivers: WeeklyDriver[], monthPcts: number[]): WeeklyDriver[] => {
+  if (!Array.isArray(monthPcts) || monthPcts.length < 3) return drivers;
+  const next = drivers.map((driver) => ({ ...driver }));
+  const month1Pct = clampNumber(Number(monthPcts[0]) || 0, 1, 99);
+  const month2Pct = clampNumber(Number(monthPcts[1]) || 0, 1, 99);
+  const month3Pct = clampNumber(Number(monthPcts[2]) || 0, 1, 99);
+  for (let idx = 0; idx < FORECAST_WEEKS; idx += 1) {
+    if (idx <= 3) next[idx].grossMarginPct = month1Pct;
+    else if (idx <= 7) next[idx].grossMarginPct = month2Pct;
+    else if (idx <= 11) next[idx].grossMarginPct = month3Pct;
+  }
+  return next;
+};
 const safeNumber = (value: unknown, fallback = 0): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -422,19 +461,45 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
             opex: Math.max(0, Math.round(avgWeeklyOpex)),
             grossMarginPct: Math.max(1, Math.min(99, Math.round(avgWeeklyGrossMargin * 100) / 100)),
           };
+          let revenueMonthlyBase: number[] = [];
+          let opexMonthlyBase: number[] = [];
+          let marginMonthlyBase: number[] = [];
+          try {
+            const rawBase = localStorage.getItem(`financialForecastRevenueMonthlyBase_${selectedCompanyId}`);
+            const parsedBase = rawBase ? JSON.parse(rawBase) : null;
+            revenueMonthlyBase = Array.isArray(parsedBase?.monthTotals)
+              ? parsedBase.monthTotals.map((value: unknown) => Number(value) || 0)
+              : [];
+            opexMonthlyBase = Array.isArray(parsedBase?.opexMonthTotals)
+              ? parsedBase.opexMonthTotals.map((value: unknown) => Number(value) || 0)
+              : [];
+            marginMonthlyBase = Array.isArray(parsedBase?.grossMarginMonthPcts)
+              ? parsedBase.grossMarginMonthPcts.map((value: unknown) => Number(value) || 0)
+              : [];
+          } catch {
+            revenueMonthlyBase = [];
+            opexMonthlyBase = [];
+            marginMonthlyBase = [];
+          }
 
           if (savedSettings) {
             const mergedInputs = normalizeInputs(savedSettings.inputs, derivedInputs);
             const mergedAverages = normalizeWeeklyDriver(savedSettings.historicalAverages, resolvedAverages);
             const mergedWeekly = normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages);
+            const seededSales = applyRevenueMonthlyBaseToWeeklySales(mergedWeekly, revenueMonthlyBase);
+            const seededOpex = applyOpexMonthlyBaseToWeeklyOpex(seededSales, opexMonthlyBase);
+            const seededWeekly = applyMarginMonthlyBaseToWeeklyMargin(seededOpex, marginMonthlyBase);
             setInputs(mergedInputs);
             setHistoricalAverages(mergedAverages);
-            setWeeklyDrivers(mergedWeekly);
+            setWeeklyDrivers(seededWeekly);
             setLastSavedAt(savedSettings.updatedAt ? String(savedSettings.updatedAt) : null);
           } else {
             setInputs(derivedInputs);
             setHistoricalAverages(resolvedAverages);
-            setWeeklyDrivers(Array.from({ length: FORECAST_WEEKS }, () => ({ ...resolvedAverages })));
+            const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...resolvedAverages }));
+            const seededSales = applyRevenueMonthlyBaseToWeeklySales(defaults, revenueMonthlyBase);
+            const seededOpex = applyOpexMonthlyBaseToWeeklyOpex(seededSales, opexMonthlyBase);
+            setWeeklyDrivers(applyMarginMonthlyBaseToWeeklyMargin(seededOpex, marginMonthlyBase));
             setLastSavedAt(null);
           }
 
