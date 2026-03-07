@@ -828,6 +828,9 @@ export default function FinancialForecastTab({
       .filter((row) => row.kind === 'month')
       .slice(0, 3)
       .map((row) => Number(row.totalRevenue) || 0);
+    const firstThreeMonthlyRows = forecastRows
+      .filter((row) => row.kind === 'month')
+      .slice(0, 3);
     if (firstThreeMonthlyRevenueTotals.length < 3) return;
     try {
       localStorage.setItem(
@@ -835,6 +838,12 @@ export default function FinancialForecastTab({
         JSON.stringify({
           companyId: selectedCompanyId,
           updatedAt: new Date().toISOString(),
+          monthRefs: firstThreeMonthlyRows.map((row) => ({
+            key: row.key,
+            label: row.label,
+            year: Number(row.year),
+            month: Number(row.month),
+          })),
           monthTotals: firstThreeMonthlyRevenueTotals,
           opexMonthTotals: forecastRows
             .filter((row) => row.kind === 'month')

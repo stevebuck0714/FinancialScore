@@ -44,6 +44,11 @@ type AgingBuckets = {
   bucket90plus: number;
 };
 
+type MonthlyBaseRef = {
+  year: number;
+  month: number; // 0-based
+};
+
 type ForecastRow = {
   week: number;
   beginningCash: number;
@@ -167,44 +172,100 @@ const normalizeWeeklyDriverList = (raw: any, fallback: WeeklyDriver): WeeklyDriv
   const list = Array.isArray(raw) ? raw : [];
   return Array.from({ length: FORECAST_WEEKS }, (_, idx) => normalizeWeeklyDriver(list[idx], fallback));
 };
-const applyRevenueMonthlyBaseToWeeklySales = (drivers: WeeklyDriver[], monthTotals: number[]): WeeklyDriver[] => {
+const addDays = (date: Date, days: number): Date => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+const getWeekendAnchorDate = (baseDate: Date): Date => {
+  const anchor = new Date(baseDate);
+  anchor.setHours(0, 0, 0, 0);
+  const day = anchor.getDay(); // 0=Sun ... 6=Sat
+  if (day === 6) return anchor; // Saturday
+  if (day === 0) return addDays(anchor, -1); // Sunday -> prior Saturday
+  return addDays(anchor, -(day + 1)); // Mon-Fri -> prior Saturday
+};
+const daysInMonth = (year: number, month: number): number => new Date(year, month + 1, 0).getDate();
+const normalizeMonthRefs = (rawMonthRefs: any, fallbackLength: number): MonthlyBaseRef[] => {
+  if (Array.isArray(rawMonthRefs) && rawMonthRefs.length >= fallbackLength) {
+    return rawMonthRefs.slice(0, fallbackLength).map((item: any, idx: number) => {
+      const year = Number(item?.year);
+      const month = Number(item?.month);
+      if (Number.isFinite(year) && Number.isFinite(month)) {
+        return { year, month };
+      }
+      const dt = new Date();
+      dt.setMonth(dt.getMonth() + idx);
+      return { year: dt.getFullYear(), month: dt.getMonth() };
+    });
+  }
+  const today = new Date();
+  return Array.from({ length: fallbackLength }, (_, idx) => {
+    const dt = new Date(today.getFullYear(), today.getMonth() + idx, 1);
+    return { year: dt.getFullYear(), month: dt.getMonth() };
+  });
+};
+const resolveMonthIndexForDate = (date: Date, monthRefs: MonthlyBaseRef[]): number => {
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const exactIdx = monthRefs.findIndex((ref) => ref.year === y && ref.month === m);
+  if (exactIdx >= 0) return exactIdx;
+  const dateKey = y * 12 + m;
+  const firstKey = monthRefs[0].year * 12 + monthRefs[0].month;
+  const lastRef = monthRefs[monthRefs.length - 1];
+  const lastKey = lastRef.year * 12 + lastRef.month;
+  if (dateKey < firstKey) return 0;
+  if (dateKey > lastKey) return monthRefs.length - 1;
+  return 0;
+};
+const applyMonthlyBaseCalendarToWeeklyDrivers = (
+  drivers: WeeklyDriver[],
+  monthTotals: number[],
+  opexMonthTotals: number[],
+  marginMonthPcts: number[],
+  monthRefs: MonthlyBaseRef[],
+): WeeklyDriver[] => {
   if (!Array.isArray(monthTotals) || monthTotals.length < 3) return drivers;
   const next = drivers.map((driver) => ({ ...driver }));
-  const month1Weekly = Math.max(0, Math.round((Number(monthTotals[0]) || 0) / 4));
-  const month2Weekly = Math.max(0, Math.round((Number(monthTotals[1]) || 0) / 4));
-  const month3Weekly = Math.max(0, Math.round((Number(monthTotals[2]) || 0) / 4));
-  for (let idx = 0; idx < FORECAST_WEEKS; idx += 1) {
-    if (idx <= 3) next[idx].sales = month1Weekly;
-    else if (idx <= 7) next[idx].sales = month2Weekly;
-    else if (idx <= 11) next[idx].sales = month3Weekly;
+  const refs = normalizeMonthRefs(monthRefs, Math.min(monthTotals.length, 3));
+  const anchor = getWeekendAnchorDate(new Date());
+  for (let idx = 0; idx < Math.min(12, FORECAST_WEEKS); idx += 1) {
+    const weekStart = addDays(anchor, idx * 7);
+    let salesTotal = 0;
+    let opexTotal = 0;
+    let marginWeighted = 0;
+    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+      const dayDate = addDays(weekStart, dayOffset);
+      const monthIdx = resolveMonthIndexForDate(dayDate, refs);
+      const ref = refs[monthIdx];
+      const dim = Math.max(1, daysInMonth(ref.year, ref.month));
+      const dailySales = (Number(monthTotals[monthIdx]) || 0) / dim;
+      const dailyOpex = (Number(opexMonthTotals[monthIdx]) || 0) / dim;
+      const dailyMargin = clampNumber(Number(marginMonthPcts[monthIdx]) || 0, 1, 99);
+      salesTotal += dailySales;
+      opexTotal += dailyOpex;
+      marginWeighted += dailyMargin;
+    }
+    next[idx].sales = Math.max(0, Math.round(salesTotal));
+    next[idx].opex = Math.max(0, Math.round(opexTotal));
+    next[idx].grossMarginPct = clampNumber(marginWeighted / 7, 1, 99);
   }
   return next;
 };
-const applyOpexMonthlyBaseToWeeklyOpex = (drivers: WeeklyDriver[], monthTotals: number[]): WeeklyDriver[] => {
-  if (!Array.isArray(monthTotals) || monthTotals.length < 3) return drivers;
-  const next = drivers.map((driver) => ({ ...driver }));
-  const month1Weekly = Math.max(0, Math.round((Number(monthTotals[0]) || 0) / 4));
-  const month2Weekly = Math.max(0, Math.round((Number(monthTotals[1]) || 0) / 4));
-  const month3Weekly = Math.max(0, Math.round((Number(monthTotals[2]) || 0) / 4));
-  for (let idx = 0; idx < FORECAST_WEEKS; idx += 1) {
-    if (idx <= 3) next[idx].opex = month1Weekly;
-    else if (idx <= 7) next[idx].opex = month2Weekly;
-    else if (idx <= 11) next[idx].opex = month3Weekly;
-  }
-  return next;
-};
-const applyMarginMonthlyBaseToWeeklyMargin = (drivers: WeeklyDriver[], monthPcts: number[]): WeeklyDriver[] => {
-  if (!Array.isArray(monthPcts) || monthPcts.length < 3) return drivers;
-  const next = drivers.map((driver) => ({ ...driver }));
-  const month1Pct = clampNumber(Number(monthPcts[0]) || 0, 1, 99);
-  const month2Pct = clampNumber(Number(monthPcts[1]) || 0, 1, 99);
-  const month3Pct = clampNumber(Number(monthPcts[2]) || 0, 1, 99);
-  for (let idx = 0; idx < FORECAST_WEEKS; idx += 1) {
-    if (idx <= 3) next[idx].grossMarginPct = month1Pct;
-    else if (idx <= 7) next[idx].grossMarginPct = month2Pct;
-    else if (idx <= 11) next[idx].grossMarginPct = month3Pct;
-  }
-  return next;
+const buildWeekMonthLabels = (monthRefs: MonthlyBaseRef[]): string[] => {
+  const refs = normalizeMonthRefs(monthRefs, 3);
+  void refs;
+  const anchor = getWeekendAnchorDate(new Date());
+  return Array.from({ length: FORECAST_WEEKS }, (_, idx) => {
+    const weekStart = addDays(anchor, idx * 7);
+    const midWeekDate = addDays(weekStart, 3);
+    const monthYear = new Date(midWeekDate.getFullYear(), midWeekDate.getMonth(), 1);
+    const firstWeekStartForMonth = getWeekendAnchorDate(monthYear);
+    const weekOfMonth =
+      Math.floor((weekStart.getTime() - firstWeekStartForMonth.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+    const monthName = midWeekDate.toLocaleDateString('en-US', { month: 'long' });
+    return `Wk ${weekOfMonth} ${monthName}`;
+  });
 };
 const safeNumber = (value: unknown, fallback = 0): number => {
   const parsed = Number(value);
@@ -261,6 +322,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
   const [weeklyDrivers, setWeeklyDrivers] = useState<WeeklyDriver[]>(
     Array.from({ length: FORECAST_WEEKS }, () => ({ ...DEFAULT_WEEKLY_DRIVER }))
   );
+  const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
   const [startingBalances, setStartingBalances] = useState<{ cash: number; ar: number; ap: number; inventory: number; loc: number }>(DEFAULT_STARTING_BALANCES);
   const [startingArBuckets, setStartingArBuckets] = useState<AgingBuckets>(DEFAULT_AGING_BUCKETS);
   const [startingApBuckets, setStartingApBuckets] = useState<AgingBuckets>(DEFAULT_AGING_BUCKETS);
@@ -573,6 +635,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
           let revenueMonthlyBase: number[] = [];
           let opexMonthlyBase: number[] = [];
           let marginMonthlyBase: number[] = [];
+          let monthRefsBase: MonthlyBaseRef[] = [];
           try {
             const rawBase = localStorage.getItem(`financialForecastRevenueMonthlyBase_${selectedCompanyId}`);
             const parsedBase = rawBase ? JSON.parse(rawBase) : null;
@@ -585,11 +648,19 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
             marginMonthlyBase = Array.isArray(parsedBase?.grossMarginMonthPcts)
               ? parsedBase.grossMarginMonthPcts.map((value: unknown) => Number(value) || 0)
               : [];
+            monthRefsBase = Array.isArray(parsedBase?.monthRefs)
+              ? parsedBase.monthRefs.map((row: any) => ({
+                  year: Number(row?.year),
+                  month: Number(row?.month),
+                }))
+              : [];
           } catch {
             revenueMonthlyBase = [];
             opexMonthlyBase = [];
             marginMonthlyBase = [];
+            monthRefsBase = [];
           }
+          setWeekMonthLabels(buildWeekMonthLabels(monthRefsBase));
 
           if (savedSettings) {
             const mergedInputs = normalizeInputs(savedSettings.inputs, derivedInputs);
@@ -599,9 +670,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
                 : mergedInputs;
             const mergedAverages = normalizeWeeklyDriver(savedSettings.historicalAverages, resolvedAverages);
             const mergedWeekly = normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages);
-            const seededSales = applyRevenueMonthlyBaseToWeeklySales(mergedWeekly, revenueMonthlyBase);
-            const seededOpex = applyOpexMonthlyBaseToWeeklyOpex(seededSales, opexMonthlyBase);
-            const seededWeekly = applyMarginMonthlyBaseToWeeklyMargin(seededOpex, marginMonthlyBase);
+            const seededWeekly = applyMonthlyBaseCalendarToWeeklyDrivers(
+              mergedWeekly,
+              revenueMonthlyBase,
+              opexMonthlyBase,
+              marginMonthlyBase,
+              monthRefsBase,
+            );
             setInputs(resolvedInputs);
             setHistoricalAverages(mergedAverages);
             setWeeklyDrivers(seededWeekly);
@@ -610,9 +685,15 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
             setInputs(derivedInputs);
             setHistoricalAverages(resolvedAverages);
             const defaults = Array.from({ length: FORECAST_WEEKS }, () => ({ ...resolvedAverages }));
-            const seededSales = applyRevenueMonthlyBaseToWeeklySales(defaults, revenueMonthlyBase);
-            const seededOpex = applyOpexMonthlyBaseToWeeklyOpex(seededSales, opexMonthlyBase);
-            setWeeklyDrivers(applyMarginMonthlyBaseToWeeklyMargin(seededOpex, marginMonthlyBase));
+            setWeeklyDrivers(
+              applyMonthlyBaseCalendarToWeeklyDrivers(
+                defaults,
+                revenueMonthlyBase,
+                opexMonthlyBase,
+                marginMonthlyBase,
+                monthRefsBase,
+              ),
+            );
             setLastSavedAt(null);
           }
 
@@ -629,6 +710,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
           setStartingBalances(DEFAULT_STARTING_BALANCES);
           setStartingArBuckets(DEFAULT_AGING_BUCKETS);
           setStartingApBuckets(DEFAULT_AGING_BUCKETS);
+          setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
         }
       } finally {
         if (!cancelled) {
@@ -991,6 +1073,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
           <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
             Values are from Income Statement Forecast; user can override and save any field.
           </div>
+          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
+            Weekly seeds are calendar-aligned from the first forecast month and weighted by day overlap across months.
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', minWidth: '820px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <colgroup>
@@ -1011,7 +1096,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
                 {weeklyDrivers.map((week, idx) => (
                   <tr key={`driver-week-${idx + 1}`}>
                     <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', fontSize: '11px', color: '#0f172a', fontWeight: 700 }}>
-                      Week {idx + 1}
+                      Week {idx + 1}{weekMonthLabels[idx] ? ` (${weekMonthLabels[idx]})` : ''}
                     </td>
                     <td style={{ padding: '4px 8px', borderBottom: '1px solid #f1f5f9' }}>
                       <input
