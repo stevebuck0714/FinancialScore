@@ -57,6 +57,7 @@ type ForecastRow = {
   locInterest: number;
   locDraw: number;
   locRepay: number;
+  unleveredEndingCash: number;
   endingCash: number;
   endingLoc: number;
   endingAr: number;
@@ -725,10 +726,12 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       Math.min(0.99, Math.max(0.01, Number(weeklyDrivers[idx]?.grossMarginPct || 0) / 100))
     );
     let cash = Number(startingBalances.cash || 0);
+    let unleveredCash = Number(startingBalances.cash || 0);
     let ar = Math.max(0, startingBalances.ar);
     let ap = Math.max(0, startingBalances.ap);
     let inventory = Math.max(0, startingBalances.inventory);
     let loc = Math.max(0, startingBalances.loc);
+    const unleveredLoc = Math.max(0, startingBalances.loc);
 
     for (let i = 0; i < weeks; i += 1) {
       const beginningCash = safeNumber(cash, 0);
@@ -764,6 +767,12 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
 
       const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
       const baseEndingCash = safeNumber(beginningCash + receipts - apPayments - opex - locInterest, beginningCash);
+      const beginningUnleveredCash = safeNumber(unleveredCash, 0);
+      const unleveredLocInterest = safeNumber(unleveredLoc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
+      const unleveredEndingCash = safeNumber(
+        beginningUnleveredCash + receipts - apPayments - opex - unleveredLocInterest,
+        beginningUnleveredCash
+      );
 
       let locDraw = 0;
       let locRepay = 0;
@@ -808,6 +817,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
         locInterest,
         locDraw,
         locRepay,
+        unleveredEndingCash,
         endingCash,
         endingLoc,
         endingAr,
@@ -816,6 +826,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       });
 
       cash = endingCash;
+      unleveredCash = unleveredEndingCash;
       loc = endingLoc;
       ar = endingAr;
       ap = endingAp;
@@ -841,6 +852,26 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       week13Cash,
     };
   }, [rows]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || typeof window === 'undefined') return;
+    const graphRows = rows.slice(0, 12).map((row) => {
+      const availableLoc = Math.max(0, Number(inputs.locLimit || 0) - Number(row.endingLoc || 0));
+      return {
+        week: row.week,
+        unleveredEndingCash: Number(row.unleveredEndingCash || 0),
+        endingCash: Number(row.endingCash || 0),
+        endingLoc: Number(row.endingLoc || 0),
+        availableLoc,
+      };
+    });
+    const payload = {
+      locLimit: Math.max(0, Number(inputs.locLimit || 0)),
+      rows: graphRows,
+      updatedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(`cashForecastGraphData_${selectedCompanyId}`, JSON.stringify(payload));
+  }, [rows, inputs.locLimit, selectedCompanyId]);
 
   const updateNumberInput = (key: keyof ForecastInputs, value: string) => {
     const parsed = Number(value);
@@ -1165,8 +1196,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
                   'LOC Interest',
                   'LOC Draw',
                   'LOC Repay',
-                  'Ending Cash',
+                  'Unlevered Cash',
+                  'Ending Cash (Post LOC)',
                   'Ending LOC',
+                  'Available LOC',
+                  'Total Available Liquidity',
                   'Ending AR',
                   'Ending AP',
                   'Ending Inventory',
@@ -1182,13 +1216,24 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
                       fontSize: '12px',
                     }}
                   >
-                    {header}
+                    {header === 'Ending Cash (Post LOC)' ? (
+                      <>
+                        <span style={{ display: 'block', whiteSpace: 'nowrap' }}>Ending Cash</span>
+                        <span style={{ display: 'block', whiteSpace: 'nowrap' }}>(Post LOC)</span>
+                      </>
+                    ) : (
+                      header
+                    )}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {rows.slice(0, 12).map((row) => (
+                (() => {
+                  const availableLoc = Math.max(0, Number(inputs.locLimit || 0) - Number(row.endingLoc || 0));
+                  const totalAvailableLiquidity = Number(row.endingCash || 0) + availableLoc;
+                  return (
                 <tr key={row.week}>
                   <td style={{ padding: '8px', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: '#0f172a', fontWeight: 600 }}>
                     W{row.week}
@@ -1200,15 +1245,24 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.locInterest)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locDraw > 0 ? '#7c3aed' : '#64748b' }}>{formatCurrency(row.locDraw)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locRepay > 0 ? '#0284c7' : '#64748b' }}>{formatCurrency(row.locRepay)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.unleveredEndingCash < 0 ? '#dc2626' : '#111827', fontWeight: 600 }}>
+                    {formatCurrency(row.unleveredEndingCash)}
+                  </td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.endingCash < 0 ? '#dc2626' : '#111827', fontWeight: 700 }}>
                     {formatCurrency(row.endingCash)}
                   </td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.endingLoc)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(availableLoc)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', fontWeight: 700, color: totalAvailableLiquidity < 0 ? '#dc2626' : '#111827' }}>
+                    {formatCurrency(totalAvailableLiquidity)}
+                  </td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.endingAr)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.endingAp)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.endingInventory)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.targetInventory)}</td>
                 </tr>
+                  );
+                })()
               ))}
             </tbody>
           </table>

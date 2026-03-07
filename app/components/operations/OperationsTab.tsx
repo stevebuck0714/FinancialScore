@@ -303,7 +303,7 @@ const SECTOR_INVESTIGATE_OVERRIDES: Record<string, InvestigatePlaybook[]> = {
 export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory, viewMode = 'full' }: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
   const [activeTab, setActiveTab] = useState<OpTab>(isOverviewOnly ? 'overview' : 'dashboard');
-  const [activeForecastTab, setActiveForecastTab] = useState<'income-statement-forecast' | 'cash-forecast'>('income-statement-forecast');
+  const [activeForecastTab, setActiveForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -3948,6 +3948,23 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
           >
             Cash Forecast
           </button>
+          <button
+            onClick={() => setActiveForecastTab('graphs')}
+            style={{
+              padding: '12px 18px',
+              background: activeForecastTab === 'graphs' ? '#667eea' : 'transparent',
+              color: activeForecastTab === 'graphs' ? 'white' : '#64748b',
+              border: 'none',
+              borderBottom: activeForecastTab === 'graphs' ? '3px solid #667eea' : '3px solid transparent',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              borderRadius: '8px 8px 0 0',
+              transition: 'all 0.2s'
+            }}
+          >
+            Graphs
+          </button>
         </div>
 
         {activeForecastTab === 'income-statement-forecast' && (
@@ -3955,10 +3972,19 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
             selectedCompanyId={selectedCompanyId}
             companyName={companyName}
             industrySectorCategory={industrySectorCategory || null}
+            displayMode="no-graphs"
           />
         )}
         {activeForecastTab === 'cash-forecast' && (
           <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} />
+        )}
+        {activeForecastTab === 'graphs' && (
+          <FinancialForecastTab
+            selectedCompanyId={selectedCompanyId}
+            companyName={companyName}
+            industrySectorCategory={industrySectorCategory || null}
+            displayMode="graphs-only"
+          />
         )}
       </div>
     );

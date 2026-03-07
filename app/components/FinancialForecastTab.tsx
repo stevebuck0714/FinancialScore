@@ -9,6 +9,7 @@ interface FinancialForecastTabProps {
   companyName: string;
   industrySectorCategory?: string | null;
   prefetchedMonthlyData?: any[];
+  displayMode?: 'full' | 'no-graphs' | 'graphs-only';
 }
 
 type ForecastTab = 'inputs' | 'income-statement' | 'graphs';
@@ -141,8 +142,9 @@ export default function FinancialForecastTab({
   companyName,
   industrySectorCategory,
   prefetchedMonthlyData,
+  displayMode = 'full',
 }: FinancialForecastTabProps) {
-  const [activeTab, setActiveTab] = useState<ForecastTab>('inputs');
+  const [activeTab, setActiveTab] = useState<ForecastTab>(displayMode === 'graphs-only' ? 'graphs' : 'inputs');
   const [annualExpanded, setAnnualExpanded] = useState(false);
   const [isSavingInputs, setIsSavingInputs] = useState(false);
   const [isLoadingInputs, setIsLoadingInputs] = useState(false);
@@ -1090,6 +1092,31 @@ export default function FinancialForecastTab({
 
   const totalsLineGraphPoints = graphGranularity === 'monthly' ? monthlyTotalsLineGraphPoints : quarterlyTotalsLineGraphPoints;
 
+  const cashLiquidityGraphPoints = useMemo(() => {
+    if (typeof window === 'undefined' || !selectedCompanyId) return [] as Array<{
+      label: string;
+      unleveredEndingCash: number;
+      endingCash: number;
+      availableLoc: number;
+      locLimit: number;
+    }>;
+    try {
+      const raw = localStorage.getItem(`cashForecastGraphData_${selectedCompanyId}`);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
+      const locLimit = Math.max(0, Number(parsed?.locLimit || 0));
+      return rows.slice(0, 12).map((row: any, idx: number) => ({
+        label: `W${Number(row?.week || idx + 1)}`,
+        unleveredEndingCash: Number(row?.unleveredEndingCash || 0),
+        endingCash: Number(row?.endingCash || 0),
+        availableLoc: Math.max(0, Number(row?.availableLoc || 0)),
+        locLimit,
+      }));
+    } catch {
+      return [];
+    }
+  }, [selectedCompanyId]);
+
   const renderStackedBarChart = (
     title: string,
     rowKeys: string[],
@@ -1338,6 +1365,137 @@ export default function FinancialForecastTab({
     );
   };
 
+  const renderCashLiquidityComboChart = (
+    title: string,
+    points: Array<{ label: string; unleveredEndingCash: number; endingCash: number; availableLoc: number; locLimit: number }>,
+    subtitle: string,
+  ) => {
+    if (!points.length) {
+      return (
+        <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+          <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>{title}</h4>
+          <div style={{ fontSize: '13px', color: '#64748b' }}>
+            No cash forecast projection data yet. Open Cash Forecast to generate weekly projections.
+          </div>
+        </div>
+      );
+    }
+
+    const width = 760;
+    const height = 360;
+    const padding = { top: 20, right: 18, bottom: 70, left: 70 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+    const allValues = points.flatMap((p) => [p.unleveredEndingCash, p.endingCash, p.availableLoc, p.locLimit]);
+    const minValue = Math.min(0, ...allValues);
+    const maxValue = Math.max(1, ...allValues);
+    const yPad = Math.max((maxValue - minValue) * 0.08, 1);
+    const yMin = minValue - yPad;
+    const yMax = maxValue + yPad;
+    const yRange = Math.max(1, yMax - yMin);
+    const yTicks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i) / 4);
+    const xCount = Math.max(points.length, 1);
+    const barSlot = chartWidth / xCount;
+    const barWidth = Math.max(10, barSlot * 0.56);
+    const toX = (idx: number) => padding.left + idx * barSlot + barSlot / 2;
+    const toY = (val: number) => padding.top + chartHeight - ((val - yMin) / yRange) * chartHeight;
+    const availableLocPath = points
+      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(idx)} ${toY(p.availableLoc)}`)
+      .join(' ');
+    const unleveredCashPath = points
+      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(idx)} ${toY(p.unleveredEndingCash)}`)
+      .join(' ');
+    const locLimitPath = points
+      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(idx)} ${toY(p.locLimit)}`)
+      .join(' ');
+    const zeroY = toY(0);
+
+    return (
+      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+        <h4 style={{ margin: '0 0 10px 0', color: '#1e293b', fontSize: '15px', fontWeight: 700 }}>{title}</h4>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: 'auto' }}>
+          {yTicks.map((tick, idx) => {
+            const y = toY(tick);
+            return (
+              <g key={`yt-cash-${idx}`}>
+                <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
+                  ${(tick / 1000).toFixed(0)}K
+                </text>
+              </g>
+            );
+          })}
+          <line x1={padding.left} y1={zeroY} x2={width - padding.right} y2={zeroY} stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3,3" />
+          <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+          <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+
+          {points.map((point, idx) => {
+            const x = padding.left + idx * barSlot + (barSlot - barWidth) / 2;
+            const yTop = toY(Math.max(0, point.endingCash));
+            const yBottom = toY(Math.min(0, point.endingCash));
+            const barHeight = Math.max(1, Math.abs(yBottom - yTop));
+            return (
+              <rect
+                key={`cash-bar-${point.label}-${idx}`}
+                x={x}
+                y={Math.min(yTop, yBottom)}
+                width={barWidth}
+                height={barHeight}
+                fill={point.endingCash >= 0 ? '#16a34a' : '#dc2626'}
+                opacity={0.9}
+              >
+                <title>{`${point.label} • Ending Cash: $${point.endingCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+              </rect>
+            );
+          })}
+
+          <path d={locLimitPath} fill="none" stroke="#6366f1" strokeWidth="2" strokeDasharray="6,5" />
+          <path d={availableLocPath} fill="none" stroke="#0ea5e9" strokeWidth="2.5" />
+          <path d={unleveredCashPath} fill="none" stroke="#f59e0b" strokeWidth="2.5" />
+          {points.map((point, idx) => (
+            <circle key={`cash-loc-pt-${point.label}-${idx}`} cx={toX(idx)} cy={toY(point.availableLoc)} r="3.2" fill="#0ea5e9">
+              <title>{`${point.label} • Available LOC: $${point.availableLoc.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+            </circle>
+          ))}
+          {points.map((point, idx) => (
+            <circle key={`cash-unlev-pt-${point.label}-${idx}`} cx={toX(idx)} cy={toY(point.unleveredEndingCash)} r="3.2" fill="#f59e0b">
+              <title>{`${point.label} • Unlevered Cash: $${point.unleveredEndingCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+            </circle>
+          ))}
+
+          {points.map((point, idx) => {
+            const show = idx === 0 || idx === points.length - 1 || idx % 2 === 0;
+            if (!show) return null;
+            return (
+              <text key={`xl-cash-${point.label}-${idx}`} x={toX(idx)} y={height - padding.bottom + 18} textAnchor="middle" fontSize="11" fill="#64748b">
+                {point.label}
+              </text>
+            );
+          })}
+        </svg>
+        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{subtitle}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', marginTop: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+            <span style={{ width: '10px', height: '10px', background: '#16a34a', borderRadius: '2px', display: 'inline-block' }} />
+            <span>Ending Cash (weekly)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+            <span style={{ width: '12px', height: '3px', background: '#f59e0b', borderRadius: '2px', display: 'inline-block' }} />
+            <span>Unlevered Cash (pre-LOC draw/repay)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+            <span style={{ width: '12px', height: '3px', background: '#0ea5e9', borderRadius: '2px', display: 'inline-block' }} />
+            <span>Available LOC</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+            <span style={{ width: '12px', height: '3px', background: '#6366f1', borderRadius: '2px', display: 'inline-block' }} />
+            <span>LOC Loan Amount (ceiling)</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
 
   const tabButtonStyle = (tab: ForecastTab): React.CSSProperties => ({
     padding: '10px 16px',
@@ -1348,6 +1506,25 @@ export default function FinancialForecastTab({
     fontWeight: 600,
     cursor: 'pointer',
   });
+
+  const showInputsTab = displayMode !== 'graphs-only';
+  const showIncomeStatementTab = displayMode !== 'graphs-only';
+  const showGraphsTab = displayMode !== 'no-graphs';
+  const visibleTabs: ForecastTab[] = [
+    ...(showInputsTab ? (['inputs'] as ForecastTab[]) : []),
+    ...(showIncomeStatementTab ? (['income-statement'] as ForecastTab[]) : []),
+    ...(showGraphsTab ? (['graphs'] as ForecastTab[]) : []),
+  ];
+
+  useEffect(() => {
+    if (displayMode === 'graphs-only' && activeTab !== 'graphs') {
+      setActiveTab('graphs');
+      return;
+    }
+    if (displayMode === 'no-graphs' && activeTab === 'graphs') {
+      setActiveTab('income-statement');
+    }
+  }, [displayMode, activeTab]);
 
   return (
     <div style={{ maxWidth: '2200px', margin: '0 auto', padding: '24px' }}>
@@ -1405,11 +1582,19 @@ export default function FinancialForecastTab({
       `}</style>
       <div style={{ marginBottom: '6px' }} />
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button style={tabButtonStyle('inputs')} onClick={() => setActiveTab('inputs')}>Inputs</button>
-        <button style={tabButtonStyle('income-statement')} onClick={() => setActiveTab('income-statement')}>Income Statement Forecast</button>
-        <button style={tabButtonStyle('graphs')} onClick={() => setActiveTab('graphs')}>Graphs</button>
-      </div>
+      {visibleTabs.length > 1 && (
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+          {showInputsTab && (
+            <button style={tabButtonStyle('inputs')} onClick={() => setActiveTab('inputs')}>Inputs</button>
+          )}
+          {showIncomeStatementTab && (
+            <button style={tabButtonStyle('income-statement')} onClick={() => setActiveTab('income-statement')}>Income Statement Forecast</button>
+          )}
+          {showGraphsTab && (
+            <button style={tabButtonStyle('graphs')} onClick={() => setActiveTab('graphs')}>Graphs</button>
+          )}
+        </div>
+      )}
 
       {activeTab === 'inputs' && (
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
@@ -2073,6 +2258,11 @@ export default function FinancialForecastTab({
               `Totals Trend (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
               totalsLineGraphPoints,
               `Shaded background = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then projected ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(totalsLineGraphPoints.length - 3, 0)}).`,
+            )}
+            {renderCashLiquidityComboChart(
+              'Cash & LOC Capacity (12 Weeks)',
+              cashLiquidityGraphPoints,
+              'Bars show weekly ending cash projection. Orange line is unlevered cash (before LOC draw/repay). Blue line is available LOC = LOC loan amount minus projected LOC balance.',
             )}
           </div>
         </div>
