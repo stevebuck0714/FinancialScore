@@ -4,6 +4,39 @@ import { getAllowedTargetFieldSet } from "@/lib/constants/sector-target-fields";
 
 export const dynamic = "force-dynamic";
 
+type AccountSnapshotRow = {
+  accountId: string;
+  accountName: string;
+  accountCode?: string | null;
+  classification?: string | null;
+};
+
+function normalize(v: unknown): string {
+  if (typeof v === "string") return v.trim().toLowerCase();
+  if (typeof v === "number" || typeof v === "bigint") return String(v).trim().toLowerCase();
+  return "";
+}
+
+function parseAccountSnapshot(value: unknown): AccountSnapshotRow[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const record = row as Record<string, unknown>;
+      const accountId = typeof record.accountId === "string" ? record.accountId.trim() : "";
+      const accountName = typeof record.accountName === "string" ? record.accountName.trim() : "";
+      if (!accountId || !accountName) return null;
+      return {
+        accountId,
+        accountName,
+        accountCode: typeof record.accountCode === "string" ? record.accountCode.trim() : null,
+        classification:
+          typeof record.classification === "string" ? record.classification.trim() : null,
+      } as AccountSnapshotRow;
+    })
+    .filter((row): row is AccountSnapshotRow => !!row);
+}
+
 // GET - Retrieve mappings for a company
 export async function GET(request: NextRequest) {
   try {
@@ -27,21 +60,86 @@ export async function GET(request: NextRequest) {
     // Get company context (LOB names + sector category)
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { linesOfBusiness: true, industrySectorCategory: true },
+      select: { linesOfBusiness: true, industrySectorCategory: true, accountingSystem: true },
     });
+
+    const seededPlatform =
+      company?.accountingSystem === "INFOR_M3"
+        ? "INFOR_M3"
+        : company?.accountingSystem === "QUICKBOOKS_DESKTOP"
+          ? "QUICKBOOKS"
+          : null;
+
+    const seededConnection = seededPlatform
+      ? await prisma.accountingConnection.findUnique({
+          where: {
+            companyId_platform: {
+              companyId,
+              platform: seededPlatform,
+            },
+          },
+          select: {
+            connectionMetadata: true,
+          },
+        })
+      : null;
+
+    const connectionMetadata =
+      seededConnection?.connectionMetadata &&
+      typeof seededConnection.connectionMetadata === "object" &&
+      !Array.isArray(seededConnection.connectionMetadata)
+        ? (seededConnection.connectionMetadata as Record<string, unknown>)
+        : {};
+    const snapshot =
+      company?.accountingSystem === "INFOR_M3"
+        ? parseAccountSnapshot(connectionMetadata.inforM3AccountSeedSnapshot)
+        : company?.accountingSystem === "QUICKBOOKS_DESKTOP"
+          ? parseAccountSnapshot(connectionMetadata.quickbooksDesktopAccountSeedSnapshot)
+          : [];
+    const snapshotById = new Map(snapshot.map((row) => [normalize(row.accountId), row]));
+    const snapshotByName = new Map(snapshot.map((row) => [normalize(row.accountName), row]));
 
     const allowedTargetFields = getAllowedTargetFieldSet(company?.industrySectorCategory || '01');
     const invalidMappings = mappings.filter(
       (m: any) => m.targetField && m.targetField.trim() !== "" && !allowedTargetFields.has(m.targetField),
     );
+    const statusCounts = {
+      total: mappings.length,
+      new: 0,
+      changed: 0,
+      inactive: 0,
+      unmapped: 0,
+    };
     const sanitizedMappings = mappings.map((m: any) => {
+      const sourceMatch =
+        snapshotById.get(normalize(m.qbAccountId)) || snapshotByName.get(normalize(m.qbAccount));
+      const isUnmapped =
+        !m.targetField || m.targetField.trim() === "" || m.targetField.trim().toLowerCase() === "unmapped";
+      let sourceStatus: "mapped" | "new" | "changed" | "inactive" = isUnmapped ? "new" : "mapped";
+      if (snapshot.length > 0 && !sourceMatch) {
+        sourceStatus = "inactive";
+      } else if (sourceMatch) {
+        const nameChanged = normalize(sourceMatch.accountName) !== normalize(m.qbAccount);
+        const classChanged =
+          normalize(sourceMatch.classification || "") !== normalize(m.qbAccountClassification || "");
+        if (nameChanged || classChanged) sourceStatus = "changed";
+      }
+      if (sourceStatus === "new") statusCounts.new += 1;
+      if (sourceStatus === "changed") statusCounts.changed += 1;
+      if (sourceStatus === "inactive") statusCounts.inactive += 1;
+      if (isUnmapped) statusCounts.unmapped += 1;
+
       if (!m.targetField || m.targetField.trim() === "" || allowedTargetFields.has(m.targetField)) {
-        return m;
+        return {
+          ...m,
+          sourceStatus,
+        };
       }
       return {
         ...m,
         invalidTargetField: m.targetField,
         targetField: "",
+        sourceStatus,
       };
     });
 
@@ -73,6 +171,19 @@ export async function GET(request: NextRequest) {
         qbAccountClassification: m.qbAccountClassification,
       })),
       invalidMappingsCount: invalidMappings.length,
+      sourceSummary: {
+        ...statusCounts,
+        lastSeedAt:
+          company?.accountingSystem === "INFOR_M3"
+            ? typeof connectionMetadata.inforM3AccountSeedLastRunAt === "string"
+              ? connectionMetadata.inforM3AccountSeedLastRunAt
+              : null
+            : company?.accountingSystem === "QUICKBOOKS_DESKTOP"
+              ? typeof connectionMetadata.quickbooksDesktopAccountSeedLastRunAt === "string"
+                ? connectionMetadata.quickbooksDesktopAccountSeedLastRunAt
+                : null
+              : null,
+      },
     });
   } catch (error: any) {
     console.error("❌ Error fetching mappings:", error);
@@ -115,11 +226,14 @@ export async function POST(request: NextRequest) {
 
     const allowedTargetFields = getAllowedTargetFieldSet(company.industrySectorCategory || '01');
 
-    // Filter out mappings with empty targetField (unmapped accounts)
-    const validMappings = mappings.filter(
+    const uniqueMappings = mappings.filter(
+      (mapping: any, index: number, self: any[]) =>
+        index === self.findIndex((m: any) => m.qbAccount === mapping.qbAccount),
+    );
+    const mappedRows = uniqueMappings.filter(
       (m: any) => m.targetField && m.targetField.trim() !== "" && m.targetField !== "unmapped",
     );
-    const invalidMappings = validMappings.filter((m: any) => !allowedTargetFields.has(m.targetField));
+    const invalidMappings = mappedRows.filter((m: any) => !allowedTargetFields.has(m.targetField));
     if (invalidMappings.length > 0) {
       return NextResponse.json(
         {
@@ -136,18 +250,9 @@ export async function POST(request: NextRequest) {
       );
     }
     console.log(
-      `Filtered to ${validMappings.length} valid mappings (removed ${mappings.length - validMappings.length} unmapped accounts)`,
+      `Prepared ${mappedRows.length} mapped rows and ${uniqueMappings.length - mappedRows.length} unmapped rows`,
     );
-    console.log("Valid mappings sample:", validMappings.slice(0, 2));
-
-    // Remove duplicates based on qbAccount to avoid unique constraint violations
-    const uniqueMappings = validMappings.filter(
-      (mapping, index, self) =>
-        index === self.findIndex((m) => m.qbAccount === mapping.qbAccount),
-    );
-    console.log(
-      `After processing: ${uniqueMappings.length} unique valid mappings (removed ${validMappings.length - uniqueMappings.length} duplicates)`,
-    );
+    console.log("Mappings sample:", uniqueMappings.slice(0, 2));
 
     // Save the LOB names to the Company record if provided
     if (
@@ -164,28 +269,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Delete existing mappings for this company
-    const deleted = await prisma.accountMapping.deleteMany({
-      where: { companyId },
-    });
-    console.log(`Deleted ${deleted.count} existing mappings`);
+    let created = 0;
+    let updated = 0;
+    for (const m of uniqueMappings) {
+      const targetField =
+        m.targetField && m.targetField.trim() !== "" ? m.targetField.trim() : "unmapped";
+      const existing = await prisma.accountMapping.findUnique({
+        where: {
+          companyId_qbAccount: {
+            companyId,
+            qbAccount: m.qbAccount,
+          },
+        },
+        select: { id: true },
+      });
+      if (!existing) {
+        await prisma.accountMapping.create({
+          data: {
+            companyId,
+            qbAccount: m.qbAccount,
+            qbAccountId: m.qbAccountId || null,
+            qbAccountCode: m.qbAccountCode || null,
+            qbAccountClassification: m.qbAccountClassification || null,
+            targetField,
+            allocationMethod: m.allocationMethod || "manual",
+            confidence: m.confidence || "medium",
+            lobAllocations: m.lobAllocations || null,
+          },
+        });
+        created += 1;
+      } else {
+        await prisma.accountMapping.update({
+          where: { id: existing.id },
+          data: {
+            qbAccountId: m.qbAccountId || null,
+            qbAccountCode: m.qbAccountCode || null,
+            qbAccountClassification: m.qbAccountClassification || null,
+            targetField,
+            allocationMethod: m.allocationMethod || "manual",
+            confidence: m.confidence || "medium",
+            lobAllocations: m.lobAllocations || null,
+          },
+        });
+        updated += 1;
+      }
+    }
 
-    // Create new mappings (only valid and unique ones with targetField)
-    const createdMappings = await prisma.accountMapping.createMany({
-      data: uniqueMappings.map((m: any) => ({
-        companyId,
-        qbAccount: m.qbAccount,
-        qbAccountId: m.qbAccountId || null,
-        qbAccountCode: m.qbAccountCode || null,
-        qbAccountClassification: m.qbAccountClassification || null,
-        targetField: m.targetField,
-        allocationMethod: m.allocationMethod || "manual",
-        confidence: m.confidence || "medium",
-        lobAllocations: m.lobAllocations || null,
-      })),
-    });
-
-    console.log(`Created ${createdMappings.count} new mappings`);
+    console.log(`Upserted mappings: created=${created}, updated=${updated}`);
 
     // Verify they were saved
     const verification = await prisma.accountMapping.findMany({
@@ -197,9 +327,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      count: createdMappings.count,
-      filtered: mappings.length - validMappings.length,
-      duplicates: validMappings.length - uniqueMappings.length,
+      count: created + updated,
+      created,
+      updated,
+      filtered: mappings.length - mappedRows.length,
+      duplicates: mappings.length - uniqueMappings.length,
       verified: verification.length,
     });
   } catch (error: any) {

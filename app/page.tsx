@@ -1013,6 +1013,15 @@ function FinancialScorePage() {
   const [aiMappings, setAiMappings] = useState<any[]>([]);
   const [isGeneratingMappings, setIsGeneratingMappings] = useState(false);
   const [isSavingMappings, setIsSavingMappings] = useState(false);
+  const [showOnlyActionableMappings, setShowOnlyActionableMappings] = useState(true);
+  const [mappingSourceSummary, setMappingSourceSummary] = useState<{
+    total: number;
+    new: number;
+    changed: number;
+    inactive: number;
+    unmapped: number;
+    lastSeedAt: string | null;
+  } | null>(null);
   
   // State - Lines of Business
   const [linesOfBusiness, setLinesOfBusiness] = useState<LOBData[]>([]);
@@ -1563,13 +1572,18 @@ function FinancialScorePage() {
             const loadedMappings = data.mappings.map((m: any) => ({
               qbAccount: m.qbAccount,
               qbAccountId: m.qbAccountId,
+              qbAccountCode: m.qbAccountCode,
               qbAccountClassification: m.qbAccountClassification,
               targetField: m.targetField,
               confidence: m.confidence || 'medium',
               lobAllocations: m.lobAllocations,
+              sourceStatus: m.sourceStatus || 'mapped',
             }));
             setAiMappings(loadedMappings);
             setShowMappingSection(true);
+            setMappingSourceSummary(data.sourceSummary || null);
+          } else {
+            setMappingSourceSummary(data.sourceSummary || null);
           }
           if (data.linesOfBusiness && Array.isArray(data.linesOfBusiness) && data.linesOfBusiness.length > 0) {
             console.log('? Loaded saved Lines of Business:', data.linesOfBusiness);
@@ -8884,13 +8898,54 @@ function FinancialScorePage() {
                       <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                         Account Mappings ({aiMappings.length} accounts)
                       </h2>
+                      <button
+                        onClick={() => setShowOnlyActionableMappings((prev) => !prev)}
+                        style={{
+                          padding: '8px 12px',
+                          background: showOnlyActionableMappings ? '#0f766e' : '#e2e8f0',
+                          color: showOnlyActionableMappings ? 'white' : '#334155',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {showOnlyActionableMappings ? 'Showing New/Changed/Unmapped' : 'Showing All Accounts'}
+                      </button>
                     </div>
+                    {mappingSourceSummary && (
+                      <div
+                        style={{
+                          marginBottom: '12px',
+                          padding: '10px 12px',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          background: '#f8fafc',
+                          display: 'flex',
+                          gap: '12px',
+                          flexWrap: 'wrap',
+                          fontSize: '12px',
+                          color: '#334155',
+                        }}
+                      >
+                        <span><strong>Total:</strong> {mappingSourceSummary.total}</span>
+                        <span><strong>New:</strong> {mappingSourceSummary.new}</span>
+                        <span><strong>Changed:</strong> {mappingSourceSummary.changed}</span>
+                        <span><strong>Inactive:</strong> {mappingSourceSummary.inactive}</span>
+                        <span><strong>Unmapped:</strong> {mappingSourceSummary.unmapped}</span>
+                        {mappingSourceSummary.lastSeedAt && (
+                          <span><strong>Last Seed:</strong> {new Date(mappingSourceSummary.lastSeedAt).toLocaleString()}</span>
+                        )}
+                      </div>
+                    )}
 
                     <AccountMappingTable
                       mappings={aiMappings}
                       linesOfBusiness={linesOfBusiness}
                       userDefinedAllocations={userDefinedAllocations}
                       industrySectorCategory={companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01'}
+                      showOnlyActionable={showOnlyActionableMappings}
                       onMappingChange={(index, updates) => {
                         const updated = [...aiMappings];
                         updated[index] = { ...updated[index], ...updates };

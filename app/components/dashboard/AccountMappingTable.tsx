@@ -11,6 +11,7 @@ interface AccountMapping {
   confidence?: string;
   lobAllocations?: { [lobName: string]: number };
   allocationMethod?: string;
+  sourceStatus?: 'mapped' | 'new' | 'changed' | 'inactive';
 }
 
 interface LOBData {
@@ -23,6 +24,7 @@ interface AccountMappingTableProps {
   linesOfBusiness: LOBData[];
   userDefinedAllocations?: { lobName: string; percentage: number }[];
   industrySectorCategory?: string | null;
+  showOnlyActionable?: boolean;
   onMappingChange: (index: number, updates: Partial<AccountMapping>) => void;
 }
 
@@ -31,6 +33,7 @@ export default function AccountMappingTable({
   linesOfBusiness,
   userDefinedAllocations = [],
   industrySectorCategory,
+  showOnlyActionable = false,
   onMappingChange
 }: AccountMappingTableProps) {
 
@@ -73,14 +76,21 @@ export default function AccountMappingTable({
     return 'other';
   };
 
+  const isActionable = (mapping: AccountMapping): boolean => {
+    if (!showOnlyActionable) return true;
+    const target = (mapping.targetField || '').trim().toLowerCase();
+    const isUnmapped = !target || target === 'unmapped';
+    return isUnmapped || mapping.sourceStatus === 'new' || mapping.sourceStatus === 'changed';
+  };
+
   // Group mappings by normalized classification
   const groupedMappings = {
-    revenue: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'revenue'),
-    cogs: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'cogs'),
-    expense: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'expense'),
-    asset: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'asset'),
-    liability: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'liability'),
-    equity: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'equity')
+    revenue: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'revenue' && isActionable(m)),
+    cogs: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'cogs' && isActionable(m)),
+    expense: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'expense' && isActionable(m)),
+    asset: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'asset' && isActionable(m)),
+    liability: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'liability' && isActionable(m)),
+    equity: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'equity' && isActionable(m))
   };
 
   const sections = [
@@ -116,6 +126,33 @@ export default function AccountMappingTable({
       <tr key={globalIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
         <td style={{ padding: '8px 10px', color: '#1e293b', fontWeight: '500', fontSize: '13px' }}>
           {mapping.qbAccount}
+          {mapping.sourceStatus && mapping.sourceStatus !== 'mapped' && (
+            <span
+              style={{
+                marginLeft: '8px',
+                padding: '2px 6px',
+                borderRadius: '999px',
+                fontSize: '10px',
+                fontWeight: '700',
+                textTransform: 'uppercase',
+                letterSpacing: '0.3px',
+                background:
+                  mapping.sourceStatus === 'new'
+                    ? '#dcfce7'
+                    : mapping.sourceStatus === 'changed'
+                      ? '#fef3c7'
+                      : '#fee2e2',
+                color:
+                  mapping.sourceStatus === 'new'
+                    ? '#166534'
+                    : mapping.sourceStatus === 'changed'
+                      ? '#92400e'
+                      : '#991b1b',
+              }}
+            >
+              {mapping.sourceStatus}
+            </span>
+          )}
         </td>
         <td style={{ padding: '8px 10px', position: 'relative' }}>
           {/* Target Field Dropdown */}

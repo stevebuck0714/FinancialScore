@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
+import { seedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
@@ -84,6 +85,68 @@ export async function POST(request: NextRequest) {
         ? (existingConnection.connectionMetadata as Record<string, unknown>)
         : {};
 
+    let seedSummary = {
+      extracted: 0,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      inactive: 0,
+      newAccounts: [] as string[],
+      changedAccounts: [] as string[],
+      inactiveAccounts: [] as string[],
+      activeAccountIds: [] as string[],
+      accountSnapshot: [] as Array<{
+        accountId: string;
+        accountName: string;
+        accountCode: string | null;
+        classification: string | null;
+      }>,
+    };
+    let seedWarning: string | null = null;
+    try {
+      seedSummary = await seedInforAccountMappings(companyId, payload);
+      await prisma.apiSyncLog.create({
+        data: {
+          companyId,
+          platform: 'INFOR_M3',
+          syncType: 'infor_account_mapping_seed',
+          status: 'success',
+          recordsImported: seedSummary.created + seedSummary.updated,
+          errorCount: 0,
+          errorDetails: {
+            extracted: seedSummary.extracted,
+            created: seedSummary.created,
+            updated: seedSummary.updated,
+            unchanged: seedSummary.unchanged,
+            inactive: seedSummary.inactive,
+            newAccounts: seedSummary.newAccounts,
+            changedAccounts: seedSummary.changedAccounts,
+            inactiveAccounts: seedSummary.inactiveAccounts,
+          },
+        },
+      });
+    } catch (seedError) {
+      seedWarning =
+        seedError instanceof Error
+          ? `Account mapping seed failed: ${seedError.message}`
+          : 'Account mapping seed failed with unknown error';
+      await prisma.apiSyncLog
+        .create({
+          data: {
+            companyId,
+            platform: 'INFOR_M3',
+            syncType: 'infor_account_mapping_seed',
+            status: 'error',
+            recordsImported: 0,
+            errorCount: 1,
+            errorDetails: {
+              warning: seedWarning,
+            },
+          },
+        })
+        .catch(() => undefined);
+    }
+
     await prisma.accountingConnection.upsert({
       where: {
         companyId_platform: {
@@ -99,6 +162,16 @@ export async function POST(request: NextRequest) {
           inforM3FinancialPayload: payload,
           inforM3FinancialLastPushAt: new Date().toISOString(),
           inforM3FinancialLastPushFrequency: frequency,
+          inforM3AccountSeedLastRunAt: new Date().toISOString(),
+          inforM3AccountSeedSummary: {
+            extracted: seedSummary.extracted,
+            created: seedSummary.created,
+            updated: seedSummary.updated,
+            unchanged: seedSummary.unchanged,
+            inactive: seedSummary.inactive,
+          },
+          inforM3AccountSeedSnapshot: seedSummary.accountSnapshot,
+          inforM3ActiveAccountIds: seedSummary.activeAccountIds,
         } as any,
         errorMessage: null,
       },
@@ -113,6 +186,16 @@ export async function POST(request: NextRequest) {
           inforM3FinancialPayload: payload,
           inforM3FinancialLastPushAt: new Date().toISOString(),
           inforM3FinancialLastPushFrequency: frequency,
+          inforM3AccountSeedLastRunAt: new Date().toISOString(),
+          inforM3AccountSeedSummary: {
+            extracted: seedSummary.extracted,
+            created: seedSummary.created,
+            updated: seedSummary.updated,
+            unchanged: seedSummary.unchanged,
+            inactive: seedSummary.inactive,
+          },
+          inforM3AccountSeedSnapshot: seedSummary.accountSnapshot,
+          inforM3ActiveAccountIds: seedSummary.activeAccountIds,
         } as any,
       },
     });
@@ -131,6 +214,8 @@ export async function POST(request: NextRequest) {
         companyId,
         companyName: company.name,
         frequency,
+        accountMappingSeed: seedSummary,
+        accountMappingSeedWarning: seedWarning,
         ...result,
       },
       { status: result.status },
