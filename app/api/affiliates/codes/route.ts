@@ -93,11 +93,16 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ code: affiliateCode });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating affiliate code:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to create code' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -129,11 +134,16 @@ export async function PUT(request: NextRequest) {
     });
 
     return NextResponse.json({ code: affiliateCode });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating affiliate code:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to update code' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -157,11 +167,16 @@ export async function DELETE(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting affiliate code:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to delete code' },
-      { status: 500 }
+      { status }
     );
   }
 }

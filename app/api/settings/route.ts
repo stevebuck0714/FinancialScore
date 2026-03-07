@@ -26,11 +26,16 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ settings }, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching settings:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to fetch settings' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -73,11 +78,16 @@ export async function POST(request: NextRequest) {
       success: true,
       settings 
     }, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error saving settings:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to save settings' },
-      { status: 500 }
+      { status }
     );
   }
 }

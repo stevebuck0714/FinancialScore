@@ -88,11 +88,16 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({ consultants });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching consultants:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -196,11 +201,16 @@ export async function POST(request: NextRequest) {
         companyWebsite: result.consultant.companyWebsite
       }
     }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating consultant:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -300,11 +310,16 @@ export async function PUT(request: NextRequest) {
     });
 
     return NextResponse.json({ consultant: result });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating consultant:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -329,11 +344,16 @@ export async function DELETE(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting consultant:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status }
     );
   }
 }

@@ -26,9 +26,14 @@ export async function GET() {
     });
 
     return NextResponse.json(siteAdmins);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching site administrators:', error);
-    return NextResponse.json({ error: 'Failed to fetch site administrators' }, { status: 500 });
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
+    return NextResponse.json({ error: 'Failed to fetch site administrators' }, { status });
   }
 }
 
@@ -93,9 +98,14 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(newAdmin);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating site administrator:', error);
-    return NextResponse.json({ error: 'Failed to create site administrator' }, { status: 500 });
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
+    return NextResponse.json({ error: 'Failed to create site administrator' }, { status });
   }
 }
 
@@ -115,9 +125,14 @@ export async function DELETE(request: Request) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting site administrator:', error);
-    return NextResponse.json({ error: 'Failed to delete site administrator' }, { status: 500 });
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
+    return NextResponse.json({ error: 'Failed to delete site administrator' }, { status });
   }
 }
 

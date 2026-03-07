@@ -19,11 +19,16 @@ export async function GET() {
     });
 
     return NextResponse.json({ affiliates });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching affiliates:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to fetch affiliates' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -88,11 +93,16 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ affiliate });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating affiliate:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to create affiliate' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -134,11 +144,16 @@ export async function PUT(request: NextRequest) {
     });
 
     return NextResponse.json({ affiliate });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating affiliate:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to update affiliate' },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -179,11 +194,16 @@ export async function DELETE(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting affiliate:', error);
+    const status = error?.message?.includes('Unauthorized')
+      ? 401
+      : error?.message?.includes('Forbidden')
+      ? 403
+      : 500;
     return NextResponse.json(
       { error: 'Failed to delete affiliate' },
-      { status: 500 }
+      { status }
     );
   }
 }
