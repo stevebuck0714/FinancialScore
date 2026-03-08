@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 
@@ -9,6 +9,7 @@ interface FinancialForecastTabProps {
   companyName: string;
   industrySectorCategory?: string | null;
   prefetchedMonthlyData?: any[];
+  displayMode?: 'full' | 'no-graphs' | 'graphs-only';
 }
 
 type ForecastTab = 'inputs' | 'income-statement' | 'graphs';
@@ -18,6 +19,22 @@ type QuarterMeta = {
   year: number;
   quarter: 1 | 2 | 3 | 4;
   label: string;
+};
+
+type MonthMeta = {
+  key: string;
+  year: number;
+  month: number; // 0-based
+  label: string;
+};
+
+type ForecastPeriodMeta = {
+  key: string;
+  year: number;
+  label: string;
+  kind: 'month' | 'quarter';
+  month?: number;
+  quarter?: 1 | 2 | 3 | 4;
 };
 
 const OPEX_FIELDS: Array<{ key: string; label: string }> = [
@@ -98,16 +115,26 @@ function shiftQuarter(year: number, quarter: number, offset: number): { year: nu
   return { year: y, quarter: q as 1 | 2 | 3 | 4 };
 }
 
-function annualGrowthToQuarterlyPct(annualPct: number): number {
-  const annualFactor = 1 + annualPct / 100;
-  if (annualFactor <= 0) return -100;
-  return (Math.pow(annualFactor, 1 / 4) - 1) * 100;
+function shiftMonth(year: number, month: number, offset: number): { year: number; month: number } {
+  const date = new Date(year, month, 1);
+  date.setMonth(date.getMonth() + offset);
+  return { year: date.getFullYear(), month: date.getMonth() };
 }
 
-function quarterlyPctsToAnnualGrowthPct(quarterlyPcts: number[]): number {
-  if (!quarterlyPcts.length) return 0;
-  const annualFactor = quarterlyPcts.reduce((factor, pct) => factor * (1 + (Number(pct) || 0) / 100), 1);
-  return (annualFactor - 1) * 100;
+function getMonthLabel(year: number, month: number): string {
+  return new Date(year, month, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+}
+
+function monthlyGrowthToQuarterlyGrowthPct(monthlyPct: number): number {
+  const monthFactor = 1 + monthlyPct / 100;
+  if (monthFactor <= 0) return -100;
+  return (Math.pow(monthFactor, 3) - 1) * 100;
+}
+
+function monthlyGrowthToAnnualGrowthPct(monthlyPct: number): number {
+  const monthFactor = 1 + monthlyPct / 100;
+  if (monthFactor <= 0) return -100;
+  return (Math.pow(monthFactor, 12) - 1) * 100;
 }
 
 export default function FinancialForecastTab({
@@ -115,8 +142,9 @@ export default function FinancialForecastTab({
   companyName,
   industrySectorCategory,
   prefetchedMonthlyData,
+  displayMode = 'full',
 }: FinancialForecastTabProps) {
-  const [activeTab, setActiveTab] = useState<ForecastTab>('inputs');
+  const [activeTab, setActiveTab] = useState<ForecastTab>(displayMode === 'graphs-only' ? 'graphs' : 'inputs');
   const [annualExpanded, setAnnualExpanded] = useState(false);
   const [isSavingInputs, setIsSavingInputs] = useState(false);
   const [isLoadingInputs, setIsLoadingInputs] = useState(false);
@@ -125,8 +153,41 @@ export default function FinancialForecastTab({
   const [isArchivingBudget, setIsArchivingBudget] = useState(false);
   const [lastBudgetArchiveAt, setLastBudgetArchiveAt] = useState<string | null>(null);
   const [incomeStatementExpandLast2Years, setIncomeStatementExpandLast2Years] = useState(false);
-  const [annualRevenueDrafts, setAnnualRevenueDrafts] = useState<Record<string, string>>({});
-  const monthly = Array.isArray(prefetchedMonthlyData) ? prefetchedMonthlyData : [];
+  const [graphGranularity, setGraphGranularity] = useState<'monthly' | 'quarterly'>('monthly');
+  const [masterMonthlyData, setMasterMonthlyData] = useState<any[]>([]);
+  const monthly = useMemo(
+    () => (masterMonthlyData.length > 0
+      ? masterMonthlyData
+      : (Array.isArray(prefetchedMonthlyData) ? prefetchedMonthlyData : [])),
+    [masterMonthlyData, prefetchedMonthlyData],
+  );
+
+  React.useEffect(() => {
+    let isCancelled = false;
+
+    const loadMasterData = async () => {
+      if (!selectedCompanyId) {
+        if (!isCancelled) setMasterMonthlyData([]);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/master-data?companyId=${selectedCompanyId}`);
+        const data = await response.json();
+        if (!response.ok || isCancelled) return;
+        const nextMonthly = Array.isArray(data?.monthlyData) ? data.monthlyData : [];
+        setMasterMonthlyData(nextMonthly);
+      } catch {
+        if (!isCancelled) {
+          setMasterMonthlyData([]);
+        }
+      }
+    };
+
+    loadMasterData();
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedCompanyId]);
   const sectorFieldOptions = useMemo(
     () => getTargetFieldOptions(industrySectorCategory || undefined),
     [industrySectorCategory],
@@ -216,8 +277,80 @@ export default function FinancialForecastTab({
     });
   }, [monthly, sectorRevenueKeys, sectorCogsKeys]);
 
-  const actualQuarters = useMemo(() => quarterActuals.slice(-3), [quarterActuals]);
-  const displayedActualQuarters = useMemo(() => {
+  const monthActuals = useMemo(() => {
+    const grouped = new Map<string, any>();
+    const addValue = (target: Record<string, number>, field: string, rawValue: unknown) => {
+      const value = Number(rawValue) || 0;
+      if (value === 0) return;
+      target[field] = (Number(target[field]) || 0) + value;
+    };
+
+    monthly.forEach((row) => {
+      const date = parseMonthDate(row);
+      if (!date) return;
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          year,
+          month,
+          key,
+          label: getMonthLabel(year, month),
+          revenue: 0,
+          revenueDetails: {} as Record<string, number>,
+          cogsDetails: {} as Record<string, number>,
+          opexDetails: {} as Record<string, number>,
+          incomeTaxes: 0,
+        });
+      }
+      const bucket = grouped.get(key);
+      bucket.revenue += Number(row?.revenue) || 0;
+
+      if (row?.revenueBreakdown && typeof row.revenueBreakdown === 'object') {
+        Object.entries(row.revenueBreakdown).forEach(([field, rawValue]) => {
+          if (!String(field).startsWith('rev_') && !sectorRevenueKeys.has(String(field))) return;
+          addValue(bucket.revenueDetails, String(field), rawValue);
+        });
+      } else {
+        Object.entries(row || {}).forEach(([field, rawValue]) => {
+          if (field.startsWith('rev_') || sectorRevenueKeys.has(field)) {
+            addValue(bucket.revenueDetails, field, rawValue);
+          }
+        });
+      }
+
+      if (row?.cogsBreakdown && typeof row.cogsBreakdown === 'object') {
+        Object.entries(row.cogsBreakdown).forEach(([field, rawValue]) => {
+          const f = String(field);
+          if ((!f.startsWith('cogs_') || f === 'cogs_total') && !sectorCogsKeys.has(f)) return;
+          addValue(bucket.cogsDetails, f, rawValue);
+        });
+      } else {
+        Object.entries(row || {}).forEach(([field, rawValue]) => {
+          if ((field.startsWith('cogs_') && field !== 'cogs_total') || sectorCogsKeys.has(field)) {
+            addValue(bucket.cogsDetails, field, rawValue);
+          }
+        });
+      }
+
+      OPEX_FIELDS.forEach(({ key: field }) => {
+        const value = Number(row?.[field]) || 0;
+        if (value !== 0) {
+          bucket.opexDetails[field] = (Number(bucket.opexDetails[field]) || 0) + value;
+        }
+      });
+      bucket.incomeTaxes += (Number(row?.stateIncomeTaxes) || 0) + (Number(row?.federalIncomeTaxes) || 0);
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      return a.month - b.month;
+    });
+  }, [monthly, sectorRevenueKeys, sectorCogsKeys]);
+
+  const actualMonths = useMemo(() => monthActuals.slice(-3), [monthActuals]);
+  const displayedActualMonths = useMemo(() => {
     const cols: Array<{
       key: string;
       label: string;
@@ -226,7 +359,7 @@ export default function FinancialForecastTab({
       cogsDetails: Record<string, number>;
       opexDetails: Record<string, number>;
       incomeTaxes: number;
-    }> = [...actualQuarters];
+    }> = [...actualMonths];
     while (cols.length < 3) {
       cols.unshift({
         key: `placeholder-${cols.length}`,
@@ -239,15 +372,34 @@ export default function FinancialForecastTab({
       });
     }
     return cols;
-  }, [actualQuarters]);
-  const latestActualQuarter = useMemo(() => quarterActuals[quarterActuals.length - 1] || null, [quarterActuals]);
+  }, [actualMonths]);
+  const latestActualMonth = useMemo(() => monthActuals[monthActuals.length - 1] || null, [monthActuals]);
 
-  const futureQuarters = useMemo<QuarterMeta[]>(() => {
-    const startYear = latestActualQuarter?.year || new Date().getFullYear();
-    const startQuarter = latestActualQuarter?.quarter || ((Math.floor(new Date().getMonth() / 3) + 1) as 1 | 2 | 3 | 4);
+  const monthlyForecastPeriods = useMemo<MonthMeta[]>(() => {
+    const startYear = latestActualMonth?.year || new Date().getFullYear();
+    const startMonth = latestActualMonth?.month ?? new Date().getMonth();
+    const results: MonthMeta[] = [];
+    for (let i = 1; i <= 12; i++) {
+      const shifted = shiftMonth(startYear, startMonth, i);
+      results.push({
+        key: `${shifted.year}-${String(shifted.month + 1).padStart(2, '0')}`,
+        year: shifted.year,
+        month: shifted.month,
+        label: getMonthLabel(shifted.year, shifted.month),
+      });
+    }
+    return results;
+  }, [latestActualMonth]);
+
+  const quarterlyForecastPeriods = useMemo<QuarterMeta[]>(() => {
+    const seedYear = latestActualMonth?.year || new Date().getFullYear();
+    const seedMonth = latestActualMonth?.month ?? new Date().getMonth();
+    const afterFirstYear = shiftMonth(seedYear, seedMonth, 12);
+    const quarterSeed = getQuarterInfo(new Date(afterFirstYear.year, afterFirstYear.month, 1));
+    const firstQuarter = shiftQuarter(quarterSeed.year, quarterSeed.quarter, 1);
     const results: QuarterMeta[] = [];
-    for (let i = 1; i <= 20; i++) {
-      const shifted = shiftQuarter(startYear, startQuarter, i);
+    for (let i = 0; i < 12; i++) {
+      const shifted = shiftQuarter(firstQuarter.year, firstQuarter.quarter, i);
       results.push({
         key: `${shifted.year}-Q${shifted.quarter}`,
         year: shifted.year,
@@ -256,37 +408,29 @@ export default function FinancialForecastTab({
       });
     }
     return results;
-  }, [latestActualQuarter]);
-  const currentForecastYear = useMemo(
-    () => futureQuarters[0]?.year || new Date().getFullYear(),
-    [futureQuarters],
-  );
-  const quarterlyForecastQuarters = useMemo(
-    () => futureQuarters.filter((q) => q.year === currentForecastYear),
-    [futureQuarters, currentForecastYear],
-  );
-  const visibleFutureQuarters = useMemo(
-    () => futureQuarters.slice(0, quarterlyForecastQuarters.length + 12),
-    [futureQuarters, quarterlyForecastQuarters.length],
-  );
-  const annualForecastQuarters = useMemo(
-    () => visibleFutureQuarters.slice(quarterlyForecastQuarters.length),
-    [visibleFutureQuarters, quarterlyForecastQuarters.length],
+  }, [latestActualMonth]);
+
+  const forecastPeriods = useMemo<ForecastPeriodMeta[]>(
+    () => [
+      ...monthlyForecastPeriods.map((m) => ({ ...m, kind: 'month' as const })),
+      ...quarterlyForecastPeriods.map((q) => ({ ...q, kind: 'quarter' as const })),
+    ],
+    [monthlyForecastPeriods, quarterlyForecastPeriods],
   );
 
   const revenueRowKeys = useMemo(() => {
     const keys = new Set<string>((sectorFieldOptions.revenue || []).map((opt) => String(opt.value)));
-    quarterActuals.forEach((q) => Object.keys(q.revenueDetails || {}).forEach((k) => keys.add(k)));
+    monthActuals.forEach((m) => Object.keys(m.revenueDetails || {}).forEach((k) => keys.add(k)));
     return Array.from(keys).sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-  }, [quarterActuals, sectorFieldOptions.revenue]);
+  }, [monthActuals, sectorFieldOptions.revenue]);
 
   const cogsRowKeys = useMemo(() => {
     const sectorKeys = new Set<string>((sectorFieldOptions.cogs || []).map((opt) => String(opt.value)));
     const useSectorDefinedKeys = sectorKeys.size > 0;
     const keys = new Set<string>(useSectorDefinedKeys ? Array.from(sectorKeys) : []);
 
-    quarterActuals.forEach((q) => {
-      Object.keys(q.cogsDetails || {}).forEach((k) => {
+    monthActuals.forEach((m) => {
+      Object.keys(m.cogsDetails || {}).forEach((k) => {
         if (!useSectorDefinedKeys || sectorKeys.has(k)) {
           keys.add(k);
         }
@@ -298,10 +442,10 @@ export default function FinancialForecastTab({
     }
 
     return Array.from(keys).sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-  }, [quarterActuals, sectorFieldOptions.cogs]);
+  }, [monthActuals, sectorFieldOptions.cogs]);
 
   const computeDefaultPct = (rowKey: string, source: 'cogs' | 'opex'): number => {
-    const last = actualQuarters[actualQuarters.length - 1];
+    const last = actualMonths[actualMonths.length - 1];
     const revenue = Number(last?.revenue) || 0;
     if (revenue === 0) return 0;
     const raw = source === 'cogs'
@@ -310,7 +454,7 @@ export default function FinancialForecastTab({
     return (raw / revenue) * 100;
   };
   const computeDefaultIncomeTaxPct = (): number => {
-    const last = actualQuarters[actualQuarters.length - 1];
+    const last = actualMonths[actualMonths.length - 1];
     const revenue = Number(last?.revenue) || 0;
     const totalCogs = Object.values(last?.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
     const totalOpex = Object.values(last?.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
@@ -390,8 +534,9 @@ export default function FinancialForecastTab({
   }, [selectedCompanyId]);
 
   React.useEffect(() => {
-    if (!visibleFutureQuarters.length) return;
-    const len = visibleFutureQuarters.length;
+    if (isLoadingInputs) return;
+    if (!forecastPeriods.length) return;
+    const len = forecastPeriods.length;
     const normalizeToLength = (arr: unknown, defaultValue: number) => {
       const existing = Array.isArray(arr) ? arr.map((n) => Number(n) || 0) : [];
       const next = existing.slice(0, len);
@@ -402,7 +547,19 @@ export default function FinancialForecastTab({
     setRevenueGrowthByRow((prev) => {
       const next = { ...prev };
       revenueRowKeys.forEach((key) => {
-        next[key] = normalizeToLength(next[key], 0);
+        const existing = Array.isArray(next[key]) ? next[key].map((n: unknown) => Number(n) || 0) : [];
+        const carrySeed = existing.length > 0 ? Number(existing[existing.length - 1] || 0) : 0;
+        const normalized = normalizeToLength(next[key], carrySeed);
+        const qStart = monthlyForecastCount;
+        if (qStart < normalized.length) {
+          const lastMonthlyPct = Number(normalized[Math.max(0, qStart - 1)] || 0);
+          const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
+          for (let i = qStart; i < normalized.length; i++) {
+            normalized[i] = derivedQuarterlyPct;
+          }
+        }
+
+        next[key] = normalized;
       });
       return next;
     });
@@ -410,7 +567,32 @@ export default function FinancialForecastTab({
       const next = { ...prev };
       cogsRowKeys.forEach((key) => {
         const seed = Number(computeDefaultPct(key, 'cogs').toFixed(2));
-        next[key] = normalizeToLength(next[key], seed);
+        const normalized = normalizeToLength(next[key], seed);
+        const qStart = monthlyForecastCount;
+        if (qStart < normalized.length) {
+          const monthlySeed = Number(normalized[Math.max(0, qStart - 1)] || 0);
+          const quarterlySlice = normalized.slice(qStart);
+          const allQuarterlyZero = quarterlySlice.every((v) => Number(v || 0) === 0);
+          if (allQuarterlyZero && monthlySeed !== 0) {
+            for (let i = qStart; i < normalized.length; i++) normalized[i] = monthlySeed;
+          } else {
+            let firstZeroTailIdx = -1;
+            for (let i = qStart + 1; i < normalized.length; i++) {
+              const isZero = Number(normalized[i] || 0) === 0;
+              const prevVal = Number(normalized[i - 1] || 0);
+              const restAreZero = normalized.slice(i).every((v) => Number(v || 0) === 0);
+              if (isZero && prevVal !== 0 && restAreZero) {
+                firstZeroTailIdx = i;
+                break;
+              }
+            }
+            if (firstZeroTailIdx !== -1) {
+              const tailSeed = Number(normalized[firstZeroTailIdx - 1] || 0);
+              for (let i = firstZeroTailIdx; i < normalized.length; i++) normalized[i] = tailSeed;
+            }
+          }
+        }
+        next[key] = normalized;
       });
       return next;
     });
@@ -418,14 +600,26 @@ export default function FinancialForecastTab({
       const next = { ...prev };
       OPEX_FIELDS.forEach(({ key }) => {
         const seed = Number(computeDefaultPct(key, 'opex').toFixed(2));
-        next[key] = normalizeToLength(next[key], seed);
+        const normalized = normalizeToLength(next[key], seed);
+        const qStart = monthlyForecastCount;
+        if (qStart < normalized.length) {
+          const monthlySeed = Number(normalized[Math.max(0, qStart - 1)] || 0);
+          for (let i = qStart; i < normalized.length; i++) normalized[i] = monthlySeed;
+        }
+        next[key] = normalized;
       });
       const incomeTaxSeed = Number(computeDefaultIncomeTaxPct().toFixed(2));
-      next[INCOME_TAX_PCT_KEY] = normalizeToLength(next[INCOME_TAX_PCT_KEY], incomeTaxSeed);
+      const normalizedTax = normalizeToLength(next[INCOME_TAX_PCT_KEY], incomeTaxSeed);
+      const qStart = monthlyForecastCount;
+      if (qStart < normalizedTax.length) {
+        const monthlySeed = Number(normalizedTax[Math.max(0, qStart - 1)] || 0);
+        for (let i = qStart; i < normalizedTax.length; i++) normalizedTax[i] = monthlySeed;
+      }
+      next[INCOME_TAX_PCT_KEY] = normalizedTax;
       return next;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revenueRowKeys.join('|'), cogsRowKeys.join('|'), visibleFutureQuarters.length, selectedCompanyId]);
+  }, [revenueRowKeys.join('|'), cogsRowKeys.join('|'), forecastPeriods.length, selectedCompanyId, isLoadingInputs]);
 
   const updateForwardFill = (
     setter: React.Dispatch<React.SetStateAction<Record<string, number[]>>>,
@@ -435,8 +629,60 @@ export default function FinancialForecastTab({
   ) => {
     setIsInputsDirty(true);
     setter((prev) => {
-      const current = Array.isArray(prev[rowKey]) ? [...prev[rowKey]] : Array.from({ length: visibleFutureQuarters.length }, () => 0);
+      const current = Array.isArray(prev[rowKey]) ? [...prev[rowKey]] : Array.from({ length: forecastPeriods.length }, () => 0);
       for (let i = startIndex; i < current.length; i++) current[i] = value;
+      return { ...prev, [rowKey]: current };
+    });
+  };
+
+  const updateYearBlock = (
+    setter: React.Dispatch<React.SetStateAction<Record<string, number[]>>>,
+    rowKey: string,
+    startIndex: number,
+    value: number,
+  ) => {
+    setIsInputsDirty(true);
+    setter((prev) => {
+      const current = Array.isArray(prev[rowKey]) ? [...prev[rowKey]] : Array.from({ length: forecastPeriods.length }, () => 0);
+      for (let i = 0; i < 4 && startIndex + i < current.length; i++) {
+        current[startIndex + i] = value;
+      }
+      return { ...prev, [rowKey]: current };
+    });
+  };
+
+  const updateSinglePeriod = (
+    setter: React.Dispatch<React.SetStateAction<Record<string, number[]>>>,
+    rowKey: string,
+    periodIndex: number,
+    value: number,
+  ) => {
+    setIsInputsDirty(true);
+    setter((prev) => {
+      const current = Array.isArray(prev[rowKey]) ? [...prev[rowKey]] : Array.from({ length: forecastPeriods.length }, () => 0);
+      if (periodIndex >= 0 && periodIndex < current.length) {
+        current[periodIndex] = value;
+      }
+      return { ...prev, [rowKey]: current };
+    });
+  };
+
+  const updateRevenueMonthlyAndDerived = (
+    rowKey: string,
+    startMonthlyIndex: number,
+    value: number,
+  ) => {
+    setIsInputsDirty(true);
+    setRevenueGrowthByRow((prev) => {
+      const current = Array.isArray(prev[rowKey]) ? [...prev[rowKey]] : Array.from({ length: forecastPeriods.length }, () => 0);
+      for (let i = startMonthlyIndex; i < monthlyForecastCount && i < current.length; i++) {
+        current[i] = value;
+      }
+      const lastMonthlyPct = Number(current[Math.max(0, monthlyForecastCount - 1)] || 0);
+      const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
+      for (let i = monthlyForecastCount; i < current.length; i++) {
+        current[i] = derivedQuarterlyPct;
+      }
       return { ...prev, [rowKey]: current };
     });
   };
@@ -500,22 +746,39 @@ export default function FinancialForecastTab({
   };
 
   const annualYearColumns = useMemo(() => {
-    const start = quarterlyForecastQuarters.length;
-    const years = Array.from(new Set(annualForecastQuarters.map((q) => q.year))).slice(0, 3);
-    return years.map((year, idx) => ({ year, startIndex: start + idx * 4 }));
-  }, [annualForecastQuarters, quarterlyForecastQuarters.length]);
+    const blockCount = Math.floor(quarterlyForecastPeriods.length / 4);
+    return Array.from({ length: blockCount }).map((_, idx) => {
+      const blockStart = idx * 4;
+      const startQuarter = quarterlyForecastPeriods[blockStart];
+      const endQuarter = quarterlyForecastPeriods[blockStart + 3] || startQuarter;
+      return {
+        id: `fy-${idx + 1}`,
+        label: String(endQuarter?.year || startQuarter?.year || new Date().getFullYear()),
+        startIndex: monthlyForecastPeriods.length + blockStart,
+      };
+    });
+  }, [monthlyForecastPeriods.length, quarterlyForecastPeriods]);
+
+  const monthlyForecastCount = monthlyForecastPeriods.length;
+  const quarterlyFutureCount = quarterlyForecastPeriods.length;
+  const futureSectionCount = annualExpanded ? quarterlyFutureCount : annualYearColumns.length;
+  const totalInputPeriodCols = 3 + monthlyForecastCount + futureSectionCount;
 
   const forecastRows = useMemo(() => {
-    if (!latestActualQuarter) return [];
+    if (!latestActualMonth) return [];
     const revenueCarry: Record<string, number> = {};
     revenueRowKeys.forEach((k) => {
-      revenueCarry[k] = Number(latestActualQuarter?.revenueDetails?.[k]) || 0;
+      revenueCarry[k] = Number(latestActualMonth?.revenueDetails?.[k]) || 0;
     });
 
-    return visibleFutureQuarters.map((q, idx) => {
+    return forecastPeriods.map((q, idx) => {
       const revenueDetails: Record<string, number> = {};
       revenueRowKeys.forEach((k) => {
-        const growthPct = Number(revenueGrowthByRow[k]?.[idx]) || 0;
+        const monthlyBasePct = Number(revenueGrowthByRow[k]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
+        const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(2));
+        const growthPct = idx < monthlyForecastCount
+          ? (Number(revenueGrowthByRow[k]?.[idx]) || 0)
+          : derivedQuarterlyPct;
         const nextVal = revenueCarry[k] * (1 + growthPct / 100);
         revenueCarry[k] = nextVal;
         revenueDetails[k] = nextVal;
@@ -557,16 +820,54 @@ export default function FinancialForecastTab({
         netIncome,
       };
     });
-  }, [visibleFutureQuarters, latestActualQuarter, revenueRowKeys, revenueGrowthByRow, cogsRowKeys, cogsGrowthByRow, opexPctByRow]);
+  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow]);
 
-  const latestMonthLabel = useMemo(() => {
-    const last = monthly[monthly.length - 1];
-    const raw = last?.month || last?.date || '';
-    if (!raw) return 'N/A';
-    const parsed = new Date(String(raw));
-    if (Number.isNaN(parsed.getTime())) return String(raw);
-    return parsed.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-  }, [monthly]);
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    const firstThreeMonthlyRevenueTotals = forecastRows
+      .filter((row) => row.kind === 'month')
+      .slice(0, 3)
+      .map((row) => Number(row.totalRevenue) || 0);
+    const firstThreeMonthlyRows = forecastRows
+      .filter((row) => row.kind === 'month')
+      .slice(0, 3);
+    if (firstThreeMonthlyRevenueTotals.length < 3) return;
+    try {
+      localStorage.setItem(
+        `financialForecastRevenueMonthlyBase_${selectedCompanyId}`,
+        JSON.stringify({
+          companyId: selectedCompanyId,
+          updatedAt: new Date().toISOString(),
+          monthRefs: firstThreeMonthlyRows.map((row) => ({
+            key: row.key,
+            label: row.label,
+            year: Number(row.year),
+            month: Number(row.month),
+          })),
+          monthTotals: firstThreeMonthlyRevenueTotals,
+          opexMonthTotals: forecastRows
+            .filter((row) => row.kind === 'month')
+            .slice(0, 3)
+            .map((row) => Number(row.totalOpex) || 0),
+          grossMarginMonthPcts: forecastRows
+            .filter((row) => row.kind === 'month')
+            .slice(0, 3)
+            .map((row) => {
+              const revenue = Number(row.totalRevenue) || 0;
+              if (revenue <= 0) return 0;
+              const grossProfit = Number(row.grossProfit) || 0;
+              return (grossProfit / revenue) * 100;
+            }),
+          operatingIncomeMonthTotals: forecastRows
+            .filter((row) => row.kind === 'month')
+            .slice(0, 3)
+            .map((row) => Number(row.operatingIncome) || 0),
+        }),
+      );
+    } catch {
+      // Ignore localStorage errors in restricted browser modes.
+    }
+  }, [selectedCompanyId, forecastRows]);
 
   const incomeStatementColumns = useMemo(() => {
     const base = forecastRows.map((row, idx) => ({
@@ -615,70 +916,221 @@ export default function FinancialForecastTab({
     return collapsed;
   }, [forecastRows, incomeStatementExpandLast2Years]);
 
-  const revenueGraphPoints = useMemo(() => {
-    const actual = actualQuarters.slice(-3).map((q) => ({
+  const forecastRowsByQuarter = useMemo(() => {
+    const grouped = new Map<string, any>();
+    forecastRows.forEach((row) => {
+      const quarter = row.kind === 'quarter'
+        ? (row.quarter as 1 | 2 | 3 | 4)
+        : ((Math.floor((Number(row.month) || 0) / 3) + 1) as 1 | 2 | 3 | 4);
+      const key = `${row.year}-Q${quarter}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          year: row.year,
+          quarter,
+          label: getQuarterEndLabel(row.year, quarter),
+          revenueDetails: {} as Record<string, number>,
+          cogsDetails: {} as Record<string, number>,
+          opexDetails: {} as Record<string, number>,
+          totalRevenue: 0,
+          totalCogs: 0,
+          grossProfit: 0,
+          totalOpex: 0,
+          totalIncomeTaxes: 0,
+          operatingIncome: 0,
+          netIncome: 0,
+          isActual: false,
+        });
+      }
+      const bucket = grouped.get(key);
+      revenueRowKeys.forEach((k) => {
+        bucket.revenueDetails[k] = (Number(bucket.revenueDetails[k]) || 0) + (Number(row.revenueDetails?.[k]) || 0);
+      });
+      cogsRowKeys.forEach((k) => {
+        bucket.cogsDetails[k] = (Number(bucket.cogsDetails[k]) || 0) + (Number(row.cogsDetails?.[k]) || 0);
+      });
+      OPEX_FIELDS.forEach(({ key: k }) => {
+        bucket.opexDetails[k] = (Number(bucket.opexDetails[k]) || 0) + (Number(row.opexDetails?.[k]) || 0);
+      });
+      bucket.totalRevenue += Number(row.totalRevenue) || 0;
+      bucket.totalCogs += Number(row.totalCogs) || 0;
+      bucket.grossProfit += Number(row.grossProfit) || 0;
+      bucket.totalOpex += Number(row.totalOpex) || 0;
+      bucket.totalIncomeTaxes += Number(row.totalIncomeTaxes) || 0;
+      bucket.operatingIncome += Number(row.operatingIncome) || 0;
+      bucket.netIncome += Number(row.netIncome) || 0;
+    });
+    return Array.from(grouped.values()).sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      return a.quarter - b.quarter;
+    });
+  }, [forecastRows, revenueRowKeys, cogsRowKeys]);
+
+  const monthlyRevenueGraphPoints = useMemo(() => {
+    const actual = actualMonths.slice(-3).map((m) => ({
+      label: m.label,
+      values: revenueRowKeys.map((key) => Number(m.revenueDetails?.[key]) || 0),
+      isActual: true,
+    }));
+    const forecast = forecastRows
+      .filter((row) => row.kind === 'month')
+      .slice(0, 9)
+      .map((row) => ({
+        label: row.label,
+        values: revenueRowKeys.map((key) => Number(row.revenueDetails?.[key]) || 0),
+        isActual: false,
+      }));
+    return [...actual, ...forecast].slice(0, 12).map((p) => ({
+      ...p,
+      total: p.values.reduce((sum, v) => sum + v, 0),
+    }));
+  }, [actualMonths, forecastRows, revenueRowKeys]);
+
+  const quarterlyRevenueGraphPoints = useMemo(() => {
+    const actual = quarterActuals.slice(-3).map((q) => ({
       label: q.label,
       values: revenueRowKeys.map((key) => Number(q.revenueDetails?.[key]) || 0),
       isActual: true,
     }));
-    const forecast = forecastRows.slice(0, 12).map((row) => ({
+    const forecast = forecastRowsByQuarter.slice(0, 9).map((row) => ({
       label: row.label,
       values: revenueRowKeys.map((key) => Number(row.revenueDetails?.[key]) || 0),
       isActual: false,
     }));
-    return [...actual, ...forecast].map((p) => ({
+    return [...actual, ...forecast].slice(0, 12).map((p) => ({
       ...p,
       total: p.values.reduce((sum, v) => sum + v, 0),
     }));
-  }, [actualQuarters, forecastRows, revenueRowKeys]);
+  }, [quarterActuals, forecastRowsByQuarter, revenueRowKeys]);
 
-  const cogsGraphPoints = useMemo(() => {
-    const actual = actualQuarters.slice(-3).map((q) => ({
+  const revenueGraphPoints = graphGranularity === 'monthly' ? monthlyRevenueGraphPoints : quarterlyRevenueGraphPoints;
+
+  const monthlyCogsGraphPoints = useMemo(() => {
+    const actual = actualMonths.slice(-3).map((m) => ({
+      label: m.label,
+      values: cogsRowKeys.map((key) => Number(m.cogsDetails?.[key]) || 0),
+      isActual: true,
+    }));
+    const forecast = forecastRows
+      .filter((row) => row.kind === 'month')
+      .slice(0, 9)
+      .map((row) => ({
+        label: row.label,
+        values: cogsRowKeys.map((key) => Number(row.cogsDetails?.[key]) || 0),
+        isActual: false,
+      }));
+    return [...actual, ...forecast].slice(0, 12).map((p) => ({
+      ...p,
+      total: p.values.reduce((sum, v) => sum + v, 0),
+    }));
+  }, [actualMonths, forecastRows, cogsRowKeys]);
+
+  const quarterlyCogsGraphPoints = useMemo(() => {
+    const actual = quarterActuals.slice(-3).map((q) => ({
       label: q.label,
       values: cogsRowKeys.map((key) => Number(q.cogsDetails?.[key]) || 0),
       isActual: true,
     }));
-    const forecast = forecastRows.slice(0, 12).map((row) => ({
+    const forecast = forecastRowsByQuarter.slice(0, 9).map((row) => ({
       label: row.label,
       values: cogsRowKeys.map((key) => Number(row.cogsDetails?.[key]) || 0),
       isActual: false,
     }));
-    return [...actual, ...forecast].map((p) => ({
+    return [...actual, ...forecast].slice(0, 12).map((p) => ({
       ...p,
       total: p.values.reduce((sum, v) => sum + v, 0),
     }));
-  }, [actualQuarters, forecastRows, cogsRowKeys]);
+  }, [quarterActuals, forecastRowsByQuarter, cogsRowKeys]);
 
-  const totalsLineGraphPoints = useMemo(() => {
-    const actual = actualQuarters.slice(-3).map((q) => {
+  const cogsGraphPoints = graphGranularity === 'monthly' ? monthlyCogsGraphPoints : quarterlyCogsGraphPoints;
+
+  const monthlyTotalsLineGraphPoints = useMemo(() => {
+    const actual = actualMonths.slice(-3).map((m) => {
+      const totalRevenue = Number(m.revenue) || 0;
+      const totalCogs = Object.values(m.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+      const totalOpex = Object.values(m.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+      const grossProfit = totalRevenue - totalCogs;
+      return {
+        label: m.label,
+        isActual: true,
+        totalRevenue,
+        totalCogs,
+        grossProfit,
+        totalOpex,
+      };
+    });
+    const forecast = forecastRows
+      .filter((row) => row.kind === 'month')
+      .slice(0, 9)
+      .map((row) => ({
+        label: row.label,
+        isActual: false,
+        totalRevenue: Number(row.totalRevenue) || 0,
+        totalCogs: Number(row.totalCogs) || 0,
+        grossProfit: Number(row.grossProfit) || 0,
+        totalOpex: Number(row.totalOpex) || 0,
+      }));
+    return [...actual, ...forecast].slice(0, 12);
+  }, [actualMonths, forecastRows]);
+
+  const quarterlyTotalsLineGraphPoints = useMemo(() => {
+    const actual = quarterActuals.slice(-3).map((q) => {
       const totalRevenue = Number(q.revenue) || 0;
       const totalCogs = Object.values(q.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
       const totalOpex = Object.values(q.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
-        const grossProfit = totalRevenue - totalCogs;
+      const grossProfit = totalRevenue - totalCogs;
       return {
         label: q.label,
         isActual: true,
         totalRevenue,
         totalCogs,
-          grossProfit,
+        grossProfit,
         totalOpex,
       };
     });
-    const forecast = forecastRows.slice(0, 12).map((row) => ({
+    const forecast = forecastRowsByQuarter.slice(0, 9).map((row) => ({
       label: row.label,
       isActual: false,
       totalRevenue: Number(row.totalRevenue) || 0,
       totalCogs: Number(row.totalCogs) || 0,
-        grossProfit: Number(row.grossProfit) || 0,
+      grossProfit: Number(row.grossProfit) || 0,
       totalOpex: Number(row.totalOpex) || 0,
     }));
-    return [...actual, ...forecast];
-  }, [actualQuarters, forecastRows]);
+    return [...actual, ...forecast].slice(0, 12);
+  }, [quarterActuals, forecastRowsByQuarter]);
+
+  const totalsLineGraphPoints = graphGranularity === 'monthly' ? monthlyTotalsLineGraphPoints : quarterlyTotalsLineGraphPoints;
+
+  const cashLiquidityGraphPoints = useMemo(() => {
+    if (typeof window === 'undefined' || !selectedCompanyId) return [] as Array<{
+      label: string;
+      unleveredEndingCash: number;
+      endingCash: number;
+      availableLoc: number;
+      locLimit: number;
+    }>;
+    try {
+      const raw = localStorage.getItem(`cashForecastGraphData_${selectedCompanyId}`);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
+      const locLimit = Math.max(0, Number(parsed?.locLimit || 0));
+      return rows.slice(0, 12).map((row: any, idx: number) => ({
+        label: `W${Number(row?.week || idx + 1)}`,
+        unleveredEndingCash: Number(row?.unleveredEndingCash || 0),
+        endingCash: Number(row?.endingCash || 0),
+        availableLoc: Math.max(0, Number(row?.availableLoc || 0)),
+        locLimit,
+      }));
+    } catch {
+      return [];
+    }
+  }, [selectedCompanyId]);
 
   const renderStackedBarChart = (
     title: string,
     rowKeys: string[],
     points: Array<{ label: string; values: number[]; total: number; isActual: boolean }>,
+    subtitle: string,
   ) => {
     if (!points.length || !rowKeys.length) {
       return (
@@ -773,7 +1225,7 @@ export default function FinancialForecastTab({
           )}
         </svg>
         <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-          Shaded bars = actual quarters (3), then forecast quarters (12).
+          {subtitle}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', marginTop: '10px' }}>
           {rowKeys.map((rowKey) => (
@@ -797,6 +1249,7 @@ export default function FinancialForecastTab({
       grossProfit: number;
       totalOpex: number;
     }>,
+    subtitle: string,
   ) => {
     if (!points.length) {
       return (
@@ -907,7 +1360,7 @@ export default function FinancialForecastTab({
           )}
         </svg>
         <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-          Shaded background = actual quarters (3), then projected quarters (12).
+          {subtitle}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', marginTop: '10px' }}>
           {series.map((s) => (
@@ -916,6 +1369,137 @@ export default function FinancialForecastTab({
               <span>{s.label}</span>
             </div>
           ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCashLiquidityComboChart = (
+    title: string,
+    points: Array<{ label: string; unleveredEndingCash: number; endingCash: number; availableLoc: number; locLimit: number }>,
+    subtitle: string,
+  ) => {
+    if (!points.length) {
+      return (
+        <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+          <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>{title}</h4>
+          <div style={{ fontSize: '13px', color: '#64748b' }}>
+            No cash forecast projection data yet. Open Cash Forecast to generate weekly projections.
+          </div>
+        </div>
+      );
+    }
+
+    const width = 760;
+    const height = 360;
+    const padding = { top: 20, right: 18, bottom: 70, left: 70 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+    const allValues = points.flatMap((p) => [p.unleveredEndingCash, p.endingCash, p.availableLoc, p.locLimit]);
+    const minValue = Math.min(0, ...allValues);
+    const maxValue = Math.max(1, ...allValues);
+    const yPad = Math.max((maxValue - minValue) * 0.08, 1);
+    const yMin = minValue - yPad;
+    const yMax = maxValue + yPad;
+    const yRange = Math.max(1, yMax - yMin);
+    const yTicks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i) / 4);
+    const xCount = Math.max(points.length, 1);
+    const barSlot = chartWidth / xCount;
+    const barWidth = Math.max(10, barSlot * 0.56);
+    const toX = (idx: number) => padding.left + idx * barSlot + barSlot / 2;
+    const toY = (val: number) => padding.top + chartHeight - ((val - yMin) / yRange) * chartHeight;
+    const availableLocPath = points
+      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(idx)} ${toY(p.availableLoc)}`)
+      .join(' ');
+    const unleveredCashPath = points
+      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(idx)} ${toY(p.unleveredEndingCash)}`)
+      .join(' ');
+    const locLimitPath = points
+      .map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${toX(idx)} ${toY(p.locLimit)}`)
+      .join(' ');
+    const zeroY = toY(0);
+
+    return (
+      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+        <h4 style={{ margin: '0 0 10px 0', color: '#1e293b', fontSize: '15px', fontWeight: 700 }}>{title}</h4>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: 'auto' }}>
+          {yTicks.map((tick, idx) => {
+            const y = toY(tick);
+            return (
+              <g key={`yt-cash-${idx}`}>
+                <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
+                  ${(tick / 1000).toFixed(0)}K
+                </text>
+              </g>
+            );
+          })}
+          <line x1={padding.left} y1={zeroY} x2={width - padding.right} y2={zeroY} stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3,3" />
+          <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+          <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+
+          {points.map((point, idx) => {
+            const x = padding.left + idx * barSlot + (barSlot - barWidth) / 2;
+            const yTop = toY(Math.max(0, point.endingCash));
+            const yBottom = toY(Math.min(0, point.endingCash));
+            const barHeight = Math.max(1, Math.abs(yBottom - yTop));
+            return (
+              <rect
+                key={`cash-bar-${point.label}-${idx}`}
+                x={x}
+                y={Math.min(yTop, yBottom)}
+                width={barWidth}
+                height={barHeight}
+                fill={point.endingCash >= 0 ? '#16a34a' : '#dc2626'}
+                opacity={0.9}
+              >
+                <title>{`${point.label} • Ending Cash: $${point.endingCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+              </rect>
+            );
+          })}
+
+          <path d={locLimitPath} fill="none" stroke="#6366f1" strokeWidth="2" strokeDasharray="6,5" />
+          <path d={availableLocPath} fill="none" stroke="#0ea5e9" strokeWidth="2.5" />
+          <path d={unleveredCashPath} fill="none" stroke="#f59e0b" strokeWidth="2.5" />
+          {points.map((point, idx) => (
+            <circle key={`cash-loc-pt-${point.label}-${idx}`} cx={toX(idx)} cy={toY(point.availableLoc)} r="3.2" fill="#0ea5e9">
+              <title>{`${point.label} • Available LOC: $${point.availableLoc.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+            </circle>
+          ))}
+          {points.map((point, idx) => (
+            <circle key={`cash-unlev-pt-${point.label}-${idx}`} cx={toX(idx)} cy={toY(point.unleveredEndingCash)} r="3.2" fill="#f59e0b">
+              <title>{`${point.label} • Unlevered Cash: $${point.unleveredEndingCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}</title>
+            </circle>
+          ))}
+
+          {points.map((point, idx) => {
+            const show = idx === 0 || idx === points.length - 1 || idx % 2 === 0;
+            if (!show) return null;
+            return (
+              <text key={`xl-cash-${point.label}-${idx}`} x={toX(idx)} y={height - padding.bottom + 18} textAnchor="middle" fontSize="11" fill="#64748b">
+                {point.label}
+              </text>
+            );
+          })}
+        </svg>
+        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{subtitle}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', marginTop: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+            <span style={{ width: '10px', height: '10px', background: '#16a34a', borderRadius: '2px', display: 'inline-block' }} />
+            <span>Ending Cash (weekly)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+            <span style={{ width: '12px', height: '3px', background: '#f59e0b', borderRadius: '2px', display: 'inline-block' }} />
+            <span>Unlevered Cash (pre-LOC draw/repay)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+            <span style={{ width: '12px', height: '3px', background: '#0ea5e9', borderRadius: '2px', display: 'inline-block' }} />
+            <span>Available LOC</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+            <span style={{ width: '12px', height: '3px', background: '#6366f1', borderRadius: '2px', display: 'inline-block' }} />
+            <span>LOC Loan Amount (ceiling)</span>
+          </div>
         </div>
       </div>
     );
@@ -931,6 +1515,25 @@ export default function FinancialForecastTab({
     fontWeight: 600,
     cursor: 'pointer',
   });
+
+  const showInputsTab = displayMode !== 'graphs-only';
+  const showIncomeStatementTab = displayMode !== 'graphs-only';
+  const showGraphsTab = displayMode !== 'no-graphs';
+  const visibleTabs: ForecastTab[] = [
+    ...(showInputsTab ? (['inputs'] as ForecastTab[]) : []),
+    ...(showIncomeStatementTab ? (['income-statement'] as ForecastTab[]) : []),
+    ...(showGraphsTab ? (['graphs'] as ForecastTab[]) : []),
+  ];
+
+  useEffect(() => {
+    if (displayMode === 'graphs-only' && activeTab !== 'graphs') {
+      setActiveTab('graphs');
+      return;
+    }
+    if (displayMode === 'no-graphs' && activeTab === 'graphs') {
+      setActiveTab('income-statement');
+    }
+  }, [displayMode, activeTab]);
 
   return (
     <div style={{ maxWidth: '2200px', margin: '0 auto', padding: '24px' }}>
@@ -986,18 +1589,21 @@ export default function FinancialForecastTab({
           appearance: textfield;
         }
       `}</style>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '30px', fontWeight: 700, color: '#0f172a', margin: '0 0 8px 0' }}>Financial Forecast</h1>
-        <div style={{ color: '#64748b', fontSize: '14px' }}>
-          Company: {companyName || selectedCompanyId} | Latest Actual Month: {latestMonthLabel}
-        </div>
-      </div>
+      <div style={{ marginBottom: '6px' }} />
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button style={tabButtonStyle('inputs')} onClick={() => setActiveTab('inputs')}>Inputs</button>
-        <button style={tabButtonStyle('income-statement')} onClick={() => setActiveTab('income-statement')}>Income Statement Forecast</button>
-        <button style={tabButtonStyle('graphs')} onClick={() => setActiveTab('graphs')}>Graphs</button>
-      </div>
+      {visibleTabs.length > 1 && (
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+          {showInputsTab && (
+            <button style={tabButtonStyle('inputs')} onClick={() => setActiveTab('inputs')}>Inputs</button>
+          )}
+          {showIncomeStatementTab && (
+            <button style={tabButtonStyle('income-statement')} onClick={() => setActiveTab('income-statement')}>Income Statement Forecast</button>
+          )}
+          {showGraphsTab && (
+            <button style={tabButtonStyle('graphs')} onClick={() => setActiveTab('graphs')}>Graphs</button>
+          )}
+        </div>
+      )}
 
       {activeTab === 'inputs' && (
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
@@ -1040,7 +1646,7 @@ export default function FinancialForecastTab({
                   cursor: 'pointer',
                 }}
               >
-                {annualExpanded ? 'Collapse Annual to Years' : 'Expand Annual to Quarters'}
+                {annualExpanded ? 'Collapse Future Years to Years' : 'Expand Future Years to Quarters'}
               </button>
             </div>
           </div>
@@ -1049,33 +1655,33 @@ export default function FinancialForecastTab({
             <table className="forecast-grid" style={{ width: 'max-content', minWidth: '1280px', borderCollapse: 'collapse', fontSize: '12px' }}>
               <colgroup>
                 <col className="name-col" />
-                {Array.from({ length: 3 + quarterlyForecastQuarters.length + (annualExpanded ? annualForecastQuarters.length : annualYearColumns.length) }).map((_, idx) => (
+                {Array.from({ length: totalInputPeriodCols }).map((_, idx) => (
                   <col key={`rev-col-${idx}`} className="period-col" />
                 ))}
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Revenue</th>
-                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Quarters)</th>
-                  <th colSpan={quarterlyForecastQuarters.length} style={{ borderBottom: '1px solid #e2e8f0' }}>Forecast Quarterly (% Growth)</th>
-                  <th colSpan={annualExpanded ? annualForecastQuarters.length : annualYearColumns.length} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    Annual Forecast
+                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Months)</th>
+                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>Current Year Forecast Monthly (% Growth)</th>
+                  <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    Future Years Forecast
                   </th>
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
-                  {displayedActualQuarters.map((q) => (
+                  {displayedActualMonths.map((q) => (
                     <th key={`act-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
-                  {quarterlyForecastQuarters.map((q) => (
+                  {monthlyForecastPeriods.map((q) => (
                     <th key={`f-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
                   {annualExpanded
-                    ? annualForecastQuarters.map((q) => (
+                    ? quarterlyForecastPeriods.map((q) => (
                         <th key={`aq-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                       ))
                     : annualYearColumns.map((y) => (
-                        <th key={`y-${y.year}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{y.year}</th>
+                        <th key={`y-${y.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{y.label}</th>
                       ))}
                 </tr>
               </thead>
@@ -1083,12 +1689,12 @@ export default function FinancialForecastTab({
                 {revenueRowKeys.map((rowKey) => (
                   <tr key={rowKey}>
                     <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>{getFieldDisplayName(rowKey)}</td>
-                    {displayedActualQuarters.map((q) => (
+                    {displayedActualMonths.map((q) => (
                       <td key={`${rowKey}-a-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                         ${(Number(q.revenueDetails?.[rowKey]) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </td>
                     ))}
-                    {quarterlyForecastQuarters.map((q, idx) => (
+                    {monthlyForecastPeriods.map((q, idx) => (
                       <td key={`${rowKey}-f-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                         <input
                           type="text"
@@ -1098,72 +1704,43 @@ export default function FinancialForecastTab({
                             const raw = e.target.value.trim();
                             if (!/^-?\d*\.?\d*$/.test(raw)) return;
                             if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
-                            updateForwardFill(setRevenueGrowthByRow, rowKey, idx, Number((Number(raw) || 0).toFixed(1)));
+                            updateRevenueMonthlyAndDerived(rowKey, idx, Number((Number(raw) || 0).toFixed(2)));
                           }}
                           style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                         />%
                       </td>
                     ))}
                     {annualExpanded
-                      ? annualForecastQuarters.map((q, idx) => (
+                      ? quarterlyForecastPeriods.map((q, idx) => (
+                          (() => {
+                            const monthlyBasePct = Number(revenueGrowthByRow[rowKey]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
+                            const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(1));
+                            return (
                           <td key={`${rowKey}-aq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                             <input
                               type="text"
                               inputMode="decimal"
-                              value={(Number(revenueGrowthByRow[rowKey]?.[idx + quarterlyForecastQuarters.length]) || 0).toFixed(1)}
-                              onChange={(e) => {
-                                const raw = e.target.value.trim();
-                                if (!/^-?\d*\.?\d*$/.test(raw)) return;
-                                if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
-                                updateForwardFill(setRevenueGrowthByRow, rowKey, idx + quarterlyForecastQuarters.length, Number((Number(raw) || 0).toFixed(1)));
-                              }}
+                              value={derivedQuarterlyPct.toFixed(1)}
+                              readOnly
+                              disabled
                               style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                             />%
                           </td>
+                            );
+                          })()
                         ))
                       : annualYearColumns.map((yearCol) => {
-                          const values = (revenueGrowthByRow[rowKey] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
-                          const annualGrowthPct = quarterlyPctsToAnnualGrowthPct(values);
-                          const draftKey = `${rowKey}-${yearCol.year}`;
-                          const isDrafting = Object.prototype.hasOwnProperty.call(annualRevenueDrafts, draftKey);
-                          const displayValue = isDrafting
-                            ? annualRevenueDrafts[draftKey]
-                            : annualGrowthPct.toFixed(1);
+                          const monthlyBasePct = Number(revenueGrowthByRow[rowKey]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
+                          const annualGrowthPct = monthlyGrowthToAnnualGrowthPct(monthlyBasePct);
+                          const displayValue = annualGrowthPct.toFixed(1);
                           return (
-                            <td key={`${rowKey}-y-${yearCol.year}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                            <td key={`${rowKey}-y-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                               <input
                                 type="text"
                                 inputMode="decimal"
                                 value={displayValue}
-                                onFocus={() => {
-                                  setAnnualRevenueDrafts((prev) => ({
-                                    ...prev,
-                                    [draftKey]: annualGrowthPct.toFixed(1),
-                                  }));
-                                }}
-                                onChange={(e) => {
-                                  const raw = e.target.value.trim();
-                                  if (!/^-?\d*\.?\d*$/.test(raw)) return;
-                                  setAnnualRevenueDrafts((prev) => ({
-                                    ...prev,
-                                    [draftKey]: raw,
-                                  }));
-                                }}
-                                onBlur={(e) => {
-                                  const annualPct = Number(e.target.value) || 0;
-                                  const quarterlyPct = Number(annualGrowthToQuarterlyPct(annualPct).toFixed(1));
-                                  updateForwardFill(setRevenueGrowthByRow, rowKey, yearCol.startIndex, quarterlyPct);
-                                  setAnnualRevenueDrafts((prev) => {
-                                    const next = { ...prev };
-                                    delete next[draftKey];
-                                    return next;
-                                  });
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    (e.currentTarget as HTMLInputElement).blur();
-                                  }
-                                }}
+                                readOnly
+                                disabled
                                 style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                               />%
                             </td>
@@ -1173,12 +1750,12 @@ export default function FinancialForecastTab({
                 ))}
                 <tr style={{ background: '#f8fafc', fontWeight: 700 }}>
                   <td style={{ padding: '6px 8px' }}>Total Revenue</td>
-                  {displayedActualQuarters.map((q) => (
+                  {displayedActualMonths.map((q) => (
                     <td key={`tot-rev-a-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right' }}>
                       ${Number(q.revenue).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   ))}
-                  <td colSpan={quarterlyForecastQuarters.length + (annualExpanded ? annualForecastQuarters.length : annualYearColumns.length)} style={{ padding: '6px 8px' }} />
+                  <td colSpan={monthlyForecastCount + futureSectionCount} style={{ padding: '6px 8px' }} />
                 </tr>
               </tbody>
             </table>
@@ -1190,33 +1767,33 @@ export default function FinancialForecastTab({
             <table className="forecast-grid" style={{ width: 'max-content', minWidth: '1280px', borderCollapse: 'collapse', fontSize: '12px' }}>
               <colgroup>
                 <col className="name-col" />
-                {Array.from({ length: 3 + quarterlyForecastQuarters.length + (annualExpanded ? annualForecastQuarters.length : annualYearColumns.length) }).map((_, idx) => (
+                {Array.from({ length: totalInputPeriodCols }).map((_, idx) => (
                   <col key={`cogs-col-${idx}`} className="period-col" />
                 ))}
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>COGS</th>
-                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Quarters, % of Revenue)</th>
-                  <th colSpan={quarterlyForecastQuarters.length} style={{ borderBottom: '1px solid #e2e8f0' }}>Forecast Quarterly (% of Revenue)</th>
-                  <th colSpan={annualExpanded ? annualForecastQuarters.length : annualYearColumns.length} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    Annual Forecast
+                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Months, % of Revenue)</th>
+                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>Current Year Forecast Monthly (% of Revenue)</th>
+                  <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    Future Years Forecast
                   </th>
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
-                  {displayedActualQuarters.map((q) => (
+                  {displayedActualMonths.map((q) => (
                     <th key={`ca-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
-                  {quarterlyForecastQuarters.map((q) => (
+                  {monthlyForecastPeriods.map((q) => (
                     <th key={`cf-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
                   {annualExpanded
-                    ? annualForecastQuarters.map((q) => (
+                    ? quarterlyForecastPeriods.map((q) => (
                         <th key={`caq-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                       ))
                     : annualYearColumns.map((y) => (
-                        <th key={`cy-${y.year}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{y.year}</th>
+                        <th key={`cy-${y.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{y.label}</th>
                       ))}
                 </tr>
               </thead>
@@ -1224,7 +1801,7 @@ export default function FinancialForecastTab({
                 {cogsRowKeys.map((rowKey) => (
                   <tr key={rowKey}>
                     <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>{getFieldDisplayName(rowKey)}</td>
-                    {displayedActualQuarters.map((q) => {
+                    {displayedActualMonths.map((q) => {
                       const revenue = Number(q.revenue) || 0;
                       const cogsValue = Number(q.cogsDetails?.[rowKey]) || 0;
                       const pct = revenue > 0 ? (cogsValue / revenue) * 100 : 0;
@@ -1234,7 +1811,7 @@ export default function FinancialForecastTab({
                         </td>
                       );
                     })}
-                    {quarterlyForecastQuarters.map((q, idx) => (
+                    {monthlyForecastPeriods.map((q, idx) => (
                       <td key={`${rowKey}-cf-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                         <input
                           type="number"
@@ -1245,12 +1822,12 @@ export default function FinancialForecastTab({
                       </td>
                     ))}
                     {annualExpanded
-                      ? annualForecastQuarters.map((q, idx) => (
+                      ? quarterlyForecastPeriods.map((q, idx) => (
                           <td key={`${rowKey}-caq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                             <input
                               type="number"
-                              value={Number((Number(cogsGrowthByRow[rowKey]?.[idx + quarterlyForecastQuarters.length]) || 0).toFixed(2))}
-                              onChange={(e) => updateForwardFill(setCogsGrowthByRow, rowKey, idx + quarterlyForecastQuarters.length, Number((Number(e.target.value) || 0).toFixed(2)))}
+                              value={Number((Number(cogsGrowthByRow[rowKey]?.[idx + monthlyForecastCount]) || 0).toFixed(2))}
+                              onChange={(e) => updateSinglePeriod(setCogsGrowthByRow, rowKey, idx + monthlyForecastCount, Number((Number(e.target.value) || 0).toFixed(2)))}
                               style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                             />%
                           </td>
@@ -1259,11 +1836,11 @@ export default function FinancialForecastTab({
                           const values = (cogsGrowthByRow[rowKey] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
                           const avg = values.length ? values.reduce((s, v) => s + Number(v || 0), 0) / values.length : 0;
                           return (
-                            <td key={`${rowKey}-cy-${yearCol.year}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                            <td key={`${rowKey}-cy-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                               <input
                                 type="number"
                                 value={Number(avg.toFixed(2))}
-                                onChange={(e) => updateForwardFill(setCogsGrowthByRow, rowKey, yearCol.startIndex, Number(e.target.value) || 0)}
+                                onChange={(e) => updateYearBlock(setCogsGrowthByRow, rowKey, yearCol.startIndex, Number(e.target.value) || 0)}
                                 style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                               />%
                             </td>
@@ -1281,33 +1858,33 @@ export default function FinancialForecastTab({
             <table className="forecast-grid" style={{ width: 'max-content', minWidth: '1280px', borderCollapse: 'collapse', fontSize: '12px' }}>
               <colgroup>
                 <col className="name-col" />
-                {Array.from({ length: 3 + quarterlyForecastQuarters.length + (annualExpanded ? annualForecastQuarters.length : annualYearColumns.length) }).map((_, idx) => (
+                {Array.from({ length: totalInputPeriodCols }).map((_, idx) => (
                   <col key={`opex-col-${idx}`} className="period-col" />
                 ))}
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Operating Expenses (% of Revenue)</th>
-                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Quarters)</th>
-                  <th colSpan={quarterlyForecastQuarters.length} style={{ borderBottom: '1px solid #e2e8f0' }}>Forecast Quarterly</th>
-                  <th colSpan={annualExpanded ? annualForecastQuarters.length : annualYearColumns.length} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    Annual Forecast
+                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Months)</th>
+                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>Current Year Forecast Monthly</th>
+                  <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    Future Years Forecast
                   </th>
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
-                  {displayedActualQuarters.map((q) => (
+                  {displayedActualMonths.map((q) => (
                     <th key={`oa-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
-                  {quarterlyForecastQuarters.map((q) => (
+                  {monthlyForecastPeriods.map((q) => (
                     <th key={`of-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
                   {annualExpanded
-                    ? annualForecastQuarters.map((q) => (
+                    ? quarterlyForecastPeriods.map((q) => (
                         <th key={`oaq-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                       ))
                     : annualYearColumns.map((y) => (
-                        <th key={`oy-${y.year}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{y.year}</th>
+                        <th key={`oy-${y.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{y.label}</th>
                       ))}
                 </tr>
               </thead>
@@ -1315,7 +1892,7 @@ export default function FinancialForecastTab({
                 {OPEX_FIELDS.map(({ key, label }) => (
                   <tr key={key}>
                     <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>{label}</td>
-                    {displayedActualQuarters.map((q) => {
+                    {displayedActualMonths.map((q) => {
                       const pct = q.revenue > 0 ? ((Number(q.opexDetails?.[key]) || 0) / q.revenue) * 100 : 0;
                       return (
                         <td key={`${key}-oa-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
@@ -1323,7 +1900,7 @@ export default function FinancialForecastTab({
                         </td>
                       );
                     })}
-                    {quarterlyForecastQuarters.map((q, idx) => (
+                    {monthlyForecastPeriods.map((q, idx) => (
                       <td key={`${key}-of-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                         <input
                           type="number"
@@ -1334,12 +1911,12 @@ export default function FinancialForecastTab({
                       </td>
                     ))}
                     {annualExpanded
-                      ? annualForecastQuarters.map((q, idx) => (
+                      ? quarterlyForecastPeriods.map((q, idx) => (
                           <td key={`${key}-oaq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                             <input
                               type="number"
-                              value={Number(opexPctByRow[key]?.[idx + quarterlyForecastQuarters.length] || 0)}
-                              onChange={(e) => updateForwardFill(setOpexPctByRow, key, idx + quarterlyForecastQuarters.length, Number(e.target.value) || 0)}
+                              value={Number(opexPctByRow[key]?.[idx + monthlyForecastCount] || 0)}
+                              onChange={(e) => updateSinglePeriod(setOpexPctByRow, key, idx + monthlyForecastCount, Number(e.target.value) || 0)}
                               style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                             />%
                           </td>
@@ -1348,11 +1925,11 @@ export default function FinancialForecastTab({
                           const values = (opexPctByRow[key] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
                           const avg = values.length ? values.reduce((s, v) => s + Number(v || 0), 0) / values.length : 0;
                           return (
-                            <td key={`${key}-oy-${yearCol.year}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
+                            <td key={`${key}-oy-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                               <input
                                 type="number"
                                 value={Number(avg.toFixed(2))}
-                                onChange={(e) => updateForwardFill(setOpexPctByRow, key, yearCol.startIndex, Number(e.target.value) || 0)}
+                                onChange={(e) => updateYearBlock(setOpexPctByRow, key, yearCol.startIndex, Number(e.target.value) || 0)}
                                 style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                               />%
                             </td>
@@ -1370,40 +1947,40 @@ export default function FinancialForecastTab({
             <table className="forecast-grid" style={{ width: 'max-content', minWidth: '1280px', borderCollapse: 'collapse', fontSize: '12px' }}>
               <colgroup>
                 <col className="name-col" />
-                {Array.from({ length: 3 + quarterlyForecastQuarters.length + (annualExpanded ? annualForecastQuarters.length : annualYearColumns.length) }).map((_, idx) => (
+                {Array.from({ length: totalInputPeriodCols }).map((_, idx) => (
                   <col key={`tax-col-${idx}`} className="period-col" />
                 ))}
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Income Taxes (Tax Rate on Operating Income)</th>
-                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Quarters)</th>
-                  <th colSpan={quarterlyForecastQuarters.length} style={{ borderBottom: '1px solid #e2e8f0' }}>Forecast Quarterly</th>
-                  <th colSpan={annualExpanded ? annualForecastQuarters.length : annualYearColumns.length} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    Annual Forecast
+                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Months)</th>
+                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>Current Year Forecast Monthly</th>
+                  <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    Future Years Forecast
                   </th>
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
-                  {displayedActualQuarters.map((q) => (
+                  {displayedActualMonths.map((q) => (
                     <th key={`ta-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
-                  {quarterlyForecastQuarters.map((q) => (
+                  {monthlyForecastPeriods.map((q) => (
                     <th key={`tf-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
                   {annualExpanded
-                    ? annualForecastQuarters.map((q) => (
+                    ? quarterlyForecastPeriods.map((q) => (
                         <th key={`taq-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                       ))
                     : annualYearColumns.map((y) => (
-                        <th key={`ty-${y.year}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{y.year}</th>
+                        <th key={`ty-${y.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{y.label}</th>
                       ))}
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>Income Taxes</td>
-                  {displayedActualQuarters.map((q) => {
+                  {displayedActualMonths.map((q) => {
                     const totalCogs = Object.values(q.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
                     const totalOpex = Object.values(q.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
                     const operatingIncome = (Number(q.revenue) || 0) - totalCogs - totalOpex;
@@ -1414,7 +1991,7 @@ export default function FinancialForecastTab({
                       </td>
                     );
                   })}
-                  {quarterlyForecastQuarters.map((q, idx) => (
+                  {monthlyForecastPeriods.map((q, idx) => (
                     <td key={`tax-f-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                       <input
                         type="number"
@@ -1425,12 +2002,12 @@ export default function FinancialForecastTab({
                     </td>
                   ))}
                   {annualExpanded
-                    ? annualForecastQuarters.map((q, idx) => (
+                    ? quarterlyForecastPeriods.map((q, idx) => (
                         <td key={`tax-aq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                           <input
                             type="number"
-                            value={Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx + quarterlyForecastQuarters.length] || 0)}
-                            onChange={(e) => updateForwardFill(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx + quarterlyForecastQuarters.length, Number(e.target.value) || 0)}
+                            value={Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx + monthlyForecastCount] || 0)}
+                            onChange={(e) => updateSinglePeriod(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx + monthlyForecastCount, Number(e.target.value) || 0)}
                             style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                           />%
                         </td>
@@ -1439,11 +2016,11 @@ export default function FinancialForecastTab({
                         const values = (opexPctByRow[INCOME_TAX_PCT_KEY] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
                         const avg = values.length ? values.reduce((s, v) => s + Number(v || 0), 0) / values.length : 0;
                         return (
-                          <td key={`tax-y-${yearCol.year}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
+                          <td key={`tax-y-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
                             <input
                               type="number"
                               value={Number(avg.toFixed(2))}
-                              onChange={(e) => updateForwardFill(setOpexPctByRow, INCOME_TAX_PCT_KEY, yearCol.startIndex, Number(e.target.value) || 0)}
+                              onChange={(e) => updateYearBlock(setOpexPctByRow, INCOME_TAX_PCT_KEY, yearCol.startIndex, Number(e.target.value) || 0)}
                               style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                             />%
                           </td>
@@ -1459,7 +2036,7 @@ export default function FinancialForecastTab({
       {activeTab === 'income-statement' && (
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement Forecast</h3>
+            <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
                 onClick={() => setIncomeStatementExpandLast2Years((prev) => !prev)}
@@ -1494,6 +2071,21 @@ export default function FinancialForecastTab({
                 }}
               >
                 {isArchivingBudget ? 'Archiving...' : 'Archive Budget'}
+              </button>
+              <button
+                onClick={() => window.print()}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#0f172a',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Print
               </button>
             </div>
           </div>
@@ -1620,11 +2212,67 @@ export default function FinancialForecastTab({
 
       {activeTab === 'graphs' && (
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-          <h3 style={{ marginTop: 0, color: '#0f172a' }}>Graphs</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 style={{ margin: 0, color: '#0f172a' }}>Graphs</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#334155' }}>
+                <label htmlFor="graph-granularity">View:</label>
+                <select
+                  id="graph-granularity"
+                  value={graphGranularity}
+                  onChange={(e) => setGraphGranularity(e.target.value === 'quarterly' ? 'quarterly' : 'monthly')}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    padding: '6px 8px',
+                    fontSize: '12px',
+                    background: '#ffffff',
+                  }}
+                >
+                  <option value="monthly">Monthly (12 Months)</option>
+                  <option value="quarterly">Quarterly (12 Quarters)</option>
+                </select>
+              </div>
+              <button
+                onClick={() => window.print()}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#0f172a',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Print
+              </button>
+            </div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
-            {renderStackedBarChart('Revenue Detail (3Q Actual + 12Q Forecast)', revenueRowKeys, revenueGraphPoints)}
-            {renderStackedBarChart('COGS Detail (3Q Actual + 12Q Forecast)', cogsRowKeys, cogsGraphPoints)}
-            {renderTotalsLineChart('Totals Trend (3Q Actual + 12Q Projection)', totalsLineGraphPoints)}
+            {renderStackedBarChart(
+              `Revenue Detail (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
+              revenueRowKeys,
+              revenueGraphPoints,
+              `Shaded bars = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then forecast ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(revenueGraphPoints.length - 3, 0)}).`,
+            )}
+            {renderStackedBarChart(
+              `COGS Detail (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
+              cogsRowKeys,
+              cogsGraphPoints,
+              `Shaded bars = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then forecast ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(cogsGraphPoints.length - 3, 0)}).`,
+            )}
+            {renderTotalsLineChart(
+              `Totals Trend (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
+              totalsLineGraphPoints,
+              `Shaded background = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then projected ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(totalsLineGraphPoints.length - 3, 0)}).`,
+            )}
+            {renderCashLiquidityComboChart(
+              'Cash & LOC Capacity (12 Weeks)',
+              cashLiquidityGraphPoints,
+              'Bars show weekly ending cash projection. Orange line is unlevered cash (before LOC draw/repay). Blue line is available LOC = LOC loan amount minus projected LOC balance.',
+            )}
           </div>
         </div>
       )}

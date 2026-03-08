@@ -219,8 +219,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ record: financialRecord }, { status: 201 });
   } catch (error) {
     console.error('Error creating financial record:', error);
+    const message = error instanceof Error ? error.message : 'Internal server error';
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: message },
       { status: 500 }
     );
   }

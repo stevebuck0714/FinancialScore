@@ -9059,7 +9059,14 @@ function FinancialScorePage() {
                                   });
 
                                   if (!response.ok) {
-                                    throw new Error('Failed to save processed data');
+                                    const errorBody = await response.json().catch(() => ({}));
+                                    const detailText =
+                                      typeof errorBody?.details === 'string'
+                                        ? errorBody.details
+                                        : errorBody?.details
+                                          ? JSON.stringify(errorBody.details)
+                                          : '';
+                                    throw new Error(`${errorBody?.error || 'Failed to save processed data'}${detailText ? `: ${detailText}` : ''}`);
                                   }
 
                                   await response.json();
@@ -9220,11 +9227,12 @@ function FinancialScorePage() {
                                 if (response.ok) {
                                   alert('Account mappings saved successfully!');
                                 } else {
-                                  alert('Failed to save account mappings');
+                                  const errorBody = await response.json().catch(() => ({}));
+                                  alert(`Failed to save account mappings${errorBody?.error ? `: ${errorBody.error}` : ''}${errorBody?.details ? `\n${typeof errorBody.details === 'string' ? errorBody.details : JSON.stringify(errorBody.details)}` : ''}`);
                                 }
                               } catch (error) {
                                 console.error('Error saving mappings:', error);
-                                alert('Failed to save account mappings');
+                                alert(`Failed to save account mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
                               } finally {
                                 setIsSavingMappings(false);
                               }
