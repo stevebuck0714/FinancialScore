@@ -124,6 +124,12 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
     fetchLoans();
   }, [companyId]);
 
+  // Clear edit state whenever active company changes.
+  useEffect(() => {
+    resetForm();
+    setError(null);
+  }, [companyId]);
+
   useEffect(() => {
     // Only load docs when the add/edit form is visible.
     if (!isAddingLoan) return;
@@ -224,7 +230,10 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
         body: JSON.stringify({ ...formData, companyId }),
       });
 
-      if (!response.ok) throw new Error(`Failed to ${editingLoanId ? 'update' : 'create'} loan`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || payload?.details || `Failed to ${editingLoanId ? 'update' : 'create'} loan`);
+      }
 
       await fetchLoans();
       resetForm();
@@ -239,8 +248,11 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
     if (!confirm('Are you sure you want to delete this loan?')) return;
 
     try {
-      const response = await fetch(`/api/loans/${loanId}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error('Failed to delete loan');
+      const response = await fetch(`/api/loans/${loanId}?companyId=${encodeURIComponent(companyId)}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || payload?.details || 'Failed to delete loan');
+      }
       await fetchLoans();
       setError(null);
     } catch (err: any) {
@@ -413,6 +425,23 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                 />
               </FormRow>
 
+              <FormRow label="Loan Type" htmlFor="loanType" required>
+                <select
+                  id="loanType"
+                  required
+                  value={formData.loanType}
+                  onChange={(e) => setFormData({ ...formData, loanType: e.target.value as any })}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', background: 'white' }}
+                >
+                  <option value="TERM">Term Loan</option>
+                  <option value="REVOLVER">Revolver</option>
+                  <option value="BRIDGE">Bridge Loan</option>
+                  <option value="LINE_OF_CREDIT">Line of Credit</option>
+                  <option value="MORTGAGE">Mortgage</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </FormRow>
+
               <FormRow label="Interest Rate (%)" htmlFor="interestRate">
                 <input
                   id="interestRate"
@@ -457,22 +486,6 @@ export default function LoansManagement({ companyId, onLoanSelected }: LoansMana
                   onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
                   style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}
                 />
-              </FormRow>
-
-              <FormRow label="Loan Type" htmlFor="loanType">
-                <select
-                  id="loanType"
-                  value={formData.loanType}
-                  onChange={(e) => setFormData({ ...formData, loanType: e.target.value as any })}
-                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', background: 'white' }}
-                >
-                  <option value="TERM">Term Loan</option>
-                  <option value="REVOLVER">Revolver</option>
-                  <option value="BRIDGE">Bridge Loan</option>
-                  <option value="LINE_OF_CREDIT">Line of Credit</option>
-                  <option value="MORTGAGE">Mortgage</option>
-                  <option value="OTHER">Other</option>
-                </select>
               </FormRow>
 
               <FormRow label="Status" htmlFor="status">

@@ -51,6 +51,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id } = params;
     const body = await request.json();
     const {
+      companyId,
       loanName,
       loanIdNumber,
       lenderName,
@@ -64,6 +65,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       notes,
     } = body;
 
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Company ID is required for loan updates" },
+        { status: 400 }
+      );
+    }
+
     try {
       // Check if loan exists
       const existingLoan = await prisma.loan.findUnique({
@@ -74,6 +82,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json(
           { error: "Loan not found" },
           { status: 404 }
+        );
+      }
+
+      if (existingLoan.companyId !== companyId) {
+        return NextResponse.json(
+          { error: "Company context mismatch for loan update" },
+          { status: 403 }
         );
       }
 
@@ -121,6 +136,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = params;
+    const { searchParams } = new URL(request.url);
+    const companyId = searchParams.get("companyId");
+
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Company ID is required for loan deletion" },
+        { status: 400 }
+      );
+    }
 
     try {
       // Check if loan exists and get associated covenants
@@ -139,6 +163,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json(
           { error: "Loan not found" },
           { status: 404 }
+        );
+      }
+
+      if (loan.companyId !== companyId) {
+        return NextResponse.json(
+          { error: "Company context mismatch for loan deletion" },
+          { status: 403 }
         );
       }
 
