@@ -1222,6 +1222,23 @@ export default function SiteAdminDashboard(props: any) {
     return mapped;
   };
 
+  const parseQbDesktopFinancialPayloadFromJson = (raw: string): Record<string, unknown> => {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Invalid JSON object');
+    }
+    const source = parsed as Record<string, unknown>;
+    const payload =
+      source.payload && typeof source.payload === 'object' && !Array.isArray(source.payload)
+        ? (source.payload as Record<string, unknown>)
+        : source;
+    const monthlyData = payload.monthlyData;
+    if (!Array.isArray(monthlyData) || monthlyData.length === 0) {
+      throw new Error('Missing required payload.monthlyData array');
+    }
+    return payload;
+  };
+
   const handleInforCredentialsFileImport = async (
     event: React.ChangeEvent<HTMLInputElement>,
     companyId: string,
@@ -1241,6 +1258,50 @@ export default function SiteAdminDashboard(props: any) {
       alert(`Imported Infor credentials into form for ${companyName}. Click Save to persist for this company.`);
     } catch (error: any) {
       alert(`Failed to import Infor credentials file: ${error?.message || 'Invalid file format'}`);
+    } finally {
+      input.value = '';
+    }
+  };
+
+  const handleQbDesktopFinancialPayloadFileImport = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    companyId: string,
+    companyName: string
+  ) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      const raw = await file.text();
+      const payload = parseQbDesktopFinancialPayloadFromJson(raw);
+      const response = await fetch('/api/quickbooks-desktop/import-json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          frequency: getCompanyOperationalSettings(companyId).frequency,
+          payload,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to import QB Desktop JSON payload');
+      }
+      await loadQbDesktopSettings(companyId);
+      const recordsImported =
+        typeof data?.recordsImported === 'number'
+          ? data.recordsImported
+          : typeof data?.rowsUpserted === 'number'
+            ? data.rowsUpserted
+            : null;
+      alert(
+        recordsImported !== null
+          ? `Imported QB Desktop JSON for ${companyName}. ${recordsImported} records processed.`
+          : `Imported QB Desktop JSON for ${companyName}.`
+      );
+    } catch (error: any) {
+      alert(`Failed to import QB Desktop JSON file: ${error?.message || 'Invalid file format'}`);
     } finally {
       input.value = '';
     }
@@ -2030,6 +2091,24 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                                 {company.accountingSystem === 'QUICKBOOKS_DESKTOP' && (
                                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                    <input
+                                                      id={`consultant-qbdesktop-json-file-${company.id}`}
+                                                      type="file"
+                                                      accept=".json"
+                                                      style={{ display: 'none' }}
+                                                      onChange={(event) =>
+                                                        handleQbDesktopFinancialPayloadFileImport(event, company.id, company.name)
+                                                      }
+                                                    />
+                                                    <button
+                                                      onClick={() => {
+                                                        const fileInput = document.getElementById(`consultant-qbdesktop-json-file-${company.id}`) as HTMLInputElement | null;
+                                                        fileInput?.click();
+                                                      }}
+                                                      style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                                    >
+                                                      Import JSON
+                                                    </button>
                                                     <button
                                                       onClick={() => saveQbDesktopSettings(company.id)}
                                                       style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
@@ -4555,6 +4634,24 @@ export default function SiteAdminDashboard(props: any) {
                                           </div>
                                         </div>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                          <input
+                                            id={`qbdesktop-json-file-${businessCompany.id}`}
+                                            type="file"
+                                            accept=".json"
+                                            style={{ display: 'none' }}
+                                            onChange={(event) =>
+                                              handleQbDesktopFinancialPayloadFileImport(event, businessCompany.id, businessCompany.name)
+                                            }
+                                          />
+                                          <button
+                                            onClick={() => {
+                                              const fileInput = document.getElementById(`qbdesktop-json-file-${businessCompany.id}`) as HTMLInputElement | null;
+                                              fileInput?.click();
+                                            }}
+                                            style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Import JSON
+                                          </button>
                                           <button
                                             onClick={() => saveQbDesktopSettings(businessCompany.id)}
                                             style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
