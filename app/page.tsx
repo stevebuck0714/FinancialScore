@@ -9263,10 +9263,12 @@ function FinancialScorePage() {
                 )}
 
                 {/* Account Preview Section */}
-                {hasCsvData && csvTrialBalanceData && (
+                {(hasCsvData || aiMappings.length > 0) && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                    Account Review - All {csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)
+                    {hasCsvData && csvTrialBalanceData
+                      ? `Account Review - All ${csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)`
+                      : `Account Review - All ${aiMappings.length} mapped accounts`}
                   </h2>
                   <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
@@ -9279,50 +9281,59 @@ function FinancialScorePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
-                          // Filter out empty dates and get the last valid one
-                          const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
-                          const latestDate = validDates[validDates.length - 1];
-                          
-                          // Get latest value
-                          let latestValue = 0;
-                          
-                          if (account.values) {
-                            // Method 1: Direct lookup with the latest valid date
-                            if (latestDate && account.values[latestDate] !== undefined) {
-                              latestValue = account.values[latestDate];
-                            } 
-                            // Method 2: Get the last key from the values object
-                            else {
-                              const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
-                              if (valueKeys.length > 0) {
-                                const lastKey = valueKeys[valueKeys.length - 1];
-                                latestValue = account.values[lastKey] || 0;
+                        {(hasCsvData && csvTrialBalanceData
+                          ? csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
+                              const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
+                              const latestDate = validDates[validDates.length - 1];
+                              let latestValue = 0;
+                              if (account.values) {
+                                if (latestDate && account.values[latestDate] !== undefined) {
+                                  latestValue = account.values[latestDate];
+                                } else {
+                                  const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
+                                  if (valueKeys.length > 0) {
+                                    const lastKey = valueKeys[valueKeys.length - 1];
+                                    latestValue = account.values[lastKey] || 0;
+                                  }
+                                }
                               }
-                            }
-                          }
-
-                          return (
-                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{account.acctType}</td>
-                              <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{account.acctId}</td>
-                              <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
-                                ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                {latestValue < 0 && ' (CR)'}
-                              </td>
-                            </tr>
-                          );
-                        })}
+                              return (
+                                <tr key={`csv-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{account.acctType}</td>
+                                  <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{account.acctId}</td>
+                                  <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                    ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {latestValue < 0 && ' (CR)'}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          : aiMappings.map((mapping: any, idx: number) => (
+                              <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{mapping.qbAccountClassification || mapping.sourceStatus || 'N/A'}</td>
+                                <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{mapping.qbAccountCode || mapping.qbAccountId || 'N/A'}</td>
+                                <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', color: '#64748b', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                  N/A
+                                </td>
+                              </tr>
+                            )))}
                       </tbody>
                     </table>
                   </div>
                   <div style={{ marginTop: '12px', padding: '8px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px' }}>
-                    <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
-                      ℹ️ Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
-                    </p>
+                    {hasCsvData && csvTrialBalanceData ? (
+                      <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
+                        ℹ️ Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
+                        ℹ️ Showing mapped accounts from {mappedApiSourceLabel}. Latest-value amounts are only available from Trial Balance CSV data.
+                      </p>
+                    )}
                     <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>
-                      Total accounts: {csvTrialBalanceData.accounts?.length || 0} |
+                      Total accounts: {hasCsvData && csvTrialBalanceData ? (csvTrialBalanceData.accounts?.length || 0) : aiMappings.length} |
                       Scroll to see all accounts | Use this to verify account mappings and amounts
                     </p>
                   </div>
