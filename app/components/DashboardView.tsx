@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 import { getBenchmarkValue } from '../utils/data-processing';
+import { buildRatioTrendData } from '../utils/ratio-trend-data';
 
 // Dynamic imports for charts
 const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
 const BarChart = dynamic(() => import('./charts/Charts').then(mod => mod.BarChart), { ssr: false });
 const AreaChart = dynamic(() => import('./charts/Charts').then(mod => mod.AreaChart), { ssr: false });
+const ProjectionChart = dynamic(() => import('./charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 
 interface MonthlyData {
   date: Date;
@@ -150,6 +152,8 @@ export default function DashboardView({
       masterDataStore.clearCompanyCache(selectedCompanyId);
     }
   }, [selectedCompanyId]);
+
+  const ratioTrendData = useMemo(() => buildRatioTrendData(monthly as any), [monthly]);
   
   return (
         <div className="dashboard-container" style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
@@ -1093,61 +1097,61 @@ export default function DashboardView({
                   return (() => {
                 // Render appropriate chart based on widget name
                 if (widget === 'Current Ratio') {
-                  return <LineChart key={widget} title="Current Ratio" data={trendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Current Ratio" data={ratioTrendData} valueKey="currentRatio" color="#10b981" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Current Ratio')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'Quick Ratio') {
-                  return <LineChart key={widget} title="Quick Ratio" data={trendData} valueKey="quickRatio" color="#14b8a6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Quick Ratio')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Quick Ratio" data={ratioTrendData} valueKey="quickRatio" color="#14b8a6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Quick Ratio')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'Debt/Net Worth') {
-                  return <LineChart key={widget} title="Debt/Net Worth" data={trendData} valueKey="debtToNW" color="#ec4899" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt/Net Worth')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Debt/Net Worth" data={ratioTrendData} valueKey="debtToNW" color="#ec4899" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt/Net Worth')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'ROA') {
-                  return <LineChart key={widget} title="Return on Assets (ROA)" data={trendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
+                  return <LineChart key={widget} title="Return on Assets (ROA)" data={ratioTrendData} valueKey="roa" color="#93c5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROA')} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 if (widget === 'ROE') {
-                  return <LineChart key={widget} title="Return on Equity (ROE)" data={trendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
+                  return <LineChart key={widget} title="Return on Equity (ROE)" data={ratioTrendData} valueKey="roe" color="#60a5fa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'ROE')} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 if (widget === 'Interest Coverage') {
-                  return <LineChart key={widget} title="Interest Coverage" data={trendData} valueKey="interestCov" color="#8b5cf6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Interest Coverage')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Interest Coverage" data={ratioTrendData} valueKey="interestCov" color="#8b5cf6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Interest Coverage')} formatter={(v) => v.toFixed(1)} />;
                 }
                 // Additional Activity Ratios
                 if (widget === 'Inventory Turnover') {
-                  return <LineChart key={widget} title="Inventory Turnover" data={trendData} valueKey="invTurnover" color="#f59e0b" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Inventory Turnover')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Inventory Turnover" data={ratioTrendData} valueKey="invTurnover" color="#f59e0b" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Inventory Turnover')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'Receivables Turnover') {
-                  return <LineChart key={widget} title="Receivables Turnover" data={trendData} valueKey="arTurnover" color="#f97316" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Receivables Turnover')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Receivables Turnover" data={ratioTrendData} valueKey="arTurnover" color="#f97316" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Receivables Turnover')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'Payables Turnover') {
-                  return <LineChart key={widget} title="Payables Turnover" data={trendData} valueKey="apTurnover" color="#ef4444" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Payables Turnover')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Payables Turnover" data={ratioTrendData} valueKey="apTurnover" color="#ef4444" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Payables Turnover')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'Sales/Working Capital') {
-                  return <LineChart key={widget} title="Sales/Working Capital" data={trendData} valueKey="salesWC" color="#06b6d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Sales/Working Capital')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Sales/Working Capital" data={ratioTrendData} valueKey="salesWC" color="#06b6d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Sales/Working Capital')} formatter={(v) => v.toFixed(1)} />;
                 }
                 // Additional Coverage Ratios
                 if (widget === 'Debt Service Coverage') {
-                  return <LineChart key={widget} title="Debt Service Coverage" data={trendData} valueKey="debtSvcCov" color="#a78bfa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt Service Coverage')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Debt Service Coverage" data={ratioTrendData} valueKey="debtSvcCov" color="#a78bfa" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Debt Service Coverage')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'Cash Flow to Debt') {
-                  return <LineChart key={widget} title="Cash Flow to Debt" data={trendData} valueKey="cfToDebt" color="#c4b5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Cash Flow to Debt')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Cash Flow to Debt" data={ratioTrendData} valueKey="cfToDebt" color="#c4b5fd" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Cash Flow to Debt')} formatter={(v) => v.toFixed(1)} />;
                 }
                 // Additional Leverage Ratios
                 if (widget === 'Fixed Assets/Net Worth') {
-                  return <LineChart key={widget} title="Fixed Assets/Net Worth" data={trendData} valueKey="fixedToNW" color="#f472b6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Fixed Assets/Net Worth')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Fixed Assets/Net Worth" data={ratioTrendData} valueKey="fixedToNW" color="#f472b6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Fixed Assets/Net Worth')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'Leverage Ratio') {
-                  return <LineChart key={widget} title="Leverage Ratio" data={trendData} valueKey="leverage" color="#f9a8d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Leverage Ratio')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Leverage Ratio" data={ratioTrendData} valueKey="leverage" color="#f9a8d4" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Leverage Ratio')} formatter={(v) => v.toFixed(1)} />;
                 }
                 // Additional Operating Ratios
                 if (widget === 'Total Asset Turnover') {
-                  return <LineChart key={widget} title="Total Asset Turnover" data={trendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} />;
+                  return <LineChart key={widget} title="Total Asset Turnover" data={ratioTrendData} valueKey="totalAssetTO" color="#3b82f6" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Total Asset Turnover')} formatter={(v) => v.toFixed(1)} />;
                 }
                 if (widget === 'EBITDA Margin') {
                   const ebitdaBM = getBenchmarkValue(benchmarks, 'EBITDA/Revenue');
-                  return <LineChart key={widget} title="EBITDA Margin" data={trendData} valueKey="ebitdaMargin" color="#2563eb" compact yMax={0.5} benchmarkValue={ebitdaBM !== null ? ebitdaBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
+                  return <LineChart key={widget} title="EBITDA Margin" data={ratioTrendData} valueKey="ebitdaMargin" color="#2563eb" compact yMax={0.5} benchmarkValue={ebitdaBM !== null ? ebitdaBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 if (widget === 'EBIT Margin') {
                   const ebitBM = getBenchmarkValue(benchmarks, 'EBIT/Revenue');
-                  return <LineChart key={widget} title="EBIT Margin" data={trendData} valueKey="ebitMargin" color="#1e40af" compact yMax={0.5} benchmarkValue={ebitBM !== null ? ebitBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
+                  return <LineChart key={widget} title="EBIT Margin" data={ratioTrendData} valueKey="ebitMargin" color="#1e40af" compact yMax={0.5} benchmarkValue={ebitBM !== null ? ebitBM / 100 : null} formatter={(v) => (v * 100).toFixed(1) + '%'} />;
                 }
                 // Note: Revenue Trend, Expense Trend, Net Profit Trend, and Gross Margin Trend widgets
                 // have been replaced with the Trend Analysis dropdown selections
@@ -1256,13 +1260,13 @@ export default function DashboardView({
                 }
                 
                 if (widget === 'Days Receivables') {
-                  return <LineChart key={widget} title="Days' Receivables" data={trendData} valueKey="daysAR" color="#fb923c" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Receivables')} formatter={(v) => v.toFixed(0)} />;
+                  return <LineChart key={widget} title="Days' Receivables" data={ratioTrendData} valueKey="daysAR" color="#fb923c" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Receivables')} formatter={(v) => v.toFixed(0)} />;
                 }
                 if (widget === 'Days Inventory') {
-                  return <LineChart key={widget} title="Days' Inventory" data={trendData} valueKey="daysInv" color="#fbbf24" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Inventory')} formatter={(v) => v.toFixed(0)} />;
+                  return <LineChart key={widget} title="Days' Inventory" data={ratioTrendData} valueKey="daysInv" color="#fbbf24" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Inventory')} formatter={(v) => v.toFixed(0)} />;
                 }
                 if (widget === 'Days Payables') {
-                  return <LineChart key={widget} title="Days' Payables" data={trendData} valueKey="daysAP" color="#f87171" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Payables')} formatter={(v) => v.toFixed(0)} />;
+                  return <LineChart key={widget} title="Days' Payables" data={ratioTrendData} valueKey="daysAP" color="#f87171" compact benchmarkValue={getBenchmarkValue(benchmarks, 'Days Payables')} formatter={(v) => v.toFixed(0)} />;
                 }
                 if (widget === 'Operating Cash Flow') {
                   const ocfData = monthly.map(m => ({

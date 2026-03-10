@@ -27,6 +27,29 @@ export default function TrendAnalysisView({
   setSelectedItemTrends
 }: TrendAnalysisViewProps) {
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
+  const toNumber = (value: unknown): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const hasLoadedFinancialData = (m: any): boolean => {
+    const keys = [
+      'revenue',
+      'expense',
+      'cogsTotal',
+      'cash',
+      'ar',
+      'inventory',
+      'ap',
+      'tca',
+      'tcl',
+      'totalAssets',
+      'totalLiabilities',
+      'equity',
+      'netIncome',
+    ];
+    return keys.some((key) => Math.abs(toNumber(m?.[key])) > 0.0001);
+  };
 
   // Get master data for dynamic expense categories
   const masterData = useMasterData(selectedCompanyId);
@@ -37,6 +60,11 @@ export default function TrendAnalysisView({
       { key: 'total-operating-expenses-pct', label: 'Total Operating Expenses', category: 'Expense' as const }
     ];
   }, [expenseCategories]);
+
+  const dataStartIndex = React.useMemo(
+    () => monthly.findIndex((m) => hasLoadedFinancialData(m)),
+    [monthly]
+  );
 
   const getOperatingExpenseTotal = (m: any) => {
     const computed =
@@ -147,50 +175,50 @@ export default function TrendAnalysisView({
               const getMetricData = (m: any) => {
                 switch (metric) {
                   case 'Revenue':
-                    return m.revenue || 0;
+                    return toNumber(m.revenue);
                   case 'Gross Profit':
-                    return (m.revenue || 0) - (m.cogsTotal || 0);
+                    return toNumber(m.revenue) - toNumber(m.cogsTotal);
                   case 'Total Operating Expenses':
-                    return m.expense || 0;
+                    return toNumber(m.expense);
                   case 'EBIT':
-                    const revenue = m.revenue || 0;
-                    const cogs = m.cogsTotal || 0;
+                    const revenue = toNumber(m.revenue);
+                    const cogs = toNumber(m.cogsTotal);
                     // Calculate total operating expenses (excluding interest expense)
-                    const operatingExpenses = (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) +
-                      (m.insurance || 0) + (m.professionalFees || 0) + (m.subcontractors || 0) +
-                      (m.rent || 0) + (m.taxLicense || 0) + (m.phoneComm || 0) + (m.infrastructure || 0) +
-                      (m.autoTravel || 0) + (m.salesExpense || 0) + (m.marketing || 0) +
-                      (m.trainingCert || 0) + (m.mealsEntertainment || 0) + (m.otherExpense || 0);
+                    const operatingExpenses = toNumber(m.payroll) + toNumber(m.ownerBasePay) + toNumber(m.benefits) +
+                      toNumber(m.insurance) + toNumber(m.professionalFees) + toNumber(m.subcontractors) +
+                      toNumber(m.rent) + toNumber(m.taxLicense) + toNumber(m.phoneComm) + toNumber(m.infrastructure) +
+                      toNumber(m.autoTravel) + toNumber(m.salesExpense) + toNumber(m.marketing) +
+                      toNumber(m.trainingCert) + toNumber(m.mealsEntertainment) + toNumber(m.otherExpense);
                     return revenue - cogs - operatingExpenses;
                   case 'EBITDA':
-                    const rev = m.revenue || 0;
-                    const cog = m.cogsTotal || 0;
+                    const rev = toNumber(m.revenue);
+                    const cog = toNumber(m.cogsTotal);
                     // Calculate total operating expenses (excluding interest expense)
-                    const operatingExpensesEbitda = (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) +
-                      (m.insurance || 0) + (m.professionalFees || 0) + (m.subcontractors || 0) +
-                      (m.rent || 0) + (m.taxLicense || 0) + (m.phoneComm || 0) + (m.infrastructure || 0) +
-                      (m.autoTravel || 0) + (m.salesExpense || 0) + (m.marketing || 0) +
-                      (m.trainingCert || 0) + (m.mealsEntertainment || 0) + (m.otherExpense || 0);
-                    const depreciation = m.depreciationAmortization || 0;
+                    const operatingExpensesEbitda = toNumber(m.payroll) + toNumber(m.ownerBasePay) + toNumber(m.benefits) +
+                      toNumber(m.insurance) + toNumber(m.professionalFees) + toNumber(m.subcontractors) +
+                      toNumber(m.rent) + toNumber(m.taxLicense) + toNumber(m.phoneComm) + toNumber(m.infrastructure) +
+                      toNumber(m.autoTravel) + toNumber(m.salesExpense) + toNumber(m.marketing) +
+                      toNumber(m.trainingCert) + toNumber(m.mealsEntertainment) + toNumber(m.otherExpense);
+                    const depreciation = toNumber(m.depreciationAmortization);
                     const ebit = rev - cog - operatingExpensesEbitda;
                     return ebit + depreciation;
                   case 'Cash':
-                    return m.cash || 0;
+                    return toNumber(m.cash);
                   case 'Current Assets':
-                    return m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0));
+                    return toNumber(m.tca) || (toNumber(m.cash) + toNumber(m.ar) + toNumber(m.inventory) + toNumber(m.otherCA));
                   case 'Fixed Assets':
-                    return m.fixedAssets || 0;
+                    return toNumber(m.fixedAssets);
                   case 'Total Assets':
-                    return m.totalAssets || 0;
+                    return toNumber(m.totalAssets);
                   case 'Accounts Payable':
-                    return m.ap || 0;
+                    return toNumber(m.ap);
                   case 'Long Term Debt':
-                    return m.ltd || 0;
+                    return toNumber(m.ltd);
                   case 'Total Equity':
-                    return m.totalEquity || 0;
+                    return toNumber(m.totalEquity);
                   case 'Net Income':
                     // Calculate as EBIT - Interest Expense + Other Income, but for simplicity use the stored value or calculate basic version
-                    return m.netIncome || ((m.revenue || 0) - (m.cogsTotal || 0) - (m.expense || 0));
+                    return toNumber(m.netIncome) || (toNumber(m.revenue) - toNumber(m.cogsTotal) - toNumber(m.expense));
                   default:
                     return 0;
                 }
@@ -214,7 +242,7 @@ export default function TrendAnalysisView({
                   title={metric}
                   data={monthly.map(m => ({
                     month: m.month,
-                    value: getMetricData(m)
+                    value: dataStartIndex >= 0 && hasLoadedFinancialData(m) ? getMetricData(m) : null
                   }))}
                   color={color}
                   compact
@@ -275,12 +303,12 @@ export default function TrendAnalysisView({
                     title={`${category.label} (% of Revenue)`}
                     data={monthly.map(m => ({
                       month: m.month,
-                      value: m.revenue > 0
+                      value: dataStartIndex >= 0 && hasLoadedFinancialData(m) && toNumber(m.revenue) > 0
                         ? ((category.key === 'total-operating-expenses-pct'
                             ? getOperatingExpenseTotal(m)
-                            : ((m as any)[category.key] || 0)
-                          ) / m.revenue) * 100
-                        : 0
+                            : toNumber((m as any)[category.key])
+                          ) / toNumber(m.revenue)) * 100
+                        : null
                     }))}
                     color={color}
                     compact

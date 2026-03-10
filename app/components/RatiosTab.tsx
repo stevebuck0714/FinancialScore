@@ -6,6 +6,7 @@ import type { MonthlyDataRow } from '../types';
 import dynamic from 'next/dynamic';
 import { exportMonthlyRatiosToExcel } from '../utils/excel-export';
 import { getBenchmarkValue } from '../utils/data-processing';
+import { buildRatioTrendData } from '../utils/ratio-trend-data';
 
 const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
 
@@ -56,141 +57,7 @@ export default function RatiosTab({
     }
   }, [selectedCompanyId]);
 
-  // Format month as MM-YYYY
-  const formatMonth = (monthValue: any): string => {
-    if (!monthValue) return '';
-    
-    // If already in MM-YYYY format, return as is
-    if (typeof monthValue === 'string' && /^\d{2}-\d{4}$/.test(monthValue)) {
-      return monthValue;
-    }
-    
-    // If already in MM/YYYY format, convert to MM-YYYY
-    if (typeof monthValue === 'string' && /^\d{1,2}\/\d{4}$/.test(monthValue)) {
-      const [month, year] = monthValue.split('/');
-      return `${month.padStart(2, '0')}-${year}`;
-    }
-    
-    // Try to parse as date
-    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
-    
-    // Check if date is valid
-    if (isNaN(date.getTime())) {
-      // If it's a string that doesn't match expected formats, return as is
-      return String(monthValue);
-    }
-    
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    
-    return `${month}-${year}`;
-  };
-
-  // Calculate trendData from monthly data (ratios/KPIs)
-  const trendData = React.useMemo(() => {
-    if (!monthly || monthly.length === 0) return [];
-
-    return monthly.map((m: MonthlyDataRow) => {
-      const revenue = m.revenue || 0;
-      const cogs = m.cogsTotal || 0;
-      const grossProfit = revenue - cogs;
-      
-      // Calculate total operating expenses
-      const operatingExpenses = (m.payroll || 0) + (m.ownerBasePay || 0) + (m.benefits || 0) +
-        (m.insurance || 0) + (m.professionalFees || 0) + (m.subcontractors || 0) +
-        (m.rent || 0) + (m.taxLicense || 0) + (m.phoneComm || 0) + (m.infrastructure || 0) +
-        (m.autoTravel || 0) + (m.salesExpense || 0) + (m.marketing || 0) +
-        (m.trainingCert || 0) + (m.mealsEntertainment || 0) + (m.otherExpense || 0);
-
-      const ebit = grossProfit - operatingExpenses;
-      const ebitda = ebit + (m.depreciationAmortization || 0);
-      const netProfit = ebit - (m.interestExpense || 0);
-
-      // Balance sheet items
-      const cash = m.cash || 0;
-      const ar = m.ar || 0;
-      const inventory = m.inventory || 0;
-      const otherCA = m.otherCA || 0;
-      const tca = m.tca || (cash + ar + inventory + otherCA);
-      
-      const fixedAssets = m.fixedAssets || 0;
-      const otherNCA = m.otherNCA || 0;
-      const totalAssets = m.totalAssets || (tca + fixedAssets + otherNCA);
-      
-      const ap = m.ap || 0;
-      const otherCL = m.otherCL || 0;
-      const tcl = m.tcl || (ap + otherCL);
-      
-      const ltDebt = m.ltDebt || 0;
-      const otherLTL = m.otherLTL || 0;
-      const totalLiabilities = m.totalLiabilities || (tcl + ltDebt + otherLTL);
-      
-      const equity = m.equity || (totalAssets - totalLiabilities);
-
-      // Calculate ratios
-      const currentRatio = tcl > 0 ? tca / tcl : 0;
-      const quickRatio = tcl > 0 ? (tca - inventory) / tcl : 0;
-      const workingCapital = tca - tcl;
-
-      // Activity ratios
-      const invTurnover = inventory > 0 ? cogs / inventory : 0;
-      const arTurnover = ar > 0 ? revenue / ar : 0;
-      const apTurnover = ap > 0 ? cogs / ap : 0;
-      const daysInv = invTurnover > 0 ? 365 / invTurnover : 0;
-      const daysAR = arTurnover > 0 ? 365 / arTurnover : 0;
-      const daysAP = apTurnover > 0 ? 365 / apTurnover : 0;
-      const salesWC = workingCapital > 0 ? revenue / workingCapital : 0;
-
-      // Coverage ratios
-      const interestCov = m.interestExpense > 0 ? ebit / m.interestExpense : 0;
-      const debtSvcCov = (ltDebt + tcl) > 0 ? (netProfit + (m.depreciationAmortization || 0)) / (ltDebt + tcl) : 0;
-      const cfToDebt = (ltDebt + tcl) > 0 ? netProfit / (ltDebt + tcl) : 0;
-
-      // Leverage ratios
-      const debtToNW = equity > 0 ? totalLiabilities / equity : 0;
-      const fixedToNW = equity > 0 ? fixedAssets / equity : 0;
-      const leverage = equity > 0 ? totalAssets / equity : 0;
-
-      // Operating ratios
-      const totalAssetTO = totalAssets > 0 ? revenue / totalAssets : 0;
-      const roe = equity > 0 ? netProfit / equity : 0;
-      const roa = totalAssets > 0 ? netProfit / totalAssets : 0;
-      const ebitdaMargin = revenue > 0 ? ebitda / revenue : 0;
-      const ebitMargin = revenue > 0 ? ebit / revenue : 0;
-
-      const monthValue = m.monthDate || m.month;
-      return {
-        month: formatMonth(monthValue),
-        monthDate: m.monthDate,
-        // Liquidity
-        currentRatio,
-        quickRatio,
-        workingCapital,
-        // Activity
-        invTurnover,
-        arTurnover,
-        apTurnover,
-        daysInv,
-        daysAR,
-        daysAP,
-        salesWC,
-        // Coverage
-        interestCov,
-        debtSvcCov,
-        cfToDebt,
-        // Leverage
-        debtToNW,
-        fixedToNW,
-        leverage,
-        // Operating
-        totalAssetTO,
-        roe,
-        roa,
-        ebitdaMargin,
-        ebitMargin,
-      };
-    });
-  }, [monthly]);
+  const trendData = React.useMemo(() => buildRatioTrendData(monthly as MonthlyDataRow[]), [monthly]);
 
   // Using getBenchmarkValue from utils/data-processing which handles:
   // - Case-insensitive matching
@@ -271,6 +138,9 @@ export default function RatiosTab({
     }
     return (v: number) => v.toFixed(1);
   };
+
+  const formatRatioCell = (value: unknown, formatterFn: (v: number) => string) =>
+    Number.isFinite(value) ? formatterFn(Number(value)) : 'N/A';
 
   if (!hasPrefetchedData && loading) {
     return (
@@ -670,7 +540,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Current Ratio</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.currentRatio !== undefined ? data.currentRatio.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.currentRatio, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -678,7 +548,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Quick Ratio</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.quickRatio !== undefined ? data.quickRatio.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.quickRatio, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -705,7 +575,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Inventory Turnover</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.invTurnover !== undefined ? data.invTurnover.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.invTurnover, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -713,7 +583,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Receivables Turnover</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.arTurnover !== undefined ? data.arTurnover.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.arTurnover, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -721,7 +591,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Payables Turnover</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.apTurnover !== undefined ? data.apTurnover.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.apTurnover, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -729,7 +599,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Inventory</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.daysInv !== undefined ? data.daysInv.toFixed(0) : 'N/A'}
+                      {formatRatioCell(data?.daysInv, (v) => v.toFixed(0))}
                     </td>
                   ))}
                 </tr>
@@ -737,7 +607,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Receivables</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.daysAR !== undefined ? data.daysAR.toFixed(0) : 'N/A'}
+                      {formatRatioCell(data?.daysAR, (v) => v.toFixed(0))}
                     </td>
                   ))}
                 </tr>
@@ -745,7 +615,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Days Payables</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.daysAP !== undefined ? data.daysAP.toFixed(0) : 'N/A'}
+                      {formatRatioCell(data?.daysAP, (v) => v.toFixed(0))}
                     </td>
                   ))}
                 </tr>
@@ -753,7 +623,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Sales/Working Capital</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.salesWC !== undefined ? data.salesWC.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.salesWC, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -780,7 +650,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Interest Coverage</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.interestCov !== undefined ? data.interestCov.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.interestCov, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -788,7 +658,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt Service Coverage</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.debtSvcCov !== undefined ? data.debtSvcCov.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.debtSvcCov, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -796,7 +666,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Cash Flow to Debt</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.cfToDebt !== undefined ? data.cfToDebt.toFixed(2) : 'N/A'}
+                      {formatRatioCell(data?.cfToDebt, (v) => v.toFixed(2))}
                     </td>
                   ))}
                 </tr>
@@ -823,7 +693,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Debt/Net Worth</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.debtToNW !== undefined ? data.debtToNW.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.debtToNW, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -831,7 +701,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Fixed Assets/Net Worth</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.fixedToNW !== undefined ? data.fixedToNW.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.fixedToNW, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -839,7 +709,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Leverage Ratio</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.leverage !== undefined ? data.leverage.toFixed(1) : 'N/A'}
+                      {formatRatioCell(data?.leverage, (v) => v.toFixed(1))}
                     </td>
                   ))}
                 </tr>
@@ -866,7 +736,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>Total Asset Turnover</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.totalAssetTO !== undefined ? data.totalAssetTO.toFixed(2) : 'N/A'}
+                      {formatRatioCell(data?.totalAssetTO, (v) => v.toFixed(2))}
                     </td>
                   ))}
                 </tr>
@@ -874,7 +744,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROE</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.roe !== undefined ? `${(data.roe * 100).toFixed(1)}%` : 'N/A'}
+                      {formatRatioCell(data?.roe, (v) => `${(v * 100).toFixed(1)}%`)}
                     </td>
                   ))}
                 </tr>
@@ -882,7 +752,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>ROA</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.roa !== undefined ? `${(data.roa * 100).toFixed(1)}%` : 'N/A'}
+                      {formatRatioCell(data?.roa, (v) => `${(v * 100).toFixed(1)}%`)}
                     </td>
                   ))}
                 </tr>
@@ -890,7 +760,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBITDA Margin</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.ebitdaMargin !== undefined ? `${(data.ebitdaMargin * 100).toFixed(1)}%` : 'N/A'}
+                      {formatRatioCell(data?.ebitdaMargin, (v) => `${(v * 100).toFixed(1)}%`)}
                     </td>
                   ))}
                 </tr>
@@ -898,7 +768,7 @@ export default function RatiosTab({
                   <td style={{ padding: '8px', fontSize: '12px', color: '#475569' }}>EBIT Margin</td>
                   {trendData.slice(-12).map((data, i) => (
                     <td key={i} style={{ padding: '8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>
-                      {data?.ebitMargin !== undefined ? `${(data.ebitMargin * 100).toFixed(1)}%` : 'N/A'}
+                      {formatRatioCell(data?.ebitMargin, (v) => `${(v * 100).toFixed(1)}%`)}
                     </td>
                   ))}
                 </tr>

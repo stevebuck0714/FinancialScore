@@ -19,7 +19,9 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   labelFormat?: 'monthly' | 'quarterly' | 'semi-annual';
   goalLineData?: number[];
 }) {
-  const chartData = valueKey ? data.map(d => ({ month: d.month, value: d[valueKey] })) : data;
+  const chartData = valueKey
+    ? data.map((d, idx) => ({ month: d.month, value: d[valueKey], _idx: idx }))
+    : data.map((d, idx) => ({ ...d, _idx: idx }));
   const validData = chartData.filter(d => d.value !== null && Number.isFinite(d.value));
   if (validData.length === 0) return null;
 
@@ -53,12 +55,14 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  const points = validData.map((d, i) => {
-    const x = padding.left + (i / (validData.length - 1)) * chartWidth;
+  const xDenominator = Math.max(chartData.length - 1, 1);
+  const points = validData.map((d) => {
+    const x = padding.left + ((d._idx || 0) / xDenominator) * chartWidth;
     const clampedValue = Math.max(yMinCalc, Math.min(yMaxCalc, d.value!));
     const y = padding.top + chartHeight - ((clampedValue - yMinCalc) / range) * chartHeight;
     return { x, y, month: d.month, value: d.value!, isOutOfRange: d.value! < yMinCalc || d.value! > yMaxCalc };
   });
+  const dataStartPoint = points.length > 0 ? points[0] : null;
 
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
@@ -122,10 +126,17 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
         })()}
         <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
         <line x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} stroke="#cbd5e1" strokeWidth="2" />
+        {dataStartPoint && dataStartPoint.x > padding.left + 1 && (
+          <>
+            <line x1={dataStartPoint.x} y1={padding.top} x2={dataStartPoint.x} y2={height - padding.bottom} stroke="#94a3b8" strokeWidth="2" strokeDasharray="4,4" />
+            <text x={dataStartPoint.x} y={padding.top - 4} textAnchor="middle" fontSize="10" fill="#64748b" fontWeight="600">Start</text>
+          </>
+        )}
         <path d={pathD} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
         {goalLineData && goalLineData.length === validData.length && (() => {
+          const goalXDenominator = Math.max(validData.length - 1, 1);
           const goalPoints = validData.map((d, i) => {
-            const x = padding.left + (i / (validData.length - 1)) * chartWidth;
+            const x = padding.left + (i / goalXDenominator) * chartWidth;
             const goalValue = goalLineData[i];
             const clampedValue = Math.max(yMinCalc, Math.min(yMaxCalc, goalValue));
             const y = padding.top + chartHeight - ((clampedValue - yMinCalc) / range) * chartHeight;
