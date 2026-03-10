@@ -879,20 +879,24 @@ function FinancialScorePage() {
   const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
   const [sdeManualInputs, setSdeManualInputs] = useState<{
+    ownerCompOther?: number;
     personalTravel?: number;
     familyPayroll?: number;
     autoLeases?: number;
     mealsEntertainment?: number;
     clubDues?: number;
+    personalOther?: number;
     legalSettlements?: number;
     majorRepairs?: number;
     consulting?: number;
     erpInstall?: number;
     relocation?: number;
     covidCosts?: number;
+    nonRecurringOther?: number;
     assetSales?: number;
     insuranceProceeds?: number;
     oneTimeContract?: number;
+    oneTimeRevenueOther?: number;
     marketReplacementSalary?: number;
   }>({});
 
@@ -9765,7 +9769,8 @@ function FinancialScorePage() {
                     const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
                     const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
                     const effectiveMarketReplacementSalary = Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
-                    const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary;
+                    const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
+                    const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
 
                     const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
                     const majorRepairs = sumTtmByKeywords(['majorrepair', 'majorrepairs'], ['expense']);
@@ -9778,14 +9783,14 @@ function FinancialScorePage() {
                     const effectiveConsulting = sdeManualInputs.consulting ?? consultingExpense;
                     const effectiveErpInstall = sdeManualInputs.erpInstall ?? erpInstall;
                     const effectiveRelocation = sdeManualInputs.relocation ?? relocation;
-                    const effectiveCovidCosts = sdeManualInputs.covidCosts ?? covidCosts;
+                    const effectiveNonRecurringOther = sdeManualInputs.nonRecurringOther ?? 0;
                     const nonRecurringExpenseAdj =
                       effectiveLegalSettlements +
                       effectiveMajorRepairs +
                       effectiveConsulting +
                       effectiveErpInstall +
                       effectiveRelocation +
-                      effectiveCovidCosts;
+                      effectiveNonRecurringOther;
 
                     const personalTravel = sumTtmByKeywords(['personaltravel'], ['expense']);
                     const familyPayroll = sumTtmByKeywords(['familypayroll'], ['expense']);
@@ -9797,12 +9802,14 @@ function FinancialScorePage() {
                     const effectiveAutoLeases = sdeManualInputs.autoLeases ?? autoLeases;
                     const effectiveMealsEntertainment = sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj;
                     const effectiveClubDues = sdeManualInputs.clubDues ?? clubDues;
+                    const effectivePersonalOther = sdeManualInputs.personalOther ?? 0;
                     const personalDiscretionaryAdj =
                       effectivePersonalTravel +
                       effectiveFamilyPayroll +
                       effectiveAutoLeases +
                       effectiveMealsEntertainment +
-                      effectiveClubDues;
+                      effectiveClubDues +
+                      effectivePersonalOther;
 
                     const assetSales = sumTtmByKeywords(['assetsale', 'gainonsale'], ['revenue']);
                     const insuranceProceeds = sumTtmByKeywords(['insuranceproceed'], ['revenue']);
@@ -9810,7 +9817,8 @@ function FinancialScorePage() {
                     const effectiveAssetSales = sdeManualInputs.assetSales ?? assetSales;
                     const effectiveInsuranceProceeds = sdeManualInputs.insuranceProceeds ?? insuranceProceeds;
                     const effectiveOneTimeContract = sdeManualInputs.oneTimeContract ?? oneTimeContract;
-                    const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract;
+                    const effectiveOneTimeRevenueOther = sdeManualInputs.oneTimeRevenueOther ?? 0;
+                    const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract + effectiveOneTimeRevenueOther;
 
                     const qoeOwnerSalaryAdjustment = coreSellerAdjustment;
                     const qoePersonalAutoLease = personalDiscretionaryAdj;
@@ -10005,7 +10013,8 @@ function FinancialScorePage() {
             const marketReplacementSalaryAdj = 0;
             const effectiveMarketReplacementSalary =
               Math.abs(sdeManualInputs.marketReplacementSalary ?? marketReplacementSalaryAdj);
-            const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary;
+            const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
+            const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
 
             const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
             const majorRepairs = sumTtmByKeywords(['majorrepair', 'majorrepairs'], ['expense']);
@@ -10018,14 +10027,14 @@ function FinancialScorePage() {
             const effectiveConsulting = sdeManualInputs.consulting ?? consultingExpense;
             const effectiveErpInstall = sdeManualInputs.erpInstall ?? erpInstall;
             const effectiveRelocation = sdeManualInputs.relocation ?? relocation;
-            const effectiveCovidCosts = sdeManualInputs.covidCosts ?? covidCosts;
+            const effectiveNonRecurringOther = sdeManualInputs.nonRecurringOther ?? 0;
             const nonRecurringExpenseAdj =
               effectiveLegalSettlements +
               effectiveMajorRepairs +
               effectiveConsulting +
               effectiveErpInstall +
               effectiveRelocation +
-              effectiveCovidCosts;
+              effectiveNonRecurringOther;
 
             const personalTravel = sumTtmByKeywords(['personaltravel'], ['expense']);
             const familyPayroll = sumTtmByKeywords(['familypayroll'], ['expense']);
@@ -10037,12 +10046,14 @@ function FinancialScorePage() {
             const effectiveAutoLeases = sdeManualInputs.autoLeases ?? autoLeases;
             const effectiveMealsEntertainment = sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj;
             const effectiveClubDues = sdeManualInputs.clubDues ?? clubDues;
+            const effectivePersonalOther = sdeManualInputs.personalOther ?? 0;
             const personalDiscretionaryAdj =
               effectivePersonalTravel +
               effectiveFamilyPayroll +
               effectiveAutoLeases +
               effectiveMealsEntertainment +
-              effectiveClubDues;
+              effectiveClubDues +
+              effectivePersonalOther;
 
             const assetSales = sumTtmByKeywords(['assetsale', 'gainonsale'], ['revenue']);
             const insuranceProceeds = sumTtmByKeywords(['insuranceproceed'], ['revenue']);
@@ -10050,7 +10061,8 @@ function FinancialScorePage() {
             const effectiveAssetSales = sdeManualInputs.assetSales ?? assetSales;
             const effectiveInsuranceProceeds = sdeManualInputs.insuranceProceeds ?? insuranceProceeds;
             const effectiveOneTimeContract = sdeManualInputs.oneTimeContract ?? oneTimeContract;
-            const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract;
+            const effectiveOneTimeRevenueOther = sdeManualInputs.oneTimeRevenueOther ?? 0;
+            const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract + effectiveOneTimeRevenueOther;
 
             const qoeOwnerSalaryAdjustment = coreSellerAdjustment;
             const qoePersonalAutoLease = personalDiscretionaryAdj;
@@ -10239,6 +10251,7 @@ function FinancialScorePage() {
                         ['Owner salary', formatDollars(ownerSalaryAdj), 'readonly'],
                         ['Owners Draw', formatDollars(ownersDrawAdj), 'readonly'],
                         ['Market replacement salary', effectiveMarketReplacementSalary, 'input'],
+                        ['Other', effectiveOwnerCompOther, 'ownerCompOther'],
                         ['Adjustment', formatDollars(coreSellerAdjustment), 'readonly-adjustment'],
                       ].map(([label, value, rowType]) => {
                         const isAdjustmentRow = label.toLowerCase().includes('adjustment');
@@ -10253,6 +10266,31 @@ function FinancialScorePage() {
                                 onChange={(e) => {
                                   const parsed = parseInputDollars(e.target.value);
                                   setSdeManualInputs((prev) => ({ ...prev, marketReplacementSalary: Math.abs(parsed) }));
+                                }}
+                                style={{
+                                  width: '130px',
+                                  textAlign: 'right',
+                                  padding: '3px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: 600
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+                        if (rowType === 'ownerCompOther') {
+                          return (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                              <span>{label}</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatInputDollars(Number(value) || 0)}
+                                onChange={(e) => {
+                                  const parsed = parseInputDollars(e.target.value);
+                                  setSdeManualInputs((prev) => ({ ...prev, ownerCompOther: parsed }));
                                 }}
                                 style={{
                                   width: '130px',
@@ -10283,6 +10321,7 @@ function FinancialScorePage() {
                         ['auto leases', effectiveAutoLeases, 'autoLeases'],
                         ['meals & entertainment', effectiveMealsEntertainment, 'mealsEntertainment'],
                         ['club dues', effectiveClubDues, 'clubDues'],
+                        ['Other', effectivePersonalOther, 'personalOther'],
                       ].map(([label, value, key]) => (
                         <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
                           <span>{label}</span>
@@ -10346,7 +10385,7 @@ function FinancialScorePage() {
                         ['consulting', effectiveConsulting, 'consulting'],
                         ['ERP install', effectiveErpInstall, 'erpInstall'],
                         ['relocation', effectiveRelocation, 'relocation'],
-                        ['COVID costs', effectiveCovidCosts, 'covidCosts'],
+                        ['Other', effectiveNonRecurringOther, 'nonRecurringOther'],
                       ].map(([label, value, key]) => (
                         <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
                           <span>{label}</span>
@@ -10382,6 +10421,7 @@ function FinancialScorePage() {
                         ['asset sales', effectiveAssetSales, 'assetSales'],
                         ['insurance proceeds', effectiveInsuranceProceeds, 'insuranceProceeds'],
                         ['one-time contract', effectiveOneTimeContract, 'oneTimeContract'],
+                        ['Other', effectiveOneTimeRevenueOther, 'oneTimeRevenueOther'],
                       ].map(([label, value, key]) => (
                         <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
                           <span>{label}</span>
