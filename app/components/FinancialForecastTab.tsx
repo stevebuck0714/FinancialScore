@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
-import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
+import { getSectorSchema, getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 
 interface FinancialForecastTabProps {
   selectedCompanyId: string;
@@ -10,6 +10,7 @@ interface FinancialForecastTabProps {
   industrySectorCategory?: string | null;
   prefetchedMonthlyData?: any[];
   displayMode?: 'full' | 'no-graphs' | 'graphs-only';
+  basisMode?: 'cash' | 'accrual';
 }
 
 type ForecastTab = 'inputs' | 'income-statement' | 'graphs';
@@ -54,7 +55,13 @@ const OPEX_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'taxLicense', label: 'Tax License' },
 ];
 
-const LEGACY_COGS_KEYS = ['cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther'];
+type OpexPaymentTreatment = 'paid-in-full' | 'ap-schedule';
+const DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY: Record<string, OpexPaymentTreatment> = OPEX_FIELDS
+  .reduce((acc, { key }) => {
+    acc[key] = 'paid-in-full';
+    return acc;
+  }, {} as Record<string, OpexPaymentTreatment>);
+
 const INCOME_TAX_PCT_KEY = 'incomeTaxesTotal';
 const STACKED_BAR_COLORS = [
   '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4',
@@ -125,6 +132,15 @@ function getMonthLabel(year: number, month: number): string {
   return new Date(year, month, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 
+function getFridayOfCurrentWeek(baseDate: Date): Date {
+  const d = new Date(baseDate);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+  const offsetToFriday = day === 0 ? -2 : 5 - day;
+  d.setDate(d.getDate() + offsetToFriday);
+  return d;
+}
+
 function monthlyGrowthToQuarterlyGrowthPct(monthlyPct: number): number {
   const monthFactor = 1 + monthlyPct / 100;
   if (monthFactor <= 0) return -100;
@@ -137,13 +153,33 @@ function monthlyGrowthToAnnualGrowthPct(monthlyPct: number): number {
   return (Math.pow(monthFactor, 12) - 1) * 100;
 }
 
+function formatCurrencyIntegerInput(value: number): string {
+  const normalized = Math.max(0, Math.round(Number(value) || 0));
+  return normalized.toLocaleString('en-US');
+}
+
+function parseCurrencyIntegerInput(raw: string): number {
+  const digits = String(raw || '').replace(/[^0-9]/g, '');
+  if (!digits) return 0;
+  return Math.max(0, Math.round(Number(digits) || 0));
+}
+
 export default function FinancialForecastTab({
   selectedCompanyId,
   companyName,
   industrySectorCategory,
   prefetchedMonthlyData,
   displayMode = 'full',
+  basisMode = 'cash',
 }: FinancialForecastTabProps) {
+  const toplineLabel = basisMode === 'accrual' ? 'Sales' : 'Revenue';
+  const isAccrualWeeklyMode = basisMode === 'accrual' && displayMode !== 'graphs-only';
+  const [accrualSalesInputMode, setAccrualSalesInputMode] = useState<'growth' | 'amount'>(
+    basisMode === 'accrual' ? 'amount' : 'growth'
+  );
+  const [accrualOpexInputMode, setAccrualOpexInputMode] = useState<'percent' | 'amount'>(
+    basisMode === 'accrual' ? 'amount' : 'percent'
+  );
   const [activeTab, setActiveTab] = useState<ForecastTab>(displayMode === 'graphs-only' ? 'graphs' : 'inputs');
   const [annualExpanded, setAnnualExpanded] = useState(false);
   const [isSavingInputs, setIsSavingInputs] = useState(false);
@@ -192,18 +228,21 @@ export default function FinancialForecastTab({
     () => getTargetFieldOptions(industrySectorCategory || undefined),
     [industrySectorCategory],
   );
+  const hasSectorSpecificSchema = useMemo(
+    () => Boolean(getSectorSchema(industrySectorCategory || undefined)),
+    [industrySectorCategory],
+  );
   const sectorRevenueKeys = useMemo(
-    () => new Set<string>((sectorFieldOptions.revenue || []).map((opt) => String(opt.value))),
-    [sectorFieldOptions.revenue],
+    () =>
+      hasSectorSpecificSchema
+        ? new Set<string>((sectorFieldOptions.revenue || []).map((opt) => String(opt.value)))
+        : new Set<string>(),
+    [sectorFieldOptions.revenue, hasSectorSpecificSchema],
   );
   const sectorCogsKeys = useMemo(() => {
-    const keys = new Set<string>((sectorFieldOptions.cogs || []).map((opt) => String(opt.value)));
-    // Only fall back to legacy COGS keys when a sector has no explicit COGS definitions.
-    if (keys.size === 0) {
-      LEGACY_COGS_KEYS.forEach((k) => keys.add(k));
-    }
-    return keys;
-  }, [sectorFieldOptions.cogs]);
+    if (!hasSectorSpecificSchema) return new Set<string>();
+    return new Set<string>((sectorFieldOptions.cogs || []).map((opt) => String(opt.value)));
+  }, [sectorFieldOptions.cogs, hasSectorSpecificSchema]);
 
   const quarterActuals = useMemo(() => {
     const grouped = new Map<string, any>();
@@ -237,12 +276,12 @@ export default function FinancialForecastTab({
       // 1) breakdown objects if present; 2) flattened/prefixed fields.
       if (row?.revenueBreakdown && typeof row.revenueBreakdown === 'object') {
         Object.entries(row.revenueBreakdown).forEach(([field, rawValue]) => {
-          if (!String(field).startsWith('rev_') && !sectorRevenueKeys.has(String(field))) return;
+          if (!sectorRevenueKeys.has(String(field))) return;
           addValue(bucket.revenueDetails, String(field), rawValue);
         });
       } else {
         Object.entries(row || {}).forEach(([field, rawValue]) => {
-          if (field.startsWith('rev_') || sectorRevenueKeys.has(field)) {
+          if (sectorRevenueKeys.has(field)) {
             addValue(bucket.revenueDetails, field, rawValue);
           }
         });
@@ -251,12 +290,12 @@ export default function FinancialForecastTab({
       if (row?.cogsBreakdown && typeof row.cogsBreakdown === 'object') {
         Object.entries(row.cogsBreakdown).forEach(([field, rawValue]) => {
           const f = String(field);
-          if ((!f.startsWith('cogs_') || f === 'cogs_total') && !sectorCogsKeys.has(f)) return;
+          if (!sectorCogsKeys.has(f)) return;
           addValue(bucket.cogsDetails, f, rawValue);
         });
       } else {
         Object.entries(row || {}).forEach(([field, rawValue]) => {
-          if ((field.startsWith('cogs_') && field !== 'cogs_total') || sectorCogsKeys.has(field)) {
+          if (sectorCogsKeys.has(field)) {
             addValue(bucket.cogsDetails, field, rawValue);
           }
         });
@@ -309,12 +348,12 @@ export default function FinancialForecastTab({
 
       if (row?.revenueBreakdown && typeof row.revenueBreakdown === 'object') {
         Object.entries(row.revenueBreakdown).forEach(([field, rawValue]) => {
-          if (!String(field).startsWith('rev_') && !sectorRevenueKeys.has(String(field))) return;
+          if (!sectorRevenueKeys.has(String(field))) return;
           addValue(bucket.revenueDetails, String(field), rawValue);
         });
       } else {
         Object.entries(row || {}).forEach(([field, rawValue]) => {
-          if (field.startsWith('rev_') || sectorRevenueKeys.has(field)) {
+          if (sectorRevenueKeys.has(field)) {
             addValue(bucket.revenueDetails, field, rawValue);
           }
         });
@@ -323,12 +362,12 @@ export default function FinancialForecastTab({
       if (row?.cogsBreakdown && typeof row.cogsBreakdown === 'object') {
         Object.entries(row.cogsBreakdown).forEach(([field, rawValue]) => {
           const f = String(field);
-          if ((!f.startsWith('cogs_') || f === 'cogs_total') && !sectorCogsKeys.has(f)) return;
+          if (!sectorCogsKeys.has(f)) return;
           addValue(bucket.cogsDetails, f, rawValue);
         });
       } else {
         Object.entries(row || {}).forEach(([field, rawValue]) => {
-          if ((field.startsWith('cogs_') && field !== 'cogs_total') || sectorCogsKeys.has(field)) {
+          if (sectorCogsKeys.has(field)) {
             addValue(bucket.cogsDetails, field, rawValue);
           }
         });
@@ -349,7 +388,11 @@ export default function FinancialForecastTab({
     });
   }, [monthly, sectorRevenueKeys, sectorCogsKeys]);
 
-  const actualMonths = useMemo(() => monthActuals.slice(-3), [monthActuals]);
+  const actualMonthColumnCount = basisMode === 'accrual' ? 2 : 3;
+  const actualMonths = useMemo(
+    () => monthActuals.slice(-actualMonthColumnCount),
+    [monthActuals, actualMonthColumnCount],
+  );
   const displayedActualMonths = useMemo(() => {
     const cols: Array<{
       key: string;
@@ -360,7 +403,7 @@ export default function FinancialForecastTab({
       opexDetails: Record<string, number>;
       incomeTaxes: number;
     }> = [...actualMonths];
-    while (cols.length < 3) {
+    while (cols.length < actualMonthColumnCount) {
       cols.unshift({
         key: `placeholder-${cols.length}`,
         label: '-',
@@ -372,13 +415,30 @@ export default function FinancialForecastTab({
       });
     }
     return cols;
-  }, [actualMonths]);
+  }, [actualMonths, actualMonthColumnCount]);
   const latestActualMonth = useMemo(() => monthActuals[monthActuals.length - 1] || null, [monthActuals]);
 
   const monthlyForecastPeriods = useMemo<MonthMeta[]>(() => {
     const startYear = latestActualMonth?.year || new Date().getFullYear();
     const startMonth = latestActualMonth?.month ?? new Date().getMonth();
     const results: MonthMeta[] = [];
+    if (isAccrualWeeklyMode) {
+      const fridayAnchor = getFridayOfCurrentWeek(new Date());
+      for (let i = 0; i < 13; i++) {
+        const weekDate = new Date(fridayAnchor);
+        weekDate.setDate(weekDate.getDate() + i * 7);
+        results.push({
+          key: `W${i + 1}-${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`,
+          year: weekDate.getFullYear(),
+          month: weekDate.getMonth(),
+          label: weekDate.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+          }),
+        });
+      }
+      return results;
+    }
     for (let i = 1; i <= 12; i++) {
       const shifted = shiftMonth(startYear, startMonth, i);
       results.push({
@@ -389,9 +449,10 @@ export default function FinancialForecastTab({
       });
     }
     return results;
-  }, [latestActualMonth]);
+  }, [latestActualMonth, isAccrualWeeklyMode]);
 
   const quarterlyForecastPeriods = useMemo<QuarterMeta[]>(() => {
+    if (isAccrualWeeklyMode) return [];
     const seedYear = latestActualMonth?.year || new Date().getFullYear();
     const seedMonth = latestActualMonth?.month ?? new Date().getMonth();
     const afterFirstYear = shiftMonth(seedYear, seedMonth, 12);
@@ -408,7 +469,7 @@ export default function FinancialForecastTab({
       });
     }
     return results;
-  }, [latestActualMonth]);
+  }, [latestActualMonth, isAccrualWeeklyMode]);
 
   const forecastPeriods = useMemo<ForecastPeriodMeta[]>(
     () => [
@@ -419,30 +480,21 @@ export default function FinancialForecastTab({
   );
 
   const revenueRowKeys = useMemo(() => {
-    const keys = new Set<string>((sectorFieldOptions.revenue || []).map((opt) => String(opt.value)));
-    monthActuals.forEach((m) => Object.keys(m.revenueDetails || {}).forEach((k) => keys.add(k)));
+    const keys = new Set<string>();
+    if (hasSectorSpecificSchema) {
+      (sectorFieldOptions.revenue || []).forEach((opt) => keys.add(String(opt.value)));
+    }
     return Array.from(keys).sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-  }, [monthActuals, sectorFieldOptions.revenue]);
+  }, [monthActuals, sectorFieldOptions.revenue, hasSectorSpecificSchema]);
 
   const cogsRowKeys = useMemo(() => {
-    const sectorKeys = new Set<string>((sectorFieldOptions.cogs || []).map((opt) => String(opt.value)));
-    const useSectorDefinedKeys = sectorKeys.size > 0;
-    const keys = new Set<string>(useSectorDefinedKeys ? Array.from(sectorKeys) : []);
-
-    monthActuals.forEach((m) => {
-      Object.keys(m.cogsDetails || {}).forEach((k) => {
-        if (!useSectorDefinedKeys || sectorKeys.has(k)) {
-          keys.add(k);
-        }
-      });
-    });
-
-    if (!useSectorDefinedKeys) {
-      LEGACY_COGS_KEYS.forEach((k) => keys.add(k));
+    const keys = new Set<string>();
+    if (hasSectorSpecificSchema) {
+      (sectorFieldOptions.cogs || []).forEach((opt) => keys.add(String(opt.value)));
     }
 
     return Array.from(keys).sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-  }, [monthActuals, sectorFieldOptions.cogs]);
+  }, [monthActuals, sectorFieldOptions.cogs, hasSectorSpecificSchema]);
 
   const computeDefaultPct = (rowKey: string, source: 'cogs' | 'opex'): number => {
     const last = actualMonths[actualMonths.length - 1];
@@ -465,8 +517,13 @@ export default function FinancialForecastTab({
   };
 
   const [revenueGrowthByRow, setRevenueGrowthByRow] = useState<Record<string, number[]>>({});
+  const [accrualRevenueAmountByRow, setAccrualRevenueAmountByRow] = useState<Record<string, number[]>>({});
   const [cogsGrowthByRow, setCogsGrowthByRow] = useState<Record<string, number[]>>({});
   const [opexPctByRow, setOpexPctByRow] = useState<Record<string, number[]>>({});
+  const [opexAmountByRow, setOpexAmountByRow] = useState<Record<string, number[]>>({});
+  const [accrualOpexPaymentTreatmentByKey, setAccrualOpexPaymentTreatmentByKey] = useState<Record<string, OpexPaymentTreatment>>(
+    { ...DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY },
+  );
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -474,7 +531,7 @@ export default function FinancialForecastTab({
       if (!selectedCompanyId) return;
       setIsLoadingInputs(true);
       try {
-        const response = await fetch(`/api/financial-forecast/inputs?companyId=${selectedCompanyId}`);
+        const response = await fetch(`/api/financial-forecast/inputs?companyId=${selectedCompanyId}&basisMode=${basisMode}`);
         const data = await response.json();
         if (!response.ok || isCancelled) return;
 
@@ -482,6 +539,11 @@ export default function FinancialForecastTab({
         setRevenueGrowthByRow(
           settings?.revenueGrowthByRow && typeof settings.revenueGrowthByRow === 'object'
             ? settings.revenueGrowthByRow
+            : {},
+        );
+        setAccrualRevenueAmountByRow(
+          settings?.revenueGrowthByRow?.__amountByRow && typeof settings.revenueGrowthByRow.__amountByRow === 'object'
+            ? settings.revenueGrowthByRow.__amountByRow
             : {},
         );
         setCogsGrowthByRow(
@@ -494,6 +556,30 @@ export default function FinancialForecastTab({
             ? settings.opexPctByRow
             : {},
         );
+        setOpexAmountByRow(
+          settings?.opexPctByRow?.__amountByRow && typeof settings.opexPctByRow.__amountByRow === 'object'
+            ? settings.opexPctByRow.__amountByRow
+            : {},
+        );
+        setAccrualOpexPaymentTreatmentByKey(
+          settings?.opexPctByRow?.__paymentTreatmentByKey && typeof settings.opexPctByRow.__paymentTreatmentByKey === 'object'
+            ? {
+                ...DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY,
+                ...Object.fromEntries(
+                  Object.entries(settings.opexPctByRow.__paymentTreatmentByKey).map(([key, value]) => [
+                    key,
+                    value === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full',
+                  ]),
+                ),
+              }
+            : { ...DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY },
+        );
+        if (basisMode === 'accrual') {
+          const storedMode = settings?.opexPctByRow?.__inputMode;
+          if (storedMode === 'amount' || storedMode === 'percent') {
+            setAccrualOpexInputMode(storedMode);
+          }
+        }
         setLastSavedAt(settings?.updatedAt ? String(settings.updatedAt) : null);
         setIsInputsDirty(false);
       } catch {
@@ -510,7 +596,16 @@ export default function FinancialForecastTab({
     return () => {
       isCancelled = true;
     };
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, basisMode]);
+
+  React.useEffect(() => {
+    if (basisMode !== 'accrual') {
+      setAccrualSalesInputMode('growth');
+      setAccrualOpexInputMode('percent');
+    } else {
+      setAccrualOpexInputMode('amount');
+    }
+  }, [basisMode]);
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -618,6 +713,16 @@ export default function FinancialForecastTab({
       next[INCOME_TAX_PCT_KEY] = normalizedTax;
       return next;
     });
+    setOpexAmountByRow((prev) => {
+      const next = { ...prev };
+      OPEX_FIELDS.forEach(({ key }) => {
+        const normalized = normalizeToLength(next[key], 0);
+        next[key] = normalized.map((n) => Math.max(0, Math.round(n)));
+      });
+      const normalizedTaxAmount = normalizeToLength(next[INCOME_TAX_PCT_KEY], 0);
+      next[INCOME_TAX_PCT_KEY] = normalizedTaxAmount.map((n) => Math.max(0, Math.round(n)));
+      return next;
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revenueRowKeys.join('|'), cogsRowKeys.join('|'), forecastPeriods.length, selectedCompanyId, isLoadingInputs]);
 
@@ -667,6 +772,14 @@ export default function FinancialForecastTab({
     });
   };
 
+  const updateAccrualOpexPaymentTreatment = (rowKey: string, treatment: OpexPaymentTreatment) => {
+    setIsInputsDirty(true);
+    setAccrualOpexPaymentTreatmentByKey((prev) => ({
+      ...prev,
+      [rowKey]: treatment,
+    }));
+  };
+
   const updateRevenueMonthlyAndDerived = (
     rowKey: string,
     startMonthlyIndex: number,
@@ -687,6 +800,90 @@ export default function FinancialForecastTab({
     });
   };
 
+  const deriveMonthlyRevenueAmounts = (rowKey: string): number[] => {
+    const amounts: number[] = [];
+    const growthSeries = Array.isArray(revenueGrowthByRow[rowKey]) ? revenueGrowthByRow[rowKey] : [];
+    const amountInputSeries = Array.isArray(accrualRevenueAmountByRow[rowKey]) ? accrualRevenueAmountByRow[rowKey] : [];
+    let carry = Number(latestActualMonth?.revenueDetails?.[rowKey]) || 0;
+    for (let i = 0; i < monthlyForecastCount; i += 1) {
+      const enteredAmount = Number(amountInputSeries[i]);
+      if (Number.isFinite(enteredAmount) && enteredAmount >= 0) {
+        const inputVal = Math.max(0, enteredAmount);
+        amounts.push(inputVal);
+        carry = inputVal;
+        continue;
+      }
+      const growthPct = Number(growthSeries[i] || 0);
+      const nextVal = carry * (1 + growthPct / 100);
+      amounts.push(Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0);
+      carry = Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0;
+    }
+    return amounts;
+  };
+
+  const updateRevenueMonthlyAmountAndDerived = (
+    rowKey: string,
+    targetMonthlyIndex: number,
+    targetAmount: number,
+  ) => {
+    setIsInputsDirty(true);
+    setAccrualRevenueAmountByRow((prev) => {
+      const current = Array.isArray(prev[rowKey]) ? [...prev[rowKey]] : Array.from({ length: monthlyForecastCount }, () => NaN);
+      while (current.length < monthlyForecastCount) current.push(NaN);
+      current[targetMonthlyIndex] = Math.max(0, Number(targetAmount) || 0);
+      return { ...prev, [rowKey]: current };
+    });
+    setRevenueGrowthByRow((prev) => {
+      const current = Array.isArray(prev[rowKey]) ? [...prev[rowKey]] : Array.from({ length: forecastPeriods.length }, () => 0);
+      const monthlyAmounts: number[] = [];
+      const amountInputSeries = Array.isArray(accrualRevenueAmountByRow[rowKey]) ? [...accrualRevenueAmountByRow[rowKey]] : [];
+      let carry = Number(latestActualMonth?.revenueDetails?.[rowKey]) || 0;
+      for (let i = 0; i < monthlyForecastCount; i += 1) {
+        const enteredAmount = Number(amountInputSeries[i]);
+        if (Number.isFinite(enteredAmount) && enteredAmount >= 0) {
+          const inputVal = Math.max(0, enteredAmount);
+          monthlyAmounts.push(inputVal);
+          carry = inputVal;
+          continue;
+        }
+        const growthPct = Number(current[i] || 0);
+        const nextVal = carry * (1 + growthPct / 100);
+        monthlyAmounts.push(Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0);
+        carry = Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0;
+      }
+      monthlyAmounts[targetMonthlyIndex] = Math.max(0, Number(targetAmount) || 0);
+
+      let prevAmount = Number(latestActualMonth?.revenueDetails?.[rowKey]) || 0;
+      for (let i = 0; i < monthlyForecastCount; i += 1) {
+        const currAmount = Math.max(0, Number(monthlyAmounts[i] || 0));
+        const growthPct = prevAmount > 0 ? ((currAmount / prevAmount) - 1) * 100 : 0;
+        current[i] = Number(growthPct.toFixed(2));
+        prevAmount = currAmount > 0 ? currAmount : prevAmount;
+      }
+      const lastMonthlyPct = Number(current[Math.max(0, monthlyForecastCount - 1)] || 0);
+      const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
+      for (let i = monthlyForecastCount; i < current.length; i += 1) {
+        current[i] = derivedQuarterlyPct;
+      }
+      return { ...prev, [rowKey]: current };
+    });
+  };
+
+  const deriveOpexAmounts = (rowKey: string): number[] => {
+    const amounts: number[] = [];
+    for (let idx = 0; idx < forecastPeriods.length; idx += 1) {
+      const override = Number(opexAmountByRow[rowKey]?.[idx]);
+      if (Number.isFinite(override) && override >= 0) {
+        amounts.push(Math.max(0, override));
+        continue;
+      }
+      const totalRevenue = Number(forecastRows[idx]?.totalRevenue || 0);
+      const pct = Number(opexPctByRow[rowKey]?.[idx] || 0);
+      amounts.push(Math.max(0, totalRevenue * (pct / 100)));
+    }
+    return amounts;
+  };
+
   const handleSaveInputs = async () => {
     if (!selectedCompanyId || isSavingInputs) return;
     setIsSavingInputs(true);
@@ -694,11 +891,22 @@ export default function FinancialForecastTab({
       const response = await fetch('/api/financial-forecast/inputs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // Persist basis-scoped percentage + amount inputs using metadata keys,
+        // while keeping the existing API/DB schema backward compatible.
         body: JSON.stringify({
           companyId: selectedCompanyId,
-          revenueGrowthByRow,
+          basisMode,
+          revenueGrowthByRow: {
+            ...revenueGrowthByRow,
+            __amountByRow: accrualRevenueAmountByRow,
+          },
           cogsPctByRow: cogsGrowthByRow,
-          opexPctByRow,
+          opexPctByRow: {
+            ...opexPctByRow,
+            __amountByRow: opexAmountByRow,
+            __inputMode: accrualOpexInputMode,
+            __paymentTreatmentByKey: accrualOpexPaymentTreatmentByKey,
+          },
         }),
       });
       const data = await response.json();
@@ -762,7 +970,7 @@ export default function FinancialForecastTab({
   const monthlyForecastCount = monthlyForecastPeriods.length;
   const quarterlyFutureCount = quarterlyForecastPeriods.length;
   const futureSectionCount = annualExpanded ? quarterlyFutureCount : annualYearColumns.length;
-  const totalInputPeriodCols = 3 + monthlyForecastCount + futureSectionCount;
+  const totalInputPeriodCols = actualMonthColumnCount + monthlyForecastCount + futureSectionCount;
 
   const forecastRows = useMemo(() => {
     if (!latestActualMonth) return [];
@@ -774,6 +982,14 @@ export default function FinancialForecastTab({
     return forecastPeriods.map((q, idx) => {
       const revenueDetails: Record<string, number> = {};
       revenueRowKeys.forEach((k) => {
+        const monthlyAmountInputs = Array.isArray(accrualRevenueAmountByRow[k]) ? accrualRevenueAmountByRow[k] : [];
+        const enteredMonthlyAmount = Number(monthlyAmountInputs[idx]);
+        if (basisMode === 'accrual' && idx < monthlyForecastCount && Number.isFinite(enteredMonthlyAmount) && enteredMonthlyAmount >= 0) {
+          const nextInputVal = Math.max(0, enteredMonthlyAmount);
+          revenueCarry[k] = nextInputVal;
+          revenueDetails[k] = nextInputVal;
+          return;
+        }
         const monthlyBasePct = Number(revenueGrowthByRow[k]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
         const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(2));
         const growthPct = idx < monthlyForecastCount
@@ -794,15 +1010,26 @@ export default function FinancialForecastTab({
 
       const opexDetails: Record<string, number> = {};
       OPEX_FIELDS.forEach(({ key }) => {
+        if (basisMode === 'accrual') {
+          const enteredAmount = Number(opexAmountByRow[key]?.[idx]);
+          if (Number.isFinite(enteredAmount)) {
+            opexDetails[key] = Math.max(0, enteredAmount);
+            return;
+          }
+        }
         const pct = Number(opexPctByRow[key]?.[idx]) || 0;
         opexDetails[key] = totalRevenue * (pct / 100);
       });
       const totalOpex = Object.values(opexDetails).reduce((sum, v) => sum + v, 0);
       const grossProfit = totalRevenue - totalCogs;
       const operatingIncome = grossProfit - totalOpex;
-      const incomeTaxPct = Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx]) || 0;
       const taxableIncome = Math.max(operatingIncome, 0);
-      const totalIncomeTaxes = taxableIncome * (incomeTaxPct / 100);
+      const incomeTaxPct = Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx]) || 0;
+      const enteredTaxAmount = Number(opexAmountByRow[INCOME_TAX_PCT_KEY]?.[idx]);
+      const totalIncomeTaxes =
+        basisMode === 'accrual' && Number.isFinite(enteredTaxAmount)
+          ? Math.max(0, enteredTaxAmount)
+          : taxableIncome * (incomeTaxPct / 100);
       const netIncome = operatingIncome - totalIncomeTaxes;
 
       return {
@@ -820,7 +1047,7 @@ export default function FinancialForecastTab({
         netIncome,
       };
     });
-  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow]);
+  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow, basisMode, accrualRevenueAmountByRow, accrualOpexInputMode, opexAmountByRow]);
 
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -834,9 +1061,10 @@ export default function FinancialForecastTab({
     if (firstThreeMonthlyRevenueTotals.length < 3) return;
     try {
       localStorage.setItem(
-        `financialForecastRevenueMonthlyBase_${selectedCompanyId}`,
+        `financialForecastRevenueMonthlyBase_${basisMode}_${selectedCompanyId}`,
         JSON.stringify({
           companyId: selectedCompanyId,
+          basisMode,
           updatedAt: new Date().toISOString(),
           monthRefs: firstThreeMonthlyRows.map((row) => ({
             key: row.key,
@@ -867,7 +1095,7 @@ export default function FinancialForecastTab({
     } catch {
       // Ignore localStorage errors in restricted browser modes.
     }
-  }, [selectedCompanyId, forecastRows]);
+  }, [selectedCompanyId, forecastRows, basisMode]);
 
   const incomeStatementColumns = useMemo(() => {
     const base = forecastRows.map((row, idx) => ({
@@ -1110,7 +1338,9 @@ export default function FinancialForecastTab({
       locLimit: number;
     }>;
     try {
-      const raw = localStorage.getItem(`cashForecastGraphData_${selectedCompanyId}`);
+      const scopedKey = `cashForecastGraphData_${basisMode}_${selectedCompanyId}`;
+      const legacyCashKey = `cashForecastGraphData_${selectedCompanyId}`;
+      const raw = localStorage.getItem(scopedKey) || (basisMode === 'cash' ? localStorage.getItem(legacyCashKey) : null);
       const parsed = raw ? JSON.parse(raw) : null;
       const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
       const locLimit = Math.max(0, Number(parsed?.locLimit || 0));
@@ -1124,7 +1354,7 @@ export default function FinancialForecastTab({
     } catch {
       return [];
     }
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, basisMode]);
 
   const renderStackedBarChart = (
     title: string,
@@ -1261,7 +1491,7 @@ export default function FinancialForecastTab({
     }
 
     const series = [
-      { key: 'totalRevenue', label: 'Total Revenue', color: '#2563eb' },
+      { key: 'totalRevenue', label: `Total ${toplineLabel}`, color: '#2563eb' },
       { key: 'totalCogs', label: 'Total COGS', color: '#f59e0b' },
       { key: 'grossProfit', label: 'Gross Profit', color: '#16a34a' },
       { key: 'totalOpex', label: 'Total Operating Expenses', color: '#8b5cf6' },
@@ -1635,7 +1865,10 @@ export default function FinancialForecastTab({
                 {isSavingInputs ? 'Saving...' : isInputsDirty ? 'Save Inputs' : 'Saved'}
               </button>
               <button
-                onClick={() => setAnnualExpanded((prev) => !prev)}
+                onClick={() => {
+                  if (!isAccrualWeeklyMode) setAnnualExpanded((prev) => !prev);
+                }}
+                disabled={isAccrualWeeklyMode}
                 style={{
                   border: '1px solid #cbd5e1',
                   background: '#f8fafc',
@@ -1643,11 +1876,28 @@ export default function FinancialForecastTab({
                   padding: '8px 12px',
                   fontSize: '12px',
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: isAccrualWeeklyMode ? 'not-allowed' : 'pointer',
+                  opacity: isAccrualWeeklyMode ? 0.7 : 1,
                 }}
               >
-                {annualExpanded ? 'Collapse Future Years to Years' : 'Expand Future Years to Quarters'}
+                {isAccrualWeeklyMode ? 'Weekly Horizon (13 Weeks)' : (annualExpanded ? 'Collapse Future Years to Years' : 'Expand Future Years to Quarters')}
               </button>
+              {basisMode === 'accrual' && (
+                <button
+                  onClick={() => setAccrualSalesInputMode((prev) => (prev === 'amount' ? 'growth' : 'amount'))}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {accrualSalesInputMode === 'amount' ? 'Sales Input: Amount' : 'Sales Input: % Growth'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1661,12 +1911,24 @@ export default function FinancialForecastTab({
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Revenue</th>
-                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Months)</th>
-                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>Current Year Forecast Monthly (% Growth)</th>
-                  <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    Future Years Forecast
+                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>{toplineLabel}</th>
+                  <th colSpan={actualMonthColumnCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    {`Actual (Last ${actualMonthColumnCount} Months)`}
                   </th>
+                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    {isAccrualWeeklyMode
+                      ? (
+                        <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>for the Week Ending</div>
+                      )
+                      : (basisMode === 'accrual' && accrualSalesInputMode === 'amount'
+                        ? 'Current Year Forecast Monthly (Amount)'
+                        : 'Current Year Forecast Monthly (% Growth)')}
+                  </th>
+                  {futureSectionCount > 0 && (
+                    <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      Future Years Forecast
+                    </th>
+                  )}
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
@@ -1696,18 +1958,43 @@ export default function FinancialForecastTab({
                     ))}
                     {monthlyForecastPeriods.map((q, idx) => (
                       <td key={`${rowKey}-f-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={(Number(revenueGrowthByRow[rowKey]?.[idx]) || 0).toFixed(1)}
-                          onChange={(e) => {
-                            const raw = e.target.value.trim();
-                            if (!/^-?\d*\.?\d*$/.test(raw)) return;
-                            if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
-                            updateRevenueMonthlyAndDerived(rowKey, idx, Number((Number(raw) || 0).toFixed(2)));
-                          }}
-                          style={{ width: '62px', textAlign: 'right', padding: '4px' }}
-                        />%
+                        {basisMode === 'accrual' && accrualSalesInputMode === 'amount' ? (
+                          <>
+                            $
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={formatCurrencyIntegerInput(deriveMonthlyRevenueAmounts(rowKey)[idx] || 0)}
+                              onChange={(e) => {
+                                const raw = e.target.value.trim();
+                                const digitsOnly = raw.replace(/[^0-9]/g, '');
+                                if (digitsOnly === '') return;
+                                updateRevenueMonthlyAmountAndDerived(rowKey, idx, Number(digitsOnly));
+                              }}
+                              style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={(Number(revenueGrowthByRow[rowKey]?.[idx]) || 0).toFixed(1)}
+                              onChange={(e) => {
+                                const raw = e.target.value.trim();
+                                if (!/^-?\d*\.?\d*$/.test(raw)) return;
+                                if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+                                const parsed = Number((Number(raw) || 0).toFixed(2));
+                                if (isAccrualWeeklyMode) {
+                                  updateSinglePeriod(setRevenueGrowthByRow, rowKey, idx, parsed);
+                                } else {
+                                  updateRevenueMonthlyAndDerived(rowKey, idx, parsed);
+                                }
+                              }}
+                              style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                            />%
+                          </>
+                        )}
                       </td>
                     ))}
                     {annualExpanded
@@ -1749,7 +2036,7 @@ export default function FinancialForecastTab({
                   </tr>
                 ))}
                 <tr style={{ background: '#f8fafc', fontWeight: 700 }}>
-                  <td style={{ padding: '6px 8px' }}>Total Revenue</td>
+                  <td style={{ padding: '6px 8px' }}>{`Total ${toplineLabel}`}</td>
                   {displayedActualMonths.map((q) => (
                     <td key={`tot-rev-a-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right' }}>
                       ${Number(q.revenue).toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -1774,11 +2061,19 @@ export default function FinancialForecastTab({
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>COGS</th>
-                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Months, % of Revenue)</th>
-                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>Current Year Forecast Monthly (% of Revenue)</th>
-                  <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    Future Years Forecast
+                  <th colSpan={actualMonthColumnCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    {`Actual (Last ${actualMonthColumnCount} Months, % of ${toplineLabel})`}
                   </th>
+                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    {isAccrualWeeklyMode ? (
+                      <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>for the Week Ending</div>
+                    ) : `Current Year Forecast Monthly (% of ${toplineLabel})`}
+                  </th>
+                  {futureSectionCount > 0 && (
+                    <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      Future Years Forecast
+                    </th>
+                  )}
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
@@ -1816,7 +2111,14 @@ export default function FinancialForecastTab({
                         <input
                           type="number"
                           value={Number((Number(cogsGrowthByRow[rowKey]?.[idx]) || 0).toFixed(2))}
-                          onChange={(e) => updateForwardFill(setCogsGrowthByRow, rowKey, idx, Number((Number(e.target.value) || 0).toFixed(2)))}
+                          onChange={(e) => {
+                            const parsed = Number((Number(e.target.value) || 0).toFixed(2));
+                            if (isAccrualWeeklyMode) {
+                              updateSinglePeriod(setCogsGrowthByRow, rowKey, idx, parsed);
+                            } else {
+                              updateForwardFill(setCogsGrowthByRow, rowKey, idx, parsed);
+                            }
+                          }}
                           style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                         />%
                       </td>
@@ -1858,21 +2160,38 @@ export default function FinancialForecastTab({
             <table className="forecast-grid" style={{ width: 'max-content', minWidth: '1280px', borderCollapse: 'collapse', fontSize: '12px' }}>
               <colgroup>
                 <col className="name-col" />
+                {basisMode === 'accrual' && <col className="period-col" />}
                 {Array.from({ length: totalInputPeriodCols }).map((_, idx) => (
                   <col key={`opex-col-${idx}`} className="period-col" />
                 ))}
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Operating Expenses (% of Revenue)</th>
-                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Months)</th>
-                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>Current Year Forecast Monthly</th>
-                  <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    Future Years Forecast
+                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>{basisMode === 'accrual' ? 'Operating Expense' : 'Account'}</th>
+                  {basisMode === 'accrual' && (
+                    <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Cash Timing</th>
+                  )}
+                  <th colSpan={actualMonthColumnCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    {basisMode === 'accrual'
+                      ? `Actual (Last ${actualMonthColumnCount} Months, $)`
+                      : `Actual (Last ${actualMonthColumnCount} Months)`}
                   </th>
+                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    {isAccrualWeeklyMode ? (
+                      <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>for the Week Ending</div>
+                    ) : 'Current Year Forecast Monthly'}
+                  </th>
+                  {futureSectionCount > 0 && (
+                    <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      Future Years Forecast
+                    </th>
+                  )}
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
+                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>{basisMode === 'accrual' ? 'Account' : `Operating Expenses (% of ${toplineLabel})`}</th>
+                  {basisMode === 'accrual' && (
+                    <th style={{ borderBottom: '1px solid #e2e8f0' }}>Treatment</th>
+                  )}
                   {displayedActualMonths.map((q) => (
                     <th key={`oa-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
@@ -1892,46 +2211,115 @@ export default function FinancialForecastTab({
                 {OPEX_FIELDS.map(({ key, label }) => (
                   <tr key={key}>
                     <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>{label}</td>
+                    {basisMode === 'accrual' && (
+                      <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                        <select
+                          value={accrualOpexPaymentTreatmentByKey[key] === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full'}
+                          onChange={(e) => updateAccrualOpexPaymentTreatment(key, e.target.value === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full')}
+                          style={{ width: '118px', padding: '4px', fontSize: '11px' }}
+                        >
+                          <option value="paid-in-full">Paid In Full</option>
+                          <option value="ap-schedule">Pay via AP</option>
+                        </select>
+                      </td>
+                    )}
                     {displayedActualMonths.map((q) => {
+                      const amount = Number(q.opexDetails?.[key]) || 0;
                       const pct = q.revenue > 0 ? ((Number(q.opexDetails?.[key]) || 0) / q.revenue) * 100 : 0;
                       return (
                         <td key={`${key}-oa-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                          {pct.toFixed(2)}%
+                          {basisMode === 'accrual'
+                            ? `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                            : `${pct.toFixed(2)}%`}
                         </td>
                       );
                     })}
                     {monthlyForecastPeriods.map((q, idx) => (
                       <td key={`${key}-of-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                        <input
-                          type="number"
-                          value={Number(opexPctByRow[key]?.[idx] || 0)}
-                          onChange={(e) => updateForwardFill(setOpexPctByRow, key, idx, Number(e.target.value) || 0)}
-                          style={{ width: '62px', textAlign: 'right', padding: '4px' }}
-                        />%
+                        {basisMode === 'accrual' ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
+                            <span>$</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={formatCurrencyIntegerInput(deriveOpexAmounts(key)[idx] || 0)}
+                              onChange={(e) => {
+                                const parsed = parseCurrencyIntegerInput(e.target.value);
+                                if (isAccrualWeeklyMode) {
+                                  updateSinglePeriod(setOpexAmountByRow, key, idx, parsed);
+                                } else {
+                                  updateForwardFill(setOpexAmountByRow, key, idx, parsed);
+                                }
+                              }}
+                              style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                            />
+                          </span>
+                        ) : (
+                          <>
+                            <input
+                              type="number"
+                              value={Number(opexPctByRow[key]?.[idx] || 0)}
+                              onChange={(e) => updateForwardFill(setOpexPctByRow, key, idx, Number(e.target.value) || 0)}
+                              style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                            />%
+                          </>
+                        )}
                       </td>
                     ))}
                     {annualExpanded
                       ? quarterlyForecastPeriods.map((q, idx) => (
                           <td key={`${key}-oaq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                            <input
-                              type="number"
-                              value={Number(opexPctByRow[key]?.[idx + monthlyForecastCount] || 0)}
-                              onChange={(e) => updateSinglePeriod(setOpexPctByRow, key, idx + monthlyForecastCount, Number(e.target.value) || 0)}
-                              style={{ width: '62px', textAlign: 'right', padding: '4px' }}
-                            />%
+                            {basisMode === 'accrual' ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
+                                <span>$</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatCurrencyIntegerInput(deriveOpexAmounts(key)[idx + monthlyForecastCount] || 0)}
+                                  onChange={(e) => updateSinglePeriod(setOpexAmountByRow, key, idx + monthlyForecastCount, parseCurrencyIntegerInput(e.target.value))}
+                                  style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                                />
+                              </span>
+                            ) : (
+                              <>
+                                <input
+                                  type="number"
+                                  value={Number(opexPctByRow[key]?.[idx + monthlyForecastCount] || 0)}
+                                  onChange={(e) => updateSinglePeriod(setOpexPctByRow, key, idx + monthlyForecastCount, Number(e.target.value) || 0)}
+                                  style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                                />%
+                              </>
+                            )}
                           </td>
                         ))
                       : annualYearColumns.map((yearCol) => {
-                          const values = (opexPctByRow[key] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
-                          const avg = values.length ? values.reduce((s, v) => s + Number(v || 0), 0) / values.length : 0;
+                          const pctValues = (opexPctByRow[key] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
+                          const pctAvg = pctValues.length ? pctValues.reduce((s, v) => s + Number(v || 0), 0) / pctValues.length : 0;
+                          const amountValues = deriveOpexAmounts(key).slice(yearCol.startIndex, yearCol.startIndex + 4);
+                          const amountAvg = amountValues.length ? amountValues.reduce((s, v) => s + Number(v || 0), 0) / amountValues.length : 0;
                           return (
                             <td key={`${key}-oy-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                              <input
-                                type="number"
-                                value={Number(avg.toFixed(2))}
-                                onChange={(e) => updateYearBlock(setOpexPctByRow, key, yearCol.startIndex, Number(e.target.value) || 0)}
-                                style={{ width: '62px', textAlign: 'right', padding: '4px' }}
-                              />%
+                              {basisMode === 'accrual' ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
+                                  <span>$</span>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={formatCurrencyIntegerInput(amountAvg)}
+                                    onChange={(e) => updateYearBlock(setOpexAmountByRow, key, yearCol.startIndex, parseCurrencyIntegerInput(e.target.value))}
+                                    style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                                  />
+                                </span>
+                              ) : (
+                                <>
+                                  <input
+                                    type="number"
+                                    value={Number(pctAvg.toFixed(2))}
+                                    onChange={(e) => updateYearBlock(setOpexPctByRow, key, yearCol.startIndex, Number(e.target.value) || 0)}
+                                    style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                                  />%
+                                </>
+                              )}
                             </td>
                           );
                         })}
@@ -1953,12 +2341,24 @@ export default function FinancialForecastTab({
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Income Taxes (Tax Rate on Operating Income)</th>
-                  <th colSpan={3} style={{ borderBottom: '1px solid #e2e8f0' }}>Actual (Last 3 Months)</th>
-                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>Current Year Forecast Monthly</th>
-                  <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    Future Years Forecast
+                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                    {basisMode === 'accrual' ? 'Income Taxes ($)' : 'Income Taxes (Tax Rate on Operating Income)'}
                   </th>
+                  <th colSpan={actualMonthColumnCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    {basisMode === 'accrual'
+                      ? `Actual (Last ${actualMonthColumnCount} Months, $)`
+                      : `Actual (Last ${actualMonthColumnCount} Months)`}
+                  </th>
+                  <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    {isAccrualWeeklyMode ? (
+                      <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>for the Week Ending</div>
+                    ) : 'Current Year Forecast Monthly'}
+                  </th>
+                  {futureSectionCount > 0 && (
+                    <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      Future Years Forecast
+                    </th>
+                  )}
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
@@ -1984,45 +2384,102 @@ export default function FinancialForecastTab({
                     const totalCogs = Object.values(q.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
                     const totalOpex = Object.values(q.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
                     const operatingIncome = (Number(q.revenue) || 0) - totalCogs - totalOpex;
+                    const taxAmount = Number(q.incomeTaxes) || 0;
                     const pct = operatingIncome > 0 ? ((Number(q.incomeTaxes) || 0) / operatingIncome) * 100 : 0;
                     return (
                       <td key={`tax-a-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                        {pct.toFixed(2)}%
+                        {basisMode === 'accrual'
+                          ? `$${taxAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                          : `${pct.toFixed(2)}%`}
                       </td>
                     );
                   })}
                   {monthlyForecastPeriods.map((q, idx) => (
                     <td key={`tax-f-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                      <input
-                        type="number"
-                        value={Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx] || 0)}
-                        onChange={(e) => updateForwardFill(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx, Number(e.target.value) || 0)}
-                        style={{ width: '62px', textAlign: 'right', padding: '4px' }}
-                      />%
+                      {basisMode === 'accrual' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
+                          <span>$</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatCurrencyIntegerInput(opexAmountByRow[INCOME_TAX_PCT_KEY]?.[idx] || 0)}
+                            onChange={(e) => {
+                              const parsed = parseCurrencyIntegerInput(e.target.value);
+                              if (isAccrualWeeklyMode) {
+                                updateSinglePeriod(setOpexAmountByRow, INCOME_TAX_PCT_KEY, idx, parsed);
+                              } else {
+                                updateForwardFill(setOpexAmountByRow, INCOME_TAX_PCT_KEY, idx, parsed);
+                              }
+                            }}
+                            style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                          />
+                        </span>
+                      ) : (
+                        <>
+                          <input
+                            type="number"
+                            value={Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx] || 0)}
+                            onChange={(e) => updateForwardFill(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx, Number(e.target.value) || 0)}
+                            style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                          />%
+                        </>
+                      )}
                     </td>
                   ))}
                   {annualExpanded
                     ? quarterlyForecastPeriods.map((q, idx) => (
                         <td key={`tax-aq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                          <input
-                            type="number"
-                            value={Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx + monthlyForecastCount] || 0)}
-                            onChange={(e) => updateSinglePeriod(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx + monthlyForecastCount, Number(e.target.value) || 0)}
-                            style={{ width: '62px', textAlign: 'right', padding: '4px' }}
-                          />%
+                          {basisMode === 'accrual' ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
+                              <span>$</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatCurrencyIntegerInput(opexAmountByRow[INCOME_TAX_PCT_KEY]?.[idx + monthlyForecastCount] || 0)}
+                                onChange={(e) => updateSinglePeriod(setOpexAmountByRow, INCOME_TAX_PCT_KEY, idx + monthlyForecastCount, parseCurrencyIntegerInput(e.target.value))}
+                                style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                              />
+                            </span>
+                          ) : (
+                            <>
+                              <input
+                                type="number"
+                                value={Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx + monthlyForecastCount] || 0)}
+                                onChange={(e) => updateSinglePeriod(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx + monthlyForecastCount, Number(e.target.value) || 0)}
+                                style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                              />%
+                            </>
+                          )}
                         </td>
                       ))
                     : annualYearColumns.map((yearCol) => {
-                        const values = (opexPctByRow[INCOME_TAX_PCT_KEY] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
-                        const avg = values.length ? values.reduce((s, v) => s + Number(v || 0), 0) / values.length : 0;
+                        const pctValues = (opexPctByRow[INCOME_TAX_PCT_KEY] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
+                        const pctAvg = pctValues.length ? pctValues.reduce((s, v) => s + Number(v || 0), 0) / pctValues.length : 0;
+                        const amountValues = (opexAmountByRow[INCOME_TAX_PCT_KEY] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
+                        const amountAvg = amountValues.length ? amountValues.reduce((s, v) => s + Number(v || 0), 0) / amountValues.length : 0;
                         return (
                           <td key={`tax-y-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                            <input
-                              type="number"
-                              value={Number(avg.toFixed(2))}
-                              onChange={(e) => updateYearBlock(setOpexPctByRow, INCOME_TAX_PCT_KEY, yearCol.startIndex, Number(e.target.value) || 0)}
-                              style={{ width: '62px', textAlign: 'right', padding: '4px' }}
-                            />%
+                            {basisMode === 'accrual' ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
+                                <span>$</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatCurrencyIntegerInput(amountAvg)}
+                                  onChange={(e) => updateYearBlock(setOpexAmountByRow, INCOME_TAX_PCT_KEY, yearCol.startIndex, parseCurrencyIntegerInput(e.target.value))}
+                                  style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                                />
+                              </span>
+                            ) : (
+                              <>
+                                <input
+                                  type="number"
+                                  value={Number(pctAvg.toFixed(2))}
+                                  onChange={(e) => updateYearBlock(setOpexPctByRow, INCOME_TAX_PCT_KEY, yearCol.startIndex, Number(e.target.value) || 0)}
+                                  style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                                />%
+                              </>
+                            )}
                           </td>
                         );
                       })}
@@ -2117,7 +2574,7 @@ export default function FinancialForecastTab({
                   </tr>
                 ))}
                 <tr>
-                  <td style={{ padding: '8px', fontWeight: 700, background: '#eff6ff' }}>Total Revenue</td>
+                  <td style={{ padding: '8px', fontWeight: 700, background: '#eff6ff' }}>{`Total ${toplineLabel}`}</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`rev-${col.key}`} style={{ textAlign: 'right', padding: '8px', fontWeight: 700, background: '#eff6ff' }}>
                       ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.totalRevenue) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}

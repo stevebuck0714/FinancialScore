@@ -7,6 +7,9 @@ type ForecastInputs = {
   minCashBuffer: number;
   locLimit: number;
   locAprPct: number;
+  creditSalesPct: number;
+  historicalSalesLookbackWeeks: number;
+  historicalSalesCollectionLagWeeks: number;
   arCurrentCollectPct: number;
   ar30To60CollectPct: number;
   ar60To90CollectPct: number;
@@ -29,6 +32,19 @@ type WeeklyDriver = {
   sales: number;
   opex: number;
   grossMarginPct: number;
+};
+
+type OpexPaymentTreatment = 'paid-in-full' | 'ap-schedule';
+
+type ExpenseTimingRule = 'weekly' | 'biweekly' | 'semi-monthly' | 'monthly' | 'monthly-eom';
+
+type ScheduledExpenseRule = {
+  key: string;
+  label: string;
+  monthlyAmount: number;
+  timing: ExpenseTimingRule;
+  weekday: number; // 0=Sun ... 6=Sat (used for biweekly)
+  dayOfMonth: number; // 1..28 (used for monthly)
 };
 
 type HistoricalFlowProfile = {
@@ -70,11 +86,36 @@ type ForecastRow = {
   endingInventory: number;
 };
 
+const ACCRUAL_OPEX_LINE_ITEMS: Array<{ key: string; label: string }> = [
+  { key: 'autoTravel', label: 'Auto Travel' },
+  { key: 'benefits', label: 'Benefits' },
+  { key: 'infrastructure', label: 'Infrastructure' },
+  { key: 'insurance', label: 'Insurance' },
+  { key: 'interestExpense', label: 'Interest Expense' },
+  { key: 'mealsEntertainment', label: 'Meals Entertainment' },
+  { key: 'otherExpense', label: 'Other Expense' },
+  { key: 'payroll', label: 'Payroll' },
+  { key: 'phoneComm', label: 'Phone Comm' },
+  { key: 'professionalFees', label: 'Professional Fees' },
+  { key: 'rent', label: 'Rent' },
+  { key: 'salesExpense', label: 'Sales Expense' },
+  { key: 'subcontractors', label: 'Subcontractors' },
+  { key: 'taxLicense', label: 'Tax License' },
+];
+const DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY: Record<string, OpexPaymentTreatment> = ACCRUAL_OPEX_LINE_ITEMS
+  .reduce((acc, item) => {
+    acc[item.key] = 'paid-in-full';
+    return acc;
+  }, {} as Record<string, OpexPaymentTreatment>);
+
 const DEFAULT_INPUTS: ForecastInputs = {
   inventoryTurns: 8,
   minCashBuffer: 25000,
   locLimit: 150000,
   locAprPct: 9,
+  creditSalesPct: 90,
+  historicalSalesLookbackWeeks: 12,
+  historicalSalesCollectionLagWeeks: 2,
   arCurrentCollectPct: 80,
   ar30To60CollectPct: 60,
   ar60To90CollectPct: 30,
@@ -97,6 +138,12 @@ const DEFAULT_WEEKLY_DRIVER: WeeklyDriver = {
   opex: 18000,
   grossMarginPct: 35,
 };
+const DEFAULT_SCHEDULED_EXPENSE_RULES: ScheduledExpenseRule[] = [
+  { key: 'payroll', label: 'Payroll', monthlyAmount: 72000, timing: 'biweekly', weekday: 5, dayOfMonth: 1 },
+  { key: 'rent', label: 'Rent', monthlyAmount: 25000, timing: 'monthly', weekday: 1, dayOfMonth: 1 },
+  { key: 'taxes', label: 'Taxes', monthlyAmount: 18000, timing: 'semi-monthly', weekday: 1, dayOfMonth: 15 },
+  { key: 'other-opex', label: 'Other Operating Expenses', monthlyAmount: 28000, timing: 'weekly', weekday: 1, dayOfMonth: 1 },
+];
 const FORECAST_WEEKS = 13;
 const DEFAULT_STARTING_BALANCES = { cash: 0, ar: 0, ap: 0, inventory: 0, loc: 0 };
 const DEFAULT_FLOW_PROFILE: HistoricalFlowProfile = { arRunoffRate: 0.12, apRunoffRate: 0.12, inventoryToSalesRatio: 0.3 };
@@ -144,6 +191,8 @@ const cardStyle: React.CSSProperties = {
 
 interface WorkingCapitalForecastTabProps {
   selectedCompanyId: string;
+  basisMode?: 'cash' | 'accrual';
+  viewMode?: 'full' | 'inputs-only';
 }
 
 const clampNumber = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
@@ -176,6 +225,11 @@ const addDays = (date: Date, days: number): Date => {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
+};
+const startOfDay = (date: Date): Date => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
 };
 const getWeekendAnchorDate = (baseDate: Date): Date => {
   const anchor = new Date(baseDate);
@@ -293,11 +347,117 @@ const mapSnapshotToBuckets = (snapshot: any, totalFallback: number): AgingBucket
   }
   return { ...DEFAULT_AGING_BUCKETS, current: Math.max(0, totalFallback || 0) };
 };
+const normalizeScheduledExpenseRule = (raw: any, fallback: ScheduledExpenseRule): ScheduledExpenseRule => {
+  const allowed: ExpenseTimingRule[] = ['weekly', 'biweekly', 'semi-monthly', 'monthly', 'monthly-eom'];
+  const timing = allowed.includes(raw?.timing) ? raw.timing : fallback.timing;
+  return {
+    key: String(raw?.key || fallback.key),
+    label: String(raw?.label || fallback.label),
+    monthlyAmount: Math.max(0, toRoundedCurrency(raw?.monthlyAmount, fallback.monthlyAmount)),
+    timing,
+    weekday: clampNumber(toRoundedInteger(raw?.weekday, fallback.weekday), 0, 6),
+    dayOfMonth: clampNumber(toRoundedInteger(raw?.dayOfMonth, fallback.dayOfMonth), 1, 28),
+  };
+};
+const normalizeScheduledExpenseRules = (raw: any): ScheduledExpenseRule[] => {
+  const rows = Array.isArray(raw) ? raw : [];
+  return DEFAULT_SCHEDULED_EXPENSE_RULES.map((fallback, idx) =>
+    normalizeScheduledExpenseRule(rows[idx], fallback)
+  );
+};
+const buildScheduledOpexByWeek = (
+  weekStarts: Date[],
+  rules: ScheduledExpenseRule[],
+): number[] => {
+  const scheduled = Array.from({ length: weekStarts.length }, () => 0);
+  if (!weekStarts.length) return scheduled;
+  const horizonStart = startOfDay(weekStarts[0]);
+  const horizonEnd = startOfDay(addDays(weekStarts[weekStarts.length - 1], 6));
+  const monthlySet = new Set<string>();
+  for (let dt = new Date(horizonStart); dt <= horizonEnd; dt = addDays(dt, 1)) {
+    monthlySet.add(`${dt.getFullYear()}-${dt.getMonth()}`);
+  }
+  const months = Array.from(monthlySet).map((key) => {
+    const [year, month] = key.split('-').map((v) => Number(v));
+    return { year, month };
+  });
+
+  const postEventToWeek = (eventDate: Date, amount: number) => {
+    const event = startOfDay(eventDate).getTime();
+    for (let i = 0; i < weekStarts.length; i += 1) {
+      const weekStart = startOfDay(weekStarts[i]).getTime();
+      const weekEnd = startOfDay(addDays(weekStarts[i], 6)).getTime();
+      if (event >= weekStart && event <= weekEnd) {
+        scheduled[i] += Math.max(0, amount);
+        return;
+      }
+    }
+  };
+
+  rules.forEach((rule) => {
+    const monthlyAmount = Math.max(0, Number(rule.monthlyAmount || 0));
+    if (monthlyAmount <= 0) return;
+
+    if (rule.timing === 'weekly') {
+      const perWeek = (monthlyAmount * 12) / 52;
+      for (let i = 0; i < weekStarts.length; i += 1) {
+        const weekStart = weekStarts[i];
+        const weekdayOffset = (Number(rule.weekday || 0) - weekStart.getDay() + 7) % 7;
+        const eventDate = addDays(weekStart, weekdayOffset);
+        postEventToWeek(eventDate, perWeek);
+      }
+      return;
+    }
+
+    if (rule.timing === 'biweekly') {
+      const perPay = (monthlyAmount * 12) / 26;
+      let firstPayDate = startOfDay(horizonStart);
+      const firstOffset = (Number(rule.weekday || 0) - firstPayDate.getDay() + 7) % 7;
+      firstPayDate = addDays(firstPayDate, firstOffset);
+      for (let d = new Date(firstPayDate); d <= horizonEnd; d = addDays(d, 14)) {
+        postEventToWeek(d, perPay);
+      }
+      return;
+    }
+
+    months.forEach(({ year, month }) => {
+      if (rule.timing === 'semi-monthly') {
+        postEventToWeek(new Date(year, month, 1), monthlyAmount / 2);
+        postEventToWeek(new Date(year, month, 15), monthlyAmount / 2);
+        return;
+      }
+      if (rule.timing === 'monthly') {
+        postEventToWeek(new Date(year, month, rule.dayOfMonth), monthlyAmount);
+        return;
+      }
+      if (rule.timing === 'monthly-eom') {
+        postEventToWeek(new Date(year, month + 1, 0), monthlyAmount);
+      }
+    });
+  });
+
+  return scheduled.map((value) => Math.max(0, Math.round(value)));
+};
+const normalizeAccrualOpexPaymentTreatmentByKey = (
+  raw: any,
+  fallback: Record<string, OpexPaymentTreatment>,
+): Record<string, OpexPaymentTreatment> => {
+  const next: Record<string, OpexPaymentTreatment> = { ...fallback };
+  const source = raw && typeof raw === 'object' ? raw : {};
+  ACCRUAL_OPEX_LINE_ITEMS.forEach(({ key }) => {
+    const value = source[key];
+    next[key] = value === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full';
+  });
+  return next;
+};
 const normalizeInputs = (raw: any, fallback: ForecastInputs): ForecastInputs => ({
   inventoryTurns: clampNumber(toRoundedTurns(raw?.inventoryTurns, fallback.inventoryTurns), 0.5, 30),
   minCashBuffer: Math.max(0, toRoundedCurrency(raw?.minCashBuffer, fallback.minCashBuffer)),
   locLimit: Math.max(0, toRoundedCurrency(raw?.locLimit, fallback.locLimit)),
   locAprPct: clampNumber(toRoundedPercent(raw?.locAprPct, fallback.locAprPct), 0, 100),
+  creditSalesPct: clampNumber(toRoundedPercent(raw?.creditSalesPct, fallback.creditSalesPct), 0, 100),
+  historicalSalesLookbackWeeks: clampNumber(toRoundedInteger(raw?.historicalSalesLookbackWeeks, fallback.historicalSalesLookbackWeeks), 1, 52),
+  historicalSalesCollectionLagWeeks: clampNumber(toRoundedInteger(raw?.historicalSalesCollectionLagWeeks, fallback.historicalSalesCollectionLagWeeks), 0, 12),
   arCurrentCollectPct: clampNumber(toRoundedPercent(raw?.arCurrentCollectPct, fallback.arCurrentCollectPct), 0, 100),
   ar30To60CollectPct: clampNumber(toRoundedPercent(raw?.ar30To60CollectPct, fallback.ar30To60CollectPct), 0, 100),
   ar60To90CollectPct: clampNumber(toRoundedPercent(raw?.ar60To90CollectPct, fallback.ar60To90CollectPct), 0, 100),
@@ -316,9 +476,17 @@ const normalizeInputs = (raw: any, fallback: ForecastInputs): ForecastInputs => 
   apWeek4WeightPct: clampNumber(toRoundedPercent(raw?.apWeek4WeightPct, fallback.apWeek4WeightPct), 0, 100),
 });
 
-export default function WorkingCapitalForecastTab({ selectedCompanyId }: WorkingCapitalForecastTabProps) {
+export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode = 'cash', viewMode = 'full' }: WorkingCapitalForecastTabProps) {
+  const isInputsOnly = viewMode === 'inputs-only';
+  const isAccrualFullCashForecast = basisMode === 'accrual' && !isInputsOnly;
   const [inputs, setInputs] = useState<ForecastInputs>(DEFAULT_INPUTS);
   const [historicalAverages, setHistoricalAverages] = useState<WeeklyDriver>(DEFAULT_WEEKLY_DRIVER);
+  const [historicalSalesByWeek, setHistoricalSalesByWeek] = useState<number[]>([]);
+  const [accrualOpexAmountByRow, setAccrualOpexAmountByRow] = useState<Record<string, number[]>>({});
+  const [accrualOpexPctByRow, setAccrualOpexPctByRow] = useState<Record<string, number[]>>({});
+  const [accrualOpexPaymentTreatmentByKey, setAccrualOpexPaymentTreatmentByKey] = useState<Record<string, OpexPaymentTreatment>>(
+    { ...DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY },
+  );
   const [weeklyDrivers, setWeeklyDrivers] = useState<WeeklyDriver[]>(
     Array.from({ length: FORECAST_WEEKS }, () => ({ ...DEFAULT_WEEKLY_DRIVER }))
   );
@@ -379,14 +547,30 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
           return null;
         };
 
-        const [savedSettingsResponse, cashResult, arResult, apResult, loansResponse] = await Promise.all([
-          fetch(`/api/working-capital-forecast/settings?companyId=${encodeURIComponent(selectedCompanyId)}`),
+        const [savedSettingsResponse, financialForecastInputsResponse, cashResult, arResult, apResult, loansResponse] = await Promise.all([
+          fetch(`/api/working-capital-forecast/settings?companyId=${encodeURIComponent(selectedCompanyId)}&basisMode=${basisMode}`),
+          fetch(`/api/financial-forecast/inputs?companyId=${encodeURIComponent(selectedCompanyId)}&basisMode=${basisMode}`),
           fetchLatestForType('cash'),
           fetchLatestForType('ar-aging'),
           fetchLatestForType('ap-aging'),
           fetch(`/api/loans?companyId=${encodeURIComponent(selectedCompanyId)}`),
         ]);
         const savedPayload = savedSettingsResponse.ok ? await savedSettingsResponse.json() : null;
+        const financialForecastPayload = financialForecastInputsResponse.ok ? await financialForecastInputsResponse.json() : null;
+        const loadedOpexAmountByRow =
+          financialForecastPayload?.settings?.opexPctByRow?.__amountByRow &&
+          typeof financialForecastPayload.settings.opexPctByRow.__amountByRow === 'object'
+            ? financialForecastPayload.settings.opexPctByRow.__amountByRow
+            : {};
+        const loadedOpexPctByRow =
+          financialForecastPayload?.settings?.opexPctByRow &&
+          typeof financialForecastPayload.settings.opexPctByRow === 'object'
+            ? financialForecastPayload.settings.opexPctByRow
+            : {};
+        const loadedOpexPaymentTreatmentByKey = normalizeAccrualOpexPaymentTreatmentByKey(
+          financialForecastPayload?.settings?.opexPctByRow?.__paymentTreatmentByKey,
+          DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY,
+        );
         const savedSettings = savedPayload?.settings || null;
         const loansPayload = loansResponse.ok ? await loansResponse.json() : null;
         const loans = Array.isArray(loansPayload?.loans) ? loansPayload.loans : [];
@@ -523,6 +707,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
         let inventoryToSalesRatio = DEFAULT_FLOW_PROFILE.inventoryToSalesRatio;
         let arRunoffRate = DEFAULT_FLOW_PROFILE.arRunoffRate;
         let apRunoffRate = DEFAULT_FLOW_PROFILE.apRunoffRate;
+        let recentHistoricalSales: number[] = [];
         if (dailyFinancialResponse.ok) {
           const dailyFinancial = await dailyFinancialResponse.json();
           if (Array.isArray(dailyFinancial?.records) && dailyFinancial.records.length > 0) {
@@ -557,6 +742,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
               .sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime())
               .slice(0, FORECAST_WEEKS)
               .map(([, totals]) => totals);
+            recentHistoricalSales = Array.from(weekly.entries())
+              .sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime())
+              .slice(0, 52)
+              .map(([, totals]) => Math.max(0, Math.round(Number(totals.revenue || 0))));
             if (lastWeeks.length > 0) {
               avgWeeklySales = lastWeeks.reduce((sum, value) => sum + value.revenue, 0) / lastWeeks.length;
               avgWeeklyOpex = lastWeeks.reduce((sum, value) => sum + value.expense, 0) / lastWeeks.length;
@@ -607,6 +796,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
         }
 
         if (!cancelled) {
+          setAccrualOpexAmountByRow(loadedOpexAmountByRow);
+          setAccrualOpexPctByRow(loadedOpexPctByRow);
+          setAccrualOpexPaymentTreatmentByKey(loadedOpexPaymentTreatmentByKey);
           const derivedStartingBalances = {
             cash: latestCash,
             ar: latestAr,
@@ -637,7 +829,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
           let marginMonthlyBase: number[] = [];
           let monthRefsBase: MonthlyBaseRef[] = [];
           try {
-            const rawBase = localStorage.getItem(`financialForecastRevenueMonthlyBase_${selectedCompanyId}`);
+            const scopedBaseKey = `financialForecastRevenueMonthlyBase_${basisMode}_${selectedCompanyId}`;
+            const legacyCashBaseKey = `financialForecastRevenueMonthlyBase_${selectedCompanyId}`;
+            const rawBase =
+              localStorage.getItem(scopedBaseKey) ||
+              (basisMode === 'cash' ? localStorage.getItem(legacyCashBaseKey) : null);
             const parsedBase = rawBase ? JSON.parse(rawBase) : null;
             revenueMonthlyBase = Array.isArray(parsedBase?.monthTotals)
               ? parsedBase.monthTotals.map((value: unknown) => Number(value) || 0)
@@ -660,6 +856,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
             marginMonthlyBase = [];
             monthRefsBase = [];
           }
+          setHistoricalSalesByWeek(recentHistoricalSales);
           setWeekMonthLabels(buildWeekMonthLabels(monthRefsBase));
 
           if (savedSettings) {
@@ -723,13 +920,17 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
     return () => {
       cancelled = true;
     };
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, basisMode]);
 
   const rows = useMemo<ForecastRow[]>(() => {
     const result: ForecastRow[] = [];
     const weeks = FORECAST_WEEKS;
+    const isAccrualBasis = basisMode === 'accrual';
     const inventoryWeeksOnHand = Math.max(0.25, 52 / Math.max(0.5, inputs.inventoryTurns));
     const historicalInventoryToSales = flowProfile.inventoryToSalesRatio > 0 ? flowProfile.inventoryToSalesRatio : DEFAULT_FLOW_PROFILE.inventoryToSalesRatio;
+    const creditSalesRate = clampNumber(inputs.creditSalesPct / 100, 0, 1);
+    const historicalLookbackWeeks = clampNumber(Math.round(inputs.historicalSalesLookbackWeeks || 0), 1, 52);
+    const historicalCollectionLagWeeks = clampNumber(Math.round(inputs.historicalSalesCollectionLagWeeks || 0), 0, 12);
     const arCurrentRate = clampNumber(inputs.arCurrentCollectPct / 100, 0, 1);
     const ar30to60Rate = clampNumber(inputs.ar30To60CollectPct / 100, 0, 1);
     const ar60to90Rate = clampNumber(inputs.ar60To90CollectPct / 100, 0, 1);
@@ -789,12 +990,26 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       }
       return total;
     };
-    const arCohorts: Cohort[] = [
+    const defaultArCohorts: Cohort[] = [
       { remaining: Math.max(0, startingArBuckets.current), ageWeeks: 0 },
       { remaining: Math.max(0, startingArBuckets.bucket30to60), ageWeeks: 4 },
       { remaining: Math.max(0, startingArBuckets.bucket60to90), ageWeeks: 8 },
       { remaining: Math.max(0, startingArBuckets.bucket90plus), ageWeeks: 12 },
     ];
+    let arCohorts: Cohort[] = defaultArCohorts;
+    if (isAccrualBasis && historicalSalesByWeek.length > 0 && Math.max(0, Number(startingBalances.ar || 0)) > 0) {
+      const seededSales = historicalSalesByWeek
+        .slice(0, historicalLookbackWeeks)
+        .map((sales) => Math.max(0, Number(sales || 0) * creditSalesRate));
+      const seededTotal = seededSales.reduce((sum, value) => sum + value, 0);
+      if (seededTotal > 0) {
+        const scaleToCurrentAr = Math.max(0, Number(startingBalances.ar || 0)) / seededTotal;
+        arCohorts = seededSales.map((value, idx) => ({
+          remaining: Math.max(0, safeNumber(value * scaleToCurrentAr, 0)),
+          ageWeeks: historicalCollectionLagWeeks + idx,
+        }));
+      }
+    }
     const apCohorts: Cohort[] = [
       { remaining: Math.max(0, startingApBuckets.current), ageWeeks: 0 },
       { remaining: Math.max(0, startingApBuckets.bucket30to60), ageWeeks: 4 },
@@ -804,6 +1019,28 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
 
     const salesByWeek: number[] = Array.from({ length: weeks }, (_, idx) => Math.max(0, weeklyDrivers[idx]?.sales || 0));
     const opexByWeek: number[] = Array.from({ length: weeks }, (_, idx) => Math.max(0, weeklyDrivers[idx]?.opex || 0));
+    const opexPaidInFullByWeek = Array.from({ length: weeks }, () => 0);
+    const opexViaApByWeek = Array.from({ length: weeks }, () => 0);
+    ACCRUAL_OPEX_LINE_ITEMS.forEach(({ key }) => {
+      const treatment = accrualOpexPaymentTreatmentByKey?.[key] === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full';
+      const amounts = Array.isArray(accrualOpexAmountByRow[key]) ? accrualOpexAmountByRow[key] : [];
+      const pcts = Array.isArray(accrualOpexPctByRow[key]) ? accrualOpexPctByRow[key] : [];
+      for (let i = 0; i < weeks; i += 1) {
+        const explicitAmount = Number(amounts[i] || 0);
+        const pct = Number(pcts[i] || 0);
+        const pctDerivedAmount = Math.max(0, safeNumber(salesByWeek[i] * (pct / 100), 0));
+        const amount = Number.isFinite(explicitAmount) && explicitAmount > 0
+          ? Math.max(0, explicitAmount)
+          : pctDerivedAmount;
+        if (treatment === 'ap-schedule') {
+          opexViaApByWeek[i] += amount;
+        } else {
+          opexPaidInFullByWeek[i] += amount;
+        }
+      }
+    });
+    const hasAccrualLineAmounts =
+      opexPaidInFullByWeek.some((value) => value > 0) || opexViaApByWeek.some((value) => value > 0);
     const grossMarginByWeek: number[] = Array.from({ length: weeks }, (_, idx) =>
       Math.min(0.99, Math.max(0.01, Number(weeklyDrivers[idx]?.grossMarginPct || 0) / 100))
     );
@@ -819,7 +1056,18 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       const beginningCash = safeNumber(cash, 0);
       const sales = Math.max(0, safeNumber(salesByWeek[i], 0));
       const cogs = Math.max(0, safeNumber(sales * (1 - grossMarginByWeek[i]), 0));
-      const opex = Math.max(0, safeNumber(opexByWeek[i], 0));
+      const directPaidOpex = isAccrualBasis && hasAccrualLineAmounts
+        ? Math.max(0, safeNumber(opexPaidInFullByWeek[i], 0))
+        : 0;
+      const apScheduledOpex = isAccrualBasis && hasAccrualLineAmounts
+        ? Math.max(0, safeNumber(opexViaApByWeek[i], 0))
+        : 0;
+      const cashOpex = isAccrualBasis && hasAccrualLineAmounts
+        ? directPaidOpex
+        : Math.max(0, safeNumber(opexByWeek[i], 0));
+      const opex = isAccrualBasis && hasAccrualLineAmounts
+        ? directPaidOpex + apScheduledOpex
+        : cashOpex;
       const turnsTargetInventory = safeNumber(cogs * inventoryWeeksOnHand, 0);
       const historicalTargetInventory = safeNumber(sales * historicalInventoryToSales, 0);
       const targetInventory = (turnsTargetInventory + historicalTargetInventory) / 2;
@@ -827,10 +1075,16 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       const postSalesInventory = Math.max(0, safeNumber(inventory - cogs, 0));
       const purchaseForTarget = Math.max(0, safeNumber(targetInventory - postSalesInventory, 0));
       const purchases = safeNumber(purchaseForTarget, 0);
-      arCohorts.push({ remaining: Math.max(0, sales), ageWeeks: 0 });
-      apCohorts.push({ remaining: Math.max(0, purchases), ageWeeks: 0 });
+      let cashSalesReceipts = 0;
+      if (isAccrualBasis) {
+        const creditSales = Math.max(0, safeNumber(sales * creditSalesRate, 0));
+        cashSalesReceipts = Math.max(0, safeNumber(sales - creditSales, 0));
+        arCohorts.push({ remaining: creditSales, ageWeeks: 0 });
+      } else {
+        arCohorts.push({ remaining: Math.max(0, sales), ageWeeks: 0 });
+      }
 
-      const receipts = processCohorts(
+      const scheduledArReceipts = processCohorts(
         arCohorts,
         arCurrentRate,
         ar30to60Rate,
@@ -846,13 +1100,17 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
         ap90plusRate,
         apWeeklyWeights
       );
+      // Add this week's new AP after payout processing so newly incurred AP
+      // starts paying in following weeks rather than being paid immediately.
+      apCohorts.push({ remaining: Math.max(0, purchases + apScheduledOpex), ageWeeks: 0 });
+      const receipts = Math.max(0, safeNumber(scheduledArReceipts + cashSalesReceipts, 0));
 
       const locInterest = safeNumber(loc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
-      const baseEndingCash = safeNumber(beginningCash + receipts - apPayments - opex - locInterest, beginningCash);
+      const baseEndingCash = safeNumber(beginningCash + receipts - apPayments - cashOpex - locInterest, beginningCash);
       const beginningUnleveredCash = safeNumber(unleveredCash, 0);
       const unleveredLocInterest = safeNumber(unleveredLoc * (Math.max(0, inputs.locAprPct) / 100) / 52, 0);
       const unleveredEndingCash = safeNumber(
-        beginningUnleveredCash + receipts - apPayments - opex - unleveredLocInterest,
+        beginningUnleveredCash + receipts - apPayments - cashOpex - unleveredLocInterest,
         beginningUnleveredCash
       );
 
@@ -918,7 +1176,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
     }
 
     return result;
-  }, [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile]);
+  }, [inputs, startingBalances, startingArBuckets, startingApBuckets, weeklyDrivers, flowProfile, basisMode, historicalSalesByWeek, accrualOpexAmountByRow, accrualOpexPctByRow, accrualOpexPaymentTreatmentByKey]);
 
   const totals = useMemo(() => {
     const minCash = rows.reduce((acc, row) => Math.min(acc, row.endingCash), Number.POSITIVE_INFINITY);
@@ -937,7 +1195,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
 
   useEffect(() => {
     if (!selectedCompanyId || typeof window === 'undefined') return;
-    const graphRows = rows.slice(0, 12).map((row) => {
+    const graphRows = rows.slice(0, FORECAST_WEEKS).map((row) => {
       const availableLoc = Math.max(0, Number(inputs.locLimit || 0) - Number(row.endingLoc || 0));
       return {
         week: row.week,
@@ -952,8 +1210,12 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       rows: graphRows,
       updatedAt: new Date().toISOString(),
     };
-    localStorage.setItem(`cashForecastGraphData_${selectedCompanyId}`, JSON.stringify(payload));
-  }, [rows, inputs.locLimit, selectedCompanyId]);
+    const scopedGraphKey = `cashForecastGraphData_${basisMode}_${selectedCompanyId}`;
+    localStorage.setItem(scopedGraphKey, JSON.stringify(payload));
+    if (basisMode === 'cash') {
+      localStorage.setItem(`cashForecastGraphData_${selectedCompanyId}`, JSON.stringify(payload));
+    }
+  }, [rows, inputs.locLimit, selectedCompanyId, basisMode]);
 
   const updateNumberInput = (key: keyof ForecastInputs, value: string) => {
     const parsed = Number(value);
@@ -988,6 +1250,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId: selectedCompanyId,
+          basisMode,
           inputs,
           historicalAverages,
           weeklyDrivers,
@@ -1011,7 +1274,13 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
       <div style={{ ...cardStyle, marginBottom: '14px', borderColor: '#cbd5e1', background: '#f8fafc' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Cash Forecast (12 Weeks)</div>
+            <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
+              {isInputsOnly
+                ? 'Accrual Weekly Inputs (13 Weeks)'
+                : basisMode === 'accrual'
+                  ? 'Cash Forecast (Accrual Basis, 13 Weeks)'
+                  : 'Cash Forecast (Cash Basis, 13 Weeks)'}
+            </div>
             <div style={{ color: '#334155', fontSize: '13px' }}>
               Starting balances are sourced from last imported operational data. AR/AP days and inventory turns are auto-seeded from recent history and remain editable.
             </div>
@@ -1046,28 +1315,31 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px', marginBottom: '14px' }}>
-        <div style={{ ...cardStyle, gridColumn: 'span 2' }}>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>Beginning Cash (Last Imported)</div>
-          <div style={{ fontSize: '28px', fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
-            {loadingBalances ? 'Loading...' : formatCurrency(startingBalances.cash)}
+      {!isInputsOnly && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px', marginBottom: '14px' }}>
+          <div style={{ ...cardStyle, gridColumn: 'span 2' }}>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Beginning Cash (Last Imported)</div>
+            <div style={{ fontSize: '28px', fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
+              {loadingBalances ? 'Loading...' : formatCurrency(startingBalances.cash)}
+            </div>
+            {balancesError && <div style={{ marginTop: '6px', fontSize: '12px', color: '#b91c1c' }}>{balancesError}</div>}
           </div>
-          {balancesError && <div style={{ marginTop: '6px', fontSize: '12px', color: '#b91c1c' }}>{balancesError}</div>}
+          <div style={cardStyle}>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Minimum Cash</div>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: '#0369a1' }}>{formatCurrency(totals.minCash)}</div>
+          </div>
+          <div style={cardStyle}>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Peak LOC</div>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: '#7c3aed' }}>{formatCurrency(totals.peakLoc)}</div>
+          </div>
         </div>
-        <div style={cardStyle}>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>Minimum Cash</div>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: '#0369a1' }}>{formatCurrency(totals.minCash)}</div>
-        </div>
-        <div style={cardStyle}>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>Peak LOC</div>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: '#7c3aed' }}>{formatCurrency(totals.peakLoc)}</div>
-        </div>
-      </div>
+      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '12px', marginBottom: '14px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isAccrualFullCashForecast ? '1fr' : 'minmax(0, 2fr) minmax(0, 1fr)', gap: '12px', marginBottom: '14px' }}>
+        {!isAccrualFullCashForecast && (
         <div style={{ ...cardStyle, marginBottom: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>Inputs (Weeks 1-12)</div>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{`Inputs (Weeks 1-${FORECAST_WEEKS})`}</div>
             {balancesError && <div style={{ fontSize: '12px', color: '#b91c1c' }}>{balancesError}</div>}
           </div>
           <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
@@ -1131,11 +1403,80 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
             </table>
           </div>
         </div>
+        )}
 
         <div style={cardStyle}>
           <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>Inputs</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isAccrualFullCashForecast ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
+            {basisMode === 'accrual' && (
+              <div
+                style={{
+                  gridColumn: isAccrualFullCashForecast ? '3 / 4' : '1 / -1',
+                  gridRow: isAccrualFullCashForecast ? '1' : undefined,
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  padding: '8px',
+                  background: '#f8fafc',
+                }}
+              >
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Historical Sales to Collections</div>
+                <div style={{ fontSize: '11px', color: '#334155', marginBottom: '8px' }}>
+                  Historical weekly sales seed the opening AR collection mix so near-term cash reflects actual sales cohorts.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Credit Sales %</label>
+                    <input type="text" inputMode="decimal" value={formatPercentInput(inputs.creditSalesPct)} onChange={(e) => updatePercentInput('creditSalesPct', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Lookback Weeks</label>
+                    <input type="number" value={inputs.historicalSalesLookbackWeeks} onChange={(e) => updateNumberInput('historicalSalesLookbackWeeks', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '10px', color: '#475569', marginBottom: '3px' }}>Collection Lag (Weeks)</label>
+                    <input type="number" value={inputs.historicalSalesCollectionLagWeeks} onChange={(e) => updateNumberInput('historicalSalesCollectionLagWeeks', e.target.value)} style={{ ...inputStyle, padding: '6px 7px', fontSize: '11px' }} />
+                  </div>
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '11px', color: '#475569' }}>
+                  Avg historical weekly sales:{' '}
+                  <strong style={{ color: '#0f172a' }}>
+                    {historicalSalesByWeek.length > 0
+                      ? formatCurrency(Math.round(historicalSalesByWeek.reduce((sum, value) => sum + Number(value || 0), 0) / historicalSalesByWeek.length))
+                      : 'N/A'}
+                  </strong>
+                </div>
+                <div style={{ height: '8px' }} />
+                <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '4px', paddingTop: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Inventory Turns (Annual)</label>
+                      <input type="number" value={inputs.inventoryTurns} onChange={(e) => updateNumberInput('inventoryTurns', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Minimum Cash Buffer</label>
+                      <input type="text" inputMode="numeric" value={formatCurrencyInput(inputs.minCashBuffer)} onChange={(e) => updateCurrencyInput('minCashBuffer', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC Limit</label>
+                      <input type="text" inputMode="numeric" value={formatCurrencyInput(inputs.locLimit)} onChange={(e) => updateCurrencyInput('locLimit', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
+                      <input type="text" inputMode="decimal" value={formatPercentInput(inputs.locAprPct)} onChange={(e) => updatePercentInput('locAprPct', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting Inventory (Last Imported)</label>
+                      <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.inventory)}</div>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting LOC Balance (Last Imported)</label>
+                      <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.loc)}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', gridColumn: isAccrualFullCashForecast ? '1 / 2' : undefined, gridRow: isAccrualFullCashForecast ? '1' : undefined }}>
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>AR Inputs</div>
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AR Aging Buckets (% collected next 4 weeks)</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
@@ -1181,7 +1522,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
               </div>
             </div>
 
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', gridColumn: isAccrualFullCashForecast ? '2 / 3' : undefined, gridRow: isAccrualFullCashForecast ? '1' : undefined }}>
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>AP Inputs</div>
               <div style={{ fontSize: '11px', color: '#334155', fontWeight: 600, marginBottom: '4px' }}>AP Aging Buckets (% paid next 4 weeks)</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', marginBottom: '6px' }}>
@@ -1227,39 +1568,14 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
               </div>
             </div>
 
-            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Inventory Turns (Annual)</label>
-                <input type="number" value={inputs.inventoryTurns} onChange={(e) => updateNumberInput('inventoryTurns', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Minimum Cash Buffer</label>
-                <input type="text" inputMode="numeric" value={formatCurrencyInput(inputs.minCashBuffer)} onChange={(e) => updateCurrencyInput('minCashBuffer', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC Limit</label>
-                <input type="text" inputMode="numeric" value={formatCurrencyInput(inputs.locLimit)} onChange={(e) => updateCurrencyInput('locLimit', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
-                <input type="text" inputMode="decimal" value={formatPercentInput(inputs.locAprPct)} onChange={(e) => updatePercentInput('locAprPct', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting Inventory (Last Imported)</label>
-                <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.inventory)}</div>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting LOC Balance (Last Imported)</label>
-                <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.loc)}</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
+      {!isInputsOnly && (
       <div style={cardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>12-Week Forecast</div>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{`${FORECAST_WEEKS}-Week Forecast`}</div>
           <div style={{ fontSize: '12px', color: '#64748b' }}>
             Week 13 Cash: <strong style={{ color: '#0f172a' }}>{formatCurrency(totals.week13Cash)}</strong>
             {' | '}
@@ -1314,7 +1630,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
               </tr>
             </thead>
             <tbody>
-              {rows.slice(0, 12).map((row) => (
+              {rows.slice(0, FORECAST_WEEKS).map((row) => (
                 (() => {
                   const availableLoc = Math.max(0, Number(inputs.locLimit || 0) - Number(row.endingLoc || 0));
                   const totalAvailableLiquidity = Number(row.endingCash || 0) + availableLoc;
@@ -1353,6 +1669,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId }: Working
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }
