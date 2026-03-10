@@ -377,7 +377,7 @@ export async function GET(request: NextRequest) {
             .slice(0, 25) as any[];
         }
 
-        if (!data.length && shouldUseMockData) {
+        if (!data.length && (shouldUseMockData || process.env.NODE_ENV === 'development')) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'ar-aging',
@@ -582,7 +582,7 @@ export async function GET(request: NextRequest) {
             .slice(0, 25) as any[];
         }
 
-        if (!data.length && shouldUseMockData) {
+        if (!data.length && (shouldUseMockData || process.env.NODE_ENV === 'development')) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'ap-aging',

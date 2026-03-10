@@ -634,8 +634,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         }
         const latestAr = Number(latestDailySnapshot?.ar || 0);
         const latestAp = Number(latestDailySnapshot?.ap || 0);
-        const latestInventory = Number(latestDailySnapshot?.inventory || 0);
-        const latestLocBalance = Number(latestDailySnapshot?.loc || 0);
+        let latestInventory = Number(latestDailySnapshot?.inventory || 0);
+        let latestLocBalance = Number(latestDailySnapshot?.loc || 0);
         const latestArSnapshot = Array.isArray(arResult?.data?.records) ? arResult?.data?.records?.[0] : null;
         const latestApSnapshot = Array.isArray(apResult?.data?.records) ? apResult?.data?.records?.[0] : null;
         const derivedArBuckets = mapSnapshotToBuckets(latestArSnapshot, latestAr);
@@ -645,6 +645,15 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         const productHistory = inventoryHistory
           ? await fetchHistoryForType('products', [inventoryHistory.frequency, 'monthly', 'weekly', 'daily'])
           : await fetchHistoryForType('products', ['monthly', 'weekly', 'daily']);
+
+        if (latestInventory <= 0 && inventoryHistory?.data?.records) {
+          const latestInventorySnapshot = inventoryHistory.data.records[0];
+          latestInventory = Math.max(0, Number(latestInventorySnapshot?.assetValue || 0));
+        }
+        if (latestLocBalance <= 0 && locLoanAmount > 0) {
+          // When no imported LOC balance exists, seed from configured LOC loan amount.
+          latestLocBalance = locLoanAmount;
+        }
 
         let suggestedInventoryTurns = 0;
         if (inventoryHistory?.data?.records && productHistory?.data?.records) {
@@ -1269,6 +1278,33 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     }
   };
 
+  const forecastHeaders = [
+    'Week',
+    'Beginning Cash',
+    'Receipts',
+    'AP Payments',
+    ...(basisMode === 'accrual' ? [] : ['Opex']),
+    'LOC Interest',
+    'LOC Draw',
+    'LOC Repay',
+    'Unlevered Cash',
+    'Ending Cash (Post LOC)',
+    'Ending LOC',
+    'Available LOC',
+    'Available Liquidity',
+    'Ending AR',
+    'Ending AP',
+    'Ending Inventory',
+    'Target Inventory',
+  ];
+  const weekDesignationLabels = useMemo(() => {
+    const anchor = getWeekendAnchorDate(new Date());
+    return Array.from({ length: FORECAST_WEEKS }, (_, idx) => {
+      const weekEnding = addDays(anchor, idx * 7 + 6);
+      return weekEnding.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+  }, []);
+
   return (
     <div style={{ padding: '18px 24px 24px' }}>
       <div style={{ ...cardStyle, marginBottom: '14px', borderColor: '#cbd5e1', background: '#f8fafc' }}>
@@ -1588,25 +1624,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           <table style={{ width: '100%', minWidth: '1400px', borderCollapse: 'collapse' }}>
             <thead style={{ background: '#f8fafc' }}>
               <tr>
-                {[
-                  'Week',
-                  'Beginning Cash',
-                  'Receipts',
-                  'AP Payments',
-                  'Opex',
-                  'LOC Interest',
-                  'LOC Draw',
-                  'LOC Repay',
-                  'Unlevered Cash',
-                  'Ending Cash (Post LOC)',
-                  'Ending LOC',
-                  'Available LOC',
-                  'Available Liquidity',
-                  'Ending AR',
-                  'Ending AP',
-                  'Ending Inventory',
-                  'Target Inventory',
-                ].map((header) => (
+                {forecastHeaders.map((header) => (
                   <th
                     key={header}
                     style={{
@@ -1637,12 +1655,14 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                   return (
                 <tr key={row.week}>
                   <td style={{ padding: '8px', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: '#0f172a', fontWeight: 600 }}>
-                    W{row.week}
+                    {`Week Ending ${weekDesignationLabels[row.week - 1] || `W${row.week}`}`}
                   </td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.beginningCash)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.receipts)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.apPayments)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.opex)}</td>
+                  {basisMode !== 'accrual' && (
+                    <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.opex)}</td>
+                  )}
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px' }}>{formatCurrency(row.locInterest)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locDraw > 0 ? '#7c3aed' : '#64748b' }}>{formatCurrency(row.locDraw)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', fontSize: '12px', color: row.locRepay > 0 ? '#0284c7' : '#64748b' }}>{formatCurrency(row.locRepay)}</td>

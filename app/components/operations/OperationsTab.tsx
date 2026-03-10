@@ -303,7 +303,9 @@ const SECTOR_INVESTIGATE_OVERRIDES: Record<string, InvestigatePlaybook[]> = {
 export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory, viewMode = 'full' }: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
   const [activeTab, setActiveTab] = useState<OpTab>(isOverviewOnly ? 'overview' : 'dashboard');
-  const [activeForecastTab, setActiveForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
+  const [activeForecastBasisTab, setActiveForecastBasisTab] = useState<'cash-basis' | 'accrual-basis'>('accrual-basis');
+  const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
+  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -3915,13 +3917,13 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       <div style={{ padding: '8px 32px 32px' }}>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
           <button
-            onClick={() => setActiveForecastTab('income-statement-forecast')}
+            onClick={() => setActiveForecastBasisTab('accrual-basis')}
             style={{
               padding: '12px 18px',
-              background: activeForecastTab === 'income-statement-forecast' ? '#667eea' : 'transparent',
-              color: activeForecastTab === 'income-statement-forecast' ? 'white' : '#64748b',
+              background: activeForecastBasisTab === 'accrual-basis' ? '#667eea' : 'transparent',
+              color: activeForecastBasisTab === 'accrual-basis' ? 'white' : '#64748b',
               border: 'none',
-              borderBottom: activeForecastTab === 'income-statement-forecast' ? '3px solid #667eea' : '3px solid transparent',
+              borderBottom: activeForecastBasisTab === 'accrual-basis' ? '3px solid #667eea' : '3px solid transparent',
               fontSize: '14px',
               fontWeight: '600',
               cursor: 'pointer',
@@ -3929,16 +3931,16 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
               transition: 'all 0.2s'
             }}
           >
-            Income Statement Forecast
+            Accural Cash Forecast
           </button>
           <button
-            onClick={() => setActiveForecastTab('cash-forecast')}
+            onClick={() => setActiveForecastBasisTab('cash-basis')}
             style={{
               padding: '12px 18px',
-              background: activeForecastTab === 'cash-forecast' ? '#667eea' : 'transparent',
-              color: activeForecastTab === 'cash-forecast' ? 'white' : '#64748b',
+              background: activeForecastBasisTab === 'cash-basis' ? '#667eea' : 'transparent',
+              color: activeForecastBasisTab === 'cash-basis' ? 'white' : '#64748b',
               border: 'none',
-              borderBottom: activeForecastTab === 'cash-forecast' ? '3px solid #667eea' : '3px solid transparent',
+              borderBottom: activeForecastBasisTab === 'cash-basis' ? '3px solid #667eea' : '3px solid transparent',
               fontSize: '14px',
               fontWeight: '600',
               cursor: 'pointer',
@@ -3946,45 +3948,168 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
               transition: 'all 0.2s'
             }}
           >
-            Cash Forecast
-          </button>
-          <button
-            onClick={() => setActiveForecastTab('graphs')}
-            style={{
-              padding: '12px 18px',
-              background: activeForecastTab === 'graphs' ? '#667eea' : 'transparent',
-              color: activeForecastTab === 'graphs' ? 'white' : '#64748b',
-              border: 'none',
-              borderBottom: activeForecastTab === 'graphs' ? '3px solid #667eea' : '3px solid transparent',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              borderRadius: '8px 8px 0 0',
-              transition: 'all 0.2s'
-            }}
-          >
-            Graphs
+            Income statement Cash Forecast
           </button>
         </div>
 
-        {activeForecastTab === 'income-statement-forecast' && (
-          <FinancialForecastTab
-            selectedCompanyId={selectedCompanyId}
-            companyName={companyName}
-            industrySectorCategory={industrySectorCategory || null}
-            displayMode="no-graphs"
-          />
+        {activeForecastBasisTab === 'cash-basis' && (
+          <>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+              <button
+                onClick={() => setActiveCashBasisForecastTab('income-statement-forecast')}
+                style={{
+                  padding: '12px 18px',
+                  background: activeCashBasisForecastTab === 'income-statement-forecast' ? '#667eea' : 'transparent',
+                  color: activeCashBasisForecastTab === 'income-statement-forecast' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: activeCashBasisForecastTab === 'income-statement-forecast' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Income Statement Forecast
+              </button>
+              <button
+                onClick={() => setActiveCashBasisForecastTab('cash-forecast')}
+                style={{
+                  padding: '12px 18px',
+                  background: activeCashBasisForecastTab === 'cash-forecast' ? '#667eea' : 'transparent',
+                  color: activeCashBasisForecastTab === 'cash-forecast' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: activeCashBasisForecastTab === 'cash-forecast' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Cash Forecast
+              </button>
+              <button
+                onClick={() => setActiveCashBasisForecastTab('graphs')}
+                style={{
+                  padding: '12px 18px',
+                  background: activeCashBasisForecastTab === 'graphs' ? '#667eea' : 'transparent',
+                  color: activeCashBasisForecastTab === 'graphs' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: activeCashBasisForecastTab === 'graphs' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Graphs
+              </button>
+            </div>
+
+            {activeCashBasisForecastTab === 'income-statement-forecast' && (
+              <FinancialForecastTab
+                selectedCompanyId={selectedCompanyId}
+                companyName={companyName}
+                industrySectorCategory={industrySectorCategory || null}
+                displayMode="no-graphs"
+                basisMode="cash"
+              />
+            )}
+            {activeCashBasisForecastTab === 'cash-forecast' && (
+              <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} basisMode="cash" />
+            )}
+            {activeCashBasisForecastTab === 'graphs' && (
+              <FinancialForecastTab
+                selectedCompanyId={selectedCompanyId}
+                companyName={companyName}
+                industrySectorCategory={industrySectorCategory || null}
+                displayMode="graphs-only"
+                basisMode="cash"
+              />
+            )}
+          </>
         )}
-        {activeForecastTab === 'cash-forecast' && (
-          <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} />
-        )}
-        {activeForecastTab === 'graphs' && (
-          <FinancialForecastTab
-            selectedCompanyId={selectedCompanyId}
-            companyName={companyName}
-            industrySectorCategory={industrySectorCategory || null}
-            displayMode="graphs-only"
-          />
+
+        {activeForecastBasisTab === 'accrual-basis' && (
+          <>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+              <button
+                onClick={() => setActiveAccrualBasisForecastTab('income-statement-forecast')}
+                style={{
+                  padding: '12px 18px',
+                  background: activeAccrualBasisForecastTab === 'income-statement-forecast' ? '#667eea' : 'transparent',
+                  color: activeAccrualBasisForecastTab === 'income-statement-forecast' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: activeAccrualBasisForecastTab === 'income-statement-forecast' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Income Statement Forecast
+              </button>
+              <button
+                onClick={() => setActiveAccrualBasisForecastTab('cash-forecast')}
+                style={{
+                  padding: '12px 18px',
+                  background: activeAccrualBasisForecastTab === 'cash-forecast' ? '#667eea' : 'transparent',
+                  color: activeAccrualBasisForecastTab === 'cash-forecast' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: activeAccrualBasisForecastTab === 'cash-forecast' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Cash Forecast
+              </button>
+              <button
+                onClick={() => setActiveAccrualBasisForecastTab('graphs')}
+                style={{
+                  padding: '12px 18px',
+                  background: activeAccrualBasisForecastTab === 'graphs' ? '#667eea' : 'transparent',
+                  color: activeAccrualBasisForecastTab === 'graphs' ? 'white' : '#64748b',
+                  border: 'none',
+                  borderBottom: activeAccrualBasisForecastTab === 'graphs' ? '3px solid #667eea' : '3px solid transparent',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Graphs
+              </button>
+            </div>
+
+            {activeAccrualBasisForecastTab === 'income-statement-forecast' && (
+              <FinancialForecastTab
+                selectedCompanyId={selectedCompanyId}
+                companyName={companyName}
+                industrySectorCategory={industrySectorCategory || null}
+                displayMode="no-graphs"
+                basisMode="accrual"
+              />
+            )}
+            {activeAccrualBasisForecastTab === 'cash-forecast' && (
+              <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} basisMode="accrual" />
+            )}
+            {activeAccrualBasisForecastTab === 'graphs' && (
+              <FinancialForecastTab
+                selectedCompanyId={selectedCompanyId}
+                companyName={companyName}
+                industrySectorCategory={industrySectorCategory || null}
+                displayMode="graphs-only"
+                basisMode="accrual"
+              />
+            )}
+          </>
         )}
       </div>
     );
@@ -4063,7 +4188,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
             {tab === 'dashboard'
               ? 'Ops Dashboard'
               : tab === 'forecast'
-                ? 'Forecast'
+                ? 'Cash Forecast'
               : getModuleLabel(tab)}
           </button>
         ))}
