@@ -1818,11 +1818,42 @@ export default function FinancialForecastTab({
           -moz-appearance: textfield;
           appearance: textfield;
         }
+        @media print {
+          .ff-print-controls {
+            display: none !important;
+          }
+          .ff-print-section {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+          .ff-print-table-wrap {
+            overflow: visible !important;
+          }
+          .ff-print-table {
+            width: 100% !important;
+            min-width: 0 !important;
+            table-layout: auto !important;
+          }
+          .ff-print-table thead {
+            display: table-header-group;
+          }
+          .ff-print-table tfoot {
+            display: table-footer-group;
+          }
+          .ff-print-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .ff-print-chart-card {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+        }
       `}</style>
       <div style={{ marginBottom: '6px' }} />
 
       {visibleTabs.length > 1 && (
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <div className="ff-print-controls" style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
           {showInputsTab && (
             <button style={tabButtonStyle('inputs')} onClick={() => setActiveTab('inputs')}>Inputs</button>
           )}
@@ -1836,8 +1867,8 @@ export default function FinancialForecastTab({
       )}
 
       {activeTab === 'inputs' && (
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, color: '#0f172a' }}>Forecast Inputs</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ fontSize: '12px', color: '#64748b' }}>
@@ -1901,8 +1932,8 @@ export default function FinancialForecastTab({
             </div>
           </div>
 
-          <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-            <table className="forecast-grid" style={{ width: 'max-content', minWidth: '1280px', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <div className="ff-print-table-wrap" style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+            <table className="forecast-grid ff-print-table" style={{ width: 'max-content', minWidth: '1280px', borderCollapse: 'collapse', fontSize: '12px' }}>
               <colgroup>
                 <col className="name-col" />
                 {Array.from({ length: totalInputPeriodCols }).map((_, idx) => (
@@ -2491,8 +2522,8 @@ export default function FinancialForecastTab({
       )}
 
       {activeTab === 'income-statement' && (
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
@@ -2546,8 +2577,8 @@ export default function FinancialForecastTab({
               </button>
             </div>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="forecast-grid forecast-income-table" style={{ width: 'max-content', minWidth: '1500px', borderCollapse: 'collapse', fontSize: '12px' }}>
+          <div className="ff-print-table-wrap" style={{ overflowX: 'auto' }}>
+            <table className="forecast-grid forecast-income-table ff-print-table" style={{ width: 'max-content', minWidth: '1500px', borderCollapse: 'collapse', fontSize: '12px' }}>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #e2e8f0' }}>Line Item</th>
@@ -2668,8 +2699,8 @@ export default function FinancialForecastTab({
       )}
 
       {activeTab === 'graphs' && (
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div className="ff-print-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+          <div className="ff-print-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, color: '#0f172a' }}>Graphs</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#334155' }}>
@@ -2708,28 +2739,28 @@ export default function FinancialForecastTab({
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px' }}>
-            {renderStackedBarChart(
+            <div className="ff-print-chart-card">{renderStackedBarChart(
               `Revenue Detail (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
               revenueRowKeys,
               revenueGraphPoints,
               `Shaded bars = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then forecast ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(revenueGraphPoints.length - 3, 0)}).`,
-            )}
-            {renderStackedBarChart(
+            )}</div>
+            <div className="ff-print-chart-card">{renderStackedBarChart(
               `COGS Detail (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
               cogsRowKeys,
               cogsGraphPoints,
               `Shaded bars = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then forecast ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(cogsGraphPoints.length - 3, 0)}).`,
-            )}
-            {renderTotalsLineChart(
+            )}</div>
+            <div className="ff-print-chart-card">{renderTotalsLineChart(
               `Totals Trend (12 ${graphGranularity === 'monthly' ? 'Months' : 'Quarters'})`,
               totalsLineGraphPoints,
               `Shaded background = actual ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (3), then projected ${graphGranularity === 'monthly' ? 'months' : 'quarters'} (${Math.max(totalsLineGraphPoints.length - 3, 0)}).`,
-            )}
-            {renderCashLiquidityComboChart(
+            )}</div>
+            <div className="ff-print-chart-card">{renderCashLiquidityComboChart(
               'Cash & LOC Capacity (12 Weeks)',
               cashLiquidityGraphPoints,
               'Bars show weekly ending cash projection. Orange line is unlevered cash (before LOC draw/repay). Blue line is available LOC = LOC loan amount minus projected LOC balance.',
-            )}
+            )}</div>
           </div>
         </div>
       )}

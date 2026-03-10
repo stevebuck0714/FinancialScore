@@ -6001,9 +6001,36 @@ function FinancialScorePage() {
 
     setIsPrintingPackage(true);
 
-    // Print each report in sequence with a delay
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+    const waitForPrintReady = async (report: any) => {
+      const baseDelayMs =
+        report.view === 'dashboard' ? 1500 : report.view === 'operations' ? 1800 : 1000;
+      await sleep(baseDelayMs);
+
+      // Forecast pages can still be loading after initial render; wait until loading text clears.
+      const isOpsForecast = report.view === 'operations' && report.opsTab === 'forecast';
+      if (!isOpsForecast) return;
+
+      const maxWaitMs = 15000;
+      const pollMs = 250;
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < maxWaitMs) {
+        const root = document.querySelector('.app-shell-main') || document.body;
+        const text = (root.textContent || '').toLowerCase();
+        const hasLoadingText =
+          text.includes('loading...') ||
+          text.includes('loading…') ||
+          text.includes('beginning cash (last imported)\nloading');
+
+        if (!hasLoadingText) return;
+        await sleep(pollMs);
+      }
+    };
+
+    // Print each report in sequence with a delay/readiness check
     let currentIndex = 0;
-    const printNext = () => {
+    const printNext = async () => {
       if (currentIndex >= printQueue.length) {
         setIsPrintingPackage(false);
         setOperationsPrintConfig(null);
@@ -6040,17 +6067,14 @@ function FinancialScorePage() {
         setCurrentView(report.view as any);
       }
 
-      // Wait for view transition/render to settle before printing
-      const renderDelayMs = report.view === 'dashboard' ? 1500 : report.view === 'operations' ? 1800 : 1000;
-      setTimeout(() => {
-        window.print();
-        currentIndex++;
-        // Give the browser time to close print dialog before next report
-        setTimeout(printNext, 1200);
-      }, renderDelayMs);
+      await waitForPrintReady(report);
+      window.print();
+      currentIndex++;
+      // Give the browser time to close print dialog before next report
+      setTimeout(() => { void printNext(); }, 1200);
     };
 
-    printNext();
+    void printNext();
   };
 
   if (!isLoggedIn) {

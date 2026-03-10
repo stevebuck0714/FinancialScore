@@ -3749,7 +3749,7 @@ export default function OperationsTab({
 
     return (
       <div>
-        <div style={{ padding: '8px 24px 0', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="ops-print-hide" style={{ padding: '8px 24px 0', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button style={tabButtonStyle(dailyFinancialView === 'summary')} onClick={() => setDailyFinancialView('summary')}>Summary</button>
           <button style={tabButtonStyle(dailyFinancialView === 'income')} onClick={() => setDailyFinancialView('income')}>Income Statements</button>
           <button style={tabButtonStyle(dailyFinancialView === 'balance')} onClick={() => setDailyFinancialView('balance')}>Balance Sheets</button>
@@ -3960,7 +3960,7 @@ export default function OperationsTab({
   const renderForecast = () => {
     return (
       <div style={{ padding: '8px 32px 32px' }}>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+        <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
           <button
             onClick={() => setActiveForecastBasisTab('accrual-basis')}
             style={{
@@ -3999,7 +3999,7 @@ export default function OperationsTab({
 
         {activeForecastBasisTab === 'cash-basis' && (
           <>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+            <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
               <button
                 onClick={() => setActiveCashBasisForecastTab('income-statement-forecast')}
                 style={{
@@ -4079,7 +4079,7 @@ export default function OperationsTab({
 
         {activeForecastBasisTab === 'accrual-basis' && (
           <>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+            <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
               <button
                 onClick={() => setActiveAccrualBasisForecastTab('income-statement-forecast')}
                 style={{
@@ -4203,11 +4203,18 @@ export default function OperationsTab({
       minHeight: '100vh',
       background: '#f8fafc'
     }}>
+      <style>{`
+        @media print {
+          .ops-print-hide {
+            display: none !important;
+          }
+        }
+      `}</style>
       {/* Spacer for main nav */}
       <div style={{ height: '20px' }}></div>
 
       {/* Tabs */}
-      <div style={{ 
+      <div className="ops-print-hide" style={{ 
         background: 'white', 
         borderBottom: '1px solid #e2e8f0',
         padding: '0 24px',
@@ -4240,7 +4247,7 @@ export default function OperationsTab({
       </div>
 
       {/* Filters */}
-      {renderFilters()}
+      <div className="ops-print-hide">{renderFilters()}</div>
 
       {/* Content */}
       {activeTab === 'dashboard' && (
