@@ -29,6 +29,9 @@ interface OperationsTabProps {
   companyName: string;
   industrySectorCategory?: string | null;
   viewMode?: 'full' | 'overview-only';
+  initialTab?: string;
+  initialForecastBasisTab?: 'cash-basis' | 'accrual-basis';
+  initialForecastSubTab?: 'income-statement-forecast' | 'cash-forecast' | 'graphs';
 }
 
 type OpTab = 'dashboard' | 'overview' | string;
@@ -300,9 +303,20 @@ const SECTOR_INVESTIGATE_OVERRIDES: Record<string, InvestigatePlaybook[]> = {
   ],
 };
 
-export default function OperationsTab({ selectedCompanyId, companyName, industrySectorCategory, viewMode = 'full' }: OperationsTabProps) {
+export default function OperationsTab({
+  selectedCompanyId,
+  companyName,
+  industrySectorCategory,
+  viewMode = 'full',
+  initialTab,
+  initialForecastBasisTab,
+  initialForecastSubTab
+}: OperationsTabProps) {
   const isOverviewOnly = viewMode === 'overview-only';
-  const [activeTab, setActiveTab] = useState<OpTab>(isOverviewOnly ? 'overview' : 'dashboard');
+  const [activeTab, setActiveTab] = useState<OpTab>(() => {
+    if (initialTab) return initialTab as OpTab;
+    return isOverviewOnly ? 'overview' : 'dashboard';
+  });
   const [activeForecastBasisTab, setActiveForecastBasisTab] = useState<'cash-basis' | 'accrual-basis'>('accrual-basis');
   const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
   const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
@@ -387,6 +401,37 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
       setActiveTab('dashboard');
     }
   }, [activeTab, availableTabs]);
+
+  useEffect(() => {
+    if (!initialTab) return;
+    if (availableTabs.includes(initialTab as OpTab)) {
+      setActiveTab(initialTab as OpTab);
+    }
+  }, [initialTab, availableTabs]);
+
+  useEffect(() => {
+    if (initialForecastBasisTab) {
+      setActiveForecastBasisTab(initialForecastBasisTab);
+    }
+  }, [initialForecastBasisTab]);
+
+  useEffect(() => {
+    if (!initialForecastSubTab) return;
+    if (initialForecastBasisTab === 'cash-basis') {
+      setActiveCashBasisForecastTab(initialForecastSubTab);
+      return;
+    }
+    if (initialForecastBasisTab === 'accrual-basis') {
+      setActiveAccrualBasisForecastTab(initialForecastSubTab);
+      return;
+    }
+    // Fallback when basis isn't explicitly provided: apply to current basis tab.
+    if (activeForecastBasisTab === 'cash-basis') {
+      setActiveCashBasisForecastTab(initialForecastSubTab);
+    } else {
+      setActiveAccrualBasisForecastTab(initialForecastSubTab);
+    }
+  }, [initialForecastSubTab, initialForecastBasisTab, activeForecastBasisTab]);
 
   useEffect(() => {
     loadSummary();
