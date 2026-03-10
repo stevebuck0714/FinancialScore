@@ -120,7 +120,7 @@ export default function SupportPage() {
         </div>
 
         {/* Tab Content */}
-        <div style={{ padding: '40px' }}>
+        <div style={{ padding: activeTab === 'request-support' ? '20px 24px' : '40px' }}>
           {activeTab === 'getting-started' && <GettingStartedContent />}
           {activeTab === 'privacy' && <PrivacyPolicyContent />}
           {activeTab === 'license' && <LicenseAgreementContent />}
@@ -673,29 +673,29 @@ function RequestSupportContent() {
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    padding: '12px 14px',
-    fontSize: '15px',
+    padding: '9px 11px',
+    fontSize: '14px',
     border: '1px solid #e2e8f0',
     borderRadius: '8px',
     background: 'white',
   };
-  const labelStyle: React.CSSProperties = { display: 'block', fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' };
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' };
 
   return (
-    <div style={{ maxWidth: '700px', margin: '0 auto' }}>
-      <h2 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
+    <div style={{ maxWidth: '760px', margin: '0 auto' }}>
+      <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '12px' }}>
         Request Support
       </h2>
-      <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
-        Submit a support ticket and we will respond at your contact email. Tier 1 routing is based on your company support owner settings.
+      <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '16px' }}>
+        Submit a support ticket and we will respond at your contact email.
       </p>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <div>
           <label style={labelStyle}>Subject *</label>
           <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Brief summary of your issue" style={inputStyle} required />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
             <label style={labelStyle}>Category *</label>
             <select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle} required>
@@ -721,21 +721,7 @@ function RequestSupportContent() {
         </div>
         <div>
           <label style={labelStyle}>Description *</label>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Provide detailed description of your issue or request" rows={6} style={{ ...inputStyle, resize: 'vertical' }} required />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-          <div>
-            <label style={labelStyle}>Contact Name *</label>
-            <input type="text" value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Your name" style={inputStyle} required />
-          </div>
-          <div>
-            <label style={labelStyle}>Contact Email *</label>
-            <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="your@email.com" style={inputStyle} required />
-          </div>
-        </div>
-        <div>
-          <label style={labelStyle}>Company Name *</label>
-          <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Your company name" style={inputStyle} required />
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Provide detailed description of your issue or request" rows={4} style={{ ...inputStyle, resize: 'vertical' }} required />
         </div>
         <div>
           <label style={labelStyle}>Page/Module</label>
@@ -756,8 +742,22 @@ function RequestSupportContent() {
             <option value="Other">Other</option>
           </select>
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={labelStyle}>Contact Name *</label>
+            <input type="text" value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Your name" style={inputStyle} required />
+          </div>
+          <div>
+            <label style={labelStyle}>Contact Email *</label>
+            <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="your@email.com" style={inputStyle} required />
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>Company Name *</label>
+          <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Your company name" style={inputStyle} required />
+        </div>
         {submitMessage && (
-          <div style={{ padding: '14px 18px', borderRadius: '8px', background: submitMessage.type === 'success' ? '#f0fdf4' : '#fef2f2', color: submitMessage.type === 'success' ? '#166534' : '#991b1b', fontSize: '14px' }}>
+          <div style={{ padding: '10px 12px', borderRadius: '8px', background: submitMessage.type === 'success' ? '#f0fdf4' : '#fef2f2', color: submitMessage.type === 'success' ? '#166534' : '#991b1b', fontSize: '13px' }}>
             {submitMessage.text}
           </div>
         )}
@@ -765,8 +765,8 @@ function RequestSupportContent() {
           type="submit"
           disabled={isSubmitting}
           style={{
-            padding: '14px 28px',
-            fontSize: '16px',
+            padding: '10px 18px',
+            fontSize: '14px',
             fontWeight: '600',
             color: 'white',
             background: isSubmitting ? '#94a3b8' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',

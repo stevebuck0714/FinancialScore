@@ -10,10 +10,11 @@ const CATEGORY_VALUES = new Set([
   'LOAN_DOCUMENTS',
   'FINANCING_DOCUMENTS',
   'LEGAL_AND_REGULATORY',
+  'TAX_DOCUMENTS',
   'OTHER',
 ]);
 
-function asCategory(value: unknown): 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'OTHER' | null {
+function asCategory(value: unknown): 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'TAX_DOCUMENTS' | 'OTHER' | null {
   const s = String(value || '').trim().toUpperCase();
   return CATEGORY_VALUES.has(s) ? (s as any) : null;
 }

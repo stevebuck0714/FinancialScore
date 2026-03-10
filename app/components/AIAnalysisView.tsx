@@ -57,7 +57,7 @@ type MonthlyDataLike = {
 
 type QuestionsByCategory = Record<string, string[]>;
 
-type DocCategory = 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'OTHER';
+type DocCategory = 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'TAX_DOCUMENTS' | 'OTHER';
 type CompanyDocument = {
   id: string;
   category: DocCategory;
@@ -72,6 +72,7 @@ const DOC_CATEGORY_META: Array<{ id: DocCategory; label: string }> = [
   { id: 'LOAN_DOCUMENTS', label: 'Loan Documents' },
   { id: 'FINANCING_DOCUMENTS', label: 'Financing Documents' },
   { id: 'LEGAL_AND_REGULATORY', label: 'Legal and Regulatory' },
+  { id: 'TAX_DOCUMENTS', label: 'Tax Documents' },
   { id: 'OTHER', label: 'Other' },
 ];
 
@@ -268,7 +269,7 @@ export default function AIAnalysisView(props: {
           companyName,
           question: trimmed,
           useExternalSources,
-          documentId: selectedDocumentId || null,
+          documentId: mode === 'document' ? (selectedDocumentId || null) : null,
           mode,
         }),
         signal: controller.signal,
@@ -380,6 +381,7 @@ export default function AIAnalysisView(props: {
       LOAN_DOCUMENTS: [],
       FINANCING_DOCUMENTS: [],
       LEGAL_AND_REGULATORY: [],
+      TAX_DOCUMENTS: [],
       OTHER: [],
     };
     for (const d of documents) {
@@ -1118,6 +1120,7 @@ function DocumentPicker(props: {
       LOAN_DOCUMENTS: [],
       FINANCING_DOCUMENTS: [],
       LEGAL_AND_REGULATORY: [],
+      TAX_DOCUMENTS: [],
       OTHER: [],
     };
     for (const cat of Object.keys(out) as DocCategory[]) {

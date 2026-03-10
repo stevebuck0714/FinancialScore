@@ -3948,7 +3948,7 @@ export default function OperationsTab({ selectedCompanyId, companyName, industry
               transition: 'all 0.2s'
             }}
           >
-            Income statement Cash Forecast
+            Income Statemeent Forecast
           </button>
         </div>
 

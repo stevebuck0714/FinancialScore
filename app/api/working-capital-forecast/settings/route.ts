@@ -40,9 +40,14 @@ async function ensureWorkingCapitalForecastSettingsTable() {
         "inputs" JSONB NOT NULL DEFAULT '{}'::jsonb,
         "weeklyDrivers" JSONB NOT NULL DEFAULT '[]'::jsonb,
         "historicalAverages" JSONB NOT NULL DEFAULT '{}'::jsonb,
+        "startingBalances" JSONB NOT NULL DEFAULT '{}'::jsonb,
         "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "WorkingCapitalForecastSettings"
+      ADD COLUMN IF NOT EXISTS "startingBalances" JSONB NOT NULL DEFAULT '{}'::jsonb
     `);
     await prisma.$executeRawUnsafe(`
       CREATE UNIQUE INDEX IF NOT EXISTS "WorkingCapitalForecastSettings_companyId_key"
@@ -75,10 +80,11 @@ export async function GET(request: NextRequest) {
         inputs: unknown;
         weeklyDrivers: unknown;
         historicalAverages: unknown;
+        startingBalances: unknown;
         updatedAt: Date;
       }>
     >(
-      `SELECT "inputs", "weeklyDrivers", "historicalAverages", "updatedAt"
+      `SELECT "inputs", "weeklyDrivers", "historicalAverages", "startingBalances", "updatedAt"
        FROM "WorkingCapitalForecastSettings"
        WHERE "companyId" = $1
        LIMIT 1`,
@@ -91,6 +97,7 @@ export async function GET(request: NextRequest) {
           inputs: extractBasisPayload(row.inputs, basisMode),
           weeklyDrivers: extractBasisPayload(row.weeklyDrivers, basisMode),
           historicalAverages: extractBasisPayload(row.historicalAverages, basisMode),
+          startingBalances: extractBasisPayload(row.startingBalances, basisMode),
           updatedAt: row.updatedAt,
         }
       : null;
@@ -106,7 +113,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { companyId, inputs, weeklyDrivers, historicalAverages } = body || {};
+    const { companyId, inputs, weeklyDrivers, historicalAverages, startingBalances } = body || {};
     const basisMode = asBasisMode(body?.basisMode);
     if (!companyId) {
       return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
@@ -121,9 +128,10 @@ export async function POST(request: NextRequest) {
         inputs: unknown;
         weeklyDrivers: unknown;
         historicalAverages: unknown;
+        startingBalances: unknown;
       }>
     >(
-      `SELECT "inputs", "weeklyDrivers", "historicalAverages"
+      `SELECT "inputs", "weeklyDrivers", "historicalAverages", "startingBalances"
        FROM "WorkingCapitalForecastSettings"
        WHERE "companyId" = $1
        LIMIT 1`,
@@ -133,22 +141,25 @@ export async function POST(request: NextRequest) {
     const mergedInputs = mergeBasisPayload(existing?.inputs, inputs || {}, basisMode);
     const mergedWeeklyDrivers = mergeBasisPayload(existing?.weeklyDrivers, Array.isArray(weeklyDrivers) ? weeklyDrivers : [], basisMode);
     const mergedHistoricalAverages = mergeBasisPayload(existing?.historicalAverages, historicalAverages || {}, basisMode);
+    const mergedStartingBalances = mergeBasisPayload(existing?.startingBalances, startingBalances || {}, basisMode);
 
     await prisma.$executeRawUnsafe(
       `INSERT INTO "WorkingCapitalForecastSettings"
-       ("id", "companyId", "inputs", "weeklyDrivers", "historicalAverages", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::timestamp, $7::timestamp)
+       ("id", "companyId", "inputs", "weeklyDrivers", "historicalAverages", "startingBalances", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::timestamp, $8::timestamp)
        ON CONFLICT ("companyId")
        DO UPDATE SET
          "inputs" = EXCLUDED."inputs",
          "weeklyDrivers" = EXCLUDED."weeklyDrivers",
          "historicalAverages" = EXCLUDED."historicalAverages",
+         "startingBalances" = EXCLUDED."startingBalances",
          "updatedAt" = EXCLUDED."updatedAt"`,
       id,
       companyId,
       JSON.stringify(mergedInputs),
       JSON.stringify(mergedWeeklyDrivers),
       JSON.stringify(mergedHistoricalAverages),
+      JSON.stringify(mergedStartingBalances),
       now,
       now,
     );

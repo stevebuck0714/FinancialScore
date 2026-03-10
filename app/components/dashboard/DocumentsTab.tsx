@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
 
-type DocCategory = 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'OTHER';
+type DocCategory = 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'TAX_DOCUMENTS' | 'OTHER';
 
 type CompanyDocument = {
   id: string;
@@ -21,6 +21,7 @@ const CATEGORY_META: Array<{ id: DocCategory; label: string }> = [
   { id: 'LOAN_DOCUMENTS', label: 'Loan Documents' },
   { id: 'FINANCING_DOCUMENTS', label: 'Financing Documents' },
   { id: 'LEGAL_AND_REGULATORY', label: 'Legal and Regulatory' },
+  { id: 'TAX_DOCUMENTS', label: 'Tax Documents' },
   { id: 'OTHER', label: 'Other' },
 ];
 

@@ -64,6 +64,7 @@ type MonthlyBaseRef = {
   year: number;
   month: number; // 0-based
 };
+type StartingBalances = { cash: number; ar: number; ap: number; inventory: number; loc: number };
 
 type ForecastRow = {
   week: number;
@@ -145,7 +146,7 @@ const DEFAULT_SCHEDULED_EXPENSE_RULES: ScheduledExpenseRule[] = [
   { key: 'other-opex', label: 'Other Operating Expenses', monthlyAmount: 28000, timing: 'weekly', weekday: 1, dayOfMonth: 1 },
 ];
 const FORECAST_WEEKS = 13;
-const DEFAULT_STARTING_BALANCES = { cash: 0, ar: 0, ap: 0, inventory: 0, loc: 0 };
+const DEFAULT_STARTING_BALANCES: StartingBalances = { cash: 0, ar: 0, ap: 0, inventory: 0, loc: 0 };
 const DEFAULT_FLOW_PROFILE: HistoricalFlowProfile = { arRunoffRate: 0.12, apRunoffRate: 0.12, inventoryToSalesRatio: 0.3 };
 const DEFAULT_AGING_BUCKETS: AgingBuckets = { current: 0, bucket30to60: 0, bucket60to90: 0, bucket90plus: 0 };
 
@@ -325,6 +326,11 @@ const safeNumber = (value: unknown, fallback = 0): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+const toOptionalRoundedCurrency = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+};
 
 const toWeeklyWeights = (w1: number, w2: number, w3: number, w4: number): number[] => {
   const raw = [w1, w2, w3, w4].map((value) => Math.max(0, Number(value) || 0));
@@ -491,7 +497,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     Array.from({ length: FORECAST_WEEKS }, () => ({ ...DEFAULT_WEEKLY_DRIVER }))
   );
   const [weekMonthLabels, setWeekMonthLabels] = useState<string[]>(Array.from({ length: FORECAST_WEEKS }, () => ''));
-  const [startingBalances, setStartingBalances] = useState<{ cash: number; ar: number; ap: number; inventory: number; loc: number }>(DEFAULT_STARTING_BALANCES);
+  const [startingBalances, setStartingBalances] = useState<StartingBalances>(DEFAULT_STARTING_BALANCES);
+  const [locBalanceFromImportedData, setLocBalanceFromImportedData] = useState<boolean>(false);
+  const [inventoryBalanceFromImportedData, setInventoryBalanceFromImportedData] = useState<boolean>(false);
   const [startingArBuckets, setStartingArBuckets] = useState<AgingBuckets>(DEFAULT_AGING_BUCKETS);
   const [startingApBuckets, setStartingApBuckets] = useState<AgingBuckets>(DEFAULT_AGING_BUCKETS);
   const [flowProfile, setFlowProfile] = useState<HistoricalFlowProfile>(DEFAULT_FLOW_PROFILE);
@@ -601,8 +609,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           cash: number;
           ar: number;
           ap: number;
-          inventory: number;
-          loc: number;
+          inventory: number | null;
+          loc: number | null;
         } | null> => {
           const response = await fetch(buildUrl('daily-financials', 'daily', 60));
           if (!response.ok) return null;
@@ -622,8 +630,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             cash: Number(latest?.cash || 0),
             ar: Number(latest?.ar || 0),
             ap: Number(latest?.ap || 0),
-            inventory: Number(latest?.inventory || 0),
-            loc: Number(latest?.loc || 0),
+            inventory: toOptionalRoundedCurrency(latest?.inventory),
+            loc: toOptionalRoundedCurrency(latest?.loc),
           };
         };
 
@@ -634,8 +642,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         }
         const latestAr = Number(latestDailySnapshot?.ar || 0);
         const latestAp = Number(latestDailySnapshot?.ap || 0);
-        let latestInventory = Number(latestDailySnapshot?.inventory || 0);
-        let latestLocBalance = Number(latestDailySnapshot?.loc || 0);
+        let latestInventory = latestDailySnapshot?.inventory ?? null;
+        let hasImportedInventoryBalance = latestInventory !== null && latestInventory > 0;
+        const latestLocBalance = latestDailySnapshot?.loc ?? null;
+        const hasImportedLocBalance = latestLocBalance !== null;
         const latestArSnapshot = Array.isArray(arResult?.data?.records) ? arResult?.data?.records?.[0] : null;
         const latestApSnapshot = Array.isArray(apResult?.data?.records) ? apResult?.data?.records?.[0] : null;
         const derivedArBuckets = mapSnapshotToBuckets(latestArSnapshot, latestAr);
@@ -646,15 +656,14 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           ? await fetchHistoryForType('products', [inventoryHistory.frequency, 'monthly', 'weekly', 'daily'])
           : await fetchHistoryForType('products', ['monthly', 'weekly', 'daily']);
 
-        if (latestInventory <= 0 && inventoryHistory?.data?.records) {
+        if ((!hasImportedInventoryBalance || latestInventory === null) && inventoryHistory?.data?.records) {
           const latestInventorySnapshot = inventoryHistory.data.records[0];
-          latestInventory = Math.max(0, Number(latestInventorySnapshot?.assetValue || 0));
+          const importedInventory = toOptionalRoundedCurrency(latestInventorySnapshot?.assetValue);
+          if (importedInventory !== null && importedInventory > 0) {
+            latestInventory = importedInventory;
+            hasImportedInventoryBalance = true;
+          }
         }
-        if (latestLocBalance <= 0 && locLoanAmount > 0) {
-          // When no imported LOC balance exists, seed from configured LOC loan amount.
-          latestLocBalance = locLoanAmount;
-        }
-
         let suggestedInventoryTurns = 0;
         if (inventoryHistory?.data?.records && productHistory?.data?.records) {
           const inventoryByDate = new Map<string, number>();
@@ -812,8 +821,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             cash: latestCash,
             ar: latestAr,
             ap: latestAp,
-            inventory: latestInventory,
-            loc: Math.max(0, Math.round(latestLocBalance)),
+            inventory: Math.max(0, Math.round(latestInventory ?? 0)),
+            loc: Math.max(0, Math.round(latestLocBalance ?? 0)),
           };
           setStartingBalances(derivedStartingBalances);
           setStartingArBuckets(derivedArBuckets);
@@ -874,6 +883,27 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               locLoanAmount > 0
                 ? { ...mergedInputs, locLimit: locLoanAmount }
                 : mergedInputs;
+            const savedStartingBalances: StartingBalances = {
+              ...derivedStartingBalances,
+              ...(savedSettings?.startingBalances && typeof savedSettings.startingBalances === 'object'
+                ? {
+                    cash: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).cash, derivedStartingBalances.cash)),
+                    ar: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).ar, derivedStartingBalances.ar)),
+                    ap: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).ap, derivedStartingBalances.ap)),
+                    inventory: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).inventory, derivedStartingBalances.inventory)),
+                    loc: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).loc, derivedStartingBalances.loc)),
+                  }
+                : {}),
+            };
+            const resolvedStartingBalances: StartingBalances = {
+              ...savedStartingBalances,
+              inventory: hasImportedInventoryBalance
+                ? Math.max(0, Math.round(latestInventory || 0))
+                : savedStartingBalances.inventory,
+              loc: hasImportedLocBalance
+                ? Math.max(0, Math.round(latestLocBalance || 0))
+                : savedStartingBalances.loc,
+            };
             const mergedAverages = normalizeWeeklyDriver(savedSettings.historicalAverages, resolvedAverages);
             const mergedWeekly = normalizeWeeklyDriverList(savedSettings.weeklyDrivers, mergedAverages);
             const seededWeekly = applyMonthlyBaseCalendarToWeeklyDrivers(
@@ -886,6 +916,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             setInputs(resolvedInputs);
             setHistoricalAverages(mergedAverages);
             setWeeklyDrivers(seededWeekly);
+            setStartingBalances(resolvedStartingBalances);
             setLastSavedAt(savedSettings.updatedAt ? String(savedSettings.updatedAt) : null);
           } else {
             setInputs(derivedInputs);
@@ -900,8 +931,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 monthRefsBase,
               ),
             );
+            setStartingBalances(derivedStartingBalances);
             setLastSavedAt(null);
           }
+          setInventoryBalanceFromImportedData(hasImportedInventoryBalance);
+          setLocBalanceFromImportedData(hasImportedLocBalance);
 
           setFlowProfile({
             arRunoffRate,
@@ -914,6 +948,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         if (!cancelled) {
           setBalancesError(error?.message || 'Unable to load latest operational balances');
           setStartingBalances(DEFAULT_STARTING_BALANCES);
+          setInventoryBalanceFromImportedData(false);
+          setLocBalanceFromImportedData(false);
           setStartingArBuckets(DEFAULT_AGING_BUCKETS);
           setStartingApBuckets(DEFAULT_AGING_BUCKETS);
           setWeekMonthLabels(Array.from({ length: FORECAST_WEEKS }, () => ''));
@@ -1238,6 +1274,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     const parsed = parsePercentInput(value);
     setInputs((prev) => ({ ...prev, [key]: parsed }));
   };
+  const updateStartingBalanceCurrency = (key: keyof StartingBalances, value: string) => {
+    const parsed = Math.max(0, parseCurrencyInput(value));
+    setStartingBalances((prev) => ({ ...prev, [key]: parsed }));
+  };
   const updateWeeklyCurrencyDriver = (weekIdx: number, key: 'sales' | 'opex', value: string) => {
     const parsed = parseCurrencyInput(value);
     setWeeklyDrivers((prev) =>
@@ -1263,6 +1303,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           inputs,
           historicalAverages,
           weeklyDrivers,
+          startingBalances,
         }),
       });
       const data = await response.json();
@@ -1483,6 +1524,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 </div>
                 <div style={{ height: '8px' }} />
                 <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '4px', paddingTop: '8px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Cash & LOC Inputs</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Inventory Turns (Annual)</label>
@@ -1500,14 +1542,40 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                       <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
                       <input type="text" inputMode="decimal" value={formatPercentInput(inputs.locAprPct)} onChange={(e) => updatePercentInput('locAprPct', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting Inventory (Last Imported)</label>
-                      <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.inventory)}</div>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting LOC Balance (Last Imported)</label>
-                      <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.loc)}</div>
-                    </div>
+                    {inventoryBalanceFromImportedData ? (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting Inventory (Last Imported)</label>
+                        <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.inventory)}</div>
+                      </div>
+                    ) : (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Starting Inventory (Manual)</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={formatCurrencyInput(startingBalances.inventory)}
+                          onChange={(e) => updateStartingBalanceCurrency('inventory', e.target.value)}
+                          style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
+                        />
+                      </div>
+                    )}
+                    {locBalanceFromImportedData ? (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting LOC Balance (Last Imported)</label>
+                        <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.loc)}</div>
+                      </div>
+                    ) : (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Starting LOC Balance (Manual)</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={formatCurrencyInput(startingBalances.loc)}
+                          onChange={(e) => updateStartingBalanceCurrency('loc', e.target.value)}
+                          style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1603,6 +1671,63 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
                 <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.ap)}</div>
               </div>
             </div>
+            {basisMode !== 'accrual' && (
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', gridColumn: '1 / -1' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Cash & LOC Inputs</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Inventory Turns (Annual)</label>
+                  <input type="number" value={inputs.inventoryTurns} onChange={(e) => updateNumberInput('inventoryTurns', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Minimum Cash Buffer</label>
+                  <input type="text" inputMode="numeric" value={formatCurrencyInput(inputs.minCashBuffer)} onChange={(e) => updateCurrencyInput('minCashBuffer', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC Limit</label>
+                  <input type="text" inputMode="numeric" value={formatCurrencyInput(inputs.locLimit)} onChange={(e) => updateCurrencyInput('locLimit', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>LOC APR (%)</label>
+                  <input type="text" inputMode="decimal" value={formatPercentInput(inputs.locAprPct)} onChange={(e) => updatePercentInput('locAprPct', e.target.value)} style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }} />
+                </div>
+                {inventoryBalanceFromImportedData ? (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting Inventory (Last Imported)</label>
+                    <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.inventory)}</div>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Starting Inventory (Manual)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formatCurrencyInput(startingBalances.inventory)}
+                      onChange={(e) => updateStartingBalanceCurrency('inventory', e.target.value)}
+                      style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
+                    />
+                  </div>
+                )}
+                {locBalanceFromImportedData ? (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Starting LOC Balance (Last Imported)</label>
+                    <div style={{ ...inputStyle, background: '#f8fafc', color: '#0f172a', fontWeight: 600, padding: '7px 8px', fontSize: '12px' }}>{formatCurrency(startingBalances.loc)}</div>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#475569', marginBottom: '4px' }}>Starting LOC Balance (Manual)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={formatCurrencyInput(startingBalances.loc)}
+                      onChange={(e) => updateStartingBalanceCurrency('loc', e.target.value)}
+                      style={{ ...inputStyle, padding: '7px 8px', fontSize: '12px' }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            )}
 
           </div>
         </div>

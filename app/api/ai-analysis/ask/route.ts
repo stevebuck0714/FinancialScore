@@ -878,6 +878,7 @@ export async function POST(request: NextRequest) {
     const documentId = body?.documentId ? String(body.documentId).trim() : '';
     const uiModeRaw = String(body?.mode || '').trim().toLowerCase();
     const uiMode: 'default' | 'document' = uiModeRaw === 'document' ? 'document' : 'default';
+    const requestedDocumentId = uiMode === 'document' ? documentId : '';
     const useExternalSourcesRaw = body?.useExternalSources;
     const useExternalSourcesOverride =
       typeof useExternalSourcesRaw === 'boolean' ? useExternalSourcesRaw : false;
@@ -899,9 +900,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'OPENAI_API_KEY is not set in environment' }, { status: 500 });
     }
 
-    let docContext = documentId
+    let docContext = requestedDocumentId
       ? await prisma.companyDocument.findUnique({
-          where: { id: documentId },
+          where: { id: requestedDocumentId },
           select: {
             id: true,
             companyId: true,
@@ -1032,7 +1033,7 @@ export async function POST(request: NextRequest) {
         }
       : null;
 
-    if (uiMode === 'document' && !documentId) {
+    if (uiMode === 'document' && !requestedDocumentId) {
       return NextResponse.json({ error: 'Select a document first.' }, { status: 400 });
     }
 
@@ -1066,7 +1067,7 @@ export async function POST(request: NextRequest) {
         }
         // Re-fetch doc context (indexStatus/indexedAt/indexError updated).
         docContext = await prisma.companyDocument.findUnique({
-          where: { id: documentId },
+          where: { id: requestedDocumentId },
           select: {
             id: true,
             companyId: true,
