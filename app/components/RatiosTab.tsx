@@ -8,7 +8,8 @@ import { exportMonthlyRatiosToExcel } from '../utils/excel-export';
 import { getBenchmarkValue } from '../utils/data-processing';
 import { buildRatioTrendData } from '../utils/ratio-trend-data';
 
-const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
+const BaseLineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
+const LineChart = (props: any) => <BaseLineChart {...props} labelFormat="m-yy-adaptive" />;
 
 interface RatiosTabProps {
   selectedCompanyId: string;

@@ -1052,7 +1052,7 @@ function FinancialScorePage() {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   // State - Custom Print Package
-  const [printPackageSelections, setPrintPackageSelections] = useState({
+  const defaultPrintPackageSelections = {
     mda: false,
     priorityRatios: false,
     workingCapital: false,
@@ -1064,9 +1064,35 @@ function FinancialScorePage() {
     balanceSheet12MonthsQuarterly: false,
     balanceSheet3YearsAnnual: false,
     profile: false
-  });
+  };
+  const [printPackageSelections, setPrintPackageSelections] = useState(defaultPrintPackageSelections);
+  const defaultPrintPackageOrientations = {
+    mda: 'portrait',
+    priorityRatios: 'portrait',
+    workingCapital: 'landscape',
+    dashboard: 'landscape',
+    cashFlow4Quarters: 'landscape',
+    cashFlow3Years: 'landscape',
+    incomeStatement12MonthsQuarterly: 'landscape',
+    incomeStatement3YearsAnnual: 'landscape',
+    balanceSheet12MonthsQuarterly: 'landscape',
+    balanceSheet3YearsAnnual: 'landscape',
+    profile: 'portrait'
+  } as const;
+  type PrintPackageKey = keyof typeof defaultPrintPackageSelections;
+  const [printPackageOrientations, setPrintPackageOrientations] = useState<Record<PrintPackageKey, 'portrait' | 'landscape'>>(
+    defaultPrintPackageOrientations
+  );
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [isPrintingPackage, setIsPrintingPackage] = useState(false);
+
+  const updatePrintSelection = (key: PrintPackageKey, checked: boolean) => {
+    setPrintPackageSelections(prev => ({ ...prev, [key]: checked }));
+  };
+
+  const updatePrintOrientation = (key: PrintPackageKey, orientation: 'portrait' | 'landscape') => {
+    setPrintPackageOrientations(prev => ({ ...prev, [key]: orientation }));
+  };
 
   const handleExportMdaToWord = async (executiveSummaryText: string, mdaAnalysis: { strengths: string[]; weaknesses: string[]; insights: string[] }) => {
     try {
@@ -5788,29 +5814,30 @@ function FinancialScorePage() {
     const printQueue: any[] = [];
     
     if (printPackageSelections.mda) {
-      printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)' });
+      printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)', orientation: printPackageOrientations.mda });
     }
     if (printPackageSelections.priorityRatios) {
-      printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios' });
+      printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios', orientation: printPackageOrientations.priorityRatios });
     }
     if (printPackageSelections.workingCapital) {
-      printQueue.push({ view: 'working-capital', title: 'Working Capital' });
+      printQueue.push({ view: 'working-capital', title: 'Working Capital', orientation: printPackageOrientations.workingCapital });
     }
     if (printPackageSelections.dashboard) {
-      printQueue.push({ view: 'dashboard', title: 'Dashboard' });
+      printQueue.push({ view: 'dashboard', title: 'Dashboard', orientation: printPackageOrientations.dashboard });
     }
     if (printPackageSelections.cashFlow4Quarters) {
-      printQueue.push({ view: 'cash-flow', display: 'quarterly', title: 'Cash Flow - Last 4 Quarters' });
+      printQueue.push({ view: 'cash-flow', display: 'quarterly', title: 'Cash Flow - Last 4 Quarters', orientation: printPackageOrientations.cashFlow4Quarters });
     }
     if (printPackageSelections.cashFlow3Years) {
-      printQueue.push({ view: 'cash-flow', display: 'annual', title: 'Cash Flow - Last 3 Years' });
+      printQueue.push({ view: 'cash-flow', display: 'annual', title: 'Cash Flow - Last 3 Years', orientation: printPackageOrientations.cashFlow3Years });
     }
     if (printPackageSelections.incomeStatement12MonthsQuarterly) {
       printQueue.push({ 
         view: 'financial-statements', 
         type: 'income-statement', 
         display: 'quarterly',
-        title: 'Income Statement - Last 12 Months (Quarterly)' 
+        title: 'Income Statement - Last 12 Months (Quarterly)',
+        orientation: printPackageOrientations.incomeStatement12MonthsQuarterly
       });
     }
     if (printPackageSelections.incomeStatement3YearsAnnual) {
@@ -5818,7 +5845,8 @@ function FinancialScorePage() {
         view: 'financial-statements', 
         type: 'income-statement', 
         display: 'annual',
-        title: 'Income Statement - Last 3 Years (Annual)' 
+        title: 'Income Statement - Last 3 Years (Annual)',
+        orientation: printPackageOrientations.incomeStatement3YearsAnnual
       });
     }
     if (printPackageSelections.balanceSheet12MonthsQuarterly) {
@@ -5826,7 +5854,8 @@ function FinancialScorePage() {
         view: 'financial-statements', 
         type: 'balance-sheet', 
         display: 'quarterly',
-        title: 'Balance Sheet - Last 12 Months (Quarterly)' 
+        title: 'Balance Sheet - Last 12 Months (Quarterly)',
+        orientation: printPackageOrientations.balanceSheet12MonthsQuarterly
       });
     }
     if (printPackageSelections.balanceSheet3YearsAnnual) {
@@ -5834,11 +5863,12 @@ function FinancialScorePage() {
         view: 'financial-statements', 
         type: 'balance-sheet', 
         display: 'annual',
-        title: 'Balance Sheet - Last 3 Years (Annual)' 
+        title: 'Balance Sheet - Last 3 Years (Annual)',
+        orientation: printPackageOrientations.balanceSheet3YearsAnnual
       });
     }
     if (printPackageSelections.profile) {
-      printQueue.push({ view: 'profile', title: 'Company Profile' });
+      printQueue.push({ view: 'profile', title: 'Company Profile', orientation: printPackageOrientations.profile });
     }
 
     if (printQueue.length === 0) {
@@ -5864,6 +5894,7 @@ function FinancialScorePage() {
       }
 
       const report = printQueue[currentIndex];
+      setPrintOrientation(report.orientation || 'portrait');
       
       // Set the appropriate view and parameters
       if (report.view === 'financial-statements') {
@@ -14203,35 +14234,25 @@ function FinancialScorePage() {
 
       {/* Custom Print View - For Consultants and Company Users */}
       {currentView === 'custom-print' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-        <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Custom Print Package</h1>
-            <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
+        <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '10px' }}>Custom Print Package</h1>
+            <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '20px' }}>
               Select the reports you want to include in your custom print package
             </p>
 
-            <div style={{ marginBottom: '24px', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                Print Orientation
-              </label>
-              <select
-                value={printOrientation}
-                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
-                style={{ width: '220px', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', background: 'white', cursor: 'pointer' }}
-              >
-                <option value="portrait">Portrait</option>
-                <option value="landscape">Landscape</option>
-              </select>
+            <div style={{ marginBottom: '16px', padding: '10px 12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569' }}>
+              Set orientation per report below. Each selected report will print using its own orientation.
             </div>
             
-            <div style={{ marginBottom: '32px' }}>
+            <div style={{ marginBottom: '20px' }}>
               {/* MD&A Report */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input 
                     type="checkbox" 
                     checked={printPackageSelections.mda}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, mda: e.target.checked})}
+                    onChange={(e) => updatePrintSelection('mda', e.target.checked)}
                     style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
                   />
                   <div>
@@ -14239,15 +14260,22 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Includes all 3 tabs: Key Metrics, Analysis, and Recommendations</div>
                   </div>
                 </label>
+                <div style={{ marginTop: '8px', marginLeft: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                  <select value={printPackageOrientations.mda} onChange={(e) => updatePrintOrientation('mda', e.target.value as 'portrait' | 'landscape')} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                  </select>
+                </div>
               </div>
 
               {/* Priority Ratios */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input 
                     type="checkbox" 
                     checked={printPackageSelections.priorityRatios}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, priorityRatios: e.target.checked})}
+                    onChange={(e) => updatePrintSelection('priorityRatios', e.target.checked)}
                     style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
                   />
                   <div>
@@ -14255,15 +14283,22 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Key financial ratios and metrics</div>
                   </div>
                 </label>
+                <div style={{ marginTop: '8px', marginLeft: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                  <select value={printPackageOrientations.priorityRatios} onChange={(e) => updatePrintOrientation('priorityRatios', e.target.value as 'portrait' | 'landscape')} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                  </select>
+                </div>
               </div>
 
               {/* Working Capital */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input 
                     type="checkbox" 
                     checked={printPackageSelections.workingCapital}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, workingCapital: e.target.checked})}
+                    onChange={(e) => updatePrintSelection('workingCapital', e.target.checked)}
                     style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
                   />
                   <div>
@@ -14271,15 +14306,22 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Working capital analysis</div>
                   </div>
                 </label>
+                <div style={{ marginTop: '8px', marginLeft: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                  <select value={printPackageOrientations.workingCapital} onChange={(e) => updatePrintOrientation('workingCapital', e.target.value as 'portrait' | 'landscape')} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                  </select>
+                </div>
               </div>
 
               {/* Dashboard */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input 
                     type="checkbox" 
                     checked={printPackageSelections.dashboard}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, dashboard: e.target.checked})}
+                    onChange={(e) => updatePrintSelection('dashboard', e.target.checked)}
                     style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
                   />
                   <div>
@@ -14287,41 +14329,62 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Custom dashboard with selected metrics and charts</div>
                   </div>
                 </label>
+                <div style={{ marginTop: '8px', marginLeft: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                  <select value={printPackageOrientations.dashboard} onChange={(e) => updatePrintOrientation('dashboard', e.target.value as 'portrait' | 'landscape')} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                  </select>
+                </div>
               </div>
 
               {/* Cash Flow Tabs */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div style={{ marginBottom: '12px' }}>
+              <div style={{ marginBottom: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ marginBottom: '8px' }}>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Cash Flow Analysis</div>
                   <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Cash flow reports</div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginLeft: '0px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '0px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
                     <input 
                       type="checkbox" 
                       checked={printPackageSelections.cashFlow4Quarters}
-                      onChange={(e) => setPrintPackageSelections({...printPackageSelections, cashFlow4Quarters: e.target.checked})}
+                      onChange={(e) => updatePrintSelection('cashFlow4Quarters', e.target.checked)}
                       style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
                     />
                     Last 4 Quarters
                   </label>
+                  <div style={{ marginLeft: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                    <select value={printPackageOrientations.cashFlow4Quarters} onChange={(e) => updatePrintOrientation('cashFlow4Quarters', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
                   <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
                     <input 
                       type="checkbox" 
                       checked={printPackageSelections.cashFlow3Years}
-                      onChange={(e) => setPrintPackageSelections({...printPackageSelections, cashFlow3Years: e.target.checked})}
+                      onChange={(e) => updatePrintSelection('cashFlow3Years', e.target.checked)}
                       style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
                     />
                     Last 3 Years
                   </label>
+                  <div style={{ marginLeft: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                    <select value={printPackageOrientations.cashFlow3Years} onChange={(e) => updatePrintOrientation('cashFlow3Years', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
               {/* Financial Statements */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <div>
                   <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Financial Statements</div>
-                  <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Select specific financial statements</div>
+                  <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Select specific financial statements</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '0px' }}>
                     {/* Income Statement with sub-options */}
                     <div>
@@ -14331,44 +14394,72 @@ function FinancialScorePage() {
                           <input 
                             type="checkbox" 
                             checked={printPackageSelections.incomeStatement12MonthsQuarterly}
-                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, incomeStatement12MonthsQuarterly: e.target.checked})}
+                            onChange={(e) => updatePrintSelection('incomeStatement12MonthsQuarterly', e.target.checked)}
                             style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
                           />
                           Income Statement, Last 12 months, Quarterly
                         </label>
+                        <div style={{ marginLeft: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                          <select value={printPackageOrientations.incomeStatement12MonthsQuarterly} onChange={(e) => updatePrintOrientation('incomeStatement12MonthsQuarterly', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                            <option value="portrait">Portrait</option>
+                            <option value="landscape">Landscape</option>
+                          </select>
+                        </div>
                         <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
                           <input 
                             type="checkbox" 
                             checked={printPackageSelections.incomeStatement3YearsAnnual}
-                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, incomeStatement3YearsAnnual: e.target.checked})}
+                            onChange={(e) => updatePrintSelection('incomeStatement3YearsAnnual', e.target.checked)}
                             style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
                           />
                           Income Statement, Last 3 Years, Annual
                         </label>
+                        <div style={{ marginLeft: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                          <select value={printPackageOrientations.incomeStatement3YearsAnnual} onChange={(e) => updatePrintOrientation('incomeStatement3YearsAnnual', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                            <option value="portrait">Portrait</option>
+                            <option value="landscape">Landscape</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                     {/* Balance Sheet with sub-options */}
-                    <div style={{ marginTop: '12px' }}>
+                    <div style={{ marginTop: '8px' }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Balance Sheet</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginLeft: '16px' }}>
                         <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
                           <input 
                             type="checkbox" 
                             checked={printPackageSelections.balanceSheet12MonthsQuarterly}
-                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, balanceSheet12MonthsQuarterly: e.target.checked})}
+                            onChange={(e) => updatePrintSelection('balanceSheet12MonthsQuarterly', e.target.checked)}
                             style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
                           />
                           Balance Sheet, Last 12 months, Quarterly
                         </label>
+                        <div style={{ marginLeft: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                          <select value={printPackageOrientations.balanceSheet12MonthsQuarterly} onChange={(e) => updatePrintOrientation('balanceSheet12MonthsQuarterly', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                            <option value="portrait">Portrait</option>
+                            <option value="landscape">Landscape</option>
+                          </select>
+                        </div>
                         <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
                           <input 
                             type="checkbox" 
                             checked={printPackageSelections.balanceSheet3YearsAnnual}
-                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, balanceSheet3YearsAnnual: e.target.checked})}
+                            onChange={(e) => updatePrintSelection('balanceSheet3YearsAnnual', e.target.checked)}
                             style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
                           />
                           Balance Sheet, Last 3 Years, Annual
                         </label>
+                        <div style={{ marginLeft: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                          <select value={printPackageOrientations.balanceSheet3YearsAnnual} onChange={(e) => updatePrintOrientation('balanceSheet3YearsAnnual', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                            <option value="portrait">Portrait</option>
+                            <option value="landscape">Landscape</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -14376,12 +14467,12 @@ function FinancialScorePage() {
               </div>
 
               {/* Company Profile */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input 
                     type="checkbox" 
                     checked={printPackageSelections.profile}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, profile: e.target.checked})}
+                    onChange={(e) => updatePrintSelection('profile', e.target.checked)}
                     style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
                   />
                   <div>
@@ -14389,11 +14480,18 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Business profile, financial overview, ratios, and disclosures</div>
                   </div>
                 </label>
+                <div style={{ marginTop: '8px', marginLeft: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Orientation:</span>
+                  <select value={printPackageOrientations.profile} onChange={(e) => updatePrintOrientation('profile', e.target.value as 'portrait' | 'landscape')} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                  </select>
+                </div>
               </div>
             </div>
 
             {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
               <button
                 onClick={handleGeneratePrintPackage}
                 style={{
@@ -14415,19 +14513,8 @@ function FinancialScorePage() {
               </button>
               <button
                 onClick={() => {
-                  setPrintPackageSelections({
-                    mda: false,
-                    priorityRatios: false,
-                    workingCapital: false,
-                    dashboard: false,
-                    cashFlow4Quarters: false,
-                    cashFlow3Years: false,
-                    incomeStatement12MonthsQuarterly: false,
-                    incomeStatement3YearsAnnual: false,
-                    balanceSheet12MonthsQuarterly: false,
-                    balanceSheet3YearsAnnual: false,
-                    profile: false
-                  });
+                  setPrintPackageSelections(defaultPrintPackageSelections);
+                  setPrintPackageOrientations(defaultPrintPackageOrientations);
                 }}
                 style={{
                   padding: '14px 32px',

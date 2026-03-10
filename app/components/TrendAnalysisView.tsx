@@ -247,7 +247,7 @@ export default function TrendAnalysisView({
                   color={color}
                   compact
                   showTable={true}
-                  labelFormat="quarterly"
+                  labelFormat="m-yy-adaptive"
                   formatter={getFormatter(metric)}
                 />
               );
@@ -313,7 +313,7 @@ export default function TrendAnalysisView({
                     color={color}
                     compact
                     showTable={true}
-                    labelFormat="quarterly"
+                    labelFormat="m-yy-adaptive"
                     formatter={(val: number) => `${val.toFixed(1)}%`}
                     goalLineData={expenseGoals[category.key] ? monthly.map(() => expenseGoals[category.key]) : undefined}
                   />

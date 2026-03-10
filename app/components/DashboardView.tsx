@@ -7,10 +7,11 @@ import { getBenchmarkValue } from '../utils/data-processing';
 import { buildRatioTrendData } from '../utils/ratio-trend-data';
 
 // Dynamic imports for charts
-const LineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
+const BaseLineChart = dynamic(() => import('./charts/Charts').then(mod => mod.LineChart), { ssr: false });
 const BarChart = dynamic(() => import('./charts/Charts').then(mod => mod.BarChart), { ssr: false });
 const AreaChart = dynamic(() => import('./charts/Charts').then(mod => mod.AreaChart), { ssr: false });
 const ProjectionChart = dynamic(() => import('./charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
+const LineChart = (props: any) => <BaseLineChart {...props} labelFormat="m-yy-adaptive" />;
 
 interface MonthlyData {
   date: Date;
@@ -127,6 +128,7 @@ export default function DashboardView({
   onSaveDashboardPrefs
 }: DashboardViewProps) {
   const [isSaving, setIsSaving] = useState(false);
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
   
   const handleSaveDashboard = async () => {
@@ -153,6 +155,26 @@ export default function DashboardView({
     }
   }, [selectedCompanyId]);
 
+  useEffect(() => {
+    const handleAfterPrint = () => setIsPreparingPrint(false);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  const handlePrintDashboard = async () => {
+    setIsPreparingPrint(true);
+
+    // Let the browser flush layout/paint before opening print dialog.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+
+    window.print();
+
+    // Fallback in case afterprint is not fired by the browser.
+    setTimeout(() => setIsPreparingPrint(false), 1500);
+  };
+
   const ratioTrendData = useMemo(() => buildRatioTrendData(monthly as any), [monthly]);
   
   return (
@@ -162,6 +184,24 @@ export default function DashboardView({
               @page {
                 size: ${printOrientation};
                 margin: 0.2in 0.4in 0.3in 0.4in;
+              }
+
+              /* Print only dashboard content to avoid app-shell layout conflicts */
+              body * {
+                visibility: hidden !important;
+              }
+
+              .dashboard-container,
+              .dashboard-container * {
+                visibility: visible !important;
+              }
+
+              .dashboard-container {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                max-width: none !important;
               }
               
               /* Hide navigation and UI elements */
@@ -204,6 +244,11 @@ export default function DashboardView({
               .dashboard-container {
                 padding: 0 !important;
                 margin: 0 !important;
+              }
+
+              /* Never print dashboard builder controls */
+              .dashboard-customizer {
+                display: none !important;
               }
               
               /* Dashboard title */
@@ -300,7 +345,9 @@ export default function DashboardView({
               </select>
               <button
                 className="no-print"
-                onClick={() => window.print()}
+                type="button"
+                onClick={handlePrintDashboard}
+                disabled={isPreparingPrint}
                 style={{
                   background: '#10b981',
                   color: 'white',
@@ -309,14 +356,15 @@ export default function DashboardView({
                   borderRadius: '8px',
                   fontSize: '14px',
                   fontWeight: '600',
-                  cursor: 'pointer',
+                  cursor: isPreparingPrint ? 'not-allowed' : 'pointer',
                   boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                  transition: 'all 0.3s'
+                  transition: 'all 0.3s',
+                  opacity: isPreparingPrint ? 0.7 : 1
                 }}
-                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseOver={(e) => !isPreparingPrint && (e.currentTarget.style.transform = 'translateY(-2px)')}
                 onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                🖨️ Print Dashboard
+                {isPreparingPrint ? 'Preparing print...' : '🖨️ Print Dashboard'}
               </button>
               <button
                 className="no-print"
@@ -343,7 +391,7 @@ export default function DashboardView({
 
           {/* Dashboard Customizer */}
           {showDashboardCustomizer && (
-            <div style={{ 
+            <div className="dashboard-customizer" style={{ 
               background: 'white', 
               borderRadius: '16px', 
               padding: '32px', 

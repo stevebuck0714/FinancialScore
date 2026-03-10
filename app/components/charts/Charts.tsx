@@ -16,7 +16,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   benchmarkValue?: number | null;
   showFormulaButton?: boolean;
   onFormulaClick?: () => void;
-  labelFormat?: 'monthly' | 'quarterly' | 'semi-annual';
+  labelFormat?: 'monthly' | 'quarterly' | 'semi-annual' | 'm-yy-adaptive';
   goalLineData?: number[];
 }) {
   const chartData = valueKey
@@ -66,6 +66,103 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
 
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+
+  const parseMonthToDate = (monthStr: string): Date | null => {
+    if (!monthStr) return null;
+
+    // MM-YYYY
+    const mmYYYY = monthStr.match(/^(\d{1,2})-(\d{4})$/);
+    if (mmYYYY) {
+      const month = Number(mmYYYY[1]);
+      const year = Number(mmYYYY[2]);
+      if (month >= 1 && month <= 12) return new Date(year, month - 1, 1);
+    }
+
+    // YYYY-MM
+    const yyyyMM = monthStr.match(/^(\d{4})-(\d{1,2})$/);
+    if (yyyyMM) {
+      const year = Number(yyyyMM[1]);
+      const month = Number(yyyyMM[2]);
+      if (month >= 1 && month <= 12) return new Date(year, month - 1, 1);
+    }
+
+    // MM/YYYY
+    const mmSlashYYYY = monthStr.match(/^(\d{1,2})\/(\d{4})$/);
+    if (mmSlashYYYY) {
+      const month = Number(mmSlashYYYY[1]);
+      const year = Number(mmSlashYYYY[2]);
+      if (month >= 1 && month <= 12) return new Date(year, month - 1, 1);
+    }
+
+    const parsed = new Date(monthStr);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+    }
+
+    return null;
+  };
+
+  const formatMonthShort = (monthStr: string): string => {
+    const date = parseMonthToDate(monthStr);
+    if (!date) return monthStr;
+    const month = date.getMonth() + 1;
+    const yy = String(date.getFullYear()).slice(-2);
+    return `${month}/${yy}`;
+  };
+
+  const getAdaptiveLabelIndices = (): Set<number> => {
+    if (points.length === 0) return new Set();
+
+    const maxTicks = compact ? 5 : 7;
+    const parsedPoints = points
+      .map((pt, idx) => ({ idx, date: parseMonthToDate(pt.month) }))
+      .filter((p): p is { idx: number; date: Date } => p.date !== null);
+
+    if (parsedPoints.length === 0) {
+      const fallback = new Set<number>([0, points.length - 1]);
+      const mid = Math.floor((points.length - 1) / 2);
+      fallback.add(mid);
+      return fallback;
+    }
+
+    const firstDate = parsedPoints[0].date;
+    const lastDate = parsedPoints[parsedPoints.length - 1].date;
+    const spanMonths =
+      (lastDate.getFullYear() - firstDate.getFullYear()) * 12 +
+      (lastDate.getMonth() - firstDate.getMonth()) + 1;
+
+    const intervalMonths = spanMonths <= 12 ? 3 : spanMonths <= 24 ? 6 : 12;
+
+    const candidates: number[] = parsedPoints
+      .filter(({ date }) => ((date.getMonth() + 1) % intervalMonths) === 0)
+      .map(({ idx }) => idx);
+
+    // Always keep the first label for context.
+    candidates.push(0);
+
+    // Only keep the final label if it lands on a quarter/half-year boundary.
+    const lastParsed = parsedPoints[parsedPoints.length - 1];
+    if (lastParsed) {
+      const lastMonth = lastParsed.date.getMonth() + 1;
+      const isQuarterOrHalfBoundary = lastMonth % 3 === 0;
+      if (isQuarterOrHalfBoundary) {
+        candidates.push(lastParsed.idx);
+      }
+    }
+
+    const sorted = [...new Set(candidates)].sort((a, b) => a - b);
+    if (sorted.length <= maxTicks) return new Set(sorted);
+
+    const picked = new Set<number>();
+    for (let i = 0; i < maxTicks; i++) {
+      const pos = Math.round((i * (sorted.length - 1)) / (maxTicks - 1));
+      picked.add(sorted[pos]);
+    }
+    picked.add(0);
+    return picked;
+  };
+
+  const adaptiveLabelIndices = getAdaptiveLabelIndices();
 
   return (
     <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', position: 'relative' }}>
@@ -200,6 +297,15 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
         {points.map((p, i) => {
           // Determine label format based on prop (default to semi-annual)
           const format = labelFormat || 'semi-annual';
+
+          if (format === 'm-yy-adaptive') {
+            if (!adaptiveLabelIndices.has(i)) return null;
+            return (
+              <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">
+                {formatMonthShort(p.month)}
+              </text>
+            );
+          }
           
           if (format === 'quarterly') {
             // Convert month to quarterly label

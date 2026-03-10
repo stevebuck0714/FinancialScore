@@ -476,6 +476,7 @@ type Finding = {
               data={monthly.map((m: any) => ({ month: m.month, value: m.revenue }))}
               color="#667eea"
               compact
+              labelFormat="m-yy-adaptive"
               formatter={formatCurrency}
             />
           </div>
@@ -486,6 +487,7 @@ type Finding = {
               data={grossMarginData}
               color="#16a34a"
               compact
+              labelFormat="m-yy-adaptive"
               formatter={formatPercent}
               benchmarkValue={grossMarginBenchmark}
             />
@@ -500,6 +502,7 @@ type Finding = {
               data={operatingExpensePctData}
               color="#ef4444"
               compact
+              labelFormat="m-yy-adaptive"
               formatter={formatPercent}
             />
           </div>
@@ -516,6 +519,7 @@ type Finding = {
               data={monthly.map((m: any) => ({ month: m.month, value: m.cash }))}
               color="#10b981"
               compact
+              labelFormat="m-yy-adaptive"
               formatter={formatCurrency}
               goalLineData={cashGoal}
             />
@@ -527,6 +531,7 @@ type Finding = {
               data={monthly.map((m: any) => ({ month: m.month, value: m.ar }))}
               color="#f59e0b"
               compact
+              labelFormat="m-yy-adaptive"
               formatter={formatCurrency}
               goalLineData={arGoal}
             />
@@ -538,6 +543,7 @@ type Finding = {
               data={monthly.map((m: any) => ({ month: m.month, value: m.inventory }))}
               color="#6366f1"
               compact
+              labelFormat="m-yy-adaptive"
               formatter={formatCurrency}
               goalLineData={inventoryGoal}
             />
