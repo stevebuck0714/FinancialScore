@@ -1053,7 +1053,6 @@ function FinancialScorePage() {
     return `${year}-${String(month).padStart(2, '0')}`;
   });
   const [erpCaoLoading, setErpCaoLoading] = useState(false);
-  const [erpCaoUploadFile, setErpCaoUploadFile] = useState<File | null>(null);
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
   const [qbStatus, setQbStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
   const [qbLastSync, setQbLastSync] = useState<Date | null>(null);
@@ -3805,19 +3804,6 @@ function FinancialScorePage() {
     }
   };
 
-  const parseErpCaoPayloadFromJson = (raw: string): Record<string, unknown> => {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('Invalid JSON object');
-    }
-    const source = parsed as Record<string, unknown>;
-    const payload =
-      source.payload && typeof source.payload === 'object' && !Array.isArray(source.payload)
-        ? (source.payload as Record<string, unknown>)
-        : source;
-    return payload;
-  };
-
   const refreshCompanyMappings = async (companyId: string) => {
     const response = await fetch(`/api/account-mappings?companyId=${companyId}`);
     const data = await response.json();
@@ -3857,19 +3843,12 @@ function FinancialScorePage() {
 
     setErpCaoLoading(true);
     try {
-      let payload: Record<string, unknown> | undefined = undefined;
-      if (erpCaoUploadFile) {
-        const raw = await erpCaoUploadFile.text();
-        payload = parseErpCaoPayloadFromJson(raw);
-      }
-
       const response = await fetch('/api/erp/coa-load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId: selectedCompanyId,
           throughMonth: erpCaoThroughMonth,
-          payload,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -3879,7 +3858,6 @@ function FinancialScorePage() {
 
       await refreshCompanyMappings(selectedCompanyId);
       setQbLastSync(new Date());
-      setErpCaoUploadFile(null);
       alert(
         `ERP COA load complete. Through month: ${erpCaoThroughMonth}. ` +
           `${typeof result?.recordsImported === 'number' ? `${result.recordsImported} monthly records processed.` : ''}`
@@ -8950,10 +8928,10 @@ function FinancialScorePage() {
                     return (
                       <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '16px', border: '2px solid #fed7aa' }}>
                         <div style={{ fontSize: '16px', fontWeight: '700', color: '#9a3412', marginBottom: '8px', textAlign: 'center' }}>
-                          ERP COA Load
+                          {selectedAccountingSystemLabel || 'ERP'} COA Load
                         </div>
                         <p style={{ fontSize: '13px', color: '#92400e', marginBottom: '12px', textAlign: 'center' }}>
-                          Load Accounts/COA JSON for mapping and process up to 36 months through the selected month.
+                          Load monthly Accounts/COA data for mapping and process up to 36 months through the selected month.
                         </p>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
@@ -8962,12 +8940,6 @@ function FinancialScorePage() {
                             value={erpCaoThroughMonth}
                             onChange={(e) => setErpCaoThroughMonth(e.target.value)}
                             style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
-                          />
-                          <input
-                            type="file"
-                            accept=".json,.txt"
-                            onChange={(e) => setErpCaoUploadFile(e.target.files?.[0] || null)}
-                            style={{ fontSize: '12px' }}
                           />
                           <button
                             onClick={loadErpCaoInDataMapping}
@@ -9083,10 +9055,10 @@ function FinancialScorePage() {
                 {showErpCaoLoadPanel && (
                   <div style={{ marginBottom: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 12px' }}>
                     <div style={{ fontSize: '12px', fontWeight: '700', color: '#9a3412', marginBottom: '6px' }}>
-                      ERP COA Load
+                      {selectedAccountingSystemLabel || 'ERP'} COA Load
                     </div>
                     <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '8px' }}>
-                      Load monthly Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
+                      Load monthly {selectedAccountingSystemLabel || 'ERP'} Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
                     </div>
                     <div style={{ fontSize: '11px', color: '#a16207', marginBottom: '8px' }}>
                       Future-ready connector list: {erpCaoFutureSystems.join(', ')}.
@@ -9098,12 +9070,6 @@ function FinancialScorePage() {
                         value={erpCaoThroughMonth}
                         onChange={(e) => setErpCaoThroughMonth(e.target.value)}
                         style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
-                      />
-                      <input
-                        type="file"
-                        accept=".json,.txt"
-                        onChange={(e) => setErpCaoUploadFile(e.target.files?.[0] || null)}
-                        style={{ fontSize: '12px' }}
                       />
                       <button
                         onClick={loadErpCaoInDataMapping}
