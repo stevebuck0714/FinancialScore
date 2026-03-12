@@ -476,6 +476,7 @@ export default function SiteAdminDashboard(props: any) {
     { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery' },
     { dataDomain: 'Customers', qbEntity: 'CustomerQuery' },
     { dataDomain: 'Vendors', qbEntity: 'VendorQuery' },
+    { dataDomain: 'Items / Products', qbEntity: 'ItemQuery' },
     { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
     { dataDomain: 'Bills', qbEntity: 'BillQuery' },
     { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
