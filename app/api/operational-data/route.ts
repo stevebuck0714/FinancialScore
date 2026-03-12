@@ -70,7 +70,7 @@ function addMonths(date: Date, months: number): Date {
  * 
  * Query parameters:
  * - companyId: string (required)
- * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash'
+ * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'daily-financials'
  * - startDate: ISO date string (optional) - defaults to 90 days ago
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
@@ -788,15 +788,93 @@ export async function GET(request: NextRequest) {
           summary: cashMetrics,
         });
 
+      case 'daily-financials':
+        // Daily mapped financial snapshots used by Operations only.
+        const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
+        const dailyMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+        if (!dailySnapshotDelegate) {
+          return NextResponse.json({
+            records: [],
+            summary: {
+              latestRevenue: 0,
+              latestExpense: 0,
+              latestNet: 0,
+              latestCash: 0,
+              message: 'Daily financial snapshots model not available yet.',
+            },
+          });
+        }
+
+        data = await dailySnapshotDelegate.findMany({
+          where: {
+            companyId,
+            frequency: 'daily',
+            snapshotDate: dateFilter,
+          },
+          orderBy: { snapshotDate: 'desc' },
+          take: limit,
+        });
+
+        if (!data.length) {
+          return NextResponse.json({
+            records: [],
+            summary: {
+              latestRevenue: 0,
+              latestExpense: 0,
+              latestNet: 0,
+              latestCash: 0,
+              days: 0,
+            },
+          });
+        }
+
+        const latestDaily = data[0];
+        const previousDaily = data[1] || latestDaily;
+        const latestRevenue = Number(latestDaily.revenue || 0);
+        const latestExpense = Number(latestDaily.expense || 0);
+        const latestNet = latestRevenue - latestExpense;
+        const previousNet = Number(previousDaily.revenue || 0) - Number(previousDaily.expense || 0);
+        const netChange = latestNet - previousNet;
+        const mappedLines = dailyMappedLineDelegate
+          ? await dailyMappedLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: dateFilter,
+              },
+              orderBy: [{ snapshotDate: 'desc' }, { sourceAccountName: 'asc' }],
+              take: Math.max(limit * 200, 3000),
+            })
+          : [];
+
+        return NextResponse.json({
+          records: data,
+          mappedLines,
+          summary: {
+            latestRevenue,
+            latestExpense,
+            latestNet,
+            latestCash: Number(latestDaily.cash || 0),
+            latestAR: Number(latestDaily.ar || 0),
+            latestAP: Number(latestDaily.ap || 0),
+            netChange,
+            days: data.length,
+            mappedLineCount: mappedLines.length,
+          },
+        });
+
       default:
         // Get all data types summary
-        const [customers, arAging, apAging, products, inventory, cash] = await Promise.all([
+        const [customers, arAging, apAging, products, inventory, cash, dailyFinancials] = await Promise.all([
           prisma.customerSalesSnapshot.count({ where: { companyId } }),
           prisma.aRAgingSnapshot.count({ where: { companyId } }),
           prisma.aPAgingSnapshot.count({ where: { companyId } }),
           prisma.productSalesSnapshot.count({ where: { companyId } }),
           prisma.inventorySnapshot.count({ where: { companyId } }),
           prisma.cashSnapshot.count({ where: { companyId } }),
+          (prisma as any).dailyFinancialSnapshot
+            ? (prisma as any).dailyFinancialSnapshot.count({ where: { companyId } })
+            : Promise.resolve(0),
         ]);
 
         const summary = {
@@ -806,8 +884,9 @@ export async function GET(request: NextRequest) {
           productSalesRecords: products,
           inventoryRecords: inventory,
           cashRecords: cash,
+          dailyFinancialRecords: dailyFinancials,
         };
-        if (!customers && !arAging && !apAging && !products && !inventory && !cash && shouldUseMockData) {
+        if (!customers && !arAging && !apAging && !products && !inventory && !cash && !dailyFinancials && shouldUseMockData) {
           return NextResponse.json({
             summary: buildOperationalMockSummaryCounts(sectorCategory),
           });

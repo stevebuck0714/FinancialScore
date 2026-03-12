@@ -13,6 +13,7 @@ interface User {
 interface HeaderProps {
   currentUser: User | null;
   currentView: string;
+  companyName?: string;
   // currentView is a large union in app/page.tsx; keep this flexible for reuse.
   setCurrentView: (view: any) => void;
   handleLogout: () => void;
@@ -22,6 +23,7 @@ interface HeaderProps {
 export default function Header({
   currentUser,
   currentView,
+  companyName,
   setCurrentView,
   handleLogout,
   handleNavigation
@@ -137,25 +139,38 @@ export default function Header({
   }
 
   // Regular User Header (with navigation)
+  const headerCompanyName = (companyName || '').trim() || 'Company Dashboard';
   return (
     <header style={{ background: 'white', borderBottom: '2px solid #e2e8f0', padding: '16px 48px 12px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '176px', minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: 1 }}>
         <div 
-          style={{ fontSize: '28px', fontWeight: '700', color: '#1F70C1', cursor: 'pointer', letterSpacing: '-0.5px', paddingTop: '4px', flexShrink: 0 }} 
+          style={{ cursor: 'pointer', flexShrink: 0, width: '300px', minWidth: '300px', maxWidth: '300px' }} 
           onClick={() => {
-            if (currentUser.role === 'consultant') {
-              setCurrentView('consultant-dashboard');
-              return;
-            }
-            // Company users may be restricted from the dashboard.
-            if (canAccess('company-dashboard')) {
-              handleNavigation('dashboard');
-            }
+            // Company identity in header routes to Company Dashboard workspace.
+            handleNavigation('admin');
           }}
+          title={headerCompanyName}
         >
-          Corelytics<sup style={{ fontSize: '12px', fontWeight: '400' }}>TM</sup>
+          <div
+            style={{
+              fontSize: '24px',
+              fontWeight: '700',
+              color: '#1F70C1',
+              letterSpacing: '-0.2px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              lineHeight: 1.1,
+            }}
+          >
+            {headerCompanyName}
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px', lineHeight: 1.1 }}>
+            Powered by Corelytics
+          </div>
         </div>
+        <div style={{ width: '28px', minWidth: '28px', flexShrink: 0 }} />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
           <nav style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'nowrap' }}>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>

@@ -474,3 +474,158 @@ export function processTrialBalanceToMonthly(
   return monthlyRecords;
 }
 
+export function processTrialBalanceToDailySnapshotsAndLines(
+  parsedData: ParsedTrialBalance,
+  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: any }>
+): {
+  dailySnapshots: any[];
+  mappedLines: Array<{
+    snapshotDate: string;
+    frequency: 'daily';
+    sourceAccountName: string;
+    sourceAccountId: string;
+    sourceAccountType: string;
+    targetField: string;
+    amount: number;
+  }>;
+} {
+  const dailySnapshots: any[] = [];
+  const mappedLines: Array<{
+    snapshotDate: string;
+    frequency: 'daily';
+    sourceAccountName: string;
+    sourceAccountId: string;
+    sourceAccountType: string;
+    targetField: string;
+    amount: number;
+  }> = [];
+
+  const normalizeAccountName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
+
+  for (const mapping of accountMappings) {
+    const normalizedKey = normalizeAccountName(mapping.qbAccount);
+    mappingLookup[normalizedKey] = { targetField: mapping.targetField, lobAllocations: mapping.lobAllocations };
+    mappingLookup[mapping.qbAccount] = { targetField: mapping.targetField, lobAllocations: mapping.lobAllocations };
+  }
+
+  for (const dateStr of parsedData.dates) {
+    const parsedDate = parseColumnDate(dateStr);
+    if (!parsedDate) continue;
+    const snapshotDate = parsedDate.toISOString();
+
+    const dailyRecord: any = {
+      snapshotDate,
+      frequency: 'daily',
+      revenue: 0,
+      expense: 0,
+      cogsPayroll: 0,
+      cogsOwnerPay: 0,
+      cogsContractors: 0,
+      cogsMaterials: 0,
+      cogsCommissions: 0,
+      cogsOther: 0,
+      cogsTotal: 0,
+      payroll: 0,
+      ownerBasePay: 0,
+      benefits: 0,
+      insurance: 0,
+      professionalFees: 0,
+      subcontractors: 0,
+      rent: 0,
+      taxLicense: 0,
+      stateIncomeTaxes: 0,
+      federalIncomeTaxes: 0,
+      phoneComm: 0,
+      infrastructure: 0,
+      autoTravel: 0,
+      salesExpense: 0,
+      marketing: 0,
+      trainingCert: 0,
+      mealsEntertainment: 0,
+      interestExpense: 0,
+      depreciationAmortization: 0,
+      otherExpense: 0,
+      nonOperatingIncome: 0,
+      extraordinaryItems: 0,
+      cash: 0,
+      ar: 0,
+      inventory: 0,
+      otherCA: 0,
+      tca: 0,
+      fixedAssets: 0,
+      otherAssets: 0,
+      totalAssets: 0,
+      ap: 0,
+      otherCL: 0,
+      tcl: 0,
+      ltd: 0,
+      totalLiab: 0,
+      ownersCapital: 0,
+      ownersDraw: 0,
+      commonStock: 0,
+      preferredStock: 0,
+      retainedEarnings: 0,
+      additionalPaidInCapital: 0,
+      treasuryStock: 0,
+      totalEquity: 0,
+      totalLAndE: 0,
+    };
+
+    for (const account of parsedData.accounts) {
+      let mapping = mappingLookup[account.description];
+      if (!mapping) {
+        const normalizedName = normalizeAccountName(account.description);
+        mapping = mappingLookup[normalizedName];
+      }
+
+      const value = account.values[dateStr] || 0;
+      if (value === 0) continue;
+
+      let targetField: string | null = null;
+      if (mapping?.targetField) {
+        targetField = mapping.targetField;
+      } else {
+        targetField = ACCOUNT_TYPE_TO_TARGET_FIELD[account.acctType] || null;
+      }
+      if (!targetField) continue;
+
+      if (dailyRecord[targetField] !== undefined) {
+        dailyRecord[targetField] += value;
+      }
+
+      mappedLines.push({
+        snapshotDate,
+        frequency: 'daily',
+        sourceAccountName: account.description,
+        sourceAccountId: account.acctId,
+        sourceAccountType: account.acctType,
+        targetField,
+        amount: value,
+      });
+    }
+
+    const cogsFromComponents = dailyRecord.cogsPayroll + dailyRecord.cogsOwnerPay +
+      dailyRecord.cogsContractors + dailyRecord.cogsMaterials +
+      dailyRecord.cogsCommissions + dailyRecord.cogsOther;
+    if (cogsFromComponents > 0) dailyRecord.cogsTotal = cogsFromComponents;
+
+    dailyRecord.tca = dailyRecord.cash + dailyRecord.ar + dailyRecord.inventory + dailyRecord.otherCA;
+    dailyRecord.totalAssets = dailyRecord.tca + dailyRecord.fixedAssets + dailyRecord.otherAssets;
+    dailyRecord.tcl = dailyRecord.ap + dailyRecord.otherCL;
+    dailyRecord.totalLiab = dailyRecord.tcl + dailyRecord.ltd;
+    const equityFromComponents = dailyRecord.ownersCapital + dailyRecord.commonStock +
+      dailyRecord.preferredStock + dailyRecord.retainedEarnings +
+      dailyRecord.additionalPaidInCapital - dailyRecord.treasuryStock - dailyRecord.ownersDraw;
+    if (equityFromComponents !== 0 && dailyRecord.totalEquity === 0) {
+      dailyRecord.totalEquity = equityFromComponents;
+    }
+    dailyRecord.totalLAndE = dailyRecord.totalLiab + dailyRecord.totalEquity;
+
+    dailySnapshots.push(dailyRecord);
+  }
+
+  dailySnapshots.sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
+  return { dailySnapshots, mappedLines };
+}
+

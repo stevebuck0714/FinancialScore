@@ -1088,3 +1088,135 @@ model CashSnapshot {
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, accountId])
 }
+
+model DailyFinancialSnapshot {
+  id                      String   @id @default(cuid())
+  companyId               String
+  snapshotDate            DateTime
+  frequency               String   @default("daily")
+
+  // Income statement activity fields (daily movement)
+  revenue                 Float    @default(0)
+  expense                 Float    @default(0)
+  cogsPayroll             Float    @default(0)
+  cogsOwnerPay            Float    @default(0)
+  cogsContractors         Float    @default(0)
+  cogsMaterials           Float    @default(0)
+  cogsCommissions         Float    @default(0)
+  cogsOther               Float    @default(0)
+  cogsTotal               Float    @default(0)
+  payroll                 Float    @default(0)
+  ownerBasePay            Float    @default(0)
+  benefits                Float    @default(0)
+  insurance               Float    @default(0)
+  professionalFees        Float    @default(0)
+  subcontractors          Float    @default(0)
+  rent                    Float    @default(0)
+  taxLicense              Float    @default(0)
+  stateIncomeTaxes        Float    @default(0)
+  federalIncomeTaxes      Float    @default(0)
+  phoneComm               Float    @default(0)
+  infrastructure          Float    @default(0)
+  autoTravel              Float    @default(0)
+  salesExpense            Float    @default(0)
+  marketing               Float    @default(0)
+  trainingCert            Float    @default(0)
+  mealsEntertainment      Float    @default(0)
+  interestExpense         Float    @default(0)
+  depreciationAmortization Float   @default(0)
+  otherExpense            Float    @default(0)
+  nonOperatingIncome      Float    @default(0)
+  extraordinaryItems      Float    @default(0)
+
+  // Balance sheet snapshot fields (point-in-time)
+  cash                    Float    @default(0)
+  ar                      Float    @default(0)
+  inventory               Float    @default(0)
+  otherCA                 Float    @default(0)
+  tca                     Float    @default(0)
+  fixedAssets             Float    @default(0)
+  otherAssets             Float    @default(0)
+  totalAssets             Float    @default(0)
+  ap                      Float    @default(0)
+  otherCL                 Float    @default(0)
+  tcl                     Float    @default(0)
+  ltd                     Float    @default(0)
+  totalLiab               Float    @default(0)
+  ownersCapital           Float    @default(0)
+  ownersDraw              Float    @default(0)
+  commonStock             Float    @default(0)
+  preferredStock          Float    @default(0)
+  retainedEarnings        Float    @default(0)
+  additionalPaidInCapital Float    @default(0)
+  treasuryStock           Float    @default(0)
+  totalEquity             Float    @default(0)
+  totalLAndE              Float    @default(0)
+
+  sourcePlatform          String?  @default("SCHEDULED_INTEGRATION")
+  sourceRunId             String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, sourceRunId])
+  @@unique([companyId, snapshotDate, frequency])
+}
+
+model DailyFinancialImportRun {
+  id               String   @id @default(cuid())
+  companyId        String
+  platform         String
+  runType          String   @default("daily")
+  status           String   // SUCCESS | PARTIAL | FAILED
+  snapshotDate     DateTime
+  recordsIngested  Int      @default(0)
+  errorMessage     String?
+  metadata         Json?
+  startedAt        DateTime @default(now())
+  finishedAt       DateTime?
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, status, startedAt(sort: Desc)])
+}
+
+model FinancialMonthPublish {
+  id                 String   @id @default(cuid())
+  companyId          String
+  monthStart         DateTime
+  monthEnd           DateTime
+  status             String   // OPEN | PUBLISHED | LOCKED
+  publishedAt        DateTime?
+  sourceSnapshotDays Int      @default(0)
+  sourceRunIds       Json?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([companyId, monthStart])
+  @@index([companyId, monthStart(sort: Desc)])
+  @@index([companyId, status, monthStart(sort: Desc)])
+}
+
+model DailyFinancialMappedLine {
+  id                String   @id @default(cuid())
+  companyId         String
+  snapshotDate      DateTime
+  frequency         String   @default("daily")
+  sourceAccountName String
+  sourceAccountId   String?
+  sourceAccountType String?
+  targetField       String
+  amount            Float    @default(0)
+  sourcePlatform    String?  @default("SCHEDULED_INTEGRATION")
+  sourceRunId       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, targetField, snapshotDate(sort: Desc)])
+  @@index([companyId, sourceRunId])
+  @@index([companyId, sourceAccountName])
+  @@unique([companyId, snapshotDate, frequency, sourceAccountName, targetField])
+}

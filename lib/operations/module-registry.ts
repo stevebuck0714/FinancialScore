@@ -1,4 +1,4 @@
-export type OpsDataType = 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash';
+export type OpsDataType = 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'daily-financials';
 
 type ModuleDefinition = {
   key: string;
@@ -7,6 +7,8 @@ type ModuleDefinition = {
 };
 
 const MODULE_DEFINITIONS: ModuleDefinition[] = [
+  { key: 'daily_financials', label: 'Daily Financials', dataType: 'daily-financials' },
+  { key: 'daily-financials', label: 'Daily Financials', dataType: 'daily-financials' },
   { key: 'cash', label: 'Cash', dataType: 'cash' },
   { key: 'cash_liquidity', label: 'Cash & Liquidity', dataType: 'cash' },
   { key: 'ar', label: 'AR', dataType: 'ar-aging' },

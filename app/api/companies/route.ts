@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { requireAuth, validateCompanyAccess, validateConsultantAccess, getCompanyAccessFilter } from "@/lib/tenant-security";
 import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger";
 import { sendAccountingSystemSelectionNotification } from "@/lib/email";
+import { listAccessibleCompaniesForUser } from "@/lib/user-company-access";
 
 async function hasCompanyColumn(columnName: string): Promise<boolean> {
   // Guard against generated Prisma client drift:
@@ -63,7 +64,9 @@ export async function GET(request: NextRequest) {
     // SECURITY: Validate consultant access if consultantId filter is requested.
     // IMPORTANT: For consultant users, listing should include all companies they can access
     // (owned + explicitly granted via UserCompanyAccess), not just owned companies.
-    // So consultantId is treated as an ownership filter only for site admins.
+    // For site admins filtering by consultantId (preview mode), include both:
+    // - companies owned by that consultant (company.consultantId), and
+    // - companies accessible to the consultant's primary user via UserCompanyAccess.
     if (consultantId) {
       const hasAccess = await validateConsultantAccess(consultantId);
       if (!hasAccess) {
@@ -74,7 +77,42 @@ export async function GET(request: NextRequest) {
         );
       }
       if (context.role === 'SITEADMIN') {
-        where.consultantId = consultantId;
+        let consultantUserId: string | null = null;
+        try {
+          const consultantRecord = await (prisma as any).consultant?.findUnique?.({
+            where: { id: consultantId },
+            select: {
+              userId: true,
+              user: { select: { id: true } },
+            },
+          });
+          consultantUserId = consultantRecord?.userId || consultantRecord?.user?.id || null;
+        } catch (error) {
+          console.warn('Could not resolve consultant primary user for access-based company filter', error);
+        }
+
+        let accessibleCompanyIds: string[] = [];
+        if (consultantUserId) {
+          try {
+            const accessible = await listAccessibleCompaniesForUser(consultantUserId);
+            accessibleCompanyIds = accessible.map((c) => c.companyId).filter(Boolean);
+          } catch (error) {
+            console.warn('Could not resolve consultant access-based companies', error);
+          }
+        }
+
+        where = accessibleCompanyIds.length > 0
+          ? {
+              ...where,
+              OR: [
+                { consultantId },
+                { id: { in: accessibleCompanyIds } },
+              ],
+            }
+          : {
+              ...where,
+              consultantId,
+            };
       }
     }
 
@@ -243,10 +281,6 @@ export async function POST(request: NextRequest) {
       addressState,
       addressZip,
       addressCountry,
-      industrySector,
-      industrySectorCategory,
-      accountingSystem,
-      companySizeCategory,
       affiliateCode,
       linesOfBusiness,
       tier1SupportOwner,
@@ -262,7 +296,6 @@ export async function POST(request: NextRequest) {
       addressState,
       addressZip,
       addressCountry,
-      industrySector,
       affiliateCode,
     });
 
@@ -602,7 +635,6 @@ export async function POST(request: NextRequest) {
       addressState,
       addressZip,
       addressCountry,
-      industrySector,
       pricingUsed: { monthlyPrice, quarterlyPrice, annualPrice }, // Pricing determined but not stored in Company table
       setupFee,
       affiliateCode: validatedAffiliateCode,
@@ -673,10 +705,6 @@ export async function POST(request: NextRequest) {
           addressState,
           addressZip,
           addressCountry,
-          industrySector,
-          ...(includeIndustrySectorCategory ? { industrySectorCategory: industrySectorCategory || null } : {}),
-          ...(includeAccountingSystem ? { accountingSystem: accountingSystem || null } : {}),
-          ...(includeCompanySizeCategory ? { companySizeCategory: companySizeCategory || null } : {}),
           // STORE FINAL PRICING PERMANENTLY - AFFILIATE CODES WORK IN BOTH ENVIRONMENTS
           // Always store pricing fields regardless of environment for affiliate codes
           // Ensure $0 values are stored as 0, not null
@@ -731,10 +759,6 @@ export async function POST(request: NextRequest) {
           addressState: true,
           addressZip: true,
           addressCountry: true,
-          industrySector: true,
-          ...(includeIndustrySectorCategory ? { industrySectorCategory: true } : {}),
-          ...(includeAccountingSystem ? { accountingSystem: true } : {}),
-          ...(includeCompanySizeCategory ? { companySizeCategory: true } : {}),
           linesOfBusiness: true,
           userDefinedAllocations: true,
           subscriptionMonthlyPrice: true,

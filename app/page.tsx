@@ -51,7 +51,7 @@ const MAScoringGuideView = dynamic(() => import('./components/assessment/MAScori
 const MAScoresSummaryView = dynamic(() => import('./components/assessment/MAScoresSummaryView'), { ssr: false });
 const MAYourResultsView = dynamic(() => import('./components/assessment/MAYourResultsView'), { ssr: false });
 const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), { ssr: false });
-import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
+import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, processTrialBalanceToDailySnapshotsAndLines, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
@@ -999,6 +999,13 @@ function FinancialScorePage() {
   const [userDefinedAllocations, setUserDefinedAllocations] = useState<{ lobName: string; percentage: number }[]>([]);
   const [showMappingSection, setShowMappingSection] = useState(false);
   const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
+  const [isPublishingMonthlyData, setIsPublishingMonthlyData] = useState(false);
+  const [publishMonthInput, setPublishMonthInput] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    return `${year}-${String(month).padStart(2, '0')}`;
+  });
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
   const [qbStatus, setQbStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
   const [qbLastSync, setQbLastSync] = useState<Date | null>(null);
@@ -1557,6 +1564,77 @@ function FinancialScorePage() {
         });
     }
   }, [selectedCompanyId, adminDashboardTab]);
+
+  // Restore first-pass mapping for API-imported financial data when no mappings exist yet.
+  useEffect(() => {
+    if (!selectedCompanyId || adminDashboardTab !== 'data-mapping' || aiMappings.length > 0) return;
+    if (!qbRawData || (!qbRawData.profitAndLoss && !qbRawData.balanceSheet)) return;
+
+    const classifyAccount = (statementType: 'profitAndLoss' | 'balanceSheet', sectionName: string): string => {
+      const section = (sectionName || '').toLowerCase();
+      if (statementType === 'profitAndLoss') {
+        if (section.includes('revenue') || section.includes('income') || section.includes('sales')) return 'Income';
+        if (section.includes('cost of goods') || section.includes('cogs') || section.includes('cost of sales')) return 'Cost of Goods Sold';
+        return 'Expense';
+      }
+      if (section.includes('asset') || section.includes('cash') || section.includes('receivable') || section.includes('inventory')) return 'Asset';
+      if (section.includes('liabil') || section.includes('payable') || section.includes('debt')) return 'Liability';
+      if (section.includes('equity') || section.includes('retained') || section.includes('capital')) return 'Equity';
+      return 'Other';
+    };
+
+    const collectAccounts = (statementData: any, statementType: 'profitAndLoss' | 'balanceSheet') => {
+      const collected: Array<{ qbAccount: string; qbAccountId: string; qbAccountCode: string; qbAccountClassification: string; targetField: string; confidence: string }> = [];
+      const seen = new Set<string>();
+
+      const visitRows = (rows: any[], sectionName: string = '') => {
+        for (const row of rows) {
+          if (row?.type === 'Section') {
+            const nextSection = row?.Header?.ColData?.[0]?.value || sectionName;
+            const nestedRows = row?.Rows?.Row;
+            if (nestedRows) {
+              visitRows(Array.isArray(nestedRows) ? nestedRows : [nestedRows], nextSection);
+            }
+            continue;
+          }
+
+          if (row?.type === 'Data' && Array.isArray(row?.ColData)) {
+            const accountName = (row.ColData[0]?.value || '').trim();
+            if (!accountName || accountName.toLowerCase().includes('total')) continue;
+
+            const accountId = (row.ColData[1]?.id || row.ColData[1]?.value || accountName).toString();
+            const classification = classifyAccount(statementType, sectionName);
+            const dedupeKey = `${statementType}:${classification}:${accountName.toLowerCase()}`;
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+
+            collected.push({
+              qbAccount: accountName,
+              qbAccountId: accountId,
+              qbAccountCode: accountId,
+              qbAccountClassification: classification,
+              targetField: 'unmapped',
+              confidence: 'low',
+            });
+          }
+        }
+      };
+
+      const rootRows = statementData?.Rows?.Row;
+      if (rootRows) visitRows(Array.isArray(rootRows) ? rootRows : [rootRows]);
+      return collected;
+    };
+
+    const generatedMappings = [
+      ...collectAccounts(qbRawData.profitAndLoss, 'profitAndLoss'),
+      ...collectAccounts(qbRawData.balanceSheet, 'balanceSheet'),
+    ];
+
+    if (generatedMappings.length > 0) {
+      setAiMappings(generatedMappings);
+      setShowMappingSection(true);
+    }
+  }, [selectedCompanyId, adminDashboardTab, qbRawData, aiMappings.length]);
 
   // Save dashboard widgets to database
   const saveDashboardPreferences = async () => {
@@ -5820,6 +5898,7 @@ function FinancialScorePage() {
       <div className="app-global-header">
         <Header
           currentUser={currentUser}
+          companyName={companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || '' : '')}
           currentView={currentView}
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
@@ -5842,50 +5921,6 @@ function FinancialScorePage() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          {/* Active Company Info at Top - Show for consultants with selected company or company users */}
-          {(companyName || (currentUser?.userType === 'company' && currentUser?.companyId)) && (
-            <div style={{ padding: '0 24px 24px', borderBottom: '2px solid #e2e8f0' }}>
-              <div 
-                onClick={() => {
-                  setCurrentView('admin');
-                  setAdminDashboardTab('company-management');
-                }}
-                style={{ 
-                  padding: '12px', 
-                  background: '#f0f9ff', 
-                  borderRadius: '8px', 
-                  border: '1px solid #bae6fd',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#e0f2fe';
-                  e.currentTarget.style.border = '1px solid #7dd3fc';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#f0f9ff';
-                  e.currentTarget.style.border = '1px solid #bae6fd';
-                }}
-              >
-                <div style={{ fontSize: '18px', fontWeight: '600', color: '#1F70C1' }}>
-                  {companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || 'Loading...' : '')}
-                </div>
-                {/* Show Advisor Name for Company Users */}
-                {currentUser?.userType === 'company' && currentUser?.consultantId && (() => {
-                  const consultant = consultants.find(c => c.id === currentUser.consultantId);
-                  if (consultant?.companyName) {
-                    return (
-                      <div style={{ fontSize: '12px', color: '#1F70C1', marginTop: '6px', fontWeight: '500' }}>
-                        {consultant.companyName}
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
-            </div>
-          )}
-          
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {currentUser?.userType !== 'assessment' && null}
 
@@ -6525,7 +6560,7 @@ function FinancialScorePage() {
               display: 'flex',
               gap: '8px',
               // Data Mapping needs to sit tight to the content below.
-              marginBottom: (adminDashboardTab === 'data-mapping' || adminDashboardTab === 'data-review') ? '4px' : '12px',
+              marginBottom: (adminDashboardTab === 'data-mapping' || adminDashboardTab === 'data-review') ? '2px' : '12px',
               borderBottom: '2px solid #e2e8f0'
             }}
           >
@@ -8253,6 +8288,71 @@ function FinancialScorePage() {
             </div>
           )}
 
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && (
+            <div style={{ maxWidth: '1280px', margin: '-18px auto 6px auto', padding: '0 16px', display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '10px 12px', width: '52%', minWidth: '520px', maxWidth: '640px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'nowrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#9a3412', marginBottom: '4px' }}>Publish Monthly Financials</div>
+                  <p style={{ fontSize: '12px', color: '#92400e', margin: 0, fontWeight: '600', whiteSpace: 'nowrap' }}>
+                    Only Publish prior month data when books are closed.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', flexShrink: 0 }}>
+                  <input
+                    type="month"
+                    value={publishMonthInput}
+                    onChange={(e) => setPublishMonthInput(e.target.value)}
+                    style={{ padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!selectedCompanyId) return;
+                      if (!publishMonthInput || !/^\d{4}-\d{2}$/.test(publishMonthInput)) {
+                        alert('Select a valid publish month first (YYYY-MM).');
+                        return;
+                      }
+                      setIsPublishingMonthlyData(true);
+                      try {
+                        const response = await fetch('/api/financials/publish-month', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            companyId: selectedCompanyId,
+                            month: publishMonthInput,
+                          }),
+                        });
+                        const result = await response.json();
+                        if (!response.ok || !result?.success) {
+                          throw new Error(result?.error || 'Failed to publish monthly data');
+                        }
+                        alert(`Published ${publishMonthInput} to core financial reports.`);
+                        masterDataStore.clearCompanyCache(selectedCompanyId);
+                      } catch (error: any) {
+                        alert(`Publish failed: ${error?.message || 'Unknown error'}`);
+                      } finally {
+                        setIsPublishingMonthlyData(false);
+                      }
+                    }}
+                    disabled={isPublishingMonthlyData}
+                    style={{
+                      padding: '8px 12px',
+                      background: isPublishingMonthlyData ? '#9ca3af' : '#7c3aed',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: isPublishingMonthlyData ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {isPublishingMonthlyData ? 'Publishing...' : 'Publish'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !csvTrialBalanceData && !qbRawData && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '12px' }}>
@@ -8355,7 +8455,7 @@ function FinancialScorePage() {
           )}
 
           {/* Account Mapping Interface - Shows after CSV is uploaded */}
-          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && !qbRawData && (csvTrialBalanceData?._companyId === selectedCompanyId || (aiMappings.length > 0 && showMappingSection))) && (() => {
+          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && (csvTrialBalanceData?._companyId === selectedCompanyId || aiMappings.length > 0)) && (() => {
             const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
 
             // Get accounts for mapping from CSV data (if available)
@@ -8369,23 +8469,19 @@ function FinancialScorePage() {
               <div
                 key={`csv-data-mapping-${selectedCompanyId}-${dataRefreshKey}`}
                 style={{
-                  maxWidth: '1800px',
+                  maxWidth: '1280px',
                   margin: '0 auto',
                   // Pull the section up to reduce the large perceived gap under the admin tabs.
-                  marginTop: '-52px',
-                  padding: '0px 32px 16px'
+                  marginTop: '-54px',
+                  padding: '0px 16px 16px'
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Account Mapping</h1>
-                  {companyName && <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{companyName}</div>}
-                </div>
-                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '6px' }}>
+                <div style={{ fontSize: '18px', color: '#334155', fontWeight: '600', marginBottom: '4px' }}>
                   Accounting System: <span style={{ fontWeight: '700', color: '#475569' }}>{selectedAccountingSystemLabel}</span>
                 </div>
                 <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
                   {hasCsvData
-                    ? `Map Trial Balance accounts to your standardized financial fields - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'} - ${csvTrialBalanceData.dates?.length || 0} periods`
+                    ? `Map Trial Balance accounts to Corelytics accounts - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'}`
                     : `${aiMappings.length} saved account mappings loaded from database`
                   }
                 </p>
@@ -8393,7 +8489,7 @@ function FinancialScorePage() {
                 {/* AI-Assisted Mapping Section for CSV */}
                 {hasCsvData && (
                 <div style={{ marginBottom: '16px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '10px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
                         <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
@@ -8497,7 +8593,7 @@ function FinancialScorePage() {
                 {/* AI-Assisted Mapping Section for API synced accounts (QuickBooks/Xero) */}
                 {!hasCsvData && aiMappings.length > 0 && aiMappings.filter(m => m.targetField === 'unmapped').length > 0 && (
                 <div style={{ marginBottom: '16px' }}>
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '10px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
                         <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
@@ -8666,6 +8762,7 @@ function FinancialScorePage() {
 
                                 // Process the CSV data using mappings
                                 const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
+                                const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(csvTrialBalanceData, aiMappings);
 
                                 // Save to database
                                 const response = await fetch('/api/financials', {
@@ -8687,6 +8784,31 @@ function FinancialScorePage() {
 
                                 const result = await response.json();
                                 console.log(`? Processed and saved ${processedData.length} months of CSV data`);
+
+                                // Persist detailed daily post-mapped data for Operations > Daily Financials
+                                try {
+                                  const dailyResponse = await fetch('/api/operational-sync/daily-financials', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      companyId: selectedCompanyId,
+                                      platform: 'CSV_TRIAL_BALANCE',
+                                      runId: `csv-map-${Date.now()}`,
+                                      frequency: 'daily',
+                                      records: dailyMapped.dailySnapshots,
+                                      mappedLines: dailyMapped.mappedLines,
+                                    }),
+                                  });
+                                  if (!dailyResponse.ok) {
+                                    const dailyErrorBody = await dailyResponse.json().catch(() => ({}));
+                                    console.error('Failed to persist daily mapped financial data:', dailyErrorBody);
+                                  } else {
+                                    const dailyResult = await dailyResponse.json();
+                                    console.log(`✅ Saved ${dailyResult.recordsIngested || 0} daily snapshots (${dailyMapped.mappedLines.length} mapped lines submitted)`);
+                                  }
+                                } catch (dailySaveError) {
+                                  console.error('Error persisting daily mapped financial data:', dailySaveError);
+                                }
 
                                 // Automatically create master data from the processed data
                                 try {
