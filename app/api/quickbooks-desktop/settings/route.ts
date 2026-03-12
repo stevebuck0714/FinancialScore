@@ -54,8 +54,13 @@ const defaultSettings: QuickBooksDesktopSettings = {
 const defaultPrograms: QuickBooksDesktopProgram[] = [
   { dataDomain: 'Chart of Accounts', qbEntity: 'AccountQuery' },
   { dataDomain: 'Customers', qbEntity: 'CustomerQuery' },
+  { dataDomain: 'Inventory (Advanced)', qbEntity: '' },
+  { dataDomain: 'Items/Products', qbEntity: 'ItemQuery' },
+  { dataDomain: 'Sales Receipts', qbEntity: 'SalesReceiptQuery' },
+  { dataDomain: 'Accounts Receivable Aging', qbEntity: 'AgingReportQuery' },
+  { dataDomain: 'Accounts Payable Aging', qbEntity: 'AgingReportQuery' },
+  { dataDomain: 'Products/Items', qbEntity: 'ItemQuery' },
   { dataDomain: 'Vendors', qbEntity: 'VendorQuery' },
-  { dataDomain: 'Items / Products', qbEntity: 'ItemQuery' },
   { dataDomain: 'Invoices', qbEntity: 'InvoiceQuery' },
   { dataDomain: 'Bills', qbEntity: 'BillQuery' },
   { dataDomain: 'Payments', qbEntity: 'ReceivePaymentQuery' },
@@ -132,7 +137,13 @@ function sanitizePrograms(value: unknown): QuickBooksDesktopProgram[] {
       };
     })
     .filter((row) => row.dataDomain || row.qbEntity);
-  return cleaned.length > 0 ? cleaned : defaultPrograms;
+  if (cleaned.length === 0) return defaultPrograms;
+
+  const existingDomains = new Set(cleaned.map((row) => row.dataDomain.trim().toLowerCase()).filter(Boolean));
+  const missingDefaults = defaultPrograms.filter(
+    (row) => row.dataDomain && !existingDomains.has(row.dataDomain.trim().toLowerCase())
+  );
+  return [...cleaned, ...missingDefaults];
 }
 
 export async function GET(request: NextRequest) {
