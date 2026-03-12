@@ -962,6 +962,7 @@ function FinancialScorePage() {
     clientId: '',
     clientSecret: '',
     ionApiBaseUrl: '',
+    csiProxyBasePath: '',
     ssoBaseUrl: '',
     oauthAuthPath: '',
     oauthTokenPath: '',
@@ -969,7 +970,7 @@ function FinancialScorePage() {
     serviceAccountAccessKey: '',
     serviceAccountSecretKey: '',
   });
-  const [inforProbePath, setInforProbePath] = useState('/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData');
+  const [inforProbePath, setInforProbePath] = useState('/IDORequestService/ido/load/Customers');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
   const [inforCaoPulling, setInforCaoPulling] = useState(false);
   const [inforCaoMessage, setInforCaoMessage] = useState<string | null>(null);
@@ -2286,8 +2287,11 @@ function FinancialScorePage() {
         await checkQBStatus(selectedCompanyId);
         // Check Xero connection status
         await checkXeroStatus(selectedCompanyId);
-        // Infor M3 setup/status is restricted to site admins.
-        if (String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' && company?.accountingSystem === 'INFOR_M3') {
+        // Infor setup/status is restricted to site admins.
+        if (
+          String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' &&
+          (company?.accountingSystem === 'INFOR_M3' || company?.accountingSystem === 'INFOR_CSI')
+        ) {
           await checkInforM3Status(selectedCompanyId);
           await fetchInforLastCaoPull(selectedCompanyId);
         }
@@ -3899,6 +3903,7 @@ function FinancialScorePage() {
         clientId: data.credentials.clientId || '',
         clientSecret: data.credentials.clientSecret || '',
         ionApiBaseUrl: data.credentials.ionApiBaseUrl || '',
+        csiProxyBasePath: data.credentials.csiProxyBasePath || '',
         ssoBaseUrl: data.credentials.ssoBaseUrl || '',
         oauthAuthPath: data.credentials.oauthAuthPath || '',
         oauthTokenPath: data.credentials.oauthTokenPath || '',
@@ -4040,7 +4045,7 @@ function FinancialScorePage() {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) return;
     if (!inforProbePath.trim()) {
-      alert('Please enter an Infor M3 probe path');
+      alert('Please enter an Infor probe path');
       return;
     }
     setInforBusy(true);
@@ -4051,7 +4056,11 @@ function FinancialScorePage() {
       );
       const data = await response.json();
       if (!response.ok || !data.ok) {
-        throw new Error(data.details || data.error || 'Probe failed');
+        const fallback =
+          data?.status || data?.url
+            ? `Status ${data?.status ?? 'unknown'} from ${data?.url ?? 'unknown endpoint'}`
+            : 'Probe failed';
+        throw new Error(data.details || data.error || fallback);
       }
 
       const summary = `Probe OK (${data.status}) - ${data.url}`;
@@ -5641,7 +5650,9 @@ function FinancialScorePage() {
       case 'IFS':
         return 'IFS';
       case 'INFOR_M3':
-        return 'Infor M3';
+        return 'Infor M3 (Legacy)';
+      case 'INFOR_CSI':
+        return 'Infor SyteLine (CloudSuite Industrial)';
       case 'NETSUITE':
         return 'NetSuite';
       case 'QAD':
@@ -7140,7 +7151,7 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem &&
-                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
                     {selectedAccountingSystemLabel} is not supported yet.
                   </div>
@@ -7359,13 +7370,15 @@ function FinancialScorePage() {
               </div>
               )}
 
-              {selectedAccountingSystem === 'INFOR_M3' && (
+              {(selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI') && (
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '16px', border: '2px solid #e2e8f0' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                    Infor M3 Monthly COA Pull
+                    {(selectedAccountingSystem === 'INFOR_CSI' ? 'Infor SyteLine (CloudSuite Industrial)' : 'Infor M3')} Monthly COA Pull
                   </h3>
                   <div style={{ marginBottom: '12px', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    Infor M3 credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
+                    {(selectedAccountingSystem === 'INFOR_CSI'
+                      ? 'Infor SyteLine (CloudSuite Industrial)'
+                      : 'Infor M3')} credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
                     This action triggers a monthly Chart of Accounts pull using the <strong>Accounts</strong> MI Program configured for this company.
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>

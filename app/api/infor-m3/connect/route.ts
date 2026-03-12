@@ -28,6 +28,7 @@ function parseBodyCredentials(body: Record<string, unknown>): Partial<InforM3Cre
   const clientId = normalizeString(body.clientId);
   const clientSecret = normalizeString(body.clientSecret);
   const ionApiBaseUrl = normalizeString(body.ionApiBaseUrl);
+  const csiProxyBasePath = normalizeString(body.csiProxyBasePath);
   const ssoBaseUrl = normalizeString(body.ssoBaseUrl);
   const oauthAuthPath = normalizeString(body.oauthAuthPath);
   const oauthTokenPath = normalizeString(body.oauthTokenPath);
@@ -40,6 +41,7 @@ function parseBodyCredentials(body: Record<string, unknown>): Partial<InforM3Cre
   if (clientId) parsed.clientId = clientId;
   if (clientSecret) parsed.clientSecret = clientSecret;
   if (ionApiBaseUrl) parsed.ionApiBaseUrl = ionApiBaseUrl;
+  if (csiProxyBasePath) parsed.csiProxyBasePath = csiProxyBasePath;
   if (ssoBaseUrl) parsed.ssoBaseUrl = ssoBaseUrl;
   if (oauthAuthPath) parsed.oauthAuthPath = oauthAuthPath;
   if (oauthTokenPath) parsed.oauthTokenPath = oauthTokenPath;

@@ -237,7 +237,10 @@ export default function SiteAdminDashboard(props: any) {
     Record<string, InforAccountingProgramRow[]>
   >({});
 
-  const defaultAccountingPrograms: InforAccountingProgramRow[] = [
+  const isInforAccountingSystem = (accountingSystem?: string) =>
+    accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI';
+
+  const defaultAccountingProgramsM3: InforAccountingProgramRow[] = [
     { module: 'Accounts', miProgram: 'CRS630MI', transactions: [], cono: '', divi: '', enabled: true },
     { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transactions: [], cono: '', divi: '', enabled: true },
     { module: 'AR', miProgram: 'ARS200MI', transactions: [], cono: '', divi: '', enabled: true },
@@ -248,8 +251,24 @@ export default function SiteAdminDashboard(props: any) {
     { module: 'Sales', miProgram: 'OIS100MI', transactions: [], cono: '', divi: '', enabled: true },
   ];
 
-  const getCompanyPrograms = (companyId: string) =>
-    accountingProgramsByCompany[companyId] || defaultAccountingPrograms;
+  const defaultAccountingProgramsCsi: InforAccountingProgramRow[] = [
+    { module: 'Accounts', miProgram: 'ChartOfAccounts', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Customers', miProgram: 'Customers', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Vendors', miProgram: 'Vendors', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'AR', miProgram: 'CustomerInvoices', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'AP', miProgram: 'VendorInvoices', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Cash', miProgram: 'BankAccounts', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Inventory', miProgram: 'Items', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Inventory Transactions', miProgram: 'InventoryTransactions', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Sales Orders', miProgram: 'SalesOrders', transactions: [], cono: '', divi: '', enabled: true },
+    { module: 'Purchase Orders', miProgram: 'PurchaseOrders', transactions: [], cono: '', divi: '', enabled: true },
+  ];
+
+  const getDefaultAccountingPrograms = (accountingSystem?: string): InforAccountingProgramRow[] =>
+    accountingSystem === 'INFOR_CSI' ? defaultAccountingProgramsCsi : defaultAccountingProgramsM3;
+
+  const getCompanyPrograms = (companyId: string, accountingSystem?: string) =>
+    accountingProgramsByCompany[companyId] || getDefaultAccountingPrograms(accountingSystem);
 
   const setCompanyPrograms = (companyId: string, programs: InforAccountingProgramRow[]) => {
     setAccountingProgramsByCompany((prev) => ({
@@ -1808,7 +1827,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   return prev.filter(id => id !== company.id);
                                                 }
                                                 setSelectedCompanyId(company.id);
-                                                if (company.accountingSystem === 'INFOR_M3') {
+                                                if (isInforAccountingSystem(company.accountingSystem)) {
                                                   loadInforM3Credentials?.(company.id);
                                                   loadCompanyPrograms(company.id);
                                                   checkInforM3Status?.(company.id).then((statusData: any) => {
@@ -1938,7 +1957,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     </div>
                                                   </div>
                                                 </div>
-                                                {company.accountingSystem === 'INFOR_M3' && (
+                                                {isInforAccountingSystem(company.accountingSystem) && (
                                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
                                                     <input
                                                       id={`consultant-infor-json-file-${company.id}`}
@@ -2135,7 +2154,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                               </div>
 
-                                              {company.accountingSystem === 'INFOR_M3' ? (
+                                              {isInforAccountingSystem(company.accountingSystem) ? (
                                                 <>
                                                   <div
                                                     style={{
@@ -2161,6 +2180,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       { key: 'clientId', label: 'Client ID *', type: 'text' },
                                                       { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
                                                       { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
+                                                      { key: 'csiProxyBasePath', label: 'CSI Proxy Base Path', type: 'text' },
                                                       { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
                                                       { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
                                                       { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
@@ -2227,7 +2247,7 @@ export default function SiteAdminDashboard(props: any) {
                                                         type="text"
                                                         value={inforProbePath || ''}
                                                         onChange={(e) => setInforProbePath?.(e.target.value)}
-                                                        placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
+                                                        placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData or /IDORequestService/ido/load/Customers"
                                                         style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       />
                                                     </label>
@@ -3149,16 +3169,16 @@ export default function SiteAdminDashboard(props: any) {
                                                     <thead>
                                                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (one per line)</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Program / Entity</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions / Methods (one per line)</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO (M3)</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI (M3)</th>
                                                         <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                                       </tr>
                                                     </thead>
                                                     <tbody>
-                                                      {getCompanyPrograms(company.id).map((row, index) => (
+                                                      {getCompanyPrograms(company.id, company.accountingSystem).map((row, index) => (
                                                         <tr key={`${company.id}-consultant-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                                                           <td style={{ padding: '6px' }}>
                                                             <input
@@ -3174,7 +3194,7 @@ export default function SiteAdminDashboard(props: any) {
                                                               type="text"
                                                               value={row.miProgram}
                                                               onChange={(e) => updateCompanyProgram(company.id, index, 'miProgram', e.target.value)}
-                                                              placeholder="MI Program"
+                                                              placeholder="Program / Entity"
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                             />
                                                           </td>
@@ -3224,7 +3244,7 @@ export default function SiteAdminDashboard(props: any) {
                                                               type="text"
                                                               value={row.divi}
                                                               onChange={(e) => updateCompanyProgram(company.id, index, 'divi', e.target.value)}
-                                                              placeholder="DIVI"
+                                                              placeholder="DIVI (M3)"
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                             />
                                                           </td>
@@ -3497,7 +3517,7 @@ export default function SiteAdminDashboard(props: any) {
                         const isExpanded = expandedBusinessIds.has(businessCompany.id);
                         const editing = editingPricing?.[businessCompany.id];
                         const operationalSettings = getCompanyOperationalSettings(businessCompany.id);
-                        const accountingPrograms = getCompanyPrograms(businessCompany.id);
+                        const accountingPrograms = getCompanyPrograms(businessCompany.id, businessCompany.accountingSystem);
                         const qbDesktopSettings = getQbDesktopSettings(businessCompany.id);
                         const qbDesktopPrograms = getQbDesktopPrograms(businessCompany.id);
                         const dynamicsSettings = getDynamicsSettings(businessCompany.id);
@@ -3617,7 +3637,7 @@ export default function SiteAdminDashboard(props: any) {
                                       } else {
                                         newSet.add(businessCompany.id);
                                         setSelectedCompanyId(businessCompany.id);
-                                        if (businessCompany.accountingSystem === 'INFOR_M3') {
+                                        if (isInforAccountingSystem(businessCompany.accountingSystem)) {
                                           loadInforM3Credentials?.(businessCompany.id);
                                           loadCompanyPrograms(businessCompany.id);
                                           checkInforM3Status?.(businessCompany.id).then((statusData: any) => {
@@ -3814,7 +3834,7 @@ export default function SiteAdminDashboard(props: any) {
                                   </div>
                                 </div>
 
-                                {businessCompany?.accountingSystem === 'INFOR_M3' ? (
+                                {isInforAccountingSystem(businessCompany?.accountingSystem) ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px' }}>
                                       <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Business Information</h4>
@@ -3838,7 +3858,9 @@ export default function SiteAdminDashboard(props: any) {
                                       <div>
                                         <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
                                         <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                          Infor M3 credentials for <strong>{businessCompany.name}</strong>
+                                          {(businessCompany?.accountingSystem === 'INFOR_CSI'
+                                            ? 'Infor SyteLine (CloudSuite Industrial)'
+                                            : 'Infor M3')} credentials for <strong>{businessCompany.name}</strong>
                                         </div>
                                         <div style={{ marginTop: '10px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc' }}>
                                           <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
@@ -3974,6 +3996,7 @@ export default function SiteAdminDashboard(props: any) {
                                         { key: 'clientId', label: 'Client ID *', type: 'text' },
                                         { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
                                         { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
+                                        { key: 'csiProxyBasePath', label: 'CSI Proxy Base Path', type: 'text' },
                                         { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
                                         { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
                                         { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
@@ -4040,7 +4063,7 @@ export default function SiteAdminDashboard(props: any) {
                                           type="text"
                                           value={inforProbePath || ''}
                                           onChange={(e) => setInforProbePath?.(e.target.value)}
-                                          placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
+                                          placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData or /IDORequestService/ido/load/Customers"
                                           style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                         />
                                       </label>
@@ -4086,10 +4109,10 @@ export default function SiteAdminDashboard(props: any) {
                                           <thead>
                                             <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (one per line)</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Program / Entity</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions / Methods (one per line)</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO (M3)</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI (M3)</th>
                                               <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                             </tr>
@@ -4111,7 +4134,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     type="text"
                                                     value={row.miProgram}
                                                     onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'miProgram', e.target.value)}
-                                                    placeholder="MI Program"
+                                                    placeholder="Program / Entity"
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                   />
                                                 </td>
@@ -4161,7 +4184,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     type="text"
                                                     value={row.divi}
                                                     onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'divi', e.target.value)}
-                                                    placeholder="DIVI"
+                                                    placeholder="DIVI (M3)"
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                   />
                                                 </td>

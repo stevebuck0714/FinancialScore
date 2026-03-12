@@ -8,6 +8,7 @@ export interface InforM3Credentials {
   clientId: string;
   clientSecret: string;
   ionApiBaseUrl: string;
+  csiProxyBasePath?: string;
   ssoBaseUrl: string;
   oauthAuthPath?: string;
   oauthTokenPath?: string;
@@ -22,6 +23,7 @@ type InforM3ConnectionMetadata = {
   clientIdEncrypted: string;
   clientSecretEncrypted: string;
   ionApiBaseUrl: string;
+  csiProxyBasePath?: string;
   ssoBaseUrl: string;
   oauthAuthPath?: string;
   oauthTokenPath?: string;
@@ -38,6 +40,7 @@ function toMetadata(credentials: InforM3Credentials): InforM3ConnectionMetadata 
     clientIdEncrypted: encryptOAuthToken(credentials.clientId),
     clientSecretEncrypted: encryptOAuthToken(credentials.clientSecret),
     ionApiBaseUrl: credentials.ionApiBaseUrl,
+    csiProxyBasePath: credentials.csiProxyBasePath,
     ssoBaseUrl: credentials.ssoBaseUrl,
     oauthAuthPath: credentials.oauthAuthPath || 'authorization.oauth2',
     oauthTokenPath: credentials.oauthTokenPath || 'token.oauth2',
@@ -55,6 +58,7 @@ function fromMetadata(metadata: InforM3ConnectionMetadata): InforM3Credentials {
     clientId: decryptOAuthToken(metadata.clientIdEncrypted),
     clientSecret: decryptOAuthToken(metadata.clientSecretEncrypted),
     ionApiBaseUrl: metadata.ionApiBaseUrl,
+    csiProxyBasePath: metadata.csiProxyBasePath,
     ssoBaseUrl: metadata.ssoBaseUrl,
     oauthAuthPath: metadata.oauthAuthPath || 'authorization.oauth2',
     oauthTokenPath: metadata.oauthTokenPath || 'token.oauth2',
@@ -152,6 +156,7 @@ export function getInforM3CredentialsFromEnv(): InforM3Credentials | null {
   const clientId = process.env.INFOR_M3_CLIENT_ID;
   const clientSecret = process.env.INFOR_M3_CLIENT_SECRET;
   const ionApiBaseUrl = process.env.INFOR_M3_IONAPI_BASE_URL;
+  const csiProxyBasePath = process.env.INFOR_CSI_PROXY_BASE_PATH;
   const ssoBaseUrl = process.env.INFOR_M3_SSO_BASE_URL;
   const oauthAuthPath = process.env.INFOR_M3_OAUTH_AUTH_PATH || 'authorization.oauth2';
   const oauthTokenPath = process.env.INFOR_M3_OAUTH_TOKEN_PATH || 'token.oauth2';
@@ -177,6 +182,7 @@ export function getInforM3CredentialsFromEnv(): InforM3Credentials | null {
     clientId,
     clientSecret,
     ionApiBaseUrl,
+    csiProxyBasePath,
     ssoBaseUrl,
     oauthAuthPath,
     oauthTokenPath,
