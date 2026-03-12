@@ -38,6 +38,23 @@ function encryptToken(token: string): string {
   return iv.toString('hex') + ':' + encrypted;
 }
 
+type FinancialImportMode = 'through' | 'only';
+
+function normalizeFinancialImportMode(value: unknown): FinancialImportMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'only' ? 'only' : 'through';
+}
+
+function parseTargetMonth(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return null;
+  const parsed = new Date(`${trimmed}-01T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+}
+
 export async function POST(request: NextRequest) {
   const syncStartTime = Date.now();
   let recordsImported = 0;
@@ -47,7 +64,13 @@ export async function POST(request: NextRequest) {
   let syncTraceId: string | null = null;
 
   try {
-    const { companyId, userId } = await request.json();
+    const body = await request.json();
+    const { companyId, userId } = body;
+    const mode = normalizeFinancialImportMode(body?.mode);
+    const targetMonthDate = parseTargetMonth(body?.targetMonth);
+    if (body?.targetMonth && !targetMonthDate) {
+      return NextResponse.json({ error: 'Invalid targetMonth. Use YYYY-MM format.' }, { status: 400 });
+    }
     syncTraceId = `qbo-sync-${companyId}-${Date.now()}`;
     console.log('🧭 QBO sync trace ID:', syncTraceId);
 
@@ -298,20 +321,25 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    // Calculate date range - use last day of previous month as end date
+    // Calculate date range.
     const today = new Date();
-    
-    // Get last day of previous month
-    const endDate = new Date(today.getFullYear(), today.getMonth(), 0); // Day 0 = last day of previous month
-    
-    // Start date is 36 months before the end date
+    const defaultEndDate = new Date(today.getFullYear(), today.getMonth(), 0); // last day of previous month
+    const endDate = targetMonthDate
+      ? new Date(targetMonthDate.getFullYear(), targetMonthDate.getMonth() + 1, 0)
+      : defaultEndDate;
     const startDate = new Date(endDate);
-    startDate.setMonth(startDate.getMonth() - 36);
+    if (targetMonthDate && mode === 'only') {
+      startDate.setDate(1);
+    } else {
+      startDate.setMonth(startDate.getMonth() - 36);
+    }
 
     const dateStart = startDate.toISOString().split('T')[0];
     const dateEnd = endDate.toISOString().split('T')[0];
     
-    console.log(`📅 QB Sync Date Range: ${dateStart} to ${dateEnd} (Last full month end)`);
+    console.log(
+      `📅 QB Sync Date Range: ${dateStart} to ${dateEnd}${targetMonthDate ? ` (targetMonth=${body?.targetMonth}, mode=${mode})` : ' (Last full month end)'}`
+    );
 
     // Emit progress update
     emitSyncStatus(companyId, {

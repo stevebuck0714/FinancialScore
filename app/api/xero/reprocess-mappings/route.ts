@@ -5,6 +5,23 @@ import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
 
+type FinancialImportMode = 'through' | 'only';
+
+function normalizeFinancialImportMode(value: unknown): FinancialImportMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'only' ? 'only' : 'through';
+}
+
+function parseTargetMonth(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return null;
+  const parsed = new Date(`${trimmed}-01T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+}
+
 function applyMappedValue(details: Record<string, any>, targetField: string | null | undefined, amount: number): boolean {
   if (!targetField || targetField === 'unmapped') return false;
   if (targetField.startsWith('rev_')) {
@@ -39,9 +56,14 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { companyId } = body;
+    const mode = normalizeFinancialImportMode(body?.mode);
+    const targetMonthDate = parseTargetMonth(body?.targetMonth);
 
     if (!companyId) {
       return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
+    }
+    if (body?.targetMonth && !targetMonthDate) {
+      return NextResponse.json({ error: 'Invalid targetMonth. Use YYYY-MM format.' }, { status: 400 });
     }
 
     console.log('🔄 Reprocessing Xero data with account mappings for company:', companyId);
@@ -181,7 +203,27 @@ export async function POST(request: NextRequest) {
     // Fetch account-level P&L data for each month
     const updatedMonths = [];
     
-    for (const monthData of latestRecord.monthlyData) {
+    const shouldIncludeMonth = (date: Date): boolean => {
+      if (!targetMonthDate) return true;
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const targetYear = targetMonthDate.getFullYear();
+      const targetMonth = targetMonthDate.getMonth();
+      if (mode === 'only') return year === targetYear && month === targetMonth;
+      return year < targetYear || (year === targetYear && month <= targetMonth);
+    };
+
+    const monthsToProcess = latestRecord.monthlyData.filter((row) => shouldIncludeMonth(new Date(row.monthDate)));
+    if (monthsToProcess.length === 0) {
+      return NextResponse.json(
+        {
+          error: `No Xero months available for targetMonth ${body?.targetMonth} (${mode}).`,
+        },
+        { status: 400 }
+      );
+    }
+
+    for (const monthData of monthsToProcess) {
       const monthDate = new Date(monthData.monthDate);
       const year = monthDate.getFullYear();
       const month = monthDate.getMonth();
@@ -273,6 +315,8 @@ export async function POST(request: NextRequest) {
       success: true,
       message: `Successfully reprocessed ${updatedMonths.length} months of Xero data with account mappings`,
       monthsUpdated: updatedMonths.length,
+      targetMonth: body?.targetMonth || null,
+      mode: targetMonthDate ? mode : null,
     });
 
   } catch (error: any) {

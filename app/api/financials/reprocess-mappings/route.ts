@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
           cookie: request.headers.get('cookie') || '',
         },
-        body: JSON.stringify({ companyId }),
+        body: JSON.stringify({ companyId, targetMonth, mode }),
         cache: 'no-store',
       });
       const payload = await xeroResponse.json().catch(() => ({}));
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
           cookie: request.headers.get('cookie') || '',
         },
-        body: JSON.stringify({ companyId, userId }),
+        body: JSON.stringify({ companyId, userId, targetMonth, mode }),
         cache: 'no-store',
       });
       const payload = await qboResponse.json().catch(() => ({}));
@@ -204,6 +204,61 @@ export async function POST(request: NextRequest) {
           message: result.ok
             ? 'QuickBooks Desktop reprocess completed successfully.'
             : result.error || 'QuickBooks Desktop reprocess failed.',
+          ...result,
+        },
+        { status: result.status },
+      );
+    }
+
+    if (configuredPlatform === 'SAGE_INTACCT' || configuredPlatform === 'SAGE') {
+      const connection = await prisma.accountingConnection.findUnique({
+        where: {
+          companyId_platform: {
+            companyId: String(companyId),
+            platform: 'SAGE_INTACCT',
+          },
+        },
+        select: {
+          connectionMetadata: true,
+        },
+      });
+
+      const metadata =
+        connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
+          ? (connection.connectionMetadata as Record<string, unknown>)
+          : {};
+      const financialPayload =
+        metadata.sageIntacctFinancialPayload && typeof metadata.sageIntacctFinancialPayload === 'object'
+          ? (metadata.sageIntacctFinancialPayload as Record<string, unknown>)
+          : null;
+
+      if (!financialPayload) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'No Sage financial payload is available yet. Push financial payload first, then reprocess.',
+          },
+          { status: 400 },
+        );
+      }
+
+      const result = await ingestFinancialPayload({
+        companyId: String(companyId),
+        platform: 'SAGE_INTACCT',
+        source: 'sage-intacct',
+        payload: financialPayload,
+        syncType: 'reprocess_financial_payload',
+        targetMonth: targetMonth || undefined,
+        mode,
+      });
+
+      return NextResponse.json(
+        {
+          success: result.ok,
+          message: result.ok
+            ? 'Sage reprocess completed successfully.'
+            : result.error || 'Sage reprocess failed.',
           ...result,
         },
         { status: result.status },

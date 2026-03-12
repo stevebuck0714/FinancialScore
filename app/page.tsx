@@ -1039,6 +1039,21 @@ function FinancialScorePage() {
     const month = now.getMonth() === 0 ? 12 : now.getMonth();
     return `${year}-${String(month).padStart(2, '0')}`;
   });
+  const [apiFinancialTargetMonth, setApiFinancialTargetMonth] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    return `${year}-${String(month).padStart(2, '0')}`;
+  });
+  const [apiFinancialImportMode, setApiFinancialImportMode] = useState<'through' | 'only'>('through');
+  const [erpCaoThroughMonth, setErpCaoThroughMonth] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    return `${year}-${String(month).padStart(2, '0')}`;
+  });
+  const [erpCaoLoading, setErpCaoLoading] = useState(false);
+  const [erpCaoUploadFile, setErpCaoUploadFile] = useState<File | null>(null);
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
   const [qbStatus, setQbStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
   const [qbLastSync, setQbLastSync] = useState<Date | null>(null);
@@ -3790,6 +3805,92 @@ function FinancialScorePage() {
     }
   };
 
+  const parseErpCaoPayloadFromJson = (raw: string): Record<string, unknown> => {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Invalid JSON object');
+    }
+    const source = parsed as Record<string, unknown>;
+    const payload =
+      source.payload && typeof source.payload === 'object' && !Array.isArray(source.payload)
+        ? (source.payload as Record<string, unknown>)
+        : source;
+    return payload;
+  };
+
+  const refreshCompanyMappings = async (companyId: string) => {
+    const response = await fetch(`/api/account-mappings?companyId=${companyId}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to refresh account mappings');
+    }
+    const loadedMappings = Array.isArray(data.mappings)
+      ? data.mappings.map((m: any) => ({
+          qbAccount: m.qbAccount,
+          qbAccountId: m.qbAccountId,
+          qbAccountCode: m.qbAccountCode,
+          qbAccountClassification: m.qbAccountClassification,
+          targetField: m.targetField,
+          confidence: m.confidence || 'medium',
+          lobAllocations: m.lobAllocations,
+          sourceStatus: m.sourceStatus || 'mapped',
+        }))
+      : [];
+    setAiMappings(loadedMappings);
+    setShowMappingSection(loadedMappings.length > 0);
+    setMappingSourceSummary(data.sourceSummary || null);
+  };
+
+  const loadErpCaoInDataMapping = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first.');
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(erpCaoThroughMonth)) {
+      alert('Select a valid Through month first (YYYY-MM).');
+      return;
+    }
+    if (!selectedAccountingSystem || !['QUICKBOOKS_DESKTOP', 'INFOR_M3'].includes(String(selectedAccountingSystem).toUpperCase())) {
+      alert('ERP COA Load is currently available for QuickBooks Desktop and Infor M3.');
+      return;
+    }
+
+    setErpCaoLoading(true);
+    try {
+      let payload: Record<string, unknown> | undefined = undefined;
+      if (erpCaoUploadFile) {
+        const raw = await erpCaoUploadFile.text();
+        payload = parseErpCaoPayloadFromJson(raw);
+      }
+
+      const response = await fetch('/api/erp/coa-load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          throughMonth: erpCaoThroughMonth,
+          payload,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.details || result?.error || 'Failed to load ERP COA data');
+      }
+
+      await refreshCompanyMappings(selectedCompanyId);
+      setQbLastSync(new Date());
+      setErpCaoUploadFile(null);
+      alert(
+        `ERP COA load complete. Through month: ${erpCaoThroughMonth}. ` +
+          `${typeof result?.recordsImported === 'number' ? `${result.recordsImported} monthly records processed.` : ''}`
+      );
+    } catch (error: any) {
+      alert(`ERP COA load failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setErpCaoLoading(false);
+    }
+  };
+
   const connectQuickBooks = async () => {
     if (!selectedCompanyId) {
       alert('Please select a company first');
@@ -3817,6 +3918,10 @@ function FinancialScorePage() {
       alert('Please select a company first');
       return;
     }
+    if (!/^\d{4}-\d{2}$/.test(apiFinancialTargetMonth)) {
+      alert('Select a valid target month first (YYYY-MM).');
+      return;
+    }
 
     setQbSyncing(true);
     setQbError(null);
@@ -3827,7 +3932,9 @@ function FinancialScorePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           companyId: selectedCompanyId,
-          userId: currentUser.id
+          userId: currentUser.id,
+          targetMonth: apiFinancialTargetMonth,
+          mode: apiFinancialImportMode,
         }),
       });
 
@@ -3848,7 +3955,9 @@ function FinancialScorePage() {
           await checkQBStatus(selectedCompanyId);
         }
         
-        alert(`QuickBooks data synced successfully! ${data.recordsImported || 0} months of financial data imported.`);
+        alert(
+          `QuickBooks data synced successfully! ${data.recordsImported || 0} months imported through ${apiFinancialTargetMonth} (${apiFinancialImportMode}).`
+        );
       } else {
         // Include detailed error message from API
         const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
@@ -3950,6 +4059,10 @@ function FinancialScorePage() {
       alert('Please select a company first');
       return;
     }
+    if (!/^\d{4}-\d{2}$/.test(apiFinancialTargetMonth)) {
+      alert('Select a valid target month first (YYYY-MM).');
+      return;
+    }
 
     setXeroSyncing(true);
     setXeroError(null);
@@ -3960,7 +4073,9 @@ function FinancialScorePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           companyId: selectedCompanyId,
-          userId: currentUser.id
+          userId: currentUser.id,
+          targetMonth: apiFinancialTargetMonth,
+          mode: apiFinancialImportMode,
         }),
       });
 
@@ -3973,7 +4088,9 @@ function FinancialScorePage() {
           await checkXeroStatus(selectedCompanyId);
         }
         
-        alert(`Xero data synced successfully! ${data.recordsImported || 0} financial records imported.`);
+        alert(
+          `Xero data synced successfully! ${data.recordsImported || 0} records imported through ${apiFinancialTargetMonth} (${apiFinancialImportMode}).`
+        );
       } else {
         const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
         throw new Error(errorMsg);
@@ -7567,6 +7684,23 @@ function FinancialScorePage() {
                   </div>
                 </div>
 
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+                  <input
+                    type="month"
+                    value={apiFinancialTargetMonth}
+                    onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
+                    style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
+                  />
+                  <select
+                    value={apiFinancialImportMode}
+                    onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
+                    style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
+                  >
+                    <option value="through">Through month</option>
+                    <option value="only">Only month</option>
+                  </select>
+                </div>
+
                 <div style={{ display: 'flex', gap: '12px' }}>
                   {!qbConnected || qbStatus === 'EXPIRED' || qbStatus === 'ERROR' ? (
                     <button
@@ -7663,6 +7797,23 @@ function FinancialScorePage() {
                       {xeroError || (xeroConnected && xeroStatus === 'ACTIVE' ? (xeroLastSync ? `Last synced: ${xeroLastSync.toLocaleString()}` : 'Ready to sync') : xeroStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
                     </div>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+                  <input
+                    type="month"
+                    value={apiFinancialTargetMonth}
+                    onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
+                    style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
+                  />
+                  <select
+                    value={apiFinancialImportMode}
+                    onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
+                    style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
+                  >
+                    <option value="through">Through month</option>
+                    <option value="only">Only month</option>
+                  </select>
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -8795,6 +8946,50 @@ function FinancialScorePage() {
                     );
                   }
 
+                  if (selectedAccountingSystem === 'QUICKBOOKS_DESKTOP' || selectedAccountingSystem === 'INFOR_M3') {
+                    return (
+                      <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '16px', border: '2px solid #fed7aa' }}>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#9a3412', marginBottom: '8px', textAlign: 'center' }}>
+                          ERP COA Load
+                        </div>
+                        <p style={{ fontSize: '13px', color: '#92400e', marginBottom: '12px', textAlign: 'center' }}>
+                          Load Accounts/COA JSON for mapping and process up to 36 months through the selected month.
+                        </p>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                          <input
+                            type="month"
+                            value={erpCaoThroughMonth}
+                            onChange={(e) => setErpCaoThroughMonth(e.target.value)}
+                            style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                          />
+                          <input
+                            type="file"
+                            accept=".json,.txt"
+                            onChange={(e) => setErpCaoUploadFile(e.target.files?.[0] || null)}
+                            style={{ fontSize: '12px' }}
+                          />
+                          <button
+                            onClick={loadErpCaoInDataMapping}
+                            disabled={erpCaoLoading}
+                            style={{
+                              padding: '8px 12px',
+                              background: erpCaoLoading ? '#9ca3af' : '#7c3aed',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: '700',
+                              cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            {erpCaoLoading ? 'Loading COA...' : 'Load ERP COA'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   // CSV Trial Balance option: always available and used as the fallback for "not supported yet".
                   const isUnsupported =
                     !!selectedAccountingSystem &&
@@ -8852,9 +9047,13 @@ function FinancialScorePage() {
               selectedAccountingSystem === 'CSV_FILE' ||
               hasCsvData ||
               hasSavedCsvInLocalStorage;
-            const hasSupportedApiReprocessPlatform = ['QUICKBOOKS', 'XERO', 'INFOR_M3', 'QUICKBOOKS_DESKTOP'].includes(
+            const hasSupportedApiReprocessPlatform = ['QUICKBOOKS', 'XERO', 'INFOR_M3', 'QUICKBOOKS_DESKTOP', 'SAGE', 'SAGE_INTACCT'].includes(
               String(selectedAccountingSystem || '').toUpperCase()
             );
+            const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
+            const erpCaoEnabledSystems = ['QUICKBOOKS_DESKTOP', 'INFOR_M3'];
+            const erpCaoFutureSystems = ['ACUMATICA', 'DYNAMICS', 'DYNAMICS365', 'SAGE_INTACCT', 'SAGE'];
+            const showErpCaoLoadPanel = erpCaoEnabledSystems.includes(selectedSystemNormalized);
             const showProcessButton =
               showCsvProcessButton ||
               hasSupportedApiReprocessPlatform ||
@@ -8880,6 +9079,51 @@ function FinancialScorePage() {
                     : `${aiMappings.length} saved account mappings loaded from database`
                   }
                 </p>
+
+                {showErpCaoLoadPanel && (
+                  <div style={{ marginBottom: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#9a3412', marginBottom: '6px' }}>
+                      ERP COA Load
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '8px' }}>
+                      Load monthly Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#a16207', marginBottom: '8px' }}>
+                      Future-ready connector list: {erpCaoFutureSystems.join(', ')}.
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                      <input
+                        type="month"
+                        value={erpCaoThroughMonth}
+                        onChange={(e) => setErpCaoThroughMonth(e.target.value)}
+                        style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                      />
+                      <input
+                        type="file"
+                        accept=".json,.txt"
+                        onChange={(e) => setErpCaoUploadFile(e.target.files?.[0] || null)}
+                        style={{ fontSize: '12px' }}
+                      />
+                      <button
+                        onClick={loadErpCaoInDataMapping}
+                        disabled={erpCaoLoading}
+                        style={{
+                          padding: '8px 12px',
+                          background: erpCaoLoading ? '#9ca3af' : '#7c3aed',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {erpCaoLoading ? 'Loading COA...' : 'Load ERP COA'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {selectedAccountingSystem === 'CSV_FILE' && (
                   <div style={{ marginBottom: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px' }}>
@@ -9247,6 +9491,25 @@ function FinancialScorePage() {
                           )}
                           {/* Unified process button for all import types */}
                           {showProcessButton && (
+                          <>
+                          {!isCsvMappingWorkflow && (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <input
+                                type="month"
+                                value={apiFinancialTargetMonth}
+                                onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
+                                style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                              />
+                              <select
+                                value={apiFinancialImportMode}
+                                onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
+                                style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                              >
+                                <option value="through">Through month</option>
+                                <option value="only">Only month</option>
+                              </select>
+                            </div>
+                          )}
                           <button
                             onClick={async () => {
                               if (!aiMappings || aiMappings.length === 0) {
@@ -9367,6 +9630,10 @@ function FinancialScorePage() {
                                 alert('No company selected');
                                 return;
                               }
+                              if (!/^\d{4}-\d{2}$/.test(apiFinancialTargetMonth)) {
+                                alert('Select a valid target month first (YYYY-MM).');
+                                return;
+                              }
 
                               const confirmed = confirm(`Reprocess ${mappedApiSourceLabel} data with your account mappings?\n\nThis will re-run mapping application for the selected accounting source.`);
                               if (!confirmed) return;
@@ -9378,7 +9645,11 @@ function FinancialScorePage() {
                                 const response = await fetch('/api/financials/reprocess-mappings', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ companyId: selectedCompanyId })
+                                  body: JSON.stringify({
+                                    companyId: selectedCompanyId,
+                                    targetMonth: apiFinancialTargetMonth,
+                                    mode: apiFinancialImportMode,
+                                  })
                                 });
 
                                 const result = await response.json();
@@ -9418,6 +9689,7 @@ function FinancialScorePage() {
                                 ? 'Process & Save Monthly Data'
                                 : 'Apply Mappings to Data'}
                           </button>
+                          </>
                           )}
                           
                           <button

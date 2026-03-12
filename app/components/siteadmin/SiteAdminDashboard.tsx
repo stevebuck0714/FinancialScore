@@ -277,7 +277,7 @@ export default function SiteAdminDashboard(props: any) {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   }, []);
   const [financialImportSettingsByCompany, setFinancialImportSettingsByCompany] = React.useState<
-    Record<string, { targetMonth: string; mode: 'through' | 'only' }>
+    Record<string, { targetMonth: string }>
   >({});
 
   const getCompanyOperationalSettings = (companyId: string) =>
@@ -297,17 +297,16 @@ export default function SiteAdminDashboard(props: any) {
   };
 
   const getCompanyFinancialImportSettings = (companyId: string) =>
-    financialImportSettingsByCompany[companyId] || { targetMonth: currentMonthKey, mode: 'through' as const };
+    financialImportSettingsByCompany[companyId] || { targetMonth: currentMonthKey };
 
   const setCompanyFinancialImportSettings = (
     companyId: string,
-    next: Partial<{ targetMonth: string; mode: 'through' | 'only' }>
+    next: Partial<{ targetMonth: string }>
   ) => {
     setFinancialImportSettingsByCompany((prev) => ({
       ...prev,
       [companyId]: {
         targetMonth: next.targetMonth || prev[companyId]?.targetMonth || currentMonthKey,
-        mode: next.mode || prev[companyId]?.mode || 'through',
       },
     }));
   };
@@ -1306,7 +1305,7 @@ export default function SiteAdminDashboard(props: any) {
           companyId,
           frequency: getCompanyOperationalSettings(companyId).frequency,
           targetMonth: financialImportSettings.targetMonth,
-          mode: financialImportSettings.mode,
+          mode: 'through',
           payload,
         }),
       });
@@ -1323,8 +1322,8 @@ export default function SiteAdminDashboard(props: any) {
             : null;
       alert(
         recordsImported !== null
-          ? `Imported QB Desktop JSON for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth} (${financialImportSettings.mode}).`
-          : `Imported QB Desktop JSON for ${companyName} through ${financialImportSettings.targetMonth} (${financialImportSettings.mode}).`
+          ? `Imported QB Desktop JSON for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth}.`
+          : `Imported QB Desktop JSON for ${companyName} through ${financialImportSettings.targetMonth}.`
       );
     } catch (error: any) {
       alert(`Failed to import QB Desktop JSON file: ${error?.message || 'Invalid file format'}`);
@@ -1347,7 +1346,7 @@ export default function SiteAdminDashboard(props: any) {
         body: JSON.stringify({
           companyId,
           targetMonth: financialImportSettings.targetMonth,
-          mode: financialImportSettings.mode,
+          mode: 'through',
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -1358,8 +1357,8 @@ export default function SiteAdminDashboard(props: any) {
       const recordsImported = typeof data?.recordsImported === 'number' ? data.recordsImported : null;
       alert(
         recordsImported !== null
-          ? `Infor financial import complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth} (${financialImportSettings.mode}).`
-          : `Infor financial import complete for ${companyName} through ${financialImportSettings.targetMonth} (${financialImportSettings.mode}).`
+          ? `Infor financial import complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth}.`
+          : `Infor financial import complete for ${companyName} through ${financialImportSettings.targetMonth}.`
       );
       await checkInforM3Status?.(companyId);
     } catch (error: any) {
@@ -2098,6 +2097,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       }
                                                     />
                                                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                                       <input
                                                         type="month"
                                                         value={getCompanyFinancialImportSettings(company.id).targetMonth}
@@ -2106,18 +2106,6 @@ export default function SiteAdminDashboard(props: any) {
                                                         }
                                                         style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       />
-                                                      <select
-                                                        value={getCompanyFinancialImportSettings(company.id).mode}
-                                                        onChange={(e) =>
-                                                          setCompanyFinancialImportSettings(company.id, {
-                                                            mode: e.target.value === 'only' ? 'only' : 'through',
-                                                          })
-                                                        }
-                                                        style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                      >
-                                                        <option value="through">Through month</option>
-                                                        <option value="only">Only month</option>
-                                                      </select>
                                                     </div>
                                                     <button
                                                       onClick={() => {
@@ -2190,6 +2178,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       }
                                                     />
                                                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                                       <input
                                                         type="month"
                                                         value={getCompanyFinancialImportSettings(company.id).targetMonth}
@@ -2198,28 +2187,16 @@ export default function SiteAdminDashboard(props: any) {
                                                         }
                                                         style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       />
-                                                      <select
-                                                        value={getCompanyFinancialImportSettings(company.id).mode}
-                                                        onChange={(e) =>
-                                                          setCompanyFinancialImportSettings(company.id, {
-                                                            mode: e.target.value === 'only' ? 'only' : 'through',
-                                                          })
-                                                        }
-                                                        style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      <button
+                                                        onClick={() => {
+                                                          const fileInput = document.getElementById(`consultant-qbdesktop-json-file-${company.id}`) as HTMLInputElement | null;
+                                                          fileInput?.click();
+                                                        }}
+                                                        style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                       >
-                                                        <option value="through">Through month</option>
-                                                        <option value="only">Only month</option>
-                                                      </select>
+                                                        Import JSON
+                                                      </button>
                                                     </div>
-                                                    <button
-                                                      onClick={() => {
-                                                        const fileInput = document.getElementById(`consultant-qbdesktop-json-file-${company.id}`) as HTMLInputElement | null;
-                                                        fileInput?.click();
-                                                      }}
-                                                      style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                                                    >
-                                                      Import JSON
-                                                    </button>
                                                     <button
                                                       onClick={() => saveQbDesktopSettings(company.id)}
                                                       style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
@@ -4179,6 +4156,7 @@ export default function SiteAdminDashboard(props: any) {
                                           }
                                         />
                                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                          <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                           <input
                                             type="month"
                                             value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
@@ -4187,18 +4165,6 @@ export default function SiteAdminDashboard(props: any) {
                                             }
                                             style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                           />
-                                          <select
-                                            value={getCompanyFinancialImportSettings(businessCompany.id).mode}
-                                            onChange={(e) =>
-                                              setCompanyFinancialImportSettings(businessCompany.id, {
-                                                mode: e.target.value === 'only' ? 'only' : 'through',
-                                              })
-                                            }
-                                            style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                          >
-                                            <option value="through">Through month</option>
-                                            <option value="only">Only month</option>
-                                          </select>
                                         </div>
                                         <button
                                           onClick={() => {
@@ -4784,6 +4750,7 @@ export default function SiteAdminDashboard(props: any) {
                                             }
                                           />
                                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                            <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                             <input
                                               type="month"
                                               value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
@@ -4792,28 +4759,16 @@ export default function SiteAdminDashboard(props: any) {
                                               }
                                               style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                             />
-                                            <select
-                                              value={getCompanyFinancialImportSettings(businessCompany.id).mode}
-                                              onChange={(e) =>
-                                                setCompanyFinancialImportSettings(businessCompany.id, {
-                                                  mode: e.target.value === 'only' ? 'only' : 'through',
-                                                })
-                                              }
-                                              style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            <button
+                                              onClick={() => {
+                                                const fileInput = document.getElementById(`qbdesktop-json-file-${businessCompany.id}`) as HTMLInputElement | null;
+                                                fileInput?.click();
+                                              }}
+                                              style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                             >
-                                              <option value="through">Through month</option>
-                                              <option value="only">Only month</option>
-                                            </select>
+                                              Import JSON
+                                            </button>
                                           </div>
-                                          <button
-                                            onClick={() => {
-                                              const fileInput = document.getElementById(`qbdesktop-json-file-${businessCompany.id}`) as HTMLInputElement | null;
-                                              fileInput?.click();
-                                            }}
-                                            style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-                                          >
-                                            Import JSON
-                                          </button>
                                           <button
                                             onClick={() => saveQbDesktopSettings(businessCompany.id)}
                                             style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}

@@ -102,13 +102,14 @@ export async function ingestFinancialPayload(params: {
   syncType?: string;
   targetMonth?: string;
   mode?: FinancialImportMode;
+  maxMonths?: number;
 }) {
   const startedAt = Date.now();
   const normalized = normalizePayload(params.payload);
   const canonicalRows = normalized.monthlyData;
   const targetMonthDate = parseTargetMonth(params.targetMonth);
   const mode = normalizeImportMode(params.mode);
-  const filteredRows = targetMonthDate
+  const filteredRowsBase = targetMonthDate
     ? canonicalRows.filter((row) =>
         mode === 'only'
           ? row.monthDate.getFullYear() === targetMonthDate.getFullYear() &&
@@ -116,8 +117,20 @@ export async function ingestFinancialPayload(params: {
           : row.monthDate <= targetMonthDate
       )
     : canonicalRows;
+  const boundedRows =
+    targetMonthDate && mode === 'through' && Number.isFinite(params.maxMonths) && Number(params.maxMonths) > 0
+      ? (() => {
+          const maxMonths = Math.max(1, Math.floor(Number(params.maxMonths)));
+          const earliestAllowed = new Date(
+            targetMonthDate.getFullYear(),
+            targetMonthDate.getMonth() - (maxMonths - 1),
+            1
+          );
+          return filteredRowsBase.filter((row) => row.monthDate >= earliestAllowed);
+        })()
+      : filteredRowsBase;
 
-  let rowsForRecord = filteredRows;
+  let rowsForRecord = boundedRows;
 
   if (targetMonthDate) {
     const latestFinancialRecord = await prisma.financialRecord.findFirst({
@@ -139,16 +152,16 @@ export async function ingestFinancialPayload(params: {
         });
         merged.set(monthKey(canonical.monthDate), canonical);
       }
-      for (const row of filteredRows) {
+      for (const row of boundedRows) {
         merged.set(monthKey(row.monthDate), row);
       }
       rowsForRecord = Array.from(merged.values()).sort((a, b) => a.monthDate.getTime() - b.monthDate.getTime());
     }
   }
 
-  const touchedMonths = filteredRows.map((row) => monthKey(row.monthDate));
+  const touchedMonths = boundedRows.map((row) => monthKey(row.monthDate));
 
-  if (filteredRows.length === 0) {
+  if (boundedRows.length === 0) {
     return {
       ok: false,
       status: 400,
@@ -167,8 +180,8 @@ export async function ingestFinancialPayload(params: {
     };
   }
 
-  const anomalies = findZeroRevenueAnomalies(filteredRows);
-  const latestMonth = filteredRows[filteredRows.length - 1].monthDate;
+  const anomalies = findZeroRevenueAnomalies(boundedRows);
+  const latestMonth = boundedRows[boundedRows.length - 1].monthDate;
   const latestMonthKey = `${latestMonth.getFullYear()}-${String(latestMonth.getMonth() + 1).padStart(2, '0')}`;
   const latestMonthWarnings = anomalies.filter((x) => x.month === latestMonthKey);
   const blockingFailures = anomalies.filter((x) => x.month !== latestMonthKey);

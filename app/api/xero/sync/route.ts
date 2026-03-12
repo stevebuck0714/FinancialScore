@@ -8,6 +8,23 @@ import { emitSyncStatus } from '@/lib/websocket-emit';
 
 export const dynamic = 'force-dynamic';
 
+type FinancialImportMode = 'through' | 'only';
+
+function normalizeFinancialImportMode(value: unknown): FinancialImportMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'only' ? 'only' : 'through';
+}
+
+function parseTargetMonth(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return null;
+  const parsed = new Date(`${trimmed}-01T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+}
+
 function applyMappedValue(data: Record<string, any>, targetField: string | null | undefined, amount: number): boolean {
   if (!targetField || targetField === 'unmapped') return false;
   if (targetField.startsWith('rev_')) {
@@ -47,9 +64,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     companyId = body.companyId;
     const userId = body.userId;
+    const mode = normalizeFinancialImportMode(body?.mode);
+    const targetMonthDate = parseTargetMonth(body?.targetMonth);
 
     if (!companyId || !userId) {
       return NextResponse.json({ error: 'Company ID and User ID required' }, { status: 400 });
+    }
+    if (body?.targetMonth && !targetMonthDate) {
+      return NextResponse.json({ error: 'Invalid targetMonth. Use YYYY-MM format.' }, { status: 400 });
     }
 
     console.log('🔄 Xero sync started (transaction-based method)');
@@ -163,6 +185,16 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ error: 'Tenant ID not found' }, { status: 400 });
     }
+
+    const shouldIncludeMonth = (date: Date): boolean => {
+      if (!targetMonthDate) return true;
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const targetYear = targetMonthDate.getFullYear();
+      const targetMonth = targetMonthDate.getMonth();
+      if (mode === 'only') return year === targetYear && month === targetMonth;
+      return year < targetYear || (year === targetYear && month <= targetMonth);
+    };
 
     // Fetch Chart of Accounts to get account types
     emitSyncStatus(companyId, {
@@ -327,6 +359,7 @@ export async function POST(request: NextRequest) {
     // Process invoices
     invoices.forEach((inv: any) => {
       const date = new Date(inv.date);
+      if (!shouldIncludeMonth(date)) return;
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       
       if (!monthlyData.has(monthKey)) {
@@ -374,6 +407,7 @@ export async function POST(request: NextRequest) {
     // Process bank transactions
     bankTransactions.forEach((tx: any) => {
       const date = new Date(tx.date);
+      if (!shouldIncludeMonth(date)) return;
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       
       if (!monthlyData.has(monthKey)) {
@@ -487,6 +521,16 @@ export async function POST(request: NextRequest) {
         monthDate: row.monthDate,
       }),
     );
+    if (canonicalRecords.length === 0) {
+      return NextResponse.json(
+        {
+          error: targetMonthDate
+            ? `No Xero transactions found for targetMonth ${body?.targetMonth} (${mode}).`
+            : 'No Xero transactions found for sync window.',
+        },
+        { status: 400 }
+      );
+    }
     console.log(`  ✅ Built ${monthlyRecords.length} months`);
 
     // Debug: Log first month to see what data we have
