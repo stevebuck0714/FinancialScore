@@ -57,6 +57,15 @@ async function safeFindMany<T>(label: string, query: Promise<T[]>): Promise<T[]>
   }
 }
 
+async function safeFindFirst<T>(label: string, query: Promise<T | null>): Promise<T | null> {
+  try {
+    return await query;
+  } catch (error) {
+    console.warn(`Performance analytics: failed to load ${label}`, error);
+    return null;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAuth();
@@ -123,6 +132,23 @@ export async function GET(request: NextRequest) {
         )
       : [];
 
+    const latestFinancialRecord = await safeFindFirst(
+      'latest financial record',
+      prisma.financialRecord.findFirst({
+        where: { companyId },
+        select: { id: true },
+        orderBy: { createdAt: 'desc' },
+      })
+    );
+
+    const monthlyFinancialWhere: any = {
+      companyId,
+      monthDate: { gte: startDate, lte: endDate },
+    };
+    if (latestFinancialRecord?.id) {
+      monthlyFinancialWhere.financialRecordId = latestFinancialRecord.id;
+    }
+
     const [
       monthlyFinancials,
       cashSnapshots,
@@ -135,7 +161,7 @@ export async function GET(request: NextRequest) {
       safeFindMany(
         'monthly financials',
         prisma.monthlyFinancial.findMany({
-          where: { companyId, monthDate: { gte: startDate, lte: endDate } },
+          where: monthlyFinancialWhere,
           orderBy: { monthDate: 'asc' },
           take: limit,
         })

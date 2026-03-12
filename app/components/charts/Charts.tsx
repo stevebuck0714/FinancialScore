@@ -34,8 +34,11 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const upperBound = q3 + 3 * iqr;
   
   const filteredValues = values.filter(v => v >= lowerBound && v <= upperBound);
-  const minValue = filteredValues.length > 0 ? Math.min(...filteredValues) : Math.min(...values);
-  const maxValue = filteredValues.length > 0 ? Math.max(...filteredValues) : Math.max(...values);
+  const clippedRatio = values.length > 0 ? 1 - (filteredValues.length / values.length) : 0;
+  const useFilteredRange = filteredValues.length > 0 && clippedRatio <= 0.2;
+  const rangeValues = useFilteredRange ? filteredValues : values;
+  const minValue = Math.min(...rangeValues);
+  const maxValue = Math.max(...rangeValues);
   
   let yMaxCalc = yMax || Math.ceil(maxValue * 1.1);
   let yMinCalc = yMax ? 0 : Math.floor(minValue * 0.9);

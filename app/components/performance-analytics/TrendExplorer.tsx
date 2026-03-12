@@ -99,40 +99,74 @@ type Finding = {
  
    const monthly = useMemo(() => {
      if (!context?.data?.monthlyFinancials) return [];
-     return context.data.monthlyFinancials.map((m: any) => ({
-       month: m.monthDate ? new Date(m.monthDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short' }) : '',
-       revenue: m.revenue || 0,
-       cogsTotal: m.cogsTotal || 0,
-      expense: m.expense || 0,
-      operatingExpenseTotal: m.operatingExpenseTotal || 0,
-      payroll: m.payroll || 0,
-      ownerBasePay: m.ownerBasePay || 0,
-      benefits: m.benefits || 0,
-      insurance: m.insurance || 0,
-      professionalFees: m.professionalFees || 0,
-      subcontractors: m.subcontractors || 0,
-      rent: m.rent || 0,
-      taxLicense: m.taxLicense || 0,
-      phoneComm: m.phoneComm || 0,
-      infrastructure: m.infrastructure || 0,
-      autoTravel: m.autoTravel || 0,
-      salesExpense: m.salesExpense || 0,
-      marketing: m.marketing || 0,
-      trainingCert: m.trainingCert || 0,
-      mealsEntertainment: m.mealsEntertainment || 0,
-      otherExpense: m.otherExpense || 0,
-       cash: m.cash || 0,
-       ar: m.ar || 0,
-       inventory: m.inventory || 0,
-     }));
+    const byMonth = new Map<string, any>();
+    for (const m of context.data.monthlyFinancials) {
+      if (!m?.monthDate) continue;
+      const date = new Date(m.monthDate);
+      if (Number.isNaN(date.getTime())) continue;
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      // Keep latest row for month if duplicates ever appear.
+      byMonth.set(monthKey, m);
+    }
+
+    const rows = Array.from(byMonth.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([monthKey, m]) => ({
+        month: monthKey,
+        revenue: m.revenue || 0,
+        cogsTotal: m.cogsTotal || 0,
+        expense: m.expense || 0,
+        operatingExpenseTotal: m.operatingExpenseTotal || 0,
+        payroll: m.payroll || 0,
+        ownerBasePay: m.ownerBasePay || 0,
+        benefits: m.benefits || 0,
+        insurance: m.insurance || 0,
+        professionalFees: m.professionalFees || 0,
+        subcontractors: m.subcontractors || 0,
+        rent: m.rent || 0,
+        taxLicense: m.taxLicense || 0,
+        phoneComm: m.phoneComm || 0,
+        infrastructure: m.infrastructure || 0,
+        autoTravel: m.autoTravel || 0,
+        salesExpense: m.salesExpense || 0,
+        marketing: m.marketing || 0,
+        trainingCert: m.trainingCert || 0,
+        mealsEntertainment: m.mealsEntertainment || 0,
+        otherExpense: m.otherExpense || 0,
+        cash: m.cash || 0,
+        ar: m.ar || 0,
+        inventory: m.inventory || 0,
+      }));
+
+    const isMeaningfulMonth = (row: any) => {
+      const keys = ['revenue', 'cogsTotal', 'expense', 'cash', 'ar', 'inventory'];
+      return keys.some((k) => Math.abs(Number(row?.[k] || 0)) > 0.0001);
+    };
+
+    const firstMeaningfulIdx = rows.findIndex(isMeaningfulMonth);
+    if (firstMeaningfulIdx <= 0) return rows;
+    return rows.slice(firstMeaningfulIdx);
    }, [context]);
+
+  const pnlMonthly = useMemo(() => {
+    if (!monthly.length) return monthly;
+    const firstPnlIdx = monthly.findIndex((m: any) => {
+      return (
+        Math.abs(Number(m.revenue || 0)) > 0.0001 ||
+        Math.abs(Number(m.cogsTotal || 0)) > 0.0001 ||
+        Math.abs(Number(m.expense || 0)) > 0.0001
+      );
+    });
+    if (firstPnlIdx <= 0) return monthly;
+    return monthly.slice(firstPnlIdx);
+  }, [monthly]);
  
    const grossMarginData = useMemo(() => {
-     return monthly.map((m: any) => ({
+    return pnlMonthly.map((m: any) => ({
        month: m.month,
-       value: m.revenue > 0 ? ((m.revenue - m.cogsTotal) / m.revenue) * 100 : 0,
+      value: m.revenue > 0.0001 ? ((m.revenue - m.cogsTotal) / m.revenue) * 100 : null,
      }));
-   }, [monthly]);
+  }, [pnlMonthly]);
  
   const getOperatingExpenseTotal = (m: any) => {
     const computed =
@@ -156,11 +190,13 @@ type Finding = {
   };
 
   const operatingExpensePctData = useMemo(() => {
-    return monthly.map((m: any) => ({
+    return pnlMonthly.map((m: any) => ({
       month: m.month,
-      value: m.revenue > 0 ? (getOperatingExpenseTotal(m) / m.revenue) * 100 : 0,
+      value: m.revenue > 0.0001 ? (getOperatingExpenseTotal(m) / m.revenue) * 100 : null,
     }));
-  }, [monthly]);
+  }, [pnlMonthly]);
+
+  const trendMonthly = pnlMonthly.length ? pnlMonthly : monthly;
  
    const benchmarks = context?.benchmarks?.items || [];
    const grossMarginBenchmark = getBenchmarkValue(benchmarks as any, 'Gross Margin');
@@ -171,9 +207,9 @@ type Finding = {
    const inventoryGoal = operationalGoals.inventory_value ? monthly.map(() => operationalGoals.inventory_value) : undefined;
 
   const driverNarrative = useMemo(() => {
-    if (monthly.length < 6) return null;
-    const prior = monthly.slice(-6, -3);
-    const recent = monthly.slice(-3);
+    if (trendMonthly.length < 6) return null;
+    const prior = trendMonthly.slice(-6, -3);
+    const recent = trendMonthly.slice(-3);
     const avg = (values: number[]) => values.reduce((sum, v) => sum + v, 0) / (values.length || 1);
 
     const priorRevenue = avg(prior.map((m: any) => m.revenue || 0));
@@ -213,7 +249,7 @@ type Finding = {
         COGS: top.name === 'COGS' || second.name === 'COGS',
       },
     };
-  }, [monthly]);
+  }, [trendMonthly]);
 
   const grossMarginPeerNarrative = useMemo(() => {
     if (grossMarginBenchmark == null || grossMarginData.length === 0) return null;
@@ -224,9 +260,9 @@ type Finding = {
   }, [grossMarginBenchmark, grossMarginData]);
 
   const chartSoWhat = useMemo(() => {
-    if (monthly.length < 6) return {};
-    const prior = monthly.slice(-6, -3);
-    const recent = monthly.slice(-3);
+    if (trendMonthly.length < 6) return {};
+    const prior = trendMonthly.slice(-6, -3);
+    const recent = trendMonthly.slice(-3);
     const avg = (values: number[]) => values.reduce((sum, v) => sum + v, 0) / (values.length || 1);
     const formatDollar = (value: number) => `$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -290,7 +326,7 @@ type Finding = {
     }
 
     return soWhat;
-  }, [monthly]);
+  }, [trendMonthly]);
 
   const priorityVarianceMetrics = useMemo(() => {
     return new Set(findings.filter((f) => f.type === 'trend' && f.metric).map((f) => f.metric as string));
@@ -473,7 +509,7 @@ type Finding = {
             {renderRationale('Revenue', 'Revenue is a top-line indicator and anchors most variance analysis.')}
             <LineChart
               title="Revenue"
-              data={monthly.map((m: any) => ({ month: m.month, value: m.revenue }))}
+              data={pnlMonthly.map((m: any) => ({ month: m.month, value: m.revenue }))}
               color="#667eea"
               compact
               labelFormat="m-yy-adaptive"
