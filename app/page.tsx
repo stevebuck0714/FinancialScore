@@ -9522,7 +9522,39 @@ function FinancialScorePage() {
                           const collectLatestValues = (report: any) => {
                             const valueByKey = new Map<string, number>();
                             const cols = Array.isArray(report?.Columns?.Column) ? report.Columns.Column : [];
-                            const latestColIndex = cols.length > 1 ? cols.length - 1 : -1;
+                            const latestColIndex = (() => {
+                              if (cols.length <= 1) return -1;
+                              let bestIndex = -1;
+                              let bestTime = Number.NEGATIVE_INFINITY;
+
+                              for (let i = 1; i < cols.length; i += 1) {
+                                const title = String(cols[i]?.ColTitle || '').trim();
+                                if (!title || title.toLowerCase() === 'total') continue;
+
+                                let parsedTime = Number.NaN;
+                                // Common QBO month labels (e.g., "Jan 2026", "2026-01", "2026-01-31").
+                                const isoMonth = title.match(/^(\d{4})-(\d{2})$/);
+                                if (isoMonth) {
+                                  parsedTime = new Date(`${isoMonth[1]}-${isoMonth[2]}-01T00:00:00Z`).getTime();
+                                } else {
+                                  parsedTime = new Date(title).getTime();
+                                }
+
+                                if (Number.isFinite(parsedTime) && parsedTime > bestTime) {
+                                  bestTime = parsedTime;
+                                  bestIndex = i;
+                                }
+                              }
+
+                              if (bestIndex >= 1) return bestIndex;
+
+                              for (let i = cols.length - 1; i >= 1; i -= 1) {
+                                const title = String(cols[i]?.ColTitle || '').trim().toLowerCase();
+                                if (title !== 'total') return i;
+                              }
+
+                              return -1;
+                            })();
 
                             const rows = Array.isArray(report?.Rows?.Row) ? report.Rows.Row : [];
                             const visitRows = (inputRows: any[]) => {
@@ -9537,7 +9569,8 @@ function FinancialScorePage() {
                                 const name = String(row.ColData[0]?.value || '').trim();
                                 if (!name || name.toLowerCase().includes('total')) continue;
 
-                                const accountId = String(row.ColData[1]?.id || row.ColData[1]?.value || '').trim();
+                                // QBO report rows carry account id on the first (name) column.
+                                const accountId = String(row.ColData[0]?.id || '').trim();
                                 const amount = parseAmount(row.ColData[latestColIndex]?.value);
 
                                 if (accountId) valueByKey.set(`id:${accountId}`, amount);

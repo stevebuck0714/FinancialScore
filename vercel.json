@@ -11,6 +11,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/cron/refresh-quickbooks-tokens",
+      "schedule": "15 2 * * *"
+    },
+    {
       "path": "/api/cron/cleanup-devices",
       "schedule": "0 3 * * *"
     }
