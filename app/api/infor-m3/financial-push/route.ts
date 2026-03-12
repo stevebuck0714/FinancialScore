@@ -4,6 +4,7 @@ import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { seedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
+type FinancialImportMode = 'through' | 'only';
 
 function normalizeFrequency(value: unknown): Frequency {
   if (typeof value !== 'string') return 'daily';
@@ -17,6 +18,18 @@ function getBearerToken(request: NextRequest): string {
   const header = request.headers.get('authorization') || '';
   if (!header.startsWith('Bearer ')) return '';
   return header.slice('Bearer '.length).trim();
+}
+
+function normalizeFinancialImportMode(value: unknown): FinancialImportMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'only' ? 'only' : 'through';
+}
+
+function normalizeTargetMonth(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return /^\d{4}-\d{2}$/.test(trimmed) ? trimmed : null;
 }
 
 export const dynamic = 'force-dynamic';
@@ -57,13 +70,8 @@ export async function POST(request: NextRequest) {
     }
 
     const frequency = normalizeFrequency(body.frequency);
-    const payload =
-      body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
-        ? (body.payload as Record<string, unknown>)
-        : null;
-    if (!payload) {
-      return NextResponse.json({ ok: false, error: 'payload object is required' }, { status: 400 });
-    }
+    const targetMonth = normalizeTargetMonth(body.targetMonth);
+    const mode = normalizeFinancialImportMode(body.mode);
 
     const existingConnection = await prisma.accountingConnection.findUnique({
       where: {
@@ -84,6 +92,24 @@ export async function POST(request: NextRequest) {
       !Array.isArray(existingConnection.connectionMetadata)
         ? (existingConnection.connectionMetadata as Record<string, unknown>)
         : {};
+
+    const bodyPayload =
+      body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
+        ? (body.payload as Record<string, unknown>)
+        : null;
+    const storedPayload =
+      existingMetadata.inforM3FinancialPayload &&
+      typeof existingMetadata.inforM3FinancialPayload === 'object' &&
+      !Array.isArray(existingMetadata.inforM3FinancialPayload)
+        ? (existingMetadata.inforM3FinancialPayload as Record<string, unknown>)
+        : null;
+    const payload = bodyPayload || storedPayload;
+    if (!payload) {
+      return NextResponse.json(
+        { ok: false, error: 'payload object is required (or previously saved payload must exist)' },
+        { status: 400 }
+      );
+    }
 
     let seedSummary = {
       extracted: 0,
@@ -206,6 +232,8 @@ export async function POST(request: NextRequest) {
       source: 'infor-m3',
       payload,
       syncType: 'financial_push',
+      targetMonth: targetMonth || undefined,
+      mode,
     });
 
     return NextResponse.json(
@@ -214,6 +242,8 @@ export async function POST(request: NextRequest) {
         companyId,
         companyName: company.name,
         frequency,
+        targetMonth,
+        mode,
         accountMappingSeed: seedSummary,
         accountMappingSeedWarning: seedWarning,
         ...result,

@@ -4,10 +4,26 @@ import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 
 export const dynamic = 'force-dynamic';
 
+type FinancialImportMode = 'through' | 'only';
+
+function normalizeFinancialImportMode(value: unknown): FinancialImportMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'only' ? 'only' : 'through';
+}
+
+function normalizeTargetMonth(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return /^\d{4}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const companyId = body?.companyId;
+    const targetMonth = normalizeTargetMonth(body?.targetMonth);
+    const mode = normalizeFinancialImportMode(body?.mode);
 
     if (!companyId) {
       return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
@@ -123,6 +139,8 @@ export async function POST(request: NextRequest) {
         source: 'infor-m3',
         payload: financialPayload,
         syncType: 'reprocess_financial_payload',
+        targetMonth: targetMonth || undefined,
+        mode,
       });
 
       return NextResponse.json(
@@ -176,6 +194,8 @@ export async function POST(request: NextRequest) {
         source: 'quickbooks-desktop',
         payload: financialPayload,
         syncType: 'reprocess_financial_payload',
+        targetMonth: targetMonth || undefined,
+        mode,
       });
 
       return NextResponse.json(

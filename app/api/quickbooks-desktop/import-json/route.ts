@@ -7,6 +7,7 @@ import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/a
 export const dynamic = 'force-dynamic';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
+type FinancialImportMode = 'through' | 'only';
 
 function normalizeFrequency(value: unknown): Frequency {
   if (typeof value !== 'string') return 'daily';
@@ -16,11 +17,25 @@ function normalizeFrequency(value: unknown): Frequency {
   return 'daily';
 }
 
+function normalizeFinancialImportMode(value: unknown): FinancialImportMode {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'only' ? 'only' : 'through';
+}
+
+function normalizeTargetMonth(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return /^\d{4}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
     const frequency = normalizeFrequency(body.frequency);
+    const targetMonth = normalizeTargetMonth(body.targetMonth);
+    const mode = normalizeFinancialImportMode(body.mode);
     const payload =
       body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
         ? (body.payload as Record<string, unknown>)
@@ -186,6 +201,8 @@ export async function POST(request: NextRequest) {
       source: 'quickbooks-desktop',
       payload,
       syncType: 'financial_push',
+      targetMonth: targetMonth || undefined,
+      mode,
     });
 
     return NextResponse.json(
@@ -194,6 +211,8 @@ export async function POST(request: NextRequest) {
         companyId,
         companyName: company.name,
         frequency,
+        targetMonth,
+        mode,
         accountMappingSeed: seedSummary,
         accountMappingSeedWarning: seedWarning,
         ...result,

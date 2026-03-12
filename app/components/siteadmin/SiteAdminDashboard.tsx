@@ -272,6 +272,13 @@ export default function SiteAdminDashboard(props: any) {
   const [operationalSyncSettingsByCompany, setOperationalSyncSettingsByCompany] = React.useState<
     Record<string, { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }>
   >({});
+  const currentMonthKey = React.useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
+  const [financialImportSettingsByCompany, setFinancialImportSettingsByCompany] = React.useState<
+    Record<string, { targetMonth: string; mode: 'through' | 'only' }>
+  >({});
 
   const getCompanyOperationalSettings = (companyId: string) =>
     operationalSyncSettingsByCompany[companyId] || { frequency: 'daily', pullTime: '08:00' };
@@ -285,6 +292,22 @@ export default function SiteAdminDashboard(props: any) {
       [companyId]: {
         frequency: next.frequency || prev[companyId]?.frequency || 'daily',
         pullTime: next.pullTime || prev[companyId]?.pullTime || '08:00',
+      },
+    }));
+  };
+
+  const getCompanyFinancialImportSettings = (companyId: string) =>
+    financialImportSettingsByCompany[companyId] || { targetMonth: currentMonthKey, mode: 'through' as const };
+
+  const setCompanyFinancialImportSettings = (
+    companyId: string,
+    next: Partial<{ targetMonth: string; mode: 'through' | 'only' }>
+  ) => {
+    setFinancialImportSettingsByCompany((prev) => ({
+      ...prev,
+      [companyId]: {
+        targetMonth: next.targetMonth || prev[companyId]?.targetMonth || currentMonthKey,
+        mode: next.mode || prev[companyId]?.mode || 'through',
       },
     }));
   };
@@ -1275,12 +1298,15 @@ export default function SiteAdminDashboard(props: any) {
     try {
       const raw = await file.text();
       const payload = parseQbDesktopFinancialPayloadFromJson(raw);
+      const financialImportSettings = getCompanyFinancialImportSettings(companyId);
       const response = await fetch('/api/quickbooks-desktop/import-json', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId,
           frequency: getCompanyOperationalSettings(companyId).frequency,
+          targetMonth: financialImportSettings.targetMonth,
+          mode: financialImportSettings.mode,
           payload,
         }),
       });
@@ -1297,13 +1323,47 @@ export default function SiteAdminDashboard(props: any) {
             : null;
       alert(
         recordsImported !== null
-          ? `Imported QB Desktop JSON for ${companyName}. ${recordsImported} records processed.`
-          : `Imported QB Desktop JSON for ${companyName}.`
+          ? `Imported QB Desktop JSON for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth} (${financialImportSettings.mode}).`
+          : `Imported QB Desktop JSON for ${companyName} through ${financialImportSettings.targetMonth} (${financialImportSettings.mode}).`
       );
     } catch (error: any) {
       alert(`Failed to import QB Desktop JSON file: ${error?.message || 'Invalid file format'}`);
     } finally {
       input.value = '';
+    }
+  };
+
+  const runInforM3FinancialImport = async (companyId: string, companyName: string) => {
+    const financialImportSettings = getCompanyFinancialImportSettings(companyId);
+    if (!/^\d{4}-\d{2}$/.test(financialImportSettings.targetMonth)) {
+      alert('Select a valid target month first (YYYY-MM).');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/financials/reprocess-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          targetMonth: financialImportSettings.targetMonth,
+          mode: financialImportSettings.mode,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to run Infor financial import');
+      }
+
+      const recordsImported = typeof data?.recordsImported === 'number' ? data.recordsImported : null;
+      alert(
+        recordsImported !== null
+          ? `Infor financial import complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth} (${financialImportSettings.mode}).`
+          : `Infor financial import complete for ${companyName} through ${financialImportSettings.targetMonth} (${financialImportSettings.mode}).`
+      );
+      await checkInforM3Status?.(companyId);
+    } catch (error: any) {
+      alert(`Infor financial import failed: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -2037,6 +2097,28 @@ export default function SiteAdminDashboard(props: any) {
                                                         handleInforCredentialsFileImport(event, company.id, company.name)
                                                       }
                                                     />
+                                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                                      <input
+                                                        type="month"
+                                                        value={getCompanyFinancialImportSettings(company.id).targetMonth}
+                                                        onChange={(e) =>
+                                                          setCompanyFinancialImportSettings(company.id, { targetMonth: e.target.value })
+                                                        }
+                                                        style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
+                                                      <select
+                                                        value={getCompanyFinancialImportSettings(company.id).mode}
+                                                        onChange={(e) =>
+                                                          setCompanyFinancialImportSettings(company.id, {
+                                                            mode: e.target.value === 'only' ? 'only' : 'through',
+                                                          })
+                                                        }
+                                                        style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="through">Through month</option>
+                                                        <option value="only">Only month</option>
+                                                      </select>
+                                                    </div>
                                                     <button
                                                       onClick={() => {
                                                         const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
@@ -2074,6 +2156,13 @@ export default function SiteAdminDashboard(props: any) {
                                                       Run Ops Sync Now
                                                     </button>
                                                     <button
+                                                      onClick={() => runInforM3FinancialImport(company.id, company.name)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Run Financial Import
+                                                    </button>
+                                                    <button
                                                       onClick={() => testInforM3Token?.(company.id)}
                                                       disabled={inforBusy || !inforConnected}
                                                       style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
@@ -2100,6 +2189,28 @@ export default function SiteAdminDashboard(props: any) {
                                                         handleQbDesktopFinancialPayloadFileImport(event, company.id, company.name)
                                                       }
                                                     />
+                                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                                      <input
+                                                        type="month"
+                                                        value={getCompanyFinancialImportSettings(company.id).targetMonth}
+                                                        onChange={(e) =>
+                                                          setCompanyFinancialImportSettings(company.id, { targetMonth: e.target.value })
+                                                        }
+                                                        style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
+                                                      <select
+                                                        value={getCompanyFinancialImportSettings(company.id).mode}
+                                                        onChange={(e) =>
+                                                          setCompanyFinancialImportSettings(company.id, {
+                                                            mode: e.target.value === 'only' ? 'only' : 'through',
+                                                          })
+                                                        }
+                                                        style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      >
+                                                        <option value="through">Through month</option>
+                                                        <option value="only">Only month</option>
+                                                      </select>
+                                                    </div>
                                                     <button
                                                       onClick={() => {
                                                         const fileInput = document.getElementById(`consultant-qbdesktop-json-file-${company.id}`) as HTMLInputElement | null;
@@ -4067,6 +4178,28 @@ export default function SiteAdminDashboard(props: any) {
                                             handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
                                           }
                                         />
+                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                          <input
+                                            type="month"
+                                            value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
+                                            onChange={(e) =>
+                                              setCompanyFinancialImportSettings(businessCompany.id, { targetMonth: e.target.value })
+                                            }
+                                            style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          />
+                                          <select
+                                            value={getCompanyFinancialImportSettings(businessCompany.id).mode}
+                                            onChange={(e) =>
+                                              setCompanyFinancialImportSettings(businessCompany.id, {
+                                                mode: e.target.value === 'only' ? 'only' : 'through',
+                                              })
+                                            }
+                                            style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          >
+                                            <option value="through">Through month</option>
+                                            <option value="only">Only month</option>
+                                          </select>
+                                        </div>
                                         <button
                                           onClick={() => {
                                             const fileInput = document.getElementById(`infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
@@ -4102,6 +4235,13 @@ export default function SiteAdminDashboard(props: any) {
                                           style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                         >
                                           Run Ops Sync Now
+                                        </button>
+                                        <button
+                                          onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
+                                          disabled={inforBusy || !inforConnected}
+                                          style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                        >
+                                          Run Financial Import
                                         </button>
                                         <button
                                           onClick={() => testInforM3Token?.(businessCompany.id)}
@@ -4643,6 +4783,28 @@ export default function SiteAdminDashboard(props: any) {
                                               handleQbDesktopFinancialPayloadFileImport(event, businessCompany.id, businessCompany.name)
                                             }
                                           />
+                                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                            <input
+                                              type="month"
+                                              value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
+                                              onChange={(e) =>
+                                                setCompanyFinancialImportSettings(businessCompany.id, { targetMonth: e.target.value })
+                                              }
+                                              style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            />
+                                            <select
+                                              value={getCompanyFinancialImportSettings(businessCompany.id).mode}
+                                              onChange={(e) =>
+                                                setCompanyFinancialImportSettings(businessCompany.id, {
+                                                  mode: e.target.value === 'only' ? 'only' : 'through',
+                                                })
+                                              }
+                                              style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            >
+                                              <option value="through">Through month</option>
+                                              <option value="only">Only month</option>
+                                            </select>
+                                          </div>
                                           <button
                                             onClick={() => {
                                               const fileInput = document.getElementById(`qbdesktop-json-file-${businessCompany.id}`) as HTMLInputElement | null;
