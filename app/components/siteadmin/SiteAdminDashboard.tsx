@@ -2096,7 +2096,7 @@ export default function SiteAdminDashboard(props: any) {
                                                         handleInforCredentialsFileImport(event, company.id, company.name)
                                                       }
                                                     />
-                                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end' }}>
                                                       <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                                       <input
                                                         type="month"
@@ -4155,7 +4155,7 @@ export default function SiteAdminDashboard(props: any) {
                                             handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
                                           }
                                         />
-                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
+                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end' }}>
                                           <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                           <input
                                             type="month"
