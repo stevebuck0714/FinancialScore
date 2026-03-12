@@ -4326,6 +4326,18 @@ function FinancialScorePage() {
           ]
         : [];
       const details = moduleLines.length ? `\n\nBy module:\n${moduleLines.join('\n')}` : '';
+      const companyForSync = Array.isArray(companies) ? companies.find((c) => c.id === companyId) : null;
+      const accountingSystem = String(companyForSync?.accountingSystem || '').toUpperCase();
+
+      // Refresh connector status so "Last synced" updates immediately in API Connections.
+      if (accountingSystem === 'QUICKBOOKS' || accountingSystem === 'QUICKBOOKS_DESKTOP') {
+        await checkQBStatus(companyId);
+      } else if (accountingSystem === 'XERO') {
+        await checkXeroStatus(companyId);
+      } else if (accountingSystem === 'INFOR_M3') {
+        await checkInforM3Status(companyId);
+      }
+
       alert(`Operational sync complete. Records created: ${data.recordsCreated ?? 0}.${details}`);
     } catch (error: any) {
       alert(`Operational sync failed:\n\n${error?.message || 'Unknown error'}`);
@@ -4949,11 +4961,35 @@ function FinancialScorePage() {
     }
   };
 
+  const hasMeaningfulFinancialData = (row: any): boolean => {
+    if (!row || typeof row !== 'object') return false;
+    const keys = [
+      'revenue',
+      'expense',
+      'cogsTotal',
+      'cash',
+      'ar',
+      'inventory',
+      'ap',
+      'tca',
+      'tcl',
+      'totalAssets',
+      'totalLiab',
+      'totalEquity',
+    ];
+    return keys.some((key) => Math.abs(Number(row[key] || 0)) > 0.0001);
+  };
+
   // Calculate monthly data
   const monthly = useMemo(() => {
     // If we have loaded monthly data from QuickBooks, use it directly
     if (loadedMonthlyData && loadedMonthlyData.length > 0) {
-      return loadedMonthlyData;
+      const source = String(latestFinancialSource || '').toLowerCase();
+      const isApiSource = !!source && !source.includes('csv');
+      if (!isApiSource) return loadedMonthlyData;
+
+      // API imports can include padded zero months; hide those so charts start at real data.
+      return loadedMonthlyData.filter((row: any) => hasMeaningfulFinancialData(row));
     }
     
     // Otherwise, process from CSV rawRows
@@ -5013,7 +5049,7 @@ function FinancialScorePage() {
       totalEquity: parseFloat(row[mapping.totalEquity!]) || 0,
       totalLAndE: parseFloat(row[mapping.totalLAndE!]) || 0
     }));
-  }, [rawRows, mapping, loadedMonthlyData]).map(m => {
+  }, [rawRows, mapping, loadedMonthlyData, latestFinancialSource]).map(m => {
     // Calculate Total Operating Expenses using standard chart of accounts (same as Data Review)
     // Use the SAME calculation as Data Review for Total Operating Expenses
     const opexCategories = [
@@ -8972,7 +9008,7 @@ function FinancialScorePage() {
                 )}
 
                 {/* AI-Assisted Mapping Section for API synced accounts (QuickBooks/Xero) */}
-                {!hasCsvData && aiMappings.length > 0 && aiMappings.filter(m => m.targetField === 'unmapped').length > 0 && (
+                {!hasCsvData && aiMappings.length > 0 && (
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '10px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -8981,7 +9017,9 @@ function FinancialScorePage() {
                           AI-Assisted Account Mapping
                         </h2>
                         <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                          Use AI to automatically suggest mappings for {aiMappings.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields
+                          {aiMappings.filter(m => m.targetField === 'unmapped').length > 0
+                            ? `Use AI to automatically suggest mappings for ${aiMappings.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields`
+                            : 'All accounts are currently mapped. Re-run AI suggestions if you imported corrected accounting data.'}
                         </p>
                       </div>
                       <button
@@ -9048,7 +9086,7 @@ function FinancialScorePage() {
                         ) : (
                           <>
                             <TrendingUp size={16} />
-                            <span>Generate AI Mappings</span>
+                            <span>{aiMappings.filter(m => m.targetField === 'unmapped').length > 0 ? 'Generate AI Mappings' : 'Regenerate AI Mappings'}</span>
                           </>
                         )}
                       </button>
@@ -9350,7 +9388,7 @@ function FinancialScorePage() {
                                   // Switch to Data Review tab
                                   setAdminDashboardTab('data-review');
                                   // Trigger data reload by updating qbLastSync (this triggers the useEffect)
-                                  setQbLastSync(Date.now());
+                                  setQbLastSync(new Date());
                                 } else {
                                   alert(`Failed to reprocess: ${result.error}`);
                                 }
@@ -9468,7 +9506,58 @@ function FinancialScorePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(hasCsvData && csvTrialBalanceData
+                        {(() => {
+                          const parseAmount = (raw: unknown): number => {
+                            if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+                            if (typeof raw !== 'string') return 0;
+                            const normalized = raw
+                              .trim()
+                              .replace(/\$/g, '')
+                              .replace(/,/g, '')
+                              .replace(/\(([^)]+)\)/, '-$1');
+                            const parsed = Number.parseFloat(normalized);
+                            return Number.isFinite(parsed) ? parsed : 0;
+                          };
+
+                          const collectLatestValues = (report: any) => {
+                            const valueByKey = new Map<string, number>();
+                            const cols = Array.isArray(report?.Columns?.Column) ? report.Columns.Column : [];
+                            const latestColIndex = cols.length > 1 ? cols.length - 1 : -1;
+
+                            const rows = Array.isArray(report?.Rows?.Row) ? report.Rows.Row : [];
+                            const visitRows = (inputRows: any[]) => {
+                              for (const row of inputRows) {
+                                if (row?.type === 'Section') {
+                                  const nested = Array.isArray(row?.Rows?.Row) ? row.Rows.Row : [];
+                                  if (nested.length > 0) visitRows(nested);
+                                  continue;
+                                }
+                                if (row?.type !== 'Data' || !Array.isArray(row?.ColData) || latestColIndex < 1) continue;
+
+                                const name = String(row.ColData[0]?.value || '').trim();
+                                if (!name || name.toLowerCase().includes('total')) continue;
+
+                                const accountId = String(row.ColData[1]?.id || row.ColData[1]?.value || '').trim();
+                                const amount = parseAmount(row.ColData[latestColIndex]?.value);
+
+                                if (accountId) valueByKey.set(`id:${accountId}`, amount);
+                                valueByKey.set(`name:${name.toLowerCase()}`, amount);
+                              }
+                            };
+
+                            if (rows.length > 0) visitRows(rows);
+                            return valueByKey;
+                          };
+
+                          const plValues = qbRawData?.profitAndLoss ? collectLatestValues(qbRawData.profitAndLoss) : new Map<string, number>();
+                          const bsValues = qbRawData?.balanceSheet ? collectLatestValues(qbRawData.balanceSheet) : new Map<string, number>();
+
+                          const mergedValues = new Map<string, number>([
+                            ...Array.from(plValues.entries()),
+                            ...Array.from(bsValues.entries()),
+                          ]);
+
+                          return (hasCsvData && csvTrialBalanceData
                           ? csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
                               const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
                               const latestDate = validDates[validDates.length - 1];
@@ -9496,16 +9585,27 @@ function FinancialScorePage() {
                                 </tr>
                               );
                             })
-                          : aiMappings.map((mapping: any, idx: number) => (
+                          : aiMappings.map((mapping: any, idx: number) => {
+                              const byId = mapping.qbAccountId ? mergedValues.get(`id:${String(mapping.qbAccountId).trim()}`) : undefined;
+                              const byCode = mapping.qbAccountCode ? mergedValues.get(`id:${String(mapping.qbAccountCode).trim()}`) : undefined;
+                              const byName = mapping.qbAccount ? mergedValues.get(`name:${String(mapping.qbAccount).toLowerCase().trim()}`) : undefined;
+                              const latestValue =
+                                byId !== undefined ? byId :
+                                byCode !== undefined ? byCode :
+                                byName !== undefined ? byName :
+                                null;
+                              return (
                               <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{mapping.qbAccountClassification || mapping.sourceStatus || 'N/A'}</td>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{mapping.qbAccountCode || mapping.qbAccountId || 'N/A'}</td>
                                 <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'right', color: '#64748b', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
-                                  N/A
+                                <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                  {latestValue == null
+                                    ? 'N/A'
+                                    : `$${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${latestValue < 0 ? ' (CR)' : ''}`}
                                 </td>
                               </tr>
-                            )))}
+                            )}))})();
                       </tbody>
                     </table>
                   </div>
@@ -9516,7 +9616,7 @@ function FinancialScorePage() {
                       </p>
                     ) : (
                       <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
-                        ℹ️ Showing mapped accounts from {mappedApiSourceLabel}. Latest-value amounts are only available from Trial Balance CSV data.
+                        ℹ️ Showing mapped accounts from {mappedApiSourceLabel}. Latest-value amounts are shown using the latest imported API month when available.
                       </p>
                     )}
                     <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>

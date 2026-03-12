@@ -49,6 +49,7 @@ export class AdapterFactory {
       connectionId: connection.id,
       accessToken: this.decryptTokenForPlatform(connection.platform, connection.accessToken) || connection.accessToken,
       refreshToken: this.decryptTokenForPlatform(connection.platform, connection.refreshToken),
+      tokenExpiresAt: connection.tokenExpiresAt || undefined,
       realmId: connection.realmId || undefined,
       tenantId: connection.tenantId || undefined,
       organizationId: connection.organizationId || undefined,

@@ -10,6 +10,8 @@ import {
   SyncResult
 } from './types';
 import prisma from '@/lib/prisma';
+import OAuthClient from 'intuit-oauth';
+import { encryptOAuthToken } from '@/lib/encryption';
 
 /**
  * QuickBooks Adapter
@@ -18,6 +20,8 @@ import prisma from '@/lib/prisma';
 export class QuickBooksAdapter implements AccountingAdapter {
   readonly platform = 'QUICKBOOKS';
   private static readonly DAILY_INCREMENTAL_LOOKBACK_DAYS = 90;
+  private static readonly TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+  private static readonly MAX_RATE_LIMIT_RETRIES = 3;
   
   private config: AdapterConfig;
   private baseUrl: string;
@@ -27,6 +31,87 @@ export class QuickBooksAdapter implements AccountingAdapter {
     // QuickBooks sandbox vs production
     this.baseUrl = process.env.QUICKBOOKS_API_BASE_URL || 
                    'https://quickbooks.api.intuit.com/v3/company';
+  }
+
+  private parseRetryAfterMs(value: string | null): number | null {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const asNumber = Number(trimmed);
+    if (Number.isFinite(asNumber) && asNumber >= 0) {
+      return Math.ceil(asNumber * 1000);
+    }
+    const asDate = Date.parse(trimmed);
+    if (Number.isFinite(asDate)) {
+      const delta = asDate - Date.now();
+      return delta > 0 ? delta : 0;
+    }
+    return null;
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private tokenExpiresSoon(): boolean {
+    const expiresAtRaw = this.config.tokenExpiresAt;
+    if (!expiresAtRaw) return false;
+    const expiresAt = expiresAtRaw instanceof Date ? expiresAtRaw : new Date(expiresAtRaw);
+    if (Number.isNaN(expiresAt.getTime())) return false;
+    return expiresAt.getTime() - Date.now() <= QuickBooksAdapter.TOKEN_REFRESH_BUFFER_MS;
+  }
+
+  private async refreshAccessToken(reason: string): Promise<void> {
+    if (!this.config.refreshToken) {
+      throw new Error(`QuickBooks refresh token is missing (${reason}).`);
+    }
+
+    const oauthClient = new OAuthClient({
+      clientId: process.env.QUICKBOOKS_CLIENT_ID || '',
+      clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || '',
+      environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
+      redirectUri:
+        process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
+    });
+
+    (oauthClient as any).token = {
+      access_token: this.config.accessToken,
+      refresh_token: this.config.refreshToken,
+      token_type: 'bearer',
+      expires_in: 3600,
+    };
+
+    try {
+      const refreshResponse = await oauthClient.refresh();
+      const newToken = refreshResponse.getJson();
+      const accessToken = newToken.access_token || this.config.accessToken;
+      const refreshToken = newToken.refresh_token || this.config.refreshToken;
+      const tokenExpiresAt = new Date(Date.now() + (newToken.expires_in || 3600) * 1000);
+
+      this.config.accessToken = accessToken;
+      this.config.refreshToken = refreshToken;
+      this.config.tokenExpiresAt = tokenExpiresAt;
+
+      await prisma.accountingConnection.update({
+        where: { id: this.config.connectionId },
+        data: {
+          accessToken: encryptOAuthToken(accessToken),
+          refreshToken: encryptOAuthToken(refreshToken),
+          tokenExpiresAt,
+          status: 'ACTIVE',
+          errorMessage: null,
+        },
+      });
+    } catch (error: any) {
+      await prisma.accountingConnection.update({
+        where: { id: this.config.connectionId },
+        data: {
+          status: 'EXPIRED',
+          errorMessage: `Token refresh failed: ${error?.message || 'Unknown error'}`.slice(0, 900),
+        },
+      });
+      throw new Error(`QuickBooks token refresh failed: ${error?.message || 'Unknown error'}`);
+    }
   }
   
   /**
@@ -1017,16 +1102,21 @@ export class QuickBooksAdapter implements AccountingAdapter {
           const cashHistory = await this.getDailyCashHistory(startDate, today, cashBalances);
           const dates = Array.from(cashHistory.keys()).sort();
 
+          // Replace the full requested daily window so stale trailing days cannot persist.
+          await prisma.cashSnapshot.deleteMany({
+            where: {
+              companyId: this.config.companyId,
+              frequency,
+              snapshotDate: {
+                gte: startDate,
+                lte: today,
+              },
+            },
+          });
+
           for (const dayKey of dates) {
             const snapshotDate = this.normalizeDay(new Date(`${dayKey}T00:00:00`));
             const balancesForDay = cashHistory.get(dayKey) || [];
-            await prisma.cashSnapshot.deleteMany({
-              where: {
-                companyId: this.config.companyId,
-                frequency,
-                snapshotDate,
-              },
-            });
             if (balancesForDay.length === 0) continue;
             await prisma.cashSnapshot.createMany({
               data: balancesForDay.map((balance) => ({
@@ -1308,23 +1398,44 @@ export class QuickBooksAdapter implements AccountingAdapter {
       throw new Error('QuickBooks realmId is missing on this connection.');
     }
     const url = `${this.baseUrl}/${this.config.realmId}${endpoint}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${this.config.accessToken}`,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
+
+    if (this.tokenExpiresSoon()) {
+      await this.refreshAccessToken('expiring soon before API call');
+    }
+
+    let tokenRetried = false;
+    let rateLimitRetry = 0;
+
+    while (true) {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) return response;
+
+      if ((response.status === 401 || response.status === 403) && !tokenRetried) {
+        tokenRetried = true;
+        await this.refreshAccessToken(`received ${response.status}`);
+        continue;
       }
-    });
-    
-    if (!response.ok) {
-      // TODO: Implement token refresh logic if 401
+
+      if (response.status === 429 && rateLimitRetry < QuickBooksAdapter.MAX_RATE_LIMIT_RETRIES) {
+        const retryAfterMs = this.parseRetryAfterMs(response.headers.get('retry-after'));
+        const fallbackMs = 1000 * Math.pow(2, rateLimitRetry);
+        const waitMs = Math.max(retryAfterMs ?? fallbackMs, fallbackMs);
+        rateLimitRetry += 1;
+        await this.sleep(waitMs);
+        continue;
+      }
+
       const body = await response.text().catch(() => '');
       const detail = body ? ` - ${body.slice(0, 500)}` : '';
       throw new Error(`QuickBooks API error: ${response.status} ${response.statusText}${detail}`);
     }
-    
-    return response;
   }
 
   private isOptionalProductSalesError(error: unknown): boolean {

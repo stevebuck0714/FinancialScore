@@ -337,6 +337,14 @@ function severityFromScore(score: number) {
   return 'low';
 }
 
+function describeAnomaly(score: number) {
+  const abs = Math.abs(score);
+  const direction = score >= 0 ? 'higher' : 'lower';
+  if (abs >= 3) return `much ${direction} than normal`;
+  if (abs >= 2.5) return `significantly ${direction} than normal`;
+  return `${direction} than normal`;
+}
+
 function formatPct(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
@@ -987,7 +995,7 @@ export async function POST(request: NextRequest) {
           confidence: Math.min(0.9, 0.5 + Math.abs(score) / 4),
           payload: {
             title: `Cash balance ${score > 0 ? 'spike' : 'drop'}`,
-            summary: `Latest cash balance deviates by ${score.toFixed(1)}σ from recent history.`,
+            summary: `Latest cash balance is ${describeAnomaly(score)} versus the last ${values.length} periods.`,
             likelyCause,
             nextSteps: [
               'Review large payments or transfers in the period.',
@@ -1019,7 +1027,7 @@ export async function POST(request: NextRequest) {
           confidence: Math.min(0.9, 0.5 + Math.abs(score) / 4),
           payload: {
             title: `AR balance ${score > 0 ? 'spike' : 'drop'}`,
-            summary: `Total AR deviates by ${score.toFixed(1)}σ from recent history.`,
+            summary: `Total AR is ${describeAnomaly(score)} versus the last ${values.length} periods.`,
             likelyCause,
             nextSteps: [
               'Identify top customers with aging over 60 days.',
@@ -1137,10 +1145,14 @@ export async function POST(request: NextRequest) {
         (a, b) => new Date(a.monthDate).getTime() - new Date(b.monthDate).getTime()
       );
       for (const { key, label } of COA_ANOMALY_FIELDS) {
-        const values = sortedMonthly.map((m: any) => (m[key] != null ? Number(m[key]) : 0));
+        // Only score months where this line item has actual loaded values.
+        const values = sortedMonthly
+          .map((m: any) => (m[key] != null ? Number(m[key]) : NaN))
+          .filter((v: number) => Number.isFinite(v) && Math.abs(v) > 0.0001);
+        if (values.length < 6) continue;
         const latest = values.length ? values[values.length - 1] : 0;
         const score = zScore(latest, values);
-        if (Math.abs(score) >= 2 && values.some((v: number) => v !== 0)) {
+        if (Math.abs(score) >= 2) {
           findings.push({
             type: 'anomaly',
             metric: label,
@@ -1148,7 +1160,7 @@ export async function POST(request: NextRequest) {
             confidence: Math.min(0.85, 0.5 + Math.abs(score) / 4),
             payload: {
               title: `${label} ${score > 0 ? 'spike' : 'drop'}`,
-              summary: `Latest ${label} deviates by ${score.toFixed(1)}σ from recent ${values.length}-month history.`,
+              summary: `Latest ${label} is ${describeAnomaly(score)} versus the last ${values.length} months with data.`,
               likelyCause: score > 0
                 ? 'Unusual increase; confirm one-time items, timing, or volume change.'
                 : 'Unusual decrease; confirm timing, reclass, or true decline.',
