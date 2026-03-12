@@ -52,6 +52,7 @@ const MAScoresSummaryView = dynamic(() => import('./components/assessment/MAScor
 const MAYourResultsView = dynamic(() => import('./components/assessment/MAYourResultsView'), { ssr: false });
 const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), { ssr: false });
 import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, processTrialBalanceToDailySnapshotsAndLines, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
+import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
@@ -59,6 +60,7 @@ const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false }
 const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: false });
 const WorkingCapitalTab = dynamic(() => import('./components/WorkingCapitalTab'), { ssr: false });
 const ProjectionsTab = dynamic(() => import('./components/ProjectionsTab'), { ssr: false });
+const FinancialForecastTab = dynamic(() => import('./components/FinancialForecastTab'), { ssr: false });
 const MDAView = dynamic(() => import('./components/MDAView'), { ssr: false });
 const AIAnalysisView = dynamic(() => import('./components/AIAnalysisView'), { ssr: false });
 const PerformanceAnalyticsOverview = dynamic(() => import('./components/performance-analytics/PerformanceAnalyticsOverview'), { ssr: false });
@@ -317,7 +319,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -875,6 +877,28 @@ function FinancialScorePage() {
   const [dcfDiscountRate, setDcfDiscountRate] = useState(10.0);
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
   const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
+  const [sdeManualInputs, setSdeManualInputs] = useState<{
+    ownerCompOther?: number;
+    personalTravel?: number;
+    familyPayroll?: number;
+    autoLeases?: number;
+    mealsEntertainment?: number;
+    clubDues?: number;
+    personalOther?: number;
+    legalSettlements?: number;
+    majorRepairs?: number;
+    consulting?: number;
+    erpInstall?: number;
+    relocation?: number;
+    covidCosts?: number;
+    nonRecurringOther?: number;
+    assetSales?: number;
+    insuranceProceeds?: number;
+    oneTimeContract?: number;
+    oneTimeRevenueOther?: number;
+    marketReplacementSalary?: number;
+  }>({});
 
   // State - Goals
   const [expenseGoals, setExpenseGoals] = useState<{[key: string]: number}>({});
@@ -894,8 +918,6 @@ function FinancialScorePage() {
   const [csvTrialBalanceData, setCsvTrialBalanceData] = useState<any>(null);
   const [latestFinancialSource, setLatestFinancialSource] = useState<string | null>(null);
   const [hasSavedCsvInLocalStorage, setHasSavedCsvInLocalStorage] = useState(false);
-  const [isClearingCsv, setIsClearingCsv] = useState(false);
-  const [csvClearStatus, setCsvClearStatus] = useState<string | null>(null);
 
   const handleTrialBalanceCsvSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     console.log('?? CSV File selected');
@@ -909,25 +931,9 @@ function FinancialScorePage() {
     console.log('?? Current User:', currentUser?.email || 'NOT SET');
 
     try {
-      const fileName = (file.name || '').toLowerCase();
-      let text = '';
-      if (fileName.endsWith('.csv')) {
-        console.log('?? Reading CSV file text...');
-        text = await file.text();
-      } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-        console.log('?? Reading Excel file and converting first sheet to CSV...');
-        const arrayBuffer = await file.arrayBuffer();
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-        const firstSheetName = workbook.SheetNames?.[0];
-        if (!firstSheetName) {
-          throw new Error('Excel file has no sheets');
-        }
-        const firstSheet = workbook.Sheets[firstSheetName];
-        text = XLSX.utils.sheet_to_csv(firstSheet);
-      } else {
-        throw new Error('Unsupported file type. Please upload CSV, XLSX, or XLS.');
-      }
-      console.log('? File converted, length:', text.length);
+      console.log('?? Reading file text...');
+      const text = await file.text();
+      console.log('? File read, length:', text.length);
 
       console.log('?? Parsing Trial Balance CSV...');
       const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
@@ -941,10 +947,6 @@ function FinancialScorePage() {
 
       console.log('?? Setting csvTrialBalanceData state...');
       setCsvTrialBalanceData(csvData);
-      // Re-uploading a CSV should start a fresh mapping pass for that file.
-      setAiMappings([]);
-      setShowMappingSection(false);
-      setLatestFinancialSource('csv_trial_balance');
 
       console.log('?? Saving to localStorage...');
       localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
@@ -954,46 +956,11 @@ function FinancialScorePage() {
       console.log('? CSV upload complete!');
     } catch (err: any) {
       console.error('? Error parsing CSV:', err);
-      setError(`Failed to parse Trial Balance file: ${err.message}`);
+      setError(`Failed to parse Trial Balance CSV: ${err.message}`);
       setCsvTrialBalanceData(null);
     } finally {
       // allow re-selecting the same file
       e.target.value = '';
-    }
-  };
-
-  const clearTrialBalanceCsvAndMappings = async () => {
-    if (!selectedCompanyId || isClearingCsv) return;
-
-    setIsClearingCsv(true);
-    setCsvClearStatus('Clearing CSV and saved mappings...');
-    setError(null);
-
-    // Clear local CSV/mapping state first so UI resets immediately.
-    setCsvTrialBalanceData(null);
-    setAiMappings([]);
-    setShowMappingSection(false);
-    setHasSavedCsvInLocalStorage(false);
-    setLatestFinancialSource(null);
-    localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
-
-    // Also clear persisted account mappings to prevent old layout from reloading.
-    try {
-      const response = await fetch(`/api/account-mappings?companyId=${selectedCompanyId}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.error || 'Failed to clear saved mappings');
-      }
-      console.log('✅ Cleared saved account mappings for company:', selectedCompanyId);
-      setCsvClearStatus('CSV and saved mappings cleared. Upload a new CSV to continue.');
-    } catch (err) {
-      console.error('❌ Failed to clear saved mappings during CSV clear:', err);
-      setCsvClearStatus('Clear failed while removing saved mappings. Please retry.');
-      setError('Cleared local CSV, but failed to clear saved mappings. Please retry.');
-    } finally {
-      setIsClearingCsv(false);
     }
   };
 
@@ -1019,7 +986,6 @@ function FinancialScorePage() {
     clientId: '',
     clientSecret: '',
     ionApiBaseUrl: '',
-    csiProxyBasePath: '',
     ssoBaseUrl: '',
     oauthAuthPath: '',
     oauthTokenPath: '',
@@ -1027,7 +993,7 @@ function FinancialScorePage() {
     serviceAccountAccessKey: '',
     serviceAccountSecretKey: '',
   });
-  const [inforProbePath, setInforProbePath] = useState('/IDORequestService/ido/load/Customers');
+  const [inforProbePath, setInforProbePath] = useState('/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
   const [inforCaoPulling, setInforCaoPulling] = useState(false);
   const [inforCaoMessage, setInforCaoMessage] = useState<string | null>(null);
@@ -1051,6 +1017,15 @@ function FinancialScorePage() {
   const [aiMappings, setAiMappings] = useState<any[]>([]);
   const [isGeneratingMappings, setIsGeneratingMappings] = useState(false);
   const [isSavingMappings, setIsSavingMappings] = useState(false);
+  const [showOnlyActionableMappings, setShowOnlyActionableMappings] = useState(true);
+  const [mappingSourceSummary, setMappingSourceSummary] = useState<{
+    total: number;
+    new: number;
+    changed: number;
+    inactive: number;
+    unmapped: number;
+    lastSeedAt: string | null;
+  } | null>(null);
   
   // State - Lines of Business
   const [linesOfBusiness, setLinesOfBusiness] = useState<LOBData[]>([]);
@@ -1064,6 +1039,20 @@ function FinancialScorePage() {
     const month = now.getMonth() === 0 ? 12 : now.getMonth();
     return `${year}-${String(month).padStart(2, '0')}`;
   });
+  const [apiFinancialTargetMonth, setApiFinancialTargetMonth] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    return `${year}-${String(month).padStart(2, '0')}`;
+  });
+  const [apiFinancialImportMode, setApiFinancialImportMode] = useState<'through' | 'only'>('through');
+  const [erpCaoThroughMonth, setErpCaoThroughMonth] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    return `${year}-${String(month).padStart(2, '0')}`;
+  });
+  const [erpCaoLoading, setErpCaoLoading] = useState(false);
   const [openTargetFieldDropdown, setOpenTargetFieldDropdown] = useState<number | null>(null);
   const [qbStatus, setQbStatus] = useState<'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED' | 'NOT_CONNECTED'>('NOT_CONNECTED');
   const [qbLastSync, setQbLastSync] = useState<Date | null>(null);
@@ -1077,7 +1066,7 @@ function FinancialScorePage() {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   // State - Custom Print Package
-  const [printPackageSelections, setPrintPackageSelections] = useState({
+  const defaultPrintPackageSelections = {
     mda: false,
     priorityRatios: false,
     workingCapital: false,
@@ -1088,10 +1077,69 @@ function FinancialScorePage() {
     incomeStatement3YearsAnnual: false,
     balanceSheet12MonthsQuarterly: false,
     balanceSheet3YearsAnnual: false,
-    profile: false
-  });
+    profile: false,
+    opsDashboard: false,
+    opsCashForecast: false,
+    opsCashBasisIncomeStatementForecast: false,
+    opsCashBasisCashForecast: false,
+    opsCashBasisGraphs: false,
+    opsAccrualIncomeStatementForecast: false,
+    opsAccrualCashForecast: false,
+    opsAccrualGraphs: false,
+    opsCustomers: false,
+    opsARAging: false,
+    opsAPAging: false,
+    opsProducts: false,
+    opsInventory: false,
+    opsDailyFinancials: false
+  };
+  const [printPackageSelections, setPrintPackageSelections] = useState(defaultPrintPackageSelections);
+  const defaultPrintPackageOrientations = {
+    mda: 'portrait',
+    priorityRatios: 'portrait',
+    workingCapital: 'landscape',
+    dashboard: 'landscape',
+    cashFlow4Quarters: 'landscape',
+    cashFlow3Years: 'landscape',
+    incomeStatement12MonthsQuarterly: 'landscape',
+    incomeStatement3YearsAnnual: 'landscape',
+    balanceSheet12MonthsQuarterly: 'landscape',
+    balanceSheet3YearsAnnual: 'landscape',
+    profile: 'portrait',
+    opsDashboard: 'landscape',
+    opsCashForecast: 'landscape',
+    opsCashBasisIncomeStatementForecast: 'landscape',
+    opsCashBasisCashForecast: 'landscape',
+    opsCashBasisGraphs: 'landscape',
+    opsAccrualIncomeStatementForecast: 'landscape',
+    opsAccrualCashForecast: 'landscape',
+    opsAccrualGraphs: 'landscape',
+    opsCustomers: 'landscape',
+    opsARAging: 'landscape',
+    opsAPAging: 'landscape',
+    opsProducts: 'landscape',
+    opsInventory: 'landscape',
+    opsDailyFinancials: 'landscape'
+  } as const;
+  type PrintPackageKey = keyof typeof defaultPrintPackageSelections;
+  const [printPackageOrientations, setPrintPackageOrientations] = useState<Record<PrintPackageKey, 'portrait' | 'landscape'>>(
+    defaultPrintPackageOrientations
+  );
+  const [operationsPrintConfig, setOperationsPrintConfig] = useState<{
+    tab: string;
+    forecastBasisTab?: 'cash-basis' | 'accrual-basis';
+    forecastSubTab?: 'income-statement-forecast' | 'cash-forecast' | 'graphs';
+  } | null>(null);
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [isPrintingPackage, setIsPrintingPackage] = useState(false);
+
+  const updatePrintSelection = (key: PrintPackageKey, checked: boolean) => {
+    setPrintPackageSelections(prev => ({ ...prev, [key]: checked }));
+  };
+
+  const updatePrintOrientation = (key: PrintPackageKey, orientation: 'portrait' | 'landscape') => {
+    setPrintPackageOrientations(prev => ({ ...prev, [key]: orientation }));
+  };
 
   const handleExportMdaToWord = async (executiveSummaryText: string, mdaAnalysis: { strengths: string[]; weaknesses: string[]; insights: string[] }) => {
     try {
@@ -1482,6 +1530,7 @@ function FinancialScorePage() {
   // Load valuation settings when company changes
   useEffect(() => {
     if (selectedCompanyId) {
+      setSdeManualInputs({});
       fetch(`/api/valuation-settings?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
@@ -1490,6 +1539,11 @@ function FinancialScorePage() {
           setEbitdaMultiplier(data.ebitdaMultiplier || 5.0);
           setDcfDiscountRate(data.dcfDiscountRate || 10.0);
           setDcfTerminalGrowth(data.dcfTerminalGrowth || 2.0);
+          setSdeManualInputs(
+            data?.sdeManualInputs && typeof data.sdeManualInputs === 'object'
+              ? data.sdeManualInputs
+              : {}
+          );
         })
         .catch(err => {
           console.error('? Error loading valuation settings:', err);
@@ -1498,6 +1552,7 @@ function FinancialScorePage() {
           setEbitdaMultiplier(5.0);
           setDcfDiscountRate(10.0);
           setDcfTerminalGrowth(2.0);
+          setSdeManualInputs({});
         });
     }
   }, [selectedCompanyId]);
@@ -1566,8 +1621,7 @@ function FinancialScorePage() {
       // Load CSV Trial Balance data from localStorage
       const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
       setHasSavedCsvInLocalStorage(!!savedCsvData);
-      const hasCsvForSelectedCompany = csvTrialBalanceData?._companyId === selectedCompanyId;
-      if (savedCsvData && !hasCsvForSelectedCompany) {
+      if (savedCsvData && !csvTrialBalanceData) {
         try {
           const parsed = JSON.parse(savedCsvData);
           if (parsed._companyId === selectedCompanyId) {
@@ -1577,28 +1631,36 @@ function FinancialScorePage() {
         } catch (err) {
           console.error('? Error parsing saved CSV data:', err);
         }
-      } else if (!savedCsvData && hasCsvForSelectedCompany) {
-        // Keep Data Mapping tied to the selected company only.
-        setCsvTrialBalanceData(null);
       }
       
       // Load account mappings from database
       fetch(`/api/account-mappings?companyId=${selectedCompanyId}`)
         .then(res => res.json())
         .then(data => {
+          if (data.invalidMappingsCount > 0) {
+            alert(
+              `We found ${data.invalidMappingsCount} saved mapping(s) that do not match this company's selected sector. ` +
+              `Those mappings were set to Unmapped. Please review and remap Revenue/COGS fields before saving.`,
+            );
+          }
           if (data.mappings && data.mappings.length > 0) {
             console.log(`? Loaded ${data.mappings.length} saved account mappings`);
             // Convert to aiMappings format
             const loadedMappings = data.mappings.map((m: any) => ({
               qbAccount: m.qbAccount,
               qbAccountId: m.qbAccountId,
+              qbAccountCode: m.qbAccountCode,
               qbAccountClassification: m.qbAccountClassification,
               targetField: m.targetField,
               confidence: m.confidence || 'medium',
               lobAllocations: m.lobAllocations,
+              sourceStatus: m.sourceStatus || 'mapped',
             }));
             setAiMappings(loadedMappings);
             setShowMappingSection(true);
+            setMappingSourceSummary(data.sourceSummary || null);
+          } else {
+            setMappingSourceSummary(data.sourceSummary || null);
           }
           if (data.linesOfBusiness && Array.isArray(data.linesOfBusiness) && data.linesOfBusiness.length > 0) {
             console.log('? Loaded saved Lines of Business:', data.linesOfBusiness);
@@ -1940,8 +2002,6 @@ function FinancialScorePage() {
         // ALWAYS clear state at the start to prevent stale data
         console.log('?? Clearing all state before loading new company data');
         setQbRawData(null);
-        setCsvTrialBalanceData(null);
-        setHasSavedCsvInLocalStorage(false);
         setRawRows([]);
         setMapping({ date: '' });
         setFile(null);
@@ -2038,6 +2098,8 @@ function FinancialScorePage() {
               subcontractors: m.subcontractors || 0,
               rent: m.rent || 0,
               taxLicense: m.taxLicense || 0,
+              stateIncomeTaxes: m.stateIncomeTaxes || 0,
+              federalIncomeTaxes: m.federalIncomeTaxes || 0,
               phoneComm: m.phoneComm || 0,
               infrastructure: m.infrastructure || 0,
               autoTravel: m.autoTravel || 0,
@@ -2062,6 +2124,7 @@ function FinancialScorePage() {
               otherAssets: m.otherAssets || 0,
               totalAssets: m.totalAssets || 0,
               ap: m.ap || 0,
+              loc: m.loc || 0,
               otherCL: m.otherCL || 0,
               tcl: m.tcl || 0,
               ltd: m.ltd || 0,
@@ -2079,12 +2142,28 @@ function FinancialScorePage() {
               revenueBreakdown: m.revenueBreakdown || null,
               expenseBreakdown: m.expenseBreakdown || null,
               cogsBreakdown: m.cogsBreakdown || null,
+              ...(m.revenueBreakdown && typeof m.revenueBreakdown === 'object' ? m.revenueBreakdown : {}),
+              ...(m.cogsBreakdown && typeof m.cogsBreakdown === 'object' ? m.cogsBreakdown : {}),
               lobBreakdowns: m.lobBreakdowns || null
             }));
             setLoadedMonthlyData(convertedMonthly);
           } else {
             // CSV/Trial Balance data - check if it has processed monthly data
             setQbRawData(null);
+            // Hydrate raw Trial Balance payload from latest DB record so Data Mapping
+            // can still show "Process & Save Monthly Data" after page reloads.
+            if (inferredCsv) {
+              const restoredCsvPayload = {
+                ...(latestRecord.rawData || {}),
+                _companyId: selectedCompanyId,
+                fileName:
+                  latestRecord.fileName ||
+                  (latestRecord.rawData && (latestRecord.rawData as any).fileName) ||
+                  'CSV Trial Balance Upload',
+              };
+              setCsvTrialBalanceData(restoredCsvPayload);
+              setHasSavedCsvInLocalStorage(true);
+            }
             
             // If this record has monthlyData, it's a processed Trial Balance - load it like QB data
             if (latestRecord.monthlyData && latestRecord.monthlyData.length > 0) {
@@ -2104,6 +2183,8 @@ function FinancialScorePage() {
                 cogsOther: m.cogsOther || 0,
                 cogsTotal: m.cogsTotal || 0,
                 cogsBreakdown: m.cogsBreakdown || null,
+                ...(m.revenueBreakdown && typeof m.revenueBreakdown === 'object' ? m.revenueBreakdown : {}),
+                ...(m.cogsBreakdown && typeof m.cogsBreakdown === 'object' ? m.cogsBreakdown : {}),
                 // Operating Expenses - map DB names to display names
                 payroll: m.payroll || 0,
                 ownerBasePay: m.ownerBasePay || 0,
@@ -2114,6 +2195,8 @@ function FinancialScorePage() {
                 subcontractors: m.subcontractors || 0,
                 rent: m.rent || 0,
                 taxLicense: m.taxLicense || 0,
+                stateIncomeTaxes: m.stateIncomeTaxes || 0,
+                federalIncomeTaxes: m.federalIncomeTaxes || 0,
                 phoneComm: m.phoneComm || 0,
                 infrastructure: m.infrastructure || 0,
                 autoTravel: m.autoTravel || 0,
@@ -2138,6 +2221,7 @@ function FinancialScorePage() {
                 otherAssets: m.otherAssets || 0,
                 totalAssets: m.totalAssets || 0,
                 ap: m.ap || 0,
+                loc: m.loc || 0,
                 otherCL: m.otherCL || 0,
                 tcl: m.tcl || 0,
                 ltd: m.ltd || 0,
@@ -2187,7 +2271,17 @@ function FinancialScorePage() {
         try {
           const mappingsResponse = await fetch(`/api/account-mappings?companyId=${selectedCompanyId}`);
           if (mappingsResponse.ok) {
-            const { mappings, linesOfBusiness: savedLobs } = await mappingsResponse.json();
+            const {
+              mappings,
+              linesOfBusiness: savedLobs,
+              invalidMappingsCount,
+            } = await mappingsResponse.json();
+            if (invalidMappingsCount > 0) {
+              alert(
+                `We found ${invalidMappingsCount} saved mapping(s) that do not match this company's selected sector. ` +
+                `Those mappings were set to Unmapped. Please review and remap Revenue/COGS fields before saving.`,
+              );
+            }
             if (mappings && mappings.length > 0) {
               console.log('Loaded saved account mappings:', mappings);
               setAiMappings(mappings);
@@ -2350,11 +2444,8 @@ function FinancialScorePage() {
         await checkQBStatus(selectedCompanyId);
         // Check Xero connection status
         await checkXeroStatus(selectedCompanyId);
-        // Infor setup/status is restricted to site admins.
-        if (
-          String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' &&
-          (company?.accountingSystem === 'INFOR_M3' || company?.accountingSystem === 'INFOR_CSI')
-        ) {
+        // Infor M3 setup/status is restricted to site admins.
+        if (String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' && company?.accountingSystem === 'INFOR_M3') {
           await checkInforM3Status(selectedCompanyId);
           await fetchInforLastCaoPull(selectedCompanyId);
         }
@@ -2378,8 +2469,7 @@ function FinancialScorePage() {
       // Only reload if consultant changed (handles site admin viewing as different consultants)
       if (loadedConsultantId === currentUser.consultantId) return;
       
-      // CRITICAL: Clear companies immediately to prevent showing wrong consultant's data
-      safeSetCompanies([]);
+      // Keep any consultant-scoped preview data visible while we refresh from API.
       
       try {
         const { companies: consultantCompanies } = await companiesApi.getAll(currentUser.consultantId);
@@ -2482,6 +2572,7 @@ function FinancialScorePage() {
           
           // Convert API data to the format expected by the app
           const formattedData = monthlyData.map((m: any) => ({
+            ...m,
             date: new Date(m.monthDate),
             month: m.month || new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
             revenue: m.revenue || 0,
@@ -2531,6 +2622,7 @@ function FinancialScorePage() {
             otherAssets: m.otherAssets || 0,
             // Balance Sheet - Liabilities
             ap: m.ap || 0,
+            loc: m.loc || 0,
             otherCL: m.otherCL || 0,
             tcl: m.tcl || 0,
             ltd: m.ltd || 0,
@@ -2544,7 +2636,13 @@ function FinancialScorePage() {
             additionalPaidInCapital: m.additionalPaidInCapital || 0,
             treasuryStock: m.treasuryStock || 0,
             totalEquity: m.totalEquity || 0,
-            totalLAndE: m.totalLAndE || 0
+            totalLAndE: m.totalLAndE || 0,
+            revenueBreakdown: m.revenueBreakdown || null,
+            expenseBreakdown: m.expenseBreakdown || null,
+            cogsBreakdown: m.cogsBreakdown || null,
+            ...(m.revenueBreakdown && typeof m.revenueBreakdown === 'object' ? m.revenueBreakdown : {}),
+            ...(m.cogsBreakdown && typeof m.cogsBreakdown === 'object' ? m.cogsBreakdown : {}),
+            lobBreakdowns: m.lobBreakdowns || null,
           }));
           
           console.log('? Loaded', formattedData.length, 'months of financial data from database');
@@ -2646,6 +2744,8 @@ function FinancialScorePage() {
           subcontractors: parseFloat(row[mapping.subcontractors!]) || 0,
           interestExpense: parseFloat(row[mapping.interestExpense!]) || 0,
           depreciationAmortization: parseFloat(row[mapping.depreciationAmortization!]) || 0,
+          stateIncomeTaxes: parseFloat(row[mapping.stateIncomeTaxes!]) || 0,
+          federalIncomeTaxes: parseFloat(row[mapping.federalIncomeTaxes!]) || 0,
           operatingExpenseTotal: parseFloat(row[mapping.operatingExpenseTotal!]) || 0,
           nonOperatingIncome: parseFloat(row[mapping.nonOperatingIncome!]) || 0,
           extraordinaryItems: parseFloat(row[mapping.extraordinaryItems!]) || 0,
@@ -2660,6 +2760,7 @@ function FinancialScorePage() {
           fixedAssets: parseFloat(row[mapping.fixedAssets!]) || 0,
           otherAssets: parseFloat(row[mapping.otherAssets!]) || 0,
           ap: parseFloat(row[mapping.ap!]) || 0,
+          loc: parseFloat(row[mapping.loc!]) || 0,
           otherCL: parseFloat(row[mapping.otherCL!]) || 0,
           tcl: parseFloat(row[mapping.tcl!]) || 0,
           ltd: parseFloat(row[mapping.ltd!]) || 0,
@@ -2754,6 +2855,8 @@ function FinancialScorePage() {
       if (!mapping.subcontractors && n.includes('contractors') && n.includes('distribution')) mapping.subcontractors = col;
       if (!mapping.interestExpense && n.includes('interest')) mapping.interestExpense = col;
       if (!mapping.depreciationAmortization && n.includes('depreciation')) mapping.depreciationAmortization = col;
+      if (!mapping.stateIncomeTaxes && ((n.includes('state') && n.includes('incometax')) || n === 'stateincometaxes')) mapping.stateIncomeTaxes = col;
+      if (!mapping.federalIncomeTaxes && ((n.includes('federal') && n.includes('incometax')) || n === 'federalincometaxes')) mapping.federalIncomeTaxes = col;
       if (!mapping.operatingExpenseTotal && n.includes('operating') && n.includes('expense') && n.includes('total')) mapping.operatingExpenseTotal = col;
       if (!mapping.nonOperatingIncome && (n.includes('nonoperating') || n.includes('nonoperatng')) && n.includes('income')) mapping.nonOperatingIncome = col;
       if (!mapping.extraordinaryItems && (n.includes('extraordinary') || n.includes('extraordinaryitems'))) mapping.extraordinaryItems = col;
@@ -2772,6 +2875,7 @@ function FinancialScorePage() {
       // Liabilities & Equity
       if (!mapping.totalLiab && (n.includes('totalliab') || n === 'totalliabilities' || n === 'liabilities')) mapping.totalLiab = col;
       if (!mapping.ap && (n.includes('accountspayable') || n.includes('payable') || n === 'ap')) mapping.ap = col;
+      if (!mapping.loc && (n.includes('lineofcredit') || n === 'loc' || n.includes('creditline'))) mapping.loc = col;
       if (!mapping.otherCL && (n.includes('othercurrentliab') || n === 'othercurrentliabilities')) mapping.otherCL = col;
       if (!mapping.tcl && (n.includes('totalcurrentliab') || n === 'totalcurrentliabilities' || n === 'currentliabilities')) mapping.tcl = col;
       if (!mapping.ltd && (n.includes('longtermdebt') || n.includes('ltd') || n === 'longtermdebt')) mapping.ltd = col;
@@ -3457,7 +3561,7 @@ function FinancialScorePage() {
     Array.from(cogsCategories).sort().forEach(key => {
       categories.push({
         key: `cogs_${key}`,
-        label: `COGS - ${key.charAt(0).toUpperCase() + key.slice(1)}`,
+        label: `${key.charAt(0).toUpperCase() + key.slice(1)}`,
         category: 'COGS',
         masterDataKey: key,
         masterDataPath: `incomeStatement.cogs.${key}`
@@ -3700,6 +3804,71 @@ function FinancialScorePage() {
     }
   };
 
+  const refreshCompanyMappings = async (companyId: string) => {
+    const response = await fetch(`/api/account-mappings?companyId=${companyId}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to refresh account mappings');
+    }
+    const loadedMappings = Array.isArray(data.mappings)
+      ? data.mappings.map((m: any) => ({
+          qbAccount: m.qbAccount,
+          qbAccountId: m.qbAccountId,
+          qbAccountCode: m.qbAccountCode,
+          qbAccountClassification: m.qbAccountClassification,
+          targetField: m.targetField,
+          confidence: m.confidence || 'medium',
+          lobAllocations: m.lobAllocations,
+          sourceStatus: m.sourceStatus || 'mapped',
+        }))
+      : [];
+    setAiMappings(loadedMappings);
+    setShowMappingSection(loadedMappings.length > 0);
+    setMappingSourceSummary(data.sourceSummary || null);
+  };
+
+  const loadErpCaoInDataMapping = async () => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first.');
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(erpCaoThroughMonth)) {
+      alert('Select a valid Through month first (YYYY-MM).');
+      return;
+    }
+    if (!selectedAccountingSystem || !['QUICKBOOKS_DESKTOP', 'INFOR_M3'].includes(String(selectedAccountingSystem).toUpperCase())) {
+      alert('ERP COA Load is currently available for QuickBooks Desktop and Infor M3.');
+      return;
+    }
+
+    setErpCaoLoading(true);
+    try {
+      const response = await fetch('/api/erp/coa-load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          throughMonth: erpCaoThroughMonth,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.details || result?.error || 'Failed to load ERP COA data');
+      }
+
+      await refreshCompanyMappings(selectedCompanyId);
+      setQbLastSync(new Date());
+      alert(
+        `ERP COA load complete. Through month: ${erpCaoThroughMonth}. ` +
+          `${typeof result?.recordsImported === 'number' ? `${result.recordsImported} monthly records processed.` : ''}`
+      );
+    } catch (error: any) {
+      alert(`ERP COA load failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setErpCaoLoading(false);
+    }
+  };
+
   const connectQuickBooks = async () => {
     if (!selectedCompanyId) {
       alert('Please select a company first');
@@ -3727,6 +3896,10 @@ function FinancialScorePage() {
       alert('Please select a company first');
       return;
     }
+    if (!/^\d{4}-\d{2}$/.test(apiFinancialTargetMonth)) {
+      alert('Select a valid target month first (YYYY-MM).');
+      return;
+    }
 
     setQbSyncing(true);
     setQbError(null);
@@ -3737,7 +3910,9 @@ function FinancialScorePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           companyId: selectedCompanyId,
-          userId: currentUser.id
+          userId: currentUser.id,
+          targetMonth: apiFinancialTargetMonth,
+          mode: 'through',
         }),
       });
 
@@ -3758,7 +3933,9 @@ function FinancialScorePage() {
           await checkQBStatus(selectedCompanyId);
         }
         
-        alert(`QuickBooks data synced successfully! ${data.recordsImported || 0} months of financial data imported.`);
+        alert(
+          `QuickBooks data synced successfully! ${data.recordsImported || 0} months imported through ${apiFinancialTargetMonth}.`
+        );
       } else {
         // Include detailed error message from API
         const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
@@ -3860,6 +4037,10 @@ function FinancialScorePage() {
       alert('Please select a company first');
       return;
     }
+    if (!/^\d{4}-\d{2}$/.test(apiFinancialTargetMonth)) {
+      alert('Select a valid target month first (YYYY-MM).');
+      return;
+    }
 
     setXeroSyncing(true);
     setXeroError(null);
@@ -3870,7 +4051,9 @@ function FinancialScorePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           companyId: selectedCompanyId,
-          userId: currentUser.id
+          userId: currentUser.id,
+          targetMonth: apiFinancialTargetMonth,
+          mode: apiFinancialImportMode,
         }),
       });
 
@@ -3883,7 +4066,9 @@ function FinancialScorePage() {
           await checkXeroStatus(selectedCompanyId);
         }
         
-        alert(`Xero data synced successfully! ${data.recordsImported || 0} financial records imported.`);
+        alert(
+          `Xero data synced successfully! ${data.recordsImported || 0} records imported through ${apiFinancialTargetMonth} (${apiFinancialImportMode}).`
+        );
       } else {
         const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Sync failed');
         throw new Error(errorMsg);
@@ -3966,7 +4151,6 @@ function FinancialScorePage() {
         clientId: data.credentials.clientId || '',
         clientSecret: data.credentials.clientSecret || '',
         ionApiBaseUrl: data.credentials.ionApiBaseUrl || '',
-        csiProxyBasePath: data.credentials.csiProxyBasePath || '',
         ssoBaseUrl: data.credentials.ssoBaseUrl || '',
         oauthAuthPath: data.credentials.oauthAuthPath || '',
         oauthTokenPath: data.credentials.oauthTokenPath || '',
@@ -4108,7 +4292,7 @@ function FinancialScorePage() {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) return;
     if (!inforProbePath.trim()) {
-      alert('Please enter an Infor probe path');
+      alert('Please enter an Infor M3 probe path');
       return;
     }
     setInforBusy(true);
@@ -4119,11 +4303,7 @@ function FinancialScorePage() {
       );
       const data = await response.json();
       if (!response.ok || !data.ok) {
-        const fallback =
-          data?.status || data?.url
-            ? `Status ${data?.status ?? 'unknown'} from ${data?.url ?? 'unknown endpoint'}`
-            : 'Probe failed';
-        throw new Error(data.details || data.error || fallback);
+        throw new Error(data.details || data.error || 'Probe failed');
       }
 
       const summary = `Probe OK (${data.status}) - ${data.url}`;
@@ -4226,7 +4406,34 @@ function FinancialScorePage() {
             : data?.details || data?.error || 'Operational sync failed';
         throw new Error(details);
       }
-      alert(`Operational sync complete. Records created: ${data.recordsCreated ?? 0}.`);
+      const moduleCounts =
+        data?.moduleCounts && typeof data.moduleCounts === 'object'
+          ? data.moduleCounts as Record<string, number>
+          : null;
+      const moduleLines = moduleCounts
+        ? [
+            `Cash: ${Number(moduleCounts.cash || 0)}`,
+            `AR Aging: ${Number(moduleCounts.arAging || 0)}`,
+            `AP Aging: ${Number(moduleCounts.apAging || 0)}`,
+            `Customers: ${Number(moduleCounts.customers || 0)}`,
+            `Products: ${Number(moduleCounts.products || 0)}`,
+            `Inventory: ${Number(moduleCounts.inventory || 0)}`,
+          ]
+        : [];
+      const details = moduleLines.length ? `\n\nBy module:\n${moduleLines.join('\n')}` : '';
+      const companyForSync = Array.isArray(companies) ? companies.find((c) => c.id === companyId) : null;
+      const accountingSystem = String(companyForSync?.accountingSystem || '').toUpperCase();
+
+      // Refresh connector status so "Last synced" updates immediately in API Connections.
+      if (accountingSystem === 'QUICKBOOKS' || accountingSystem === 'QUICKBOOKS_DESKTOP') {
+        await checkQBStatus(companyId);
+      } else if (accountingSystem === 'XERO') {
+        await checkXeroStatus(companyId);
+      } else if (accountingSystem === 'INFOR_M3') {
+        await checkInforM3Status(companyId);
+      }
+
+      alert(`Operational sync complete. Records created: ${data.recordsCreated ?? 0}.${details}`);
     } catch (error: any) {
       alert(`Operational sync failed:\n\n${error?.message || 'Unknown error'}`);
     }
@@ -4849,11 +5056,35 @@ function FinancialScorePage() {
     }
   };
 
+  const hasMeaningfulFinancialData = (row: any): boolean => {
+    if (!row || typeof row !== 'object') return false;
+    const keys = [
+      'revenue',
+      'expense',
+      'cogsTotal',
+      'cash',
+      'ar',
+      'inventory',
+      'ap',
+      'tca',
+      'tcl',
+      'totalAssets',
+      'totalLiab',
+      'totalEquity',
+    ];
+    return keys.some((key) => Math.abs(Number(row[key] || 0)) > 0.0001);
+  };
+
   // Calculate monthly data
   const monthly = useMemo(() => {
     // If we have loaded monthly data from QuickBooks, use it directly
     if (loadedMonthlyData && loadedMonthlyData.length > 0) {
-      return loadedMonthlyData;
+      const source = String(latestFinancialSource || '').toLowerCase();
+      const isApiSource = !!source && !source.includes('csv');
+      if (!isApiSource) return loadedMonthlyData;
+
+      // API imports can include padded zero months; hide those so charts start at real data.
+      return loadedMonthlyData.filter((row: any) => hasMeaningfulFinancialData(row));
     }
     
     // Otherwise, process from CSV rawRows
@@ -4898,6 +5129,7 @@ function FinancialScorePage() {
       fixedAssets: parseFloat(row[mapping.fixedAssets!]) || 0,
       otherAssets: parseFloat(row[mapping.otherAssets!]) || 0,
       ap: parseFloat(row[mapping.ap!]) || 0,
+      loc: parseFloat(row[mapping.loc!]) || 0,
       otherCL: parseFloat(row[mapping.otherCL!]) || 0,
       tcl: parseFloat(row[mapping.tcl!]) || 0,
       ltd: parseFloat(row[mapping.ltd!]) || 0,
@@ -4912,7 +5144,7 @@ function FinancialScorePage() {
       totalEquity: parseFloat(row[mapping.totalEquity!]) || 0,
       totalLAndE: parseFloat(row[mapping.totalLAndE!]) || 0
     }));
-  }, [rawRows, mapping, loadedMonthlyData]).map(m => {
+  }, [rawRows, mapping, loadedMonthlyData, latestFinancialSource]).map(m => {
     // Calculate Total Operating Expenses using standard chart of accounts (same as Data Review)
     // Use the SAME calculation as Data Review for Total Operating Expenses
     const opexCategories = [
@@ -5086,7 +5318,7 @@ function FinancialScorePage() {
       
       const cur = monthly[i];
       const currentAssets = cur.tca || ((cur.cash || 0) + (cur.ar || 0) + (cur.inventory || 0) + (cur.otherCA || 0));
-      const currentLiab = Math.abs(cur.tcl || ((cur.ap || 0) + (cur.otherCL || 0)));
+      const currentLiab = Math.abs(cur.tcl || ((cur.ap || 0) + (cur.loc || 0) + (cur.otherCL || 0)));
       const quickAssets = (cur.cash || 0) + (cur.ar || 0);
 
       const currentRatio = currentLiab > 0 ? currentAssets / currentLiab : 0;
@@ -5114,7 +5346,7 @@ function FinancialScorePage() {
       
       // Sales/Working Capital: Monthly revenue / Average WC (current + prior month)
       const priorMonthCurrentAssets = i > 0 ? (priorMonth.tca || ((priorMonth.cash || 0) + (priorMonth.ar || 0) + (priorMonth.inventory || 0) + (priorMonth.otherCA || 0))) : currentAssets;
-      const priorMonthCurrentLiab = i > 0 ? Math.abs(priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.otherCL || 0))) : currentLiab;
+      const priorMonthCurrentLiab = i > 0 ? Math.abs(priorMonth.tcl || ((priorMonth.ap || 0) + (priorMonth.loc || 0) + (priorMonth.otherCL || 0))) : currentLiab;
       const priorMonthWorkingCap = priorMonthCurrentAssets - priorMonthCurrentLiab;
       const avgWorkingCap = (workingCap + priorMonthWorkingCap) / 2;
       const salesWC = avgWorkingCap !== 0 ? (cur.revenue || 0) / avgWorkingCap : 0;
@@ -5131,7 +5363,7 @@ function FinancialScorePage() {
       const ltmDepreciation = ltmE * 0.05; // Estimated depreciation
       const priorMonth12 = i >= 12 ? monthly[i - 12] : cur;
       const priorWorkingCap12CA = priorMonth12.tca || ((priorMonth12.cash || 0) + (priorMonth12.ar || 0) + (priorMonth12.inventory || 0) + (priorMonth12.otherCA || 0));
-      const priorWorkingCap12CL = priorMonth12.tcl || ((priorMonth12.ap || 0) + (priorMonth12.otherCL || 0));
+      const priorWorkingCap12CL = priorMonth12.tcl || ((priorMonth12.ap || 0) + (priorMonth12.loc || 0) + (priorMonth12.otherCL || 0));
       const priorWorkingCap = priorWorkingCap12CA - priorWorkingCap12CL;
       const changeInWorkingCap = workingCap - priorWorkingCap;
       const ltmOperatingCF = ltmNetIncome + ltmDepreciation - changeInWorkingCap;
@@ -5282,7 +5514,7 @@ function FinancialScorePage() {
     // Working Capital Analysis
     const lastMonth = monthly[monthly.length - 1];
     const currentAssets = lastMonth.tca || ((lastMonth.cash || 0) + (lastMonth.ar || 0) + (lastMonth.inventory || 0) + (lastMonth.otherCA || 0));
-    const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.otherCL || 0)));
+    const currentLiab = Math.abs(lastMonth.tcl || ((lastMonth.ap || 0) + (lastMonth.loc || 0) + (lastMonth.otherCL || 0)));
     const workingCapital = currentAssets - currentLiab;
     // Fix: If no current liabilities but have current assets, treat as very strong (>10.0), not 0
     const wcRatioMDA = currentLiab > 0 ? currentAssets / currentLiab : (currentAssets > 0 ? 999 : 0);
@@ -5713,9 +5945,7 @@ function FinancialScorePage() {
       case 'IFS':
         return 'IFS';
       case 'INFOR_M3':
-        return 'Infor M3 (Legacy)';
-      case 'INFOR_CSI':
-        return 'Infor SyteLine (CloudSuite Industrial)';
+        return 'Infor M3';
       case 'NETSUITE':
         return 'NetSuite';
       case 'QAD':
@@ -5748,29 +5978,30 @@ function FinancialScorePage() {
     const printQueue: any[] = [];
     
     if (printPackageSelections.mda) {
-      printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)' });
+      printQueue.push({ view: 'mda', title: 'MD&A (Management Discussion & Analysis)', orientation: printPackageOrientations.mda });
     }
     if (printPackageSelections.priorityRatios) {
-      printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios' });
+      printQueue.push({ view: 'kpis', tab: 'priority-ratios', title: 'Priority Ratios', orientation: printPackageOrientations.priorityRatios });
     }
     if (printPackageSelections.workingCapital) {
-      printQueue.push({ view: 'working-capital', title: 'Working Capital' });
+      printQueue.push({ view: 'working-capital', title: 'Working Capital', orientation: printPackageOrientations.workingCapital });
     }
     if (printPackageSelections.dashboard) {
-      printQueue.push({ view: 'dashboard', title: 'Dashboard' });
+      printQueue.push({ view: 'dashboard', title: 'Dashboard', orientation: printPackageOrientations.dashboard });
     }
     if (printPackageSelections.cashFlow4Quarters) {
-      printQueue.push({ view: 'cash-flow', display: 'quarterly', title: 'Cash Flow - Last 4 Quarters' });
+      printQueue.push({ view: 'cash-flow', display: 'quarterly', title: 'Cash Flow - Last 4 Quarters', orientation: printPackageOrientations.cashFlow4Quarters });
     }
     if (printPackageSelections.cashFlow3Years) {
-      printQueue.push({ view: 'cash-flow', display: 'annual', title: 'Cash Flow - Last 3 Years' });
+      printQueue.push({ view: 'cash-flow', display: 'annual', title: 'Cash Flow - Last 3 Years', orientation: printPackageOrientations.cashFlow3Years });
     }
     if (printPackageSelections.incomeStatement12MonthsQuarterly) {
       printQueue.push({ 
         view: 'financial-statements', 
         type: 'income-statement', 
         display: 'quarterly',
-        title: 'Income Statement - Last 12 Months (Quarterly)' 
+        title: 'Income Statement - Last 12 Months (Quarterly)',
+        orientation: printPackageOrientations.incomeStatement12MonthsQuarterly
       });
     }
     if (printPackageSelections.incomeStatement3YearsAnnual) {
@@ -5778,7 +6009,8 @@ function FinancialScorePage() {
         view: 'financial-statements', 
         type: 'income-statement', 
         display: 'annual',
-        title: 'Income Statement - Last 3 Years (Annual)' 
+        title: 'Income Statement - Last 3 Years (Annual)',
+        orientation: printPackageOrientations.incomeStatement3YearsAnnual
       });
     }
     if (printPackageSelections.balanceSheet12MonthsQuarterly) {
@@ -5786,7 +6018,8 @@ function FinancialScorePage() {
         view: 'financial-statements', 
         type: 'balance-sheet', 
         display: 'quarterly',
-        title: 'Balance Sheet - Last 12 Months (Quarterly)' 
+        title: 'Balance Sheet - Last 12 Months (Quarterly)',
+        orientation: printPackageOrientations.balanceSheet12MonthsQuarterly
       });
     }
     if (printPackageSelections.balanceSheet3YearsAnnual) {
@@ -5794,11 +6027,96 @@ function FinancialScorePage() {
         view: 'financial-statements', 
         type: 'balance-sheet', 
         display: 'annual',
-        title: 'Balance Sheet - Last 3 Years (Annual)' 
+        title: 'Balance Sheet - Last 3 Years (Annual)',
+        orientation: printPackageOrientations.balanceSheet3YearsAnnual
       });
     }
     if (printPackageSelections.profile) {
-      printQueue.push({ view: 'profile', title: 'Company Profile' });
+      printQueue.push({ view: 'profile', title: 'Company Profile', orientation: printPackageOrientations.profile });
+    }
+    if (printPackageSelections.opsDashboard) {
+      printQueue.push({ view: 'operations', opsTab: 'dashboard', title: 'Operations - Ops Dashboard', orientation: printPackageOrientations.opsDashboard });
+    }
+    if (printPackageSelections.opsCashForecast) {
+      printQueue.push({ view: 'operations', opsTab: 'forecast', title: 'Operations - Cash Forecast', orientation: printPackageOrientations.opsCashForecast });
+    }
+    if (printPackageSelections.opsCashBasisIncomeStatementForecast) {
+      printQueue.push({
+        view: 'operations',
+        opsTab: 'forecast',
+        opsForecastBasisTab: 'cash-basis',
+        opsForecastSubTab: 'income-statement-forecast',
+        title: 'Operations - Cash Basis - Income Statement Forecast',
+        orientation: printPackageOrientations.opsCashBasisIncomeStatementForecast
+      });
+    }
+    if (printPackageSelections.opsCashBasisCashForecast) {
+      printQueue.push({
+        view: 'operations',
+        opsTab: 'forecast',
+        opsForecastBasisTab: 'cash-basis',
+        opsForecastSubTab: 'cash-forecast',
+        title: 'Operations - Cash Basis - Cash Forecast',
+        orientation: printPackageOrientations.opsCashBasisCashForecast
+      });
+    }
+    if (printPackageSelections.opsCashBasisGraphs) {
+      printQueue.push({
+        view: 'operations',
+        opsTab: 'forecast',
+        opsForecastBasisTab: 'cash-basis',
+        opsForecastSubTab: 'graphs',
+        title: 'Operations - Cash Basis - Graphs',
+        orientation: printPackageOrientations.opsCashBasisGraphs
+      });
+    }
+    if (printPackageSelections.opsAccrualIncomeStatementForecast) {
+      printQueue.push({
+        view: 'operations',
+        opsTab: 'forecast',
+        opsForecastBasisTab: 'accrual-basis',
+        opsForecastSubTab: 'income-statement-forecast',
+        title: 'Operations - Accrual Basis - Income Statement Forecast',
+        orientation: printPackageOrientations.opsAccrualIncomeStatementForecast
+      });
+    }
+    if (printPackageSelections.opsAccrualCashForecast) {
+      printQueue.push({
+        view: 'operations',
+        opsTab: 'forecast',
+        opsForecastBasisTab: 'accrual-basis',
+        opsForecastSubTab: 'cash-forecast',
+        title: 'Operations - Accrual Basis - Cash Forecast',
+        orientation: printPackageOrientations.opsAccrualCashForecast
+      });
+    }
+    if (printPackageSelections.opsAccrualGraphs) {
+      printQueue.push({
+        view: 'operations',
+        opsTab: 'forecast',
+        opsForecastBasisTab: 'accrual-basis',
+        opsForecastSubTab: 'graphs',
+        title: 'Operations - Accrual Basis - Graphs',
+        orientation: printPackageOrientations.opsAccrualGraphs
+      });
+    }
+    if (printPackageSelections.opsCustomers) {
+      printQueue.push({ view: 'operations', opsTab: 'customers', title: 'Operations - Customers', orientation: printPackageOrientations.opsCustomers });
+    }
+    if (printPackageSelections.opsARAging) {
+      printQueue.push({ view: 'operations', opsTab: 'ar', title: 'Operations - AR Aging', orientation: printPackageOrientations.opsARAging });
+    }
+    if (printPackageSelections.opsAPAging) {
+      printQueue.push({ view: 'operations', opsTab: 'ap', title: 'Operations - AP Aging', orientation: printPackageOrientations.opsAPAging });
+    }
+    if (printPackageSelections.opsProducts) {
+      printQueue.push({ view: 'operations', opsTab: 'products', title: 'Operations - Products', orientation: printPackageOrientations.opsProducts });
+    }
+    if (printPackageSelections.opsInventory) {
+      printQueue.push({ view: 'operations', opsTab: 'inventory', title: 'Operations - Inventory', orientation: printPackageOrientations.opsInventory });
+    }
+    if (printPackageSelections.opsDailyFinancials) {
+      printQueue.push({ view: 'operations', opsTab: 'daily_financials', title: 'Operations - Daily Financials', orientation: printPackageOrientations.opsDailyFinancials });
     }
 
     if (printQueue.length === 0) {
@@ -5814,43 +6132,80 @@ function FinancialScorePage() {
 
     setIsPrintingPackage(true);
 
-    // Print each report in sequence with a delay
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+    const waitForPrintReady = async (report: any) => {
+      const baseDelayMs =
+        report.view === 'dashboard' ? 1500 : report.view === 'operations' ? 1800 : 1000;
+      await sleep(baseDelayMs);
+
+      // Forecast pages can still be loading after initial render; wait until loading text clears.
+      const isOpsForecast = report.view === 'operations' && report.opsTab === 'forecast';
+      if (!isOpsForecast) return;
+
+      const maxWaitMs = 15000;
+      const pollMs = 250;
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < maxWaitMs) {
+        const root = document.querySelector('.app-shell-main') || document.body;
+        const text = (root.textContent || '').toLowerCase();
+        const hasLoadingText =
+          text.includes('loading...') ||
+          text.includes('loading…') ||
+          text.includes('beginning cash (last imported)\nloading');
+
+        if (!hasLoadingText) return;
+        await sleep(pollMs);
+      }
+    };
+
+    // Print each report in sequence with a delay/readiness check
     let currentIndex = 0;
-    const printNext = () => {
+    const printNext = async () => {
       if (currentIndex >= printQueue.length) {
         setIsPrintingPackage(false);
+        setOperationsPrintConfig(null);
         alert('All reports have been sent to print!');
         return;
       }
 
       const report = printQueue[currentIndex];
+      setPrintOrientation(report.orientation || 'portrait');
       
       // Set the appropriate view and parameters
       if (report.view === 'financial-statements') {
+        setOperationsPrintConfig(null);
         setStatementType(report.type as any);
         setStatementDisplay(report.display as any);
         setCurrentView('financial-statements');
+      } else if (report.view === 'operations') {
+        setOperationsPrintConfig({
+          tab: report.opsTab as string,
+          forecastBasisTab: report.opsForecastBasisTab as 'cash-basis' | 'accrual-basis' | undefined,
+          forecastSubTab: report.opsForecastSubTab as 'income-statement-forecast' | 'cash-forecast' | 'graphs' | undefined
+        });
+        setCurrentView('operations');
       } else if (report.view === 'cash-flow') {
+        setOperationsPrintConfig(null);
         setCashFlowDisplay(report.display as any);
         setCurrentView('cash-flow');
       } else if (report.view === 'kpis' && report.tab) {
+        setOperationsPrintConfig(null);
         setKpiDashboardTab(report.tab as any);
         setCurrentView('kpis');
       } else {
+        setOperationsPrintConfig(null);
         setCurrentView(report.view as any);
       }
 
-      // Wait for view transition/render to settle before printing
-      const renderDelayMs = report.view === 'dashboard' ? 1500 : 1000;
-      setTimeout(() => {
-        window.print();
-        currentIndex++;
-        // Give the browser time to close print dialog before next report
-        setTimeout(printNext, 1200);
-      }, renderDelayMs);
+      await waitForPrintReady(report);
+      window.print();
+      currentIndex++;
+      // Give the browser time to close print dialog before next report
+      setTimeout(() => { void printNext(); }, 1200);
     };
 
-    printNext();
+    void printNext();
   };
 
   if (!isLoggedIn) {
@@ -5998,18 +6353,17 @@ function FinancialScorePage() {
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
             {currentUser?.userType !== 'assessment' && null}
 
-            {/* Analysis Section */}
-            <div style={{ marginBottom: '16px' }}>
+            <div style={{ marginBottom: '6px' }}>
               <h3
-                onClick={() => handleNavigation('operations')}
+                onClick={() => handleNavigation('ai-analysis')}
                 style={{
                   fontSize: '16px',
                   fontWeight: '700',
-                  color: currentView === 'operations' ? '#1F70C1' : '#1e293b',
+                  color: currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   padding: '1px 24px',
-                  margin: '6px 0 8px 0',
+                  margin: '0 0 8px 0',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
                   whiteSpace: 'nowrap'
@@ -6018,12 +6372,15 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#1F70C1';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.color = currentView === 'operations' ? '#1F70C1' : '#1e293b';
+                  e.currentTarget.style.color = currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b';
                 }}
               >
-                {currentView === 'operations' && '› '}OPERATIONS DASHBOARD
+                {currentView === 'ai-analysis' && '› '}ASK CORELYTICS
               </h3>
+            </div>
 
+            {/* Analysis Section */}
+            <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={() => handleNavigation('pa-overview')}
                 style={{
@@ -6044,48 +6401,74 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = currentView.startsWith('pa-') ? '#1F70C1' : '#1e293b';
                 }}
               >
-                {currentView === 'pa-overview' && '› '}Operations Analysis
+                {currentView === 'pa-overview' && '› '}Expert Analysis
               </h3>
               {(!isCompanyUser || isCompanyAdmin || (allowedSectionsForCompanyUser || []).includes('performance-analytics')) && (
-                <div style={{ paddingLeft: '28px' }}>
-                  {[
-                    { id: 'pa-critical-issues', label: 'Critical Issues' },
-                    { id: 'pa-focus-board', label: 'Major Trends' },
-                    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
-                    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
-                    { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
-                  ].map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={() => handleNavigation(item.id)}
-                      style={{
-                        fontSize: '16px',
-                        color: currentView === item.id ? '#1F70C1' : '#475569',
-                        padding: '6px 12px',
-                        cursor: 'pointer',
-                        borderRadius: '6px',
-                        marginBottom: '4px',
-                        background: currentView === item.id ? '#e0f2fe' : 'transparent',
-                        fontWeight: currentView === item.id ? '600' : '400',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (currentView !== item.id) {
-                          e.currentTarget.style.background = '#f8fafc';
-                          e.currentTarget.style.color = '#1F70C1';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (currentView !== item.id) {
-                          e.currentTarget.style.background = 'transparent';
-                          e.currentTarget.style.color = '#475569';
-                        }
-                      }}
-                    >
-                      {currentView === item.id && '› '}{item.label}
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div style={{ paddingLeft: '28px' }}>
+                    {[
+                      { id: 'pa-critical-issues', label: 'Critical Issues' },
+                      { id: 'pa-focus-board', label: 'Major Trends' },
+                      { id: 'pa-trend-explorer', label: 'Trend Explorer' },
+                      { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
+                      { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
+                    ].map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => handleNavigation(item.id)}
+                        style={{
+                          fontSize: '16px',
+                          color: currentView === item.id ? '#1F70C1' : '#475569',
+                          padding: '6px 12px',
+                          cursor: 'pointer',
+                          borderRadius: '6px',
+                          marginBottom: '4px',
+                          background: currentView === item.id ? '#e0f2fe' : 'transparent',
+                          fontWeight: currentView === item.id ? '600' : '400',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (currentView !== item.id) {
+                            e.currentTarget.style.background = '#f8fafc';
+                            e.currentTarget.style.color = '#1F70C1';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (currentView !== item.id) {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.color = '#475569';
+                          }
+                        }}
+                      >
+                        {currentView === item.id && '› '}{item.label}
+                      </div>
+                    ))}
+                  </div>
+                  <h3
+                    onClick={() => handleNavigation('mda')}
+                    style={{
+                      fontSize: '16px',
+                      fontWeight: '700',
+                      color: currentView === 'mda' ? '#1F70C1' : '#1e293b',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      padding: '1px 24px',
+                      margin: '6px 0 8px 0',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                      whiteSpace: 'normal',
+                      lineHeight: '1.25'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#1F70C1';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = currentView === 'mda' ? '#1F70C1' : '#1e293b';
+                    }}
+                  >
+                    {currentView === 'mda' && '› '}MANAGEMENT DISCUSSION AND ANALYSIS
+                  </h3>
+                </>
               )}
             </div>
 
@@ -6230,6 +6613,17 @@ function FinancialScorePage() {
               >
                 📞 SUPPORT
               </a>
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  color: '#1e293b',
+                  padding: '8px 24px 0 24px',
+                  margin: '0 12px'
+                }}
+              >
+                Powered by Corelytics
+              </div>
             </div>
           </nav>
         </aside>
@@ -7037,6 +7431,7 @@ function FinancialScorePage() {
                     <div>
                       <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#475569', marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>Liabilities & Other</h4>
                       {renderColumnSelector('Accounts Payable', 'ap')}
+                      {renderColumnSelector('Line of Credit', 'loc')}
                       {renderColumnSelector('Other Current Liabilities', 'otherCL')}
                       {renderColumnSelector('Total Current Liabilities', 'tcl')}
                       {renderColumnSelector('Long Term Debt', 'ltd')}
@@ -7063,17 +7458,38 @@ function FinancialScorePage() {
                 
                 <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
                   <p style={{ fontSize: '14px', color: '#065f46', lineHeight: '1.6', margin: 0 }}>
-                    <strong>Trial Balance Format:</strong> Upload a CSV or Excel file with columns: Acct Type, Acct ID, Description, then date columns (e.g., 12/31/2022, 1/31/2023, ...).
+                    <strong>Trial Balance Format:</strong> Upload a CSV with columns: Acct Type, Acct ID, Description, then date columns (e.g., 12/31/2022, 1/31/2023, ...).
                     This format supports QuickBooks-style account types and routes through Data Mapping for precise account classification.
                   </p>
                 </div>
 
                 <div style={{ marginBottom: '20px' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Trial Balance File</h3>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Trial Balance CSV</h3>
                   <input 
                     type="file" 
-                    accept=".csv,.xlsx,.xls" 
-                    onChange={handleTrialBalanceCsvSelected}
+                    accept=".csv" 
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      try {
+                        const text = await file.text();
+                        const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
+                        const csvData = {
+                          ...parsed,
+                          _companyId: selectedCompanyId,
+                          fileName: file.name,
+                        };
+                        setCsvTrialBalanceData(csvData);
+                        // Save to localStorage for persistence across sessions
+                        localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
+                        setError(null);
+                        alert(`Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
+                      } catch (err: any) {
+                        setError(`Failed to parse Trial Balance CSV: ${err.message}`);
+                        setCsvTrialBalanceData(null);
+                      }
+                    }} 
                     style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #10b981', borderRadius: '8px', width: '100%', cursor: 'pointer', background: '#f0fdf4' }} 
                   />
                   {error && error.includes('Trial Balance') && (
@@ -7138,8 +7554,10 @@ function FinancialScorePage() {
                         ? Go to Data Mapping
                       </button>
                       <button
-                        onClick={clearTrialBalanceCsvAndMappings}
-                        disabled={isClearingCsv}
+                        onClick={() => {
+                          setCsvTrialBalanceData(null);
+                          localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
+                        }}
                         style={{
                           padding: '12px 24px',
                           background: 'white',
@@ -7148,18 +7566,12 @@ function FinancialScorePage() {
                           borderRadius: '8px',
                           fontSize: '14px',
                           fontWeight: '600',
-                          cursor: isClearingCsv ? 'not-allowed' : 'pointer',
-                          opacity: isClearingCsv ? 0.6 : 1
+                          cursor: 'pointer'
                         }}
                       >
-                        {isClearingCsv ? 'Clearing...' : 'Clear'}
+                        Clear
                       </button>
                     </div>
-                    {csvClearStatus && (
-                      <div style={{ marginTop: '10px', fontSize: '12px', color: csvClearStatus.toLowerCase().includes('failed') ? '#b91c1c' : '#065f46' }}>
-                        {csvClearStatus}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -7197,7 +7609,7 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem &&
-                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
                     {selectedAccountingSystemLabel} is not supported yet.
                   </div>
@@ -7248,6 +7660,16 @@ function FinancialScorePage() {
                       {qbError || (qbConnected && qbStatus === 'ACTIVE' ? (qbLastSync ? `Last synced: ${qbLastSync.toLocaleString()}` : 'Ready to sync') : qbStatus === 'EXPIRED' ? 'Please reconnect' : 'Ready to connect')}
                     </div>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                  <input
+                    type="month"
+                    value={apiFinancialTargetMonth}
+                    onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
+                    style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
+                  />
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -7348,6 +7770,23 @@ function FinancialScorePage() {
                   </div>
                 </div>
 
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+                  <input
+                    type="month"
+                    value={apiFinancialTargetMonth}
+                    onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
+                    style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
+                  />
+                  <select
+                    value={apiFinancialImportMode}
+                    onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
+                    style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
+                  >
+                    <option value="through">Through month</option>
+                    <option value="only">Only month</option>
+                  </select>
+                </div>
+
                 <div style={{ display: 'flex', gap: '12px' }}>
                   {!xeroConnected || xeroStatus === 'EXPIRED' || xeroStatus === 'ERROR' ? (
                     <button
@@ -7416,15 +7855,13 @@ function FinancialScorePage() {
               </div>
               )}
 
-              {(selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI') && (
+              {selectedAccountingSystem === 'INFOR_M3' && (
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '16px', border: '2px solid #e2e8f0' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                    {(selectedAccountingSystem === 'INFOR_CSI' ? 'Infor SyteLine (CloudSuite Industrial)' : 'Infor M3')} Monthly COA Pull
+                    Infor M3 Monthly COA Pull
                   </h3>
                   <div style={{ marginBottom: '12px', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    {(selectedAccountingSystem === 'INFOR_CSI'
-                      ? 'Infor SyteLine (CloudSuite Industrial)'
-                      : 'Infor M3')} credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
+                    Infor M3 credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
                     This action triggers a monthly Chart of Accounts pull using the <strong>Accounts</strong> MI Program configured for this company.
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -7776,6 +8213,9 @@ function FinancialScorePage() {
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
           industrySectorCategory={company?.industrySectorCategory || null}
+          initialTab={operationsPrintConfig?.tab}
+          initialForecastBasisTab={operationsPrintConfig?.forecastBasisTab}
+          initialForecastSubTab={operationsPrintConfig?.forecastSubTab}
         />
       )}
 
@@ -8347,7 +8787,7 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && selectedAccountingSystem === 'CSV_FILE' && (
             <div style={{ maxWidth: '1280px', margin: '-18px auto 6px auto', padding: '0 16px', display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '10px 12px', width: '52%', minWidth: '520px', maxWidth: '640px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'nowrap' }}>
                 <div style={{ minWidth: 0 }}>
@@ -8412,7 +8852,7 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !(csvTrialBalanceData?._companyId === selectedCompanyId) && !qbRawData && selectedAccountingSystem !== 'CSV_FILE' && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !csvTrialBalanceData && !qbRawData && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
@@ -8477,6 +8917,44 @@ function FinancialScorePage() {
                     );
                   }
 
+                  if (selectedAccountingSystem === 'QUICKBOOKS_DESKTOP' || selectedAccountingSystem === 'INFOR_M3') {
+                    return (
+                      <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '16px', border: '2px solid #fed7aa' }}>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#9a3412', marginBottom: '8px', textAlign: 'center' }}>
+                          {selectedAccountingSystemLabel || 'ERP'} COA Load
+                        </div>
+                        <p style={{ fontSize: '13px', color: '#92400e', marginBottom: '12px', textAlign: 'center' }}>
+                          Load monthly Accounts/COA data for mapping and process up to 36 months through the selected month.
+                        </p>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                          <input
+                            type="month"
+                            value={erpCaoThroughMonth}
+                            onChange={(e) => setErpCaoThroughMonth(e.target.value)}
+                            style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                          />
+                          <button
+                            onClick={loadErpCaoInDataMapping}
+                            disabled={erpCaoLoading}
+                            style={{
+                              padding: '8px 12px',
+                              background: erpCaoLoading ? '#9ca3af' : '#7c3aed',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: '700',
+                              cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            {erpCaoLoading ? 'Loading COA...' : 'Load ERP COA'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   // CSV Trial Balance option: always available and used as the fallback for "not supported yet".
                   const isUnsupported =
                     !!selectedAccountingSystem &&
@@ -8495,7 +8973,7 @@ function FinancialScorePage() {
                       </p>
                       <input
                         type="file"
-                        accept=".csv,.xlsx,.xls"
+                        accept=".csv"
                         onChange={handleTrialBalanceCsvSelected}
                         style={{
                           width: '100%',
@@ -8514,15 +8992,37 @@ function FinancialScorePage() {
           )}
 
           {/* Account Mapping Interface - Shows after CSV is uploaded */}
-          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && (selectedAccountingSystem === 'CSV_FILE' || csvTrialBalanceData?._companyId === selectedCompanyId || aiMappings.length > 0)) && (() => {
+          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && (csvTrialBalanceData?._companyId === selectedCompanyId || aiMappings.length > 0)) && (() => {
             const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
 
             // Get accounts for mapping from CSV data (if available)
             const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
             const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
-            const shouldShowCsvReupload =
-              !qbRawData &&
-              (hasCsvData || hasSavedCsvInLocalStorage || latestFinancialSource === 'csv_trial_balance');
+            const mappedApiSourceLabel =
+              selectedAccountingSystem === 'QUICKBOOKS'
+                ? 'QuickBooks'
+                : selectedAccountingSystem === 'XERO'
+                  ? 'Xero'
+                  : selectedAccountingSystemLabel || 'accounting';
+            const isCsvMappingWorkflow =
+              hasCsvData ||
+              selectedAccountingSystem === 'CSV_FILE' ||
+              String(latestFinancialSource || '').toLowerCase().includes('csv');
+            const showCsvProcessButton =
+              selectedAccountingSystem === 'CSV_FILE' ||
+              hasCsvData ||
+              hasSavedCsvInLocalStorage;
+            const hasSupportedApiReprocessPlatform = ['QUICKBOOKS', 'XERO', 'INFOR_M3', 'QUICKBOOKS_DESKTOP', 'SAGE', 'SAGE_INTACCT'].includes(
+              String(selectedAccountingSystem || '').toUpperCase()
+            );
+            const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
+            const erpCaoEnabledSystems = ['QUICKBOOKS_DESKTOP', 'INFOR_M3'];
+            const erpCaoFutureSystems = ['ACUMATICA', 'DYNAMICS', 'DYNAMICS365', 'SAGE_INTACCT', 'SAGE'];
+            const showErpCaoLoadPanel = erpCaoEnabledSystems.includes(selectedSystemNormalized);
+            const showProcessButton =
+              showCsvProcessButton ||
+              hasSupportedApiReprocessPlatform ||
+              Boolean(loadedMonthlyData && loadedMonthlyData.length > 0);
 
             return (
               <div
@@ -8541,59 +9041,65 @@ function FinancialScorePage() {
                 <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
                   {hasCsvData
                     ? `Map Trial Balance accounts to Corelytics accounts - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'}`
-                    : aiMappings.length > 0
-                      ? `${aiMappings.length} saved account mappings loaded from database`
-                      : 'Upload a Trial Balance CSV to start mapping accounts.'
+                    : `${aiMappings.length} saved account mappings loaded from database`
                   }
                 </p>
-                {(selectedAccountingSystem === 'CSV_FILE' || shouldShowCsvReupload) && (
-                  <div style={{ marginBottom: '12px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <label style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px 12px',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '8px',
-                      background: '#f8fafc',
-                      cursor: isClearingCsv ? 'not-allowed' : 'pointer',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: '#334155',
-                      opacity: isClearingCsv ? 0.6 : 1
-                    }}>
-                      <Upload size={14} />
-                      {hasCsvData ? 'Replace CSV' : 'Upload CSV'}
+
+                {showErpCaoLoadPanel && (
+                  <div style={{ marginBottom: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#9a3412', marginBottom: '6px' }}>
+                      {selectedAccountingSystemLabel || 'ERP'} COA Load
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '8px' }}>
+                      Load monthly {selectedAccountingSystemLabel || 'ERP'} Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#a16207', marginBottom: '8px' }}>
+                      Future-ready connector list: {erpCaoFutureSystems.join(', ')}.
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                       <input
-                        type="file"
-                        accept=".csv,.xlsx,.xls"
-                        onChange={handleTrialBalanceCsvSelected}
-                        disabled={isClearingCsv}
-                        style={{ display: 'none' }}
+                        type="month"
+                        value={erpCaoThroughMonth}
+                        onChange={(e) => setErpCaoThroughMonth(e.target.value)}
+                        style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
                       />
-                    </label>
-                    <button
-                      onClick={clearTrialBalanceCsvAndMappings}
-                      disabled={isClearingCsv}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #cbd5e1',
-                        background: 'white',
-                        color: '#64748b',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        cursor: isClearingCsv ? 'not-allowed' : 'pointer',
-                        opacity: isClearingCsv ? 0.6 : 1
-                      }}
-                    >
-                      {isClearingCsv ? 'Clearing...' : 'Clear CSV'}
-                    </button>
+                      <button
+                        onClick={loadErpCaoInDataMapping}
+                        disabled={erpCaoLoading}
+                        style={{
+                          padding: '8px 12px',
+                          background: erpCaoLoading ? '#9ca3af' : '#7c3aed',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {erpCaoLoading ? 'Loading COA...' : 'Load ERP COA'}
+                      </button>
+                    </div>
                   </div>
                 )}
-                {csvClearStatus && (
-                  <div style={{ marginBottom: '12px', fontSize: '12px', color: csvClearStatus.toLowerCase().includes('failed') ? '#b91c1c' : '#065f46' }}>
-                    {csvClearStatus}
+
+                {selectedAccountingSystem === 'CSV_FILE' && (
+                  <div style={{ marginBottom: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>Upload/Replace Trial Balance CSV</div>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleTrialBalanceCsvSelected}
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        border: '1px dashed #94a3b8',
+                        borderRadius: '6px',
+                        background: 'white',
+                        cursor: 'pointer'
+                      }}
+                    />
                   </div>
                 )}
 
@@ -8621,6 +9127,9 @@ function FinancialScorePage() {
                               accountCode: acc.acctId,  // Include account code for better AI mapping
                               accountType: acc.acctType,
                             }));
+                            const currentSectorCategory = companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01';
+                            const targetFieldOptions = getTargetFieldOptions(currentSectorCategory);
+                            const sectorTargetFields = [...targetFieldOptions.revenue, ...targetFieldOptions.cogs];
 
                             console.log('?? CSV accounts to map:', qbAccountsWithClass.length);
                             console.log('?? First 10 accounts:', qbAccountsWithClass.slice(0, 10));
@@ -8631,7 +9140,7 @@ function FinancialScorePage() {
                               body: JSON.stringify({ 
                                 qbAccountsWithClass,
                                 companyId: selectedCompanyId,
-                                targetFields: []
+                                targetFields: sectorTargetFields
                               })
                             });
 
@@ -8702,7 +9211,7 @@ function FinancialScorePage() {
                 )}
 
                 {/* AI-Assisted Mapping Section for API synced accounts (QuickBooks/Xero) */}
-                {!hasCsvData && aiMappings.length > 0 && aiMappings.filter(m => m.targetField === 'unmapped').length > 0 && (
+                {!hasCsvData && aiMappings.length > 0 && (
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ background: 'white', borderRadius: '12px', padding: '10px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -8711,7 +9220,9 @@ function FinancialScorePage() {
                           AI-Assisted Account Mapping
                         </h2>
                         <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                          Use AI to automatically suggest mappings for {aiMappings.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields
+                          {aiMappings.filter(m => m.targetField === 'unmapped').length > 0
+                            ? `Use AI to automatically suggest mappings for ${aiMappings.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields`
+                            : 'All accounts are currently mapped. Re-run AI suggestions if you imported corrected accounting data.'}
                         </p>
                       </div>
                       <button
@@ -8724,6 +9235,9 @@ function FinancialScorePage() {
                               classification: acc.qbAccountClassification,
                               accountCode: acc.qbAccountCode,
                             }));
+                            const currentSectorCategory = companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01';
+                            const targetFieldOptions = getTargetFieldOptions(currentSectorCategory);
+                            const sectorTargetFields = [...targetFieldOptions.revenue, ...targetFieldOptions.cogs];
 
                             console.log('?? API accounts to map:', qbAccountsWithClass.length);
 
@@ -8733,7 +9247,7 @@ function FinancialScorePage() {
                               body: JSON.stringify({ 
                                 qbAccountsWithClass,
                                 companyId: selectedCompanyId,
-                                targetFields: []
+                                targetFields: sectorTargetFields
                               })
                             });
 
@@ -8775,7 +9289,7 @@ function FinancialScorePage() {
                         ) : (
                           <>
                             <TrendingUp size={16} />
-                            <span>Generate AI Mappings</span>
+                            <span>{aiMappings.filter(m => m.targetField === 'unmapped').length > 0 ? 'Generate AI Mappings' : 'Regenerate AI Mappings'}</span>
                           </>
                         )}
                       </button>
@@ -8816,12 +9330,54 @@ function FinancialScorePage() {
                       <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                         Account Mappings ({aiMappings.length} accounts)
                       </h2>
+                      <button
+                        onClick={() => setShowOnlyActionableMappings((prev) => !prev)}
+                        style={{
+                          padding: '8px 12px',
+                          background: showOnlyActionableMappings ? '#0f766e' : '#e2e8f0',
+                          color: showOnlyActionableMappings ? 'white' : '#334155',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {showOnlyActionableMappings ? 'Showing New/Changed/Unmapped' : 'Showing All Accounts'}
+                      </button>
                     </div>
+                    {mappingSourceSummary && (
+                      <div
+                        style={{
+                          marginBottom: '12px',
+                          padding: '10px 12px',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          background: '#f8fafc',
+                          display: 'flex',
+                          gap: '12px',
+                          flexWrap: 'wrap',
+                          fontSize: '12px',
+                          color: '#334155',
+                        }}
+                      >
+                        <span><strong>Total:</strong> {mappingSourceSummary.total}</span>
+                        <span><strong>New:</strong> {mappingSourceSummary.new}</span>
+                        <span><strong>Changed:</strong> {mappingSourceSummary.changed}</span>
+                        <span><strong>Inactive:</strong> {mappingSourceSummary.inactive}</span>
+                        <span><strong>Unmapped:</strong> {mappingSourceSummary.unmapped}</span>
+                        {mappingSourceSummary.lastSeedAt && (
+                          <span><strong>Last Seed:</strong> {new Date(mappingSourceSummary.lastSeedAt).toLocaleString()}</span>
+                        )}
+                      </div>
+                    )}
 
                     <AccountMappingTable
                       mappings={aiMappings}
                       linesOfBusiness={linesOfBusiness}
                       userDefinedAllocations={userDefinedAllocations}
+                      industrySectorCategory={companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01'}
+                      showOnlyActionable={showOnlyActionableMappings}
                       onMappingChange={(index, updates) => {
                         const updated = [...aiMappings];
                         updated[index] = { ...updated[index], ...updates };
@@ -8836,7 +9392,7 @@ function FinancialScorePage() {
                           <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
                             <span style={{ fontSize: '16px' }}></span>
                             <div>
-                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>Xero/QuickBooks Data Detected</div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#1e40af', marginBottom: '4px' }}>{mappedApiSourceLabel} Data Detected</div>
                               <p style={{ fontSize: '12px', color: '#1e40af', margin: 0 }}>
                                 Your financial data is imported. After saving mappings, click <strong>"Apply Mappings to Data"</strong> to create detailed expense breakdowns, then view in <strong>Data Review</strong> tab!
                               </p>
@@ -8848,12 +9404,76 @@ function FinancialScorePage() {
                         <div>
                           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
                           <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                            {csvTrialBalanceData ? 'Save your mappings, then process the CSV data to create monthly records.' : 'Save your mappings to apply them to your Xero/QuickBooks data.'}
+                            {isCsvMappingWorkflow
+                              ? 'Save your mappings, then process the CSV data to create monthly records.'
+                              : hasSavedCsvInLocalStorage
+                                ? 'A saved CSV was found for this company. Load it, then process with your mappings.'
+                                : `Save your mappings to apply them to your ${mappedApiSourceLabel} data.`}
                           </p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                          {/* Only show Process button for CSV data - Xero/QB data is already processed */}
-                          {csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId && (
+                          {!csvTrialBalanceData && hasSavedCsvInLocalStorage && (
+                            <button
+                              onClick={() => {
+                                try {
+                                  const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
+                                  if (!savedCsvData) {
+                                    alert('No saved CSV found for this company.');
+                                    setHasSavedCsvInLocalStorage(false);
+                                    return;
+                                  }
+                                  const parsed = JSON.parse(savedCsvData);
+                                  if (!parsed || parsed._companyId !== selectedCompanyId) {
+                                    alert('Saved CSV does not match the selected company.');
+                                    return;
+                                  }
+                                  setCsvTrialBalanceData(parsed);
+                                  alert(`Loaded saved CSV: ${parsed.fileName || 'Trial Balance CSV'}`);
+                                } catch (err: any) {
+                                  alert(`Failed to load saved CSV: ${err?.message || 'Unknown error'}`);
+                                }
+                              }}
+                              style={{
+                                padding: '8px 16px',
+                                background: '#0ea5e9',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '13px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 6px rgba(14, 165, 233, 0.3)'
+                              }}
+                            >
+                              Load Saved CSV
+                            </button>
+                          )}
+                          {/* Unified process button for all import types */}
+                          {showProcessButton && (
+                          <>
+                          {!isCsvMappingWorkflow && (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {String(selectedAccountingSystem || '').toUpperCase() === 'QUICKBOOKS' && (
+                                <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                              )}
+                              <input
+                                type="month"
+                                value={apiFinancialTargetMonth}
+                                onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
+                                style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                              />
+                              {String(selectedAccountingSystem || '').toUpperCase() !== 'QUICKBOOKS' && (
+                                <select
+                                  value={apiFinancialImportMode}
+                                  onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
+                                  style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                                >
+                                  <option value="through">Through month</option>
+                                  <option value="only">Only month</option>
+                                </select>
+                              )}
+                            </div>
+                          )}
                           <button
                             onClick={async () => {
                               if (!aiMappings || aiMappings.length === 0) {
@@ -8861,98 +9481,155 @@ function FinancialScorePage() {
                                 return;
                               }
 
-                              if (!currentUser) {
-                                alert('User not logged in!');
-                                return;
-                              }
-
-                              setIsProcessingMonthlyData(true);
-                              try {
-                                console.log('?? Processing CSV/Trial Balance data using mappings...');
-                                console.log('?? Total mappings:', aiMappings.length);
-
-                                // Process the CSV data using mappings
-                                const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
-                                const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(csvTrialBalanceData, aiMappings);
-
-                                // Save to database
-                                const response = await fetch('/api/financials', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    companyId: selectedCompanyId,
-                                    uploadedByUserId: currentUser.id,
-                                    fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
-                                    rawData: csvTrialBalanceData,
-                                    columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
-                                    monthlyData: processedData
-                                  })
-                                });
-
-                                if (!response.ok) {
-                                  throw new Error('Failed to save processed data');
+                              if (isCsvMappingWorkflow) {
+                                if (!hasCsvData) {
+                                  alert('Upload a CSV or click "Load Saved CSV" first.');
+                                  return;
+                                }
+                                if (!currentUser) {
+                                  alert('User not logged in!');
+                                  return;
                                 }
 
-                                const result = await response.json();
-                                console.log(`? Processed and saved ${processedData.length} months of CSV data`);
-
-                                // Persist detailed daily post-mapped data for Operations > Daily Financials
+                                setIsProcessingMonthlyData(true);
                                 try {
-                                  const dailyResponse = await fetch('/api/operational-sync/daily-financials', {
+                                  console.log('?? Processing CSV/Trial Balance data using mappings...');
+                                  console.log('?? Total mappings:', aiMappings.length);
+
+                                  // Process the CSV data using mappings
+                                  const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
+                                  const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(csvTrialBalanceData, aiMappings);
+
+                                  // Save to database
+                                  const response = await fetch('/api/financials', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                       companyId: selectedCompanyId,
-                                      platform: 'CSV_TRIAL_BALANCE',
-                                      runId: `csv-map-${Date.now()}`,
-                                      frequency: 'daily',
-                                      records: dailyMapped.dailySnapshots,
-                                      mappedLines: dailyMapped.mappedLines,
-                                    }),
-                                  });
-                                  if (!dailyResponse.ok) {
-                                    const dailyErrorBody = await dailyResponse.json().catch(() => ({}));
-                                    console.error('Failed to persist daily mapped financial data:', dailyErrorBody);
-                                  } else {
-                                    const dailyResult = await dailyResponse.json();
-                                    console.log(`✅ Saved ${dailyResult.recordsIngested || 0} daily snapshots (${dailyMapped.mappedLines.length} mapped lines submitted)`);
-                                  }
-                                } catch (dailySaveError) {
-                                  console.error('Error persisting daily mapped financial data:', dailySaveError);
-                                }
-
-                                // Automatically create master data from the processed data
-                                try {
-                                  console.log('?? Auto-creating master data...');
-                                  const masterDataResponse = await fetch('/api/save-master-file', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      companyId: selectedCompanyId,
+                                      uploadedByUserId: currentUser.id,
+                                      fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
+                                      rawData: csvTrialBalanceData,
+                                      columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
                                       monthlyData: processedData
                                     })
                                   });
 
-                                const masterDataResult = await masterDataResponse.json();
-                                if (masterDataResult.success) {
-                                  console.log(`? Master data auto-created: ${masterDataResult.months} months`);
-                                  // Clear the master data cache so Data Review tab shows updated data
-                                  masterDataStore.clearCompanyCache(selectedCompanyId);
-                                  console.log('?? Master data cache cleared - Data Review will show fresh data');
-                                } else {
-                                  console.error('? Failed to auto-create master data:', masterDataResult.error);
+                                  if (!response.ok) {
+                                    const errorBody = await response.json().catch(() => ({}));
+                                    const detailText =
+                                      typeof errorBody?.details === 'string'
+                                        ? errorBody.details
+                                        : errorBody?.details
+                                          ? JSON.stringify(errorBody.details)
+                                          : '';
+                                    throw new Error(`${errorBody?.error || 'Failed to save processed data'}${detailText ? `: ${detailText}` : ''}`);
+                                  }
+
+                                  await response.json();
+                                  console.log(`? Processed and saved ${processedData.length} months of CSV data`);
+
+                                  // Persist detailed daily post-mapped data for Operations > Daily Financials
+                                  try {
+                                    const dailyResponse = await fetch('/api/operational-sync/daily-financials', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        companyId: selectedCompanyId,
+                                        platform: 'CSV_TRIAL_BALANCE',
+                                        runId: `csv-map-${Date.now()}`,
+                                        frequency: 'daily',
+                                        records: dailyMapped.dailySnapshots,
+                                        mappedLines: dailyMapped.mappedLines,
+                                      }),
+                                    });
+                                    if (!dailyResponse.ok) {
+                                      const dailyErrorBody = await dailyResponse.json().catch(() => ({}));
+                                      console.error('Failed to persist daily mapped financial data:', dailyErrorBody);
+                                    } else {
+                                      const dailyResult = await dailyResponse.json();
+                                      console.log(`✅ Saved ${dailyResult.recordsIngested || 0} daily snapshots (${dailyMapped.mappedLines.length} mapped lines submitted)`);
+                                    }
+                                  } catch (dailySaveError) {
+                                    console.error('Error persisting daily mapped financial data:', dailySaveError);
+                                  }
+
+                                  // Automatically create master data from the processed data
+                                  try {
+                                    console.log('?? Auto-creating master data...');
+                                    const masterDataResponse = await fetch('/api/save-master-file', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        companyId: selectedCompanyId,
+                                        monthlyData: processedData
+                                      })
+                                    });
+
+                                    const masterDataResult = await masterDataResponse.json();
+                                    if (masterDataResult.success) {
+                                      console.log(`? Master data auto-created: ${masterDataResult.months} months`);
+                                      // Clear the master data cache so Data Review tab shows updated data
+                                      masterDataStore.clearCompanyCache(selectedCompanyId);
+                                      console.log('?? Master data cache cleared - Data Review will show fresh data');
+                                    } else {
+                                      console.error('? Failed to auto-create master data:', masterDataResult.error);
+                                    }
+                                  } catch (masterDataError) {
+                                    console.error('? Error auto-creating master data:', masterDataError);
+                                  }
+
+                                  // Update local state
+                                  setLoadedMonthlyData(processedData);
+                                  alert(`Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                                } catch (error: any) {
+                                  console.error('Error processing CSV data:', error);
+                                  alert('Failed to process CSV data: ' + error.message);
+                                } finally {
+                                  setIsProcessingMonthlyData(false);
                                 }
-                              } catch (masterDataError) {
-                                console.error('? Error auto-creating master data:', masterDataError);
+                                return;
                               }
 
-                              // Update local state
-                              setLoadedMonthlyData(processedData);
+                              if (!selectedCompanyId) {
+                                alert('No company selected');
+                                return;
+                              }
+                              if (!/^\d{4}-\d{2}$/.test(apiFinancialTargetMonth)) {
+                                alert('Select a valid target month first (YYYY-MM).');
+                                return;
+                              }
 
-                                alert(`Successfully processed and saved ${processedData.length} months of financial data from CSV/Trial Balance!`);
+                              const confirmed = confirm(`Reprocess ${mappedApiSourceLabel} data with your account mappings?\n\nThis will re-run mapping application for the selected accounting source.`);
+                              if (!confirmed) return;
+
+                              setIsProcessingMonthlyData(true);
+                              try {
+                                console.log('?? Reprocessing API data with mappings...');
+
+                                const response = await fetch('/api/financials/reprocess-mappings', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    companyId: selectedCompanyId,
+                                    targetMonth: apiFinancialTargetMonth,
+                                    mode: String(selectedAccountingSystem || '').toUpperCase() === 'QUICKBOOKS' ? 'through' : apiFinancialImportMode,
+                                  })
+                                });
+
+                                const result = await response.json();
+
+                                if (result.success) {
+                                  alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
+                                  // Switch to Data Review tab
+                                  setAdminDashboardTab('data-review');
+                                  // Trigger data reload by updating qbLastSync (this triggers the useEffect)
+                                  setQbLastSync(new Date());
+                                } else {
+                                  alert(`Failed to reprocess: ${result.error}`);
+                                }
                               } catch (error: any) {
-                                console.error('Error processing CSV data:', error);
-                                alert('Failed to process CSV data: ' + error.message);
+                                console.error('Reprocess error:', error);
+                                alert('Failed to reprocess data: ' + error.message);
                               } finally {
                                 setIsProcessingMonthlyData(false);
                               }
@@ -8970,65 +9647,13 @@ function FinancialScorePage() {
                               boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
                             }}
                           >
-                            {isProcessingMonthlyData ? 'Processing...' : 'Process & Save Monthly Data'}
+                            {isProcessingMonthlyData
+                              ? 'Processing...'
+                              : isCsvMappingWorkflow
+                                ? 'Process & Save Monthly Data'
+                                : 'Apply Mappings to Data'}
                           </button>
-                          )}
-                          
-                          {/* Reprocess Xero Data button - only show if API-synced data exists */}
-                          {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
-                          <button
-                            onClick={async () => {
-                              if (!selectedCompanyId) {
-                                alert('No company selected');
-                                return;
-                              }
-                              
-                              const confirmed = confirm('Reprocess Xero/QuickBooks data with your account mappings?\n\nThis will fetch account-level details and apply your mappings to create detailed expense breakdowns.');
-                              if (!confirmed) return;
-                              
-                              setIsProcessingMonthlyData(true);
-                              try {
-                                console.log('?? Reprocessing Xero/QB data with mappings...');
-                                
-                                const response = await fetch('/api/xero/reprocess-mappings', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ companyId: selectedCompanyId })
-                                });
-                                
-                                const result = await response.json();
-                                
-                                if (result.success) {
-                                  alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
-                                  // Switch to Data Review tab
-                                  setAdminDashboardTab('data-review');
-                                  // Trigger data reload by updating qbLastSync (this triggers the useEffect)
-                                  setQbLastSync(Date.now());
-                                } else {
-                                  alert(`Failed to reprocess: ${result.error}`);
-                                }
-                              } catch (error: any) {
-                                console.error('Reprocess error:', error);
-                                alert('Failed to reprocess data: ' + error.message);
-                              } finally {
-                                setIsProcessingMonthlyData(false);
-                              }
-                            }}
-                            disabled={isProcessingMonthlyData}
-                            style={{
-                              padding: '8px 16px',
-                              background: isProcessingMonthlyData ? '#9ca3af' : '#10b981',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontSize: '13px',
-                              fontWeight: '600',
-                              cursor: isProcessingMonthlyData ? 'not-allowed' : 'pointer',
-                              boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
-                            }}
-                          >
-                            {isProcessingMonthlyData ? 'Processing...' : 'Apply Mappings to Data'}
-                          </button>
+                          </>
                           )}
                           
                           <button
@@ -9067,11 +9692,12 @@ function FinancialScorePage() {
                                 if (response.ok) {
                                   alert('Account mappings saved successfully!');
                                 } else {
-                                  alert('Failed to save account mappings');
+                                  const errorBody = await response.json().catch(() => ({}));
+                                  alert(`Failed to save account mappings${errorBody?.error ? `: ${errorBody.error}` : ''}${errorBody?.details ? `\n${typeof errorBody.details === 'string' ? errorBody.details : JSON.stringify(errorBody.details)}` : ''}`);
                                 }
                               } catch (error) {
                                 console.error('Error saving mappings:', error);
-                                alert('Failed to save account mappings');
+                                alert(`Failed to save account mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
                               } finally {
                                 setIsSavingMappings(false);
                               }
@@ -9098,10 +9724,12 @@ function FinancialScorePage() {
                 )}
 
                 {/* Account Preview Section */}
-                {hasCsvData && csvTrialBalanceData && (
+                {(hasCsvData || aiMappings.length > 0) && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                    Account Review - All {csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)
+                    {hasCsvData && csvTrialBalanceData
+                      ? `Account Review - All ${csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)`
+                      : `Account Review - All ${aiMappings.length} mapped accounts`}
                   </h2>
                   <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
@@ -9114,50 +9742,157 @@ function FinancialScorePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
-                          // Filter out empty dates and get the last valid one
-                          const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
-                          const latestDate = validDates[validDates.length - 1];
-                          
-                          // Get latest value
-                          let latestValue = 0;
-                          
-                          if (account.values) {
-                            // Method 1: Direct lookup with the latest valid date
-                            if (latestDate && account.values[latestDate] !== undefined) {
-                              latestValue = account.values[latestDate];
-                            } 
-                            // Method 2: Get the last key from the values object
-                            else {
-                              const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
-                              if (valueKeys.length > 0) {
-                                const lastKey = valueKeys[valueKeys.length - 1];
-                                latestValue = account.values[lastKey] || 0;
-                              }
-                            }
-                          }
+                        {(() => {
+                          const parseAmount = (raw: unknown): number => {
+                            if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+                            if (typeof raw !== 'string') return 0;
+                            const normalized = raw
+                              .trim()
+                              .replace(/\$/g, '')
+                              .replace(/,/g, '')
+                              .replace(/\(([^)]+)\)/, '-$1');
+                            const parsed = Number.parseFloat(normalized);
+                            return Number.isFinite(parsed) ? parsed : 0;
+                          };
 
-                          return (
-                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{account.acctType}</td>
-                              <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{account.acctId}</td>
-                              <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
-                                ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                {latestValue < 0 && ' (CR)'}
-                              </td>
-                            </tr>
+                          const collectLatestValues = (report: any) => {
+                            const valueByKey = new Map<string, number>();
+                            const cols = Array.isArray(report?.Columns?.Column) ? report.Columns.Column : [];
+                            const latestColIndex = (() => {
+                              if (cols.length <= 1) return -1;
+                              let bestIndex = -1;
+                              let bestTime = Number.NEGATIVE_INFINITY;
+
+                              for (let i = 1; i < cols.length; i += 1) {
+                                const title = String(cols[i]?.ColTitle || '').trim();
+                                if (!title || title.toLowerCase() === 'total') continue;
+
+                                let parsedTime = Number.NaN;
+                                // Common QBO month labels (e.g., "Jan 2026", "2026-01", "2026-01-31").
+                                const isoMonth = title.match(/^(\d{4})-(\d{2})$/);
+                                if (isoMonth) {
+                                  parsedTime = new Date(`${isoMonth[1]}-${isoMonth[2]}-01T00:00:00Z`).getTime();
+                                } else {
+                                  parsedTime = new Date(title).getTime();
+                                }
+
+                                if (Number.isFinite(parsedTime) && parsedTime > bestTime) {
+                                  bestTime = parsedTime;
+                                  bestIndex = i;
+                                }
+                              }
+
+                              if (bestIndex >= 1) return bestIndex;
+
+                              for (let i = cols.length - 1; i >= 1; i -= 1) {
+                                const title = String(cols[i]?.ColTitle || '').trim().toLowerCase();
+                                if (title !== 'total') return i;
+                              }
+
+                              return -1;
+                            })();
+
+                            const rows = Array.isArray(report?.Rows?.Row) ? report.Rows.Row : [];
+                            const visitRows = (inputRows: any[]) => {
+                              for (const row of inputRows) {
+                                if (row?.type === 'Section') {
+                                  const nested = Array.isArray(row?.Rows?.Row) ? row.Rows.Row : [];
+                                  if (nested.length > 0) visitRows(nested);
+                                  continue;
+                                }
+                                if (row?.type !== 'Data' || !Array.isArray(row?.ColData) || latestColIndex < 1) continue;
+
+                                const name = String(row.ColData[0]?.value || '').trim();
+                                if (!name || name.toLowerCase().includes('total')) continue;
+
+                                // QBO report rows carry account id on the first (name) column.
+                                const accountId = String(row.ColData[0]?.id || '').trim();
+                                const amount = parseAmount(row.ColData[latestColIndex]?.value);
+
+                                if (accountId) valueByKey.set(`id:${accountId}`, amount);
+                                valueByKey.set(`name:${name.toLowerCase()}`, amount);
+                              }
+                            };
+
+                            if (rows.length > 0) visitRows(rows);
+                            return valueByKey;
+                          };
+
+                          const plValues = qbRawData?.profitAndLoss ? collectLatestValues(qbRawData.profitAndLoss) : new Map<string, number>();
+                          const bsValues = qbRawData?.balanceSheet ? collectLatestValues(qbRawData.balanceSheet) : new Map<string, number>();
+
+                          const mergedValues = new Map<string, number>([
+                            ...Array.from(plValues.entries()),
+                            ...Array.from(bsValues.entries()),
+                          ]);
+
+                          return (hasCsvData && csvTrialBalanceData
+                          ? csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
+                              const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
+                              const latestDate = validDates[validDates.length - 1];
+                              let latestValue = 0;
+                              if (account.values) {
+                                if (latestDate && account.values[latestDate] !== undefined) {
+                                  latestValue = account.values[latestDate];
+                                } else {
+                                  const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
+                                  if (valueKeys.length > 0) {
+                                    const lastKey = valueKeys[valueKeys.length - 1];
+                                    latestValue = account.values[lastKey] || 0;
+                                  }
+                                }
+                              }
+                              return (
+                                <tr key={`csv-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{account.acctType}</td>
+                                  <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{account.acctId}</td>
+                                  <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                    ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {latestValue < 0 && ' (CR)'}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          : aiMappings.map((mapping: any, idx: number) => {
+                              const byId = mapping.qbAccountId ? mergedValues.get(`id:${String(mapping.qbAccountId).trim()}`) : undefined;
+                              const byCode = mapping.qbAccountCode ? mergedValues.get(`id:${String(mapping.qbAccountCode).trim()}`) : undefined;
+                              const byName = mapping.qbAccount ? mergedValues.get(`name:${String(mapping.qbAccount).toLowerCase().trim()}`) : undefined;
+                              const latestValue =
+                                byId !== undefined ? byId :
+                                byCode !== undefined ? byCode :
+                                byName !== undefined ? byName :
+                                null;
+                              return (
+                              <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{mapping.qbAccountClassification || mapping.sourceStatus || 'N/A'}</td>
+                                <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{mapping.qbAccountCode || mapping.qbAccountId || 'N/A'}</td>
+                                <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                  {latestValue == null
+                                    ? 'N/A'
+                                    : `$${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${latestValue < 0 ? ' (CR)' : ''}`}
+                                </td>
+                              </tr>
+                            );
+                          })
                           );
-                        })}
+                        })()}
                       </tbody>
                     </table>
                   </div>
                   <div style={{ marginTop: '12px', padding: '8px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '6px' }}>
-                    <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
-                      ℹ️ Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
-                    </p>
+                    {hasCsvData && csvTrialBalanceData ? (
+                      <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
+                        ℹ️ Showing amounts for most recent period: {csvTrialBalanceData.dates?.[csvTrialBalanceData.dates.length - 1] || 'N/A'}
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
+                        ℹ️ Showing mapped accounts from {mappedApiSourceLabel}. Latest-value amounts are shown using the latest imported API month when available.
+                      </p>
+                    )}
                     <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>
-                      Total accounts: {csvTrialBalanceData.accounts?.length || 0} |
+                      Total accounts: {hasCsvData && csvTrialBalanceData ? (csvTrialBalanceData.accounts?.length || 0) : aiMappings.length} |
                       Scroll to see all accounts | Use this to verify account mappings and amounts
                     </p>
                   </div>
@@ -9456,6 +10191,16 @@ function FinancialScorePage() {
         />
       )}
 
+      {/* Financial Forecast View (placeholder to be replaced by dedicated forecast page) */}
+      {currentView === 'financial-forecast' && selectedCompanyId && (
+        <FinancialForecastTab
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName || ''}
+          industrySectorCategory={company?.industrySectorCategory || null}
+          prefetchedMonthlyData={monthly as any}
+        />
+      )}
+
       {/* Goals View */}
       {currentView === 'goals' && selectedCompanyId && monthly.length >= 6 && (
         <GoalsView
@@ -9540,10 +10285,140 @@ function FinancialScorePage() {
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Business Valuation</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
+                id="valuation-save-settings-btn"
                 onClick={async () => {
                   console.log('?? Saving valuation settings for company:', selectedCompanyId);
                   setValuationSaveStatus('saving');
                   try {
+                    const last12 = monthly.slice(-12);
+                    const sumTtmField = (fieldName: string): number =>
+                      last12.reduce((sum, month) => sum + (Number((month as any)?.[fieldName]) || 0), 0);
+                    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const sumTtmByKeywords = (
+                      keywords: string[],
+                      breakdownTypes: Array<'expense' | 'revenue'> = ['expense', 'revenue']
+                    ): number => {
+                      const normalizedKeywords = keywords.map(normalize);
+                      return last12.reduce((sum, month) => {
+                        const buckets: Array<Record<string, unknown>> = [];
+                        if (breakdownTypes.includes('expense') && (month as any)?.expenseBreakdown && typeof (month as any).expenseBreakdown === 'object') {
+                          buckets.push((month as any).expenseBreakdown);
+                        }
+                        if (breakdownTypes.includes('revenue') && (month as any)?.revenueBreakdown && typeof (month as any).revenueBreakdown === 'object') {
+                          buckets.push((month as any).revenueBreakdown);
+                        }
+                        let monthSum = 0;
+                        for (const bucket of buckets) {
+                          for (const [key, rawValue] of Object.entries(bucket)) {
+                            const normalizedKey = normalize(key);
+                            if (normalizedKeywords.some((kw) => normalizedKey.includes(kw))) {
+                              monthSum += Number(rawValue) || 0;
+                            }
+                          }
+                        }
+                        return sum + monthSum;
+                      }, 0);
+                    };
+
+                    const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);
+                    const ttmCOGS = last12.reduce((sum, m) => sum + (m.cogsTotal || 0), 0);
+                    const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
+                    const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
+                    const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+                    const ttmStateTaxes = last12.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+                    const ttmFederalTaxes = last12.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                    const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
+                    const ttmTaxesAnalysis = ttmStateTaxes + ttmFederalTaxes;
+                    const ttmNetIncomeAfterTax = ttmNetIncome - ttmTaxesAnalysis;
+                    const ttmDepreciationBreakdown = sumTtmByKeywords(['depreciation'], ['expense']);
+                    const ttmAmortizationBreakdown = sumTtmByKeywords(['amortization'], ['expense']);
+                    const ttmDepreciationOnly = ttmDepreciationBreakdown > 0 ? ttmDepreciationBreakdown : ttmDepreciation;
+                    const ttmAmortizationOnly = ttmAmortizationBreakdown > 0 ? ttmAmortizationBreakdown : 0;
+                    const ttmEbitdaAnalysis = ttmNetIncomeAfterTax + ttmInterest + ttmTaxesAnalysis + ttmDepreciationOnly + ttmAmortizationOnly;
+
+                    const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
+                    const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
+                    const effectiveMarketReplacementSalary = Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
+                    const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
+                    const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
+
+                    const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
+                    const majorRepairs = sumTtmByKeywords(['majorrepair', 'majorrepairs'], ['expense']);
+                    const consultingExpense = sumTtmByKeywords(['consulting'], ['expense']);
+                    const erpInstall = sumTtmByKeywords(['erpinstall', 'erpimplementation'], ['expense']);
+                    const relocation = sumTtmByKeywords(['relocation', 'movingexpense'], ['expense']);
+                    const covidCosts = sumTtmByKeywords(['covid'], ['expense']);
+                    const effectiveLegalSettlements = sdeManualInputs.legalSettlements ?? legalSettlements;
+                    const effectiveMajorRepairs = sdeManualInputs.majorRepairs ?? majorRepairs;
+                    const effectiveConsulting = sdeManualInputs.consulting ?? consultingExpense;
+                    const effectiveErpInstall = sdeManualInputs.erpInstall ?? erpInstall;
+                    const effectiveRelocation = sdeManualInputs.relocation ?? relocation;
+                    const effectiveNonRecurringOther = sdeManualInputs.nonRecurringOther ?? 0;
+                    const nonRecurringExpenseAdj =
+                      effectiveLegalSettlements +
+                      effectiveMajorRepairs +
+                      effectiveConsulting +
+                      effectiveErpInstall +
+                      effectiveRelocation +
+                      effectiveNonRecurringOther;
+
+                    const personalTravel = sumTtmByKeywords(['personaltravel'], ['expense']);
+                    const familyPayroll = sumTtmByKeywords(['familypayroll'], ['expense']);
+                    const autoLeases = sumTtmByKeywords(['autolease', 'vehiclelease'], ['expense']);
+                    const mealsAndEntertainmentAdj = sumTtmField('mealsEntertainment');
+                    const clubDues = sumTtmByKeywords(['clubdues'], ['expense']);
+                    const effectivePersonalTravel = sdeManualInputs.personalTravel ?? personalTravel;
+                    const effectiveFamilyPayroll = sdeManualInputs.familyPayroll ?? familyPayroll;
+                    const effectiveAutoLeases = sdeManualInputs.autoLeases ?? autoLeases;
+                    const effectiveMealsEntertainment = sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj;
+                    const effectiveClubDues = sdeManualInputs.clubDues ?? clubDues;
+                    const effectivePersonalOther = sdeManualInputs.personalOther ?? 0;
+                    const personalDiscretionaryAdj =
+                      effectivePersonalTravel +
+                      effectiveFamilyPayroll +
+                      effectiveAutoLeases +
+                      effectiveMealsEntertainment +
+                      effectiveClubDues +
+                      effectivePersonalOther;
+
+                    const assetSales = sumTtmByKeywords(['assetsale', 'gainonsale'], ['revenue']);
+                    const insuranceProceeds = sumTtmByKeywords(['insuranceproceed'], ['revenue']);
+                    const oneTimeContract = sumTtmByKeywords(['onetimecontract'], ['revenue']);
+                    const effectiveAssetSales = sdeManualInputs.assetSales ?? assetSales;
+                    const effectiveInsuranceProceeds = sdeManualInputs.insuranceProceeds ?? insuranceProceeds;
+                    const effectiveOneTimeContract = sdeManualInputs.oneTimeContract ?? oneTimeContract;
+                    const effectiveOneTimeRevenueOther = sdeManualInputs.oneTimeRevenueOther ?? 0;
+                    const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract + effectiveOneTimeRevenueOther;
+
+                    const qoeOwnerSalaryAdjustment = coreSellerAdjustment;
+                    const qoePersonalAutoLease = personalDiscretionaryAdj;
+                    const qoeOneTimeExpenses = nonRecurringExpenseAdj;
+                    const qoeOneTimeRevenue = -oneTimeRevenueAdj;
+                    const qoeTotalAdjustments = qoeOwnerSalaryAdjustment + qoePersonalAutoLease + qoeOneTimeExpenses + qoeOneTimeRevenue;
+                    const qualityOfEarnings = ttmEbitdaAnalysis + qoeTotalAdjustments;
+
+                    const sdeAnalysisTotals = {
+                      ttmNetIncomeAfterTax,
+                      ttmInterest,
+                      ttmTaxesAnalysis,
+                      ttmDepreciationOnly,
+                      ttmAmortizationOnly,
+                      ttmEbitdaAnalysis,
+                      ownerSalaryAdj,
+                      ownersDrawAdj,
+                      marketReplacementSalary: effectiveMarketReplacementSalary,
+                      coreSellerAdjustment,
+                      personalDiscretionaryAdj,
+                      nonRecurringExpenseAdj,
+                      oneTimeRevenueAdj,
+                      qoeOwnerSalaryAdjustment,
+                      qoePersonalAutoLease,
+                      qoeOneTimeExpenses,
+                      qoeOneTimeRevenue,
+                      qoeTotalAdjustments,
+                      qualityOfEarnings,
+                    };
+
                     const response = await fetch('/api/valuation-settings', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -9552,7 +10427,9 @@ function FinancialScorePage() {
                         sdeMultiplier,
                         ebitdaMultiplier,
                         dcfDiscountRate,
-                        dcfTerminalGrowth
+                        dcfTerminalGrowth,
+                        sdeManualInputs,
+                        sdeAnalysisTotals,
                       })
                     });
                     const result = await response.json();
@@ -9598,21 +10475,19 @@ function FinancialScorePage() {
             const ttmExpense = last12.reduce((sum, m) => sum + (m.expense || 0), 0);
             const ttmDepreciation = last12.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
             const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
+            const ttmStateTaxes = last12.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
+            const ttmFederalTaxes = last12.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+            const ttmTotalIncomeTaxes = ttmStateTaxes + ttmFederalTaxes;
             
             // Calculate Net Income correctly: Revenue - COGS - Operating Expenses
             const ttmGrossProfit = ttmRevenue - ttmCOGS;
             const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
-            
+            const ttmNetIncomeAfterTaxForDcf = ttmNetIncome - ttmTotalIncomeTaxes;
             // Calculate EBITDA: Net Income + Interest + Taxes + Depreciation + Amortization
             const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
             // Note: We don't have a separate tax field, so this is technically EBIT if taxes are in 'expense'
             
-            // Calculate SDE using ACTUAL Owner Base Pay from income statement
-            const ttmOwnerBasePay = last12.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
-            const ttmSDE = ttmEBITDA + ttmOwnerBasePay;
-            
             // Calculate valuations
-            const sdeValuation = ttmSDE * sdeMultiplier;
             const ebitdaValuation = ttmEBITDA * ebitdaMultiplier;
             
             // Calculate Free Cash Flow (FCF) for DCF
@@ -9621,8 +10496,8 @@ function FinancialScorePage() {
             const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
             
             // Working capital change over last 12 months
-            const currentWC = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.otherCL || 0));
-            const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.otherCL || 0));
+            const currentWC = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.loc || 0) + (currentMonth.otherCL || 0));
+            const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.loc || 0) + (month12Ago.otherCL || 0));
             const changeInWC = currentWC - priorWC;
             
             // Capital expenditures (change in fixed assets + depreciation)
@@ -9630,7 +10505,7 @@ function FinancialScorePage() {
             const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
             
             // Free Cash Flow using ACTUAL depreciation
-            const ttmFreeCashFlow = ttmNetIncome + ttmDepreciation - changeInWC - ttmCapEx;
+            const ttmFreeCashFlow = ttmNetIncomeAfterTaxForDcf + ttmDepreciation - changeInWC - ttmCapEx;
             
             // DCF calculation with adjustable parameters using FCF
             const growthRate = growth_24mo / 100;
@@ -9643,58 +10518,228 @@ function FinancialScorePage() {
             }
             const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
             dcfValue += terminalValue / Math.pow(1 + discountRate, 5);
+
+            const sumTtmField = (fieldName: string): number =>
+              last12.reduce((sum, month) => sum + (Number((month as any)?.[fieldName]) || 0), 0);
+
+            const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            const sumTtmByKeywords = (
+              keywords: string[],
+              breakdownTypes: Array<'expense' | 'revenue'> = ['expense', 'revenue']
+            ): number => {
+              const normalizedKeywords = keywords.map(normalize);
+              return last12.reduce((sum, month) => {
+                const buckets: Array<Record<string, unknown>> = [];
+                if (breakdownTypes.includes('expense') && (month as any)?.expenseBreakdown && typeof (month as any).expenseBreakdown === 'object') {
+                  buckets.push((month as any).expenseBreakdown);
+                }
+                if (breakdownTypes.includes('revenue') && (month as any)?.revenueBreakdown && typeof (month as any).revenueBreakdown === 'object') {
+                  buckets.push((month as any).revenueBreakdown);
+                }
+
+                let monthSum = 0;
+                for (const bucket of buckets) {
+                  for (const [key, rawValue] of Object.entries(bucket)) {
+                    const normalizedKey = normalize(key);
+                    if (normalizedKeywords.some((kw) => normalizedKey.includes(kw))) {
+                      monthSum += Number(rawValue) || 0;
+                    }
+                  }
+                }
+                return sum + monthSum;
+              }, 0);
+            };
+
+            const formatDollars = (value: number): string => {
+              if (!Number.isFinite(value) || Math.abs(value) < 0.5) return '$-';
+              const roundedAbs = Math.round(Math.abs(value)).toLocaleString();
+              return value < 0 ? `($${roundedAbs})` : `$${roundedAbs}`;
+            };
+
+            const formatInputDollars = (value: number): string => {
+              const rounded = Math.round(Number(value) || 0);
+              const abs = Math.abs(rounded).toLocaleString();
+              return rounded < 0 ? `-$${abs}` : `$${abs}`;
+            };
+
+            const parseInputDollars = (raw: string): number => {
+              const cleaned = raw.replace(/[^0-9-]/g, '');
+              if (!cleaned || cleaned === '-') return 0;
+              return Math.round(Number(cleaned) || 0);
+            };
+
+            // SDE analysis values (TTM from active company's monthly master data)
+            const ttmDepreciationBreakdown = sumTtmByKeywords(['depreciation'], ['expense']);
+            const ttmAmortizationBreakdown = sumTtmByKeywords(['amortization'], ['expense']);
+            const ttmTaxesAnalysis = ttmStateTaxes + ttmFederalTaxes;
+            const ttmNetIncomeAfterTax = ttmNetIncome - ttmTaxesAnalysis;
+            const ttmDepreciationOnly = ttmDepreciationBreakdown > 0 ? ttmDepreciationBreakdown : ttmDepreciation;
+            const ttmAmortizationOnly = ttmAmortizationBreakdown > 0 ? ttmAmortizationBreakdown : 0;
+            const ttmEbitdaAnalysis = ttmNetIncomeAfterTax + ttmInterest + ttmTaxesAnalysis + ttmDepreciationOnly + ttmAmortizationOnly;
+
+            const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
+            const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
+            const marketReplacementSalaryAdj = 0;
+            const effectiveMarketReplacementSalary =
+              Math.abs(sdeManualInputs.marketReplacementSalary ?? marketReplacementSalaryAdj);
+            const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
+            const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
+
+            const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
+            const majorRepairs = sumTtmByKeywords(['majorrepair', 'majorrepairs'], ['expense']);
+            const consultingExpense = sumTtmByKeywords(['consulting'], ['expense']);
+            const erpInstall = sumTtmByKeywords(['erpinstall', 'erpimplementation'], ['expense']);
+            const relocation = sumTtmByKeywords(['relocation', 'movingexpense'], ['expense']);
+            const covidCosts = sumTtmByKeywords(['covid'], ['expense']);
+            const effectiveLegalSettlements = sdeManualInputs.legalSettlements ?? legalSettlements;
+            const effectiveMajorRepairs = sdeManualInputs.majorRepairs ?? majorRepairs;
+            const effectiveConsulting = sdeManualInputs.consulting ?? consultingExpense;
+            const effectiveErpInstall = sdeManualInputs.erpInstall ?? erpInstall;
+            const effectiveRelocation = sdeManualInputs.relocation ?? relocation;
+            const effectiveNonRecurringOther = sdeManualInputs.nonRecurringOther ?? 0;
+            const nonRecurringExpenseAdj =
+              effectiveLegalSettlements +
+              effectiveMajorRepairs +
+              effectiveConsulting +
+              effectiveErpInstall +
+              effectiveRelocation +
+              effectiveNonRecurringOther;
+
+            const personalTravel = sumTtmByKeywords(['personaltravel'], ['expense']);
+            const familyPayroll = sumTtmByKeywords(['familypayroll'], ['expense']);
+            const autoLeases = sumTtmByKeywords(['autolease', 'vehiclelease'], ['expense']);
+            const mealsAndEntertainmentAdj = sumTtmField('mealsEntertainment');
+            const clubDues = sumTtmByKeywords(['clubdues'], ['expense']);
+            const effectivePersonalTravel = sdeManualInputs.personalTravel ?? personalTravel;
+            const effectiveFamilyPayroll = sdeManualInputs.familyPayroll ?? familyPayroll;
+            const effectiveAutoLeases = sdeManualInputs.autoLeases ?? autoLeases;
+            const effectiveMealsEntertainment = sdeManualInputs.mealsEntertainment ?? mealsAndEntertainmentAdj;
+            const effectiveClubDues = sdeManualInputs.clubDues ?? clubDues;
+            const effectivePersonalOther = sdeManualInputs.personalOther ?? 0;
+            const personalDiscretionaryAdj =
+              effectivePersonalTravel +
+              effectiveFamilyPayroll +
+              effectiveAutoLeases +
+              effectiveMealsEntertainment +
+              effectiveClubDues +
+              effectivePersonalOther;
+
+            const assetSales = sumTtmByKeywords(['assetsale', 'gainonsale'], ['revenue']);
+            const insuranceProceeds = sumTtmByKeywords(['insuranceproceed'], ['revenue']);
+            const oneTimeContract = sumTtmByKeywords(['onetimecontract'], ['revenue']);
+            const effectiveAssetSales = sdeManualInputs.assetSales ?? assetSales;
+            const effectiveInsuranceProceeds = sdeManualInputs.insuranceProceeds ?? insuranceProceeds;
+            const effectiveOneTimeContract = sdeManualInputs.oneTimeContract ?? oneTimeContract;
+            const effectiveOneTimeRevenueOther = sdeManualInputs.oneTimeRevenueOther ?? 0;
+            const oneTimeRevenueAdj = effectiveAssetSales + effectiveInsuranceProceeds + effectiveOneTimeContract + effectiveOneTimeRevenueOther;
+
+            const qoeOwnerSalaryAdjustment = coreSellerAdjustment;
+            const qoePersonalAutoLease = personalDiscretionaryAdj;
+            const qoeOneTimeExpenses = nonRecurringExpenseAdj;
+            const qoeOneTimeRevenue = -oneTimeRevenueAdj;
+            const qoeTotalAdjustments = qoeOwnerSalaryAdjustment + qoePersonalAutoLease + qoeOneTimeExpenses + qoeOneTimeRevenue;
+            const qualityOfEarnings = ttmEbitdaAnalysis + qoeTotalAdjustments;
+            const ttmSDE = qualityOfEarnings;
+            const sdeValuation = ttmSDE * sdeMultiplier;
+
+            const getYearFromMonthValue = (monthValue: unknown): number | null => {
+              if (monthValue instanceof Date && !isNaN(monthValue.getTime())) {
+                return monthValue.getFullYear();
+              }
+              if (typeof monthValue === 'string') {
+                const yearMatch = monthValue.match(/\b(20\d{2}|19\d{2})\b/);
+                if (yearMatch) return Number(yearMatch[1]);
+                const parsed = new Date(monthValue);
+                if (!isNaN(parsed.getTime())) return parsed.getFullYear();
+              }
+              return null;
+            };
+
+            const annualRevenueEbitdaData = (() => {
+              const byYear = new Map<number, { revenue: number; ebitda: number }>();
+              for (const m of monthly) {
+                const year = getYearFromMonthValue((m as any)?.month);
+                if (!year) continue;
+                const revenue = Number((m as any)?.revenue) || 0;
+                const cogs = Number((m as any)?.cogsTotal) || 0;
+                const expense = Number((m as any)?.expense) || 0;
+                const interest = Number((m as any)?.interestExpense) || 0;
+                const da = Number((m as any)?.depreciationAmortization) || 0;
+                const ebitda = revenue - cogs - expense + interest + da;
+                const prev = byYear.get(year) || { revenue: 0, ebitda: 0 };
+                byYear.set(year, {
+                  revenue: prev.revenue + revenue,
+                  ebitda: prev.ebitda + ebitda,
+                });
+              }
+              return Array.from(byYear.entries())
+                .map(([year, totals]) => ({
+                  year,
+                  revenue: totals.revenue,
+                  ebitdaMargin: totals.revenue !== 0 ? (totals.ebitda / totals.revenue) * 100 : 0,
+                }))
+                .sort((a, b) => a.year - b.year)
+                .slice(-7);
+            })();
             
             return (
               <>
-                {/* Overview Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
-                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #10b981' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>SDE Valuation</h3>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#10b981', marginBottom: '4px' }}>
-                      ${Math.round(sdeValuation).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM SDE: ${(ttmSDE / 1000).toFixed(0)}K × {sdeMultiplier}x
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #667eea' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>EBITDA Valuation</h3>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea', marginBottom: '4px' }}>
-                      ${Math.round(ebitdaValuation).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      TTM EBITDA: ${(ttmEBITDA / 1000).toFixed(0)}K × {ebitdaMultiplier}x
-                    </div>
-                  </div>
-                  
-                  <div style={{ background: 'white', borderRadius: '10px', padding: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '2px solid #f59e0b' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginBottom: '4px' }}>DCF Valuation</h3>
-                    <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b', marginBottom: '4px' }}>
-                      ${Math.round(dcfValue).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>
-                      5-year @ {dcfDiscountRate.toFixed(1)}% discount, {dcfTerminalGrowth.toFixed(1)}% terminal
-                    </div>
-                  </div>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                  {[
+                    { id: 'sde' as const, label: 'SDE' },
+                    { id: 'ebitda' as const, label: 'EBITDA Multiple' },
+                    { id: 'dcf' as const, label: 'DCF' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setValuationMethodTab(tab.id)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        background: valuationMethodTab === tab.id ? '#667eea' : '#f1f5f9',
+                        color: valuationMethodTab === tab.id ? 'white' : '#334155'
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
                 
                 {/* SDE Method */}
+                {valuationMethodTab === 'sde' && (
+                <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Seller's Discretionary Earnings (SDE) Method
                   </h2>
                   
-                  <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                    <div style={{ marginBottom: '8px' }}>
-                      <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${(ttmSDE / 1000).toFixed(0)}K</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
+                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${(ttmSDE / 1000).toFixed(0)}K</div>
+                      </div>
+                      
+                      <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                        <strong>Calculation:</strong> Quality of Earnings: EBITDA + QoE Adjustments = ${(ttmEbitdaAnalysis / 1000).toFixed(0)}K + ${(qoeTotalAdjustments / 1000).toFixed(0)}K
+                      </div>
                     </div>
-                    
-                    <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                      <strong>Calculation:</strong> EBITDA + Owner Base Pay + Discretionary Expenses
-                      <br/>
-                      = ${(ttmEBITDA / 1000).toFixed(0)}K + ${(ttmOwnerBasePay / 1000).toFixed(0)}K
+
+                    <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+                        Estimated Business Value (SDE)
+                      </div>
+                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
+                        ${Math.round(sdeValuation).toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                        Range: ${Math.round(ttmSDE * 1.5).toLocaleString()} - ${Math.round(ttmSDE * 4.0).toLocaleString()}
+                      </div>
                     </div>
                   </div>
                   
@@ -9717,20 +10762,465 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-                      Estimated Business Value (SDE)
+                </div>
+
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                      SDE Analysis
+                    </h2>
+                    <button
+                      onClick={() => {
+                        const saveButton = document.getElementById('valuation-save-settings-btn') as HTMLButtonElement | null;
+                        saveButton?.click();
+                      }}
+                      disabled={valuationSaveStatus === 'saving'}
+                      style={{
+                        padding: '8px 16px',
+                        background: valuationSaveStatus === 'saved' ? '#10b981' : valuationSaveStatus === 'error' ? '#ef4444' : valuationSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: valuationSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save SDE Analysis'}
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>EBITDA, Trailing 12 Months</div>
+                      {[
+                        ['Net Income', formatDollars(ttmNetIncomeAfterTax)],
+                        ['Interest', formatDollars(ttmInterest)],
+                        ['Taxes', formatDollars(ttmTaxesAnalysis)],
+                        ['Depreciation', formatDollars(ttmDepreciationOnly)],
+                        ['Amortization', formatDollars(ttmAmortizationOnly)],
+                        ['EBITDA', formatDollars(ttmEbitdaAnalysis)],
+                      ].map(([label, value]) => {
+                        const isAdjustmentRow = label.toLowerCase().includes('adjustment');
+                        const isEbitdaRow = label === 'EBITDA';
+                        return (
+                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: (isAdjustmentRow || isEbitdaRow) ? 700 : 400 }}>
+                            <span>{label}</span>
+                            <span style={{ fontWeight: (isAdjustmentRow || isEbitdaRow) ? 700 : 600 }}>{value}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
-                      ${Math.round(sdeValuation).toLocaleString()}
+
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>1. Owner Compensation Adjustment</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Replace owner pay with market salary.</div>
+                      {[
+                        ['Owner salary', formatDollars(ownerSalaryAdj), 'readonly'],
+                        ['Owners Draw', formatDollars(ownersDrawAdj), 'readonly'],
+                        ['Market replacement salary', effectiveMarketReplacementSalary, 'input'],
+                        ['Other', effectiveOwnerCompOther, 'ownerCompOther'],
+                        ['Adjustment', formatDollars(coreSellerAdjustment), 'readonly-adjustment'],
+                      ].map(([label, value, rowType]) => {
+                        const isAdjustmentRow = label.toLowerCase().includes('adjustment');
+                        if (rowType === 'input') {
+                          return (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                              <span>{label}</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatInputDollars(Number(value) || 0)}
+                                onChange={(e) => {
+                                  const parsed = parseInputDollars(e.target.value);
+                                  setSdeManualInputs((prev) => ({ ...prev, marketReplacementSalary: Math.abs(parsed) }));
+                                }}
+                                style={{
+                                  width: '130px',
+                                  textAlign: 'right',
+                                  padding: '3px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: 600
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+                        if (rowType === 'ownerCompOther') {
+                          return (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                              <span>{label}</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatInputDollars(Number(value) || 0)}
+                                onChange={(e) => {
+                                  const parsed = parseInputDollars(e.target.value);
+                                  setSdeManualInputs((prev) => ({ ...prev, ownerCompOther: parsed }));
+                                }}
+                                style={{
+                                  width: '130px',
+                                  textAlign: 'right',
+                                  padding: '3px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: 600
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: isAdjustmentRow ? 700 : 400 }}>
+                            <span>{label}</span>
+                            <span style={{ fontWeight: isAdjustmentRow ? 700 : 600 }}>{value}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      Range: ${Math.round(ttmSDE * 1.5).toLocaleString()} - ${Math.round(ttmSDE * 4.0).toLocaleString()}
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>2. Personal / Discretionary Expenses</div>
+                      {[
+                        ['personal travel', effectivePersonalTravel, 'personalTravel'],
+                        ['family payroll', effectiveFamilyPayroll, 'familyPayroll'],
+                        ['auto leases', effectiveAutoLeases, 'autoLeases'],
+                        ['meals & entertainment', effectiveMealsEntertainment, 'mealsEntertainment'],
+                        ['club dues', effectiveClubDues, 'clubDues'],
+                        ['Other', effectivePersonalOther, 'personalOther'],
+                      ].map(([label, value, key]) => (
+                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                          <span>{label}</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatInputDollars(Number(value) || 0)}
+                            onChange={(e) => {
+                              const parsed = parseInputDollars(e.target.value);
+                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                            }}
+                            style={{
+                              width: '130px',
+                              textAlign: 'right',
+                              padding: '3px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
+                        <span>Adjustment</span>
+                        <span style={{ fontWeight: 700 }}>{formatDollars(personalDiscretionaryAdj)}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>QoE Adjustments</div>
+                      {[
+                        ['1. Owner Compensation Adjustment', formatDollars(qoeOwnerSalaryAdjustment)],
+                        ['2. Personal / Discretionary Expenses', formatDollars(qoePersonalAutoLease)],
+                        ['3. Non-Recurring Expenses', formatDollars(qoeOneTimeExpenses)],
+                        ['4. One-Time Revenue', formatDollars(qoeOneTimeRevenue)],
+                        ['Total adjustments', formatDollars(qoeTotalAdjustments)],
+                      ].map(([label, value]) => {
+                        const isAdjustmentRow =
+                          label.toLowerCase().includes('adjustment') &&
+                          label !== '1. Owner Compensation Adjustment';
+                        return (
+                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: isAdjustmentRow ? 700 : 400 }}>
+                            <span>{label}</span>
+                            <span style={{ fontWeight: isAdjustmentRow ? 700 : 600 }}>{value}</span>
+                          </div>
+                        );
+                      })}
+                      <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '8px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>Quality of Earnings</span>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#10b981' }}>{formatDollars(qualityOfEarnings)}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>3. Non-Recurring Expenses</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>One-time items.</div>
+                      {[
+                        ['legal settlements', effectiveLegalSettlements, 'legalSettlements'],
+                        ['major repairs', effectiveMajorRepairs, 'majorRepairs'],
+                        ['consulting', effectiveConsulting, 'consulting'],
+                        ['ERP install', effectiveErpInstall, 'erpInstall'],
+                        ['relocation', effectiveRelocation, 'relocation'],
+                        ['Other', effectiveNonRecurringOther, 'nonRecurringOther'],
+                      ].map(([label, value, key]) => (
+                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                          <span>{label}</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatInputDollars(Number(value) || 0)}
+                            onChange={(e) => {
+                              const parsed = parseInputDollars(e.target.value);
+                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                            }}
+                            style={{
+                              width: '130px',
+                              textAlign: 'right',
+                              padding: '3px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
+                        <span>Adjustment</span>
+                        <span style={{ fontWeight: 700 }}>{formatDollars(nonRecurringExpenseAdj)}</span>
+                      </div>
+                    </div>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>4. One-Time Revenue</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Remove revenue that will not repeat.</div>
+                      {[
+                        ['asset sales', effectiveAssetSales, 'assetSales'],
+                        ['insurance proceeds', effectiveInsuranceProceeds, 'insuranceProceeds'],
+                        ['one-time contract', effectiveOneTimeContract, 'oneTimeContract'],
+                        ['Other', effectiveOneTimeRevenueOther, 'oneTimeRevenueOther'],
+                      ].map(([label, value, key]) => (
+                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                          <span>{label}</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={formatInputDollars(Number(value) || 0)}
+                            onChange={(e) => {
+                              const parsed = parseInputDollars(e.target.value);
+                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                            }}
+                            style={{
+                              width: '130px',
+                              textAlign: 'right',
+                              padding: '3px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: 600
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
+                        <span>Adjustment</span>
+                        <span style={{ fontWeight: 700 }}>{formatDollars(oneTimeRevenueAdj)}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>
+                        EBITDA Margin and Total Revenue
+                      </div>
+                      {annualRevenueEbitdaData.length > 0 ? (
+                        <svg viewBox="0 0 760 320" style={{ width: '100%', height: 'auto' }}>
+                          {(() => {
+                            const width = 760;
+                            const height = 320;
+                            const pad = { top: 28, right: 56, bottom: 42, left: 56 };
+                            const chartW = width - pad.left - pad.right;
+                            const chartH = height - pad.top - pad.bottom;
+                            const maxRevenue = Math.max(...annualRevenueEbitdaData.map(d => d.revenue), 1);
+                            const maxMargin = Math.max(...annualRevenueEbitdaData.map(d => d.ebitdaMargin), 1);
+                            const xStep = chartW / annualRevenueEbitdaData.length;
+                            const barW = Math.min(56, xStep * 0.55);
+                            const linePoints = annualRevenueEbitdaData.map((d, idx) => {
+                              const x = pad.left + xStep * idx + xStep / 2;
+                              const y = pad.top + chartH - (Math.max(0, d.ebitdaMargin) / maxMargin) * chartH;
+                              return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
+                            }).join(' ');
+
+                            return (
+                              <>
+                                <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+                                <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+                                <line x1={width - pad.right} y1={pad.top} x2={width - pad.right} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="1" />
+                                {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+                                  const y = pad.top + chartH - chartH * pct;
+                                  const leftVal = Math.round((maxRevenue * pct) / 1_000_000);
+                                  const rightVal = (maxMargin * pct).toFixed(1);
+                                  return (
+                                    <g key={pct}>
+                                      <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                                      <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">${leftVal}M</text>
+                                      <text x={width - pad.right + 8} y={y + 4} textAnchor="start" fontSize="10" fill="#64748b">{rightVal}%</text>
+                                    </g>
+                                  );
+                                })}
+                                {annualRevenueEbitdaData.map((d, idx) => {
+                                  const centerX = pad.left + xStep * idx + xStep / 2;
+                                  const barH = (d.revenue / maxRevenue) * chartH;
+                                  const barY = pad.top + chartH - barH;
+                                  const marginY = pad.top + chartH - (Math.max(0, d.ebitdaMargin) / maxMargin) * chartH;
+                                  return (
+                                    <g key={d.year}>
+                                      <rect x={centerX - barW / 2} y={barY} width={barW} height={barH} fill="#1d76c3" rx="3" />
+                                      <text x={centerX} y={barY + 16} textAnchor="middle" fontSize="10" fill="white" fontWeight="700">
+                                        ${Math.round(d.revenue / 1_000_000)}
+                                      </text>
+                                      <circle cx={centerX} cy={marginY} r="4" fill="#5fbcd3" stroke="white" strokeWidth="1.5" />
+                                      <text x={centerX} y={marginY - 8} textAnchor="middle" fontSize="10" fill="#0f766e" fontWeight="700">
+                                        {d.ebitdaMargin.toFixed(1)}%
+                                      </text>
+                                      <text x={centerX} y={height - pad.bottom + 16} textAnchor="middle" fontSize="10" fill="#475569">
+                                        {d.year}
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+                                <path d={linePoints} fill="none" stroke="#5fbcd3" strokeWidth="2.5" />
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      ) : (
+                        <div style={{ fontSize: '12px', color: '#64748b', padding: '24px 0' }}>
+                          Not enough data to render chart.
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>
+                        QoE Waterfall Bridge
+                      </div>
+                      <svg viewBox="0 0 760 320" style={{ width: '100%', height: 'auto' }}>
+                        {(() => {
+                          const width = 760;
+                          const height = 320;
+                          const pad = { top: 24, right: 20, bottom: 58, left: 70 };
+                          const chartW = width - pad.left - pad.right;
+                          const chartH = height - pad.top - pad.bottom;
+                          const steps = [
+                            { label: 'EBITDA', type: 'base' as const, value: ttmEbitdaAnalysis },
+                            { label: 'Compensation adj.', type: 'delta' as const, value: qoeOwnerSalaryAdjustment },
+                            { label: 'Personal exp.', type: 'delta' as const, value: qoePersonalAutoLease },
+                            { label: 'Non-Recurring', type: 'delta' as const, value: qoeOneTimeExpenses },
+                            { label: 'One-time rev', type: 'delta' as const, value: qoeOneTimeRevenue },
+                            { label: 'Quality of Earnings', type: 'total' as const, value: qualityOfEarnings },
+                          ];
+
+                          let running = 0;
+                          const bars = steps.map((step) => {
+                            if (step.type === 'base') {
+                              running = step.value;
+                              return { ...step, start: 0, end: step.value };
+                            }
+                            if (step.type === 'delta') {
+                              const start = running;
+                              running = running + step.value;
+                              return { ...step, start, end: running };
+                            }
+                            return { ...step, start: 0, end: step.value };
+                          });
+
+                          const extentValues = [0, ...bars.flatMap((b) => [b.start, b.end])];
+                          const minY = Math.min(...extentValues);
+                          const maxY = Math.max(...extentValues);
+                          const range = Math.max(1, maxY - minY);
+                          const yOf = (v: number) => pad.top + chartH - ((v - minY) / range) * chartH;
+                          const zeroY = yOf(0);
+
+                          const xStep = chartW / bars.length;
+                          const barW = Math.min(80, xStep * 0.62);
+
+                          return (
+                            <>
+                              {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+                                const val = minY + range * pct;
+                                const y = yOf(val);
+                                return (
+                                  <g key={pct}>
+                                    <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                                    <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
+                                      {`$${Math.round(val / 1000).toLocaleString()}K`}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                              <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="#94a3b8" strokeWidth="1.5" />
+                              <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+
+                              {bars.map((bar, idx) => {
+                                const cx = pad.left + xStep * idx + xStep / 2;
+                                const yTop = yOf(Math.max(bar.start, bar.end));
+                                const yBottom = yOf(Math.min(bar.start, bar.end));
+                                const isIncrease = bar.end >= bar.start;
+                                const fill =
+                                  bar.type === 'base' || bar.type === 'total'
+                                    ? '#1d76c3'
+                                    : isIncrease
+                                      ? '#10b981'
+                                      : '#ef4444';
+                                const delta = bar.end - bar.start;
+                                return (
+                                  <g key={bar.label}>
+                                    <rect
+                                      x={cx - barW / 2}
+                                      y={yTop}
+                                      width={barW}
+                                      height={Math.max(2, yBottom - yTop)}
+                                      fill={fill}
+                                      rx="3"
+                                    />
+                                    <text
+                                      x={cx}
+                                      y={yTop - 6}
+                                      textAnchor="middle"
+                                      fontSize="10"
+                                      fill="#334155"
+                                      fontWeight="700"
+                                    >
+                                      {bar.type === 'delta'
+                                        ? `${delta >= 0 ? '+' : '-'}$${Math.round(Math.abs(delta) / 1000).toLocaleString()}K`
+                                        : `$${Math.round(bar.end / 1000).toLocaleString()}K`}
+                                    </text>
+                                    <text x={cx} y={height - pad.bottom + 14} textAnchor="middle" fontSize="9" fill="#475569">
+                                      {bar.label}
+                                    </text>
+                                    {idx < bars.length - 1 && (
+                                      <line
+                                        x1={cx + barW / 2}
+                                        y1={yOf(bar.end)}
+                                        x2={pad.left + xStep * (idx + 1) + xStep / 2 - barW / 2}
+                                        y2={yOf(bar.end)}
+                                        stroke="#94a3b8"
+                                        strokeWidth="1.5"
+                                        strokeDasharray="4,3"
+                                      />
+                                    )}
+                                  </g>
+                                );
+                              })}
+                            </>
+                          );
+                        })()}
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+                </>
+                )}
                 
                 {/* EBITDA Method */}
+                {valuationMethodTab === 'ebitda' && (
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     EBITDA Multiple Method
@@ -9782,76 +11272,84 @@ function FinancialScorePage() {
                     </div>
                   </div>
                 </div>
+                )}
                 
                 {/* DCF Method */}
+                {valuationMethodTab === 'dcf' && (
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Discounted Cash Flow (DCF) Method
                   </h2>
                   
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '10px' }}>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Rate</div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{growth_24mo.toFixed(1)}%</div>
-                        <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Used for 5-year projection</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '10px' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Rate</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{growth_24mo.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Used for 5-year projection</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Discount Rate</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfDiscountRate.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Risk-adjusted rate</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Terminal Growth</div>
+                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfTerminalGrowth.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Perpetuity growth</div>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Discount Rate</div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfDiscountRate.toFixed(1)}%</div>
-                        <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Risk-adjusted rate</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Terminal Growth</div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfTerminalGrowth.toFixed(1)}%</div>
-                        <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Perpetuity growth</div>
+                      
+                      <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.6', marginBottom: '16px' }}>
+                        5-year free cash flow projection based on historical growth rate, discounted to present value. Includes terminal value calculation for perpetuity beyond forecast period.
                       </div>
                     </div>
                     
-                    <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.6', marginBottom: '16px' }}>
-                      5-year free cash flow projection based on historical growth rate, discounted to present value. Includes terminal value calculation for perpetuity beyond forecast period.
-                    </div>
-                  </div>
-                  
-                  {/* Free Cash Flow Calculation */}
-                  <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', marginBottom: '12px', border: '1px solid #fcd34d' }}>
-                    <div style={{ marginBottom: '10px' }}>
-                      <div style={{ fontSize: '13px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
-                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>${(ttmFreeCashFlow / 1000).toFixed(0)}K</div>
-                    </div>
-                    
-                    <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
+                    {/* Free Cash Flow Calculation */}
+                    <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', border: '1px solid #fcd34d' }}>
+                      <div style={{ marginBottom: '10px' }}>
+                        <div style={{ fontSize: '13px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</div>
+                      </div>
+                      
+                      <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>TTM Revenue</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmRevenue / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmRevenue).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>- COGS</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmCOGS / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmCOGS).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>- Operating Expenses</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmExpense / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmExpense).toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span>- Income Taxes</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmTotalIncomeTaxes).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '6px', borderBottom: '1px solid #fcd34d' }}>
                         <span style={{ fontWeight: '600' }}>= Net Income</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmNetIncome / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmNetIncomeAfterTaxForDcf).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>+ Depreciation/Amortization</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmDepreciation / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmDepreciation).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>- Change in Working Capital</span>
-                        <span style={{ fontWeight: '600' }}>${(changeInWC / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(changeInWC).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px solid #fcd34d' }}>
                         <span>- Capital Expenditures</span>
-                        <span style={{ fontWeight: '600' }}>${(ttmCapEx / 1000).toFixed(0)}K</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmCapEx).toLocaleString()}</span>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-                        <span style={{ fontWeight: '700' }}>= Free Cash Flow</span>
-                        <span style={{ fontWeight: '700', color: '#f59e0b' }}>${(ttmFreeCashFlow / 1000).toFixed(0)}K</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                          <span style={{ fontWeight: '700' }}>= Free Cash Flow</span>
+                          <span style={{ fontWeight: '700', color: '#f59e0b' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -9909,6 +11407,7 @@ function FinancialScorePage() {
                     </div>
                   </div>
                 </div>
+                )}
               </>
             );
           })()}
@@ -10480,6 +11979,79 @@ function FinancialScorePage() {
               monthlyFirst: monthly?.[0],
               condition: statementType === 'income-statement' && statementPeriod === 'current-month'
             });
+
+            const buildIncomeStatementDetails = (monthsInput: any[]) => {
+              const months = Array.isArray(monthsInput) ? monthsInput : [];
+              const revenue = months.reduce((sum, m) => sum + (Number(m?.revenue) || 0), 0);
+
+              const revenueDetails: Record<string, number> = {};
+              const cogsDetails: Record<string, number> = {
+                cogsPayroll: months.reduce((sum, m) => sum + (Number(m?.cogsPayroll) || 0), 0),
+                cogsOwnerPay: months.reduce((sum, m) => sum + (Number(m?.cogsOwnerPay) || 0), 0),
+                cogsContractors: months.reduce((sum, m) => sum + (Number(m?.cogsContractors) || 0), 0),
+                cogsMaterials: months.reduce((sum, m) => sum + (Number(m?.cogsMaterials) || 0), 0),
+                cogsCommissions: months.reduce((sum, m) => sum + (Number(m?.cogsCommissions) || 0), 0),
+                cogsOther: months.reduce((sum, m) => sum + (Number(m?.cogsOther) || 0), 0),
+              };
+
+              months.forEach((m) => {
+                const monthObj = m || {};
+                const keys = Object.keys(monthObj);
+                const hasFlatRevenue = keys.some((key) => key.startsWith('rev_'));
+                const hasFlatSectorCogs = keys.some((key) => key.startsWith('cogs_') && key !== 'cogs_total');
+                const hasLegacyCogs = ['cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther']
+                  .some((key) => (Number(monthObj[key]) || 0) !== 0);
+
+                keys.forEach((key) => {
+                  if (key.startsWith('rev_')) {
+                    revenueDetails[key] = (Number(revenueDetails[key]) || 0) + (Number(monthObj[key]) || 0);
+                  }
+                  if (key.startsWith('cogs_') && key !== 'cogs_total') {
+                    cogsDetails[key] = (Number(cogsDetails[key]) || 0) + (Number(monthObj[key]) || 0);
+                  }
+                });
+
+                if (!hasFlatRevenue && monthObj.revenueBreakdown && typeof monthObj.revenueBreakdown === 'object') {
+                  Object.entries(monthObj.revenueBreakdown).forEach(([key, value]) => {
+                    revenueDetails[key] = (Number(revenueDetails[key]) || 0) + (Number(value) || 0);
+                  });
+                }
+                if (!hasFlatSectorCogs && !hasLegacyCogs && monthObj.cogsBreakdown && typeof monthObj.cogsBreakdown === 'object') {
+                  Object.entries(monthObj.cogsBreakdown).forEach(([key, value]) => {
+                    cogsDetails[key] = (Number(cogsDetails[key]) || 0) + (Number(value) || 0);
+                  });
+                }
+              });
+
+              const cogsFromTotal = months.reduce((sum, m) => sum + (Number(m?.cogsTotal) || 0), 0);
+              const cogsFromDetails = Object.values(cogsDetails).reduce((sum, value) => sum + (Number(value) || 0), 0);
+              const cogs = cogsFromTotal !== 0 ? cogsFromTotal : cogsFromDetails;
+
+              const revenueDetailFields = Object.keys(revenueDetails).filter((field) => (Number(revenueDetails[field]) || 0) !== 0);
+              const cogsDetailFields = Object.keys(cogsDetails).filter((field) => (Number(cogsDetails[field]) || 0) !== 0);
+
+              return { revenue, cogs, revenueDetails, cogsDetails, revenueDetailFields, cogsDetailFields };
+            };
+            const operatingExpenseFieldDefinitions = [
+              { key: 'payroll', label: 'Payroll' },
+              { key: 'ownerBasePay', label: "Owner's Base Pay" },
+              { key: 'ownersRetirement', label: "Owner's Retirement" },
+              { key: 'benefits', label: 'Benefits' },
+              { key: 'insurance', label: 'Insurance' },
+              { key: 'professionalFees', label: 'Professional Services' },
+              { key: 'subcontractors', label: 'Subcontractors' },
+              { key: 'rent', label: 'Rent/Lease' },
+              { key: 'taxLicense', label: 'Tax & License' },
+              { key: 'phoneComm', label: 'Phone & Communication' },
+              { key: 'infrastructure', label: 'Infrastructure/Utilities' },
+              { key: 'autoTravel', label: 'Auto & Travel' },
+              { key: 'salesExpense', label: 'Sales & Marketing' },
+              { key: 'marketing', label: 'Marketing' },
+              { key: 'trainingCert', label: 'Training & Certification' },
+              { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
+              { key: 'depreciationAmortization', label: 'Depreciation & Amortization' },
+              { key: 'otherExpense', label: 'Other Expenses' },
+            ] as const;
             
             if (statementType === 'income-statement' && statementPeriod === 'current-month') {
               // Sort by date to ensure we get the most recent month (in case data isn't sorted)
@@ -10492,17 +12064,14 @@ function FinancialScorePage() {
               const monthDate = new Date(currentMonth.date || currentMonth.month);
               const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-              // Revenue
-              const revenue = currentMonth.revenue || 0;
-
-              // Cost of Goods Sold
-              const cogsPayroll = currentMonth.cogsPayroll || 0;
-              const cogsOwnerPay = currentMonth.cogsOwnerPay || 0;
-              const cogsContractors = currentMonth.cogsContractors || 0;
-              const cogsMaterials = currentMonth.cogsMaterials || 0;
-              const cogsCommissions = currentMonth.cogsCommissions || 0;
-              const cogsOther = currentMonth.cogsOther || 0;
-              const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+              const {
+                revenue,
+                cogs,
+                revenueDetails,
+                cogsDetails,
+                revenueDetailFields,
+                cogsDetailFields,
+              } = buildIncomeStatementDetails([currentMonth]);
 
               const grossProfit = revenue - cogs;
               const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
@@ -10544,7 +12113,7 @@ function FinancialScorePage() {
               const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
               
               return (
-                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', whiteSpace: 'nowrap' }}>
                   <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                     <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
                     <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName}</div>
@@ -10556,47 +12125,23 @@ function FinancialScorePage() {
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                     </div>
+                    {revenueDetailFields.map((field) => (
+                      <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569' }}>${(Number(revenueDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    ))}
                   </div>
 
                   {/* COGS Section */}
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
-                    {cogsPayroll > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                        <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                    {cogsDetailFields.map((field) => (
+                      <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569' }}>${(Number(cogsDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       </div>
-                    )}
-                    {cogsOwnerPay > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                        <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    )}
-                    {cogsContractors > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                        <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    )}
-                    {cogsMaterials > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>COGS - Materials</span>
-                        <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    )}
-                    {cogsCommissions > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                        <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    )}
-                    {cogsOther > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                        <span style={{ color: '#475569' }}>COGS - Other</span>
-                        <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                      </div>
-                    )}
+                    ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
                       <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -10755,16 +12300,14 @@ function FinancialScorePage() {
               const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
               
               // Revenue
-              const revenue = currentMonth.revenue || 0;
-              
-              // Cost of Goods Sold
-              const cogsPayroll = currentMonth.cogsPayroll || 0;
-              const cogsOwnerPay = currentMonth.cogsOwnerPay || 0;
-              const cogsContractors = currentMonth.cogsContractors || 0;
-              const cogsMaterials = currentMonth.cogsMaterials || 0;
-              const cogsCommissions = currentMonth.cogsCommissions || 0;
-              const cogsOther = currentMonth.cogsOther || 0;
-              const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+              const {
+                revenue,
+                cogs,
+                revenueDetails,
+                cogsDetails,
+                revenueDetailFields,
+                cogsDetailFields,
+              } = buildIncomeStatementDetails([currentMonth]);
               
               const grossProfit = revenue - cogs;
               const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
@@ -10812,7 +12355,7 @@ function FinancialScorePage() {
               const pct = (amount: number) => revenue > 0 ? (amount / revenue) * 100 : 0;
               
               return (
-                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', whiteSpace: 'nowrap' }}>
                   <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                     <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement - Common Size Analysis</h2>
                     <div style={{ fontSize: '14px', color: '#64748b' }}>For the Month Ended {monthName} - All items shown as % of Revenue</div>
@@ -10832,53 +12375,25 @@ function FinancialScorePage() {
                       <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                       <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>100.0%</span>
                     </div>
+                    {revenueDetailFields.map((field) => (
+                      <div key={field} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${(Number(revenueDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(Number(revenueDetails[field]) || 0).toFixed(1)}%</span>
+                      </div>
+                    ))}
                   </div>
 
                   {/* COGS Section */}
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Cost of Goods Sold</div>
-                    {cogsPayroll > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Payroll</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsPayroll).toFixed(1)}%</span>
+                    {cogsDetailFields.map((field) => (
+                      <div key={field} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                        <span style={{ color: '#475569', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>${(Number(cogsDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(Number(cogsDetails[field]) || 0).toFixed(1)}%</span>
                       </div>
-                    )}
-                    {cogsOwnerPay > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Owner Pay</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsOwnerPay).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {cogsContractors > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Contractors</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsContractors).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {cogsMaterials > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Materials</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsMaterials).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {cogsCommissions > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Commissions</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsCommissions).toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {cogsOther > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
-                        <span style={{ color: '#475569', paddingLeft: '20px' }}>COGS - Other</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                        <span style={{ color: '#475569', textAlign: 'right' }}>{pct(cogsOther).toFixed(1)}%</span>
-                      </div>
-                    )}
+                    ))}
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                       <span style={{ fontWeight: '600', color: '#1e293b', paddingLeft: '20px' }}>Total COGS</span>
                       <span style={{ fontWeight: '600', color: '#1e293b', textAlign: 'right' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -11127,6 +12642,7 @@ function FinancialScorePage() {
                 
                 // Liabilities - Use imported totals directly from CSV
                 const ap = currentMonth.ap || 0;
+                const loc = currentMonth.loc || 0;
                 const otherCL = currentMonth.otherCL || 0;
                 const tcl = currentMonth.tcl || 0;  // Use imported total, don't calculate
                 
@@ -11223,6 +12739,12 @@ function FinancialScorePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Accounts Payable</span>
                           <span style={{ color: '#475569' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {loc !== 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Line of Credit</span>
+                          <span style={{ color: '#475569' }}>${loc.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       )}
                       {otherCL !== 0 && (
@@ -11473,28 +12995,12 @@ function FinancialScorePage() {
                 if (displayPeriods.length > 1) {
                 // Multi-column comparative income statement
                 const calculatePeriodData = (months: any[]) => {
-                  const revenue = months.reduce((sum, m) => sum + (m.revenue || 0), 0);
-
-                  // COGS detailed
-                  const cogsPayroll = months.reduce((sum, m) => sum + (m.cogsPayroll || 0), 0);
-                  const cogsOwnerPay = months.reduce((sum, m) => sum + (m.cogsOwnerPay || 0), 0);
-                  const cogsContractors = months.reduce((sum, m) => sum + (m.cogsContractors || 0), 0);
-                  const cogsMaterials = months.reduce((sum, m) => sum + (m.cogsMaterials || 0), 0);
-                  const cogsCommissions = months.reduce((sum, m) => sum + (m.cogsCommissions || 0), 0);
-                  const cogsOther = months.reduce((sum, m) => sum + (m.cogsOther || 0), 0);
-                  const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+                  const { revenue, cogs, revenueDetails, cogsDetails } = buildIncomeStatementDetails(months);
                   const grossProfit = revenue - cogs;
 
-                  // Dynamically calculate operating expense fields only
-                  const expenseFields = [
-                    'payroll', 'benefits', 'insurance', 'professionalFees', 'subcontractors',
-                    'rent', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
-                    'salesExpense', 'marketing', 'mealsEntertainment', 'otherExpense'
-                  ];
-
                   const expenses: { [key: string]: number } = {};
-                  expenseFields.forEach(field => {
-                    expenses[field] = months.reduce((sum, m) => sum + (m[field] || 0), 0);
+                  operatingExpenseFieldDefinitions.forEach(({ key }) => {
+                    expenses[key] = months.reduce((sum, m) => sum + (Number(m[key]) || 0), 0);
                   });
 
                   // Calculate total operating expenses dynamically
@@ -11523,7 +13029,9 @@ function FinancialScorePage() {
                   
                   return {
                     revenue,
-                    cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs,
+                    revenueDetails,
+                    cogsDetails,
+                    cogs,
                     grossProfit,
                     ...expenses, // Include all expense fields dynamically
                     totalOpex,
@@ -11540,11 +13048,21 @@ function FinancialScorePage() {
                     ...calculatePeriodData(p.months),
                     label: p.label
                   }));
+                  const comparativeCogsFields = Array.from(
+                    new Set(periodsData.flatMap((p: any) => Object.keys(p.cogsDetails || {}))),
+                  ).filter((field) =>
+                    periodsData.some((p: any) => (Number((p.cogsDetails || {})[field]) || 0) !== 0),
+                  );
+                  const comparativeRevenueFields = Array.from(
+                    new Set(periodsData.flatMap((p: any) => Object.keys(p.revenueDetails || {}))),
+                  ).filter((field) =>
+                    periodsData.some((p: any) => (Number((p.revenueDetails || {})[field]) || 0) !== 0),
+                  );
                   
                   return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                       <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Income Statement</h2>
+                        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                       </div>
                       
@@ -11565,6 +13083,16 @@ function FinancialScorePage() {
                             <div key={i} style={{ textAlign: 'right', color: '#1e293b' }}>${p.revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                           ))}
                         </div>
+                        {comparativeRevenueFields.map((field) => (
+                          <div key={field} style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</div>
+                            {periodsData.map((p, i) => (
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
+                                ${(Number((p.revenueDetails || {})[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
                         
                         {/* COGS Section Header */}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
@@ -11573,54 +13101,16 @@ function FinancialScorePage() {
                         </div>
                         
                         {/* COGS Details */}
-                        {periodsData.some(p => p.cogsPayroll > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Payroll</div>
+                        {comparativeCogsFields.map((field) => (
+                          <div key={field} style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>{getFieldDisplayName(field)}</div>
                             {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>
+                                ${(Number((p.cogsDetails || {})[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              </div>
                             ))}
                           </div>
-                        )}
-                        {periodsData.some(p => p.cogsOwnerPay > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Owner Pay</div>
-                            {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                        )}
-                        {periodsData.some(p => p.cogsContractors > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Contractors</div>
-                            {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                        )}
-                        {periodsData.some(p => p.cogsMaterials > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Materials</div>
-                            {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                        )}
-                        {periodsData.some(p => p.cogsCommissions > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Commissions</div>
-                            {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                        )}
-                        {periodsData.some(p => p.cogsOther > 0) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b', paddingLeft: '20px' }}>COGS - Other</div>
-                            {periodsData.map((p, i) => (
-                              <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            ))}
-                          </div>
-                        )}
+                        ))}
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '6px 0', fontSize: '14px', fontWeight: '600', borderTop: '1px solid #cbd5e1', marginTop: '4px' }}>
                           <div style={{ color: '#475569' }}>Total COGS</div>
                           {periodsData.map((p, i) => (
@@ -11644,27 +13134,8 @@ function FinancialScorePage() {
                         
                         {/* Operating Expenses Details - Dynamic Rendering */}
                         {(() => {
-                          // Define all possible expense fields with their display names
-                          const expenseFieldDefinitions = [
-                            // Operating Expenses - Complete list in correct order
-                            { key: 'payroll', label: 'Payroll' },
-                            { key: 'benefits', label: 'Benefits' },
-                            { key: 'insurance', label: 'Insurance' },
-                            { key: 'professionalFees', label: 'Professional Services' },
-                            { key: 'subcontractors', label: 'Subcontractors' },
-                            { key: 'rent', label: 'Rent/Lease' },
-                            { key: 'taxLicense', label: 'Tax & License' },
-                            { key: 'phoneComm', label: 'Phone & Communication' },
-                            { key: 'infrastructure', label: 'Infrastructure/Utilities' },
-                            { key: 'autoTravel', label: 'Auto & Travel' },
-                            { key: 'salesExpense', label: 'Sales & Marketing' },
-                            { key: 'marketing', label: 'Marketing' },
-                            { key: 'mealsEntertainment', label: 'Meals & Entertainment' },
-                            { key: 'otherExpense', label: 'Other Expenses' }
-                          ];
-
                           // Render only fields that have values in at least one period
-                          return expenseFieldDefinitions.map(fieldDef => {
+                          return operatingExpenseFieldDefinitions.map(fieldDef => {
                             const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) > 0);
                             if (hasValue) {
                               return (
@@ -11806,35 +13277,23 @@ function FinancialScorePage() {
                 }
                 
                 // Single period aggregation (original logic)
-                const revenue = periodMonths.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                
-                const cogsPayroll = periodMonths.reduce((sum, m) => sum + (m.cogsPayroll || 0), 0);
-                const cogsOwnerPay = periodMonths.reduce((sum, m) => sum + (m.cogsOwnerPay || 0), 0);
-                const cogsContractors = periodMonths.reduce((sum, m) => sum + (m.cogsContractors || 0), 0);
-                const cogsMaterials = periodMonths.reduce((sum, m) => sum + (m.cogsMaterials || 0), 0);
-                const cogsCommissions = periodMonths.reduce((sum, m) => sum + (m.cogsCommissions || 0), 0);
-                const cogsOther = periodMonths.reduce((sum, m) => sum + (m.cogsOther || 0), 0);
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+                const {
+                  revenue,
+                  cogs,
+                  revenueDetails,
+                  cogsDetails,
+                  revenueDetailFields,
+                  cogsDetailFields,
+                } = buildIncomeStatementDetails(periodMonths);
                 
                 const grossProfit = revenue - cogs;
                 const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
                 
-                const payroll = periodMonths.reduce((sum, m) => sum + (m.payroll || 0), 0);
-                const ownerBasePay = periodMonths.reduce((sum, m) => sum + (m.ownerBasePay || 0), 0);
-                const ownersRetirement = periodMonths.reduce((sum, m) => sum + (m.ownersRetirement || 0), 0);
-                const professionalFees = periodMonths.reduce((sum, m) => sum + (m.professionalFees || 0), 0);
-                const rent = periodMonths.reduce((sum, m) => sum + (m.rent || 0), 0);
-                const infrastructure = periodMonths.reduce((sum, m) => sum + (m.infrastructure || 0), 0);
-                const autoTravel = periodMonths.reduce((sum, m) => sum + (m.autoTravel || 0), 0);
-                const insurance = periodMonths.reduce((sum, m) => sum + (m.insurance || 0), 0);
-                const salesExpense = periodMonths.reduce((sum, m) => sum + (m.salesExpense || 0), 0);
-                const subcontractors = periodMonths.reduce((sum, m) => sum + (m.subcontractors || 0), 0);
-                const depreciationAmortization = periodMonths.reduce((sum, m) => sum + (m.depreciationAmortization || 0), 0);
-                const marketing = periodMonths.reduce((sum, m) => sum + (m.marketing || 0), 0);
-                
-                const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + 
-                                 rent + infrastructure + autoTravel + insurance + 
-                                 salesExpense + subcontractors + depreciationAmortization + marketing;
+                const expenses: { [key: string]: number } = {};
+                operatingExpenseFieldDefinitions.forEach(({ key }) => {
+                  expenses[key] = periodMonths.reduce((sum, m) => sum + (Number(m[key]) || 0), 0);
+                });
+                const totalOpex = Object.values(expenses).reduce((sum, value) => sum + value, 0);
                 
                 const operatingIncome = grossProfit - totalOpex;
                 const operatingMargin = revenue > 0 ? (operatingIncome / revenue) * 100 : 0;
@@ -11843,13 +13302,23 @@ function FinancialScorePage() {
                 const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
                 const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
                 const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-                const stateIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
-                const federalIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
+                const stateIncomeTaxes = periodMonths.reduce((sum, m) => {
+                  const raw = (m as any).stateIncomeTaxes;
+                  if (raw === null || raw === undefined) return sum;
+                  const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/,/g, ''));
+                  return sum + (Number.isFinite(parsed) ? parsed : 0);
+                }, 0);
+                const federalIncomeTaxes = periodMonths.reduce((sum, m) => {
+                  const raw = (m as any).federalIncomeTaxes;
+                  if (raw === null || raw === undefined) return sum;
+                  const parsed = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/,/g, ''));
+                  return sum + (Number.isFinite(parsed) ? parsed : 0);
+                }, 0);
                 const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
                 const netMargin = revenue > 0 ? (netIncome / revenue) * 100 : 0;
                 
                 return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', whiteSpace: 'nowrap' }}>
                       <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Income Statement</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {periodLabel}</div>
@@ -11861,47 +13330,23 @@ function FinancialScorePage() {
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Revenue</span>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
+                    {revenueDetailFields.map((field) => (
+                      <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569' }}>${(Number(revenueDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    ))}
                       </div>
 
                       {/* COGS Section */}
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Cost of Goods Sold</div>
-                        {cogsPayroll > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Payroll</span>
-                            <span style={{ color: '#475569' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsOwnerPay > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Owner Pay</span>
-                            <span style={{ color: '#475569' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsContractors > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Contractors</span>
-                            <span style={{ color: '#475569' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsMaterials > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Materials</span>
-                            <span style={{ color: '#475569' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsCommissions > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Commissions</span>
-                            <span style={{ color: '#475569' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {cogsOther > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>COGS - Other</span>
-                            <span style={{ color: '#475569' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
+                    {cogsDetailFields.map((field) => (
+                      <div key={field} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                        <span style={{ color: '#475569' }}>{getFieldDisplayName(field)}</span>
+                        <span style={{ color: '#475569' }}>${(Number(cogsDetails[field]) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                      </div>
+                    ))}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Total COGS</span>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -11922,78 +13367,16 @@ function FinancialScorePage() {
                       {/* Operating Expenses */}
                       <div style={{ marginBottom: '12px' }}>
                         <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Operating Expenses</div>
-                        {payroll > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Payroll</span>
-                            <span style={{ color: '#475569' }}>${payroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {ownerBasePay > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Owner's Base Pay</span>
-                            <span style={{ color: '#475569' }}>${ownerBasePay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {ownersRetirement > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Owner's Retirement</span>
-                            <span style={{ color: '#475569' }}>${ownersRetirement.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {professionalFees > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Professional Services</span>
-                            <span style={{ color: '#475569' }}>${professionalFees.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {rent > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Rent/Lease</span>
-                            <span style={{ color: '#475569' }}>${rent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {infrastructure > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Infrastructure</span>
-                            <span style={{ color: '#475569' }}>${infrastructure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {autoTravel > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Auto & Travel</span>
-                            <span style={{ color: '#475569' }}>${autoTravel.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {insurance > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Insurance</span>
-                            <span style={{ color: '#475569' }}>${insurance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {salesExpense > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Sales & Marketing</span>
-                            <span style={{ color: '#475569' }}>${salesExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {subcontractors > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Contractors - Distribution</span>
-                            <span style={{ color: '#475569' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {depreciationAmortization > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Depreciation & Amortization</span>
-                            <span style={{ color: '#475569' }}>${depreciationAmortization.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {marketing > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                            <span style={{ color: '#475569' }}>Other Operating Expenses</span>
-                            <span style={{ color: '#475569' }}>${marketing.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
+                        {operatingExpenseFieldDefinitions.map((field) => {
+                          const value = Number(expenses[field.key]) || 0;
+                          if (value <= 0) return null;
+                          return (
+                            <div key={field.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                              <span style={{ color: '#475569' }}>{field.label}</span>
+                              <span style={{ color: '#475569' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            </div>
+                          );
+                        })}
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #e2e8f0', marginTop: '4px' }}>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>Total Operating Expenses</span>
                           <span style={{ fontWeight: '600', color: '#1e293b' }}>${totalOpex.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -12034,6 +13417,33 @@ function FinancialScorePage() {
                         )}
                       </div>
 
+                      {/* Income Before Tax */}
+                      <div style={{ marginBottom: '12px', background: '#f1f5f9', padding: '12px', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontWeight: '700', color: '#0f172a' }}>Income Before Tax</span>
+                          <span style={{ fontWeight: '700', color: '#0f172a' }}>
+                            ${incomeBeforeTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Income Taxes */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Taxes</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>State Income Taxes</span>
+                          <span style={{ color: '#475569' }}>
+                            ({Math.abs(stateIncomeTaxes).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Federal Income Taxes</span>
+                          <span style={{ color: '#475569' }}>
+                            ({Math.abs(federalIncomeTaxes).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                          </span>
+                        </div>
+                      </div>
+
                       {/* Net Income */}
                       <div style={{ background: netIncome >= 0 ? '#dcfce7' : '#fee2e2', padding: '16px', borderRadius: '8px', marginTop: '24px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -12057,13 +13467,9 @@ function FinancialScorePage() {
                   const calc = (months: any[], field: string) => months.reduce((sum, m) => sum + (m[field] || 0), 0);
                   const periodsData = displayPeriods.map(p => {
                     const m = p.months;
-                    const revenue = calc(m, 'revenue');
-                    const cogsPayroll = calc(m, 'cogsPayroll');
-                    const cogsOwnerPay = calc(m, 'cogsOwnerPay');
-                    const cogsContractors = calc(m, 'cogsContractors');
-                    const cogsMaterials = calc(m, 'cogsMaterials');
-                    const cogsCommissions = calc(m, 'cogsCommissions');
-                    const cogsOther = calc(m, 'cogsOther');
+                    const detailData = buildIncomeStatementDetails(m);
+                    const revenue = detailData.revenue;
+                    const cogs = detailData.cogs;
                     const payroll = calc(m, 'payroll');
                     const ownerBasePay = calc(m, 'ownerBasePay');
                     const ownersRetirement = calc(m, 'ownersRetirement');
@@ -12079,7 +13485,6 @@ function FinancialScorePage() {
                     const interestExpense = calc(m, 'interestExpense');
                     const nonOperatingIncome = calc(m, 'nonOperatingIncome');
                     const extraordinaryItems = calc(m, 'extraordinaryItems');
-                    const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
                     // Calculate all operating expenses - include all expense fields
                     const benefits = calc(m, 'benefits');
                     const taxLicense = calc(m, 'taxLicense');
@@ -12094,8 +13499,52 @@ function FinancialScorePage() {
                     const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
                     const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
                     const netIncome = incomeBeforeTax - totalIncomeTaxes;
-                    return { label: p.label, revenue, cogsPayroll, cogsOwnerPay, cogsContractors, cogsMaterials, cogsCommissions, cogsOther, cogs, grossProfit, payroll, ownerBasePay, ownersRetirement, professionalFees, rent, infrastructure, autoTravel, insurance, salesExpense, subcontractors, depreciationAmortization, marketing, benefits, taxLicense, phoneComm, mealsEntertainment, otherExpense, totalOpex, operatingIncome, interestExpense, nonOperatingIncome, extraordinaryItems, incomeBeforeTax, stateIncomeTaxes, federalIncomeTaxes, totalIncomeTaxes, netIncome };
+                    return {
+                      label: p.label,
+                      revenue,
+                      cogs,
+                      revenueDetails: detailData.revenueDetails,
+                      cogsDetails: detailData.cogsDetails,
+                      grossProfit,
+                      payroll,
+                      ownerBasePay,
+                      ownersRetirement,
+                      professionalFees,
+                      rent,
+                      infrastructure,
+                      autoTravel,
+                      insurance,
+                      salesExpense,
+                      subcontractors,
+                      depreciationAmortization,
+                      marketing,
+                      benefits,
+                      taxLicense,
+                      phoneComm,
+                      mealsEntertainment,
+                      otherExpense,
+                      totalOpex,
+                      operatingIncome,
+                      interestExpense,
+                      nonOperatingIncome,
+                      extraordinaryItems,
+                      incomeBeforeTax,
+                      stateIncomeTaxes,
+                      federalIncomeTaxes,
+                      totalIncomeTaxes,
+                      netIncome
+                    };
                   });
+                  const cogsDetailFields = Array.from(
+                    new Set(periodsData.flatMap((p: any) => Object.keys(p.cogsDetails || {}))),
+                  ).filter((field) =>
+                    periodsData.some((p: any) => (Number((p.cogsDetails || {})[field]) || 0) !== 0),
+                  );
+                  const revenueDetailFields = Array.from(
+                    new Set(periodsData.flatMap((p: any) => Object.keys(p.revenueDetails || {}))),
+                  ).filter((field) =>
+                    periodsData.some((p: any) => (Number((p.revenueDetails || {})[field]) || 0) !== 0),
+                  );
                   const RowWithPercent = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
                       <div style={{ color: bold ? '#475569' : '#64748b', paddingLeft: `${indent}px` }}>{label}</div>
@@ -12111,7 +13560,7 @@ function FinancialScorePage() {
                     </div>
                   );
                   return (
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
+                    <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                       <div style={{ marginBottom: '12px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Comparative Common Size Income Statement</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>{periodLabel} - {statementDisplay === 'monthly' ? 'Monthly' : statementDisplay === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
@@ -12127,13 +13576,23 @@ function FinancialScorePage() {
                           ))}
                         </div>
                         <RowWithPercent label="Revenue" values={periodsData.map(p => p.revenue)} bold />
+                        {revenueDetailFields.map((field) => (
+                          <RowWithPercent
+                            key={field}
+                            label={getFieldDisplayName(field)}
+                            values={periodsData.map((p: any) => Number((p.revenueDetails || {})[field]) || 0)}
+                            indent={20}
+                          />
+                        ))}
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Cost of Goods Sold</div>
-                        {periodsData.some(p => p.cogsPayroll > 0) && <RowWithPercent label="COGS - Payroll" values={periodsData.map(p => p.cogsPayroll)} indent={20} />}
-                        {periodsData.some(p => p.cogsOwnerPay > 0) && <RowWithPercent label="COGS - Owner Pay" values={periodsData.map(p => p.cogsOwnerPay)} indent={20} />}
-                        {periodsData.some(p => p.cogsContractors > 0) && <RowWithPercent label="COGS - Contractors" values={periodsData.map(p => p.cogsContractors)} indent={20} />}
-                        {periodsData.some(p => p.cogsMaterials > 0) && <RowWithPercent label="COGS - Materials" values={periodsData.map(p => p.cogsMaterials)} indent={20} />}
-                        {periodsData.some(p => p.cogsCommissions > 0) && <RowWithPercent label="COGS - Commissions" values={periodsData.map(p => p.cogsCommissions)} indent={20} />}
-                        {periodsData.some(p => p.cogsOther > 0) && <RowWithPercent label="COGS - Other" values={periodsData.map(p => p.cogsOther)} indent={20} />}
+                        {cogsDetailFields.map((field) => (
+                          <RowWithPercent
+                            key={field}
+                            label={getFieldDisplayName(field)}
+                            values={periodsData.map((p: any) => Number((p.cogsDetails || {})[field]) || 0)}
+                            indent={20}
+                          />
+                        ))}
                         <RowWithPercent label="Total COGS" values={periodsData.map(p => p.cogs)} bold />
                         <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 90px 60px)`, gap: '4px', padding: '10px 8px', background: '#dbeafe', borderRadius: '4px', margin: '8px 0', fontWeight: '700', color: '#1e40af' }}>
                           <div>Gross Profit</div>
@@ -12268,15 +13727,14 @@ function FinancialScorePage() {
                   );
                 }
                 
-                const revenue = periodMonths.reduce((sum, m) => sum + (m.revenue || 0), 0);
-                
-                const cogsPayroll = periodMonths.reduce((sum, m) => sum + (m.cogsPayroll || 0), 0);
-                const cogsOwnerPay = periodMonths.reduce((sum, m) => sum + (m.cogsOwnerPay || 0), 0);
-                const cogsContractors = periodMonths.reduce((sum, m) => sum + (m.cogsContractors || 0), 0);
-                const cogsMaterials = periodMonths.reduce((sum, m) => sum + (m.cogsMaterials || 0), 0);
-                const cogsCommissions = periodMonths.reduce((sum, m) => sum + (m.cogsCommissions || 0), 0);
-                const cogsOther = periodMonths.reduce((sum, m) => sum + (m.cogsOther || 0), 0);
-                const cogs = cogsPayroll + cogsOwnerPay + cogsContractors + cogsMaterials + cogsCommissions + cogsOther;
+                const {
+                  revenue,
+                  cogs,
+                  revenueDetails,
+                  cogsDetails,
+                  revenueDetailFields,
+                  cogsDetailFields,
+                } = buildIncomeStatementDetails(periodMonths);
                 
                 const grossProfit = revenue - cogs;
 
@@ -12311,7 +13769,7 @@ function FinancialScorePage() {
                 const calcPercent = (value: number) => revenue > 0 ? ((value / revenue) * 100).toFixed(1) + '%' : '0.0%';
                 
                 return (
-                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ background: 'white', borderRadius: '12px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', whiteSpace: 'nowrap' }}>
                       <div style={{ marginBottom: '32px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
                         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>Common Size Income Statement</h2>
                         <div style={{ fontSize: '14px', color: '#64748b' }}>For the Period: {periodLabel}</div>
@@ -12330,52 +13788,30 @@ function FinancialScorePage() {
                         <div style={{ textAlign: 'right', color: '#1e293b' }}>${revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                         <div style={{ textAlign: 'right', color: '#1e293b' }}>100.0%</div>
                       </div>
+                      {revenueDetailFields.map((field) => {
+                        const value = Number(revenueDetails[field]) || 0;
+                        return (
+                          <div key={field} style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                            <div style={{ color: '#64748b' }}>{getFieldDisplayName(field)}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(value)}</div>
+                          </div>
+                        );
+                      })}
 
                       {/* COGS */}
                       <div style={{ marginTop: '16px' }}>
                         <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Cost of Goods Sold</div>
-                        {cogsPayroll > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>COGS - Payroll</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsPayroll.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsPayroll)}</div>
-                          </div>
-                        )}
-                        {cogsOwnerPay > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>COGS - Owner Pay</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOwnerPay.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOwnerPay)}</div>
-                          </div>
-                        )}
-                        {cogsContractors > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>COGS - Contractors</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsContractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsContractors)}</div>
-                          </div>
-                        )}
-                        {cogsMaterials > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>COGS - Materials</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsMaterials.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsMaterials)}</div>
-                          </div>
-                        )}
-                        {cogsCommissions > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>COGS - Commissions</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsCommissions.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsCommissions)}</div>
-                          </div>
-                        )}
-                        {cogsOther > 0 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
-                            <div style={{ color: '#64748b' }}>COGS - Other</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>${cogsOther.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
-                            <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(cogsOther)}</div>
-                          </div>
-                        )}
+                        {cogsDetailFields.map((field) => {
+                          const value = Number(cogsDetails[field]) || 0;
+                          return (
+                            <div key={field} style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b' }}>{getFieldDisplayName(field)}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(value)}</div>
+                            </div>
+                          );
+                        })}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '8px 0', borderTop: '1px solid #cbd5e1', marginTop: '4px', fontWeight: '600' }}>
                           <div style={{ color: '#475569' }}>Total COGS</div>
                           <div style={{ textAlign: 'right', color: '#475569' }}>${cogs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
@@ -12534,6 +13970,7 @@ function FinancialScorePage() {
                     
                     // Liabilities - Use Data Review fields and imported totals
                     const ap = latest.ap || 0;
+                    const loc = latest.loc || 0;
                     const otherCL = latest.otherCL || 0;
                     const tcl = latest.tcl || 0;  // Use imported total
                     
@@ -12555,7 +13992,7 @@ function FinancialScorePage() {
                     // Calculate Total Liabilities & Equity to match Data Review page (do NOT use imported totalLAndE)
                     const totalLAndE = totalLiabilities + totalEquity;
                     
-                    return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, otherAssets, totalAssets, ap, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
+                    return { label: p.label, cash, ar, inventory, otherCA, tca, fixedAssets, otherAssets, totalAssets, ap, loc, otherCL, tcl, ltd, totalLiabilities, ownersCapital, ownersDraw, commonStock, preferredStock, retainedEarnings, additionalPaidInCapital, treasuryStock, paidInCapital, totalEquity, totalLAndE };
                   });
                   const Row = ({ label, values, indent = 0, bold = false }: any) => (
                     <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${balanceData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: bold ? '14px' : '13px', fontWeight: bold ? '600' : 'normal' }}>
@@ -12592,6 +14029,7 @@ function FinancialScorePage() {
                         <div style={{ margin: '12px 0 4px', fontSize: '15px', fontWeight: '700', color: '#1e293b' }}>LIABILITIES</div>
                         <div style={{ margin: '8px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Liabilities</div>
                         {balanceData.some(p => p.ap !== 0) && <Row label="Accounts Payable" values={balanceData.map(p => p.ap)} indent={20} />}
+                        {balanceData.some(p => p.loc !== 0) && <Row label="Line of Credit" values={balanceData.map(p => p.loc)} indent={20} />}
                         {balanceData.some(p => p.otherCL !== 0) && <Row label="Other Current Liabilities" values={balanceData.map(p => p.otherCL)} indent={20} />}
                         <Row label="Total Current Liabilities" values={balanceData.map(p => p.tcl)} bold />
                         {balanceData.some(p => p.ltd !== 0) && <Row label="Long-Term Debt" values={balanceData.map(p => p.ltd)} />}
@@ -12650,6 +14088,7 @@ function FinancialScorePage() {
                 const totalAssets = latestMonth.totalAssets || 0;  // Use imported total
                 
                 const ap = latestMonth.ap || 0;
+                const loc = latestMonth.loc || 0;
                 const otherCL = latestMonth.otherCL || 0;
                 const tcl = latestMonth.tcl || 0;  // Use imported total
                 
@@ -12753,6 +14192,12 @@ function FinancialScorePage() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#64748b' }}>Accounts Payable</span>
                             <span style={{ color: '#64748b' }}>${ap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
+                        {loc !== 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 4px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>Line of Credit</span>
+                            <span style={{ color: '#64748b' }}>${loc.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         {otherCL !== 0 && (
@@ -13317,197 +14762,280 @@ function FinancialScorePage() {
 
       {/* Custom Print View - For Consultants and Company Users */}
       {currentView === 'custom-print' && (currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
-        <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Custom Print Package</h1>
-            <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '32px' }}>
+        <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', marginBottom: '10px' }}>Custom Print Package</h1>
+            <p style={{ fontSize: '15px', color: '#64748b', marginBottom: '20px' }}>
               Select the reports you want to include in your custom print package
             </p>
 
-            <div style={{ marginBottom: '24px', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                Print Orientation
-              </label>
-              <select
-                value={printOrientation}
-                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
-                style={{ width: '220px', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', background: 'white', cursor: 'pointer' }}
-              >
-                <option value="portrait">Portrait</option>
-                <option value="landscape">Landscape</option>
-              </select>
-            </div>
-            
-            <div style={{ marginBottom: '32px' }}>
-              {/* MD&A Report */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={printPackageSelections.mda}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, mda: e.target.checked})}
-                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
-                  />
-                  <div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>MD&A (Management Discussion & Analysis)</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Includes all 3 tabs: Key Metrics, Analysis, and Recommendations</div>
+            <div style={{ marginBottom: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'start' }}>
+              <div style={{ padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>Financial Data Reports</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.mda} onChange={(e) => updatePrintSelection('mda', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      MD&A
+                    </label>
+                    <select value={printPackageOrientations.mda} onChange={(e) => updatePrintOrientation('mda', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
                   </div>
-                </label>
-              </div>
-
-              {/* Priority Ratios */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={printPackageSelections.priorityRatios}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, priorityRatios: e.target.checked})}
-                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
-                  />
-                  <div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Priority Ratios</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Key financial ratios and metrics</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.priorityRatios} onChange={(e) => updatePrintSelection('priorityRatios', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Priority Ratios
+                    </label>
+                    <select value={printPackageOrientations.priorityRatios} onChange={(e) => updatePrintOrientation('priorityRatios', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
                   </div>
-                </label>
-              </div>
-
-              {/* Working Capital */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={printPackageSelections.workingCapital}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, workingCapital: e.target.checked})}
-                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
-                  />
-                  <div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Working Capital</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Working capital analysis</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.workingCapital} onChange={(e) => updatePrintSelection('workingCapital', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Working Capital
+                    </label>
+                    <select value={printPackageOrientations.workingCapital} onChange={(e) => updatePrintOrientation('workingCapital', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
                   </div>
-                </label>
-              </div>
-
-              {/* Dashboard */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={printPackageSelections.dashboard}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, dashboard: e.target.checked})}
-                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
-                  />
-                  <div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Dashboard</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Custom dashboard with selected metrics and charts</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.dashboard} onChange={(e) => updatePrintSelection('dashboard', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Dashboard
+                    </label>
+                    <select value={printPackageOrientations.dashboard} onChange={(e) => updatePrintOrientation('dashboard', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
                   </div>
-                </label>
-              </div>
 
-              {/* Cash Flow Tabs */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div style={{ marginBottom: '12px' }}>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Cash Flow Analysis</div>
-                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Cash flow reports</div>
+                  <div style={{ marginTop: '4px', fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>Cash Flow</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', paddingLeft: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.cashFlow4Quarters} onChange={(e) => updatePrintSelection('cashFlow4Quarters', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Last 4 Quarters
+                    </label>
+                    <select value={printPackageOrientations.cashFlow4Quarters} onChange={(e) => updatePrintOrientation('cashFlow4Quarters', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', paddingLeft: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.cashFlow3Years} onChange={(e) => updatePrintSelection('cashFlow3Years', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Last 3 Years
+                    </label>
+                    <select value={printPackageOrientations.cashFlow3Years} onChange={(e) => updatePrintOrientation('cashFlow3Years', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+
+                  <div style={{ marginTop: '4px', fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>Financial Statements</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', paddingLeft: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.incomeStatement12MonthsQuarterly} onChange={(e) => updatePrintSelection('incomeStatement12MonthsQuarterly', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Income Statement - 12M Quarterly
+                    </label>
+                    <select value={printPackageOrientations.incomeStatement12MonthsQuarterly} onChange={(e) => updatePrintOrientation('incomeStatement12MonthsQuarterly', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', paddingLeft: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.incomeStatement3YearsAnnual} onChange={(e) => updatePrintSelection('incomeStatement3YearsAnnual', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Income Statement - 3Y Annual
+                    </label>
+                    <select value={printPackageOrientations.incomeStatement3YearsAnnual} onChange={(e) => updatePrintOrientation('incomeStatement3YearsAnnual', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', paddingLeft: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.balanceSheet12MonthsQuarterly} onChange={(e) => updatePrintSelection('balanceSheet12MonthsQuarterly', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Balance Sheet - 12M Quarterly
+                    </label>
+                    <select value={printPackageOrientations.balanceSheet12MonthsQuarterly} onChange={(e) => updatePrintOrientation('balanceSheet12MonthsQuarterly', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', paddingLeft: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.balanceSheet3YearsAnnual} onChange={(e) => updatePrintSelection('balanceSheet3YearsAnnual', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Balance Sheet - 3Y Annual
+                    </label>
+                    <select value={printPackageOrientations.balanceSheet3YearsAnnual} onChange={(e) => updatePrintOrientation('balanceSheet3YearsAnnual', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.profile} onChange={(e) => updatePrintSelection('profile', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Company Profile
+                    </label>
+                    <select value={printPackageOrientations.profile} onChange={(e) => updatePrintOrientation('profile', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginLeft: '0px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={printPackageSelections.cashFlow4Quarters}
-                      onChange={(e) => setPrintPackageSelections({...printPackageSelections, cashFlow4Quarters: e.target.checked})}
-                      style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
-                    />
-                    Last 4 Quarters
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={printPackageSelections.cashFlow3Years}
-                      onChange={(e) => setPrintPackageSelections({...printPackageSelections, cashFlow3Years: e.target.checked})}
-                      style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
-                    />
-                    Last 3 Years
-                  </label>
-                </div>
               </div>
 
-              {/* Financial Statements */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div>
-                  <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Financial Statements</div>
-                  <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>Select specific financial statements</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '0px' }}>
-                    {/* Income Statement with sub-options */}
-                    <div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Income Statement</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginLeft: '16px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={printPackageSelections.incomeStatement12MonthsQuarterly}
-                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, incomeStatement12MonthsQuarterly: e.target.checked})}
-                            style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
-                          />
-                          Income Statement, Last 12 months, Quarterly
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={printPackageSelections.incomeStatement3YearsAnnual}
-                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, incomeStatement3YearsAnnual: e.target.checked})}
-                            style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
-                          />
-                          Income Statement, Last 3 Years, Annual
-                        </label>
-                      </div>
+              <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>Operations Reports</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsDashboard} onChange={(e) => updatePrintSelection('opsDashboard', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Ops Dashboard
+                    </label>
+                    <select value={printPackageOrientations.opsDashboard} onChange={(e) => updatePrintOrientation('opsDashboard', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ marginTop: '2px', fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>Cash Forecast</div>
+                  <div style={{ marginLeft: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Income Statement Forecast (Cash Basis)</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                        <input type="checkbox" checked={printPackageSelections.opsCashBasisIncomeStatementForecast} onChange={(e) => updatePrintSelection('opsCashBasisIncomeStatementForecast', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                        Income Statement Forecast
+                      </label>
+                      <select value={printPackageOrientations.opsCashBasisIncomeStatementForecast} onChange={(e) => updatePrintOrientation('opsCashBasisIncomeStatementForecast', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
                     </div>
-                    {/* Balance Sheet with sub-options */}
-                    <div style={{ marginTop: '12px' }}>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Balance Sheet</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginLeft: '16px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={printPackageSelections.balanceSheet12MonthsQuarterly}
-                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, balanceSheet12MonthsQuarterly: e.target.checked})}
-                            style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
-                          />
-                          Balance Sheet, Last 12 months, Quarterly
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={printPackageSelections.balanceSheet3YearsAnnual}
-                            onChange={(e) => setPrintPackageSelections({...printPackageSelections, balanceSheet3YearsAnnual: e.target.checked})}
-                            style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} 
-                          />
-                          Balance Sheet, Last 3 Years, Annual
-                        </label>
-                      </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                        <input type="checkbox" checked={printPackageSelections.opsCashBasisCashForecast} onChange={(e) => updatePrintSelection('opsCashBasisCashForecast', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                        Cash Forecast
+                      </label>
+                      <select value={printPackageOrientations.opsCashBasisCashForecast} onChange={(e) => updatePrintOrientation('opsCashBasisCashForecast', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                        <input type="checkbox" checked={printPackageSelections.opsCashBasisGraphs} onChange={(e) => updatePrintSelection('opsCashBasisGraphs', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                        Graphs
+                      </label>
+                      <select value={printPackageOrientations.opsCashBasisGraphs} onChange={(e) => updatePrintOrientation('opsCashBasisGraphs', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
+                    </div>
+
+                    <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', marginTop: '4px' }}>Accrual Basis</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                        <input type="checkbox" checked={printPackageSelections.opsAccrualIncomeStatementForecast} onChange={(e) => updatePrintSelection('opsAccrualIncomeStatementForecast', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                        Income Statement Forecast
+                      </label>
+                      <select value={printPackageOrientations.opsAccrualIncomeStatementForecast} onChange={(e) => updatePrintOrientation('opsAccrualIncomeStatementForecast', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                        <input type="checkbox" checked={printPackageSelections.opsAccrualCashForecast} onChange={(e) => updatePrintSelection('opsAccrualCashForecast', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                        Cash Forecast
+                      </label>
+                      <select value={printPackageOrientations.opsAccrualCashForecast} onChange={(e) => updatePrintOrientation('opsAccrualCashForecast', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                        <input type="checkbox" checked={printPackageSelections.opsAccrualGraphs} onChange={(e) => updatePrintSelection('opsAccrualGraphs', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                        Graphs
+                      </label>
+                      <select value={printPackageOrientations.opsAccrualGraphs} onChange={(e) => updatePrintOrientation('opsAccrualGraphs', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              {/* Company Profile */}
-              <div style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={printPackageSelections.profile}
-                    onChange={(e) => setPrintPackageSelections({...printPackageSelections, profile: e.target.checked})}
-                    style={{ width: '18px', height: '18px', marginRight: '12px', cursor: 'pointer' }}
-                  />
-                  <div>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>Company Profile</div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Business profile, financial overview, ratios, and disclosures</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsCustomers} onChange={(e) => updatePrintSelection('opsCustomers', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Customers
+                    </label>
+                    <select value={printPackageOrientations.opsCustomers} onChange={(e) => updatePrintOrientation('opsCustomers', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
                   </div>
-                </label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsARAging} onChange={(e) => updatePrintSelection('opsARAging', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      AR Aging
+                    </label>
+                    <select value={printPackageOrientations.opsARAging} onChange={(e) => updatePrintOrientation('opsARAging', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsAPAging} onChange={(e) => updatePrintSelection('opsAPAging', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      AP Aging
+                    </label>
+                    <select value={printPackageOrientations.opsAPAging} onChange={(e) => updatePrintOrientation('opsAPAging', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsProducts} onChange={(e) => updatePrintSelection('opsProducts', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Products
+                    </label>
+                    <select value={printPackageOrientations.opsProducts} onChange={(e) => updatePrintOrientation('opsProducts', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsInventory} onChange={(e) => updatePrintSelection('opsInventory', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Inventory
+                    </label>
+                    <select value={printPackageOrientations.opsInventory} onChange={(e) => updatePrintOrientation('opsInventory', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px', color: '#475569' }}>
+                      <input type="checkbox" checked={printPackageSelections.opsDailyFinancials} onChange={(e) => updatePrintSelection('opsDailyFinancials', e.target.checked)} style={{ width: '16px', height: '16px', marginRight: '8px', cursor: 'pointer' }} />
+                      Daily Financials
+                    </label>
+                    <select value={printPackageOrientations.opsDailyFinancials} onChange={(e) => updatePrintOrientation('opsDailyFinancials', e.target.value as 'portrait' | 'landscape')} style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', background: 'white', cursor: 'pointer' }}>
+                      <option value="portrait">Portrait</option>
+                      <option value="landscape">Landscape</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
               <button
                 onClick={handleGeneratePrintPackage}
                 style={{
@@ -13529,19 +15057,8 @@ function FinancialScorePage() {
               </button>
               <button
                 onClick={() => {
-                  setPrintPackageSelections({
-                    mda: false,
-                    priorityRatios: false,
-                    workingCapital: false,
-                    dashboard: false,
-                    cashFlow4Quarters: false,
-                    cashFlow3Years: false,
-                    incomeStatement12MonthsQuarterly: false,
-                    incomeStatement3YearsAnnual: false,
-                    balanceSheet12MonthsQuarterly: false,
-                    balanceSheet3YearsAnnual: false,
-                    profile: false
-                  });
+                  setPrintPackageSelections(defaultPrintPackageSelections);
+                  setPrintPackageOrientations(defaultPrintPackageOrientations);
                 }}
                 style={{
                   padding: '14px 32px',
