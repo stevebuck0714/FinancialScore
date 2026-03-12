@@ -9605,7 +9605,10 @@ function FinancialScorePage() {
                                     : `$${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${latestValue < 0 ? ' (CR)' : ''}`}
                                 </td>
                               </tr>
-                            )}))})();
+                            );
+                          })
+                          );
+                        })()}
                       </tbody>
                     </table>
                   </div>
