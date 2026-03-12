@@ -3912,7 +3912,7 @@ function FinancialScorePage() {
           companyId: selectedCompanyId,
           userId: currentUser.id,
           targetMonth: apiFinancialTargetMonth,
-          mode: apiFinancialImportMode,
+          mode: 'through',
         }),
       });
 
@@ -3934,7 +3934,7 @@ function FinancialScorePage() {
         }
         
         alert(
-          `QuickBooks data synced successfully! ${data.recordsImported || 0} months imported through ${apiFinancialTargetMonth} (${apiFinancialImportMode}).`
+          `QuickBooks data synced successfully! ${data.recordsImported || 0} months imported through ${apiFinancialTargetMonth}.`
         );
       } else {
         // Include detailed error message from API
@@ -7663,20 +7663,13 @@ function FinancialScorePage() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                   <input
                     type="month"
                     value={apiFinancialTargetMonth}
                     onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
                     style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
                   />
-                  <select
-                    value={apiFinancialImportMode}
-                    onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
-                    style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '12px', background: 'white' }}
-                  >
-                    <option value="through">Through month</option>
-                    <option value="only">Only month</option>
-                  </select>
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -9411,7 +9404,7 @@ function FinancialScorePage() {
                         <div>
                           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>Save Account Mappings</h3>
                           <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                            {csvTrialBalanceData
+                            {isCsvMappingWorkflow
                               ? 'Save your mappings, then process the CSV data to create monthly records.'
                               : hasSavedCsvInLocalStorage
                                 ? 'A saved CSV was found for this company. Load it, then process with your mappings.'
@@ -9460,20 +9453,25 @@ function FinancialScorePage() {
                           <>
                           {!isCsvMappingWorkflow && (
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {String(selectedAccountingSystem || '').toUpperCase() === 'QUICKBOOKS' && (
+                                <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                              )}
                               <input
                                 type="month"
                                 value={apiFinancialTargetMonth}
                                 onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
                                 style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
                               />
-                              <select
-                                value={apiFinancialImportMode}
-                                onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
-                                style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
-                              >
-                                <option value="through">Through month</option>
-                                <option value="only">Only month</option>
-                              </select>
+                              {String(selectedAccountingSystem || '').toUpperCase() !== 'QUICKBOOKS' && (
+                                <select
+                                  value={apiFinancialImportMode}
+                                  onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
+                                  style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                                >
+                                  <option value="through">Through month</option>
+                                  <option value="only">Only month</option>
+                                </select>
+                              )}
                             </div>
                           )}
                           <button
@@ -9614,7 +9612,7 @@ function FinancialScorePage() {
                                   body: JSON.stringify({
                                     companyId: selectedCompanyId,
                                     targetMonth: apiFinancialTargetMonth,
-                                    mode: apiFinancialImportMode,
+                                    mode: String(selectedAccountingSystem || '').toUpperCase() === 'QUICKBOOKS' ? 'through' : apiFinancialImportMode,
                                   })
                                 });
 
