@@ -931,9 +931,25 @@ function FinancialScorePage() {
     console.log('?? Current User:', currentUser?.email || 'NOT SET');
 
     try {
-      console.log('?? Reading file text...');
-      const text = await file.text();
-      console.log('? File read, length:', text.length);
+      const fileName = (file.name || '').toLowerCase();
+      let text = '';
+      if (fileName.endsWith('.csv')) {
+        console.log('?? Reading CSV file text...');
+        text = await file.text();
+      } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        console.log('?? Reading Excel file and converting first sheet to CSV...');
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const firstSheetName = workbook.SheetNames?.[0];
+        if (!firstSheetName) {
+          throw new Error('Excel file has no sheets');
+        }
+        const firstSheet = workbook.Sheets[firstSheetName];
+        text = XLSX.utils.sheet_to_csv(firstSheet);
+      } else {
+        throw new Error('Unsupported file type. Please upload CSV, XLSX, or XLS.');
+      }
+      console.log('? File converted, length:', text.length);
 
       console.log('?? Parsing Trial Balance CSV...');
       const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
@@ -956,7 +972,7 @@ function FinancialScorePage() {
       console.log('? CSV upload complete!');
     } catch (err: any) {
       console.error('? Error parsing CSV:', err);
-      setError(`Failed to parse Trial Balance CSV: ${err.message}`);
+      setError(`Failed to parse Trial Balance file: ${err.message}`);
       setCsvTrialBalanceData(null);
     } finally {
       // allow re-selecting the same file
@@ -7458,38 +7474,17 @@ function FinancialScorePage() {
                 
                 <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
                   <p style={{ fontSize: '14px', color: '#065f46', lineHeight: '1.6', margin: 0 }}>
-                    <strong>Trial Balance Format:</strong> Upload a CSV with columns: Acct Type, Acct ID, Description, then date columns (e.g., 12/31/2022, 1/31/2023, ...).
+                    <strong>Trial Balance Format:</strong> Upload a CSV or Excel file with columns: Acct Type, Acct ID, Description, then date columns (e.g., 12/31/2022, 1/31/2023, ...).
                     This format supports QuickBooks-style account types and routes through Data Mapping for precise account classification.
                   </p>
                 </div>
 
                 <div style={{ marginBottom: '20px' }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Trial Balance CSV</h3>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Upload Trial Balance File</h3>
                   <input 
                     type="file" 
-                    accept=".csv" 
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      
-                      try {
-                        const text = await file.text();
-                        const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
-                        const csvData = {
-                          ...parsed,
-                          _companyId: selectedCompanyId,
-                          fileName: file.name,
-                        };
-                        setCsvTrialBalanceData(csvData);
-                        // Save to localStorage for persistence across sessions
-                        localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
-                        setError(null);
-                        alert(`Parsed ${parsed.accounts.length} accounts across ${parsed.dates.length} periods. Go to Data Mapping tab to map accounts.`);
-                      } catch (err: any) {
-                        setError(`Failed to parse Trial Balance CSV: ${err.message}`);
-                        setCsvTrialBalanceData(null);
-                      }
-                    }} 
+                    accept=".csv,.xlsx,.xls" 
+                    onChange={handleTrialBalanceCsvSelected}
                     style={{ marginBottom: '16px', padding: '12px', border: '2px dashed #10b981', borderRadius: '8px', width: '100%', cursor: 'pointer', background: '#f0fdf4' }} 
                   />
                   {error && error.includes('Trial Balance') && (
@@ -8973,7 +8968,7 @@ function FinancialScorePage() {
                       </p>
                       <input
                         type="file"
-                        accept=".csv"
+                        accept=".csv,.xlsx,.xls"
                         onChange={handleTrialBalanceCsvSelected}
                         style={{
                           width: '100%',
@@ -9089,7 +9084,7 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>Upload/Replace Trial Balance CSV</div>
                     <input
                       type="file"
-                      accept=".csv"
+                      accept=".csv,.xlsx,.xls"
                       onChange={handleTrialBalanceCsvSelected}
                       style={{
                         width: '100%',
