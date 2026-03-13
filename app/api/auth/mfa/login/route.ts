@@ -11,23 +11,43 @@ import { createTrustedDevice, getTrustDurationDays } from '@/lib/trusted-device'
 import { sendTrustedDeviceNotification } from '@/lib/email';
 import { getAcceptedMfaAppScopes, getMfaAppScope } from '@/lib/mfa-app-scope';
 import { getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
+import { auth } from '@/auth';
 
 export async function POST(request: NextRequest) {
   try {
     const appScope = getMfaAppScope(request);
     const acceptedAppScopes = getAcceptedMfaAppScopes(request);
     const { userId, token, isBackupCode, rememberDevice, trustDurationDays } = await request.json();
+    const session = await auth();
 
-    if (!userId || !token) {
+    if (!session?.user?.id) {
       return NextResponse.json(
-        { error: 'User ID and token are required' },
+        { error: 'Authentication session is required before MFA verification' },
+        { status: 401 }
+      );
+    }
+
+    // Security: bind MFA verification to the currently authenticated session user.
+    // This prevents a token from another account from satisfying this login flow.
+    const sessionUserId = session.user.id;
+    if (userId && userId !== sessionUserId) {
+      console.warn('⚠️ MFA user/session mismatch', { providedUserId: userId, sessionUserId });
+      return NextResponse.json(
+        { error: 'MFA verification session mismatch. Please restart sign-in.' },
+        { status: 403 }
+      );
+    }
+
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Verification token is required' },
         { status: 400 }
       );
     }
 
     // Get user with relations
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: sessionUserId },
       include: {
         company: true,
         primaryConsultant: true,
@@ -59,7 +79,7 @@ export async function POST(request: NextRequest) {
       if (isValid && result.remainingCodes.length > 0) {
         // Update backup codes (remove used one)
         await prisma.user.update({
-          where: { id: userId },
+          where: { id: sessionUserId },
           data: {
             backupCodes: encryptBackupCodes(result.remainingCodes),
           },
@@ -107,6 +127,8 @@ export async function POST(request: NextRequest) {
           ? 'Invalid verification code. Your device clock appears out of sync. Sync your phone time and try a fresh code.'
           : totpFailureReason === 'INVALID_FORMAT'
             ? 'Invalid verification code format. Enter a 6-digit code.'
+          : totpFailureReason === 'INTERNAL_ERROR'
+            ? 'MFA verification is temporarily unavailable for your account. Please use a backup code or contact support to reset MFA.'
           : (totpFailureReason === 'SCOPE_MISMATCH' || totpFailureReason === 'SCOPE_MISSING')
             ? 'Your MFA enrollment is linked to a different app scope. Contact support to update your MFA scope.'
             : 'Invalid verification code. Please use the latest code from your authenticator app and try again.';
@@ -137,9 +159,9 @@ export async function POST(request: NextRequest) {
     // Handle trusted device if requested
     if (rememberDevice) {
       try {
-        console.log('🔐 Creating trusted device for user:', userId);
+        console.log('🔐 Creating trusted device for user:', sessionUserId);
         const { token: deviceToken, device, trustDurationDays: effectiveTrustDurationDays } =
-          await createTrustedDevice(userId, request, trustDurationDays);
+          await createTrustedDevice(sessionUserId, request, trustDurationDays);
         
         // Set cookie with device token
         const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();

@@ -33,10 +33,30 @@ function deriveKeyBuffer(rawKey: string): Buffer {
   return crypto.createHash('sha256').update(key).digest();
 }
 
+function parseKeyList(raw: string | undefined): string[] {
+  return (raw || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function looksEncryptedPayload(value: string): boolean {
+  const parts = String(value || '').split(':');
+  return (
+    parts.length === 2 &&
+    /^[0-9a-fA-F]{32}$/.test(parts[0] || '') &&
+    /^[0-9a-fA-F]+$/.test(parts[1] || '')
+  );
+}
+
 function getEncryptionKeyCandidates(): string[] {
   const candidates = [
     process.env.MFA_ENCRYPTION_KEY,
     process.env.OAUTH_ENCRYPTION_KEY,
+    process.env.NEXTAUTH_SECRET,
+    ...parseKeyList(process.env.MFA_ENCRYPTION_KEY_PREVIOUS),
+    ...parseKeyList(process.env.OAUTH_ENCRYPTION_KEY_PREVIOUS),
+    ...parseKeyList(process.env.NEXTAUTH_SECRET_PREVIOUS),
     'default-key-change-me-in-prod',
   ]
     .map((value) => (value || '').trim())
@@ -134,6 +154,12 @@ export function resolveStoredMFASecret(encryptedSecret: string): ParsedMFASecret
   try {
     decrypted = decryptSecret(encryptedSecret);
   } catch {
+    if (looksEncryptedPayload(encryptedSecret)) {
+      // Encrypted-at-rest value that cannot be decrypted by current keyring.
+      // Fail closed so callers can surface a recovery message instead of silently
+      // treating ciphertext as a plain legacy secret.
+      throw new Error('Failed to decrypt stored MFA secret with configured keyring');
+    }
     // Backward compatibility: support previously stored plain base32 secrets.
     decrypted = encryptedSecret;
   }

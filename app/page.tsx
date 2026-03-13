@@ -923,6 +923,10 @@ function FinancialScorePage() {
 
       console.log('?? Setting csvTrialBalanceData state...');
       setCsvTrialBalanceData(csvData);
+      // Re-uploading a CSV should start a fresh mapping pass for that file.
+      setAiMappings([]);
+      setShowMappingSection(false);
+      setLatestFinancialSource('csv_trial_balance');
 
       console.log('?? Saving to localStorage...');
       localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
@@ -8504,6 +8508,53 @@ function FinancialScorePage() {
                     : `${aiMappings.length} saved account mappings loaded from database`
                   }
                 </p>
+                {shouldShowCsvReupload && (
+                  <div style={{ marginBottom: '12px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      background: '#f8fafc',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#334155'
+                    }}>
+                      <Upload size={14} />
+                      Replace CSV
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleTrialBalanceCsvSelected}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    <button
+                      onClick={() => {
+                        setCsvTrialBalanceData(null);
+                        setAiMappings([]);
+                        setShowMappingSection(false);
+                        localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
+                        setHasSavedCsvInLocalStorage(false);
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        background: 'white',
+                        color: '#64748b',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Clear CSV
+                    </button>
+                  </div>
+                )}
 
                 {/* AI-Assisted Mapping Section for CSV */}
                 {hasCsvData && (
