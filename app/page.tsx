@@ -1509,7 +1509,8 @@ function FinancialScorePage() {
       // Load CSV Trial Balance data from localStorage
       const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
       setHasSavedCsvInLocalStorage(!!savedCsvData);
-      if (savedCsvData && !csvTrialBalanceData) {
+      const hasCsvForSelectedCompany = csvTrialBalanceData?._companyId === selectedCompanyId;
+      if (savedCsvData && !hasCsvForSelectedCompany) {
         try {
           const parsed = JSON.parse(savedCsvData);
           if (parsed._companyId === selectedCompanyId) {
@@ -1519,6 +1520,9 @@ function FinancialScorePage() {
         } catch (err) {
           console.error('? Error parsing saved CSV data:', err);
         }
+      } else if (!savedCsvData && hasCsvForSelectedCompany) {
+        // Keep Data Mapping tied to the selected company only.
+        setCsvTrialBalanceData(null);
       }
       
       // Load account mappings from database
@@ -1879,6 +1883,8 @@ function FinancialScorePage() {
         // ALWAYS clear state at the start to prevent stale data
         console.log('?? Clearing all state before loading new company data');
         setQbRawData(null);
+        setCsvTrialBalanceData(null);
+        setHasSavedCsvInLocalStorage(false);
         setRawRows([]);
         setMapping({ date: '' });
         setFile(null);
@@ -8366,7 +8372,7 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !csvTrialBalanceData && !qbRawData && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !(csvTrialBalanceData?._companyId === selectedCompanyId) && !qbRawData && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
