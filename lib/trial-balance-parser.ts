@@ -219,8 +219,7 @@ function shouldSkipAccountRow(acctType: string, acctId: string, description: str
     type === 'balance sheet' ||
     type === 'profit and loss' ||
     type === 'assets' ||
-    type === 'liabilities' ||
-    type === 'equity'
+    type === 'liabilities'
   ) {
     return true;
   }
