@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
   try {
     const appScope = getMfaAppScope(request);
     const acceptedAppScopes = getAcceptedMfaAppScopes(request);
-    const { userId, token, isBackupCode, rememberDevice } = await request.json();
+    const { userId, token, isBackupCode, rememberDevice, trustDurationDays } = await request.json();
 
     if (!userId || !token) {
       return NextResponse.json(
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
           ? 'Invalid verification code. Your device clock appears out of sync. Sync your phone time and try a fresh code.'
           : totpFailureReason === 'INVALID_FORMAT'
             ? 'Invalid verification code format. Enter a 6-digit code.'
-          : totpFailureReason === 'APP_SCOPE_MISMATCH'
+          : (totpFailureReason === 'SCOPE_MISMATCH' || totpFailureReason === 'SCOPE_MISSING')
             ? 'Your MFA enrollment is linked to a different app scope. Contact support to update your MFA scope.'
             : 'Invalid verification code. Please use the latest code from your authenticator app and try again.';
 
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       try {
         console.log('🔐 Creating trusted device for user:', userId);
         const { token: deviceToken, device, trustDurationDays: effectiveTrustDurationDays } =
-          await createTrustedDevice(userId, request);
+          await createTrustedDevice(userId, request, trustDurationDays);
         
         // Set cookie with device token
         const trustDurationDaysValue = effectiveTrustDurationDays || getTrustDurationDays();
