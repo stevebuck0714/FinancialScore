@@ -54,6 +54,77 @@ export const ACCOUNT_TYPE_CLASSIFICATIONS: { [key: string]: string } = {
   'Expense': 'Expense',
 };
 
+// Common Trial Balance exports contain non-QB labels. Normalize them to our canonical types.
+const ACCOUNT_TYPE_ALIASES: { [key: string]: string } = {
+  income: 'Income',
+  revenue: 'Income',
+  sales: 'Income',
+  'income statement': 'Income',
+  'other income': 'Income',
+
+  cogs: 'CostOfGoodsSold',
+  'cost of goods sold': 'CostOfGoodsSold',
+  'cost of sales': 'CostOfGoodsSold',
+
+  expense: 'Expense',
+  expenses: 'Expense',
+  'operating expense': 'Expense',
+  'operating expenses': 'Expense',
+  'other expense': 'Expense',
+
+  bank: 'Bank',
+  cash: 'Bank',
+  'accounts receivable': 'AccountsReceivable',
+  'other current asset': 'OtherCurrentAsset',
+  'fixed asset': 'FixedAsset',
+  'other asset': 'OtherAsset',
+
+  'accounts payable': 'AccountsPayable',
+  'credit card': 'CreditCard',
+  'other current liability': 'OtherCurrentLiability',
+  'long term liability': 'LongTermLiability',
+  liability: 'OtherCurrentLiability',
+  liabilities: 'OtherCurrentLiability',
+
+  equity: 'Equity',
+};
+
+// Some exports collapse labels (e.g., "Costofgoodssold", "Accountsreceivable").
+// Normalize those compact variants explicitly.
+const ACCOUNT_TYPE_ALIASES_COMPACT: { [key: string]: string } = {
+  income: 'Income',
+  revenue: 'Income',
+  sales: 'Income',
+  incomestatement: 'Income',
+  otherincome: 'Income',
+
+  cogs: 'CostOfGoodsSold',
+  costofgoodssold: 'CostOfGoodsSold',
+  costofsales: 'CostOfGoodsSold',
+
+  expense: 'Expense',
+  expenses: 'Expense',
+  operatingexpense: 'Expense',
+  operatingexpenses: 'Expense',
+  otherexpense: 'Expense',
+
+  bank: 'Bank',
+  cash: 'Bank',
+  accountsreceivable: 'AccountsReceivable',
+  othercurrentasset: 'OtherCurrentAsset',
+  fixedasset: 'FixedAsset',
+  otherasset: 'OtherAsset',
+
+  accountspayable: 'AccountsPayable',
+  creditcard: 'CreditCard',
+  othercurrentliability: 'OtherCurrentLiability',
+  longtermliability: 'LongTermLiability',
+  liability: 'OtherCurrentLiability',
+  liabilities: 'OtherCurrentLiability',
+
+  equity: 'Equity',
+};
+
 // Map account types to target field categories for auto-mapping
 export const ACCOUNT_TYPE_TO_TARGET_FIELD: { [key: string]: string } = {
   'Bank': 'cash',
@@ -70,6 +141,91 @@ export const ACCOUNT_TYPE_TO_TARGET_FIELD: { [key: string]: string } = {
   'CostOfGoodsSold': 'cogsTotal',
   'Expense': 'expense',
 };
+
+function normalizeAccountType(rawType: string | undefined, description: string): string {
+  const trimmed = (rawType || '').trim();
+  if (!trimmed) return inferAccountTypeFromDescription(description);
+
+  // Keep canonical types untouched.
+  if (ACCOUNT_TYPE_CLASSIFICATIONS[trimmed]) return trimmed;
+
+  const normalizedKey = trimmed.toLowerCase().replace(/[_\s-]+/g, ' ');
+  if (ACCOUNT_TYPE_ALIASES[normalizedKey]) {
+    return ACCOUNT_TYPE_ALIASES[normalizedKey];
+  }
+  const compactKey = normalizedKey.replace(/[^a-z0-9]/g, '');
+  if (ACCOUNT_TYPE_ALIASES_COMPACT[compactKey]) {
+    return ACCOUNT_TYPE_ALIASES_COMPACT[compactKey];
+  }
+
+  // Heuristic fallback if CSV type is a verbose label.
+  if (normalizedKey.includes('income') || normalizedKey.includes('revenue') || normalizedKey.includes('sales')) return 'Income';
+  if (
+    normalizedKey.includes('cost of goods') ||
+    normalizedKey === 'cogs' ||
+    normalizedKey.includes('cost of sales') ||
+    compactKey.includes('costofgoods') ||
+    compactKey === 'cogs'
+  ) return 'CostOfGoodsSold';
+  if (normalizedKey.includes('expense')) return 'Expense';
+  if (normalizedKey.includes('asset')) return 'OtherAsset';
+  if (normalizedKey.includes('liabil')) return 'OtherCurrentLiability';
+  if (normalizedKey.includes('equity') || normalizedKey.includes('capital')) return 'Equity';
+
+  // Some exports place account names in Acct Type; infer from description instead of creating unknown pseudo-types.
+  return inferAccountTypeFromDescription(description);
+}
+
+function inferAccountTypeFromDescription(description: string): string {
+  const d = (description || '').toLowerCase();
+  if (d.includes('income') || d.includes('revenue') || d.includes('sales')) return 'Income';
+  if (d.includes('cost of goods') || d.includes('cogs') || d.includes('job material')) return 'CostOfGoodsSold';
+  if (d.includes('accounts receivable')) return 'AccountsReceivable';
+  if (d.includes('accounts payable')) return 'AccountsPayable';
+  if (d.includes('cash') || d.includes('checking') || d.includes('savings')) return 'Bank';
+  if (d.includes('equity') || d.includes('retained earnings') || d.includes('owner')) return 'Equity';
+  if (d.includes('asset')) return 'OtherAsset';
+  if (d.includes('liabil')) return 'OtherCurrentLiability';
+  return 'Expense';
+}
+
+function shouldSkipAccountRow(acctType: string, acctId: string, description: string): boolean {
+  const type = (acctType || '').trim().toLowerCase();
+  const id = (acctId || '').trim().toLowerCase();
+  const desc = (description || '').trim().toLowerCase();
+
+  if (!desc) return true;
+
+  // Ignore summary/subtotal rows that should not be mapped.
+  if (
+    desc.startsWith('total ') ||
+    desc === 'total' ||
+    desc === 'gross profit' ||
+    desc === 'net income' ||
+    desc === 'net profit' ||
+    desc === 'ordinary income/expense'
+  ) {
+    return true;
+  }
+
+  // Skip rows where Acct ID is a known header/summary token.
+  if (id === 'summary' || id === 'header' || id === 'subtotal') {
+    return true;
+  }
+
+  // Skip non-account section rows occasionally exported as data lines.
+  if (
+    type === 'income statement' ||
+    type === 'balance sheet' ||
+    type === 'profit and loss' ||
+    type === 'assets' ||
+    type === 'liabilities'
+  ) {
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Parse a number from a CSV value (handles commas, quotes, negative numbers, accounting parentheses)
@@ -154,38 +310,99 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
   // Parse header row
   const headerLine = lines[0];
   const headers = parseCSVLine(headerLine);
-  
-  // Expected format: Acct Type, Acct ID, Description, Date1, Date2, ...
-  if (headers.length < 4) {
-    throw new Error('CSV must have at least 4 columns: Acct Type, Acct ID, Description, and at least one date column');
+
+  const normalizeHeader = (header: string) =>
+    (header || '')
+      .toLowerCase()
+      .trim()
+      .replace(/["']/g, '')
+      .replace(/[\s_-]+/g, ' ');
+
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const findHeaderIndex = (predicates: Array<(header: string) => boolean>): number =>
+    normalizedHeaders.findIndex((header) => predicates.some((predicate) => predicate(header)));
+
+  const acctTypeIndex = findHeaderIndex([
+    (h) => h === 'acct type',
+    (h) => h === 'account type',
+    (h) => h === 'type',
+  ]);
+  const acctIdIndex = findHeaderIndex([
+    (h) => h === 'acct id',
+    (h) => h === 'account id',
+    (h) => h === 'account number',
+    (h) => h === 'account no',
+    (h) => h === 'account #',
+    (h) => h === 'code',
+  ]);
+  const descriptionIndex = findHeaderIndex([
+    (h) => h === 'description',
+    (h) => h === 'account',
+    (h) => h === 'account name',
+    (h) => h === 'name',
+  ]);
+
+  // Detect date columns by parseable date headers instead of fixed positions.
+  const dateColumnIndexes = headers
+    .map((header, idx) => ({ header: header.trim(), idx }))
+    .filter(({ header }) => parseColumnDate(header) !== null)
+    .map(({ idx }) => idx);
+
+  if (dateColumnIndexes.length === 0) {
+    throw new Error('CSV must include at least one date column (e.g., 12/31/2022 or 2024-01-31)');
   }
-  
-  // Extract date columns (columns after the first 3)
-  const dates = headers.slice(3).map(h => h.trim());
+
+  const dates = dateColumnIndexes.map((idx) => headers[idx].trim());
+  const isStructuredTrialBalance = acctTypeIndex !== -1 && descriptionIndex !== -1;
   
   const accounts: TrialBalanceAccount[] = [];
   const accountsByType: { [type: string]: TrialBalanceAccount[] } = {};
+  let currentSectionType = '';
   
   // Parse data rows
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     const values = parseCSVLine(line);
-    
-    // Skip empty rows or rows without account type
-    const acctType = values[0]?.trim();
-    if (!acctType) continue;
-    
-    const acctId = values[1]?.trim() || '';
-    const description = values[2]?.trim() || '';
-    
-    // Skip if no description (likely a separator row)
-    if (!description) continue;
+
+    let rawAcctType = '';
+    let acctId = '';
+    let description = '';
+
+    if (isStructuredTrialBalance) {
+      rawAcctType = values[acctTypeIndex]?.trim() || '';
+      acctId = acctIdIndex >= 0 ? (values[acctIdIndex]?.trim() || '') : '';
+      description = values[descriptionIndex]?.trim() || '';
+    } else {
+      // Alternate layout support:
+      // First column contains section headers (Income/Expenses/...) and account names.
+      // Remaining columns are date amounts.
+      const firstNonDateColumnIndex = headers.findIndex((_, idx) => !dateColumnIndexes.includes(idx));
+      const descriptionIdx = firstNonDateColumnIndex >= 0 ? firstNonDateColumnIndex : 0;
+      description = values[descriptionIdx]?.trim() || '';
+      if (!description) continue;
+
+      const rowHasNonZeroAmount = dateColumnIndexes.some((idx) => parseNumber(values[idx]) !== 0);
+      const isLikelySectionRow = !rowHasNonZeroAmount;
+      if (isLikelySectionRow) {
+        currentSectionType = normalizeAccountType(description, description);
+        continue;
+      }
+
+      rawAcctType = currentSectionType || inferAccountTypeFromDescription(description);
+      acctId = '';
+    }
+
+    // Skip separator/subtotal rows and malformed lines.
+    if (shouldSkipAccountRow(rawAcctType, acctId, description)) continue;
+
+    const acctType = normalizeAccountType(rawAcctType, description);
     
     // Parse values for each date column
     const dateValues: { [date: string]: number } = {};
-    for (let j = 0; j < dates.length; j++) {
+    for (let j = 0; j < dateColumnIndexes.length; j++) {
       const date = dates[j];
-      const value = parseNumber(values[j + 3]);
+      const sourceIndex = dateColumnIndexes[j];
+      const value = parseNumber(values[sourceIndex]);
       dateValues[date] = value;
     }
     
@@ -250,7 +467,7 @@ export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ n
   const accountsForMapping: Array<{ name: string; classification: string; acctType: string; acctId: string }> = [];
   
   for (const account of parsedData.accounts) {
-    const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || 'Unknown';
+    const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || ACCOUNT_TYPE_CLASSIFICATIONS[normalizeAccountType(account.acctType, account.description)] || 'Expense';
     
     accountsForMapping.push({
       name: account.description,
@@ -272,9 +489,6 @@ export function processTrialBalanceToMonthly(
 ): any[] {
   const monthlyRecords: any[] = [];
   
-  const isSectorRevenueField = (field: string) => field.startsWith('rev_');
-  const isSectorCogsField = (field: string) => field.startsWith('cogs_');
-
   // Normalize account names for better matching (trim, lowercase, normalize whitespace)
   const normalizeAccountName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
   
@@ -315,7 +529,6 @@ export function processTrialBalanceToMonthly(
       
       // Income Statement - Revenue
       revenue: 0,
-      revenueBreakdown: {},
       
       // COGS fields
       cogsPayroll: 0,
@@ -325,7 +538,6 @@ export function processTrialBalanceToMonthly(
       cogsCommissions: 0,
       cogsOther: 0,
       cogsTotal: 0,
-      cogsBreakdown: {},
       
       // Operating Expenses - use database field names
       payroll: 0,
@@ -367,7 +579,6 @@ export function processTrialBalanceToMonthly(
       
       // Balance Sheet - Liabilities
       ap: 0,
-      loc: 0,
       otherCL: 0,
       tcl: 0,
       ltd: 0,
@@ -404,21 +615,11 @@ export function processTrialBalanceToMonthly(
 
       if (mapping && mapping.targetField && value !== 0) {
         // Add to the target field
-        if (monthlyRecord[mapping.targetField] === undefined) {
-          monthlyRecord[mapping.targetField] = 0;
-        }
-        monthlyRecord[mapping.targetField] += value;
-        if (mapping.targetField === 'additionalPaidInCapital') {
-          console.log(`💰 Added ${value} to additionalPaidInCapital for ${dateStr}`);
-        }
-        if (isSectorRevenueField(mapping.targetField)) {
-          monthlyRecord.revenue += value;
-          monthlyRecord.revenueBreakdown[mapping.targetField] =
-            (Number(monthlyRecord.revenueBreakdown[mapping.targetField]) || 0) + value;
-        }
-        if (isSectorCogsField(mapping.targetField)) {
-          monthlyRecord.cogsBreakdown[mapping.targetField] =
-            (Number(monthlyRecord.cogsBreakdown[mapping.targetField]) || 0) + value;
+        if (monthlyRecord[mapping.targetField] !== undefined) {
+          monthlyRecord[mapping.targetField] += value;
+          if (mapping.targetField === 'additionalPaidInCapital') {
+            console.log(`💰 Added ${value} to additionalPaidInCapital for ${dateStr}`);
+          }
         }
 
         // Collect account value for LOB allocation
@@ -446,17 +647,16 @@ export function processTrialBalanceToMonthly(
     const cogsFromComponents = monthlyRecord.cogsPayroll + monthlyRecord.cogsOwnerPay +
       monthlyRecord.cogsContractors + monthlyRecord.cogsMaterials +
       monthlyRecord.cogsCommissions + monthlyRecord.cogsOther;
-    const cogsFromSectorFields = Object.keys(monthlyRecord)
-      .filter((key) => isSectorCogsField(key))
-      .reduce((sum, key) => sum + (Number(monthlyRecord[key]) || 0), 0);
-    monthlyRecord.cogsTotal = cogsFromComponents + cogsFromSectorFields;
+    if (cogsFromComponents > 0) {
+      monthlyRecord.cogsTotal = cogsFromComponents;
+    }
     
     // Current Assets total
     monthlyRecord.tca = monthlyRecord.cash + monthlyRecord.ar + monthlyRecord.inventory + monthlyRecord.otherCA;
     monthlyRecord.totalAssets = monthlyRecord.tca + monthlyRecord.fixedAssets + monthlyRecord.otherAssets;
     
     // Liabilities total
-    monthlyRecord.tcl = monthlyRecord.ap + monthlyRecord.loc + monthlyRecord.otherCL;
+    monthlyRecord.tcl = monthlyRecord.ap + monthlyRecord.otherCL;
     monthlyRecord.totalLiab = monthlyRecord.tcl + monthlyRecord.ltd;
     
     // Equity total (sum of detailed equity fields if not directly mapped)
@@ -506,9 +706,6 @@ export function processTrialBalanceToDailySnapshotsAndLines(
     amount: number;
   }>;
 } {
-  const isSectorRevenueField = (field: string) => field.startsWith('rev_');
-  const isSectorCogsField = (field: string) => field.startsWith('cogs_');
-
   const dailySnapshots: any[] = [];
   const mappedLines: Array<{
     snapshotDate: string;
@@ -577,7 +774,6 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       otherAssets: 0,
       totalAssets: 0,
       ap: 0,
-      loc: 0,
       otherCL: 0,
       tcl: 0,
       ltd: 0,
@@ -611,12 +807,8 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       }
       if (!targetField) continue;
 
-      if (dailyRecord[targetField] === undefined) {
-        dailyRecord[targetField] = 0;
-      }
-      dailyRecord[targetField] += value;
-      if (isSectorRevenueField(targetField)) {
-        dailyRecord.revenue += value;
+      if (dailyRecord[targetField] !== undefined) {
+        dailyRecord[targetField] += value;
       }
 
       mappedLines.push({
@@ -633,14 +825,11 @@ export function processTrialBalanceToDailySnapshotsAndLines(
     const cogsFromComponents = dailyRecord.cogsPayroll + dailyRecord.cogsOwnerPay +
       dailyRecord.cogsContractors + dailyRecord.cogsMaterials +
       dailyRecord.cogsCommissions + dailyRecord.cogsOther;
-    const cogsFromSectorFields = Object.keys(dailyRecord)
-      .filter((key) => isSectorCogsField(key))
-      .reduce((sum, key) => sum + (Number(dailyRecord[key]) || 0), 0);
-    dailyRecord.cogsTotal = cogsFromComponents + cogsFromSectorFields;
+    if (cogsFromComponents > 0) dailyRecord.cogsTotal = cogsFromComponents;
 
     dailyRecord.tca = dailyRecord.cash + dailyRecord.ar + dailyRecord.inventory + dailyRecord.otherCA;
     dailyRecord.totalAssets = dailyRecord.tca + dailyRecord.fixedAssets + dailyRecord.otherAssets;
-    dailyRecord.tcl = dailyRecord.ap + dailyRecord.loc + dailyRecord.otherCL;
+    dailyRecord.tcl = dailyRecord.ap + dailyRecord.otherCL;
     dailyRecord.totalLiab = dailyRecord.tcl + dailyRecord.ltd;
     const equityFromComponents = dailyRecord.ownersCapital + dailyRecord.commonStock +
       dailyRecord.preferredStock + dailyRecord.retainedEarnings +
