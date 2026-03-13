@@ -54,6 +54,41 @@ export const ACCOUNT_TYPE_CLASSIFICATIONS: { [key: string]: string } = {
   'Expense': 'Expense',
 };
 
+// Common Trial Balance exports contain non-QB labels. Normalize them to our canonical types.
+const ACCOUNT_TYPE_ALIASES: { [key: string]: string } = {
+  income: 'Income',
+  revenue: 'Income',
+  sales: 'Income',
+  'income statement': 'Income',
+  'other income': 'Income',
+
+  cogs: 'CostOfGoodsSold',
+  'cost of goods sold': 'CostOfGoodsSold',
+  'cost of sales': 'CostOfGoodsSold',
+
+  expense: 'Expense',
+  expenses: 'Expense',
+  'operating expense': 'Expense',
+  'operating expenses': 'Expense',
+  'other expense': 'Expense',
+
+  bank: 'Bank',
+  cash: 'Bank',
+  'accounts receivable': 'AccountsReceivable',
+  'other current asset': 'OtherCurrentAsset',
+  'fixed asset': 'FixedAsset',
+  'other asset': 'OtherAsset',
+
+  'accounts payable': 'AccountsPayable',
+  'credit card': 'CreditCard',
+  'other current liability': 'OtherCurrentLiability',
+  'long term liability': 'LongTermLiability',
+  liability: 'OtherCurrentLiability',
+  liabilities: 'OtherCurrentLiability',
+
+  equity: 'Equity',
+};
+
 // Map account types to target field categories for auto-mapping
 export const ACCOUNT_TYPE_TO_TARGET_FIELD: { [key: string]: string } = {
   'Bank': 'cash',
@@ -70,6 +105,82 @@ export const ACCOUNT_TYPE_TO_TARGET_FIELD: { [key: string]: string } = {
   'CostOfGoodsSold': 'cogsTotal',
   'Expense': 'expense',
 };
+
+function normalizeAccountType(rawType: string | undefined, description: string): string {
+  const trimmed = (rawType || '').trim();
+  if (!trimmed) return inferAccountTypeFromDescription(description);
+
+  // Keep canonical types untouched.
+  if (ACCOUNT_TYPE_CLASSIFICATIONS[trimmed]) return trimmed;
+
+  const normalizedKey = trimmed.toLowerCase().replace(/[_\s-]+/g, ' ');
+  if (ACCOUNT_TYPE_ALIASES[normalizedKey]) {
+    return ACCOUNT_TYPE_ALIASES[normalizedKey];
+  }
+
+  // Heuristic fallback if CSV type is a verbose label.
+  if (normalizedKey.includes('income') || normalizedKey.includes('revenue') || normalizedKey.includes('sales')) return 'Income';
+  if (normalizedKey.includes('cost of goods') || normalizedKey === 'cogs' || normalizedKey.includes('cost of sales')) return 'CostOfGoodsSold';
+  if (normalizedKey.includes('expense')) return 'Expense';
+  if (normalizedKey.includes('asset')) return 'OtherAsset';
+  if (normalizedKey.includes('liabil')) return 'OtherCurrentLiability';
+  if (normalizedKey.includes('equity') || normalizedKey.includes('capital')) return 'Equity';
+
+  // Some exports place account names in Acct Type; infer from description instead of creating unknown pseudo-types.
+  return inferAccountTypeFromDescription(description);
+}
+
+function inferAccountTypeFromDescription(description: string): string {
+  const d = (description || '').toLowerCase();
+  if (d.includes('income') || d.includes('revenue') || d.includes('sales')) return 'Income';
+  if (d.includes('cost of goods') || d.includes('cogs') || d.includes('job material')) return 'CostOfGoodsSold';
+  if (d.includes('accounts receivable')) return 'AccountsReceivable';
+  if (d.includes('accounts payable')) return 'AccountsPayable';
+  if (d.includes('cash') || d.includes('checking') || d.includes('savings')) return 'Bank';
+  if (d.includes('equity') || d.includes('retained earnings') || d.includes('owner')) return 'Equity';
+  if (d.includes('asset')) return 'OtherAsset';
+  if (d.includes('liabil')) return 'OtherCurrentLiability';
+  return 'Expense';
+}
+
+function shouldSkipAccountRow(acctType: string, acctId: string, description: string): boolean {
+  const type = (acctType || '').trim().toLowerCase();
+  const id = (acctId || '').trim().toLowerCase();
+  const desc = (description || '').trim().toLowerCase();
+
+  if (!desc) return true;
+
+  // Ignore summary/subtotal rows that should not be mapped.
+  if (
+    desc.startsWith('total ') ||
+    desc === 'total' ||
+    desc === 'gross profit' ||
+    desc === 'net income' ||
+    desc === 'net profit' ||
+    desc === 'ordinary income/expense'
+  ) {
+    return true;
+  }
+
+  // Skip rows where Acct ID is a known header/summary token.
+  if (id === 'summary' || id === 'header' || id === 'subtotal') {
+    return true;
+  }
+
+  // Skip non-account section rows occasionally exported as data lines.
+  if (
+    type === 'income statement' ||
+    type === 'balance sheet' ||
+    type === 'profit and loss' ||
+    type === 'assets' ||
+    type === 'liabilities' ||
+    type === 'equity'
+  ) {
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Parse a number from a CSV value (handles commas, quotes, negative numbers, accounting parentheses)
@@ -172,14 +283,15 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
     const values = parseCSVLine(line);
     
     // Skip empty rows or rows without account type
-    const acctType = values[0]?.trim();
-    if (!acctType) continue;
+    const rawAcctType = values[0]?.trim() || '';
     
     const acctId = values[1]?.trim() || '';
     const description = values[2]?.trim() || '';
     
-    // Skip if no description (likely a separator row)
-    if (!description) continue;
+    // Skip separator/subtotal rows and malformed lines.
+    if (shouldSkipAccountRow(rawAcctType, acctId, description)) continue;
+
+    const acctType = normalizeAccountType(rawAcctType, description);
     
     // Parse values for each date column
     const dateValues: { [date: string]: number } = {};
@@ -250,7 +362,7 @@ export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ n
   const accountsForMapping: Array<{ name: string; classification: string; acctType: string; acctId: string }> = [];
   
   for (const account of parsedData.accounts) {
-    const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || 'Unknown';
+    const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || ACCOUNT_TYPE_CLASSIFICATIONS[normalizeAccountType(account.acctType, account.description)] || 'Expense';
     
     accountsForMapping.push({
       name: account.description,
