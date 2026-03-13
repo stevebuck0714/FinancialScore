@@ -894,6 +894,8 @@ function FinancialScorePage() {
   const [csvTrialBalanceData, setCsvTrialBalanceData] = useState<any>(null);
   const [latestFinancialSource, setLatestFinancialSource] = useState<string | null>(null);
   const [hasSavedCsvInLocalStorage, setHasSavedCsvInLocalStorage] = useState(false);
+  const [isClearingCsv, setIsClearingCsv] = useState(false);
+  const [csvClearStatus, setCsvClearStatus] = useState<string | null>(null);
 
   const handleTrialBalanceCsvSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     console.log('?? CSV File selected');
@@ -945,13 +947,18 @@ function FinancialScorePage() {
   };
 
   const clearTrialBalanceCsvAndMappings = async () => {
-    if (!selectedCompanyId) return;
+    if (!selectedCompanyId || isClearingCsv) return;
+
+    setIsClearingCsv(true);
+    setCsvClearStatus('Clearing CSV and saved mappings...');
+    setError(null);
 
     // Clear local CSV/mapping state first so UI resets immediately.
     setCsvTrialBalanceData(null);
     setAiMappings([]);
     setShowMappingSection(false);
     setHasSavedCsvInLocalStorage(false);
+    setLatestFinancialSource(null);
     localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
 
     // Also clear persisted account mappings to prevent old layout from reloading.
@@ -964,9 +971,13 @@ function FinancialScorePage() {
         throw new Error(payload?.error || 'Failed to clear saved mappings');
       }
       console.log('✅ Cleared saved account mappings for company:', selectedCompanyId);
+      setCsvClearStatus('CSV and saved mappings cleared. Upload a new CSV to continue.');
     } catch (err) {
       console.error('❌ Failed to clear saved mappings during CSV clear:', err);
+      setCsvClearStatus('Clear failed while removing saved mappings. Please retry.');
       setError('Cleared local CSV, but failed to clear saved mappings. Please retry.');
+    } finally {
+      setIsClearingCsv(false);
     }
   };
 
@@ -7133,6 +7144,7 @@ function FinancialScorePage() {
                       </button>
                       <button
                         onClick={clearTrialBalanceCsvAndMappings}
+                        disabled={isClearingCsv}
                         style={{
                           padding: '12px 24px',
                           background: 'white',
@@ -7141,12 +7153,18 @@ function FinancialScorePage() {
                           borderRadius: '8px',
                           fontSize: '14px',
                           fontWeight: '600',
-                          cursor: 'pointer'
+                          cursor: isClearingCsv ? 'not-allowed' : 'pointer',
+                          opacity: isClearingCsv ? 0.6 : 1
                         }}
                       >
-                        Clear
+                        {isClearingCsv ? 'Clearing...' : 'Clear'}
                       </button>
                     </div>
+                    {csvClearStatus && (
+                      <div style={{ marginTop: '10px', fontSize: '12px', color: csvClearStatus.toLowerCase().includes('failed') ? '#b91c1c' : '#065f46' }}>
+                        {csvClearStatus}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -8399,7 +8417,7 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !(csvTrialBalanceData?._companyId === selectedCompanyId) && !qbRawData && (
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !(csvTrialBalanceData?._companyId === selectedCompanyId) && !qbRawData && selectedAccountingSystem !== 'CSV_FILE' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
@@ -8501,7 +8519,7 @@ function FinancialScorePage() {
           )}
 
           {/* Account Mapping Interface - Shows after CSV is uploaded */}
-          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && (csvTrialBalanceData?._companyId === selectedCompanyId || aiMappings.length > 0)) && (() => {
+          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && (selectedAccountingSystem === 'CSV_FILE' || csvTrialBalanceData?._companyId === selectedCompanyId || aiMappings.length > 0)) && (() => {
             const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
 
             // Get accounts for mapping from CSV data (if available)
@@ -8528,10 +8546,12 @@ function FinancialScorePage() {
                 <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
                   {hasCsvData
                     ? `Map Trial Balance accounts to Corelytics accounts - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'}`
-                    : `${aiMappings.length} saved account mappings loaded from database`
+                    : aiMappings.length > 0
+                      ? `${aiMappings.length} saved account mappings loaded from database`
+                      : 'Upload a Trial Balance CSV to start mapping accounts.'
                   }
                 </p>
-                {shouldShowCsvReupload && (
+                {(selectedAccountingSystem === 'CSV_FILE' || shouldShowCsvReupload) && (
                   <div style={{ marginBottom: '12px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <label style={{
                       display: 'inline-flex',
@@ -8541,22 +8561,25 @@ function FinancialScorePage() {
                       border: '1px solid #cbd5e1',
                       borderRadius: '8px',
                       background: '#f8fafc',
-                      cursor: 'pointer',
+                      cursor: isClearingCsv ? 'not-allowed' : 'pointer',
                       fontSize: '13px',
                       fontWeight: 600,
-                      color: '#334155'
+                      color: '#334155',
+                      opacity: isClearingCsv ? 0.6 : 1
                     }}>
                       <Upload size={14} />
-                      Replace CSV
+                      {hasCsvData ? 'Replace CSV' : 'Upload CSV'}
                       <input
                         type="file"
                         accept=".csv"
                         onChange={handleTrialBalanceCsvSelected}
+                        disabled={isClearingCsv}
                         style={{ display: 'none' }}
                       />
                     </label>
                     <button
                       onClick={clearTrialBalanceCsvAndMappings}
+                      disabled={isClearingCsv}
                       style={{
                         padding: '8px 12px',
                         borderRadius: '8px',
@@ -8565,11 +8588,17 @@ function FinancialScorePage() {
                         color: '#64748b',
                         fontSize: '13px',
                         fontWeight: 600,
-                        cursor: 'pointer'
+                        cursor: isClearingCsv ? 'not-allowed' : 'pointer',
+                        opacity: isClearingCsv ? 0.6 : 1
                       }}
                     >
-                      Clear CSV
+                      {isClearingCsv ? 'Clearing...' : 'Clear CSV'}
                     </button>
+                  </div>
+                )}
+                {csvClearStatus && (
+                  <div style={{ marginBottom: '12px', fontSize: '12px', color: csvClearStatus.toLowerCase().includes('failed') ? '#b91c1c' : '#065f46' }}>
+                    {csvClearStatus}
                   </div>
                 )}
 
