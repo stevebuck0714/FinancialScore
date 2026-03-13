@@ -145,8 +145,8 @@ export default function TrendAnalysisView({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
               {[
                 'Revenue', 'Gross Profit', 'Total Operating Expenses', 'EBIT', 'EBITDA', 'Net Income',
-                'Cash', 'Current Assets', 'Fixed Assets', 'Total Assets',
-                'Accounts Payable', 'Long Term Debt', 'Total Equity'
+                'Cash', 'Accounts Receivable', 'Current Assets', 'Fixed Assets', 'Total Assets',
+                'Accounts Payable', 'Current Liabilities', 'Long Term Debt', 'Total Equity'
               ].map(metric => (
                 <label key={metric} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
                   <input
@@ -204,6 +204,8 @@ export default function TrendAnalysisView({
                     return ebit + depreciation;
                   case 'Cash':
                     return toNumber(m.cash);
+                  case 'Accounts Receivable':
+                    return toNumber(m.ar);
                   case 'Current Assets':
                     return toNumber(m.tca) || (toNumber(m.cash) + toNumber(m.ar) + toNumber(m.inventory) + toNumber(m.otherCA));
                   case 'Fixed Assets':
@@ -212,6 +214,8 @@ export default function TrendAnalysisView({
                     return toNumber(m.totalAssets);
                   case 'Accounts Payable':
                     return toNumber(m.ap);
+                  case 'Current Liabilities':
+                    return toNumber(m.tcl) || (toNumber(m.ap) + toNumber(m.otherCL));
                   case 'Long Term Debt':
                     return toNumber(m.ltd);
                   case 'Total Equity':
