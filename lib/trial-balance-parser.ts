@@ -265,29 +265,88 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
   // Parse header row
   const headerLine = lines[0];
   const headers = parseCSVLine(headerLine);
-  
-  // Expected format: Acct Type, Acct ID, Description, Date1, Date2, ...
-  if (headers.length < 4) {
-    throw new Error('CSV must have at least 4 columns: Acct Type, Acct ID, Description, and at least one date column');
+
+  const normalizeHeader = (header: string) =>
+    (header || '')
+      .toLowerCase()
+      .trim()
+      .replace(/["']/g, '')
+      .replace(/[\s_-]+/g, ' ');
+
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const findHeaderIndex = (predicates: Array<(header: string) => boolean>): number =>
+    normalizedHeaders.findIndex((header) => predicates.some((predicate) => predicate(header)));
+
+  const acctTypeIndex = findHeaderIndex([
+    (h) => h === 'acct type',
+    (h) => h === 'account type',
+    (h) => h === 'type',
+  ]);
+  const acctIdIndex = findHeaderIndex([
+    (h) => h === 'acct id',
+    (h) => h === 'account id',
+    (h) => h === 'account number',
+    (h) => h === 'account no',
+    (h) => h === 'account #',
+    (h) => h === 'code',
+  ]);
+  const descriptionIndex = findHeaderIndex([
+    (h) => h === 'description',
+    (h) => h === 'account',
+    (h) => h === 'account name',
+    (h) => h === 'name',
+  ]);
+
+  // Detect date columns by parseable date headers instead of fixed positions.
+  const dateColumnIndexes = headers
+    .map((header, idx) => ({ header: header.trim(), idx }))
+    .filter(({ header }) => parseColumnDate(header) !== null)
+    .map(({ idx }) => idx);
+
+  if (dateColumnIndexes.length === 0) {
+    throw new Error('CSV must include at least one date column (e.g., 12/31/2022 or 2024-01-31)');
   }
-  
-  // Extract date columns (columns after the first 3)
-  const dates = headers.slice(3).map(h => h.trim());
+
+  const dates = dateColumnIndexes.map((idx) => headers[idx].trim());
+  const isStructuredTrialBalance = acctTypeIndex !== -1 && descriptionIndex !== -1;
   
   const accounts: TrialBalanceAccount[] = [];
   const accountsByType: { [type: string]: TrialBalanceAccount[] } = {};
+  let currentSectionType = '';
   
   // Parse data rows
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     const values = parseCSVLine(line);
-    
-    // Skip empty rows or rows without account type
-    const rawAcctType = values[0]?.trim() || '';
-    
-    const acctId = values[1]?.trim() || '';
-    const description = values[2]?.trim() || '';
-    
+
+    let rawAcctType = '';
+    let acctId = '';
+    let description = '';
+
+    if (isStructuredTrialBalance) {
+      rawAcctType = values[acctTypeIndex]?.trim() || '';
+      acctId = acctIdIndex >= 0 ? (values[acctIdIndex]?.trim() || '') : '';
+      description = values[descriptionIndex]?.trim() || '';
+    } else {
+      // Alternate layout support:
+      // First column contains section headers (Income/Expenses/...) and account names.
+      // Remaining columns are date amounts.
+      const firstNonDateColumnIndex = headers.findIndex((_, idx) => !dateColumnIndexes.includes(idx));
+      const descriptionIdx = firstNonDateColumnIndex >= 0 ? firstNonDateColumnIndex : 0;
+      description = values[descriptionIdx]?.trim() || '';
+      if (!description) continue;
+
+      const rowHasNonZeroAmount = dateColumnIndexes.some((idx) => parseNumber(values[idx]) !== 0);
+      const isLikelySectionRow = !rowHasNonZeroAmount;
+      if (isLikelySectionRow) {
+        currentSectionType = normalizeAccountType(description, description);
+        continue;
+      }
+
+      rawAcctType = currentSectionType || inferAccountTypeFromDescription(description);
+      acctId = '';
+    }
+
     // Skip separator/subtotal rows and malformed lines.
     if (shouldSkipAccountRow(rawAcctType, acctId, description)) continue;
 
@@ -295,9 +354,10 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
     
     // Parse values for each date column
     const dateValues: { [date: string]: number } = {};
-    for (let j = 0; j < dates.length; j++) {
+    for (let j = 0; j < dateColumnIndexes.length; j++) {
       const date = dates[j];
-      const value = parseNumber(values[j + 3]);
+      const sourceIndex = dateColumnIndexes[j];
+      const value = parseNumber(values[sourceIndex]);
       dateValues[date] = value;
     }
     
