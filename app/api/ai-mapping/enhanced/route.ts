@@ -159,9 +159,55 @@ function mapAccountByCode(accountCode: string): { targetField: string; confidenc
   return null;
 }
 
+function extractCodeFromAccountName(accountName: string): string {
+  const match = String(accountName || '').match(/^\s*(\d{3,})\b/);
+  return match ? match[1] : '';
+}
+
 function isCogsType(value: string): boolean {
   const normalized = (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   return normalized.includes('costofgoods') || normalized.includes('costofsales') || normalized === 'cogs';
+}
+
+function normalizeClassification(value: string): 'asset' | 'liability' | 'equity' | 'revenue' | 'expense' | 'cogs' | 'other' {
+  const normalized = (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (normalized.includes('costofgoods') || normalized.includes('costofsales') || normalized === 'cogs') return 'cogs';
+  if (normalized.includes('asset')) return 'asset';
+  if (normalized.includes('liabil')) return 'liability';
+  if (normalized.includes('equity') || normalized.includes('capital')) return 'equity';
+  if (normalized.includes('revenue') || normalized.includes('income')) return 'revenue';
+  if (normalized.includes('expense')) return 'expense';
+  return 'other';
+}
+
+function isAssetTarget(field: string): boolean {
+  return ['cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 'otherAssets', 'totalAssets'].includes(field);
+}
+
+function isLiabilityTarget(field: string): boolean {
+  return ['ap', 'otherCL', 'tcl', 'ltd', 'totalLiab'].includes(field);
+}
+
+function isEquityTarget(field: string): boolean {
+  return [
+    'ownersCapital',
+    'ownersDraw',
+    'commonStock',
+    'preferredStock',
+    'retainedEarnings',
+    'additionalPaidInCapital',
+    'treasuryStock',
+    'totalEquity',
+    'totalLAndE',
+  ].includes(field);
+}
+
+function isRevenueTarget(field: string): boolean {
+  return ['revenue', 'nonOperatingIncome'].includes(field);
+}
+
+function isCogsTarget(field: string): boolean {
+  return ['cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther', 'cogsTotal'].includes(field);
 }
 
 function isOperatingExpenseTarget(field: string): boolean {
@@ -249,9 +295,11 @@ export async function POST(request: NextRequest) {
     for (const account of qbAccountsWithClass) {
       const accountName = typeof account === 'string' ? account : account.name;
       const classification = typeof account === 'string' ? '' : (account.classification || '');
-      const accountCode = typeof account === 'string' ? '' : (account.accountCode || '');
+      const providedAccountCode = typeof account === 'string' ? '' : (account.accountCode || '');
+      const accountCode = providedAccountCode || extractCodeFromAccountName(accountName);
       const accountType = typeof account === 'string' ? '' : (account.accountType || '');
       const isCogsClass = isCogsType(classification) || isCogsType(accountType);
+      const classificationGroup = normalizeClassification(classification || accountType);
 
       let bestMapping = null;
       let bestConfidence = 0;
@@ -298,8 +346,42 @@ export async function POST(request: NextRequest) {
       }
 
       if (bestMapping && bestMapping.targetField) {
+        // Classification guardrails: prevent cross-statement drift (e.g. assets into OpEx).
+        if (classificationGroup === 'asset' && !isAssetTarget(bestMapping.targetField)) {
+          bestMapping = {
+            targetField: 'otherAssets',
+            confidence: 'high',
+            reasoning: `Forced to Asset target because account classification is ${classification || accountType || 'Asset'}`,
+          };
+          source = source === 'none' ? 'keyword' : source;
+        }
+        if (classificationGroup === 'liability' && !isLiabilityTarget(bestMapping.targetField)) {
+          bestMapping = {
+            targetField: 'otherCL',
+            confidence: 'high',
+            reasoning: `Forced to Liability target because account classification is ${classification || accountType || 'Liability'}`,
+          };
+          source = source === 'none' ? 'keyword' : source;
+        }
+        if (classificationGroup === 'equity' && !isEquityTarget(bestMapping.targetField)) {
+          bestMapping = {
+            targetField: 'totalEquity',
+            confidence: 'high',
+            reasoning: `Forced to Equity target because account classification is ${classification || accountType || 'Equity'}`,
+          };
+          source = source === 'none' ? 'keyword' : source;
+        }
+        if (classificationGroup === 'revenue' && !isRevenueTarget(bestMapping.targetField)) {
+          bestMapping = {
+            targetField: 'revenue',
+            confidence: 'high',
+            reasoning: `Forced to Revenue target because account classification is ${classification || accountType || 'Revenue'}`,
+          };
+          source = source === 'none' ? 'keyword' : source;
+        }
+
         // Guardrail: explicitly COGS-classified accounts should never be forced into OpEx targets.
-        if (isCogsClass && isOperatingExpenseTarget(bestMapping.targetField)) {
+        if ((isCogsClass || classificationGroup === 'cogs') && (isOperatingExpenseTarget(bestMapping.targetField) || !isCogsTarget(bestMapping.targetField))) {
           bestMapping = {
             targetField: 'cogsOther',
             confidence: 'high',
