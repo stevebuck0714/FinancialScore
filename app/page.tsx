@@ -944,6 +944,32 @@ function FinancialScorePage() {
     }
   };
 
+  const clearTrialBalanceCsvAndMappings = async () => {
+    if (!selectedCompanyId) return;
+
+    // Clear local CSV/mapping state first so UI resets immediately.
+    setCsvTrialBalanceData(null);
+    setAiMappings([]);
+    setShowMappingSection(false);
+    setHasSavedCsvInLocalStorage(false);
+    localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
+
+    // Also clear persisted account mappings to prevent old layout from reloading.
+    try {
+      const response = await fetch(`/api/account-mappings?companyId=${selectedCompanyId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || 'Failed to clear saved mappings');
+      }
+      console.log('✅ Cleared saved account mappings for company:', selectedCompanyId);
+    } catch (err) {
+      console.error('❌ Failed to clear saved mappings during CSV clear:', err);
+      setError('Cleared local CSV, but failed to clear saved mappings. Please retry.');
+    }
+  };
+
   // State - QuickBooks Connection
   const [qbConnected, setQbConnected] = useState(false);
 
@@ -7106,10 +7132,7 @@ function FinancialScorePage() {
                         ? Go to Data Mapping
                       </button>
                       <button
-                        onClick={() => {
-                          setCsvTrialBalanceData(null);
-                          localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
-                        }}
+                        onClick={clearTrialBalanceCsvAndMappings}
                         style={{
                           padding: '12px 24px',
                           background: 'white',
@@ -8533,13 +8556,7 @@ function FinancialScorePage() {
                       />
                     </label>
                     <button
-                      onClick={() => {
-                        setCsvTrialBalanceData(null);
-                        setAiMappings([]);
-                        setShowMappingSection(false);
-                        localStorage.removeItem(`csvTrialBalance_${selectedCompanyId}`);
-                        setHasSavedCsvInLocalStorage(false);
-                      }}
+                      onClick={clearTrialBalanceCsvAndMappings}
                       style={{
                         padding: '8px 12px',
                         borderRadius: '8px',
