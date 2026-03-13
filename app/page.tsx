@@ -1016,7 +1016,7 @@ function FinancialScorePage() {
     serviceAccountAccessKey: '',
     serviceAccountSecretKey: '',
   });
-  const [inforProbePath, setInforProbePath] = useState('/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData');
+  const [inforProbePath, setInforProbePath] = useState('/ionapi/metadata/v1/APR_PRD/version');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
   const [inforCaoPulling, setInforCaoPulling] = useState(false);
   const [inforCaoMessage, setInforCaoMessage] = useState<string | null>(null);
@@ -3517,6 +3517,15 @@ function FinancialScorePage() {
     localStorage.removeItem('fs_selectedCompanyId');
   };
 
+  const exitSiteAdminPreview = () => {
+    if (!siteAdminViewingAs) return;
+    setCurrentUser(siteAdminViewingAs);
+    setSiteAdminViewingAs(null);
+    setCurrentView('siteadmin');
+    setLoadedConsultantId(null);
+    safeSetCompanies([]); // Clear companies to prevent cross-account data leakage
+  };
+
   // Load master data and extract categories for dynamic goals
   const loadMasterDataForGoals = async () => {
     if (!selectedCompanyId) {
@@ -4315,7 +4324,7 @@ function FinancialScorePage() {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) return;
     if (!inforProbePath.trim()) {
-      alert('Please enter an Infor M3 probe path');
+      alert('Please enter an Infor CSI probe path');
       return;
     }
     setInforBusy(true);
@@ -5968,7 +5977,7 @@ function FinancialScorePage() {
       case 'IFS':
         return 'IFS';
       case 'INFOR_M3':
-        return 'Infor M3';
+        return 'Infor Syteline CSI';
       case 'NETSUITE':
         return 'NetSuite';
       case 'QAD':
@@ -6823,6 +6832,33 @@ function FinancialScorePage() {
           {/* Restrict access for assessment users - only show Team Assessment views */}
           {(!(currentUser?.userType === 'assessment') || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
+          {/* Persistent Exit Preview button for site admins when in company views outside admin/dashboard shells */}
+          {siteAdminViewingAs && currentView !== 'siteadmin' && currentView !== 'admin' && currentView !== 'consultant-dashboard' && (
+            <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 32px 0 32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '0' }}>
+                <button
+                  onClick={exitSiteAdminPreview}
+                  style={{
+                    padding: '10px 20px',
+                    background: '#f59e0b',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <ArrowLeft size={16} aria-hidden="true" />
+                  <span>Back to Site Admin</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Site Administration */}
           {currentView === 'siteadmin' && currentUser?.role === 'siteadmin' && (
             <SiteAdminDashboard
@@ -6955,13 +6991,7 @@ function FinancialScorePage() {
                 <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 32px 0 32px' }}>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '0' }}>
                     <button
-                      onClick={() => {
-                        setCurrentUser(siteAdminViewingAs);
-                        setSiteAdminViewingAs(null);
-                        setCurrentView('siteadmin');
-                        setLoadedConsultantId(null);
-                        safeSetCompanies([]); // Clear companies to prevent data leakage
-                      }}
+                      onClick={exitSiteAdminPreview}
                       style={{ 
                         padding: '10px 20px', 
                         background: '#f59e0b', 
@@ -7016,14 +7046,7 @@ function FinancialScorePage() {
           {siteAdminViewingAs && (
             <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '20px' }}>
               <button
-                onClick={() => {
-                  // Restore admin user
-                  setCurrentUser(siteAdminViewingAs);
-                  setSiteAdminViewingAs(null);
-                  setCurrentView('siteadmin');
-                  setLoadedConsultantId(null); // Reset so companies reload for next consultant view
-                  safeSetCompanies([]); // Clear companies to prevent data leakage
-                }}
+                onClick={exitSiteAdminPreview}
                 style={{ 
                   padding: '10px 20px', 
                   background: '#f59e0b', 
@@ -7860,10 +7883,10 @@ function FinancialScorePage() {
               {selectedAccountingSystem === 'INFOR_M3' && (
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '16px', border: '2px solid #e2e8f0' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                    Infor M3 Monthly COA Pull
+                    Infor Syteline CSI Monthly COA Pull
                   </h3>
                   <div style={{ marginBottom: '12px', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    Infor M3 credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
+                    Infor Syteline CSI credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
                     This action triggers a monthly Chart of Accounts pull using the <strong>Accounts</strong> MI Program configured for this company.
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -7884,7 +7907,7 @@ function FinancialScorePage() {
                       {inforCaoPulling ? 'Pulling COA...' : 'Pull Monthly COA Data'}
                     </button>
                     <span style={{ fontSize: '12px', color: '#64748b' }}>
-                      Requires Accounts MI Program in Site Admin &gt; Businesses.
+                      Requires CSI Accounts MI Program in Site Admin &gt; Businesses.
                     </span>
                   </div>
                   <div style={{ marginTop: '10px', fontSize: '12px', color: '#475569' }}>

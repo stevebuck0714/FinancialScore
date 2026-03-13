@@ -343,14 +343,39 @@ export default function SiteAdminDashboard(props: any) {
   >({});
 
   const defaultAccountingPrograms: InforAccountingProgramRow[] = [
-    { module: 'Accounts', miProgram: 'CRS630MI', transactions: [], cono: '', divi: '', enabled: true },
-    { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transactions: [], cono: '', divi: '', enabled: true },
-    { module: 'AR', miProgram: 'ARS200MI', transactions: [], cono: '', divi: '', enabled: true },
-    { module: 'AP', miProgram: 'APS200MI', transactions: [], cono: '', divi: '', enabled: true },
-    { module: 'Customer', miProgram: 'CRS610MI', transactions: [], cono: '', divi: '', enabled: true },
-    { module: 'Supplier', miProgram: 'CRS620MI', transactions: [], cono: '', divi: '', enabled: true },
-    { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transactions: [], cono: '', divi: '', enabled: true },
-    { module: 'Sales', miProgram: 'OIS100MI', transactions: [], cono: '', divi: '', enabled: true },
+    // Infor CSI (SyteLine) extraction mapping defaults.
+    { module: 'Chart of Accounts', miProgram: 'ChartOfAccounts', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Accounting Dimensions', miProgram: 'DimensionCodes', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'GL Transactions', miProgram: 'LedgerTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'GL Period Balances', miProgram: 'LedgerBalances', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Customers', miProgram: 'Customers', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Customer Addresses', miProgram: 'CustomerAddresses', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'AR Invoices', miProgram: 'CustomerInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'AR Payments', miProgram: 'ARPayments', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'AR Transactions', miProgram: 'ARPostedTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Vendors', miProgram: 'Vendors', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Vendor Addresses', miProgram: 'VendorAddresses', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'AP Invoices', miProgram: 'VendorInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'AP Payments', miProgram: 'APPayments', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'AP Transactions', miProgram: 'APPostedTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Bank Accounts', miProgram: 'BankAccounts', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Cash Ledger', miProgram: 'BankTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Payment Transactions', miProgram: 'CashReceipts', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Items', miProgram: 'Items', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Item Warehouse Balance', miProgram: 'ItemWarehouseBalances', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Inventory Transactions', miProgram: 'InventoryTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Lot/Serial Inventory', miProgram: 'ItemLotLocations', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Sales Orders', miProgram: 'SalesOrders', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Sales Order Lines', miProgram: 'SalesOrderLines', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Sales Invoices', miProgram: 'CustomerInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Customer Shipments', miProgram: 'CustomerShipments', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Purchase Orders', miProgram: 'PurchaseOrders', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'PO Lines', miProgram: 'PurchaseOrderLines', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Goods Receipts', miProgram: 'PurchaseOrderReceipts', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Work Orders', miProgram: 'Jobs', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Work Order Operations', miProgram: 'JobOperations', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'Production Reporting', miProgram: 'JobTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    { module: 'BOM', miProgram: 'BillOfMaterials', transactions: ['GET'], cono: '', divi: '', enabled: true },
   ];
 
   const getCompanyPrograms = (companyId: string) =>
@@ -2086,7 +2111,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
                                                 </div>
                                                 {company.accountingSystem === 'INFOR_M3' && (
-                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                                  <div style={{ display: 'grid', gap: '8px', width: '100%', maxWidth: '760px' }}>
                                                     <input
                                                       id={`consultant-infor-json-file-${company.id}`}
                                                       type="file"
@@ -2096,74 +2121,89 @@ export default function SiteAdminDashboard(props: any) {
                                                         handleInforCredentialsFileImport(event, company.id, company.name)
                                                       }
                                                     />
-                                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end' }}>
-                                                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
-                                                      <input
-                                                        type="month"
-                                                        value={getCompanyFinancialImportSettings(company.id).targetMonth}
-                                                        onChange={(e) =>
-                                                          setCompanyFinancialImportSettings(company.id, { targetMonth: e.target.value })
-                                                        }
-                                                        style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                      />
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
+                                                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>DATA WINDOW</div>
+                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                          <button
+                                                            onClick={() => {
+                                                              const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
+                                                              fileInput?.click();
+                                                            }}
+                                                            disabled={inforBusy}
+                                                            style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                          >
+                                                            Import JSON
+                                                          </button>
+                                                          <button
+                                                            onClick={() => testInforM3Token?.(company.id)}
+                                                            disabled={inforBusy || !inforConnected}
+                                                            style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                          >
+                                                            Test Token
+                                                          </button>
+                                                        </div>
+                                                      </div>
+                                                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>CONNECTION</div>
+                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                          <button
+                                                            onClick={() =>
+                                                              saveInforM3Credentials?.(company.id, {
+                                                                frequency: getCompanyOperationalSettings(company.id).frequency,
+                                                                pullTime: getCompanyOperationalSettings(company.id).pullTime,
+                                                              })
+                                                            }
+                                                            disabled={inforBusy}
+                                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                          >
+                                                            Save
+                                                          </button>
+                                                          <button
+                                                            onClick={() => connectInforM3?.(company.id)}
+                                                            disabled={inforBusy}
+                                                            style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                          >
+                                                            {inforBusy ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
+                                                          </button>
+                                                          <button
+                                                            onClick={() => disconnectInforM3?.(company.id)}
+                                                            disabled={inforBusy || !inforConnected}
+                                                            style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                          >
+                                                            Disconnect
+                                                          </button>
+                                                        </div>
+                                                      </div>
+                                                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>SYNC ACTIONS</div>
+                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                          <button
+                                                            onClick={() => runInforM3OperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                            disabled={inforBusy || !inforConnected}
+                                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                          >
+                                                            Run Ops Sync Now
+                                                          </button>
+                                                          <button
+                                                            onClick={() => runInforM3FinancialImport(company.id, company.name)}
+                                                            disabled={inforBusy || !inforConnected}
+                                                            style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                          >
+                                                            Run Financial Import
+                                                          </button>
+                                                          <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                                                          <input
+                                                            type="month"
+                                                            value={getCompanyFinancialImportSettings(company.id).targetMonth}
+                                                            onChange={(e) =>
+                                                              setCompanyFinancialImportSettings(company.id, { targetMonth: e.target.value })
+                                                            }
+                                                            style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          />
+                                                        </div>
+                                                      </div>
                                                     </div>
-                                                    <button
-                                                      onClick={() => {
-                                                        const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
-                                                        fileInput?.click();
-                                                      }}
-                                                      disabled={inforBusy}
-                                                      style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                    >
-                                                      Import JSON
-                                                    </button>
-                                                    <button
-                                                      onClick={() =>
-                                                        saveInforM3Credentials?.(company.id, {
-                                                          frequency: getCompanyOperationalSettings(company.id).frequency,
-                                                          pullTime: getCompanyOperationalSettings(company.id).pullTime,
-                                                        })
-                                                      }
-                                                      disabled={inforBusy}
-                                                      style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                    >
-                                                      Save
-                                                    </button>
-                                                    <button
-                                                      onClick={() => connectInforM3?.(company.id)}
-                                                      disabled={inforBusy}
-                                                      style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                    >
-                                                      {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')}
-                                                    </button>
-                                                    <button
-                                                      onClick={() => runInforM3OperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
-                                                      disabled={inforBusy || !inforConnected}
-                                                      style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                    >
-                                                      Run Ops Sync Now
-                                                    </button>
-                                                    <button
-                                                      onClick={() => runInforM3FinancialImport(company.id, company.name)}
-                                                      disabled={inforBusy || !inforConnected}
-                                                      style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                    >
-                                                      Run Financial Import
-                                                    </button>
-                                                    <button
-                                                      onClick={() => testInforM3Token?.(company.id)}
-                                                      disabled={inforBusy || !inforConnected}
-                                                      style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                    >
-                                                      Test Token
-                                                    </button>
-                                                    <button
-                                                      onClick={() => disconnectInforM3?.(company.id)}
-                                                      disabled={inforBusy || !inforConnected}
-                                                      style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                    >
-                                                      Disconnect
-                                                    </button>
                                                   </div>
                                                 )}
                                                 {company.accountingSystem === 'QUICKBOOKS_DESKTOP' && (
@@ -2470,7 +2510,7 @@ export default function SiteAdminDashboard(props: any) {
                                                         type="text"
                                                         value={inforProbePath || ''}
                                                         onChange={(e) => setInforProbePath?.(e.target.value)}
-                                                        placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
+                                                        placeholder="/ionapi/metadata/v1/APR_PRD/version"
                                                         style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       />
                                                     </label>
@@ -3135,7 +3175,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 </div>
                                               </div>
                                               <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-                                                Programs called by the integration
+                                                Programs called by the CSI integration
                                               </div>
                                               <div style={{ overflowX: 'auto' }}>
                                                 {company.accountingSystem === 'QUICKBOOKS' ? (
@@ -3459,7 +3499,7 @@ export default function SiteAdminDashboard(props: any) {
                                                                   parseTransactionsFromInput(nextValue)
                                                                 );
                                                               }}
-                                                              placeholder={"Transaction 1\nTransaction 2"}
+                                                              placeholder={"Enter CSI transaction names (one per line)\nExample: List / Get / Search"}
                                                               rows={3}
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
                                                             />
@@ -3469,7 +3509,7 @@ export default function SiteAdminDashboard(props: any) {
                                                               type="text"
                                                               value={row.cono}
                                                               onChange={(e) => updateCompanyProgram(company.id, index, 'cono', e.target.value)}
-                                                              placeholder="CONO"
+                                                              placeholder="CSI CONO (e.g. 100)"
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                             />
                                                           </td>
@@ -3478,7 +3518,7 @@ export default function SiteAdminDashboard(props: any) {
                                                               type="text"
                                                               value={row.divi}
                                                               onChange={(e) => updateCompanyProgram(company.id, index, 'divi', e.target.value)}
-                                                              placeholder="DIVI"
+                                                              placeholder="CSI DIVI (e.g. AAA)"
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                             />
                                                           </td>
@@ -4145,7 +4185,7 @@ export default function SiteAdminDashboard(props: any) {
                                       <div>
                                         <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
                                       </div>
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                      <div style={{ display: 'grid', gap: '8px', width: '100%', maxWidth: '760px' }}>
                                         <input
                                           id={`infor-json-file-${businessCompany.id}`}
                                           type="file"
@@ -4155,74 +4195,89 @@ export default function SiteAdminDashboard(props: any) {
                                             handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
                                           }
                                         />
-                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end' }}>
-                                          <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
-                                          <input
-                                            type="month"
-                                            value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
-                                            onChange={(e) =>
-                                              setCompanyFinancialImportSettings(businessCompany.id, { targetMonth: e.target.value })
-                                            }
-                                            style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                          />
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>DATA WINDOW</div>
+                                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                              <button
+                                                onClick={() => {
+                                                  const fileInput = document.getElementById(`infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
+                                                  fileInput?.click();
+                                                }}
+                                                disabled={inforBusy}
+                                                style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Import JSON
+                                              </button>
+                                              <button
+                                                onClick={() => testInforM3Token?.(businessCompany.id)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Test Token
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>CONNECTION</div>
+                                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                              <button
+                                                onClick={() =>
+                                                  saveInforM3Credentials?.(businessCompany.id, {
+                                                    frequency: operationalSettings.frequency,
+                                                    pullTime: operationalSettings.pullTime,
+                                                  })
+                                                }
+                                                disabled={inforBusy}
+                                                style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Save
+                                              </button>
+                                              <button
+                                                onClick={() => connectInforM3?.(businessCompany.id)}
+                                                disabled={inforBusy}
+                                                style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                {inforBusy ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
+                                              </button>
+                                              <button
+                                                onClick={() => disconnectInforM3?.(businessCompany.id)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Disconnect
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>SYNC ACTIONS</div>
+                                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                              <button
+                                                onClick={() => runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Run Ops Sync Now
+                                              </button>
+                                              <button
+                                                onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Run Financial Import
+                                              </button>
+                                              <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                                              <input
+                                                type="month"
+                                                value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
+                                                onChange={(e) =>
+                                                  setCompanyFinancialImportSettings(businessCompany.id, { targetMonth: e.target.value })
+                                                }
+                                                style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                              />
+                                            </div>
+                                          </div>
                                         </div>
-                                        <button
-                                          onClick={() => {
-                                            const fileInput = document.getElementById(`infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
-                                            fileInput?.click();
-                                          }}
-                                          disabled={inforBusy}
-                                          style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                        >
-                                          Import JSON
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            saveInforM3Credentials?.(businessCompany.id, {
-                                              frequency: operationalSettings.frequency,
-                                              pullTime: operationalSettings.pullTime,
-                                            })
-                                          }
-                                          disabled={inforBusy}
-                                          style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                        >
-                                          Save
-                                        </button>
-                                        <button
-                                          onClick={() => connectInforM3?.(businessCompany.id)}
-                                          disabled={inforBusy}
-                                          style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                        >
-                                          {inforBusy ? 'Working...' : (inforConnected ? 'Reconnect' : 'Connect')}
-                                        </button>
-                                        <button
-                                          onClick={() => runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency)}
-                                          disabled={inforBusy || !inforConnected}
-                                          style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                        >
-                                          Run Ops Sync Now
-                                        </button>
-                                        <button
-                                          onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
-                                          disabled={inforBusy || !inforConnected}
-                                          style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                        >
-                                          Run Financial Import
-                                        </button>
-                                        <button
-                                          onClick={() => testInforM3Token?.(businessCompany.id)}
-                                          disabled={inforBusy || !inforConnected}
-                                          style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                        >
-                                          Test Token
-                                        </button>
-                                        <button
-                                          onClick={() => disconnectInforM3?.(businessCompany.id)}
-                                          disabled={inforBusy || !inforConnected}
-                                          style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                        >
-                                          Disconnect
-                                        </button>
                                       </div>
                                     </div>
 
@@ -4365,7 +4420,7 @@ export default function SiteAdminDashboard(props: any) {
                                           type="text"
                                           value={inforProbePath || ''}
                                           onChange={(e) => setInforProbePath?.(e.target.value)}
-                                          placeholder="/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData"
+                                          placeholder="/ionapi/metadata/v1/APR_PRD/version"
                                           style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                         />
                                       </label>
@@ -4404,7 +4459,7 @@ export default function SiteAdminDashboard(props: any) {
                                         </div>
                                       </div>
                                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
-                                        Programs called by the integration
+                                        Programs called by the CSI integration
                                       </div>
                                       <div style={{ overflowX: 'auto' }}>
                                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -4467,7 +4522,7 @@ export default function SiteAdminDashboard(props: any) {
                                                         parseTransactionsFromInput(nextValue)
                                                       );
                                                     }}
-                                                    placeholder={"Transaction 1\nTransaction 2"}
+                                                    placeholder={"Enter CSI transaction names (one per line)\nExample: List / Get / Search"}
                                                     rows={3}
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
                                                   />
@@ -4477,7 +4532,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     type="text"
                                                     value={row.cono}
                                                     onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'cono', e.target.value)}
-                                                    placeholder="CONO"
+                                                    placeholder="CSI CONO (e.g. 100)"
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                   />
                                                 </td>
@@ -4486,7 +4541,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     type="text"
                                                     value={row.divi}
                                                     onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'divi', e.target.value)}
-                                                    placeholder="DIVI"
+                                                    placeholder="CSI DIVI (e.g. AAA)"
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                   />
                                                 </td>

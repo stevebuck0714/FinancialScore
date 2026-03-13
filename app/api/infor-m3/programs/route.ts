@@ -11,15 +11,57 @@ type AccountingProgram = {
   enabled: boolean;
 };
 
+function isLegacyTransactionPlaceholder(value: string): boolean {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return (
+    normalized === 'transaction 1' ||
+    normalized === 'transaction 2' ||
+    normalized === 'transaction1' ||
+    normalized === 'transaction2'
+  );
+}
+
+function normalizeLegacyProgramField(value: string, placeholder: 'cono' | 'divi'): string {
+  const normalized = value.trim();
+  if (!normalized) return '';
+  if (normalized.toLowerCase() === placeholder) return '';
+  return normalized;
+}
+
 const DEFAULT_PROGRAMS: AccountingProgram[] = [
-  { module: 'Accounts', miProgram: 'CRS630MI', transactions: [], cono: '', divi: '', enabled: true },
-  { module: 'Cash', miProgram: 'CRS690MI, CRS691MI, CRS692MI', transactions: [], cono: '', divi: '', enabled: true },
-  { module: 'AR', miProgram: 'ARS200MI', transactions: [], cono: '', divi: '', enabled: true },
-  { module: 'AP', miProgram: 'APS200MI', transactions: [], cono: '', divi: '', enabled: true },
-  { module: 'Customer', miProgram: 'CRS610MI', transactions: [], cono: '', divi: '', enabled: true },
-  { module: 'Supplier', miProgram: 'CRS620MI', transactions: [], cono: '', divi: '', enabled: true },
-  { module: 'Inventory', miProgram: 'MMS200MI, MWS070MI', transactions: [], cono: '', divi: '', enabled: true },
-  { module: 'Sales', miProgram: 'OIS100MI', transactions: [], cono: '', divi: '', enabled: true },
+  // Infor CSI (SyteLine) extraction mapping defaults.
+  { module: 'Chart of Accounts', miProgram: 'ChartOfAccounts', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Accounting Dimensions', miProgram: 'DimensionCodes', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'GL Transactions', miProgram: 'LedgerTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'GL Period Balances', miProgram: 'LedgerBalances', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Customers', miProgram: 'Customers', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Customer Addresses', miProgram: 'CustomerAddresses', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'AR Invoices', miProgram: 'CustomerInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'AR Payments', miProgram: 'ARPayments', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'AR Transactions', miProgram: 'ARPostedTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Vendors', miProgram: 'Vendors', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Vendor Addresses', miProgram: 'VendorAddresses', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'AP Invoices', miProgram: 'VendorInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'AP Payments', miProgram: 'APPayments', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'AP Transactions', miProgram: 'APPostedTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Bank Accounts', miProgram: 'BankAccounts', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Cash Ledger', miProgram: 'BankTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Payment Transactions', miProgram: 'CashReceipts', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Items', miProgram: 'Items', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Item Warehouse Balance', miProgram: 'ItemWarehouseBalances', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Inventory Transactions', miProgram: 'InventoryTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Lot/Serial Inventory', miProgram: 'ItemLotLocations', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Sales Orders', miProgram: 'SalesOrders', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Sales Order Lines', miProgram: 'SalesOrderLines', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Sales Invoices', miProgram: 'CustomerInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Customer Shipments', miProgram: 'CustomerShipments', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Purchase Orders', miProgram: 'PurchaseOrders', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'PO Lines', miProgram: 'PurchaseOrderLines', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Goods Receipts', miProgram: 'PurchaseOrderReceipts', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Work Orders', miProgram: 'Jobs', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Work Order Operations', miProgram: 'JobOperations', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'Production Reporting', miProgram: 'JobTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  { module: 'BOM', miProgram: 'BillOfMaterials', transactions: ['GET'], cono: '', divi: '', enabled: true },
 ];
 
 function normalizeTransactions(row: any): string[] {
@@ -44,20 +86,17 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
   for (const row of value) {
     const module = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgram = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
-    const transactions = normalizeTransactions(row);
-    const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
-    const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
-    const enabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
+    const transactions = normalizeTransactions(row).filter((tx) => !isLegacyTransactionPlaceholder(tx));
+    const cono = normalizeLegacyProgramField(typeof row?.cono === 'string' ? row.cono : '', 'cono');
+    const divi = normalizeLegacyProgramField(typeof row?.divi === 'string' ? row.divi : '', 'divi');
+    const requestedEnabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
+    const enabled = requestedEnabled;
     if (!module && !miProgram && transactions.length === 0 && !cono && !divi) continue;
     if (!module || !miProgram) {
       throw new Error('Each accounting program row must include module and MI program.');
     }
-    // Only enforce full required fields for rows the user has enabled.
-    if (requireComplete && enabled && (transactions.length === 0 || !divi)) {
-      throw new Error(
-        'Each enabled accounting program row must include module, MI program, at least one transaction, and DIVI.'
-      );
-    }
+    // For CSI mappings, module + program are the required fields.
+    // Transactions/CONO/DIVI are optional and environment-specific.
     const dedupeKey = `${module}::${miProgram}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
     if (seen.has(dedupeKey)) {
       throw new Error(

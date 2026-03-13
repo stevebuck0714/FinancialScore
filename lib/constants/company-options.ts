@@ -7,7 +7,7 @@ export const ACCOUNTING_SYSTEMS = [
   { value: 'DYNAMICS', label: 'Dynamics' },
   { value: 'EPICOR', label: 'Epicor' },
   { value: 'IFS', label: 'IFS' },
-  { value: 'INFOR_M3', label: 'Infor M3' },
+  { value: 'INFOR_M3', label: 'Infor Syteline CSI' },
   { value: 'NETSUITE', label: 'NetSuite' },
   { value: 'ODOO', label: 'Odoo' },
   { value: 'QUICKBOOKS', label: 'QuickBooks Online' },

@@ -7,8 +7,17 @@ export const dynamic = 'force-dynamic';
 
 function isAllowedReadPath(path: string): boolean {
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  // Keep this route read-only and limited to M3 API paths.
-  return normalized.includes('/M3/') && !normalized.includes('/revoke');
+  const lowered = normalized.toLowerCase();
+  // Keep this route read-only and limited to known accounting API read paths.
+  const isReadScope =
+    lowered.includes('/m3/') ||
+    lowered.includes('/idorequestservice/') ||
+    lowered.includes('/ionapi/metadata/');
+  const isBlocked =
+    lowered.includes('/revoke') ||
+    lowered.includes('token.oauth2') ||
+    lowered.includes('authorization.oauth2');
+  return isReadScope && !isBlocked;
 }
 
 export async function GET(request: NextRequest) {
@@ -33,7 +42,7 @@ export async function GET(request: NextRequest) {
         {
           error: 'Missing required query parameter: path',
           example:
-            '/api/infor-m3/probe?path=/APR_PRD/M3/m3api-rest/execute/MNS150MI/GetUserData',
+            '/api/infor-m3/probe?path=/APR_PRD/IDORequestService/IDOCollections/Customers',
         },
         { status: 400 }
       );
@@ -42,7 +51,7 @@ export async function GET(request: NextRequest) {
     if (!isAllowedReadPath(endpointPath)) {
       return NextResponse.json(
         {
-          error: 'Unsupported path. Only read-only M3 paths are allowed.',
+          error: 'Unsupported path. Only read-only M3/CSI API paths are allowed.',
           received: endpointPath,
         },
         { status: 400 }
