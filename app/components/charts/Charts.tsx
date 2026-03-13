@@ -19,13 +19,62 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   labelFormat?: 'monthly' | 'quarterly' | 'semi-annual' | 'm-yy-adaptive';
   goalLineData?: number[];
 }) {
+  const MAX_MONTHS = 36;
+
+  const parseMonthToDate = (monthStr: string): Date | null => {
+    if (!monthStr || typeof monthStr !== 'string') return null;
+    const trimmed = monthStr.trim();
+    if (!trimmed) return null;
+
+    // MM-YYYY
+    const mmYYYY = trimmed.match(/^(\d{1,2})-(\d{4})$/);
+    if (mmYYYY) {
+      const month = Number(mmYYYY[1]);
+      const year = Number(mmYYYY[2]);
+      if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) return new Date(year, month - 1, 1);
+      return null;
+    }
+
+    // YYYY-MM
+    const yyyyMM = trimmed.match(/^(\d{4})-(\d{1,2})$/);
+    if (yyyyMM) {
+      const year = Number(yyyyMM[1]);
+      const month = Number(yyyyMM[2]);
+      if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) return new Date(year, month - 1, 1);
+      return null;
+    }
+
+    // MM/YYYY
+    const mmSlashYYYY = trimmed.match(/^(\d{1,2})\/(\d{4})$/);
+    if (mmSlashYYYY) {
+      const month = Number(mmSlashYYYY[1]);
+      const year = Number(mmSlashYYYY[2]);
+      if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) return new Date(year, month - 1, 1);
+      return null;
+    }
+
+    // ISO-like date (YYYY-MM-DD)
+    const isoDate = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoDate) {
+      const year = Number(isoDate[1]);
+      const month = Number(isoDate[2]);
+      if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) return new Date(year, month - 1, 1);
+      return null;
+    }
+
+    return null;
+  };
+
   const chartData = valueKey
     ? data.map((d, idx) => ({ month: d.month, value: d[valueKey], _idx: idx }))
     : data.map((d, idx) => ({ ...d, _idx: idx }));
-  const validData = chartData.filter(d => d.value !== null && Number.isFinite(d.value));
-  if (validData.length === 0) return null;
+  const visibleData = chartData
+    .filter((d) => d.month && parseMonthToDate(String(d.month)) !== null && d.value !== null && Number.isFinite(d.value))
+    .slice(-MAX_MONTHS)
+    .map((d, idx) => ({ ...d, _idx: idx }));
+  if (visibleData.length === 0) return null;
 
-  const values = validData.map(d => d.value as number);
+  const values = visibleData.map(d => d.value as number);
   const sorted = [...values].sort((a, b) => a - b);
   const q1 = sorted[Math.floor(sorted.length * 0.25)];
   const q3 = sorted[Math.floor(sorted.length * 0.75)];
@@ -58,8 +107,8 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  const xDenominator = Math.max(chartData.length - 1, 1);
-  const points = validData.map((d) => {
+  const xDenominator = Math.max(visibleData.length - 1, 1);
+  const points = visibleData.map((d) => {
     const x = padding.left + ((d._idx || 0) / xDenominator) * chartWidth;
     const clampedValue = Math.max(yMinCalc, Math.min(yMaxCalc, d.value!));
     const y = padding.top + chartHeight - ((clampedValue - yMinCalc) / range) * chartHeight;
@@ -69,41 +118,6 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
 
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
-
-  const parseMonthToDate = (monthStr: string): Date | null => {
-    if (!monthStr) return null;
-
-    // MM-YYYY
-    const mmYYYY = monthStr.match(/^(\d{1,2})-(\d{4})$/);
-    if (mmYYYY) {
-      const month = Number(mmYYYY[1]);
-      const year = Number(mmYYYY[2]);
-      if (month >= 1 && month <= 12) return new Date(year, month - 1, 1);
-    }
-
-    // YYYY-MM
-    const yyyyMM = monthStr.match(/^(\d{4})-(\d{1,2})$/);
-    if (yyyyMM) {
-      const year = Number(yyyyMM[1]);
-      const month = Number(yyyyMM[2]);
-      if (month >= 1 && month <= 12) return new Date(year, month - 1, 1);
-    }
-
-    // MM/YYYY
-    const mmSlashYYYY = monthStr.match(/^(\d{1,2})\/(\d{4})$/);
-    if (mmSlashYYYY) {
-      const month = Number(mmSlashYYYY[1]);
-      const year = Number(mmSlashYYYY[2]);
-      if (month >= 1 && month <= 12) return new Date(year, month - 1, 1);
-    }
-
-    const parsed = new Date(monthStr);
-    if (!Number.isNaN(parsed.getTime())) {
-      return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
-    }
-
-    return null;
-  };
 
   const formatMonthShort = (monthStr: string): string => {
     const date = parseMonthToDate(monthStr);
@@ -233,9 +247,9 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           </>
         )}
         <path d={pathD} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-        {goalLineData && goalLineData.length === validData.length && (() => {
-          const goalXDenominator = Math.max(validData.length - 1, 1);
-          const goalPoints = validData.map((d, i) => {
+        {goalLineData && goalLineData.length === visibleData.length && (() => {
+          const goalXDenominator = Math.max(visibleData.length - 1, 1);
+          const goalPoints = visibleData.map((d, i) => {
             const x = padding.left + (i / goalXDenominator) * chartWidth;
             const goalValue = goalLineData[i];
             const clampedValue = Math.max(yMinCalc, Math.min(yMaxCalc, goalValue));
@@ -406,7 +420,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
       <div style={{ display: 'grid', gridTemplateColumns: benchmarkValue != null ? 'repeat(5, 1fr)' : 'repeat(4, 1fr)', gap: '10px', marginTop: '5px', padding: '3px 12px', background: 'white', borderRadius: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>CURRENT:</div>
-          <div style={{ fontSize: '16px', fontWeight: '700', color: color }}>{formatter ? formatter(validData[validData.length - 1].value!) : validData[validData.length - 1].value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: color }}>{formatter ? formatter(visibleData[visibleData.length - 1].value!) : visibleData[visibleData.length - 1].value!.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>AVG:</div>
@@ -436,10 +450,10 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
                 <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: '#f1f5f9', zIndex: 1, minWidth: '60px' }}>
                   Quarter
                 </td>
-                {validData.map((d, i) => {
+                {visibleData.map((d, i) => {
                   // Only show quarterly data (every 3rd month)
-                  let date = new Date(d.month);
-                  if (!isNaN(date.getTime())) {
+                  const date = parseMonthToDate(String(d.month));
+                  if (date) {
                     const month = date.getMonth() + 1;
                     if (month % 3 !== 0) return null;
                   }
@@ -454,9 +468,9 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
                 <td style={{ padding: '6px 8px', fontWeight: '700', color: '#1e293b', position: 'sticky', left: 0, background: 'white', zIndex: 1, minWidth: '60px' }}>
                   Value
                 </td>
-                {validData.map((d, i) => {
-                  let date = new Date(d.month);
-                  if (!isNaN(date.getTime())) {
+                {visibleData.map((d, i) => {
+                  const date = parseMonthToDate(String(d.month));
+                  if (date) {
                     const month = date.getMonth() + 1;
                     if (month % 3 !== 0) return null;
                   }

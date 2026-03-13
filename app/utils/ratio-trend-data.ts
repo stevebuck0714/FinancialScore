@@ -31,6 +31,8 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const MAX_RATIO_MONTHS = 36;
+
 const formatMonth = (monthValue: unknown): string => {
   if (!monthValue) return '';
 
@@ -44,10 +46,11 @@ const formatMonth = (monthValue: unknown): string => {
   }
 
   const date = monthValue instanceof Date ? monthValue : new Date(monthValue as string);
-  if (Number.isNaN(date.getTime())) return String(monthValue);
+  if (Number.isNaN(date.getTime())) return '';
 
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
+  if (year < 2000 || year > 2100) return '';
   return `${month}-${year}`;
 };
 
@@ -73,45 +76,29 @@ const hasLoadedFinancialData = (m: Record<string, unknown>): boolean => {
 export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[] {
   if (!Array.isArray(monthly) || monthly.length === 0) return [];
 
-  const dataStartIndex = monthly.findIndex((row) => hasLoadedFinancialData(row as unknown as Record<string, unknown>));
-  if (dataStartIndex < 0) return [];
-
-  return monthly.map((m, index) => {
-    const monthValue = (m as any).monthDate || m.month;
-    const month = formatMonth(monthValue);
-    const hasData = index >= dataStartIndex && hasLoadedFinancialData(m as unknown as Record<string, unknown>);
-    const previousMonth = index > dataStartIndex ? monthly[index - 1] : null;
-    const hasPreviousMonthData = previousMonth
-      ? hasLoadedFinancialData(previousMonth as unknown as Record<string, unknown>)
-      : false;
-
-    if (!hasData) {
+  const populatedMonths = monthly
+    .map((row) => {
+      const monthValue = (row as any).monthDate || row.month;
+      const formattedMonth = formatMonth(monthValue);
       return {
-        month,
-        monthDate: (m as any).monthDate,
-        currentRatio: null,
-        quickRatio: null,
-        workingCapital: null,
-        invTurnover: null,
-        arTurnover: null,
-        apTurnover: null,
-        daysInv: null,
-        daysAR: null,
-        daysAP: null,
-        salesWC: null,
-        interestCov: null,
-        debtSvcCov: null,
-        cfToDebt: null,
-        debtToNW: null,
-        fixedToNW: null,
-        leverage: null,
-        totalAssetTO: null,
-        roe: null,
-        roa: null,
-        ebitdaMargin: null,
-        ebitMargin: null,
+        row,
+        month: formattedMonth,
+        monthDate: (row as any).monthDate,
       };
-    }
+    })
+    .filter((entry) =>
+      entry.month &&
+      hasLoadedFinancialData(entry.row as unknown as Record<string, unknown>)
+    )
+    .slice(-MAX_RATIO_MONTHS);
+
+  if (populatedMonths.length === 0) return [];
+
+  return populatedMonths.map((entry, index) => {
+    const m = entry.row;
+    const month = entry.month;
+    const previousMonth = index > 0 ? populatedMonths[index - 1].row : null;
+    const hasPreviousMonthData = !!previousMonth;
 
     const revenue = toNumber((m as any).revenue);
     const cogs = toNumber((m as any).cogsTotal);
@@ -191,7 +178,7 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
 
     return {
       month,
-      monthDate: (m as any).monthDate,
+      monthDate: entry.monthDate,
       currentRatio,
       quickRatio,
       workingCapital,
