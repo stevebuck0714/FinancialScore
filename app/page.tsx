@@ -2103,7 +2103,7 @@ function FinancialScorePage() {
             // Convert monthlyData to the format expected by the app
             const convertedMonthly = latestRecord.monthlyData.map((m: any) => ({
               date: new Date(m.monthDate),
-              month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
+              month: normalizeMonthLabel(m.monthDate, m.month),
               revenue: m.revenue || 0,
               expense: m.expense || 0,
               cogsPayroll: m.cogsPayroll || 0,
@@ -2193,7 +2193,7 @@ function FinancialScorePage() {
               console.log(`?? Loading processed Trial Balance data: ${latestRecord.monthlyData.length} months`);
               const convertedMonthly = latestRecord.monthlyData.map((m: any) => ({
                 date: new Date(m.monthDate),
-                month: new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
+                month: normalizeMonthLabel(m.monthDate, m.month),
                 revenue: m.revenue || 0,
                 revenueBreakdown: m.revenueBreakdown || null,
                 expense: m.expense || 0,
@@ -2597,7 +2597,7 @@ function FinancialScorePage() {
           const formattedData = monthlyData.map((m: any) => ({
             ...m,
             date: new Date(m.monthDate),
-            month: m.month || new Date(m.monthDate).toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' }),
+            month: normalizeMonthLabel(m.monthDate, m.month),
             revenue: m.revenue || 0,
             expense: m.expense || 0,
             // COGS Breakdown - map QB aggregated data to detailed fields for Data Review compatibility
@@ -5277,6 +5277,46 @@ function FinancialScorePage() {
   const assetDevScore = clamp(adsBase + adsAdj, 10, 100);
   const finalScore = (profitabilityScore + assetDevScore) / 2;
 
+  const normalizeMonthLabel = (primaryMonthValue: unknown, fallbackMonthValue?: unknown): string => {
+    const formatDate = (value: unknown): string | null => {
+      if (!value) return null;
+      const date = value instanceof Date ? value : new Date(value as string);
+      if (Number.isNaN(date.getTime())) return null;
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      if (year < 2000 || year > 2100 || month < 1 || month > 12) return null;
+      return `${String(month).padStart(2, '0')}-${year}`;
+    };
+
+    const normalizedPrimary = formatDate(primaryMonthValue);
+    if (normalizedPrimary) return normalizedPrimary;
+
+    if (typeof fallbackMonthValue === 'string') {
+      const trimmed = fallbackMonthValue.trim();
+      if (!trimmed) return '';
+
+      const mmYYYY = trimmed.match(/^(\d{1,2})[-/](\d{4})$/);
+      if (mmYYYY) {
+        const month = Number(mmYYYY[1]);
+        const year = Number(mmYYYY[2]);
+        if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
+          return `${String(month).padStart(2, '0')}-${year}`;
+        }
+      }
+
+      const yyyyMM = trimmed.match(/^(\d{4})-(\d{1,2})$/);
+      if (yyyyMM) {
+        const year = Number(yyyyMM[1]);
+        const month = Number(yyyyMM[2]);
+        if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
+          return `${String(month).padStart(2, '0')}-${year}`;
+        }
+      }
+    }
+
+    return '';
+  };
+
   // Trend data
   const trendData = useMemo(() => {
     if (monthly.length < 13) return [];
@@ -5430,7 +5470,7 @@ function FinancialScorePage() {
       const ebitdaMargin = (cur.revenue || 0) > 0 ? currentMonthEBITDA / cur.revenue : 0;
       
       trends.push({
-        month: cur.month,
+        month: normalizeMonthLabel((cur as any).monthDate, cur.month),
         rgs: bRGS,
         rgsAdj: aRGS,
         expenseAdj: eAdj,

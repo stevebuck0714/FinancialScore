@@ -27,6 +27,46 @@ export default function TrendAnalysisView({
   setSelectedItemTrends
 }: TrendAnalysisViewProps) {
   const [trendAnalysisTab, setTrendAnalysisTab] = useState<'item-trends' | 'expense-analysis'>('item-trends');
+  const normalizeMonthLabel = (primaryMonthValue: unknown, fallbackMonthValue?: unknown): string => {
+    const formatDate = (value: unknown): string | null => {
+      if (!value) return null;
+      const date = value instanceof Date ? value : new Date(value as string);
+      if (Number.isNaN(date.getTime())) return null;
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      if (year < 2000 || year > 2100 || month < 1 || month > 12) return null;
+      return `${String(month).padStart(2, '0')}-${year}`;
+    };
+
+    const normalizedPrimary = formatDate(primaryMonthValue);
+    if (normalizedPrimary) return normalizedPrimary;
+
+    if (typeof fallbackMonthValue === 'string') {
+      const trimmed = fallbackMonthValue.trim();
+      if (!trimmed) return '';
+
+      const mmYYYY = trimmed.match(/^(\d{1,2})[-/](\d{4})$/);
+      if (mmYYYY) {
+        const month = Number(mmYYYY[1]);
+        const year = Number(mmYYYY[2]);
+        if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
+          return `${String(month).padStart(2, '0')}-${year}`;
+        }
+      }
+
+      const yyyyMM = trimmed.match(/^(\d{4})-(\d{1,2})$/);
+      if (yyyyMM) {
+        const year = Number(yyyyMM[1]);
+        const month = Number(yyyyMM[2]);
+        if (month >= 1 && month <= 12 && year >= 2000 && year <= 2100) {
+          return `${String(month).padStart(2, '0')}-${year}`;
+        }
+      }
+    }
+
+    return '';
+  };
+
   const toNumber = (value: unknown): number => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -244,10 +284,12 @@ export default function TrendAnalysisView({
                 <LineChart
                   key={metric}
                   title={metric}
-                  data={monthly.map(m => ({
-                    month: m.month,
-                    value: dataStartIndex >= 0 && hasLoadedFinancialData(m) ? getMetricData(m) : null
-                  }))}
+                  data={monthly
+                    .map(m => ({
+                      month: normalizeMonthLabel((m as any).monthDate || (m as any).date, m.month),
+                      value: dataStartIndex >= 0 && hasLoadedFinancialData(m) ? getMetricData(m) : null
+                    }))
+                    .filter((point) => point.month)}
                   color={color}
                   compact
                   showTable={true}
@@ -305,15 +347,17 @@ export default function TrendAnalysisView({
                   <LineChart
                     key={category.key}
                     title={`${category.label} (% of Revenue)`}
-                    data={monthly.map(m => ({
-                      month: m.month,
-                      value: dataStartIndex >= 0 && hasLoadedFinancialData(m) && toNumber(m.revenue) > 0
-                        ? ((category.key === 'total-operating-expenses-pct'
-                            ? getOperatingExpenseTotal(m)
-                            : toNumber((m as any)[category.key])
-                          ) / toNumber(m.revenue)) * 100
-                        : null
-                    }))}
+                    data={monthly
+                      .map(m => ({
+                        month: normalizeMonthLabel((m as any).monthDate || (m as any).date, m.month),
+                        value: dataStartIndex >= 0 && hasLoadedFinancialData(m) && toNumber(m.revenue) > 0
+                          ? ((category.key === 'total-operating-expenses-pct'
+                              ? getOperatingExpenseTotal(m)
+                              : toNumber((m as any)[category.key])
+                            ) / toNumber(m.revenue)) * 100
+                          : null
+                      }))
+                      .filter((point) => point.month)}
                     color={color}
                     compact
                     showTable={true}
