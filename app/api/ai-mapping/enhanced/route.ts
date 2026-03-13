@@ -119,29 +119,32 @@ const accountCodeRanges = [
 
 function extractNumericCode(accountCode: string): number | null {
   if (!accountCode) return null;
-  
-  // Handle formats like "1-1005", "1005", "1-1005 JBP", etc.
-  // Extract the main account number (ignore prefix like "1-" or "2-")
-  const match = accountCode.match(/(\d+)-?(\d+)/);
-  if (match) {
-    // If format is "1-1005", use the second part "1005"
-    // If format is just "1005", use that
-    const num = match[2] ? parseInt(match[2]) : parseInt(match[1]);
+
+  const raw = String(accountCode).trim();
+
+  // Handle formats like "1-1005" -> use the account code part to the right.
+  const dashedMatch = raw.match(/^\D*(\d+)\s*-\s*(\d+)\D*$/);
+  if (dashedMatch) {
+    const right = parseInt(dashedMatch[2], 10);
+    return isNaN(right) ? null : right;
+  }
+
+  // Handle plain numeric formats like "50700", "53000", "1005".
+  const simpleMatch = raw.match(/(\d+)/);
+  if (simpleMatch) {
+    const num = parseInt(simpleMatch[1], 10);
     return isNaN(num) ? null : num;
   }
-  
-  // Try simple numeric extraction
-  const simpleMatch = accountCode.match(/(\d+)/);
-  if (simpleMatch) {
-    return parseInt(simpleMatch[1]);
-  }
-  
+
   return null;
 }
 
 function mapAccountByCode(accountCode: string): { targetField: string; confidence: string; reasoning: string } | null {
-  const numericCode = extractNumericCode(accountCode);
-  if (numericCode === null) return null;
+  const parsedCode = extractNumericCode(accountCode);
+  if (parsedCode === null) return null;
+
+  // Normalize 5+ digit account codes (e.g., 50700 -> 5070) to align with ranges.
+  const numericCode = parsedCode >= 10000 ? Math.floor(parsedCode / 10) : parsedCode;
   
   for (const range of accountCodeRanges) {
     if (numericCode >= range.start && numericCode <= range.end) {
@@ -154,6 +157,34 @@ function mapAccountByCode(accountCode: string): { targetField: string; confidenc
   }
   
   return null;
+}
+
+function isCogsType(value: string): boolean {
+  const normalized = (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return normalized.includes('costofgoods') || normalized.includes('costofsales') || normalized === 'cogs';
+}
+
+function isOperatingExpenseTarget(field: string): boolean {
+  return [
+    'payroll',
+    'ownerBasePay',
+    'benefits',
+    'insurance',
+    'professionalFees',
+    'subcontractors',
+    'rent',
+    'taxLicense',
+    'phoneComm',
+    'infrastructure',
+    'autoTravel',
+    'salesExpense',
+    'trainingCert',
+    'mealsEntertainment',
+    'interestExpense',
+    'depreciationAmortization',
+    'otherExpense',
+    'expense',
+  ].includes(field);
 }
 
 function mapAccountToFieldKeyword(accountName: string): { targetField: string; confidence: string; reasoning: string } | null {
@@ -220,6 +251,7 @@ export async function POST(request: NextRequest) {
       const classification = typeof account === 'string' ? '' : (account.classification || '');
       const accountCode = typeof account === 'string' ? '' : (account.accountCode || '');
       const accountType = typeof account === 'string' ? '' : (account.accountType || '');
+      const isCogsClass = isCogsType(classification) || isCogsType(accountType);
 
       let bestMapping = null;
       let bestConfidence = 0;
@@ -266,6 +298,16 @@ export async function POST(request: NextRequest) {
       }
 
       if (bestMapping && bestMapping.targetField) {
+        // Guardrail: explicitly COGS-classified accounts should never be forced into OpEx targets.
+        if (isCogsClass && isOperatingExpenseTarget(bestMapping.targetField)) {
+          bestMapping = {
+            targetField: 'cogsOther',
+            confidence: 'high',
+            reasoning: `Forced to COGS because account classification is ${classification || accountType || 'CostOfGoodsSold'}`,
+          };
+          source = source === 'none' ? 'keyword' : source;
+        }
+
         mappings.push({
           qbAccount: accountName,
           qbAccountClassification: classification,

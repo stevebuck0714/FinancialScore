@@ -89,6 +89,42 @@ const ACCOUNT_TYPE_ALIASES: { [key: string]: string } = {
   equity: 'Equity',
 };
 
+// Some exports collapse labels (e.g., "Costofgoodssold", "Accountsreceivable").
+// Normalize those compact variants explicitly.
+const ACCOUNT_TYPE_ALIASES_COMPACT: { [key: string]: string } = {
+  income: 'Income',
+  revenue: 'Income',
+  sales: 'Income',
+  incomestatement: 'Income',
+  otherincome: 'Income',
+
+  cogs: 'CostOfGoodsSold',
+  costofgoodssold: 'CostOfGoodsSold',
+  costofsales: 'CostOfGoodsSold',
+
+  expense: 'Expense',
+  expenses: 'Expense',
+  operatingexpense: 'Expense',
+  operatingexpenses: 'Expense',
+  otherexpense: 'Expense',
+
+  bank: 'Bank',
+  cash: 'Bank',
+  accountsreceivable: 'AccountsReceivable',
+  othercurrentasset: 'OtherCurrentAsset',
+  fixedasset: 'FixedAsset',
+  otherasset: 'OtherAsset',
+
+  accountspayable: 'AccountsPayable',
+  creditcard: 'CreditCard',
+  othercurrentliability: 'OtherCurrentLiability',
+  longtermliability: 'LongTermLiability',
+  liability: 'OtherCurrentLiability',
+  liabilities: 'OtherCurrentLiability',
+
+  equity: 'Equity',
+};
+
 // Map account types to target field categories for auto-mapping
 export const ACCOUNT_TYPE_TO_TARGET_FIELD: { [key: string]: string } = {
   'Bank': 'cash',
@@ -117,10 +153,20 @@ function normalizeAccountType(rawType: string | undefined, description: string):
   if (ACCOUNT_TYPE_ALIASES[normalizedKey]) {
     return ACCOUNT_TYPE_ALIASES[normalizedKey];
   }
+  const compactKey = normalizedKey.replace(/[^a-z0-9]/g, '');
+  if (ACCOUNT_TYPE_ALIASES_COMPACT[compactKey]) {
+    return ACCOUNT_TYPE_ALIASES_COMPACT[compactKey];
+  }
 
   // Heuristic fallback if CSV type is a verbose label.
   if (normalizedKey.includes('income') || normalizedKey.includes('revenue') || normalizedKey.includes('sales')) return 'Income';
-  if (normalizedKey.includes('cost of goods') || normalizedKey === 'cogs' || normalizedKey.includes('cost of sales')) return 'CostOfGoodsSold';
+  if (
+    normalizedKey.includes('cost of goods') ||
+    normalizedKey === 'cogs' ||
+    normalizedKey.includes('cost of sales') ||
+    compactKey.includes('costofgoods') ||
+    compactKey === 'cogs'
+  ) return 'CostOfGoodsSold';
   if (normalizedKey.includes('expense')) return 'Expense';
   if (normalizedKey.includes('asset')) return 'OtherAsset';
   if (normalizedKey.includes('liabil')) return 'OtherCurrentLiability';
