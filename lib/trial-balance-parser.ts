@@ -227,6 +227,13 @@ function shouldSkipAccountRow(acctType: string, acctId: string, description: str
   return false;
 }
 
+function isLikelyNumericText(value: string | undefined): boolean {
+  const v = (value || '').trim();
+  if (!v) return false;
+  const cleaned = v.replace(/[$,\s]/g, '');
+  return /^-?\(?\d+(\.\d+)?\)?$/.test(cleaned);
+}
+
 /**
  * Parse a number from a CSV value (handles commas, quotes, negative numbers, accounting parentheses)
  */
@@ -276,6 +283,14 @@ function parseColumnDate(header: string): Date | null {
     const [, month, day, year] = mdyMatch;
     return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
   }
+
+  // Try MM/DD/YY format
+  const mdyShortMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (mdyShortMatch) {
+    const [, month, day, year2] = mdyShortMatch;
+    const year = parseInt(year2) + (parseInt(year2) >= 70 ? 1900 : 2000);
+    return new Date(year, parseInt(month) - 1, parseInt(day));
+  }
   
   // Try YYYY-MM-DD format
   const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -293,6 +308,19 @@ function parseColumnDate(header: string): Date | null {
       return new Date(parseInt(year), monthIndex, 1);
     }
   }
+
+  // Try "Mon-YY" / "Mon YYYY" / "Mon-YYYY" variants
+  const monthDashYearMatch = trimmed.match(/^([A-Za-z]{3,9})[-\s](\d{2}|\d{4})$/);
+  if (monthDashYearMatch) {
+    const [, monthName, yearToken] = monthDashYearMatch;
+    const year = yearToken.length === 2
+      ? parseInt(yearToken) + (parseInt(yearToken) >= 70 ? 1900 : 2000)
+      : parseInt(yearToken);
+    const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
+    if (!isNaN(monthIndex)) {
+      return new Date(year, monthIndex, 1);
+    }
+  }
   
   return null;
 }
@@ -307,8 +335,14 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
     throw new Error('CSV file must have at least a header row and one data row');
   }
   
-  // Parse header row
-  const headerLine = lines[0];
+  // Find the real header row (some exports include title rows above headers).
+  const detectedHeaderIndex = lines.findIndex((line) => {
+    const cols = parseCSVLine(line);
+    const dateLikeCount = cols.filter((c) => parseColumnDate((c || '').trim()) !== null).length;
+    return cols.length >= 3 && dateLikeCount >= 1;
+  });
+  const headerIndex = detectedHeaderIndex >= 0 ? detectedHeaderIndex : 0;
+  const headerLine = lines[headerIndex];
   const headers = parseCSVLine(headerLine);
 
   const normalizeHeader = (header: string) =>
@@ -353,14 +387,18 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
   }
 
   const dates = dateColumnIndexes.map((idx) => headers[idx].trim());
-  const isStructuredTrialBalance = acctTypeIndex !== -1 && descriptionIndex !== -1;
+  const nonDateColumnIndexes = headers.map((_, idx) => idx).filter((idx) => !dateColumnIndexes.includes(idx));
+  const fallbackDescriptionIndex = descriptionIndex !== -1
+    ? descriptionIndex
+    : (nonDateColumnIndexes.find((idx) => idx !== acctTypeIndex && idx !== acctIdIndex) ?? nonDateColumnIndexes[0] ?? 0);
+  const isStructuredTrialBalance = acctTypeIndex !== -1;
   
   const accounts: TrialBalanceAccount[] = [];
   const accountsByType: { [type: string]: TrialBalanceAccount[] } = {};
   let currentSectionType = '';
   
   // Parse data rows
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIndex + 1; i < lines.length; i++) {
     const line = lines[i];
     const values = parseCSVLine(line);
 
@@ -371,7 +409,14 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
     if (isStructuredTrialBalance) {
       rawAcctType = values[acctTypeIndex]?.trim() || '';
       acctId = acctIdIndex >= 0 ? (values[acctIdIndex]?.trim() || '') : '';
-      description = values[descriptionIndex]?.trim() || '';
+      description = values[fallbackDescriptionIndex]?.trim() || '';
+      if (!description || isLikelyNumericText(description)) {
+        const candidateDescription = nonDateColumnIndexes
+          .filter((idx) => idx !== acctTypeIndex && idx !== acctIdIndex)
+          .map((idx) => values[idx]?.trim() || '')
+          .find((val) => val && !isLikelyNumericText(val));
+        description = candidateDescription || '';
+      }
     } else {
       // Alternate layout support:
       // First column contains section headers (Income/Expenses/...) and account names.
@@ -595,6 +640,8 @@ export function processTrialBalanceToMonthly(
       totalEquity: 0,
       totalLAndE: 0,
     };
+    const sectorRevenueBreakdown: Record<string, number> = {};
+    const sectorCogsBreakdown: Record<string, number> = {};
     
     // Build account values for LOB allocation processing
     const accountValues: Array<{ accountName: string; accountId: string; value: number }> = [];
@@ -614,12 +661,18 @@ export function processTrialBalanceToMonthly(
       const value = account.values[dateStr] || 0;
 
       if (mapping && mapping.targetField && value !== 0) {
-        // Add to the target field
+        // Add to mapped target field. Sector-specific rev_/cogs_ mappings roll up to report totals.
         if (monthlyRecord[mapping.targetField] !== undefined) {
           monthlyRecord[mapping.targetField] += value;
           if (mapping.targetField === 'additionalPaidInCapital') {
             console.log(`💰 Added ${value} to additionalPaidInCapital for ${dateStr}`);
           }
+        } else if (mapping.targetField.startsWith('rev_')) {
+          monthlyRecord.revenue += value;
+          sectorRevenueBreakdown[mapping.targetField] = (sectorRevenueBreakdown[mapping.targetField] || 0) + value;
+        } else if (mapping.targetField.startsWith('cogs_')) {
+          monthlyRecord.cogsTotal += value;
+          sectorCogsBreakdown[mapping.targetField] = (sectorCogsBreakdown[mapping.targetField] || 0) + value;
         }
 
         // Collect account value for LOB allocation
@@ -680,6 +733,18 @@ export function processTrialBalanceToMonthly(
       monthlyRecord.revenueBreakdown = lobData.revenueBreakdown || null;
       monthlyRecord.expenseBreakdown = lobData.expenseBreakdown || null;
       monthlyRecord.cogsBreakdown = lobData.cogsBreakdown || null;
+    }
+    if (Object.keys(sectorRevenueBreakdown).length > 0) {
+      monthlyRecord.revenueBreakdown = {
+        ...(monthlyRecord.revenueBreakdown || {}),
+        ...sectorRevenueBreakdown,
+      };
+    }
+    if (Object.keys(sectorCogsBreakdown).length > 0) {
+      monthlyRecord.cogsBreakdown = {
+        ...(monthlyRecord.cogsBreakdown || {}),
+        ...sectorCogsBreakdown,
+      };
     }
     
     monthlyRecords.push(monthlyRecord);
@@ -809,6 +874,10 @@ export function processTrialBalanceToDailySnapshotsAndLines(
 
       if (dailyRecord[targetField] !== undefined) {
         dailyRecord[targetField] += value;
+      } else if (targetField.startsWith('rev_')) {
+        dailyRecord.revenue += value;
+      } else if (targetField.startsWith('cogs_')) {
+        dailyRecord.cogsTotal += value;
       }
 
       mappedLines.push({

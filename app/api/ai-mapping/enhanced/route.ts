@@ -142,14 +142,32 @@ function extractNumericCode(accountCode: string): number | null {
 function mapAccountByCode(accountCode: string): { targetField: string; confidence: string; reasoning: string } | null {
   const numericCode = extractNumericCode(accountCode);
   if (numericCode === null) return null;
-  
-  for (const range of accountCodeRanges) {
-    if (numericCode >= range.start && numericCode <= range.end) {
-      return {
-        targetField: range.targetField,
-        confidence: range.confidence,
-        reasoning: `Account code ${accountCode} (${numericCode}) falls in ${range.category} range (${range.start}-${range.end})`
-      };
+
+  // Some COAs export 4-digit families as 5-digit values ending in zero
+  // (e.g., 45000 instead of 4500, 50700 instead of 5070).
+  const normalizedCandidates = new Set<number>([numericCode]);
+  if (numericCode >= 10000 && numericCode % 10 === 0) {
+    normalizedCandidates.add(Math.floor(numericCode / 10));
+  }
+  if (numericCode >= 10000) {
+    const firstFourDigits = parseInt(String(numericCode).slice(0, 4), 10);
+    if (!isNaN(firstFourDigits)) {
+      normalizedCandidates.add(firstFourDigits);
+    }
+  }
+
+  for (const candidateCode of normalizedCandidates) {
+    for (const range of accountCodeRanges) {
+      if (candidateCode >= range.start && candidateCode <= range.end) {
+        const usedNormalization = candidateCode !== numericCode;
+        return {
+          targetField: range.targetField,
+          confidence: range.confidence,
+          reasoning: usedNormalization
+            ? `Account code ${accountCode} normalized to ${candidateCode} for ${range.category} range (${range.start}-${range.end})`
+            : `Account code ${accountCode} (${candidateCode}) falls in ${range.category} range (${range.start}-${range.end})`
+        };
+      }
     }
   }
   

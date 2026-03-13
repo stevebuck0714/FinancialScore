@@ -879,6 +879,8 @@ function FinancialScorePage() {
   const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
   const [sdeManualInputs, setSdeManualInputs] = useState<{
+    ownerSalary?: number;
+    ownersDraw?: number;
     ownerCompOther?: number;
     personalTravel?: number;
     familyPayroll?: number;
@@ -929,6 +931,7 @@ function FinancialScorePage() {
 
     console.log('? File:', file.name, 'Size:', file.size, 'Company:', selectedCompanyId);
     console.log('?? Current User:', currentUser?.email || 'NOT SET');
+    setError(null);
 
     try {
       const fileName = (file.name || '').toLowerCase();
@@ -953,6 +956,9 @@ function FinancialScorePage() {
 
       console.log('?? Parsing Trial Balance CSV...');
       const parsed = parseTrialBalanceCSV(text, selectedCompanyId);
+      if (!parsed.accounts || parsed.accounts.length === 0) {
+        throw new Error('No account rows were detected. Verify the header/date row and that account names are in a text column.');
+      }
       console.log('? Parsed successfully:', parsed);
 
       const csvData = {
@@ -963,6 +969,7 @@ function FinancialScorePage() {
 
       console.log('?? Setting csvTrialBalanceData state...');
       setCsvTrialBalanceData(csvData);
+      setMappingSourceSummary(null);
 
       console.log('?? Saving to localStorage...');
       localStorage.setItem(`csvTrialBalance_${selectedCompanyId}`, JSON.stringify(csvData));
@@ -1033,7 +1040,7 @@ function FinancialScorePage() {
   const [aiMappings, setAiMappings] = useState<any[]>([]);
   const [isGeneratingMappings, setIsGeneratingMappings] = useState(false);
   const [isSavingMappings, setIsSavingMappings] = useState(false);
-  const [showOnlyActionableMappings, setShowOnlyActionableMappings] = useState(true);
+  const [showOnlyActionableMappings, setShowOnlyActionableMappings] = useState(false);
   const [mappingSourceSummary, setMappingSourceSummary] = useState<{
     total: number;
     new: number;
@@ -8979,6 +8986,11 @@ function FinancialScorePage() {
                           cursor: 'pointer'
                         }}
                       />
+                      {error && error.includes('Trial Balance') && (
+                        <div style={{ marginTop: '10px', padding: '10px', borderRadius: '8px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12px' }}>
+                          {error}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -9145,6 +9157,7 @@ function FinancialScorePage() {
 
                             const data = await response.json();
                             setAiMappings(data.mappings || []);
+                            setMappingSourceSummary(null);
                             setShowMappingSection(true);
                           } catch (error: any) {
                             console.error('Error generating mappings:', error);
@@ -9252,6 +9265,7 @@ function FinancialScorePage() {
 
                             const data = await response.json();
                             setAiMappings(data.mappings || []);
+                            setMappingSourceSummary(null);
                             setShowMappingSection(true);
                           } catch (error: any) {
                             console.error('Error generating mappings:', error);
@@ -10333,9 +10347,13 @@ function FinancialScorePage() {
 
                     const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
                     const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
+                    const effectiveOwnerSalaryAdj =
+                      ownerSalaryAdj > 0 ? ownerSalaryAdj : Math.abs(sdeManualInputs.ownerSalary ?? 0);
+                    const effectiveOwnersDrawAdj =
+                      ownersDrawAdj > 0 ? ownersDrawAdj : Math.abs(sdeManualInputs.ownersDraw ?? 0);
                     const effectiveMarketReplacementSalary = Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
                     const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
-                    const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
+                    const coreSellerAdjustment = effectiveOwnerSalaryAdj + effectiveOwnersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
 
                     const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
                     const majorRepairs = sumTtmByKeywords(['majorrepair', 'majorrepairs'], ['expense']);
@@ -10399,8 +10417,8 @@ function FinancialScorePage() {
                       ttmDepreciationOnly,
                       ttmAmortizationOnly,
                       ttmEbitdaAnalysis,
-                      ownerSalaryAdj,
-                      ownersDrawAdj,
+                      ownerSalaryAdj: effectiveOwnerSalaryAdj,
+                      ownersDrawAdj: effectiveOwnersDrawAdj,
                       marketReplacementSalary: effectiveMarketReplacementSalary,
                       coreSellerAdjustment,
                       personalDiscretionaryAdj,
@@ -10575,11 +10593,15 @@ function FinancialScorePage() {
 
             const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
             const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
+            const effectiveOwnerSalaryAdj =
+              ownerSalaryAdj > 0 ? ownerSalaryAdj : Math.abs(sdeManualInputs.ownerSalary ?? 0);
+            const effectiveOwnersDrawAdj =
+              ownersDrawAdj > 0 ? ownersDrawAdj : Math.abs(sdeManualInputs.ownersDraw ?? 0);
             const marketReplacementSalaryAdj = 0;
             const effectiveMarketReplacementSalary =
               Math.abs(sdeManualInputs.marketReplacementSalary ?? marketReplacementSalaryAdj);
             const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
-            const coreSellerAdjustment = ownerSalaryAdj + ownersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
+            const coreSellerAdjustment = effectiveOwnerSalaryAdj + effectiveOwnersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
 
             const legalSettlements = sumTtmByKeywords(['legalsettlement', 'settlement'], ['expense']);
             const majorRepairs = sumTtmByKeywords(['majorrepair', 'majorrepairs'], ['expense']);
@@ -10813,13 +10835,63 @@ function FinancialScorePage() {
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>1. Owner Compensation Adjustment</div>
                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Replace owner pay with market salary.</div>
                       {[
-                        ['Owner salary', formatDollars(ownerSalaryAdj), 'readonly'],
-                        ['Owners Draw', formatDollars(ownersDrawAdj), 'readonly'],
+                        ['Owner salary', ownerSalaryAdj > 0 ? formatDollars(effectiveOwnerSalaryAdj) : (sdeManualInputs.ownerSalary ?? 0), ownerSalaryAdj > 0 ? 'readonly' : 'ownerSalaryInput'],
+                        ['Owners Draw', ownersDrawAdj > 0 ? formatDollars(effectiveOwnersDrawAdj) : (sdeManualInputs.ownersDraw ?? 0), ownersDrawAdj > 0 ? 'readonly' : 'ownersDrawInput'],
                         ['Market replacement salary', effectiveMarketReplacementSalary, 'input'],
                         ['Other', effectiveOwnerCompOther, 'ownerCompOther'],
                         ['Adjustment', formatDollars(coreSellerAdjustment), 'readonly-adjustment'],
                       ].map(([label, value, rowType]) => {
                         const isAdjustmentRow = label.toLowerCase().includes('adjustment');
+                        if (rowType === 'ownerSalaryInput') {
+                          return (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                              <span>{label}</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatInputDollars(Number(value) || 0)}
+                                onChange={(e) => {
+                                  const parsed = parseInputDollars(e.target.value);
+                                  setSdeManualInputs((prev) => ({ ...prev, ownerSalary: Math.abs(parsed) }));
+                                }}
+                                style={{
+                                  width: '130px',
+                                  textAlign: 'right',
+                                  padding: '3px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: 600
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+                        if (rowType === 'ownersDrawInput') {
+                          return (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                              <span>{label}</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={formatInputDollars(Number(value) || 0)}
+                                onChange={(e) => {
+                                  const parsed = parseInputDollars(e.target.value);
+                                  setSdeManualInputs((prev) => ({ ...prev, ownersDraw: Math.abs(parsed) }));
+                                }}
+                                style={{
+                                  width: '130px',
+                                  textAlign: 'right',
+                                  padding: '3px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: 600
+                                }}
+                              />
+                            </div>
+                          );
+                        }
                         if (rowType === 'input') {
                           return (
                             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>

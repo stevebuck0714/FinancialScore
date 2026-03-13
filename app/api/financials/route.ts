@@ -183,8 +183,8 @@ export async function POST(request: NextRequest) {
             otherAssets: month.otherAssets || 0,
             totalAssets: month.totalAssets || 0,
             ap: month.ap || 0,
-            loc: month.loc || 0,
-            otherCL: month.otherCL || 0,
+            // Preserve line-of-credit values even when this runtime client does not expose a dedicated `loc` create field.
+            otherCL: (month.otherCL || 0) + (month.loc || 0),
             tcl: month.tcl || 0,
             ltd: month.ltd || 0,
             totalLiab: month.totalLiab || 0,

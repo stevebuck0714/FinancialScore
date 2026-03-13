@@ -57,6 +57,7 @@ export default function AccountMappingTable({
   const normalizeClassification = (value?: string): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' => {
     const normalized = (value || '').trim().toLowerCase();
     if (!normalized) return 'other';
+    const compact = normalized.replace(/[\s_-]+/g, '');
     if (normalized === 'revenue' || normalized === 'income' || normalized.includes('revenue') || normalized.includes('income')) {
       return 'revenue';
     }
@@ -68,6 +69,40 @@ export default function AccountMappingTable({
       normalized.includes('cogs')
     ) {
       return 'cogs';
+    }
+    if (
+      normalized === 'bank' ||
+      normalized === 'accountsreceivable' ||
+      normalized === 'accounts receivable' ||
+      normalized === 'othercurrentasset' ||
+      normalized === 'other current asset' ||
+      normalized === 'fixedasset' ||
+      normalized === 'fixed asset' ||
+      normalized === 'otherasset' ||
+      normalized === 'other asset' ||
+      compact === 'bank' ||
+      compact === 'accountsreceivable' ||
+      compact === 'othercurrentasset' ||
+      compact === 'fixedasset' ||
+      compact === 'otherasset'
+    ) {
+      return 'asset';
+    }
+    if (
+      normalized === 'accountspayable' ||
+      normalized === 'accounts payable' ||
+      normalized === 'creditcard' ||
+      normalized === 'credit card' ||
+      normalized === 'othercurrentliability' ||
+      normalized === 'other current liability' ||
+      normalized === 'longtermliability' ||
+      normalized === 'long term liability' ||
+      compact === 'accountspayable' ||
+      compact === 'creditcard' ||
+      compact === 'othercurrentliability' ||
+      compact === 'longtermliability'
+    ) {
+      return 'liability';
     }
     if (normalized === 'expense' || normalized.includes('expense')) return 'expense';
     if (normalized === 'asset' || normalized.includes('asset')) return 'asset';
