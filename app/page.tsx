@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
+import { useState, useMemo, useEffect, useCallback, ChangeEvent, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, ArrowLeft, CreditCard, MapPin, Lock } from 'lucide-react';
@@ -53,7 +53,9 @@ const MAYourResultsView = dynamic(() => import('./components/assessment/MAYourRe
 const TextToSpeech = dynamic(() => import('./components/common/TextToSpeech'), { ssr: false });
 import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonthly, processTrialBalanceToDailySnapshotsAndLines, ACCOUNT_TYPE_CLASSIFICATIONS, type ParsedTrialBalance } from '@/lib/trial-balance-parser';
 import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
+import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
+import type { SdeExecutiveFinancialSummary, SdeExecutiveSummary, SdeRecommendation } from '@/lib/sde-recommendations';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
 const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false });
@@ -878,6 +880,46 @@ function FinancialScorePage() {
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
   const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
+  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'recommendations'>('ebitda-adjustments');
+  const [revenueQualityCardInfoOpen, setRevenueQualityCardInfoOpen] = useState<Record<'topBucket' | 'cashGap' | 'dsoTrend' | 'arSpread', boolean>>({
+    topBucket: false,
+    cashGap: false,
+    dsoTrend: false,
+    arSpread: false
+  });
+  const [revenueQualityFlagGraphOpen, setRevenueQualityFlagGraphOpen] = useState<null | 'top-bucket' | 'dso-spike' | 'ar-vs-revenue' | 'cash-gap' | 'revenue-volatility'>(null);
+  const [customerQualityRecords, setCustomerQualityRecords] = useState<any[]>([]);
+  const [customerQualityLoading, setCustomerQualityLoading] = useState(false);
+  const [customerQualityError, setCustomerQualityError] = useState<string | null>(null);
+  const [customerQualityCardInfoOpen, setCustomerQualityCardInfoOpen] = useState<Record<'top1' | 'top5' | 'hhi' | 'customerCount', boolean>>({
+    top1: false,
+    top5: false,
+    hhi: false,
+    customerCount: false
+  });
+  const [customerQualityFlagGraphOpen, setCustomerQualityFlagGraphOpen] = useState<null | 'top1' | 'top5' | 'hhi' | 'customer-count'>(null);
+  const [workingCapitalCardInfoOpen, setWorkingCapitalCardInfoOpen] = useState<Record<'normalizedTarget' | 'currentWc' | 'wcAdjustment' | 'cccTrend', boolean>>({
+    normalizedTarget: false,
+    currentWc: false,
+    wcAdjustment: false,
+    cccTrend: false
+  });
+  const [workingCapitalFlagGraphOpen, setWorkingCapitalFlagGraphOpen] = useState<null | 'wc-deficit' | 'ccc-deterioration' | 'wc-intensity' | 'ccc-level'>(null);
+  const [workingCapitalCccGuideOpen, setWorkingCapitalCccGuideOpen] = useState(false);
+  const [workingCapitalCashImpactOpen, setWorkingCapitalCashImpactOpen] = useState(false);
+  const [cashFlowQualityCardInfoOpen, setCashFlowQualityCardInfoOpen] = useState<Record<'cashConversion' | 'maintenanceCapex' | 'capexGap' | 'fcfDurability', boolean>>({
+    cashConversion: false,
+    maintenanceCapex: false,
+    capexGap: false,
+    fcfDurability: false
+  });
+  const [cashFlowQualityFlagGraphOpen, setCashFlowQualityFlagGraphOpen] = useState<null | 'cash-conversion-weak' | 'capex-gap' | 'fcf-weakness' | 'ocf-deterioration'>(null);
+  const [sdeExplanationOpen, setSdeExplanationOpen] = useState<string | null>(null);
+  const [sdeExecutiveSummaryApi, setSdeExecutiveSummaryApi] = useState<SdeExecutiveSummary | null>(null);
+  const [sdeExecutiveFinancialSummaryApi, setSdeExecutiveFinancialSummaryApi] = useState<SdeExecutiveFinancialSummary | null>(null);
+  const [sdeRecommendationsApi, setSdeRecommendationsApi] = useState<SdeRecommendation[]>([]);
+  const [sdeRecommendationsLoading, setSdeRecommendationsLoading] = useState(false);
+  const [sdeRecommendationsError, setSdeRecommendationsError] = useState<string | null>(null);
   const [sdeManualInputs, setSdeManualInputs] = useState<{
     ownerSalary?: number;
     ownersDraw?: number;
@@ -914,6 +956,8 @@ function FinancialScorePage() {
   
   // State - QuickBooks Raw Data
   const [qbRawData, setQbRawData] = useState<any>(null);
+  const companyLoadRequestRef = useRef(0);
+  const sdeRecommendationsRequestRef = useRef(0);
   const [dataRefreshKey, setDataRefreshKey] = useState(0);
   
   // State - CSV Trial Balance Data
@@ -1580,6 +1624,103 @@ function FinancialScorePage() {
     }
   }, [selectedCompanyId]);
 
+  // Load SDE executive summary + recommendations from API (strict-mode only)
+  useEffect(() => {
+    if (!selectedCompanyId) {
+      setSdeExecutiveSummaryApi(null);
+      setSdeExecutiveFinancialSummaryApi(null);
+      setSdeRecommendationsApi([]);
+      setSdeRecommendationsError(null);
+      return;
+    }
+
+    const sourceLabel = String(latestFinancialSource || '').toLowerCase();
+    const hasCompanyFinancialData = Array.isArray(loadedMonthlyData) && loadedMonthlyData.length > 0;
+    const isMockSource = sourceLabel.includes('mock');
+    const approvedSources = ['quickbooks', 'quickbooks_desktop', 'xero', 'sage', 'sage_intacct', 'infor', 'infor_m3', 'dynamics', 'dynamics365', 'csv_trial_balance'];
+    const isApprovedSource = approvedSources.some((source) => sourceLabel.includes(source));
+    const isStrictReady = hasCompanyFinancialData && isApprovedSource && !isMockSource;
+
+    if (!isStrictReady) {
+      setSdeExecutiveSummaryApi(null);
+      setSdeExecutiveFinancialSummaryApi(null);
+      setSdeRecommendationsApi([]);
+      setSdeRecommendationsError(null);
+      return;
+    }
+
+    const requestId = Date.now();
+    sdeRecommendationsRequestRef.current = requestId;
+    const isStaleRequest = () => sdeRecommendationsRequestRef.current !== requestId;
+
+    setSdeRecommendationsLoading(true);
+    setSdeRecommendationsError(null);
+
+    fetch(`/api/sde-recommendations?companyId=${selectedCompanyId}`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to load SDE recommendations');
+        }
+        return data;
+      })
+      .then((data) => {
+        if (isStaleRequest()) return;
+        setSdeExecutiveSummaryApi(data.executiveSummary || null);
+        setSdeExecutiveFinancialSummaryApi(data.executiveFinancialSummary || null);
+        setSdeRecommendationsApi(Array.isArray(data.recommendations) ? data.recommendations : []);
+      })
+      .catch((err) => {
+        if (isStaleRequest()) return;
+        setSdeExecutiveSummaryApi(null);
+        setSdeExecutiveFinancialSummaryApi(null);
+        setSdeRecommendationsApi([]);
+        setSdeRecommendationsError(err instanceof Error ? err.message : 'Failed to load SDE recommendations');
+      })
+      .finally(() => {
+        if (isStaleRequest()) return;
+        setSdeRecommendationsLoading(false);
+      });
+  }, [selectedCompanyId, loadedMonthlyData, latestFinancialSource]);
+
+  // Load customer-level operational sales for Customer Quality tab
+  useEffect(() => {
+    if (!selectedCompanyId) {
+      setCustomerQualityRecords([]);
+      setCustomerQualityError(null);
+      setCustomerQualityLoading(false);
+      return;
+    }
+
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 36);
+
+    setCustomerQualityLoading(true);
+    setCustomerQualityError(null);
+
+    fetch(
+      `/api/operational-data?companyId=${selectedCompanyId}&type=customers&frequency=monthly&limit=5000&startDate=${encodeURIComponent(startDate.toISOString())}&endDate=${encodeURIComponent(endDate.toISOString())}`,
+    )
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to load customer quality data');
+        }
+        return data;
+      })
+      .then((data) => {
+        setCustomerQualityRecords(Array.isArray(data?.records) ? data.records : []);
+      })
+      .catch((err) => {
+        setCustomerQualityRecords([]);
+        setCustomerQualityError(err instanceof Error ? err.message : 'Failed to load customer quality data');
+      })
+      .finally(() => {
+        setCustomerQualityLoading(false);
+      });
+  }, [selectedCompanyId]);
+
   // Load dashboard widgets from database (with localStorage fallback) when company changes
   useEffect(() => {
     if (selectedCompanyId) {
@@ -2020,10 +2161,15 @@ function FinancialScorePage() {
       if (typeof window === 'undefined') return;
 
       if (!selectedCompanyId || !currentUser) return;
+      const requestId = Date.now();
+      companyLoadRequestRef.current = requestId;
+      const isStaleRequest = () => companyLoadRequestRef.current !== requestId;
       
       try {
         // ALWAYS clear state at the start to prevent stale data
         console.log('?? Clearing all state before loading new company data');
+        setLoadedMonthlyData([]);
+        setLatestFinancialSource(null);
         setQbRawData(null);
         setRawRows([]);
         setMapping({ date: '' });
@@ -2033,6 +2179,7 @@ function FinancialScorePage() {
         // Load users for this company
         console.log('Loading users for company:', selectedCompanyId);
         const { users: companyUsers } = await usersApi.getByCompany(selectedCompanyId);
+        if (isStaleRequest()) return;
         console.log('Users loaded from API:', companyUsers);
         
         // Normalize role and userType to lowercase
@@ -2056,6 +2203,7 @@ function FinancialScorePage() {
         console.log(`?? LOADING DATA FOR: "${companyName}" (ID: ${selectedCompanyId})`);
         
         const { records } = await financialsApi.getByCompany(selectedCompanyId);
+        if (isStaleRequest()) return;
         console.log(`?? Found ${records.length} financial records for company "${companyName}"`);
         
         // If no records found, clear aiMappings as well
@@ -2066,6 +2214,13 @@ function FinancialScorePage() {
         } else if (records && records.length > 0) {
           const latestRecord = records[0];
           console.log(`?? Latest record ID: ${latestRecord.id}, created: ${latestRecord.createdAt}`);
+          if (latestRecord.companyId !== selectedCompanyId) {
+            console.error(`?? SECURITY BLOCK: latest record company mismatch. Selected: ${selectedCompanyId}, Record company: ${latestRecord.companyId}`);
+            setLoadedMonthlyData([]);
+            setQbRawData(null);
+            setLatestFinancialSource(null);
+            return;
+          }
           // Track data source for UI branching (CSV vs API connections).
           // Prefer explicit columnMapping.source; fallback to heuristics for older records.
           const inferredCsv =
@@ -2169,6 +2324,7 @@ function FinancialScorePage() {
               ...(m.cogsBreakdown && typeof m.cogsBreakdown === 'object' ? m.cogsBreakdown : {}),
               lobBreakdowns: m.lobBreakdowns || null
             }));
+            if (isStaleRequest()) return;
             setLoadedMonthlyData(convertedMonthly);
           } else {
             // CSV/Trial Balance data - check if it has processed monthly data
@@ -2261,6 +2417,7 @@ function FinancialScorePage() {
                 totalLAndE: m.totalLAndE || 0,
                 lobBreakdowns: m.lobBreakdowns || null
               }));
+              if (isStaleRequest()) return;
               setLoadedMonthlyData(convertedMonthly);
               console.log(`? Trial Balance monthly data loaded with ${convertedMonthly.length} months`);
             } else {
@@ -2277,6 +2434,7 @@ function FinancialScorePage() {
         // Load assessment records
         console.log(`?? Loading assessment records for company: ${selectedCompanyId}`);
         const { records: assessments } = await assessmentsApi.getByCompany(selectedCompanyId);
+        if (isStaleRequest()) return;
         console.log(`?? Loaded ${assessments?.length || 0} assessment records:`, assessments);
         setAssessmentRecords(assessments || []);
         console.log(`? Assessment records set in state`);
@@ -6404,6 +6562,8 @@ function FinancialScorePage() {
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
           handleNavigation={handleNavigation}
+          valuationMethodTab={valuationMethodTab}
+          setValuationMethodTab={setValuationMethodTab}
         />
       </div>
 
@@ -10736,6 +10896,9 @@ function FinancialScorePage() {
               return null;
             };
 
+            const sdeSectorCategory = company?.industrySectorCategory || industrySectorCategory || '01';
+            const sdeSectorBenchmarks = getSdeSectorBenchmarks(sdeSectorCategory);
+
             const annualRevenueEbitdaData = (() => {
               const byYear = new Map<number, { revenue: number; ebitda: number }>();
               for (const m of monthly) {
@@ -10762,88 +10925,809 @@ function FinancialScorePage() {
                 .sort((a, b) => a.year - b.year)
                 .slice(-7);
             })();
-            
+
+            const revenueQualitySeries = (() => {
+              const recent = monthly.slice(-36);
+              return recent.map((m, idx) => {
+                const revenue = Number((m as any)?.revenue) || 0;
+                const ar = Number((m as any)?.ar) || 0;
+                const priorAr = idx > 0 ? Number((recent[idx - 1] as any)?.ar) || 0 : ar;
+                const deltaAr = ar - priorAr;
+                const collectionsProxy = revenue - deltaAr;
+                const gapPct = revenue !== 0 ? ((revenue - collectionsProxy) / Math.abs(revenue)) * 100 : 0;
+                const monthDate = (m as any)?.month ? new Date(String((m as any).month)) : null;
+                const daysInMonth =
+                  monthDate && !Number.isNaN(monthDate.getTime())
+                    ? new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate()
+                    : 30;
+                // Align with working-capital financial report logic.
+                const dso = ar > 0 && revenue > 0 ? (ar / revenue) * daysInMonth : 0;
+                return {
+                  month: String((m as any)?.month || ''),
+                  revenue,
+                  ar,
+                  collectionsProxy,
+                  gapPct,
+                  dso
+                };
+              });
+            })();
+
+            const revenueQualityInsights = (() => {
+              const last12 = revenueQualitySeries.slice(-12);
+              const latest = revenueQualitySeries[revenueQualitySeries.length - 1];
+              const month12Ago = revenueQualitySeries.length >= 13 ? revenueQualitySeries[revenueQualitySeries.length - 13] : null;
+              const safeAvg = (values: number[]) => values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+
+              const avgGap12 = safeAvg(last12.map((r) => r.gapPct));
+              const avgDso12 = safeAvg(last12.map((r) => r.dso));
+              const dsoTrend12 = latest && month12Ago ? latest.dso - month12Ago.dso : 0;
+              const currentDso = latest ? latest.dso : 0;
+              const dsoOverBenchmark = currentDso - sdeSectorBenchmarks.dso.max;
+
+              const ttmRevenueCurrent = revenueQualitySeries.slice(-12).reduce((s, r) => s + r.revenue, 0);
+              const ttmRevenuePrior = revenueQualitySeries.slice(-24, -12).reduce((s, r) => s + r.revenue, 0);
+              const ttmArCurrent = latest ? latest.ar : 0;
+              const ttmArPrior = month12Ago ? month12Ago.ar : 0;
+
+              const revenueGrowth = ttmRevenuePrior !== 0 ? ((ttmRevenueCurrent - ttmRevenuePrior) / Math.abs(ttmRevenuePrior)) * 100 : 0;
+              const arGrowth = ttmArPrior !== 0 ? ((ttmArCurrent - ttmArPrior) / Math.abs(ttmArPrior)) * 100 : 0;
+              const arRevenueSpread = arGrowth - revenueGrowth;
+              const dsoBenchmarkTarget = sdeSectorBenchmarks.benchmarkTargets.dso;
+              const dsoCashOpportunity = Math.max(0, currentDso - dsoBenchmarkTarget) * (Math.abs(ttmRevenueCurrent) / 365);
+
+              const breakdownTotals = new Map<string, number>();
+              let breakdownTotal = 0;
+              for (const row of monthly.slice(-12)) {
+                const breakdown = (row as any)?.revenueBreakdown;
+                if (!breakdown || typeof breakdown !== 'object') continue;
+                for (const [key, raw] of Object.entries(breakdown as Record<string, unknown>)) {
+                  const value = Number(raw) || 0;
+                  if (value <= 0) continue;
+                  breakdownTotals.set(key, (breakdownTotals.get(key) || 0) + value);
+                  breakdownTotal += value;
+                }
+              }
+              const topBucketAmount = breakdownTotals.size > 0 ? Math.max(...Array.from(breakdownTotals.values())) : 0;
+              const topBucketSharePct = breakdownTotal > 0 ? (topBucketAmount / breakdownTotal) * 100 : null;
+
+              const volatilityInputs = revenueQualitySeries.slice(-12).map((r) => r.revenue);
+              const meanRevenue = safeAvg(volatilityInputs);
+              const variance = volatilityInputs.length
+                ? volatilityInputs.reduce((sum, value) => sum + Math.pow(value - meanRevenue, 2), 0) / volatilityInputs.length
+                : 0;
+              const stdDev = Math.sqrt(variance);
+              const coeffVar = meanRevenue !== 0 ? stdDev / Math.abs(meanRevenue) : 0;
+
+              const growthComparisonSeries = revenueQualitySeries.map((row, idx) => {
+                if (idx < 23) {
+                  return { month: row.month, revenueGrowth: 0, arGrowth: 0, spread: 0, hasData: false };
+                }
+                const currRev = revenueQualitySeries.slice(idx - 11, idx + 1).reduce((s, r) => s + r.revenue, 0);
+                const prevRev = revenueQualitySeries.slice(idx - 23, idx - 11).reduce((s, r) => s + r.revenue, 0);
+                const revGrowthPct = prevRev !== 0 ? ((currRev - prevRev) / Math.abs(prevRev)) * 100 : 0;
+
+                const currAr = row.ar;
+                const prevAr = revenueQualitySeries[idx - 12].ar;
+                const arGrowthPct = prevAr !== 0 ? ((currAr - prevAr) / Math.abs(prevAr)) * 100 : 0;
+
+                const spread = arGrowthPct - revGrowthPct;
+                return {
+                  month: row.month,
+                  revenueGrowth: revGrowthPct,
+                  arGrowth: arGrowthPct,
+                  spread,
+                  hasData: true
+                };
+              });
+
+              const arRevenueSpreadSeries = growthComparisonSeries.map((row) => ({
+                month: row.month,
+                value: row.spread,
+                hasData: row.hasData,
+              }));
+
+              const revenueToCashGapSeries = revenueQualitySeries.slice(-12).map((row) => ({
+                month: row.month,
+                value: row.gapPct,
+              }));
+
+              const dsoMiniSeries = revenueQualitySeries.slice(-12).map((row) => ({
+                month: row.month,
+                value: row.dso,
+              }));
+
+              const volatilitySeries = revenueQualitySeries.map((row, idx) => {
+                if (idx < 11) {
+                  return { month: row.month, value: 0, hasData: false };
+                }
+                const window = revenueQualitySeries.slice(idx - 11, idx + 1).map((r) => r.revenue);
+                const avg = safeAvg(window);
+                const var12 = window.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / window.length;
+                const sd12 = Math.sqrt(var12);
+                const cv12 = avg !== 0 ? sd12 / Math.abs(avg) : 0;
+                return {
+                  month: row.month,
+                  value: cv12,
+                  hasData: true
+                };
+              });
+
+              const flags = [
+                {
+                  id: 'dso-spike',
+                  title: 'DSO trend spike',
+                  triggered: dsoTrend12 > sdeSectorBenchmarks.dso.trendWarn || dsoOverBenchmark > 5,
+                  detail: `DSO ${currentDso.toFixed(1)}d vs ${sdeSectorBenchmarks.sectorLabel} benchmark ${sdeSectorBenchmarks.dso.min}-${sdeSectorBenchmarks.dso.max}d | 12M trend ${dsoTrend12 >= 0 ? '+' : ''}${dsoTrend12.toFixed(1)}d`,
+                  severity: dsoTrend12 > sdeSectorBenchmarks.dso.trendHigh || dsoOverBenchmark > 15 ? 'high' : 'medium'
+                },
+                {
+                  id: 'ar-vs-revenue',
+                  title: 'AR growth outpacing revenue',
+                  triggered: arRevenueSpread > sdeSectorBenchmarks.dso.spreadWarn,
+                  detail: `Spread: ${arRevenueSpread >= 0 ? '+' : ''}${arRevenueSpread.toFixed(1)} pts (AR growth ${arGrowth >= 0 ? '+' : ''}${arGrowth.toFixed(1)}% vs revenue growth ${revenueGrowth >= 0 ? '+' : ''}${revenueGrowth.toFixed(1)}%). This means receivables are building faster than sales, which can indicate slower collections, looser credit terms, or revenue quality pressure.`,
+                  severity: arRevenueSpread > sdeSectorBenchmarks.dso.spreadHigh ? 'high' : 'medium'
+                },
+                {
+                  id: 'cash-gap',
+                  title: 'Revenue-to-cash gap elevated',
+                  triggered: Math.abs(avgGap12) > sdeSectorBenchmarks.dso.gapWarn,
+                  detail: `Avg 12M gap: ${avgGap12 >= 0 ? '+' : ''}${avgGap12.toFixed(1)}%`,
+                  severity: Math.abs(avgGap12) > sdeSectorBenchmarks.dso.gapHigh ? 'high' : 'medium'
+                },
+                {
+                  id: 'revenue-volatility',
+                  title: 'Revenue volatility',
+                  triggered: coeffVar > sdeSectorBenchmarks.dso.volatilityWarn,
+                  detail: `12M coefficient of variation: ${coeffVar.toFixed(2)}`,
+                  severity: coeffVar > sdeSectorBenchmarks.dso.volatilityHigh ? 'high' : 'low'
+                }
+              ];
+
+              return {
+                avgGap12,
+                avgDso12,
+                dsoTrend12,
+                currentDso,
+                dsoBenchmarkTarget,
+                dsoCashOpportunity,
+                revenueGrowth,
+                arGrowth,
+                arRevenueSpread,
+                topBucketSharePct,
+                revenueToCashGapSeries,
+                dsoMiniSeries,
+                arRevenueSpreadSeries,
+                growthComparisonSeries,
+                volatilitySeries,
+                flags
+              };
+            })();
+
+            const customerQualityInsights = (() => {
+              const emptyResult = {
+                hasData: false,
+                top1Pct: 0,
+                top5Pct: 0,
+                hhi: 0,
+                customerCount: 0,
+                totalTtmRevenue: 0,
+                top1Series: [] as Array<{ month: string; value: number }>,
+                top5Series: [] as Array<{ month: string; value: number }>,
+                hhiSeries: [] as Array<{ month: string; value: number }>,
+                customerCountSeries: [] as Array<{ month: string; value: number }>,
+                flags: [] as Array<{ id: 'top1' | 'top5' | 'hhi'; title: string; triggered: boolean; detail: string; severity: 'high' | 'medium' | 'low' }>,
+              };
+              if (!Array.isArray(customerQualityRecords) || customerQualityRecords.length === 0) return emptyResult;
+
+              const monthKey = (value: unknown): string | null => {
+                const parsed = value ? new Date(value as any) : null;
+                if (!parsed || isNaN(parsed.getTime())) return null;
+                return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+              };
+
+              const normalized = customerQualityRecords
+                .map((r) => ({
+                  month: monthKey((r as any).snapshotDate),
+                  customerName: String((r as any).customerName || '').trim(),
+                  revenue: Number((r as any).revenue) || 0,
+                }))
+                .filter((r) => !!r.month && !!r.customerName);
+
+              if (normalized.length === 0) return emptyResult;
+
+              const monthCustomerRevenue = new Map<string, Map<string, number>>();
+              for (const row of normalized) {
+                const perCustomer = monthCustomerRevenue.get(row.month!) || new Map<string, number>();
+                perCustomer.set(row.customerName, (perCustomer.get(row.customerName) || 0) + row.revenue);
+                monthCustomerRevenue.set(row.month!, perCustomer);
+              }
+
+              const months = Array.from(monthCustomerRevenue.keys()).sort();
+              if (months.length === 0) return emptyResult;
+
+              const rollingMetrics: Array<{ month: string; top1Pct: number; top5Pct: number; hhi: number; customerCount: number; totalRevenue: number }> = [];
+              for (let i = 0; i < months.length; i++) {
+                if (i < 11) continue;
+                const windowMonths = months.slice(i - 11, i + 1);
+                const totalsByCustomer = new Map<string, number>();
+                for (const mKey of windowMonths) {
+                  const customerMap = monthCustomerRevenue.get(mKey);
+                  if (!customerMap) continue;
+                  for (const [customer, revenue] of Array.from(customerMap.entries())) {
+                    totalsByCustomer.set(customer, (totalsByCustomer.get(customer) || 0) + revenue);
+                  }
+                }
+                const totalRevenue = Array.from(totalsByCustomer.values()).reduce((s, v) => s + v, 0);
+                const sortedRevenue = Array.from(totalsByCustomer.values()).sort((a, b) => b - a);
+                const top1 = sortedRevenue[0] || 0;
+                const top5 = sortedRevenue.slice(0, 5).reduce((s, v) => s + v, 0);
+                const top1Pct = totalRevenue > 0 ? (top1 / totalRevenue) * 100 : 0;
+                const top5Pct = totalRevenue > 0 ? (top5 / totalRevenue) * 100 : 0;
+                const hhi = totalRevenue > 0
+                  ? Array.from(totalsByCustomer.values()).reduce((sum, rev) => {
+                      const sharePct = (rev / totalRevenue) * 100;
+                      return sum + sharePct * sharePct;
+                    }, 0)
+                  : 0;
+                rollingMetrics.push({
+                  month: months[i],
+                  top1Pct,
+                  top5Pct,
+                  hhi,
+                  customerCount: totalsByCustomer.size,
+                  totalRevenue,
+                });
+              }
+
+              if (rollingMetrics.length === 0) return emptyResult;
+
+              const latest = rollingMetrics[rollingMetrics.length - 1];
+              const bench = sdeSectorBenchmarks.customerQuality;
+
+              const flags = [
+                {
+                  id: 'top1' as const,
+                  title: 'Top customer concentration',
+                  triggered: latest.top1Pct > bench.top1Warn,
+                  detail: `Top 1 customer: ${latest.top1Pct.toFixed(1)}% (sector warn ${bench.top1Warn.toFixed(0)}%)`,
+                  severity: latest.top1Pct > bench.top1High ? 'high' as const : 'medium' as const,
+                },
+                {
+                  id: 'top5' as const,
+                  title: 'Top 5 customer concentration',
+                  triggered: latest.top5Pct > bench.top5Warn,
+                  detail: `Top 5 customers: ${latest.top5Pct.toFixed(1)}% (sector warn ${bench.top5Warn.toFixed(0)}%)`,
+                  severity: latest.top5Pct > bench.top5High ? 'high' as const : 'medium' as const,
+                },
+                {
+                  id: 'hhi' as const,
+                  title: 'Customer concentration index (HHI)',
+                  triggered: latest.hhi > bench.hhiWarn,
+                  detail: `HHI: ${Math.round(latest.hhi)} (sector warn ${bench.hhiWarn})`,
+                  severity: latest.hhi > bench.hhiHigh ? 'high' as const : 'medium' as const,
+                },
+              ];
+
+              return {
+                hasData: true,
+                top1Pct: latest.top1Pct,
+                top5Pct: latest.top5Pct,
+                hhi: latest.hhi,
+                customerCount: latest.customerCount,
+                totalTtmRevenue: latest.totalRevenue,
+                top1Series: rollingMetrics.map((m) => ({ month: m.month, value: m.top1Pct })),
+                top5Series: rollingMetrics.map((m) => ({ month: m.month, value: m.top5Pct })),
+                hhiSeries: rollingMetrics.map((m) => ({ month: m.month, value: m.hhi })),
+                customerCountSeries: rollingMetrics.map((m) => ({ month: m.month, value: m.customerCount })),
+                flags,
+              };
+            })();
+
+            const workingCapitalSeries = (() => {
+              const recent = monthly.slice(-36);
+              return recent.map((m) => {
+                const revenue = Number((m as any)?.revenue) || 0;
+                const cogs = Number((m as any)?.cogsTotal) || 0;
+                const ar = Number((m as any)?.ar) || 0;
+                const inventory = Number((m as any)?.inventory) || 0;
+                const ap = Number((m as any)?.ap) || 0;
+                const accruedOpLiabilities = Number((m as any)?.otherCL) || 0;
+                const operatingWc = ar + inventory - ap - accruedOpLiabilities;
+                const wcIntensityPct = revenue !== 0 ? (operatingWc / Math.abs(revenue)) * 100 : 0;
+                const monthDate = (m as any)?.month ? new Date(String((m as any).month)) : null;
+                const daysInMonth =
+                  monthDate && !Number.isNaN(monthDate.getTime())
+                    ? new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate()
+                    : 30;
+                // Align with WorkingCapitalTab formulas in financial reports.
+                const dso = ar > 0 && revenue > 0 ? (ar / revenue) * daysInMonth : 0;
+                const dio = inventory > 0 && cogs !== 0 ? (inventory / Math.abs(cogs)) * daysInMonth : 0;
+                const dpo = Math.abs(ap) > 0 && cogs !== 0 ? (Math.abs(ap) / Math.abs(cogs)) * daysInMonth : 0;
+                const ccc = dso + dio - dpo;
+                return {
+                  month: String((m as any)?.month || ''),
+                  revenue,
+                  cogs,
+                  ar,
+                  inventory,
+                  ap,
+                  accruedOpLiabilities,
+                  operatingWc,
+                  wcIntensityPct,
+                  dso,
+                  dio,
+                  dpo,
+                  ccc
+                };
+              });
+            })();
+
+            const workingCapitalInsights = (() => {
+              const safeAvg = (values: number[]) => values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+              const last12 = workingCapitalSeries.slice(-12);
+              const latest = workingCapitalSeries[workingCapitalSeries.length - 1];
+              const month12Ago = workingCapitalSeries.length >= 13 ? workingCapitalSeries[workingCapitalSeries.length - 13] : null;
+
+              const normalizedTarget = safeAvg(last12.map((r) => r.operatingWc));
+              const currentWc = latest ? latest.operatingWc : 0;
+              const wcAdjustment = currentWc - normalizedTarget;
+              const avgWcIntensity12 = safeAvg(last12.map((r) => r.wcIntensityPct));
+              const currentCcc = latest ? latest.ccc : 0;
+              const priorCcc = month12Ago ? month12Ago.ccc : 0;
+              const cccTrend12 = latest && month12Ago ? latest.ccc - month12Ago.ccc : 0;
+              const cccTrendTitle = currentCcc < 0 && priorCcc < 0 ? 'CCC becoming less favorable' : 'CCC deterioration';
+              const cccTrendDetail = `12M change: ${cccTrend12 >= 0 ? '+' : ''}${cccTrend12.toFixed(1)} days (${priorCcc.toFixed(1)} -> ${currentCcc.toFixed(1)})`;
+              const cccWarn = sdeSectorBenchmarks.workingCapital.cccWarn;
+              const cccHigh = sdeSectorBenchmarks.workingCapital.cccHigh;
+              const cccInterpretation = currentCcc < 0
+                ? 'Negative CCC can indicate supplier financing of growth (cash collected before payments are due). This can be positive for liquidity, but monitor supplier concentration and payment-term durability.'
+                : currentCcc <= Math.max(60, Math.round(cccWarn * 0.67))
+                  ? 'Low positive CCC typically indicates efficient working capital conversion and healthy operating cash discipline.'
+                : currentCcc <= cccWarn
+                    ? 'Moderate CCC suggests normal cash tie-up; monitor trend and driver mix (DSO, DIO, DPO).'
+                    : `High CCC versus ${sdeSectorBenchmarks.sectorLabel} norms suggests significant cash tied in operations and can reduce transaction readiness.`;
+              const annualRevenue = last12.reduce((sum, row) => sum + row.revenue, 0);
+              const annualCogs = last12.reduce((sum, row) => sum + row.cogs, 0);
+              const dailyRevenue = annualRevenue / 365;
+              const dailyCogs = annualCogs / 365;
+              const arTiedUp = (latest ? latest.dso : 0) * dailyRevenue;
+              const inventoryTiedUp = (latest ? latest.dio : 0) * dailyCogs;
+              const supplierFinancing = (latest ? latest.dpo : 0) * dailyCogs;
+              const operatingWcFromCcc = arTiedUp + inventoryTiedUp - supplierFinancing;
+              const cashImpactPerCccDay = dailyRevenue;
+              const cccScenarioImpacts = [
+                { days: -20, cashImpact: -20 * cashImpactPerCccDay },
+                { days: -10, cashImpact: -10 * cashImpactPerCccDay },
+                { days: 10, cashImpact: 10 * cashImpactPerCccDay },
+                { days: 20, cashImpact: 20 * cashImpactPerCccDay },
+              ];
+              const revenueGrowth12 = Math.max(0, annualRevenue - (workingCapitalSeries.slice(-24, -12).reduce((sum, row) => sum + row.revenue, 0)));
+              const dailyRevenueGrowth = revenueGrowth12 / 365;
+              const cashNeededForGrowth = currentCcc * dailyRevenueGrowth;
+              const wcLeverageRatio = annualRevenue !== 0 ? (operatingWcFromCcc / annualRevenue) * 100 : 0;
+              const wcRecent12 = workingCapitalSeries.slice(-12);
+              const currentWcSeries = wcRecent12.map((r) => ({ month: r.month, value: r.operatingWc }));
+              const normalizedTargetSeries = wcRecent12.map((r) => ({ month: r.month, value: normalizedTarget }));
+              const wcAdjustmentSeries = wcRecent12.map((r) => ({ month: r.month, value: r.operatingWc - normalizedTarget }));
+              const cccMiniSeries = wcRecent12.map((r) => ({ month: r.month, value: r.ccc }));
+
+              const flags = [
+                {
+                  id: 'wc-deficit',
+                  title: 'WC below normalized target',
+                  triggered: wcAdjustment < 0,
+                  detail: `Current vs target: $${Math.round(currentWc).toLocaleString()} vs $${Math.round(normalizedTarget).toLocaleString()}`,
+                  severity: wcAdjustment < -Math.abs(normalizedTarget) * 0.2 ? 'high' : 'medium'
+                },
+                {
+                  id: 'ccc-deterioration',
+                  title: cccTrendTitle,
+                  triggered: cccTrend12 > sdeSectorBenchmarks.workingCapital.cccTrendWarn,
+                  detail: cccTrendDetail,
+                  severity: currentCcc < 0 ? 'low' : cccTrend12 > sdeSectorBenchmarks.workingCapital.cccTrendHigh ? 'high' : 'medium'
+                },
+                {
+                  id: 'wc-intensity',
+                  title: 'Working capital intensity elevated',
+                  triggered: avgWcIntensity12 > sdeSectorBenchmarks.workingCapital.wcIntensityWarn,
+                  detail: `Avg 12M WC intensity: ${avgWcIntensity12.toFixed(1)}%`,
+                  severity: avgWcIntensity12 > sdeSectorBenchmarks.workingCapital.wcIntensityHigh ? 'high' : 'medium'
+                },
+                {
+                  id: 'ccc-level',
+                  title: 'Cash conversion cycle level high',
+                  triggered: currentCcc > cccWarn,
+                  detail: `Current CCC: ${currentCcc.toFixed(1)} days vs ${sdeSectorBenchmarks.sectorLabel} benchmark trigger ${cccWarn.toFixed(0)} days`,
+                  severity: currentCcc > cccHigh ? 'high' : 'medium'
+                }
+              ];
+
+              return {
+                normalizedTarget,
+                currentWc,
+                wcAdjustment,
+                avgWcIntensity12,
+                currentCcc,
+                priorCcc,
+                cccTrend12,
+                cccInterpretation,
+                annualRevenue,
+                annualCogs,
+                dailyRevenue,
+                dailyCogs,
+                arTiedUp,
+                inventoryTiedUp,
+                supplierFinancing,
+                operatingWcFromCcc,
+                cashImpactPerCccDay,
+                cccScenarioImpacts,
+                cashNeededForGrowth,
+                wcLeverageRatio,
+                currentWcSeries,
+                normalizedTargetSeries,
+                wcAdjustmentSeries,
+                cccMiniSeries,
+                flags
+              };
+            })();
+
+            const sdeSourceLabel = String(latestFinancialSource || '').toLowerCase();
+            const sdeHasCompanyFinancialData = Array.isArray(loadedMonthlyData) && loadedMonthlyData.length > 0;
+            const sdeIsMockSource = sdeSourceLabel.includes('mock');
+            const sdeApprovedSources = ['quickbooks', 'quickbooks_desktop', 'xero', 'sage', 'sage_intacct', 'infor', 'infor_m3', 'dynamics', 'dynamics365', 'csv_trial_balance'];
+            const sdeIsApprovedSource = sdeApprovedSources.some((source) => sdeSourceLabel.includes(source));
+            const sdeHasRealOperationalData = Boolean(company?.hasRealOperationalData) && !Boolean(company?.forceOperationalMockData);
+            const sdeStrictReady = sdeHasCompanyFinancialData && sdeIsApprovedSource && !sdeIsMockSource;
+
+            const cashFlowQualitySeries = (() => {
+              const recent = monthly.slice(-36);
+              return recent.map((m, idx) => {
+                const revenue = Number((m as any)?.revenue) || 0;
+                const cogs = Number((m as any)?.cogsTotal) || 0;
+                const expense = Number((m as any)?.expense) || 0;
+                const interest = Number((m as any)?.interestExpense) || 0;
+                const depreciation = Number((m as any)?.depreciationAmortization) || 0;
+                const netIncome = revenue - cogs - expense;
+                const ebitda = netIncome + interest + depreciation;
+                const prevFixedAssets = idx > 0 ? Number((recent[idx - 1] as any)?.fixedAssets) || 0 : Number((m as any)?.fixedAssets) || 0;
+                const fixedAssets = Number((m as any)?.fixedAssets) || 0;
+                const prevAr = idx > 0 ? Number((recent[idx - 1] as any)?.ar) || 0 : Number((m as any)?.ar) || 0;
+                const prevInventory = idx > 0 ? Number((recent[idx - 1] as any)?.inventory) || 0 : Number((m as any)?.inventory) || 0;
+                const prevAp = idx > 0 ? Number((recent[idx - 1] as any)?.ap) || 0 : Number((m as any)?.ap) || 0;
+                const currAr = Number((m as any)?.ar) || 0;
+                const currInventory = Number((m as any)?.inventory) || 0;
+                const currAp = Number((m as any)?.ap) || 0;
+                const changeInAr = currAr - prevAr;
+                const changeInInventory = currInventory - prevInventory;
+                const changeInAp = currAp - prevAp;
+                const changeInWorkingCapital = -(changeInAr + changeInInventory - changeInAp);
+                // Align with CashFlowTab formulas in financial reports.
+                const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
+                const capex = idx > 0 ? (fixedAssets - prevFixedAssets) + depreciation : 0;
+                const freeCashFlow = operatingCashFlow - Math.max(0, capex);
+                const cashConversionPct = ebitda !== 0 ? (operatingCashFlow / ebitda) * 100 : 0;
+                return {
+                  month: String((m as any)?.month || ''),
+                  revenue,
+                  netIncome,
+                  depreciation,
+                  ebitda,
+                  capex,
+                  operatingCashFlow,
+                  freeCashFlow,
+                  cashConversionPct
+                };
+              });
+            })();
+
+            const cashFlowQualityInsights = (() => {
+              const safeAvg = (values: number[]) => values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+              const last12 = cashFlowQualitySeries.slice(-12);
+              const prev12 = cashFlowQualitySeries.slice(-24, -12);
+              const latest = cashFlowQualitySeries[cashFlowQualitySeries.length - 1];
+
+              const ttmEbitda = last12.reduce((sum, row) => sum + row.ebitda, 0);
+              const ttmOperatingCashFlow = last12.reduce((sum, row) => sum + row.operatingCashFlow, 0);
+              const ttmOperatingCashFlowPrev = prev12.reduce((sum, row) => sum + row.operatingCashFlow, 0);
+              const ttmReportedCapex = last12.reduce((sum, row) => sum + row.capex, 0);
+              const ttmDepreciation = last12.reduce((sum, row) => sum + row.depreciation, 0);
+              const maintenanceCapexEstimate = Math.max(ttmDepreciation, ttmReportedCapex);
+              const capexGap = maintenanceCapexEstimate - ttmReportedCapex;
+              const cashConversionPct = ttmEbitda !== 0 ? (ttmOperatingCashFlow / ttmEbitda) * 100 : 0;
+              const fcfDurabilityPct = ttmEbitda !== 0 ? ((ttmOperatingCashFlow - maintenanceCapexEstimate) / ttmEbitda) * 100 : 0;
+              const avgCashConversion12 = safeAvg(last12.map((r) => r.cashConversionPct));
+              const avgCashConversionPrev12 = safeAvg(prev12.map((r) => r.cashConversionPct));
+              const cashConversionTrend = avgCashConversion12 - avgCashConversionPrev12;
+              const ocfTrend = ttmOperatingCashFlow - ttmOperatingCashFlowPrev;
+              const fcfTtm = last12.reduce((sum, row) => sum + row.freeCashFlow, 0);
+              const fcfPrevTtm = prev12.reduce((sum, row) => sum + row.freeCashFlow, 0);
+              const fcfTrend = fcfTtm - fcfPrevTtm;
+              const cashConversionMiniSeries = cashFlowQualitySeries.slice(-12).map((r) => ({ month: r.month, value: r.cashConversionPct }));
+              const reportedCapexMiniSeries = cashFlowQualitySeries.slice(-12).map((r) => ({ month: r.month, value: r.capex }));
+              const maintenanceCapexMiniSeries = cashFlowQualitySeries.slice(-12).map((r) => ({ month: r.month, value: Math.max(r.capex, r.depreciation) }));
+              const capexGapMiniSeries = cashFlowQualitySeries.slice(-12).map((r) => ({ month: r.month, value: Math.max(r.capex, r.depreciation) - r.capex }));
+              const fcfDurabilityMiniSeries = cashFlowQualitySeries.slice(-12).map((r) => ({
+                month: r.month,
+                value: r.ebitda !== 0 ? (r.freeCashFlow / r.ebitda) * 100 : 0,
+              }));
+
+              const flags = [
+                {
+                  id: 'cash-conversion-weak',
+                  title: 'Cash conversion below target',
+                  triggered: cashConversionPct < sdeSectorBenchmarks.cashFlow.cashConversionWarn,
+                  detail: `Current TTM cash conversion: ${cashConversionPct.toFixed(1)}% (sector target >= ${sdeSectorBenchmarks.cashFlow.cashConversionWarn.toFixed(0)}%)`,
+                  severity: cashConversionPct < sdeSectorBenchmarks.cashFlow.cashConversionHighRisk ? 'high' : 'medium'
+                },
+                {
+                  id: 'capex-gap',
+                  title: 'Maintenance CapEx underinvestment',
+                  triggered: capexGap > 0,
+                  detail: `Estimated gap: $${Math.round(capexGap).toLocaleString()} (maintenance - reported)`,
+                  severity: capexGap > Math.max(1, Math.abs(ttmEbitda) * sdeSectorBenchmarks.cashFlow.capexGapHighPctOfEbitda) ? 'high' : 'medium'
+                },
+                {
+                  id: 'fcf-weakness',
+                  title: fcfDurabilityPct < sdeSectorBenchmarks.cashFlow.fcfDurabilityWarn ? 'Free cash flow durability weak' : 'Free cash flow durability healthy',
+                  triggered: fcfDurabilityPct < sdeSectorBenchmarks.cashFlow.fcfDurabilityWarn,
+                  detail: `FCF durability: ${fcfDurabilityPct.toFixed(1)}% of EBITDA (${fcfDurabilityPct < sdeSectorBenchmarks.cashFlow.fcfDurabilityWarn ? 'below threshold' : 'within threshold'})`,
+                  severity: fcfDurabilityPct < sdeSectorBenchmarks.cashFlow.fcfDurabilityHighRisk ? 'high' : 'medium'
+                },
+                {
+                  id: 'ocf-deterioration',
+                  title: (cashConversionTrend < -sdeSectorBenchmarks.cashFlow.conversionTrendWarn || fcfTrend < 0 || ocfTrend < 0)
+                    ? 'Cash flow trend deterioration'
+                    : 'Cash flow trend stable',
+                  triggered: cashConversionTrend < -sdeSectorBenchmarks.cashFlow.conversionTrendWarn || fcfTrend < 0 || ocfTrend < 0,
+                  detail: `OCF trend: ${ocfTrend >= 0 ? '+' : ''}$${Math.round(Math.abs(ocfTrend)).toLocaleString()} | FCF trend: ${fcfTrend >= 0 ? '+' : ''}$${Math.round(Math.abs(fcfTrend)).toLocaleString()} | Conversion trend: ${cashConversionTrend >= 0 ? '+' : ''}${cashConversionTrend.toFixed(1)} pts`,
+                  severity: (cashConversionTrend < -sdeSectorBenchmarks.cashFlow.conversionTrendHigh || (ocfTrend < 0 && fcfTrend < 0)) ? 'high' : 'medium'
+                }
+              ];
+
+              return {
+                ttmEbitda,
+                ttmOperatingCashFlow,
+                ttmReportedCapex,
+                ttmDepreciation,
+                maintenanceCapexEstimate,
+                capexGap,
+                cashConversionPct,
+                fcfDurabilityPct,
+                avgCashConversion12,
+                cashConversionTrend,
+                ocfTrend,
+                fcfTtm,
+                fcfTrend,
+                cashConversionMiniSeries,
+                reportedCapexMiniSeries,
+                maintenanceCapexMiniSeries,
+                capexGapMiniSeries,
+                fcfDurabilityMiniSeries,
+                latest,
+                flags
+              };
+            })();
+
+            const sdeExplanationContent: Record<
+              string,
+              {
+                title: string;
+                formula?: string;
+                plain: string[];
+                example?: string[];
+                why: string[];
+              }
+            > = {
+              'top-bucket': {
+                title: 'Top Revenue Bucket Concentration',
+                formula: 'Top bucket % = Largest revenue bucket / Total revenue breakdown',
+                plain: [
+                  `Current top bucket share is ${revenueQualityInsights.topBucketSharePct !== null ? `${revenueQualityInsights.topBucketSharePct.toFixed(1)}%` : 'N/A'}.`,
+                ],
+                why: [
+                  'Higher bucket concentration can increase perceived concentration risk.',
+                  'Acquirers usually prefer diversified revenue sources by product/service/customer mix.',
+                ],
+              },
+              'ar-vs-revenue': {
+                title: 'AR Growth Outpacing Revenue',
+                formula: 'Spread = AR growth % - Revenue growth % (current TTM vs prior TTM)',
+                plain: [
+                  `Current spread is ${revenueQualityInsights.arRevenueSpread >= 0 ? '+' : ''}${revenueQualityInsights.arRevenueSpread.toFixed(1)} pts.`,
+                  `AR growth is ${revenueQualityInsights.arGrowth >= 0 ? '+' : ''}${revenueQualityInsights.arGrowth.toFixed(1)}% while revenue growth is ${revenueQualityInsights.revenueGrowth >= 0 ? '+' : ''}${revenueQualityInsights.revenueGrowth.toFixed(1)}%.`,
+                ],
+                example: [
+                  'Example:',
+                  'Revenue growth = +40%',
+                  'AR growth = +268.4%',
+                  'Spread = 268.4 - 40 = +228.4 pts',
+                ],
+                why: [
+                  'Sales may be recognized faster than cash is collected.',
+                  'More revenue sitting in AR increases cash-flow risk and diligence scrutiny.',
+                  'Can indicate looser terms, slower collections, billing timing changes, or revenue-quality pressure.',
+                ],
+              },
+              'dso-spike': {
+                title: 'DSO Trend Spike',
+                formula: 'DSO = Accounts Receivable / (Revenue / 365)',
+                plain: [
+                  `Current DSO is ${revenueQualityInsights.currentDso.toFixed(1)} days with a 12M change of ${revenueQualityInsights.dsoTrend12 >= 0 ? '+' : ''}${revenueQualityInsights.dsoTrend12.toFixed(1)} days.`,
+                ],
+                why: [
+                  'Higher DSO means cash takes longer to convert from sales.',
+                  'Rising DSO can pressure liquidity and increase buyer execution risk.',
+                ],
+              },
+              'cash-gap': {
+                title: 'Revenue-to-Cash Gap',
+                formula: 'Gap % = (Revenue - Collections Proxy) / Revenue',
+                plain: [
+                  `Average 12M gap is ${revenueQualityInsights.avgGap12 >= 0 ? '+' : ''}${revenueQualityInsights.avgGap12.toFixed(1)}%.`,
+                ],
+                why: [
+                  'Persistent positive gaps can mean collections are lagging revenue recognition.',
+                  'That raises questions on conversion quality and short-term cash reliability.',
+                ],
+              },
+              'revenue-volatility': {
+                title: 'Revenue Volatility',
+                formula: 'Coefficient of Variation = Std Dev (12M Revenue) / Mean (12M Revenue)',
+                plain: ['Measures how unstable monthly revenue is relative to its average level.'],
+                why: [
+                  'Higher volatility usually implies lower forecast confidence.',
+                  'Lower predictability can compress valuation multiples.',
+                ],
+              },
+              top1: {
+                title: 'Top 1 Customer Concentration',
+                formula: 'Top 1 % = Largest customer TTM revenue / Total TTM revenue',
+                plain: [`Current top customer share is ${customerQualityInsights.top1Pct.toFixed(1)}%.`],
+                why: [
+                  'Higher concentration increases downside if that customer churns or renegotiates.',
+                ],
+              },
+              top5: {
+                title: 'Top 5 Customer Concentration',
+                formula: 'Top 5 % = Sum of top 5 customer TTM revenue / Total TTM revenue',
+                plain: [`Current top 5 customer share is ${customerQualityInsights.top5Pct.toFixed(1)}%.`],
+                why: [
+                  'When too much revenue is in a small customer set, earnings durability risk rises.',
+                ],
+              },
+              hhi: {
+                title: 'Customer HHI',
+                formula: 'HHI = sum of squared customer revenue share percentages',
+                plain: [`Current HHI is ${Math.round(customerQualityInsights.hhi).toLocaleString()}.`],
+                why: [
+                  'Higher HHI means more concentration and greater dependency risk.',
+                ],
+              },
+              'wc-deficit': {
+                title: 'WC Adjustment vs Target',
+                formula: 'Adjustment = Current Operating WC - Normalized WC Target (12M average)',
+                plain: [`Current adjustment is ${workingCapitalInsights.wcAdjustment >= 0 ? '+' : ''}$${Math.round(workingCapitalInsights.wcAdjustment).toLocaleString()}.`],
+                why: [
+                  'Negative adjustments can reduce seller proceeds in closing true-up mechanics.',
+                  'Positive adjustments indicate more cash tied in working capital than baseline.',
+                ],
+              },
+              'ccc-deterioration': {
+                title: 'CCC Trend',
+                formula: 'CCC = DSO + DIO - DPO',
+                plain: [`Current CCC is ${workingCapitalInsights.currentCcc.toFixed(1)} days with 12M change ${workingCapitalInsights.cccTrend12 >= 0 ? '+' : ''}${workingCapitalInsights.cccTrend12.toFixed(1)} days.`],
+                why: [
+                  'Rising CCC means more operating cash tied up.',
+                  'Worsening cycle efficiency can reduce transaction readiness.',
+                ],
+              },
+              'wc-intensity': {
+                title: 'Working Capital Intensity',
+                formula: 'WC Intensity % = Operating WC / Revenue',
+                plain: [`Average 12M intensity is ${workingCapitalInsights.avgWcIntensity12.toFixed(1)}%.`],
+                why: [
+                  'Higher intensity means growth consumes more cash to support sales.',
+                ],
+              },
+              'ccc-level': {
+                title: 'CCC Level',
+                formula: 'CCC compared against sector thresholds',
+                plain: [`Current CCC is ${workingCapitalInsights.currentCcc.toFixed(1)} days.`],
+                why: [
+                  'A high level versus sector norms can signal structural cash drag.',
+                ],
+              },
+              'cash-conversion-weak': {
+                title: 'Cash Conversion',
+                formula: 'Cash Conversion % = TTM Operating Cash Flow / TTM EBITDA, where OCF = Net Income + Depreciation + Change in Working Capital',
+                plain: [`Current cash conversion is ${cashFlowQualityInsights.cashConversionPct.toFixed(1)}%.`],
+                why: [
+                  'Lower conversion means EBITDA is not translating to cash efficiently.',
+                ],
+              },
+              'capex-gap': {
+                title: 'Maintenance CapEx Gap',
+                formula: 'CapEx Gap = Maintenance CapEx estimate - Reported CapEx',
+                plain: [`Current gap is ${cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}$${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}.`],
+                why: [
+                  'Positive gaps can indicate deferred reinvestment and future cash needs.',
+                ],
+              },
+              'fcf-weakness': {
+                title: 'FCF Durability',
+                formula: 'FCF Durability % = (Operating Cash Flow - Maintenance CapEx) / EBITDA',
+                plain: [`Current FCF durability is ${cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}% of EBITDA.`],
+                why: [
+                  'Shows how much EBITDA remains as durable cash after sustaining the business.',
+                ],
+              },
+              'ocf-deterioration': {
+                title: 'Operating Cash Flow Trend',
+                formula: 'Trend compares current TTM vs prior TTM',
+                plain: [`OCF trend is ${cashFlowQualityInsights.ocfTrend >= 0 ? '+' : '-'}$${Math.round(Math.abs(cashFlowQualityInsights.ocfTrend)).toLocaleString()} over TTM.`],
+                why: [
+                  'Downward trend can reduce confidence in near-term cash generation.',
+                ],
+              },
+            };
+
             return (
               <>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
-                  {[
-                    { id: 'sde' as const, label: 'SDE' },
-                    { id: 'ebitda' as const, label: 'EBITDA Multiple' },
-                    { id: 'dcf' as const, label: 'DCF' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setValuationMethodTab(tab.id)}
-                      style={{
-                        padding: '8px 14px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        background: valuationMethodTab === tab.id ? '#667eea' : '#f1f5f9',
-                        color: valuationMethodTab === tab.id ? 'white' : '#334155'
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                
                 {/* SDE Method */}
                 {valuationMethodTab === 'sde' && (
                 <>
-                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                    Seller's Discretionary Earnings (SDE) Method
-                  </h2>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                    <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px' }}>
-                      <div style={{ marginBottom: '8px' }}>
-                        <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
-                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${(ttmSDE / 1000).toFixed(0)}K</div>
-                      </div>
-                      
-                      <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                        <strong>Calculation:</strong> Quality of Earnings: EBITDA + QoE Adjustments = ${(ttmEbitdaAnalysis / 1000).toFixed(0)}K + ${(qoeTotalAdjustments / 1000).toFixed(0)}K
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-                        Estimated Business Value (SDE)
-                      </div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
-                        ${Math.round(sdeValuation).toLocaleString()}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                        Range: ${Math.round(ttmSDE * 1.5).toLocaleString()} - ${Math.round(ttmSDE * 4.0).toLocaleString()}
-                      </div>
+                {!sdeStrictReady ? (
+                  <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#9a3412', marginBottom: '8px' }}>SDE Data Validation Required</h2>
+                    <div style={{ fontSize: '13px', color: '#7c2d12', lineHeight: 1.7 }}>
+                      SDE tabs are now strict-mode only: calculations run only on company financial data from non-mock sources.
+                      <br />
+                      <strong>Financial data:</strong> {sdeHasCompanyFinancialData ? 'Loaded' : 'Not loaded'} | <strong>Financial source:</strong> {latestFinancialSource || 'Unknown'}
+                      <br />
+                      <strong>Source approved for SDE:</strong> {sdeIsApprovedSource ? 'Yes' : 'No'}
+                      <br />
+                      <strong>Operational data:</strong> {sdeHasRealOperationalData ? 'Real operational data available' : 'Not available or mock-forced'}
+                      <br />
+                      To continue, load validated company financial data (no mock source).
                     </div>
                   </div>
-                  
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
-                      SDE Multiple: {sdeMultiplier.toFixed(1)}x
-                    </label>
-                    <input 
-                      type="range" 
-                      min="1" 
-                      max="5" 
-                      step="0.1" 
-                      value={sdeMultiplier} 
-                      onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))} 
-                      style={{ width: '100%', marginBottom: '4px' }} 
-                    />
-                    <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Typical Range: 1.5x - 4.0x</span>
-                      <span>Industry Average: 2.5x</span>
-                    </div>
+                ) : (
+                <>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '12px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'ebitda-adjustments' as const, label: 'EBITDA Adjustments' },
+                      { id: 'revenue-quality' as const, label: 'Revenue Quality' },
+                      { id: 'customer-quality' as const, label: 'Customer Quality' },
+                      { id: 'working-capital' as const, label: 'Working Capital' },
+                      { id: 'cash-flow-quality' as const, label: 'Cash Flow Quality' },
+                      { id: 'recommendations' as const, label: 'Results & Recommendations' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setSdeModuleTab(tab.id)}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          background: sdeModuleTab === tab.id ? '#667eea' : '#f1f5f9',
+                          color: sdeModuleTab === tab.id ? 'white' : '#334155'
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
                   </div>
-                  
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
+                    Data source: Company financial data ({latestFinancialSource || 'connected source'}) | Operational context: {sdeHasRealOperationalData ? 'real data available' : 'not available'}
+                  </div>
                 </div>
-
+                {sdeModuleTab === 'ebitda-adjustments' && (
+                <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
@@ -11346,6 +12230,1829 @@ function FinancialScorePage() {
                     </div>
                   </div>
                 </div>
+                </>
+                )}
+                {sdeModuleTab === 'revenue-quality' && (
+                <>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Revenue Quality</h2>
+                  <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
+                    Buyer-focused revenue reliability checks using monthly financial data, with deterministic signal rules.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px' }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Top Revenue Bucket % (proxy)</div>
+                        <button
+                          onClick={() => setRevenueQualityCardInfoOpen((prev) => ({ ...prev, topBucket: !prev.topBucket }))}
+                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          title="Click to view metric details"
+                        >
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>
+                        {revenueQualityInsights.topBucketSharePct !== null ? `${revenueQualityInsights.topBucketSharePct.toFixed(1)}%` : 'N/A'}
+                      </div>
+                      <button
+                        onClick={() => setRevenueQualityFlagGraphOpen('top-bucket')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {revenueQualityCardInfoOpen.topBucket && (
+                        <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Share of TTM revenue represented by the largest revenue bucket in available revenue breakdown data.
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
+                            <strong>Why it matters:</strong> Higher concentration increases buyer risk perception and can pressure valuation multiples.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Revenue-to-Cash Gap (avg 12M)</div>
+                        <button
+                          onClick={() => setRevenueQualityCardInfoOpen((prev) => ({ ...prev, cashGap: !prev.cashGap }))}
+                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          title="Click to view metric details"
+                        >
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: Math.abs(revenueQualityInsights.avgGap12) > 8 ? '#ef4444' : '#1e293b' }}>
+                        {revenueQualityInsights.avgGap12 >= 0 ? '+' : ''}{revenueQualityInsights.avgGap12.toFixed(1)}%
+                      </div>
+                      <button
+                        onClick={() => setRevenueQualityFlagGraphOpen('cash-gap')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {revenueQualityCardInfoOpen.cashGap && (
+                        <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Average monthly difference between recognized revenue and collections proxy over the past 12 months.
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
+                            <strong>Why it matters:</strong> Persistent gaps can indicate collection pressure or recognition quality issues that raise diligence risk.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>DSO Trend (12M)</div>
+                        <button
+                          onClick={() => setRevenueQualityCardInfoOpen((prev) => ({ ...prev, dsoTrend: !prev.dsoTrend }))}
+                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          title="Click to view metric details"
+                        >
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: revenueQualityInsights.dsoTrend12 > sdeSectorBenchmarks.dso.trendWarn ? '#ef4444' : '#1e293b' }}>
+                        {revenueQualityInsights.dsoTrend12 >= 0 ? '+' : ''}{revenueQualityInsights.dsoTrend12.toFixed(1)} days
+                      </div>
+                      <button
+                        onClick={() => setRevenueQualityFlagGraphOpen('dso-spike')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {revenueQualityCardInfoOpen.dsoTrend && (
+                        <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Change in estimated days sales outstanding between current period and 12 months ago.
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
+                            <strong>Why it matters:</strong> Rising DSO ties up cash in receivables and can reduce near-term deal value confidence.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>AR vs Revenue Growth Spread</div>
+                        <button
+                          onClick={() => setRevenueQualityCardInfoOpen((prev) => ({ ...prev, arSpread: !prev.arSpread }))}
+                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          title="Click to view metric details"
+                        >
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: revenueQualityInsights.arRevenueSpread > sdeSectorBenchmarks.dso.spreadWarn ? '#ef4444' : '#1e293b' }}>
+                        {revenueQualityInsights.arRevenueSpread >= 0 ? '+' : ''}{revenueQualityInsights.arRevenueSpread.toFixed(1)} pts
+                      </div>
+                      <button
+                        onClick={() => setRevenueQualityFlagGraphOpen('ar-vs-revenue')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {revenueQualityCardInfoOpen.arSpread && (
+                        <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Difference between AR growth rate and revenue growth rate over comparable trailing 12-month periods.
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
+                            <strong>Why it matters:</strong> AR growing faster than revenue can signal weaker collections quality and potential earnings conversion risk.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}>Revenue Quality Flags</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {revenueQualityInsights.flags.map((flag) => (
+                      <div key={flag.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
+                          <button
+                            onClick={() => setRevenueQualityFlagGraphOpen(flag.id as 'top-bucket' | 'dso-spike' | 'ar-vs-revenue' | 'cash-gap' | 'revenue-volatility')}
+                            style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                            title="Open trend graph"
+                          >
+                            View Trend
+                          </button>
+                          <button
+                            onClick={() => setSdeExplanationOpen(String(flag.id))}
+                            style={{ marginTop: '4px', marginLeft: '12px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                            title="Open plain-language explanation"
+                          >
+                            Explain
+                          </button>
+                        </div>
+                        <div style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          color: flag.triggered ? 'white' : '#334155',
+                          background: flag.triggered ? (flag.severity === 'high' ? '#ef4444' : '#f59e0b') : '#e2e8f0',
+                          borderRadius: '999px',
+                          padding: '5px 10px',
+                          minWidth: '72px',
+                          textAlign: 'center'
+                        }}>
+                          {flag.triggered ? `Flagged (${flag.severity})` : 'Normal'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '10px 16px 14px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px 0' }}>
+                    Sector Benchmark Comparison ({sdeSectorBenchmarks.sectorLabel})
+                  </h3>
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ textAlign: 'left', padding: '8px 10px', color: '#334155' }}>Metric</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Company</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Sector</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Variance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 10px', color: '#475569' }}>DSO (days)</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{revenueQualityInsights.currentDso.toFixed(1)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.benchmarkTargets.dso.toFixed(1)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (revenueQualityInsights.currentDso - sdeSectorBenchmarks.benchmarkTargets.dso) > 0 ? '#ef4444' : '#10b981' }}>
+                            {(revenueQualityInsights.currentDso - sdeSectorBenchmarks.benchmarkTargets.dso) >= 0 ? '+' : ''}{(revenueQualityInsights.currentDso - sdeSectorBenchmarks.benchmarkTargets.dso).toFixed(1)}
+                          </td>
+                        </tr>
+                        <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 10px', color: '#475569' }}>CCC (days)</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{workingCapitalInsights.currentCcc.toFixed(1)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.benchmarkTargets.ccc.toFixed(1)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (workingCapitalInsights.currentCcc - sdeSectorBenchmarks.benchmarkTargets.ccc) > 0 ? '#ef4444' : '#10b981' }}>
+                            {(workingCapitalInsights.currentCcc - sdeSectorBenchmarks.benchmarkTargets.ccc) >= 0 ? '+' : ''}{(workingCapitalInsights.currentCcc - sdeSectorBenchmarks.benchmarkTargets.ccc).toFixed(1)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: '8px 10px', color: '#475569' }}>Inventory days (DIO)</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>
+                            {(workingCapitalSeries.length > 0 ? workingCapitalSeries[workingCapitalSeries.length - 1].dio : 0).toFixed(1)}
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.benchmarkTargets.inventoryDays.toFixed(1)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: ((workingCapitalSeries.length > 0 ? workingCapitalSeries[workingCapitalSeries.length - 1].dio : 0) - sdeSectorBenchmarks.benchmarkTargets.inventoryDays) > 0 ? '#ef4444' : '#10b981' }}>
+                            {((workingCapitalSeries.length > 0 ? workingCapitalSeries[workingCapitalSeries.length - 1].dio : 0) - sdeSectorBenchmarks.benchmarkTargets.inventoryDays) >= 0 ? '+' : ''}
+                            {((workingCapitalSeries.length > 0 ? workingCapitalSeries[workingCapitalSeries.length - 1].dio : 0) - sdeSectorBenchmarks.benchmarkTargets.inventoryDays).toFixed(1)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: '8px', fontSize: '12px', color: '#334155' }}>
+                    <strong>Cash improvement opportunity:</strong>{' '}
+                    {revenueQualityInsights.dsoCashOpportunity > 0
+                      ? `Reducing DSO to sector benchmark (${revenueQualityInsights.dsoBenchmarkTarget.toFixed(1)} days) could release approximately $${Math.round(revenueQualityInsights.dsoCashOpportunity).toLocaleString()} of cash.`
+                      : `DSO is at or below sector benchmark (${revenueQualityInsights.dsoBenchmarkTarget.toFixed(1)} days).`}
+                  </div>
+                </div>
+                {revenueQualityFlagGraphOpen && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(15,23,42,0.5)',
+                      zIndex: 3000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setRevenueQualityFlagGraphOpen(null)}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.2)',
+                        width: '100%',
+                        maxWidth: '980px',
+                        padding: '16px'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+                          {revenueQualityFlagGraphOpen === 'top-bucket' && 'Top Revenue Buckets (TTM)'}
+                          {revenueQualityFlagGraphOpen === 'dso-spike' && 'DSO Trend (Flag Detail)'}
+                          {revenueQualityFlagGraphOpen === 'cash-gap' && 'Revenue-to-Cash Gap % (Flag Detail)'}
+                          {revenueQualityFlagGraphOpen === 'ar-vs-revenue' && 'AR vs Revenue (Dual Axis, Flag Detail)'}
+                          {revenueQualityFlagGraphOpen === 'revenue-volatility' && 'Revenue Volatility (Rolling 12M CV)'}
+                        </h3>
+                        <button
+                          onClick={() => setRevenueQualityFlagGraphOpen(null)}
+                          style={{ background: 'transparent', border: 'none', color: '#334155', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}
+                          title="Close"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {revenueQualityFlagGraphOpen === 'top-bucket' && (
+                        <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
+                          {(() => {
+                            const sourceRows = monthly.slice(-36);
+                            const totals = new Map<string, number>();
+                            for (const row of sourceRows) {
+                              const breakdown = (row as any)?.revenueBreakdown;
+                              if (!breakdown || typeof breakdown !== 'object') continue;
+                              for (const [key, raw] of Object.entries(breakdown as Record<string, unknown>)) {
+                                const value = Number(raw) || 0;
+                                if (value <= 0) continue;
+                                totals.set(key, (totals.get(key) || 0) + value);
+                              }
+                            }
+                            const topBuckets = Array.from(totals.entries())
+                              .sort((a, b) => b[1] - a[1])
+                              .slice(0, 5)
+                              .map(([bucket]) => bucket);
+                            if (topBuckets.length === 0) {
+                              return <div style={{ fontSize: '12px', color: '#64748b' }}>No revenue bucket breakdown data available for the last 36 months.</div>;
+                            }
+
+                            const monthlyBuckets = sourceRows
+                              .map((row) => {
+                                const breakdown = (row as any)?.revenueBreakdown;
+                                const month = String((row as any)?.month || '');
+                                if (!breakdown || typeof breakdown !== 'object') return { month, total: 0, values: {} as Record<string, number> };
+                                const values: Record<string, number> = {};
+                                let total = 0;
+                                for (const [key, raw] of Object.entries(breakdown as Record<string, unknown>)) {
+                                  const value = Math.max(0, Number(raw) || 0);
+                                  if (!value) continue;
+                                  total += value;
+                                  if (topBuckets.includes(key)) {
+                                    values[key] = (values[key] || 0) + value;
+                                  } else {
+                                    values.__other__ = (values.__other__ || 0) + value;
+                                  }
+                                }
+                                return { month, total, values };
+                              })
+                              .filter((row) => row.total > 0);
+
+                            if (monthlyBuckets.length === 0) {
+                              return <div style={{ fontSize: '12px', color: '#64748b' }}>No monthly trend data available for revenue buckets.</div>;
+                            }
+
+                            const bucketOrder = [...topBuckets, '__other__'].filter((bucket) =>
+                              monthlyBuckets.some((row) => (row.values[bucket] || 0) > 0)
+                            );
+                            const colorPalette = ['#1d76c3', '#8b5cf6', '#14b8a6', '#f59e0b', '#ef4444', '#64748b'];
+                            const maxTotal = Math.max(...monthlyBuckets.map((row) => row.total), 1);
+                            const formatMonthLabel = (monthValue: string): string => {
+                              const parsed = new Date(monthValue);
+                              if (!isNaN(parsed.getTime())) return `${parsed.getMonth() + 1}/${String(parsed.getFullYear()).slice(-2)}`;
+                              const m = monthValue.match(/^(\d{1,2})[-/](\d{4})$/);
+                              if (m) return `${Number(m[1])}/${m[2].slice(-2)}`;
+                              return monthValue.slice(0, 7);
+                            };
+
+                            return (
+                              <div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
+                                  {bucketOrder.map((bucket, idx) => (
+                                    <div key={bucket} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#334155' }}>
+                                      <span style={{ width: '12px', height: '12px', borderRadius: '2px', background: colorPalette[idx % colorPalette.length], display: 'inline-block' }} />
+                                      {bucket === '__other__' ? 'Other buckets' : bucket}
+                                    </div>
+                                  ))}
+                                </div>
+                                <svg viewBox="0 0 920 320" style={{ width: '100%', height: 'auto' }}>
+                                  {(() => {
+                                    const width = 920;
+                                    const height = 320;
+                                    const pad = { top: 18, right: 18, bottom: 42, left: 68 };
+                                    const chartW = width - pad.left - pad.right;
+                                    const chartH = height - pad.top - pad.bottom;
+                                    const step = chartW / Math.max(monthlyBuckets.length, 1);
+                                    const barW = Math.min(22, step * 0.66);
+                                    const yFor = (value: number) => pad.top + chartH - (value / maxTotal) * chartH;
+
+                                    return (
+                                      <>
+                                        {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+                                          const y = pad.top + chartH - chartH * pct;
+                                          return (
+                                            <g key={pct}>
+                                              <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                                              <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">
+                                                ${Math.round((maxTotal * pct) / 1000)}K
+                                              </text>
+                                            </g>
+                                          );
+                                        })}
+                                        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+                                        <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+
+                                        {monthlyBuckets.map((row, idx) => {
+                                          const x = pad.left + idx * step + step / 2;
+                                          let running = 0;
+                                          return (
+                                            <g key={`${row.month}-${idx}`}>
+                                              {bucketOrder.map((bucket, bIdx) => {
+                                                const value = row.values[bucket] || 0;
+                                                if (value <= 0) return null;
+                                                const topY = yFor(running + value);
+                                                const bottomY = yFor(running);
+                                                running += value;
+                                                return (
+                                                  <rect
+                                                    key={`${bucket}-${idx}`}
+                                                    x={x - barW / 2}
+                                                    y={topY}
+                                                    width={barW}
+                                                    height={Math.max(1, bottomY - topY)}
+                                                    fill={colorPalette[bIdx % colorPalette.length]}
+                                                    rx="2"
+                                                  />
+                                                );
+                                              })}
+                                              {(idx % 6 === 0 || idx === monthlyBuckets.length - 1) && (
+                                                <text x={x} y={height - pad.bottom + 14} textAnchor="middle" fontSize="9" fill="#64748b">
+                                                  {formatMonthLabel(row.month)}
+                                                </text>
+                                              )}
+                                            </g>
+                                          );
+                                        })}
+                                      </>
+                                    );
+                                  })()}
+                                </svg>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                      {revenueQualityFlagGraphOpen === 'dso-spike' && (
+                        <LineChart
+                          title="DSO Trend (Last 36 Months)"
+                          data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.dso }))}
+                          color="#f59e0b"
+                          compact
+                          formatter={(v) => `${v.toFixed(0)} days`}
+                        />
+                      )}
+                      {revenueQualityFlagGraphOpen === 'cash-gap' && (
+                        <LineChart
+                          title="Revenue-to-Cash Gap % (Last 36 Months)"
+                          data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.gapPct }))}
+                          color="#ef4444"
+                          compact
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                      )}
+                      {revenueQualityFlagGraphOpen === 'ar-vs-revenue' && (
+                        <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#334155' }}>
+                              <span style={{ width: '12px', height: '12px', background: '#1d76c3', display: 'inline-block', borderRadius: '2px' }} />
+                              Revenue (bar, left axis)
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#334155' }}>
+                              <span style={{ width: '16px', height: '2px', background: '#8b5cf6', display: 'inline-block' }} />
+                              AR (line, right axis)
+                            </div>
+                          </div>
+                          <svg viewBox="0 0 900 320" style={{ width: '100%', height: 'auto' }}>
+                            {(() => {
+                              const dualAxisData = revenueQualitySeries.slice(-36).map((r) => ({
+                                month: r.month,
+                                revenue: Math.max(0, r.revenue || 0),
+                                ar: Math.max(0, r.ar || 0)
+                              }));
+                              const width = 900;
+                              const height = 320;
+                              const pad = { top: 18, right: 68, bottom: 42, left: 68 };
+                              const chartW = width - pad.left - pad.right;
+                              const chartH = height - pad.top - pad.bottom;
+                              const maxRevenue = Math.max(...dualAxisData.map((d) => d.revenue), 1);
+                              const maxAr = Math.max(...dualAxisData.map((d) => d.ar), 1);
+                              const xStep = chartW / Math.max(dualAxisData.length, 1);
+                              const barW = Math.min(20, xStep * 0.6);
+                              const yRevenue = (v: number) => pad.top + chartH - (v / maxRevenue) * chartH;
+                              const yAr = (v: number) => pad.top + chartH - (v / maxAr) * chartH;
+
+                              const linePath = dualAxisData
+                                .map((d, idx) => {
+                                  const x = pad.left + xStep * idx + xStep / 2;
+                                  const y = yAr(d.ar);
+                                  return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`;
+                                })
+                                .join(' ');
+
+                              return (
+                                <>
+                                  {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
+                                    const y = pad.top + chartH - chartH * pct;
+                                    const leftVal = Math.round((maxRevenue * pct) / 1000);
+                                    const rightVal = Math.round((maxAr * pct) / 1000);
+                                    return (
+                                      <g key={pct}>
+                                        <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                                        <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#64748b">${leftVal}K</text>
+                                        <text x={width - pad.right + 8} y={y + 4} textAnchor="start" fontSize="10" fill="#64748b">${rightVal}K</text>
+                                      </g>
+                                    );
+                                  })}
+
+                                  <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+                                  <line x1={width - pad.right} y1={pad.top} x2={width - pad.right} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+                                  <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} stroke="#cbd5e1" strokeWidth="2" />
+
+                                  {dualAxisData.map((d, idx) => {
+                                    const x = pad.left + xStep * idx + xStep / 2;
+                                    const barTop = yRevenue(d.revenue);
+                                    const arY = yAr(d.ar);
+                                    const label = d.month ? String(d.month).slice(0, 7) : '';
+                                    return (
+                                      <g key={`${d.month}-${idx}`}>
+                                        <rect x={x - barW / 2} y={barTop} width={barW} height={Math.max(1, height - pad.bottom - barTop)} fill="#1d76c3" rx="2" />
+                                        <circle cx={x} cy={arY} r="3.5" fill="#8b5cf6" stroke="white" strokeWidth="1" />
+                                        {(idx % 3 === 0 || idx === dualAxisData.length - 1) && (
+                                          <text x={x} y={height - pad.bottom + 14} textAnchor="middle" fontSize="9" fill="#64748b">
+                                            {label}
+                                          </text>
+                                        )}
+                                      </g>
+                                    );
+                                  })}
+                                  <path d={linePath} fill="none" stroke="#8b5cf6" strokeWidth="2.5" />
+                                </>
+                              );
+                            })()}
+                          </svg>
+                        </div>
+                      )}
+                      {revenueQualityFlagGraphOpen === 'revenue-volatility' && (
+                        <LineChart
+                          title="Revenue Volatility (Rolling 12M Coefficient of Variation)"
+                          data={revenueQualityInsights.volatilitySeries.filter((d) => d.hasData).map((d) => ({ month: d.month, value: d.value }))}
+                          color="#0ea5e9"
+                          compact
+                          formatter={(v) => v.toFixed(2)}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                  <LineChart
+                    title="Revenue-to-Cash Gap % (Last 36 Months)"
+                    data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.gapPct }))}
+                    color="#ef4444"
+                    compact
+                    formatter={(v) => `${v.toFixed(1)}%`}
+                  />
+                  <LineChart
+                    title="DSO Trend (Last 36 Months)"
+                    data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.dso }))}
+                    color="#f59e0b"
+                    compact
+                    formatter={(v) => `${v.toFixed(0)} days`}
+                  />
+                </div>
+
+                <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '14px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Data Coverage Notes</div>
+                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                    Current signals use monthly financial data and revenue breakdown proxies.
+                    Customer-level concentration, recurring revenue percentage, and invoice-level recognition checks will activate when customer revenue and invoice/cash datasets are available.
+                  </div>
+                </div>
+                </>
+                )}
+                {sdeModuleTab === 'customer-quality' && (
+                <>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Customer Quality</h2>
+                  <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
+                    Customer concentration and dependency risk based on customer-level operational sales snapshots (TTM rolling analysis).
+                  </p>
+
+                  {customerQualityLoading && (
+                    <div style={{ fontSize: '13px', color: '#64748b' }}>Loading customer quality data...</div>
+                  )}
+                  {!customerQualityLoading && customerQualityError && (
+                    <div style={{ fontSize: '13px', color: '#b91c1c' }}>{customerQualityError}</div>
+                  )}
+                  {!customerQualityLoading && !customerQualityError && !customerQualityInsights.hasData && (
+                    <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                      No customer-level sales snapshots are available yet for this company. Connect or ingest customer sales operational data to enable concentration analysis.
+                    </div>
+                  )}
+
+                  {!customerQualityLoading && !customerQualityError && customerQualityInsights.hasData && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px' }}>
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>Top 1 Customer % (TTM)</div>
+                          <button
+                            onClick={() => setCustomerQualityCardInfoOpen((prev) => ({ ...prev, top1: !prev.top1 }))}
+                            style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          >
+                            <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                          </button>
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: 700, color: customerQualityInsights.top1Pct > sdeSectorBenchmarks.customerQuality.top1Warn ? '#ef4444' : '#1e293b' }}>
+                          {customerQualityInsights.top1Pct.toFixed(1)}%
+                        </div>
+                        <button
+                          onClick={() => setCustomerQualityFlagGraphOpen('top1')}
+                          style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          View Trend
+                        </button>
+                        {customerQualityCardInfoOpen.top1 && (
+                          <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Share of trailing 12-month revenue represented by the single largest customer.<br />
+                            <strong>Why it matters:</strong> Higher single-customer dependency increases continuity risk and often lowers buyer confidence in projected cash flows.
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>Top 5 Customers % (TTM)</div>
+                          <button
+                            onClick={() => setCustomerQualityCardInfoOpen((prev) => ({ ...prev, top5: !prev.top5 }))}
+                            style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          >
+                            <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                          </button>
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: 700, color: customerQualityInsights.top5Pct > sdeSectorBenchmarks.customerQuality.top5Warn ? '#ef4444' : '#1e293b' }}>
+                          {customerQualityInsights.top5Pct.toFixed(1)}%
+                        </div>
+                        <button
+                          onClick={() => setCustomerQualityFlagGraphOpen('top5')}
+                          style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          View Trend
+                        </button>
+                        {customerQualityCardInfoOpen.top5 && (
+                          <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Combined share of trailing 12-month revenue represented by the top five customers.<br />
+                            <strong>Why it matters:</strong> Buyer risk increases when a small cluster of customers controls most recurring revenue.
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>Customer HHI (TTM)</div>
+                          <button
+                            onClick={() => setCustomerQualityCardInfoOpen((prev) => ({ ...prev, hhi: !prev.hhi }))}
+                            style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          >
+                            <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                          </button>
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: 700, color: customerQualityInsights.hhi > sdeSectorBenchmarks.customerQuality.hhiWarn ? '#ef4444' : '#1e293b' }}>
+                          {Math.round(customerQualityInsights.hhi).toLocaleString()}
+                        </div>
+                        <button
+                          onClick={() => setCustomerQualityFlagGraphOpen('hhi')}
+                          style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          View Trend
+                        </button>
+                        {customerQualityCardInfoOpen.hhi && (
+                          <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Herfindahl-Hirschman Index on trailing 12-month customer revenue shares (0-10,000 scale).<br />
+                            <strong>Why it matters:</strong> Higher HHI indicates more concentrated demand and greater downside from customer churn or renegotiation.
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>Active Customers (TTM)</div>
+                          <button
+                            onClick={() => setCustomerQualityCardInfoOpen((prev) => ({ ...prev, customerCount: !prev.customerCount }))}
+                            style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          >
+                            <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                          </button>
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>
+                          {customerQualityInsights.customerCount.toLocaleString()}
+                        </div>
+                        <button
+                          onClick={() => setCustomerQualityFlagGraphOpen('customer-count')}
+                          style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          View Trend
+                        </button>
+                        {customerQualityCardInfoOpen.customerCount && (
+                          <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Distinct customers contributing revenue over the trailing 12-month period.<br />
+                            <strong>Why it matters:</strong> A broader customer base usually lowers concentration risk and improves perceived durability of earnings.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {!customerQualityLoading && !customerQualityError && customerQualityInsights.hasData && (
+                  <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}>Customer Quality Flags</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      {customerQualityInsights.flags.map((flag) => (
+                        <div key={flag.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
+                            <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
+                            <button
+                              onClick={() => setCustomerQualityFlagGraphOpen(flag.id)}
+                              style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                            >
+                              View Trend
+                            </button>
+                            <button
+                              onClick={() => setSdeExplanationOpen(String(flag.id))}
+                              style={{ marginTop: '4px', marginLeft: '12px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                            >
+                              Explain
+                            </button>
+                          </div>
+                          <div style={{
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            color: flag.triggered ? 'white' : '#334155',
+                            background: flag.triggered ? (flag.severity === 'high' ? '#ef4444' : '#f59e0b') : '#e2e8f0',
+                            borderRadius: '999px',
+                            padding: '5px 10px',
+                            minWidth: '72px',
+                            textAlign: 'center'
+                          }}>
+                            {flag.triggered ? `Flagged (${flag.severity})` : 'Normal'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!customerQualityLoading && !customerQualityError && customerQualityInsights.hasData && (
+                  <div style={{ background: 'white', borderRadius: '10px', padding: '10px 16px 14px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px 0' }}>
+                      Sector Benchmark Comparison ({sdeSectorBenchmarks.sectorLabel})
+                    </h3>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ textAlign: 'left', padding: '8px 10px', color: '#334155' }}>Metric</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Company</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Sector Warn</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Variance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px 10px', color: '#475569' }}>Top 1 customer %</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{customerQualityInsights.top1Pct.toFixed(1)}%</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.top1Warn.toFixed(1)}%</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn) > 0 ? '#ef4444' : '#10b981' }}>
+                              {(customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn) >= 0 ? '+' : ''}
+                              {(customerQualityInsights.top1Pct - sdeSectorBenchmarks.customerQuality.top1Warn).toFixed(1)}%
+                            </td>
+                          </tr>
+                          <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px 10px', color: '#475569' }}>Top 5 customers %</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{customerQualityInsights.top5Pct.toFixed(1)}%</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.top5Warn.toFixed(1)}%</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn) > 0 ? '#ef4444' : '#10b981' }}>
+                              {(customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn) >= 0 ? '+' : ''}
+                              {(customerQualityInsights.top5Pct - sdeSectorBenchmarks.customerQuality.top5Warn).toFixed(1)}%
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style={{ padding: '8px 10px', color: '#475569' }}>HHI</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#1e293b' }}>{Math.round(customerQualityInsights.hhi).toLocaleString()}</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', color: '#475569' }}>{sdeSectorBenchmarks.customerQuality.hhiWarn.toLocaleString()}</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: (customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn) > 0 ? '#ef4444' : '#10b981' }}>
+                              {(customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn) >= 0 ? '+' : ''}
+                              {Math.round(customerQualityInsights.hhi - sdeSectorBenchmarks.customerQuality.hhiWarn).toLocaleString()}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#334155' }}>
+                      <strong>Valuation narrative:</strong>{' '}
+                      {customerQualityInsights.top1Pct > sdeSectorBenchmarks.customerQuality.top1High || customerQualityInsights.top5Pct > sdeSectorBenchmarks.customerQuality.top5High
+                        ? 'Customer concentration is materially above sector norms and may pressure risk-adjusted valuation multiples unless diversification actions are underway.'
+                        : 'Customer concentration is within an acceptable range versus sector norms and supports revenue durability in valuation discussions.'}
+                    </div>
+                  </div>
+                )}
+
+                {customerQualityFlagGraphOpen && customerQualityInsights.hasData && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(15,23,42,0.5)',
+                      zIndex: 3000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setCustomerQualityFlagGraphOpen(null)}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.2)',
+                        width: '100%',
+                        maxWidth: '980px',
+                        padding: '16px'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+                          {customerQualityFlagGraphOpen === 'top1' && 'Top 1 Customer Concentration (Rolling TTM)'}
+                          {customerQualityFlagGraphOpen === 'top5' && 'Top 5 Customer Concentration (Rolling TTM)'}
+                          {customerQualityFlagGraphOpen === 'hhi' && 'Customer HHI Concentration (Rolling TTM)'}
+                          {customerQualityFlagGraphOpen === 'customer-count' && 'Active Customer Count (Rolling TTM)'}
+                        </h3>
+                        <button
+                          onClick={() => setCustomerQualityFlagGraphOpen(null)}
+                          style={{ background: 'transparent', border: 'none', color: '#334155', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}
+                          title="Close"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {customerQualityFlagGraphOpen === 'top1' && (
+                        <LineChart
+                          title="Top 1 Customer % (Last 36 Months)"
+                          data={customerQualityInsights.top1Series}
+                          color="#f59e0b"
+                          compact
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                      )}
+                      {customerQualityFlagGraphOpen === 'top5' && (
+                        <LineChart
+                          title="Top 5 Customers % (Last 36 Months)"
+                          data={customerQualityInsights.top5Series}
+                          color="#ef4444"
+                          compact
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                      )}
+                      {customerQualityFlagGraphOpen === 'hhi' && (
+                        <LineChart
+                          title="Customer HHI (Last 36 Months)"
+                          data={customerQualityInsights.hhiSeries}
+                          color="#6366f1"
+                          compact
+                          formatter={(v) => Math.round(v).toLocaleString()}
+                        />
+                      )}
+                      {customerQualityFlagGraphOpen === 'customer-count' && (
+                        <LineChart
+                          title="Active Customers (Last 36 Months)"
+                          data={customerQualityInsights.customerCountSeries}
+                          color="#1d76c3"
+                          compact
+                          formatter={(v) => Math.round(v).toLocaleString()}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+                </>
+                )}
+                {sdeModuleTab === 'working-capital' && (
+                <>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '6px 12px 12px 12px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>SDE Module: Working Capital</h2>
+                  <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5, marginBottom: '8px' }}>
+                    Buyer-oriented working capital view showing normalized target, current position, and likely purchase price adjustment implications.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Normalized WC Target (12M)</div>
+                        <button
+                          onClick={() => setWorkingCapitalCardInfoOpen((prev) => ({ ...prev, normalizedTarget: !prev.normalizedTarget }))}
+                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '17px', fontWeight: 700, color: '#1e293b' }}>
+                        ${Math.round(workingCapitalInsights.normalizedTarget).toLocaleString()}
+                      </div>
+                      <button
+                        onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {workingCapitalCardInfoOpen.normalizedTarget && (
+                        <div style={{ marginTop: '6px', padding: '6px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> 12-month average operating working capital (AR + Inventory - AP - accrued operating liabilities).
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
+                            <strong>Why it matters:</strong> Buyers use this as the baseline target at close for purchase-price adjustment mechanics.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Current Operating WC</div>
+                        <button
+                          onClick={() => setWorkingCapitalCardInfoOpen((prev) => ({ ...prev, currentWc: !prev.currentWc }))}
+                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '17px', fontWeight: 700, color: '#1e293b' }}>
+                        ${Math.round(workingCapitalInsights.currentWc).toLocaleString()}
+                      </div>
+                      <button
+                        onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {workingCapitalCardInfoOpen.currentWc && (
+                        <div style={{ marginTop: '6px', padding: '6px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Latest period operating working capital based on currently loaded monthly financial data.
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
+                            <strong>Why it matters:</strong> Indicates whether current operations are consuming or releasing net operating cash.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>WC Adjustment vs Target</div>
+                        <button
+                          onClick={() => setWorkingCapitalCardInfoOpen((prev) => ({ ...prev, wcAdjustment: !prev.wcAdjustment }))}
+                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '17px', fontWeight: 700, color: workingCapitalInsights.wcAdjustment < 0 ? '#ef4444' : '#10b981' }}>
+                        {workingCapitalInsights.wcAdjustment >= 0 ? '+' : ''}${Math.round(workingCapitalInsights.wcAdjustment).toLocaleString()}
+                      </div>
+                      <button
+                        onClick={() => setWorkingCapitalFlagGraphOpen('wc-deficit')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {workingCapitalCardInfoOpen.wcAdjustment && (
+                        <div style={{ marginTop: '6px', padding: '6px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Difference between current operating WC and normalized target (Current - Target).
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
+                            <strong>Why it matters:</strong> Negative adjustments typically reduce proceeds at close in working-capital true-up clauses.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>CCC Trend (12M)</div>
+                        <button
+                          onClick={() => setWorkingCapitalCardInfoOpen((prev) => ({ ...prev, cccTrend: !prev.cccTrend }))}
+                          style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                        >
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '17px', fontWeight: 700, color: workingCapitalInsights.cccTrend12 > sdeSectorBenchmarks.workingCapital.cccTrendWarn ? '#ef4444' : '#1e293b' }}>
+                        {workingCapitalInsights.cccTrend12 >= 0 ? '+' : ''}{workingCapitalInsights.cccTrend12.toFixed(1)} days
+                      </div>
+                      <button
+                        onClick={() => setWorkingCapitalFlagGraphOpen('ccc-deterioration')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {workingCapitalCardInfoOpen.cccTrend && (
+                        <div style={{ marginTop: '6px', padding: '6px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Description:</strong> Change in cash conversion cycle over 12 months (DSO + DIO - DPO).
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.5, marginTop: '4px' }}>
+                            <strong>Why it matters:</strong> Increasing cycle days means more cash tied up in operations, reducing transaction readiness.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}>Working Capital Flags</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {workingCapitalInsights.flags.map((flag) => (
+                      <div key={flag.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
+                          <button
+                            onClick={() => setWorkingCapitalFlagGraphOpen(flag.id as 'wc-deficit' | 'ccc-deterioration' | 'wc-intensity' | 'ccc-level')}
+                            style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          >
+                            View Trend
+                          </button>
+                          <button
+                            onClick={() => setSdeExplanationOpen(String(flag.id))}
+                            style={{ marginTop: '4px', marginLeft: '12px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          >
+                            Explain
+                          </button>
+                          {(flag.id === 'ccc-deterioration' || flag.id === 'ccc-level') && (
+                            <>
+                              <button
+                                onClick={() => setWorkingCapitalCccGuideOpen(true)}
+                                style={{ marginTop: '4px', marginLeft: '12px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                              >
+                                CCC Guide
+                              </button>
+                              <button
+                                onClick={() => setWorkingCapitalCashImpactOpen(true)}
+                                style={{ marginTop: '4px', marginLeft: '12px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                              >
+                                Cash Impact
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        <div style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          color: flag.triggered ? 'white' : '#334155',
+                          background: flag.triggered
+                            ? (flag.severity === 'high' ? '#ef4444' : flag.severity === 'low' ? '#0ea5e9' : '#f59e0b')
+                            : '#e2e8f0',
+                          borderRadius: '999px',
+                          padding: '5px 10px',
+                          minWidth: '72px',
+                          textAlign: 'center'
+                        }}>
+                          {flag.triggered ? `Flagged (${flag.severity})` : 'Normal'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {workingCapitalCccGuideOpen && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(15,23,42,0.5)',
+                      zIndex: 3000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setWorkingCapitalCccGuideOpen(false)}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.2)',
+                        width: '100%',
+                        maxWidth: '920px',
+                        padding: '16px'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>Cash Conversion Cycle (CCC) Guide</h3>
+                        <button
+                          onClick={() => setWorkingCapitalCccGuideOpen(false)}
+                          style={{ background: 'transparent', border: 'none', color: '#334155', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7, maxHeight: '62vh', overflowY: 'auto', paddingRight: '6px' }}>
+                        <div><strong>Formula:</strong> CCC = DSO + DIO - DPO</div>
+                        <div style={{ marginTop: '8px' }}><strong>Why negative CCC is powerful:</strong></div>
+                        <div>- The business can grow without adding working capital.</div>
+                        <div>- Operations collect cash early and pay later.</div>
+                        <div>- Expansion can be funded internally instead of by debt.</div>
+                        <div style={{ marginTop: '8px' }}><strong>What investors/acquirers usually infer:</strong></div>
+                        <div>- Operational efficiency and stronger cash discipline.</div>
+                        <div>- Supplier terms and demand strength may be favorable.</div>
+                        <div>- Scalability can improve when growth does not consume cash.</div>
+                        <div style={{ marginTop: '8px' }}><strong>Common examples:</strong></div>
+                        <div>- Retail models with immediate collection and delayed supplier payment.</div>
+                        <div>- Subscription/SaaS models where cash is paid before delivery period.</div>
+                        <div>- Fast-turn inventory businesses (for example, grocery and discount formats).</div>
+                        <div style={{ marginTop: '8px' }}><strong>Simple timeline example:</strong></div>
+                        <div>- Day 0: customer pays.</div>
+                        <div>- Day 2: company delivers product/service.</div>
+                        <div>- Day 45: company pays supplier.</div>
+                        <div>- Result: cash is held for ~43 days.</div>
+                        <div style={{ marginTop: '8px' }}><strong>Financial implications:</strong></div>
+                        <div>- Growth can generate cash instead of consuming it.</div>
+                        <div>- Lower need for lines of credit and working-capital loans.</div>
+                        <div>- Higher return on invested capital from lower capital intensity.</div>
+                        <div style={{ marginTop: '8px' }}><strong>When negative CCC can be misleading:</strong></div>
+                        <div>- Unsustainably long vendor terms.</div>
+                        <div>- Delayed supplier payments.</div>
+                        <div>- Seasonal timing distortions.</div>
+                        <div>- Marketplace or low-inventory models that require separate context.</div>
+                        <div style={{ marginTop: '8px' }}><strong>Analyst checks:</strong></div>
+                        <div>- Sustainability of payment terms.</div>
+                        <div>- Inventory turnover direction.</div>
+                        <div>- Customer/supplier concentration and dependency risk.</div>
+                        <div style={{ marginTop: '8px' }}><strong>SMB acquisition implication:</strong></div>
+                        <div>- Negative CCC often supports a lower working-capital requirement at close, if sustainable.</div>
+                        <div style={{ marginTop: '8px' }}><strong>Current reading:</strong> {workingCapitalInsights.currentCcc.toFixed(1)} days (12M change {workingCapitalInsights.cccTrend12 >= 0 ? '+' : ''}{workingCapitalInsights.cccTrend12.toFixed(1)} days).</div>
+                        <div style={{ marginTop: '6px' }}><strong>What this means now:</strong> {workingCapitalInsights.cccInterpretation}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {workingCapitalCashImpactOpen && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(15,23,42,0.5)',
+                      zIndex: 3000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setWorkingCapitalCashImpactOpen(false)}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.2)',
+                        width: '100%',
+                        maxWidth: '980px',
+                        padding: '16px'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>CCC Cash Impact Engine</h3>
+                        <button
+                          onClick={() => setWorkingCapitalCashImpactOpen(false)}
+                          style={{ background: 'transparent', border: 'none', color: '#334155', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>Current CCC</div>
+                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>{workingCapitalInsights.currentCcc.toFixed(1)} days</div>
+                        </div>
+                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>Working Capital Tied Up</div>
+                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>${Math.round(workingCapitalInsights.operatingWcFromCcc).toLocaleString()}</div>
+                        </div>
+                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>Cash per CCC Day</div>
+                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>${Math.round(workingCapitalInsights.cashImpactPerCccDay).toLocaleString()}</div>
+                        </div>
+                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>WC as % of Revenue</div>
+                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>{workingCapitalInsights.wcLeverageRatio.toFixed(1)}%</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }}>
+                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Component Conversion to Dollars</div>
+                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>AR tied up: ${Math.round(workingCapitalInsights.arTiedUp).toLocaleString()}</div>
+                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>Inventory tied up: ${Math.round(workingCapitalInsights.inventoryTiedUp).toLocaleString()}</div>
+                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>Supplier financing (AP): ${Math.round(workingCapitalInsights.supplierFinancing).toLocaleString()}</div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, fontWeight: 700, marginTop: '6px' }}>
+                            Operating WC impact: ${Math.round(workingCapitalInsights.operatingWcFromCcc).toLocaleString()}
+                          </div>
+                        </div>
+                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Growth Cash Requirement</div>
+                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                            Estimated cash needed for growth (CCC x daily revenue growth):
+                          </div>
+                          <div style={{ fontSize: '20px', fontWeight: 700, color: workingCapitalInsights.cashNeededForGrowth > 0 ? '#ef4444' : '#10b981', marginTop: '6px' }}>
+                            ${Math.round(workingCapitalInsights.cashNeededForGrowth).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>Scenario Impact (CCC Day Changes)</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                          {workingCapitalInsights.cccScenarioImpacts.map((scenario) => (
+                            <div key={scenario.days} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#64748b' }}>{scenario.days >= 0 ? `+${scenario.days}` : `${scenario.days}`} days</div>
+                              <div style={{ fontSize: '15px', fontWeight: 700, color: scenario.cashImpact > 0 ? '#ef4444' : '#10b981' }}>
+                                ${Math.round(Math.abs(scenario.cashImpact)).toLocaleString()} {scenario.cashImpact > 0 ? 'used' : 'freed'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {workingCapitalFlagGraphOpen && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(15,23,42,0.5)',
+                      zIndex: 3000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setWorkingCapitalFlagGraphOpen(null)}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.2)',
+                        width: '100%',
+                        maxWidth: '980px',
+                        padding: '16px'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+                          {workingCapitalFlagGraphOpen === 'wc-deficit' && 'Operating WC vs Normalized Target'}
+                          {workingCapitalFlagGraphOpen === 'ccc-deterioration' && 'Cash Conversion Cycle Trend'}
+                          {workingCapitalFlagGraphOpen === 'wc-intensity' && 'Working Capital Intensity % Trend'}
+                          {workingCapitalFlagGraphOpen === 'ccc-level' && 'Cash Conversion Cycle Level'}
+                        </h3>
+                        <button
+                          onClick={() => setWorkingCapitalFlagGraphOpen(null)}
+                          style={{ background: 'transparent', border: 'none', color: '#334155', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {workingCapitalFlagGraphOpen === 'wc-deficit' && (
+                        <LineChart
+                          title="Operating WC (Last 36 Months)"
+                          data={workingCapitalSeries.map((r) => ({ month: r.month, value: r.operatingWc }))}
+                          color="#1d76c3"
+                          compact
+                          formatter={(v) => `$${Math.round(v / 1000)}K`}
+                        />
+                      )}
+                      {(workingCapitalFlagGraphOpen === 'ccc-deterioration' || workingCapitalFlagGraphOpen === 'ccc-level') && (
+                        <LineChart
+                          title="Cash Conversion Cycle (Last 36 Months)"
+                          data={workingCapitalSeries.map((r) => ({ month: r.month, value: r.ccc }))}
+                          color="#f59e0b"
+                          compact
+                          formatter={(v) => `${v.toFixed(0)} days`}
+                        />
+                      )}
+                      {workingCapitalFlagGraphOpen === 'wc-intensity' && (
+                        <LineChart
+                          title="Working Capital Intensity % (Last 36 Months)"
+                          data={workingCapitalSeries.map((r) => ({ month: r.month, value: r.wcIntensityPct }))}
+                          color="#8b5cf6"
+                          compact
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                  <LineChart
+                    title="Operating Working Capital (Last 36 Months)"
+                    data={workingCapitalSeries.map((r) => ({ month: r.month, value: r.operatingWc }))}
+                    color="#1d76c3"
+                    compact
+                    formatter={(v) => `$${Math.round(v / 1000)}K`}
+                  />
+                  <LineChart
+                    title="Cash Conversion Cycle (Last 36 Months)"
+                    data={workingCapitalSeries.map((r) => ({ month: r.month, value: r.ccc }))}
+                    color="#f59e0b"
+                    compact
+                    formatter={(v) => `${v.toFixed(0)} days`}
+                  />
+                </div>
+                </>
+                )}
+                {sdeModuleTab === 'cash-flow-quality' && (
+                <>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Cash Flow Quality</h2>
+                  <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
+                    Cash-flow durability lens focused on conversion quality, maintenance CapEx requirements, and free cash flow resilience.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px' }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Cash Conversion % (TTM)</div>
+                        <button onClick={() => setCashFlowQualityCardInfoOpen((prev) => ({ ...prev, cashConversion: !prev.cashConversion }))} style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: cashFlowQualityInsights.cashConversionPct < sdeSectorBenchmarks.cashFlow.cashConversionWarn ? '#ef4444' : '#1e293b' }}>
+                        {cashFlowQualityInsights.cashConversionPct.toFixed(1)}%
+                      </div>
+                      <button
+                        onClick={() => setCashFlowQualityFlagGraphOpen('cash-conversion-weak')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {cashFlowQualityCardInfoOpen.cashConversion && (
+                        <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                          <div><strong>Description:</strong> TTM operating cash flow divided by TTM EBITDA.</div>
+                          <div style={{ marginTop: '4px' }}><strong>Why it matters:</strong> Buyers prefer earnings that convert to cash reliably, not accounting-only profitability.</div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>Maintenance CapEx Estimate</div>
+                        <button onClick={() => setCashFlowQualityCardInfoOpen((prev) => ({ ...prev, maintenanceCapex: !prev.maintenanceCapex }))} style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>
+                        ${Math.round(cashFlowQualityInsights.maintenanceCapexEstimate).toLocaleString()}
+                      </div>
+                      <button
+                        onClick={() => setCashFlowQualityFlagGraphOpen('capex-gap')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {cashFlowQualityCardInfoOpen.maintenanceCapex && (
+                        <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                          <div><strong>Description:</strong> Estimated minimum annual reinvestment to sustain operations (max of TTM depreciation and reported CapEx).</div>
+                          <div style={{ marginTop: '4px' }}><strong>Why it matters:</strong> Understating maintenance CapEx can overstate valuation-ready cash flow.</div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>CapEx Gap (TTM)</div>
+                        <button onClick={() => setCashFlowQualityCardInfoOpen((prev) => ({ ...prev, capexGap: !prev.capexGap }))} style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: cashFlowQualityInsights.capexGap > 0 ? '#ef4444' : '#10b981' }}>
+                        {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}
+                      </div>
+                      <button
+                        onClick={() => setCashFlowQualityFlagGraphOpen('capex-gap')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {cashFlowQualityCardInfoOpen.capexGap && (
+                        <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                          <div><strong>Description:</strong> Maintenance CapEx estimate minus reported CapEx.</div>
+                          <div style={{ marginTop: '4px' }}><strong>Why it matters:</strong> Positive gaps suggest deferred reinvestment and potential post-acquisition cash drag.</div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>FCF Durability %</div>
+                        <button onClick={() => setCashFlowQualityCardInfoOpen((prev) => ({ ...prev, fcfDurability: !prev.fcfDurability }))} style={{ background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                          <span style={{ fontSize: '14px', marginRight: '4px' }}>ℹ️</span> Details
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: cashFlowQualityInsights.fcfDurabilityPct < sdeSectorBenchmarks.cashFlow.fcfDurabilityWarn ? '#ef4444' : '#1e293b' }}>
+                        {cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}%
+                      </div>
+                      <button
+                        onClick={() => setCashFlowQualityFlagGraphOpen('fcf-weakness')}
+                        style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      >
+                        View Trend
+                      </button>
+                      {cashFlowQualityCardInfoOpen.fcfDurability && (
+                        <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: '11px', color: '#334155', lineHeight: 1.5 }}>
+                          <div><strong>Description:</strong> (Operating cash flow - maintenance CapEx) as a percentage of EBITDA.</div>
+                          <div style={{ marginTop: '4px' }}><strong>Why it matters:</strong> Indicates how much EBITDA remains as durable free cash after sustaining the asset base.</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}>Cash Flow Quality Flags</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {cashFlowQualityInsights.flags.map((flag) => (
+                      <div key={flag.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>{flag.title}</div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>{flag.detail}</div>
+                          <button
+                            onClick={() => setCashFlowQualityFlagGraphOpen(flag.id as 'cash-conversion-weak' | 'capex-gap' | 'fcf-weakness' | 'ocf-deterioration')}
+                            style={{ marginTop: '4px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          >
+                            View Trend
+                          </button>
+                          <button
+                            onClick={() => setSdeExplanationOpen(String(flag.id))}
+                            style={{ marginTop: '4px', marginLeft: '12px', background: 'transparent', border: 'none', color: '#1F70C1', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                          >
+                            Explain
+                          </button>
+                        </div>
+                        <div style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          color: flag.triggered ? 'white' : '#334155',
+                          background: flag.triggered ? (flag.severity === 'high' ? '#ef4444' : '#f59e0b') : '#e2e8f0',
+                          borderRadius: '999px',
+                          padding: '5px 10px',
+                          minWidth: '72px',
+                          textAlign: 'center'
+                        }}>
+                          {flag.triggered ? `Flagged (${flag.severity})` : 'Normal'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {cashFlowQualityFlagGraphOpen && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(15,23,42,0.5)',
+                      zIndex: 3000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setCashFlowQualityFlagGraphOpen(null)}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.2)',
+                        width: '100%',
+                        maxWidth: '980px',
+                        padding: '16px'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+                          {cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' && 'Cash Conversion Trend'}
+                          {cashFlowQualityFlagGraphOpen === 'capex-gap' && 'Maintenance vs Reported CapEx'}
+                          {cashFlowQualityFlagGraphOpen === 'fcf-weakness' && 'Free Cash Flow Trend'}
+                          {cashFlowQualityFlagGraphOpen === 'ocf-deterioration' && 'Operating Cash Flow Trend'}
+                        </h3>
+                        <button onClick={() => setCashFlowQualityFlagGraphOpen(null)} style={{ background: 'transparent', border: 'none', color: '#334155', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}>
+                          ×
+                        </button>
+                      </div>
+                      {(cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' || cashFlowQualityFlagGraphOpen === 'ocf-deterioration') && (
+                        <LineChart
+                          title={cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' ? 'Cash Conversion % (Last 36 Months)' : 'Operating Cash Flow (Last 36 Months)'}
+                          data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' ? r.cashConversionPct : r.operatingCashFlow }))}
+                          color={cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' ? '#0ea5e9' : '#10b981'}
+                          compact
+                          formatter={(v) => cashFlowQualityFlagGraphOpen === 'cash-conversion-weak' ? `${v.toFixed(1)}%` : `$${Math.round(v / 1000)}K`}
+                        />
+                      )}
+                      {cashFlowQualityFlagGraphOpen === 'fcf-weakness' && (
+                        <LineChart
+                          title="Free Cash Flow (Last 36 Months)"
+                          data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
+                          color="#f59e0b"
+                          compact
+                          formatter={(v) => `$${Math.round(v / 1000)}K`}
+                        />
+                      )}
+                      {cashFlowQualityFlagGraphOpen === 'capex-gap' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          <LineChart
+                            title="Reported CapEx (Last 36 Months)"
+                            data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.capex }))}
+                            color="#8b5cf6"
+                            compact
+                            formatter={(v) => `$${Math.round(v / 1000)}K`}
+                          />
+                          <LineChart
+                            title="Depreciation Proxy (Last 36 Months)"
+                            data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.depreciation }))}
+                            color="#ef4444"
+                            compact
+                            formatter={(v) => `$${Math.round(v / 1000)}K`}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                  <LineChart
+                    title="Cash Conversion % (Last 36 Months)"
+                    data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.cashConversionPct }))}
+                    color="#0ea5e9"
+                    compact
+                    formatter={(v) => `${v.toFixed(1)}%`}
+                  />
+                  <LineChart
+                    title="Free Cash Flow (Last 36 Months)"
+                    data={cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
+                    color="#f59e0b"
+                    compact
+                    formatter={(v) => `$${Math.round(v / 1000)}K`}
+                  />
+                </div>
+                </>
+                )}
+                {sdeExplanationOpen && sdeExplanationContent[sdeExplanationOpen] && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(15,23,42,0.5)',
+                      zIndex: 3000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setSdeExplanationOpen(null)}
+                  >
+                    <div
+                      style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 8px 28px rgba(0,0,0,0.2)',
+                        width: '100%',
+                        maxWidth: '980px',
+                        padding: '16px'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+                          {sdeExplanationContent[sdeExplanationOpen].title}
+                        </h3>
+                        <button
+                          onClick={() => setSdeExplanationOpen(null)}
+                          style={{ background: 'transparent', border: 'none', color: '#334155', cursor: 'pointer', fontSize: '18px', fontWeight: 700 }}
+                          title="Close"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {sdeExplanationContent[sdeExplanationOpen].formula && (
+                        <div style={{ marginBottom: '8px', fontSize: '13px', color: '#334155', lineHeight: 1.6 }}>
+                          <strong>Formula:</strong> {sdeExplanationContent[sdeExplanationOpen].formula}
+                        </div>
+                      )}
+                      <div style={{ marginBottom: '8px', fontSize: '13px', color: '#334155', lineHeight: 1.7 }}>
+                        {sdeExplanationContent[sdeExplanationOpen].plain.map((line, idx) => (
+                          <div key={`plain-${idx}`}>{line}</div>
+                        ))}
+                      </div>
+                      {sdeExplanationContent[sdeExplanationOpen].example && (
+                        <div style={{ marginBottom: '8px', fontSize: '13px', color: '#334155', lineHeight: 1.7 }}>
+                          {sdeExplanationContent[sdeExplanationOpen].example!.map((line, idx) => (
+                            <div key={`example-${idx}`}>{line}</div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.7 }}>
+                        <div style={{ fontWeight: 700, marginBottom: '4px' }}>Why this matters:</div>
+                        {sdeExplanationContent[sdeExplanationOpen].why.map((line, idx) => (
+                          <div key={`why-${idx}`}>- {line}</div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {sdeModuleTab === 'recommendations' && (
+                <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginTop: 0, marginBottom: '10px' }}>SDE Module: Results & Recommendations</h2>
+                  <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
+                    Recommendations are designed to improve deal readiness by converting quality-of-earnings risks into prioritized actions tied to EBITDA quality, cash conversion, and valuation resilience.
+                  </p>
+                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                      Seller's Discretionary Earnings (SDE) Method
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                      <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px' }}>
+                        <div style={{ marginBottom: '8px' }}>
+                          <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
+                          <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${Math.round(ttmSDE).toLocaleString()}</div>
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                          <strong>Calculation:</strong> Quality of Earnings: EBITDA + QoE Adjustments = ${Math.round(ttmEbitdaAnalysis).toLocaleString()} + ${Math.round(qoeTotalAdjustments).toLocaleString()}
+                        </div>
+                      </div>
+                      <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+                          Estimated Business Value (SDE)
+                        </div>
+                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
+                          ${Math.round(sdeValuation).toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                          Range: ${Math.round(ttmSDE * 1.5).toLocaleString()} - ${Math.round(ttmSDE * 4.0).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                        SDE Multiple: {sdeMultiplier.toFixed(1)}x
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        step="0.1"
+                        value={sdeMultiplier}
+                        onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))}
+                        style={{ width: '100%', marginBottom: '4px' }}
+                      />
+                      <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Typical Range: 1.5x - 4.0x</span>
+                        <span>Industry Average: 2.5x</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginBottom: '6px' }}>Executive Financial Summary</div>
+                    <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, marginBottom: '8px' }}>
+                      {sdeRecommendationsLoading ? 'Building executive summary from validated company financial data...' : (sdeExecutiveFinancialSummaryApi?.headline || 'Executive summary is not available for this company yet.')}
+                    </div>
+                    {!sdeRecommendationsLoading && sdeExecutiveFinancialSummaryApi && (
+                      <>
+                        <div style={{ fontSize: '12px', color: '#475569', marginBottom: '10px' }}>
+                          This summary rolls up findings from EBITDA Adjustments, Revenue Quality, Working Capital, and Cash Flow Quality.
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                          {sdeExecutiveFinancialSummaryApi.scorecard.map((card) => {
+                            const statusStyle =
+                              card.status === 'high_risk'
+                                ? { bg: '#fee2e2', color: '#b91c1c', border: '#fecaca', label: 'High Risk' }
+                                : card.status === 'moderate_risk'
+                                  ? { bg: '#fef3c7', color: '#92400e', border: '#fde68a', label: 'Moderate Risk' }
+                                  : { bg: '#dcfce7', color: '#166534', border: '#bbf7d0', label: 'Healthy' };
+                            return (
+                              <div key={card.area} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                                <div style={{ display: 'inline-block', padding: '2px 6px', borderRadius: '999px', background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}`, fontSize: '10px', fontWeight: 700, marginBottom: '6px' }}>
+                                  {statusStyle.label}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '4px' }}>{card.headlineMetric}</div>
+                                <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '4px' }}>{card.value}</div>
+                                <div style={{ fontSize: '11px', color: '#475569', lineHeight: 1.4 }}>
+                                  <strong>{card.impactLabel}:</strong> {card.impactValue}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '6px' }}>Current Valuation (SDE)</div>
+                            <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800 }}>${Math.round(sdeValuation).toLocaleString()}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>Based on current QoE adjustments and {sdeMultiplier.toFixed(1)}x multiple.</div>
+                          </div>
+                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '6px' }}>Action-Driven Valuation Uplift</div>
+                            <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800 }}>
+                              ${(Math.round((sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftLow || 0) * sdeMultiplier)).toLocaleString()} - ${(Math.round((sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftHigh || 0) * sdeMultiplier)).toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>
+                              EBITDA uplift ${Math.round(sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftLow || 0).toLocaleString()} - ${Math.round(sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftHigh || 0).toLocaleString()} at current multiple.
+                            </div>
+                          </div>
+                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '6px' }}>Projected Valuation Range (Execution)</div>
+                            <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800 }}>
+                              ${(Math.round(sdeValuation + (sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftLow || 0) * sdeMultiplier)).toLocaleString()} - ${(Math.round(sdeValuation + (sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftHigh || 0) * sdeMultiplier)).toLocaleString()}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{sdeExecutiveFinancialSummaryApi.valueOpportunity.narrative}</div>
+                          </div>
+                        </div>
+                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', marginBottom: '10px' }}>
+                          <div style={{ fontSize: '14px', color: '#334155', fontWeight: 800, marginBottom: '8px' }}>Growth + Advance-Revenue Valuation Sensitivity</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
+                            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', background: '#f8fafc' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>
+                                Growth Quality Premium {sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.active ? '(Active)' : '(Not Active)'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#475569', marginBottom: '4px' }}>{sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.rationale}</div>
+                              <div style={{ fontSize: '11px', color: '#334155' }}>
+                                Suggested multiple support: +{sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.suggestedMultipleDeltaLow.toFixed(2)}x to +{sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.suggestedMultipleDeltaHigh.toFixed(2)}x
+                              </div>
+                            </div>
+                            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', background: '#f8fafc' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>
+                                Advance-Revenue CCC Advantage {sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.active ? '(Active)' : '(Not Active)'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#475569', marginBottom: '4px' }}>{sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.rationale}</div>
+                              <div style={{ fontSize: '11px', color: '#334155' }}>
+                                Suggested multiple support: +{sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.suggestedMultipleDeltaLow.toFixed(2)}x to +{sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.suggestedMultipleDeltaHigh.toFixed(2)}x
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                            <strong>Valuation sensitivity (including premium signals):</strong>{' '}
+                            ${Math.round(sdeValuation + (sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftLow || 0) * sdeMultiplier + Math.max(0, ttmSDE) * (sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.suggestedMultipleDeltaLow + sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.suggestedMultipleDeltaLow)).toLocaleString()}
+                            {' - '}
+                            ${Math.round(sdeValuation + (sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftHigh || 0) * sdeMultiplier + Math.max(0, ttmSDE) * (sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.suggestedMultipleDeltaHigh + sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.suggestedMultipleDeltaHigh)).toLocaleString()}
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                            <div style={{ fontSize: '14px', color: '#334155', fontWeight: 800, marginBottom: '8px' }}>Top Executive Insights</div>
+                            <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                              {sdeExecutiveFinancialSummaryApi.coreInsights.map((insight) => (
+                                <div key={insight.id} style={{ marginBottom: '6px' }}>
+                                  - <strong>{insight.severity === 'critical' ? 'Critical' : insight.severity === 'warning' ? 'Watch' : 'Info'}:</strong> {insight.text}
+                                </div>
+                              ))}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px' }}>
+                              Confidence: <strong>{sdeExecutiveFinancialSummaryApi.confidence.toUpperCase()}</strong> | Data Quality Score: <strong>{sdeExecutiveFinancialSummaryApi.dataQualityScore}/100</strong>
+                            </div>
+                          </div>
+                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                            <div style={{ fontSize: '14px', color: '#334155', fontWeight: 800, marginBottom: '8px' }}>Executive Action Plan (30 / 60 / 90 Days)</div>
+                            <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                              {(['30 days', '60 days', '90 days'] as const).map((horizon) => {
+                                const bucket = sdeRecommendationsApi.filter((rec) => rec.horizon === horizon);
+                                const valLow = bucket.reduce((sum, rec) => sum + rec.impactRange.low * sdeMultiplier, 0);
+                                const valHigh = bucket.reduce((sum, rec) => sum + rec.impactRange.high * sdeMultiplier, 0);
+                                return (
+                                  <div key={`plan-${horizon}`} style={{ marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0' }}>
+                                    <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: '2px' }}>{horizon}</div>
+                                    <div>{bucket.length} action{bucket.length === 1 ? '' : 's'} scheduled</div>
+                                    <div>Potential valuation uplift: ${Math.round(valLow).toLocaleString()} - ${Math.round(valHigh).toLocaleString()}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginBottom: '6px' }}>Recommendation Goals</div>
+                    <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                      1) Protect quality of earnings and reduce diligence surprises. 2) Release working capital and strengthen operating cash flow.
+                      <br />
+                      3) Prioritize highest-value actions by impact, effort, and confidence. 4) Improve transaction readiness and support higher valuation outcomes.
+                    </div>
+                  </div>
+                  {sdeRecommendationsError && (
+                    <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '10px', marginBottom: '12px', fontSize: '12px', color: '#9a3412' }}>
+                      Unable to load recommendation engine output: {sdeRecommendationsError}
+                    </div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '12px' }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Executive Rating</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{sdeRecommendationsLoading ? 'Loading...' : (sdeExecutiveSummaryApi?.rating || 'N/A')}</div>
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Readiness Score</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>
+                        {sdeRecommendationsLoading ? 'Loading...' : (sdeExecutiveSummaryApi ? `${Math.round(sdeExecutiveSummaryApi.readinessScore)}/100` : 'N/A')}
+                      </div>
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>High Risk Flags</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{sdeRecommendationsLoading ? 'Loading...' : (sdeExecutiveSummaryApi?.highCount ?? 'N/A')}</div>
+                    </div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Recommendations</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{sdeRecommendationsLoading ? 'Loading...' : sdeRecommendationsApi.length}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
+                    {!sdeRecommendationsLoading && sdeRecommendationsApi.map((rec) => (
+                      <div key={rec.id} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', background: '#ffffff' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '6px' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{rec.title}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: rec.priority === 'High' ? '#b91c1c' : rec.priority === 'Medium' ? '#b45309' : '#166534' }}>
+                            {rec.priority} Priority
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5, marginBottom: '8px' }}>{rec.rationale}</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '8px' }}>
+                          <div style={{ fontSize: '12px', color: '#475569' }}><strong>Module:</strong> {rec.module}</div>
+                          <div style={{ fontSize: '12px', color: '#475569' }}><strong>Horizon:</strong> {rec.horizon}</div>
+                          <div style={{ fontSize: '12px', color: '#475569' }}><strong>Effort:</strong> {rec.effort}</div>
+                          <div style={{ fontSize: '12px', color: '#475569' }}><strong>Confidence:</strong> {(rec.confidence * 100).toFixed(0)}%</div>
+                          <div style={{ fontSize: '12px', color: '#475569' }}>
+                            <strong>EBITDA Impact:</strong> ${Math.round(rec.impactRange.low).toLocaleString()} - ${Math.round(rec.impactRange.high).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {!sdeRecommendationsLoading && sdeRecommendationsApi.length === 0 && !sdeRecommendationsError && (
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', background: '#ffffff', fontSize: '12px', color: '#475569' }}>
+                        No recommendations available for the selected company.
+                      </div>
+                    )}
+                  </div>
+                </div>
+                )}
+                </>
+                )}
                 </>
                 )}
                 
