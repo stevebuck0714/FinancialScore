@@ -11702,7 +11702,7 @@ function FinancialScorePage() {
                       { id: 'customer-quality' as const, label: 'Customer Quality' },
                       { id: 'working-capital' as const, label: 'Working Capital' },
                       { id: 'cash-flow-quality' as const, label: 'Cash Flow Quality' },
-                      { id: 'recommendations' as const, label: 'Results & Recommendations' },
+                      { id: 'recommendations' as const, label: 'Executive Summary' },
                     ].map((tab) => (
                       <button
                         key={tab.id}
@@ -12790,8 +12790,49 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '13px', color: '#b91c1c' }}>{customerQualityError}</div>
                   )}
                   {!customerQualityLoading && !customerQualityError && !customerQualityInsights.hasData && (
-                    <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
-                      No customer-level sales snapshots are available yet for this company. Connect or ingest customer sales operational data to enable concentration analysis.
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px' }}>
+                        {[
+                          'Top 1 Customer % (TTM)',
+                          'Top 5 Customers % (TTM)',
+                          'Customer HHI (TTM)',
+                          'Active Customers (TTM)',
+                        ].map((title) => (
+                          <div key={`cq-placeholder-card-${title}`} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>{title}</div>
+                            <div style={{ fontSize: '18px', color: '#94a3b8', fontWeight: 700 }}>--</div>
+                            <div style={{ marginTop: '4px', fontSize: '11px', color: '#94a3b8' }}>Ops data pending</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr 0.8fr 1.2fr', gap: '8px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '8px 10px' }}>
+                          <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Metric</div>
+                          <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Current</div>
+                          <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Target / Threshold</div>
+                          <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Status</div>
+                          <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Impact</div>
+                        </div>
+                        {[
+                          'Top 1 customer concentration',
+                          'Top 5 customer concentration',
+                          'Revenue retention (NRR)',
+                          'Gross retention (GRR)',
+                          'AR 90+ days (Top 10 customers)',
+                          'Disputed invoices rate',
+                          'Avg days late (Top 10)',
+                          'Contracted revenue share',
+                        ].map((metric, idx) => (
+                          <div key={`cq-placeholder-row-${metric}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 1fr 0.8fr 1.2fr', gap: '8px', padding: '8px 10px', borderTop: idx === 0 ? 'none' : '1px solid #f1f5f9' }}>
+                            <div style={{ fontSize: '11px', color: '#334155' }}>{metric}</div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>--</div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>--</div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>Pending</div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Ops data pending</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -13821,7 +13862,7 @@ function FinancialScorePage() {
                 )}
                 {sdeModuleTab === 'recommendations' && (
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginTop: 0, marginBottom: '10px' }}>SDE Module: Results & Recommendations</h2>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginTop: 0, marginBottom: '10px' }}>SDE Module: Executive Summary</h2>
                   <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
                     Recommendations are designed to improve deal readiness by converting quality-of-earnings risks into prioritized actions tied to EBITDA quality, cash conversion, and valuation resilience.
                   </p>
@@ -13835,9 +13876,6 @@ function FinancialScorePage() {
                           <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
                           <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>${Math.round(ttmSDE).toLocaleString()}</div>
                         </div>
-                        <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                          <strong>Calculation:</strong> Quality of Earnings: EBITDA + QoE Adjustments = ${Math.round(ttmEbitdaAnalysis).toLocaleString()} + ${Math.round(qoeTotalAdjustments).toLocaleString()}
-                        </div>
                       </div>
                       <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
                         <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
@@ -13845,9 +13883,6 @@ function FinancialScorePage() {
                         </div>
                         <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
                           ${Math.round(sdeValuation).toLocaleString()}
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                          Range: ${Math.round(ttmSDE * 1.5).toLocaleString()} - ${Math.round(ttmSDE * 4.0).toLocaleString()}
                         </div>
                       </div>
                     </div>
@@ -13868,187 +13903,414 @@ function FinancialScorePage() {
                         <span>Typical Range: 1.5x - 4.0x</span>
                         <span>Industry Average: 2.5x</span>
                       </div>
+                      <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => {
+                            const saveButton = document.getElementById('valuation-save-settings-btn') as HTMLButtonElement | null;
+                            saveButton?.click();
+                          }}
+                          disabled={valuationSaveStatus === 'saving'}
+                          style={{
+                            padding: '8px 14px',
+                            background: valuationSaveStatus === 'saved' ? '#10b981' : valuationSaveStatus === 'error' ? '#ef4444' : valuationSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '700',
+                            cursor: valuationSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Multiple Saved' : valuationSaveStatus === 'error' ? 'Save Failed' : 'Save Multiple'}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginBottom: '6px' }}>Executive Financial Summary</div>
-                    <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6, marginBottom: '8px' }}>
-                      {sdeRecommendationsLoading ? 'Building executive summary from validated company financial data...' : (sdeExecutiveFinancialSummaryApi?.headline || 'Executive summary is not available for this company yet.')}
-                    </div>
-                    {!sdeRecommendationsLoading && sdeExecutiveFinancialSummaryApi && (
+                  {(() => {
+                    const statusLabel = (status: 'healthy' | 'moderate_risk' | 'high_risk') => {
+                      if (status === 'high_risk') return 'High risk';
+                      if (status === 'moderate_risk') return 'Moderate risk';
+                      return 'Healthy';
+                    };
+                    const statusColor = (status: 'healthy' | 'moderate_risk' | 'high_risk') => {
+                      if (status === 'high_risk') return '#dc2626';
+                      if (status === 'moderate_risk') return '#d97706';
+                      return '#059669';
+                    };
+                    const valuationMultiple = sdeMultiplier;
+                    const reportedEbitda = ttmEbitdaAnalysis;
+                    const ebitdaAdjustments = qoeTotalAdjustments;
+                    const normalizedEbitda = reportedEbitda + ebitdaAdjustments;
+                    const valuationImpactFromAdjustments = ebitdaAdjustments * valuationMultiple;
+                    const latestWc = workingCapitalSeries[workingCapitalSeries.length - 1];
+                    const dsoCurrent = latestWc ? latestWc.dso : revenueQualityInsights.currentDso;
+                    const dioCurrent = latestWc ? latestWc.dio : 0;
+                    const dpoCurrent = latestWc ? latestWc.dpo : 0;
+                    const dsoTarget = sdeSectorBenchmarks.benchmarkTargets.dso;
+                    const dioTarget = sdeSectorBenchmarks.benchmarkTargets.inventoryDays;
+                    const cccTarget = sdeSectorBenchmarks.benchmarkTargets.ccc;
+                    const dpoTarget = Math.max(0, dsoTarget + dioTarget - cccTarget);
+                    const dsoImpact = Math.max(0, dsoCurrent - dsoTarget) * Math.max(0, Math.abs(workingCapitalInsights.annualRevenue) / 365);
+                    const dioImpact = Math.max(0, dioCurrent - dioTarget) * Math.max(0, Math.abs(workingCapitalInsights.annualCogs) / 365);
+                    const dpoImpact = Math.max(0, dpoTarget - dpoCurrent) * Math.max(0, Math.abs(workingCapitalInsights.annualCogs) / 365);
+                    const wcTotalImpact = dsoImpact + dioImpact + dpoImpact;
+                    const recurringRevenuePct = Math.max(0, Math.min(100, 100 - Math.abs(revenueQualityInsights.avgGap12) * 4));
+                    const topCustomerPct = customerQualityInsights.hasData
+                      ? customerQualityInsights.top1Pct
+                      : 0;
+                    const topRevenueBucketPct = revenueQualityInsights.topBucketSharePct || 0;
+                    const revenueVolatilityPct = Math.max(0, (revenueQualityInsights.volatilitySeries.slice(-1)[0]?.value || 0) * 100);
+                    const contractedRevenuePct = Math.max(0, Math.min(100, recurringRevenuePct * 0.45));
+                    const cashConversionPct = cashFlowQualityInsights.cashConversionPct;
+                    const opCashFlow = cashFlowQualityInsights.ttmOperatingCashFlow;
+                    const ebitdaBase = cashFlowQualityInsights.ttmEbitda;
+                    const inventoryCurrent = monthly[monthly.length - 1]?.inventory || 0;
+                    const inventoryYearAgo = monthly.length >= 13 ? (monthly[monthly.length - 13]?.inventory || 0) : inventoryCurrent;
+                    const revenueCurrentTtm = monthly.slice(-12).reduce((sum, m) => sum + (m.revenue || 0), 0);
+                    const revenuePriorTtm = monthly.slice(-24, -12).reduce((sum, m) => sum + (m.revenue || 0), 0);
+                    const inventoryBuild = Math.max(0, inventoryCurrent - inventoryYearAgo);
+                    const workingCapitalGrowth = Math.max(0, workingCapitalInsights.currentWc - workingCapitalInsights.normalizedTarget);
+                    const capexLeakage = Math.max(0, cashFlowQualityInsights.capexGap);
+                    const expenseNormalization = Math.max(0, ebitdaAdjustments);
+                    const pricingImprovement = sdeRecommendationsApi
+                      .filter((rec) => rec.module === 'Revenue Quality')
+                      .reduce((sum, rec) => sum + rec.impactRange.high, 0);
+                    const immediateActions = sdeRecommendationsApi.filter((rec) => rec.horizon === '30 days');
+                    const mediumActions = sdeRecommendationsApi.filter((rec) => rec.horizon === '60 days');
+                    const strategicActions = sdeRecommendationsApi.filter((rec) => rec.horizon === '90 days');
+                    const immediateCashImpact = immediateActions.reduce((sum, rec) => sum + rec.impactRange.high, 0);
+                    const mediumEbitdaImpact = mediumActions.reduce((sum, rec) => sum + rec.impactRange.high, 0);
+                    const strategicValue = strategicActions.reduce((sum, rec) => sum + rec.impactRange.high * valuationMultiple, 0);
+                    const totalValueOpportunity = (expenseNormalization + pricingImprovement) * valuationMultiple;
+                    const adjustedValueBase = sdeValuation;
+                    const totalPotentialValue = adjustedValueBase + totalValueOpportunity;
+                    const alertItems = [
+                      {
+                        show: topCustomerPct > sdeSectorBenchmarks.customerQuality.top1Warn,
+                        text: `Revenue concentration above sector threshold ${sdeSectorBenchmarks.customerQuality.top1Warn.toFixed(1)}% (current ${topCustomerPct.toFixed(1)}%)`
+                      },
+                      {
+                        show: cashConversionPct < sdeSectorBenchmarks.cashFlow.cashConversionWarn,
+                        text: `Cash conversion below sector threshold ${sdeSectorBenchmarks.cashFlow.cashConversionWarn.toFixed(1)}% (current ${cashConversionPct.toFixed(1)}%)`
+                      },
+                      {
+                        show: workingCapitalInsights.cccTrend12 > sdeSectorBenchmarks.workingCapital.cccTrendWarn,
+                        text: `CCC deterioration above sector trend threshold ${sdeSectorBenchmarks.workingCapital.cccTrendWarn.toFixed(1)} days (12M change ${workingCapitalInsights.cccTrend12.toFixed(1)} days)`
+                      },
+                      {
+                        show: (() => {
+                          const invGrowth = inventoryYearAgo !== 0 ? ((inventoryCurrent - inventoryYearAgo) / Math.abs(inventoryYearAgo)) * 100 : 0;
+                          const revGrowth = revenuePriorTtm !== 0 ? ((revenueCurrentTtm - revenuePriorTtm) / Math.abs(revenuePriorTtm)) * 100 : 0;
+                          return invGrowth > revGrowth;
+                        })(),
+                        text: 'Inventory growth faster than revenue'
+                      }
+                    ].filter((item) => item.show);
+                    return (
                       <>
-                        <div style={{ fontSize: '12px', color: '#475569', marginBottom: '10px' }}>
-                          This summary rolls up findings from EBITDA Adjustments, Revenue Quality, Working Capital, and Cash Flow Quality.
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
-                          {sdeExecutiveFinancialSummaryApi.scorecard.map((card) => {
-                            const statusStyle =
-                              card.status === 'high_risk'
-                                ? { bg: '#fee2e2', color: '#b91c1c', border: '#fecaca', label: 'High Risk' }
-                                : card.status === 'moderate_risk'
-                                  ? { bg: '#fef3c7', color: '#92400e', border: '#fde68a', label: 'Moderate Risk' }
-                                  : { bg: '#dcfce7', color: '#166534', border: '#bbf7d0', label: 'Healthy' };
-                            return (
-                              <div key={card.area} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
-                                <div style={{ display: 'inline-block', padding: '2px 6px', borderRadius: '999px', background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}`, fontSize: '10px', fontWeight: 700, marginBottom: '6px' }}>
-                                  {statusStyle.label}
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '4px' }}>{card.headlineMetric}</div>
-                                <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '4px' }}>{card.value}</div>
-                                <div style={{ fontSize: '11px', color: '#475569', lineHeight: 1.4 }}>
-                                  <strong>{card.impactLabel}:</strong> {card.impactValue}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '10px' }}>
-                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
-                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '6px' }}>Current Valuation (SDE)</div>
-                            <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800 }}>${Math.round(sdeValuation).toLocaleString()}</div>
-                            <div style={{ fontSize: '11px', color: '#64748b' }}>Based on current QoE adjustments and {sdeMultiplier.toFixed(1)}x multiple.</div>
-                          </div>
-                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
-                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '6px' }}>Action-Driven Valuation Uplift</div>
-                            <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800 }}>
-                              ${(Math.round((sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftLow || 0) * sdeMultiplier)).toLocaleString()} - ${(Math.round((sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftHigh || 0) * sdeMultiplier)).toLocaleString()}
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#64748b' }}>
-                              EBITDA uplift ${Math.round(sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftLow || 0).toLocaleString()} - ${Math.round(sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftHigh || 0).toLocaleString()} at current multiple.
-                            </div>
-                          </div>
-                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
-                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '6px' }}>Projected Valuation Range (Execution)</div>
-                            <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800 }}>
-                              ${(Math.round(sdeValuation + (sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftLow || 0) * sdeMultiplier)).toLocaleString()} - ${(Math.round(sdeValuation + (sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftHigh || 0) * sdeMultiplier)).toLocaleString()}
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#64748b' }}>{sdeExecutiveFinancialSummaryApi.valueOpportunity.narrative}</div>
+                        <div style={{ background: '#ecfdf5', border: '1px solid #86efac', borderRadius: '8px', padding: '14px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '20px', color: '#14532d', fontWeight: 800, marginBottom: '8px' }}>Value Summary</div>
+                          <div style={{ fontSize: '18px', color: '#14532d', fontWeight: 800, marginBottom: '6px' }}>
+                            Adjusted Value of ${Math.round(adjustedValueBase).toLocaleString()} + Value Opportunity of ${Math.round(totalValueOpportunity).toLocaleString()} = ${Math.round(totalPotentialValue).toLocaleString()}
                           </div>
                         </div>
-                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', marginBottom: '10px' }}>
-                          <div style={{ fontSize: '14px', color: '#334155', fontWeight: 800, marginBottom: '8px' }}>Growth + Advance-Revenue Valuation Sensitivity</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
-                            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', background: '#f8fafc' }}>
-                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>
-                                Growth Quality Premium {sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.active ? '(Active)' : '(Not Active)'}
+
+                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '16px', color: '#1e293b', fontWeight: 700, marginBottom: '10px' }}>Executive Financial Health Summary</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.5fr', gap: '8px', marginBottom: '6px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Area</div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Status</div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Impact</div>
+                          </div>
+                          {(sdeExecutiveFinancialSummaryApi?.scorecard || []).map((card) => (
+                            <div key={`score-${card.area}`} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.5fr', gap: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 600 }}>
+                                {card.area === 'revenue_quality' ? 'Revenue Quality' :
+                                 card.area === 'ebitda_quality' ? 'EBITDA Quality' :
+                                 card.area === 'working_capital_efficiency' ? 'Working Capital Efficiency' :
+                                 'Cash Flow Quality'}
                               </div>
-                              <div style={{ fontSize: '11px', color: '#475569', marginBottom: '4px' }}>{sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.rationale}</div>
-                              <div style={{ fontSize: '11px', color: '#334155' }}>
-                                Suggested multiple support: +{sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.suggestedMultipleDeltaLow.toFixed(2)}x to +{sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.suggestedMultipleDeltaHigh.toFixed(2)}x
+                              <div style={{ fontSize: '12px', color: statusColor(card.status as 'healthy' | 'moderate_risk' | 'high_risk'), fontWeight: 700 }}>
+                                {statusLabel(card.status as 'healthy' | 'moderate_risk' | 'high_risk')}
                               </div>
+                              <div style={{ fontSize: '12px', color: '#334155' }}>{card.impactValue}</div>
                             </div>
-                            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', background: '#f8fafc' }}>
-                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>
-                                Advance-Revenue CCC Advantage {sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.active ? '(Active)' : '(Not Active)'}
+                          ))}
+                        </div>
+
+                        <div style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>Corelytics Insight</div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
+                            {(sdeExecutiveFinancialSummaryApi?.coreInsights || []).slice(0, 4).map((insight) => (
+                              <div key={`insight-${insight.id}`} style={{ marginBottom: '4px' }}>• {insight.text}</div>
+                            ))}
+                            {(!sdeExecutiveFinancialSummaryApi || sdeExecutiveFinancialSummaryApi.coreInsights.length === 0) && (
+                              <div>• Insights will populate after recommendation model output is available.</div>
+                            )}
+                          </div>
+                          <div style={{ marginTop: '10px', fontSize: '13px', color: '#1e293b', fontWeight: 700 }}>
+                            Estimated value improvement opportunity: ${Math.round((sdeExecutiveFinancialSummaryApi?.valueOpportunity.ebitdaUpliftLow || 0) * sdeMultiplier).toLocaleString()} - ${Math.round((sdeExecutiveFinancialSummaryApi?.valueOpportunity.ebitdaUpliftHigh || 0) * sdeMultiplier).toLocaleString()}
+                          </div>
+                        </div>
+
+                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>2) EBITDA Quality Recommendations</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Value</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Reported EBITDA</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(reportedEbitda).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Adjustments</div>
+                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>{ebitdaAdjustments >= 0 ? '+' : ''}${Math.round(ebitdaAdjustments).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Normalized EBITDA</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(normalizedEbitda).toLocaleString()}</div>
+                          </div>
+                          <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px', fontSize: '12px', color: '#334155', marginBottom: '8px' }}>
+                            Assume {valuationMultiple.toFixed(1)}x multiple (selected): ${Math.round(ebitdaAdjustments).toLocaleString()} x {valuationMultiple.toFixed(1)} = ${Math.round(valuationImpactFromAdjustments).toLocaleString()} valuation impact
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '6px' }}>Management recommendations</div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
+                            {sdeRecommendationsApi.slice(0, 4).map((rec, idx) => (
+                              <div key={`ebitda-rec-${rec.id}`} style={{ marginBottom: '4px' }}>
+                                {idx + 1}. {rec.title} - Potential EBITDA improvement: ${Math.round(rec.impactRange.high).toLocaleString()}
                               </div>
-                              <div style={{ fontSize: '11px', color: '#475569', marginBottom: '4px' }}>{sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.rationale}</div>
-                              <div style={{ fontSize: '11px', color: '#334155' }}>
-                                Suggested multiple support: +{sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.suggestedMultipleDeltaLow.toFixed(2)}x to +{sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.suggestedMultipleDeltaHigh.toFixed(2)}x
+                            ))}
+                          </div>
+                        </div>
+
+                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>3) Working Capital Recommendations</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.8fr 0.8fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Current</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Target</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Cash Impact</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>DSO</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{dsoCurrent.toFixed(1)}</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b' }}>{dsoTarget}</div>
+                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>${Math.round(dsoImpact).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>DIO</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{dioCurrent.toFixed(1)}</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b' }}>{dioTarget}</div>
+                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>${Math.round(dioImpact).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>DPO</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{dpoCurrent.toFixed(1)}</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b' }}>{dpoTarget}</div>
+                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>${Math.round(dpoImpact).toLocaleString()}</div>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                            Sector targets ({sdeSectorBenchmarks.sectorLabel}): DSO {dsoTarget.toFixed(1)}, DIO {dioTarget.toFixed(1)}, CCC {cccTarget.toFixed(1)} (implied DPO {dpoTarget.toFixed(1)}).
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '8px' }}>
+                            Core insight: ${Math.round(wcTotalImpact).toLocaleString()} of working capital improvement possible
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Receivables</div>
+                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                                • tighten payment terms<br />
+                                • enforce collections<br />
+                                • reduce slow-pay customers
                               </div>
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>Potential cash release: ${Math.round(dsoImpact).toLocaleString()}</div>
                             </div>
+                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Inventory</div>
+                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                                • reduce slow moving SKUs<br />
+                                • improve purchasing forecast<br />
+                                • optimize reorder levels
+                              </div>
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>Potential cash release: ${Math.round(dioImpact).toLocaleString()}</div>
+                            </div>
+                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Supplier terms</div>
+                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                                • renegotiate payment terms<br />
+                                • consolidate purchasing
+                              </div>
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>Potential cash release: ${Math.round(dpoImpact).toLocaleString()}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>4) Revenue Quality Insights</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Value</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Recurring revenue</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{recurringRevenuePct.toFixed(1)}%</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Top revenue bucket concentration</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{topRevenueBucketPct.toFixed(1)}%</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Revenue volatility</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{revenueVolatilityPct > 20 ? 'High' : revenueVolatilityPct > 10 ? 'Moderate' : 'Low'}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Contracted revenue</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{contractedRevenuePct.toFixed(1)}%</div>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
+                            Margin analysis recommendation: reprice lower-margin product lines and remove unprofitable SKUs.
+                            Potential EBITDA impact: ${Math.round(pricingImprovement).toLocaleString()}
+                          </div>
+                        </div>
+
+                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>5) Customer Quality Insights</div>
+                          <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 800, marginBottom: '6px' }}>Preview format (connect ops data to populate)</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr 0.8fr 1.2fr', gap: '8px', marginBottom: '6px' }}>
+                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Metric</div>
+                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Current</div>
+                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Target / Threshold</div>
+                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Status</div>
+                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Impact</div>
+                            </div>
+                            {[
+                              ['Top 1 customer concentration', '##.#%', '< ##.#%', 'Watch / Risk', 'Revenue concentration risk'],
+                              ['Top 5 customer concentration', '##.#%', '< ##.#%', 'Watch / Risk', 'Portfolio concentration'],
+                              ['Revenue retention (NRR)', '##.#%', '> ###.#%', 'Healthy / Watch / Risk', 'Growth quality'],
+                              ['Gross retention (GRR)', '##.#%', '> ##.#%', 'Healthy / Watch / Risk', 'Churn pressure'],
+                              ['AR 90+ days (Top 10 customers)', '##.#%', '< #.#%', 'Watch / Risk', 'Cash conversion drag'],
+                              ['Disputed invoices rate', '#.#%', '< #.#%', 'Watch / Risk', 'Collections friction'],
+                              ['Avg days late (Top 10)', '## days', '< ## days', 'Watch / Risk', 'Liquidity stress'],
+                              ['Contracted revenue share', '##.#%', '> ##.#%', 'Healthy / Watch / Risk', 'Revenue durability'],
+                            ].map((row, idx) => (
+                              <div key={`cq-format-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr 0.8fr 1.2fr', gap: '8px', borderTop: '1px solid #dbeafe', paddingTop: '6px', marginTop: '6px' }}>
+                                <div style={{ fontSize: '11px', color: '#334155' }}>{row[0]}</div>
+                                <div style={{ fontSize: '11px', color: '#1e293b', fontWeight: 700 }}>{row[1]}</div>
+                                <div style={{ fontSize: '11px', color: '#334155' }}>{row[2]}</div>
+                                <div style={{ fontSize: '11px', color: '#92400e', fontWeight: 700 }}>{row[3]}</div>
+                                <div style={{ fontSize: '11px', color: '#334155' }}>{row[4]}</div>
+                              </div>
+                            ))}
+                        </div>
+
+                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>6) Cash Flow Quality Analysis</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Value</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>EBITDA</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(ebitdaBase).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Operating Cash Flow</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(opCashFlow).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Cash conversion ratio</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{cashConversionPct.toFixed(1)}%</div>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#334155', marginBottom: '8px' }}>
+                            Sector benchmark ({sdeSectorBenchmarks.sectorLabel}): target cash conversion {'>='} {sdeSectorBenchmarks.cashFlow.cashConversionWarn.toFixed(1)}%.
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Cash leakage source</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Impact</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Working capital growth</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(workingCapitalGrowth).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>CapEx gap</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(capexLeakage).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Inventory build</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(inventoryBuild).toLocaleString()}</div>
                           </div>
                           <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                            <strong>Valuation sensitivity (including premium signals):</strong>{' '}
-                            ${Math.round(sdeValuation + (sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftLow || 0) * sdeMultiplier + Math.max(0, ttmSDE) * (sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.suggestedMultipleDeltaLow + sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.suggestedMultipleDeltaLow)).toLocaleString()}
-                            {' - '}
-                            ${Math.round(sdeValuation + (sdeExecutiveFinancialSummaryApi.valueOpportunity.ebitdaUpliftHigh || 0) * sdeMultiplier + Math.max(0, ttmSDE) * (sdeExecutiveFinancialSummaryApi.valueOpportunity.growthQualityPremium.suggestedMultipleDeltaHigh + sdeExecutiveFinancialSummaryApi.valueOpportunity.advanceRevenueCccAdvantage.suggestedMultipleDeltaHigh)).toLocaleString()}
+                            Management actions: reduce inventory accumulation, tighten AR collections, and improve purchasing cycles.
                           </div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
-                            <div style={{ fontSize: '14px', color: '#334155', fontWeight: 800, marginBottom: '8px' }}>Top Executive Insights</div>
-                            <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                              {sdeExecutiveFinancialSummaryApi.coreInsights.map((insight) => (
-                                <div key={insight.id} style={{ marginBottom: '6px' }}>
-                                  - <strong>{insight.severity === 'critical' ? 'Critical' : insight.severity === 'warning' ? 'Watch' : 'Info'}:</strong> {insight.text}
-                                </div>
-                              ))}
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px' }}>
-                              Confidence: <strong>{sdeExecutiveFinancialSummaryApi.confidence.toUpperCase()}</strong> | Data Quality Score: <strong>{sdeExecutiveFinancialSummaryApi.dataQualityScore}/100</strong>
-                            </div>
+
+                        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#14532d', fontWeight: 800, marginBottom: '8px' }}>7) Value Creation Dashboard</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>Initiative</div>
+                            <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>EBITDA / Cash Impact</div>
+                            <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>Valuation Impact ({valuationMultiple.toFixed(1)}x)</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Expense normalization</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(expenseNormalization).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(expenseNormalization * valuationMultiple).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Pricing improvement</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(pricingImprovement).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(pricingImprovement * valuationMultiple).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Working capital improvement</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(wcTotalImpact).toLocaleString()} cash</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>-</div>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>Inventory reduction</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(dioImpact).toLocaleString()} cash</div>
+                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>-</div>
                           </div>
-                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
-                            <div style={{ fontSize: '14px', color: '#334155', fontWeight: 800, marginBottom: '8px' }}>Executive Action Plan (30 / 60 / 90 Days)</div>
-                            <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                              {(['30 days', '60 days', '90 days'] as const).map((horizon) => {
-                                const bucket = sdeRecommendationsApi.filter((rec) => rec.horizon === horizon);
-                                const valLow = bucket.reduce((sum, rec) => sum + rec.impactRange.low * sdeMultiplier, 0);
-                                const valHigh = bucket.reduce((sum, rec) => sum + rec.impactRange.high * sdeMultiplier, 0);
-                                return (
-                                  <div key={`plan-${horizon}`} style={{ marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0' }}>
-                                    <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: '2px' }}>{horizon}</div>
-                                    <div>{bucket.length} action{bucket.length === 1 ? '' : 's'} scheduled</div>
-                                    <div>Potential valuation uplift: ${Math.round(valLow).toLocaleString()} - ${Math.round(valHigh).toLocaleString()}</div>
-                                  </div>
-                                );
-                              })}
+                          <div style={{ marginTop: '8px', fontSize: '13px', color: '#14532d', fontWeight: 800 }}>
+                            Total value opportunity: ${Math.round(totalValueOpportunity).toLocaleString()}+
+                          </div>
+                        </div>
+
+                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>8) Priority Action List</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Immediate (0-90 days)</div>
+                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                                {immediateActions.slice(0, 3).map((rec) => <div key={`immediate-${rec.id}`}>• {rec.title}</div>)}
+                                {immediateActions.length === 0 && (
+                                  <>
+                                    <div>• reduce AR aging</div>
+                                    <div>• eliminate non-recurring expenses</div>
+                                    <div>• renegotiate vendor terms</div>
+                                  </>
+                                )}
+                              </div>
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>Cash impact: ${Math.round(immediateCashImpact).toLocaleString()}</div>
+                            </div>
+                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Medium term (3-12 months)</div>
+                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                                {mediumActions.slice(0, 3).map((rec) => <div key={`medium-${rec.id}`}>• {rec.title}</div>)}
+                                {mediumActions.length === 0 && (
+                                  <>
+                                    <div>• inventory optimization</div>
+                                    <div>• pricing strategy</div>
+                                    <div>• margin improvement</div>
+                                  </>
+                                )}
+                              </div>
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#1e40af', fontWeight: 700 }}>EBITDA impact: ${Math.round(mediumEbitdaImpact).toLocaleString()}</div>
+                            </div>
+                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Strategic (12-24 months)</div>
+                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
+                                {strategicActions.slice(0, 3).map((rec) => <div key={`strategic-${rec.id}`}>• {rec.title}</div>)}
+                                {strategicActions.length === 0 && (
+                                  <>
+                                    <div>• diversify customer base</div>
+                                    <div>• increase recurring revenue</div>
+                                    <div>• automate operations</div>
+                                  </>
+                                )}
+                              </div>
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#7c3aed', fontWeight: 700 }}>Value creation: ${Math.round(strategicValue).toLocaleString()}+</div>
                             </div>
                           </div>
                         </div>
+
+                        <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#9a3412', fontWeight: 800, marginBottom: '8px' }}>9) Alerts System</div>
+                          <div style={{ fontSize: '12px', color: '#7c2d12', lineHeight: 1.6 }}>
+                            {alertItems.length > 0 ? alertItems.map((alert, idx) => (
+                              <div key={`alert-${idx}`}>⚠️ {alert.text}</div>
+                            )) : (
+                              <div>No active high-priority alerts right now.</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {sdeRecommendationsLoading && (
+                          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', fontSize: '12px', color: '#475569' }}>
+                            Building executive recommendations from validated company financial data...
+                          </div>
+                        )}
+                        {sdeRecommendationsError && (
+                          <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '10px', fontSize: '12px', color: '#9a3412' }}>
+                            Unable to load recommendation engine output: {sdeRecommendationsError}
+                          </div>
+                        )}
                       </>
-                    )}
-                  </div>
-                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginBottom: '6px' }}>Recommendation Goals</div>
-                    <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
-                      1) Protect quality of earnings and reduce diligence surprises. 2) Release working capital and strengthen operating cash flow.
-                      <br />
-                      3) Prioritize highest-value actions by impact, effort, and confidence. 4) Improve transaction readiness and support higher valuation outcomes.
-                    </div>
-                  </div>
-                  {sdeRecommendationsError && (
-                    <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '10px', marginBottom: '12px', fontSize: '12px', color: '#9a3412' }}>
-                      Unable to load recommendation engine output: {sdeRecommendationsError}
-                    </div>
-                  )}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '12px' }}>
-                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Executive Rating</div>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{sdeRecommendationsLoading ? 'Loading...' : (sdeExecutiveSummaryApi?.rating || 'N/A')}</div>
-                    </div>
-                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Readiness Score</div>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>
-                        {sdeRecommendationsLoading ? 'Loading...' : (sdeExecutiveSummaryApi ? `${Math.round(sdeExecutiveSummaryApi.readinessScore)}/100` : 'N/A')}
-                      </div>
-                    </div>
-                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>High Risk Flags</div>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{sdeRecommendationsLoading ? 'Loading...' : (sdeExecutiveSummaryApi?.highCount ?? 'N/A')}</div>
-                    </div>
-                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Recommendations</div>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{sdeRecommendationsLoading ? 'Loading...' : sdeRecommendationsApi.length}</div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
-                    {!sdeRecommendationsLoading && sdeRecommendationsApi.map((rec) => (
-                      <div key={rec.id} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', background: '#ffffff' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '6px' }}>
-                          <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{rec.title}</div>
-                          <div style={{ fontSize: '11px', fontWeight: 700, color: rec.priority === 'High' ? '#b91c1c' : rec.priority === 'Medium' ? '#b45309' : '#166534' }}>
-                            {rec.priority} Priority
-                          </div>
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5, marginBottom: '8px' }}>{rec.rationale}</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '8px' }}>
-                          <div style={{ fontSize: '12px', color: '#475569' }}><strong>Module:</strong> {rec.module}</div>
-                          <div style={{ fontSize: '12px', color: '#475569' }}><strong>Horizon:</strong> {rec.horizon}</div>
-                          <div style={{ fontSize: '12px', color: '#475569' }}><strong>Effort:</strong> {rec.effort}</div>
-                          <div style={{ fontSize: '12px', color: '#475569' }}><strong>Confidence:</strong> {(rec.confidence * 100).toFixed(0)}%</div>
-                          <div style={{ fontSize: '12px', color: '#475569' }}>
-                            <strong>EBITDA Impact:</strong> ${Math.round(rec.impactRange.low).toLocaleString()} - ${Math.round(rec.impactRange.high).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {!sdeRecommendationsLoading && sdeRecommendationsApi.length === 0 && !sdeRecommendationsError && (
-                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', background: '#ffffff', fontSize: '12px', color: '#475569' }}>
-                        No recommendations available for the selected company.
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })()}
                 </div>
                 )}
                 </>
