@@ -1785,7 +1785,7 @@ function FinancialScorePage() {
       // Load CSV Trial Balance data from localStorage
       const savedCsvData = localStorage.getItem(`csvTrialBalance_${selectedCompanyId}`);
       setHasSavedCsvInLocalStorage(!!savedCsvData);
-      if (savedCsvData && !csvTrialBalanceData) {
+      if (savedCsvData && (!csvTrialBalanceData || csvTrialBalanceData._companyId !== selectedCompanyId)) {
         try {
           const parsed = JSON.parse(savedCsvData);
           if (parsed._companyId === selectedCompanyId) {
@@ -2171,6 +2171,8 @@ function FinancialScorePage() {
         setLoadedMonthlyData([]);
         setLatestFinancialSource(null);
         setQbRawData(null);
+        setCsvTrialBalanceData(null);
+        setHasSavedCsvInLocalStorage(false);
         setRawRows([]);
         setMapping({ date: '' });
         setFile(null);
@@ -6158,6 +6160,11 @@ function FinancialScorePage() {
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
   const selectedAccountingSystem = company?.accountingSystem || '';
+  const selectedCompanyCsvTrialBalanceData =
+    csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId
+      ? csvTrialBalanceData
+      : null;
+  const hasCsvDataForSelectedCompany = !!selectedCompanyCsvTrialBalanceData;
   const selectedAccountingSystemLabel = (() => {
     switch (selectedAccountingSystem) {
       case 'ACUMATICA':
@@ -9077,7 +9084,11 @@ function FinancialScorePage() {
             </div>
           )}
 
-          {adminDashboardTab === 'data-mapping' && selectedCompanyId && aiMappings.length === 0 && !csvTrialBalanceData && !qbRawData && (
+          {adminDashboardTab === 'data-mapping' &&
+            selectedCompanyId &&
+            aiMappings.length === 0 &&
+            !hasCsvDataForSelectedCompany &&
+            (selectedAccountingSystem === 'CSV_FILE' || !qbRawData) && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
               <div style={{ textAlign: 'center', marginBottom: '12px' }}>
                 <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '8px' }}>No Financial Data to Map</div>
@@ -9222,12 +9233,12 @@ function FinancialScorePage() {
           )}
 
           {/* Account Mapping Interface - Shows after CSV is uploaded */}
-          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && (csvTrialBalanceData?._companyId === selectedCompanyId || aiMappings.length > 0)) && (() => {
+          {(currentView === 'admin' && adminDashboardTab === 'data-mapping' && selectedCompanyId && (hasCsvDataForSelectedCompany || aiMappings.length > 0)) && (() => {
             const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
 
             // Get accounts for mapping from CSV data (if available)
-            const csvAccountsForMapping = csvTrialBalanceData ? getAccountsForMapping(csvTrialBalanceData) : [];
-            const hasCsvData = csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId;
+            const csvAccountsForMapping = selectedCompanyCsvTrialBalanceData ? getAccountsForMapping(selectedCompanyCsvTrialBalanceData) : [];
+            const hasCsvData = hasCsvDataForSelectedCompany;
             const mappedApiSourceLabel =
               selectedAccountingSystem === 'QUICKBOOKS'
                 ? 'QuickBooks'
@@ -9270,7 +9281,7 @@ function FinancialScorePage() {
                 </div>
                 <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
                   {hasCsvData
-                    ? `Map Trial Balance accounts to Corelytics accounts - Source: ${csvTrialBalanceData.fileName || 'CSV Upload'}`
+                    ? `Map Trial Balance accounts to Corelytics accounts - Source: ${selectedCompanyCsvTrialBalanceData?.fileName || 'CSV Upload'}`
                     : `${aiMappings.length} saved account mappings loaded from database`
                   }
                 </p>
@@ -9619,7 +9630,7 @@ function FinancialScorePage() {
 
                     {/* Save Mappings Section */}
                     <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
-                      {!csvTrialBalanceData && loadedMonthlyData && loadedMonthlyData.length > 0 && (
+                      {!hasCsvDataForSelectedCompany && loadedMonthlyData && loadedMonthlyData.length > 0 && (
                         <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #93c5fd' }}>
                           <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
                             <span style={{ fontSize: '16px' }}></span>
@@ -9644,7 +9655,7 @@ function FinancialScorePage() {
                           </p>
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                          {!csvTrialBalanceData && hasSavedCsvInLocalStorage && (
+                          {!hasCsvDataForSelectedCompany && hasSavedCsvInLocalStorage && (
                             <button
                               onClick={() => {
                                 try {
@@ -9729,8 +9740,8 @@ function FinancialScorePage() {
                                   console.log('?? Total mappings:', aiMappings.length);
 
                                   // Process the CSV data using mappings
-                                  const processedData = processTrialBalanceToMonthly(csvTrialBalanceData, aiMappings);
-                                  const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(csvTrialBalanceData, aiMappings);
+                                  const processedData = processTrialBalanceToMonthly(selectedCompanyCsvTrialBalanceData, aiMappings);
+                                  const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(selectedCompanyCsvTrialBalanceData, aiMappings);
 
                                   // Save to database
                                   const response = await fetch('/api/financials', {
@@ -9739,8 +9750,8 @@ function FinancialScorePage() {
                                     body: JSON.stringify({
                                       companyId: selectedCompanyId,
                                       uploadedByUserId: currentUser.id,
-                                      fileName: csvTrialBalanceData.fileName || 'CSV Trial Balance Upload',
-                                      rawData: csvTrialBalanceData,
+                                      fileName: selectedCompanyCsvTrialBalanceData?.fileName || 'CSV Trial Balance Upload',
+                                      rawData: selectedCompanyCsvTrialBalanceData,
                                       columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
                                       monthlyData: processedData
                                     })
