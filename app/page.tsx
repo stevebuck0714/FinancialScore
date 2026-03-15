@@ -89,6 +89,427 @@ const formatDollar = (value: number): string => {
   return '$' + Math.round(Math.abs(value)).toLocaleString('en-US');
 };
 
+type RevenueAnalysisQualifiers = {
+  revenueNature: 'short_term_projects' | 'long_term_contracts' | 'mixed';
+  contractSizeProfile: 'few_large' | 'mixed' | 'many_small';
+  clientCreditProfile: 'regulated_utility' | 'enterprise' | 'mixed' | 'smb';
+  billingModel: 'milestone' | 'progress' | 'time_materials' | 'mixed';
+  renewalVisibility: 'low' | 'medium' | 'high';
+};
+
+const getIndustryGroupMeta = (industryGroupId?: number | null) => {
+  const id = Number(industryGroupId || 0);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  return INDUSTRY_SECTORS.find((sector) => sector.id === id) || null;
+};
+
+const defaultRevenueAnalysisQualifiers = (
+  sectorCategory?: string | null,
+  industryGroupId?: number | null,
+): RevenueAnalysisQualifiers => {
+  const defaults: RevenueAnalysisQualifiers = {
+    revenueNature: 'mixed',
+    contractSizeProfile: 'mixed',
+    clientCreditProfile: 'mixed',
+    billingModel: 'mixed',
+    renewalVisibility: 'medium',
+  };
+  const sector = String(sectorCategory || '').trim();
+  const industryGroup = getIndustryGroupMeta(industryGroupId);
+  const groupName = String(industryGroup?.name || '').toLowerCase();
+
+  // Group-specific overrides take precedence over broad sector defaults.
+  if (
+    groupName.includes('electrician') ||
+    groupName.includes('electrical contractor') ||
+    groupName.includes('electrical')
+  ) {
+    return {
+      revenueNature: 'long_term_contracts',
+      contractSizeProfile: 'few_large',
+      clientCreditProfile: 'regulated_utility',
+      billingModel: 'milestone',
+      renewalVisibility: 'medium',
+    };
+  }
+
+  if (
+    groupName.includes('roofing') ||
+    groupName.includes('excavation') ||
+    groupName.includes('paving') ||
+    groupName.includes('concrete') ||
+    groupName.includes('drywall')
+  ) {
+    return {
+      revenueNature: 'short_term_projects',
+      contractSizeProfile: 'mixed',
+      clientCreditProfile: 'enterprise',
+      billingModel: 'progress',
+      renewalVisibility: 'low',
+    };
+  }
+
+  if (groupName.includes('software') || groupName.includes('subscription')) {
+    return {
+      revenueNature: 'long_term_contracts',
+      contractSizeProfile: 'many_small',
+      clientCreditProfile: 'mixed',
+      billingModel: 'time_materials',
+      renewalVisibility: 'high',
+    };
+  }
+
+  if (sector === '23') {
+    return {
+      revenueNature: 'long_term_contracts',
+      contractSizeProfile: 'few_large',
+      clientCreditProfile: 'regulated_utility',
+      billingModel: 'milestone',
+      renewalVisibility: 'medium',
+    };
+  }
+  if (sector === '54') {
+    return {
+      revenueNature: 'long_term_contracts',
+      contractSizeProfile: 'mixed',
+      clientCreditProfile: 'enterprise',
+      billingModel: 'time_materials',
+      renewalVisibility: 'medium',
+    };
+  }
+  if (sector === '45' || sector === '72') {
+    return {
+      ...defaults,
+      revenueNature: 'short_term_projects',
+      contractSizeProfile: 'many_small',
+      clientCreditProfile: 'smb',
+      renewalVisibility: 'low',
+    };
+  }
+  return defaults;
+};
+
+const describeRevenueQualifierPreset = (
+  sectorCategory?: string | null,
+  industryGroupId?: number | null,
+): string => {
+  const industryGroup = getIndustryGroupMeta(industryGroupId);
+  const groupName = String(industryGroup?.name || '').toLowerCase();
+  if (
+    groupName.includes('electrician') ||
+    groupName.includes('electrical contractor') ||
+    groupName.includes('electrical')
+  ) {
+    return `Industry group default (${industryGroup?.name || 'Electrical'})`;
+  }
+  if (
+    groupName.includes('roofing') ||
+    groupName.includes('excavation') ||
+    groupName.includes('paving') ||
+    groupName.includes('concrete') ||
+    groupName.includes('drywall')
+  ) {
+    return `Industry group default (${industryGroup?.name || 'Project-trade construction'})`;
+  }
+  if (groupName.includes('software') || groupName.includes('subscription')) {
+    return `Industry group default (${industryGroup?.name || 'Software / Subscription'})`;
+  }
+  const sector = String(sectorCategory || '').trim();
+  if (sector === '23') return 'Sector default (Construction)';
+  if (sector === '54') return 'Sector default (Professional Services)';
+  if (sector === '45' || sector === '72') return 'Sector default (Retail / Hospitality)';
+  return 'Global default';
+};
+
+const normalizeRevenueAnalysisQualifiers = (
+  raw: unknown,
+  sectorCategory?: string | null,
+  industryGroupId?: number | null,
+): RevenueAnalysisQualifiers => {
+  const defaults = defaultRevenueAnalysisQualifiers(sectorCategory, industryGroupId);
+  if (!raw || typeof raw !== 'object') return defaults;
+  const input = raw as Partial<RevenueAnalysisQualifiers>;
+  return {
+    revenueNature: input.revenueNature || defaults.revenueNature,
+    contractSizeProfile: input.contractSizeProfile || defaults.contractSizeProfile,
+    clientCreditProfile: input.clientCreditProfile || defaults.clientCreditProfile,
+    billingModel: input.billingModel || defaults.billingModel,
+    renewalVisibility: input.renewalVisibility || defaults.renewalVisibility,
+  };
+};
+
+type RevenueQualifierFieldSource = 'manual' | 'ops_inferred' | 'sector_group_default';
+
+const deriveRevenueQualifierFieldSources = (params: {
+  baseQualifiers: RevenueAnalysisQualifiers;
+  finalQualifiers: RevenueAnalysisQualifiers;
+  qualifierMode: 'auto' | 'manual';
+}) => {
+  const { baseQualifiers, finalQualifiers, qualifierMode } = params;
+  const keys: Array<keyof RevenueAnalysisQualifiers> = [
+    'revenueNature',
+    'contractSizeProfile',
+    'clientCreditProfile',
+    'billingModel',
+    'renewalVisibility',
+  ];
+  const result = {} as Record<keyof RevenueAnalysisQualifiers, RevenueQualifierFieldSource>;
+  for (const key of keys) {
+    if (qualifierMode === 'manual') {
+      result[key] = 'manual';
+      continue;
+    }
+    result[key] = finalQualifiers[key] !== baseQualifiers[key] ? 'ops_inferred' : 'sector_group_default';
+  }
+  return result;
+};
+
+const qualifierSourceBadge = (source: RevenueQualifierFieldSource) => {
+  if (source === 'manual') {
+    return { label: 'Manual', bg: '#eef2ff', border: '#c7d2fe', color: '#1e40af' };
+  }
+  if (source === 'ops_inferred') {
+    return { label: 'Ops inferred', bg: '#ecfeff', border: '#a5f3fc', color: '#0e7490' };
+  }
+  return { label: 'Sector/group default', bg: '#f8fafc', border: '#e2e8f0', color: '#475569' };
+};
+
+const inferRevenueQualifiersFromSignals = (params: {
+  baseQualifiers: RevenueAnalysisQualifiers;
+  qualifierMode: 'auto' | 'manual';
+  hasOpsData: boolean;
+  sectorCategory?: string | null;
+  contractTimingReceivablesLikely: boolean;
+  top1Pct?: number | null;
+  top5Pct?: number | null;
+  customerCount?: number | null;
+  revenueVolatilityPct?: number | null;
+}) => {
+  const {
+    baseQualifiers,
+    qualifierMode,
+    hasOpsData,
+    sectorCategory,
+    contractTimingReceivablesLikely,
+    top1Pct,
+    top5Pct,
+    customerCount,
+    revenueVolatilityPct,
+  } = params;
+
+  if (qualifierMode === 'manual') {
+    return { qualifiers: baseQualifiers, inferenceApplied: false };
+  }
+
+  let inferred: RevenueAnalysisQualifiers = { ...baseQualifiers };
+  let changed = false;
+
+  if (contractTimingReceivablesLikely) {
+    if (inferred.revenueNature !== 'long_term_contracts') {
+      inferred.revenueNature = 'long_term_contracts';
+      changed = true;
+    }
+    if (inferred.billingModel === 'mixed') {
+      inferred.billingModel = 'milestone';
+      changed = true;
+    }
+  }
+
+  if (hasOpsData) {
+    const t1 = Number(top1Pct ?? 0);
+    const t5 = Number(top5Pct ?? 0);
+    const count = Number(customerCount ?? 0);
+
+    const inferredContractSize: RevenueAnalysisQualifiers['contractSizeProfile'] =
+      (t1 >= 35 || t5 >= 70)
+        ? 'few_large'
+        : (count >= 40 && t1 <= 15 && t5 <= 45)
+          ? 'many_small'
+          : 'mixed';
+
+    if (inferred.contractSizeProfile !== inferredContractSize) {
+      inferred.contractSizeProfile = inferredContractSize;
+      changed = true;
+    }
+
+    const volatility = Number(revenueVolatilityPct ?? 0);
+    const inferredRevenueNature: RevenueAnalysisQualifiers['revenueNature'] =
+      contractTimingReceivablesLikely
+        ? 'long_term_contracts'
+        : volatility <= 10
+          ? 'long_term_contracts'
+          : volatility >= 25
+            ? 'short_term_projects'
+            : 'mixed';
+
+    if (inferred.revenueNature !== inferredRevenueNature) {
+      inferred.revenueNature = inferredRevenueNature;
+      changed = true;
+    }
+  }
+
+  const sector = String(sectorCategory || '').trim();
+  if (sector === '23' && inferred.contractSizeProfile === 'few_large') {
+    if (inferred.clientCreditProfile !== 'regulated_utility') {
+      inferred.clientCreditProfile = 'regulated_utility';
+      changed = true;
+    }
+  } else if ((sector === '45' || sector === '72') && inferred.clientCreditProfile === 'mixed') {
+    inferred.clientCreditProfile = 'smb';
+    changed = true;
+  }
+
+  return { qualifiers: inferred, inferenceApplied: changed };
+};
+
+const getRevenueQualityExecutiveNarrative = (params: {
+  topRevenueBucketPct: number;
+  pricingImprovement: number;
+  sectorLabel: string;
+  sectorCategory?: string | null;
+  qualifiers: RevenueAnalysisQualifiers;
+  hasOpsData: boolean;
+  hasQualifierOverrides: boolean;
+  contractTimingReceivablesLikely: boolean;
+}) => {
+  const {
+    topRevenueBucketPct,
+    pricingImprovement,
+    sectorLabel,
+    sectorCategory,
+    qualifiers,
+    hasOpsData,
+    hasQualifierOverrides,
+    contractTimingReceivablesLikely,
+  } = params;
+  const highConcentration = topRevenueBucketPct >= 90;
+  const contractBackedModel =
+    qualifiers.revenueNature === 'long_term_contracts' &&
+    (qualifiers.clientCreditProfile === 'regulated_utility' || qualifiers.clientCreditProfile === 'enterprise');
+  const sectorContractFriendly = ['23', '32', '54', '62'].includes(String(sectorCategory || '').trim());
+  const confidence = hasOpsData ? 'High' : hasQualifierOverrides ? 'Medium' : 'Low';
+
+  if (highConcentration && contractBackedModel && sectorContractFriendly) {
+    return {
+      outcome: `Revenue is concentrated, with the top revenue bucket at ${topRevenueBucketPct.toFixed(1)}%, primarily tied to multi-period contract flow.`,
+      meaning: `${sectorLabel} contract revenue can support valuation stability when counterparties are strong and renewal durability is visible; concentration becomes risk if contract economics or renewals weaken.`,
+      impact: `Quality signal is constructive for valuation narrative, while dependency risk must be managed through renewal coverage and margin durability. Estimated pricing/mix upside remains $${Math.round(pricingImprovement).toLocaleString()}.`,
+      action: 'Track top-contract renewal calendar, backlog coverage, gross margin by contract cohort, and customer dependency thresholds each quarter.',
+      confidenceLabel: confidence,
+    };
+  }
+
+  if (highConcentration) {
+    return {
+      outcome: `Revenue is concentrated, with the top revenue bucket at ${topRevenueBucketPct.toFixed(1)}%.`,
+      meaning: `In ${sectorLabel}, this can pressure forecast resilience and buyer confidence unless concentration is supported by durable contracts and strong collections behavior.`,
+      impact: `Concentration can create diligence pressure and multiple sensitivity if renewal visibility is limited. Estimated pricing/mix upside: $${Math.round(pricingImprovement).toLocaleString()}.`,
+      action: 'Reduce dependency by widening revenue sources, and strengthen renewal/collections discipline for top accounts.',
+      confidenceLabel: confidence,
+    };
+  }
+
+  return {
+    outcome: `Revenue concentration is within a manageable range, with the top revenue bucket at ${topRevenueBucketPct.toFixed(1)}%.`,
+    meaning: `Revenue mix currently supports a stable narrative for ${sectorLabel}, subject to continued contract and margin performance.`,
+    impact: `Lower concentration generally supports valuation resilience; pricing/mix improvement still represents an estimated $${Math.round(pricingImprovement).toLocaleString()} opportunity.`,
+    action: contractTimingReceivablesLikely
+      ? 'Validate billing-milestone timing and AR conversion by contract cohort to preserve confidence in contracted growth.'
+      : 'Maintain diversification momentum and monitor top-account margin and renewal trends.',
+    confidenceLabel: confidence,
+  };
+};
+
+const getWorkingCapitalExecutiveNarrative = (params: {
+  wcTotalImpact: number;
+  primaryWcDriverLabel: string;
+  primaryWcDriverValue: number;
+  sectorLabel: string;
+  qualifiers: RevenueAnalysisQualifiers;
+  contractTimingReceivablesLikely: boolean;
+  hasOpsData: boolean;
+}) => {
+  const {
+    wcTotalImpact,
+    primaryWcDriverLabel,
+    primaryWcDriverValue,
+    sectorLabel,
+    qualifiers,
+    contractTimingReceivablesLikely,
+    hasOpsData,
+  } = params;
+  const contractConstrained =
+    contractTimingReceivablesLikely ||
+    (
+      qualifiers.revenueNature === 'long_term_contracts' &&
+      (qualifiers.billingModel === 'milestone' || qualifiers.billingModel === 'progress') &&
+      qualifiers.contractSizeProfile === 'few_large'
+    );
+  const nearTermUnlockableEstimate = contractConstrained
+    ? Math.max(0, Math.min(wcTotalImpact * 0.15, primaryWcDriverValue * 0.25))
+    : Math.max(0, Math.min(wcTotalImpact, primaryWcDriverValue * 0.75));
+  const confidence = hasOpsData ? 'High' : 'Medium';
+
+  if (contractConstrained) {
+    return {
+      outcome: `Working-capital structural opportunity is $${Math.round(wcTotalImpact).toLocaleString()}, with the largest lever in ${primaryWcDriverLabel.toLowerCase()}.`,
+      meaning: `In ${sectorLabel}, contract/billing structure can limit short-term cash unlock even when model-based opportunity is high.`,
+      impact: `Near-term unlockable (0-90 days): ~${formatDollar(nearTermUnlockableEstimate)}; structural opportunity (90-365+ days): ${formatDollar(wcTotalImpact)}.`,
+      action: 'Sequence actions by horizon: first tighten billing/collection execution on delinquent balances, then renegotiate terms and contract design at renewal to realize structural cash release.',
+      confidenceLabel: confidence,
+      nearTermUnlockableEstimate,
+      structuralOpportunity: wcTotalImpact,
+    };
+  }
+
+  return {
+    outcome: `Working-capital opportunity is $${Math.round(wcTotalImpact).toLocaleString()}, led by ${primaryWcDriverLabel.toLowerCase()} optimization.`,
+    meaning: 'Cash can be improved through operating-cycle discipline without requiring top-line growth.',
+    impact: `${primaryWcDriverLabel} is the primary lever at approximately ${formatDollar(primaryWcDriverValue)} potential impact.`,
+    action: 'Execute 30/60/90-day cycle improvements across collections cadence, inventory turns, and payables execution.',
+    confidenceLabel: confidence,
+    nearTermUnlockableEstimate,
+    structuralOpportunity: wcTotalImpact,
+  };
+};
+
+const getCashFlowQualityExecutiveNarrative = (params: {
+  cashConversionPct: number;
+  sectorTarget: number;
+  opCashFlow: number;
+  ebitdaBase: number;
+  qualifiers: RevenueAnalysisQualifiers;
+  contractTimingReceivablesLikely: boolean;
+}) => {
+  const {
+    cashConversionPct,
+    sectorTarget,
+    opCashFlow,
+    ebitdaBase,
+    qualifiers,
+    contractTimingReceivablesLikely,
+  } = params;
+  const contractConstrained =
+    contractTimingReceivablesLikely ||
+    (qualifiers.revenueNature === 'long_term_contracts' && (qualifiers.billingModel === 'milestone' || qualifiers.billingModel === 'progress'));
+
+  if (contractConstrained) {
+    return {
+      outcome: `Cash conversion is ${cashConversionPct.toFixed(1)}% versus a sector target of ${sectorTarget.toFixed(1)}%.`,
+      meaning: 'Lower conversion may partially reflect contract-timing and milestone billing dynamics, not only operating weakness.',
+      impact: `Operating cash flow is ${formatDollar(opCashFlow)} on EBITDA of ${formatDollar(ebitdaBase)}; near-term cash conversion gains are likely gradual under current contract terms.`,
+      action: 'Separate timing-driven gap from controllable leakage by tracking billing milestone aging, collection velocity, and contract-cohort conversion monthly.',
+    };
+  }
+
+  return {
+    outcome: `Cash conversion is ${cashConversionPct.toFixed(1)}% versus a sector target of ${sectorTarget.toFixed(1)}%.`,
+    meaning: 'Cash realization is lagging earnings performance, creating liquidity drag.',
+    impact: `Operating cash flow is ${formatDollar(opCashFlow)} on EBITDA of ${formatDollar(ebitdaBase)}.`,
+    action: 'Tighten conversion discipline through AR speed, inventory control, and purchasing cadence.',
+  };
+};
+
 function FinancialScorePage() {
   // State - Authentication
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
@@ -988,6 +1409,9 @@ function FinancialScorePage() {
   const [dcfDiscountRate, setDcfDiscountRate] = useState(10.0);
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
   const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [qualifierAutosaveStatus, setQualifierAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const qualifierAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sdeAnalysisTotalsState, setSdeAnalysisTotalsState] = useState<Record<string, number>>({});
   const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
   const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
   const [revenueQualityCardInfoOpen, setRevenueQualityCardInfoOpen] = useState<Record<'topBucket' | 'cashGap' | 'dsoTrend' | 'arSpread', boolean>>({
@@ -1051,6 +1475,9 @@ function FinancialScorePage() {
     oneTimeContract?: number;
     oneTimeRevenueOther?: number;
     marketReplacementSalary?: number;
+    analysisQualifiers?: RevenueAnalysisQualifiers;
+    analysisQualifierMode?: 'auto' | 'manual';
+    analysisQualifierAudit?: any;
   }>({});
 
   // State - Goals
@@ -1720,6 +2147,11 @@ function FinancialScorePage() {
               ? data.sdeManualInputs
               : {}
           );
+          setSdeAnalysisTotalsState(
+            data?.sdeAnalysisTotals && typeof data.sdeAnalysisTotals === 'object'
+              ? data.sdeAnalysisTotals
+              : {}
+          );
         })
         .catch(err => {
           console.error('? Error loading valuation settings:', err);
@@ -1729,9 +2161,47 @@ function FinancialScorePage() {
           setDcfDiscountRate(10.0);
           setDcfTerminalGrowth(2.0);
           setSdeManualInputs({});
+          setSdeAnalysisTotalsState({});
         });
     }
   }, [selectedCompanyId]);
+
+  // Ensure qualifier defaults are always seeded by sector + industry group
+  // when a company has no saved qualifier overrides yet.
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    const activeCompany = Array.isArray(companies)
+      ? companies.find((c) => c.id === selectedCompanyId)
+      : undefined;
+    const sectorCategory = String(activeCompany?.industrySectorCategory || industrySectorCategory || '01');
+    const industryGroupId = activeCompany?.industrySector;
+
+    setSdeManualInputs((prev) => {
+      const hasQualifiers = Boolean((prev as any)?.analysisQualifiers && typeof (prev as any).analysisQualifiers === 'object');
+      const mode = (prev as any)?.analysisQualifierMode;
+      if (hasQualifiers) {
+        // Preserve existing saved qualifier values; default legacy records to manual mode.
+        if (mode === 'auto' || mode === 'manual') return prev;
+        return {
+          ...prev,
+          analysisQualifierMode: 'manual',
+        };
+      }
+      return {
+        ...prev,
+        analysisQualifiers: defaultRevenueAnalysisQualifiers(sectorCategory, industryGroupId),
+        analysisQualifierMode: 'auto',
+      };
+    });
+  }, [selectedCompanyId, companies, industrySectorCategory]);
+
+  useEffect(() => {
+    return () => {
+      if (qualifierAutosaveTimerRef.current) {
+        clearTimeout(qualifierAutosaveTimerRef.current);
+      }
+    };
+  }, []);
 
   // Load SDE executive summary + recommendations from API (strict-mode only)
   useEffect(() => {
@@ -10754,6 +11224,7 @@ function FinancialScorePage() {
                     const result = await response.json();
                     console.log('?? Save response:', result);
                     if (response.ok) {
+                      setSdeAnalysisTotalsState(sdeAnalysisTotals);
                       setValuationSaveStatus('saved');
                       setTimeout(() => setValuationSaveStatus('idle'), 3000);
                     } else {
@@ -12344,6 +12815,368 @@ function FinancialScorePage() {
                   <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
                     Buyer-focused revenue reliability checks using monthly financial data, with deterministic signal rules.
                   </p>
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>
+                      Revenue Context Qualifiers ({sdeSectorBenchmarks.sectorLabel})
+                    </div>
+                    {(() => {
+                      const rawRevenueQualifiers = (sdeManualInputs as any)?.analysisQualifiers;
+                      const hasQualifierOverrides = Boolean(rawRevenueQualifiers && typeof rawRevenueQualifiers === 'object');
+                      const revenueQualifiers = normalizeRevenueAnalysisQualifiers(
+                        rawRevenueQualifiers,
+                        sdeSectorCategory,
+                        company?.industrySector,
+                      );
+                      const qualifierMode: 'auto' | 'manual' = (sdeManualInputs as any)?.analysisQualifierMode === 'manual' ? 'manual' : 'auto';
+                      const qualifierPrefillSource = describeRevenueQualifierPreset(
+                        sdeSectorCategory,
+                        company?.industrySector,
+                      );
+                      const defaultQualifierSet = defaultRevenueAnalysisQualifiers(
+                        sdeSectorCategory,
+                        company?.industrySector,
+                      );
+                      const resetRevenueQualifiersToDefaults = () => {
+                        const nextInputs = {
+                          ...(sdeManualInputs || {}),
+                          analysisQualifiers: defaultQualifierSet,
+                          analysisQualifierMode: 'auto' as const,
+                          analysisQualifierAudit: {
+                            updatedAt: new Date().toISOString(),
+                            mode: 'auto',
+                            fieldSources: {
+                              revenueNature: 'sector_group_default',
+                              contractSizeProfile: 'sector_group_default',
+                              clientCreditProfile: 'sector_group_default',
+                              billingModel: 'sector_group_default',
+                              renewalVisibility: 'sector_group_default',
+                            },
+                          },
+                        };
+                        setSdeManualInputs((prev) => ({
+                          ...prev,
+                          analysisQualifiers: defaultQualifierSet,
+                          analysisQualifierMode: 'auto',
+                          analysisQualifierAudit: nextInputs.analysisQualifierAudit,
+                        }));
+                        if (!selectedCompanyId) return;
+                        if (qualifierAutosaveTimerRef.current) clearTimeout(qualifierAutosaveTimerRef.current);
+                        qualifierAutosaveTimerRef.current = setTimeout(async () => {
+                          try {
+                            setQualifierAutosaveStatus('saving');
+                            const response = await fetch('/api/valuation-settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                companyId: selectedCompanyId,
+                                sdeMultiplier,
+                                ebitdaMultiplier,
+                                dcfDiscountRate,
+                                dcfTerminalGrowth,
+                                sdeManualInputs: nextInputs,
+                                sdeAnalysisTotals: sdeAnalysisTotalsState || {},
+                              }),
+                            });
+                            if (response.ok) {
+                              setQualifierAutosaveStatus('saved');
+                              setTimeout(() => setQualifierAutosaveStatus('idle'), 1500);
+                            } else {
+                              setQualifierAutosaveStatus('error');
+                            }
+                          } catch {
+                            setQualifierAutosaveStatus('error');
+                          }
+                        }, 400);
+                      };
+                      const contractTimingReceivablesLikely =
+                        revenueQualityInsights.arRevenueSpread > sdeSectorBenchmarks.dso.spreadWarn &&
+                        revenueQualityInsights.currentDso <= sdeSectorBenchmarks.benchmarkTargets.dso + 10;
+                      const revenueVolatilityPct = Math.max(0, (revenueQualityInsights.volatilitySeries.slice(-1)[0]?.value || 0) * 100);
+                      const inferredRevenue = inferRevenueQualifiersFromSignals({
+                        baseQualifiers: revenueQualifiers,
+                        qualifierMode,
+                        hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                        sectorCategory: sdeSectorCategory,
+                        contractTimingReceivablesLikely,
+                        top1Pct: customerQualityInsights.hasData ? customerQualityInsights.top1Pct : null,
+                        top5Pct: customerQualityInsights.hasData ? customerQualityInsights.top5Pct : null,
+                        customerCount: customerQualityInsights.hasData ? customerQualityInsights.customerCount : null,
+                        revenueVolatilityPct,
+                      });
+                      const qualifierFieldSources = deriveRevenueQualifierFieldSources({
+                        baseQualifiers: revenueQualifiers,
+                        finalQualifiers: inferredRevenue.qualifiers,
+                        qualifierMode,
+                      });
+                      const revenueNarrative = getRevenueQualityExecutiveNarrative({
+                        topRevenueBucketPct: revenueQualityInsights.topBucketSharePct || 0,
+                        pricingImprovement:
+                          sdeRecommendationsApi
+                            .filter((rec) => rec.module === 'Revenue Quality')
+                            .reduce((sum, rec) => sum + rec.impactRange.high, 0),
+                        sectorLabel: sdeSectorBenchmarks.sectorLabel,
+                        sectorCategory: sdeSectorCategory,
+                        qualifiers: inferredRevenue.qualifiers,
+                        hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                        hasQualifierOverrides,
+                        contractTimingReceivablesLikely,
+                      });
+                      const qualifierEvidence = {
+                        sector: sdeSectorBenchmarks.sectorLabel,
+                        top1Pct: customerQualityInsights.hasData ? Number(customerQualityInsights.top1Pct || 0) : null,
+                        top5Pct: customerQualityInsights.hasData ? Number(customerQualityInsights.top5Pct || 0) : null,
+                        customerCount: customerQualityInsights.hasData ? Number(customerQualityInsights.customerCount || 0) : null,
+                        revenueVolatilityPct,
+                        contractTimingReceivablesLikely,
+                      };
+                      const queueQualifierAutosave = (nextManualInputs: any) => {
+                        if (!selectedCompanyId) return;
+                        if (qualifierAutosaveTimerRef.current) {
+                          clearTimeout(qualifierAutosaveTimerRef.current);
+                        }
+                        qualifierAutosaveTimerRef.current = setTimeout(async () => {
+                          try {
+                            setQualifierAutosaveStatus('saving');
+                            const response = await fetch('/api/valuation-settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                companyId: selectedCompanyId,
+                                sdeMultiplier,
+                                ebitdaMultiplier,
+                                dcfDiscountRate,
+                                dcfTerminalGrowth,
+                                sdeManualInputs: nextManualInputs,
+                                sdeAnalysisTotals: sdeAnalysisTotalsState || {},
+                              }),
+                            });
+                            if (response.ok) {
+                              setQualifierAutosaveStatus('saved');
+                              setTimeout(() => setQualifierAutosaveStatus('idle'), 1500);
+                            } else {
+                              setQualifierAutosaveStatus('error');
+                            }
+                          } catch {
+                            setQualifierAutosaveStatus('error');
+                          }
+                        }, 900);
+                      };
+                      const updateRevenueQualifier = <K extends keyof RevenueAnalysisQualifiers>(
+                        key: K,
+                        value: RevenueAnalysisQualifiers[K],
+                      ) => {
+                        setSdeManualInputs((prev) => {
+                          const previous = normalizeRevenueAnalysisQualifiers(
+                            (prev as any)?.analysisQualifiers,
+                            sdeSectorCategory,
+                            company?.industrySector,
+                          );
+                          return {
+                            ...prev,
+                            analysisQualifiers: {
+                              ...previous,
+                              [key]: value,
+                            },
+                            analysisQualifierMode: 'manual',
+                            analysisQualifierAudit: {
+                              updatedAt: new Date().toISOString(),
+                              mode: 'manual',
+                              fieldSources: {
+                                revenueNature: 'manual',
+                                contractSizeProfile: 'manual',
+                                clientCreditProfile: 'manual',
+                                billingModel: 'manual',
+                                renewalVisibility: 'manual',
+                              },
+                              evidence: qualifierEvidence,
+                            },
+                          };
+                        });
+                        queueQualifierAutosave({
+                          ...(sdeManualInputs || {}),
+                          analysisQualifiers: {
+                            ...revenueQualifiers,
+                            [key]: value,
+                          },
+                          analysisQualifierMode: 'manual',
+                          analysisQualifierAudit: {
+                            updatedAt: new Date().toISOString(),
+                            mode: 'manual',
+                            fieldSources: {
+                              revenueNature: 'manual',
+                              contractSizeProfile: 'manual',
+                              clientCreditProfile: 'manual',
+                              billingModel: 'manual',
+                              renewalVisibility: 'manual',
+                            },
+                            evidence: qualifierEvidence,
+                          },
+                        });
+                      };
+                      return (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: '12px', color: '#475569' }}>
+                              Prefill source: <strong>{qualifierPrefillSource}</strong>
+                            </div>
+                            <button
+                              onClick={resetRevenueQualifiersToDefaults}
+                              style={{
+                                background: '#eef2ff',
+                                border: '1px solid #c7d2fe',
+                                color: '#1d4ed8',
+                                borderRadius: '6px',
+                                padding: '4px 8px',
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Reset to sector/group defaults
+                            </button>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+                            Auto-save status:{' '}
+                            <strong>
+                              {qualifierAutosaveStatus === 'saving'
+                                ? 'Saving...'
+                                : qualifierAutosaveStatus === 'saved'
+                                  ? 'Saved'
+                                  : qualifierAutosaveStatus === 'error'
+                                    ? 'Error'
+                                    : 'Idle'}
+                            </strong>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(130px, 1fr))', gap: '8px' }}>
+                            <label style={{ fontSize: '12px', color: '#334155' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span>Revenue nature</span>
+                                {(() => {
+                                  const badge = qualifierSourceBadge(qualifierFieldSources.revenueNature);
+                                  return (
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
+                                      {badge.label}
+                                    </span>
+                                  );
+                                })()}
+                              </span>
+                              <select
+                                value={inferredRevenue.qualifiers.revenueNature}
+                                onChange={(e) => updateRevenueQualifier('revenueNature', e.target.value as RevenueAnalysisQualifiers['revenueNature'])}
+                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                              >
+                                <option value="short_term_projects">Short-term projects</option>
+                                <option value="long_term_contracts">Long-term contracts</option>
+                                <option value="mixed">Mixed</option>
+                              </select>
+                            </label>
+                            <label style={{ fontSize: '12px', color: '#334155' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span>Contract size profile</span>
+                                {(() => {
+                                  const badge = qualifierSourceBadge(qualifierFieldSources.contractSizeProfile);
+                                  return (
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
+                                      {badge.label}
+                                    </span>
+                                  );
+                                })()}
+                              </span>
+                              <select
+                                value={inferredRevenue.qualifiers.contractSizeProfile}
+                                onChange={(e) => updateRevenueQualifier('contractSizeProfile', e.target.value as RevenueAnalysisQualifiers['contractSizeProfile'])}
+                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                              >
+                                <option value="few_large">Few large contracts</option>
+                                <option value="mixed">Mixed</option>
+                                <option value="many_small">Many small contracts</option>
+                              </select>
+                            </label>
+                            <label style={{ fontSize: '12px', color: '#334155' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span>Client credit profile</span>
+                                {(() => {
+                                  const badge = qualifierSourceBadge(qualifierFieldSources.clientCreditProfile);
+                                  return (
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
+                                      {badge.label}
+                                    </span>
+                                  );
+                                })()}
+                              </span>
+                              <select
+                                value={inferredRevenue.qualifiers.clientCreditProfile}
+                                onChange={(e) => updateRevenueQualifier('clientCreditProfile', e.target.value as RevenueAnalysisQualifiers['clientCreditProfile'])}
+                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                              >
+                                <option value="regulated_utility">Regulated utility</option>
+                                <option value="enterprise">Enterprise</option>
+                                <option value="mixed">Mixed</option>
+                                <option value="smb">SMB</option>
+                              </select>
+                            </label>
+                            <label style={{ fontSize: '12px', color: '#334155' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span>Billing model</span>
+                                {(() => {
+                                  const badge = qualifierSourceBadge(qualifierFieldSources.billingModel);
+                                  return (
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
+                                      {badge.label}
+                                    </span>
+                                  );
+                                })()}
+                              </span>
+                              <select
+                                value={inferredRevenue.qualifiers.billingModel}
+                                onChange={(e) => updateRevenueQualifier('billingModel', e.target.value as RevenueAnalysisQualifiers['billingModel'])}
+                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                              >
+                                <option value="milestone">Milestone</option>
+                                <option value="progress">Percent complete</option>
+                                <option value="time_materials">Time & materials</option>
+                                <option value="mixed">Mixed</option>
+                              </select>
+                            </label>
+                            <label style={{ fontSize: '12px', color: '#334155' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span>Renewal visibility</span>
+                                {(() => {
+                                  const badge = qualifierSourceBadge(qualifierFieldSources.renewalVisibility);
+                                  return (
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
+                                      {badge.label}
+                                    </span>
+                                  );
+                                })()}
+                              </span>
+                              <select
+                                value={inferredRevenue.qualifiers.renewalVisibility}
+                                onChange={(e) => updateRevenueQualifier('renewalVisibility', e.target.value as RevenueAnalysisQualifiers['renewalVisibility'])}
+                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                              >
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                              </select>
+                            </label>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#475569', marginTop: '8px' }}>
+                            Revenue narrative confidence: <strong>{revenueNarrative.confidenceLabel}</strong>. Use Save Settings to persist qualifier updates.
+                          </div>
+                          <div style={{ marginTop: '6px', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
+                            <strong>Inference evidence:</strong>{' '}
+                            Top1 {qualifierEvidence.top1Pct !== null ? `${qualifierEvidence.top1Pct.toFixed(1)}%` : 'n/a'}, Top5 {qualifierEvidence.top5Pct !== null ? `${qualifierEvidence.top5Pct.toFixed(1)}%` : 'n/a'}, Customers {qualifierEvidence.customerCount !== null ? qualifierEvidence.customerCount : 'n/a'}, Volatility {qualifierEvidence.revenueVolatilityPct.toFixed(1)}%, Contract-timing AR {qualifierEvidence.contractTimingReceivablesLikely ? 'yes' : 'no'}.
+                          </div>
+                          {qualifierMode === 'auto' && inferredRevenue.inferenceApplied && (
+                            <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
+                              Ops inference active: qualifier defaults are being adjusted from available operational signals.
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px' }}>
                     <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
@@ -13234,6 +14067,69 @@ function FinancialScorePage() {
                   <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5, marginBottom: '8px' }}>
                     Buyer-oriented working capital view showing normalized target, current position, and likely purchase price adjustment implications.
                   </p>
+                  {(() => {
+                    const latestWcRow = workingCapitalSeries[workingCapitalSeries.length - 1];
+                    const dsoCurrent = latestWcRow ? latestWcRow.dso : revenueQualityInsights.currentDso;
+                    const dioCurrent = latestWcRow ? latestWcRow.dio : 0;
+                    const dpoCurrent = latestWcRow ? latestWcRow.dpo : 0;
+                    const dsoTarget = sdeSectorBenchmarks.benchmarkTargets.dso;
+                    const dioTarget = sdeSectorBenchmarks.benchmarkTargets.inventoryDays;
+                    const cccTarget = sdeSectorBenchmarks.benchmarkTargets.ccc;
+                    const dpoTarget = Math.max(0, dsoTarget + dioTarget - cccTarget);
+                    const dsoImpact = Math.max(0, dsoCurrent - dsoTarget) * Math.max(0, Math.abs(workingCapitalInsights.annualRevenue) / 365);
+                    const dioImpact = Math.max(0, dioCurrent - dioTarget) * Math.max(0, Math.abs(workingCapitalInsights.annualCogs) / 365);
+                    const dpoImpact = Math.max(0, dpoTarget - dpoCurrent) * Math.max(0, Math.abs(workingCapitalInsights.annualCogs) / 365);
+                    const contractTimingReceivablesLikely =
+                      !customerQualityInsights.hasData &&
+                      revenueQualityInsights.arRevenueSpread > sdeSectorBenchmarks.dso.spreadWarn &&
+                      dsoCurrent <= dsoTarget + 10;
+                    const receivablesCashOpportunity = contractTimingReceivablesLikely ? 0 : dsoImpact;
+                    const wcTotalImpact = receivablesCashOpportunity + dioImpact + dpoImpact;
+                    const primaryWcDriver = [
+                      { label: 'Receivables', value: receivablesCashOpportunity },
+                      { label: 'Inventory', value: dioImpact },
+                      { label: 'Supplier terms', value: dpoImpact },
+                    ].sort((a, b) => b.value - a.value)[0];
+                    const revenueQualifiers = normalizeRevenueAnalysisQualifiers(
+                      (sdeManualInputs as any)?.analysisQualifiers,
+                      sdeSectorCategory,
+                      company?.industrySector,
+                    );
+                    const qualifierMode: 'auto' | 'manual' = (sdeManualInputs as any)?.analysisQualifierMode === 'manual' ? 'manual' : 'auto';
+                    const revenueVolatilityPct = Math.max(0, (revenueQualityInsights.volatilitySeries.slice(-1)[0]?.value || 0) * 100);
+                    const inferredRevenue = inferRevenueQualifiersFromSignals({
+                      baseQualifiers: revenueQualifiers,
+                      qualifierMode,
+                      hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                      sectorCategory: sdeSectorCategory,
+                      contractTimingReceivablesLikely,
+                      top1Pct: customerQualityInsights.hasData ? customerQualityInsights.top1Pct : null,
+                      top5Pct: customerQualityInsights.hasData ? customerQualityInsights.top5Pct : null,
+                      customerCount: customerQualityInsights.hasData ? customerQualityInsights.customerCount : null,
+                      revenueVolatilityPct,
+                    });
+                    const wcNarrative = getWorkingCapitalExecutiveNarrative({
+                      wcTotalImpact,
+                      primaryWcDriverLabel: primaryWcDriver.label,
+                      primaryWcDriverValue: primaryWcDriver.value,
+                      sectorLabel: sdeSectorBenchmarks.sectorLabel,
+                      qualifiers: inferredRevenue.qualifiers,
+                      contractTimingReceivablesLikely,
+                      hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                    });
+                    return (
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', marginBottom: '8px' }}>
+                        <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Sector/Contract Opportunity Framing</div>
+                        <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.55 }}>
+                          <div><strong>Primary driver:</strong> {primaryWcDriver.label}</div>
+                          <div><strong>Near-term unlockable (0-90 days):</strong> {formatDollar(wcNarrative.nearTermUnlockableEstimate)}</div>
+                          <div><strong>Structural opportunity (90-365+ days):</strong> {formatDollar(wcNarrative.structuralOpportunity)}</div>
+                          <div><strong>Interpretation:</strong> {wcNarrative.meaning}</div>
+                          <div><strong>Confidence:</strong> {wcNarrative.confidenceLabel}</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
                     <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
@@ -14515,9 +15411,9 @@ function FinancialScorePage() {
                         ? (topCustomerPct > sdeSectorBenchmarks.customerQuality.top1Warn ? 'high_risk' : 'healthy')
                         : 'moderate_risk';
                     const executiveStatusByArea = new Map<string, 'healthy' | 'moderate_risk' | 'high_risk'>([
-                      ...executiveRows.map((row) => [row.area, row.status as 'healthy' | 'moderate_risk' | 'high_risk']),
-                      ['Balance Sheet Quality', balanceSheetExecutiveStatus],
-                      ['Customer Quality', customerExecutiveStatus],
+                      ...executiveRows.map((row) => [row.area, row.status as 'healthy' | 'moderate_risk' | 'high_risk'] as const),
+                      ['Balance Sheet Quality', balanceSheetExecutiveStatus] as const,
+                      ['Customer Quality', customerExecutiveStatus] as const,
                     ]);
                     const executiveStatusLabel = (status: 'healthy' | 'moderate_risk' | 'high_risk') =>
                       status === 'healthy' ? 'Healthy' : status === 'moderate_risk' ? 'Watch' : 'Risk';
@@ -14528,42 +15424,121 @@ function FinancialScorePage() {
                       { label: 'Inventory', value: dioImpact },
                       { label: 'Supplier terms', value: dpoImpact },
                     ].sort((a, b) => b.value - a.value)[0];
-                    const wcQuantConfidence = (!contractTimingReceivablesLikely && customerQualityInsights.hasData) ? 'higher' : 'directional';
+                    const rawRevenueQualifiers = (sdeManualInputs as any)?.analysisQualifiers;
+                    const hasQualifierOverrides = Boolean(rawRevenueQualifiers && typeof rawRevenueQualifiers === 'object');
+                    const revenueQualifiers = normalizeRevenueAnalysisQualifiers(
+                      rawRevenueQualifiers,
+                      sdeSectorCategory,
+                      company?.industrySector,
+                    );
+                    const qualifierMode: 'auto' | 'manual' = (sdeManualInputs as any)?.analysisQualifierMode === 'manual' ? 'manual' : 'auto';
+                    const inferredRevenue = inferRevenueQualifiersFromSignals({
+                      baseQualifiers: revenueQualifiers,
+                      qualifierMode,
+                      hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                      sectorCategory: sdeSectorCategory,
+                      contractTimingReceivablesLikely,
+                      top1Pct: customerQualityInsights.hasData ? customerQualityInsights.top1Pct : null,
+                      top5Pct: customerQualityInsights.hasData ? customerQualityInsights.top5Pct : null,
+                      customerCount: customerQualityInsights.hasData ? customerQualityInsights.customerCount : null,
+                      revenueVolatilityPct,
+                    });
+                    const revenueNarrative = getRevenueQualityExecutiveNarrative({
+                      topRevenueBucketPct,
+                      pricingImprovement,
+                      sectorLabel: sdeSectorBenchmarks.sectorLabel,
+                      sectorCategory: sdeSectorCategory,
+                      qualifiers: inferredRevenue.qualifiers,
+                      hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                      hasQualifierOverrides,
+                      contractTimingReceivablesLikely,
+                    });
+                    const workingCapitalNarrative = getWorkingCapitalExecutiveNarrative({
+                      wcTotalImpact,
+                      primaryWcDriverLabel: primaryWcDriver.label,
+                      primaryWcDriverValue: primaryWcDriver.value,
+                      sectorLabel: sdeSectorBenchmarks.sectorLabel,
+                      qualifiers: inferredRevenue.qualifiers,
+                      contractTimingReceivablesLikely,
+                      hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                    });
+                    const cashFlowNarrative = getCashFlowQualityExecutiveNarrative({
+                      cashConversionPct,
+                      sectorTarget: sdeSectorBenchmarks.cashFlow.cashConversionWarn,
+                      opCashFlow,
+                      ebitdaBase,
+                      qualifiers: inferredRevenue.qualifiers,
+                      contractTimingReceivablesLikely,
+                    });
+                    const revenueValueImpact = pricingImprovement * valuationMultiple;
+                    const cashConversionGapValue = Math.max(
+                      0,
+                      ((sdeSectorBenchmarks.cashFlow.cashConversionWarn - cashConversionPct) / 100) * Math.max(0, ebitdaBase),
+                    );
+                    const balanceSheetValueDelta = ttmSDE * multipleAdjustment;
+                    const updateRevenueQualifier = <K extends keyof RevenueAnalysisQualifiers>(
+                      key: K,
+                      value: RevenueAnalysisQualifiers[K],
+                    ) => {
+                      setSdeManualInputs((prev) => {
+                        const previous = normalizeRevenueAnalysisQualifiers(
+                          (prev as any)?.analysisQualifiers,
+                          sdeSectorCategory,
+                          company?.industrySector,
+                        );
+                        return {
+                          ...prev,
+                          analysisQualifiers: {
+                            ...previous,
+                            [key]: value,
+                          },
+                          analysisQualifierMode: 'manual',
+                        };
+                      });
+                    };
                     const executiveCards = [
                       {
                         title: 'Revenue Quality',
-                        outcome: `Revenue is concentrated, with the top revenue bucket at ${topRevenueBucketPct.toFixed(1)}%.`,
-                        meaning: 'Concentration increases forecast risk and can pressure deal multiples unless addressed.',
-                        impact: `Potential EBITDA lift from pricing/mix actions: $${Math.round(pricingImprovement).toLocaleString()}.`,
-                        action: 'Protect margin in low-performing lines and diversify revenue contribution.',
+                        outcome: revenueNarrative.outcome,
+                        meaning: revenueNarrative.meaning,
+                        valueAdjustment: `EBITDA adjustment: ${formatDollar(pricingImprovement)}`,
+                        valueImpact: `Valuation impact @ ${valuationMultiple.toFixed(1)}x: ${formatDollar(revenueValueImpact)}`,
+                        impact: revenueNarrative.impact,
+                        action: revenueNarrative.action,
                       },
                       {
                         title: 'EBITDA Quality',
                         outcome: `Quality-of-earnings review identified ${ebitdaAdjustments >= 0 ? 'add-back' : 'downside'} adjustments of ${ebitdaAdjustments >= 0 ? '+' : ''}$${Math.round(ebitdaAdjustments).toLocaleString()}.`,
                         meaning: 'Normalized earnings are stronger than reported headline EBITDA, improving valuation credibility.',
+                        valueAdjustment: `EBITDA adjustment: ${ebitdaAdjustments >= 0 ? '+' : '-'}${formatDollar(Math.abs(ebitdaAdjustments))}`,
+                        valueImpact: `Valuation impact @ ${valuationMultiple.toFixed(1)}x: ${valuationImpactFromAdjustments >= 0 ? '+' : '-'}${formatDollar(Math.abs(valuationImpactFromAdjustments))}`,
                         impact: `Estimated valuation impact at ${valuationMultiple.toFixed(1)}x: $${Math.round(valuationImpactFromAdjustments).toLocaleString()}.`,
                         action: 'Document adjustment support and lock in recurring earnings improvements.',
                       },
                       {
                         title: 'Working Capital',
-                        outcome: `Working capital opportunity is $${Math.round(wcTotalImpact).toLocaleString()}, led by ${primaryWcDriver.label.toLowerCase()} optimization.`,
-                        meaning: 'Improve cash generation through billing, collections, inventory, and vendor-term discipline without depending on new sales.',
-                        impact: wcQuantConfidence === 'higher'
-                          ? `${primaryWcDriver.label} is the primary lever, with an estimated $${Math.round(primaryWcDriver.value).toLocaleString()} cash impact.`
-                          : `${primaryWcDriver.label} is the primary lever; cash impact is directional until contract-timing and payables execution data are fully validated.`,
-                        action: 'Prioritize cycle-time actions tied to billing, purchasing, and payment-term execution.',
+                        outcome: workingCapitalNarrative.outcome,
+                        meaning: workingCapitalNarrative.meaning,
+                        valueAdjustment: `Cash adjustment (structural potential): ${formatDollar(workingCapitalNarrative.structuralOpportunity)}`,
+                        valueImpact: `Near-term unlockable (0-90d): ${formatDollar(workingCapitalNarrative.nearTermUnlockableEstimate)}; structural (90-365+d): ${formatDollar(workingCapitalNarrative.structuralOpportunity)}.`,
+                        impact: `${workingCapitalNarrative.impact} Confidence: ${workingCapitalNarrative.confidenceLabel}.`,
+                        action: workingCapitalNarrative.action,
                       },
                       {
                         title: 'Cash Flow Quality',
-                        outcome: `Cash conversion is ${cashConversionPct.toFixed(1)}% versus a sector target of ${sdeSectorBenchmarks.cashFlow.cashConversionWarn.toFixed(1)}%.`,
-                        meaning: 'Cash realization is lagging earnings performance, creating liquidity drag.',
-                        impact: `Operating cash flow is $${Math.round(opCashFlow).toLocaleString()} on EBITDA of $${Math.round(ebitdaBase).toLocaleString()}.`,
-                        action: 'Tighten conversion discipline through AR speed, inventory control, and purchasing cadence.',
+                        outcome: cashFlowNarrative.outcome,
+                        meaning: cashFlowNarrative.meaning,
+                        valueAdjustment: `Cash conversion gap vs target: ${formatDollar(cashConversionGapValue)}`,
+                        valueImpact: 'Primarily liquidity and diligence-readiness impact; valuation effect is indirect unless sustained.',
+                        impact: cashFlowNarrative.impact,
+                        action: cashFlowNarrative.action,
                       },
                       {
                         title: 'Balance Sheet Quality',
                         outcome: `Balance-sheet confidence is ${confidenceLabel.toLowerCase()} with an adjusted multiple band of ${adjustedLowMultiple.toFixed(1)}x-${adjustedHighMultiple.toFixed(1)}x.`,
                         meaning: 'Balance-sheet strength supports valuation defensibility in diligence and negotiation.',
+                        valueAdjustment: `Multiple adjustment: ${multipleAdjustment >= 0 ? '+' : ''}${multipleAdjustment.toFixed(1)}x`,
+                        valueImpact: `Implied value change: ${balanceSheetValueDelta >= 0 ? '+' : '-'}${formatDollar(Math.abs(balanceSheetValueDelta))}`,
                         impact: `Strongest check: ${strongestCheck.label}; watch item: ${weakestCheck.label}.`,
                         action: 'Address the weakest check first to reduce buyer diligence friction.',
                       },
@@ -14575,6 +15550,8 @@ function FinancialScorePage() {
                         meaning: customerQualityInsights.hasData
                           ? 'Customer concentration and retention can now be actively monitored for deal risk.'
                           : 'Customer risk can only be assessed directionally until customer-level operational data is connected.',
+                        valueAdjustment: 'Direct pre-multiple adjustment: N/A until retention/churn economics are modeled.',
+                        valueImpact: 'Indirect impact via risk premium / multiple confidence; show as qualitative until modeled.',
                         impact: customerQualityInsights.hasData
                           ? 'Customer-risk insights are available for concentration, retention, and collections quality.'
                           : 'No direct customer-quality valuation adjustment is applied until customer data is connected.',
@@ -14598,7 +15575,9 @@ function FinancialScorePage() {
                                 <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
                                   <div><strong>What happened:</strong> {card.outcome}</div>
                                   <div style={{ marginTop: '4px' }}><strong>Why it matters:</strong> {card.meaning}</div>
-                                  <div style={{ marginTop: '4px' }}><strong>Value impact:</strong> {card.impact}</div>
+                                  <div style={{ marginTop: '4px' }}><strong>Value adjustment:</strong> {card.valueAdjustment}</div>
+                                  <div style={{ marginTop: '4px' }}><strong>Value impact:</strong> {card.valueImpact}</div>
+                                  <div style={{ marginTop: '4px' }}><strong>Value context:</strong> {card.impact}</div>
                                   <div style={{ marginTop: '4px' }}><strong>Executive action:</strong> {card.action}</div>
                                 </div>
                               </div>
