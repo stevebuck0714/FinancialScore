@@ -989,7 +989,7 @@ function FinancialScorePage() {
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
   const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
-  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('ebitda-adjustments');
+  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
   const [revenueQualityCardInfoOpen, setRevenueQualityCardInfoOpen] = useState<Record<'topBucket' | 'cashGap' | 'dsoTrend' | 'arSpread', boolean>>({
     topBucket: false,
     cashGap: false,
@@ -1767,6 +1767,12 @@ function FinancialScorePage() {
 
     fetch(`/api/sde-recommendations?companyId=${selectedCompanyId}`)
       .then(async (res) => {
+        const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+        if (!contentType.includes('application/json')) {
+          const raw = await res.text().catch(() => '');
+          const hint = raw && raw.trim().startsWith('<') ? 'non-JSON response from endpoint' : 'unexpected response format';
+          throw new Error(`Recommendation service unavailable (${hint})`);
+        }
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data?.error || 'Failed to load SDE recommendations');
@@ -11793,13 +11799,13 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '10px', padding: '12px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {[
+                      { id: 'recommendations' as const, label: 'Executive Summary' },
                       { id: 'ebitda-adjustments' as const, label: 'EBITDA Adjustments' },
                       { id: 'revenue-quality' as const, label: 'Revenue Quality' },
                       { id: 'customer-quality' as const, label: 'Customer Quality' },
                       { id: 'working-capital' as const, label: 'Working Capital' },
                       { id: 'cash-flow-quality' as const, label: 'Cash Flow Quality' },
                       { id: 'balance-sheet-quality' as const, label: 'Balance Sheet Quality' },
-                      { id: 'recommendations' as const, label: 'Executive Summary' },
                     ].map((tab) => (
                       <button
                         key={tab.id}
@@ -14218,20 +14224,26 @@ function FinancialScorePage() {
                         </div>
                       </div>
                       <div style={{ background: '#ecfdf5', borderRadius: '8px', padding: '12px', border: '1px solid #86efac' }}>
-                        <div style={{ fontSize: '18px', fontWeight: '800', color: '#14532d', marginBottom: '6px' }}>Value Summary</div>
-                        <div style={{ fontSize: '14px', color: '#14532d', fontWeight: '800', lineHeight: 1.4 }}>
+                        <div style={{ fontSize: '18px', fontWeight: '800', color: '#14532d', marginBottom: '6px' }}>Executive Value Snapshot</div>
+                        <div style={{ fontSize: '14px', color: '#14532d', lineHeight: 1.4 }}>
                           {(() => {
                             const topValueOpportunity = (Math.max(0, qoeTotalAdjustments) + sdeRecommendationsApi
                               .filter((rec) => rec.module === 'Revenue Quality')
                               .reduce((sum, rec) => sum + rec.impactRange.high, 0)) * sdeMultiplier;
                             const topTotalPotentialValue = sdeValuation + topValueOpportunity;
-                            return <>Adjusted Value of ${Math.round(sdeValuation).toLocaleString()} + Value Opportunity of ${Math.round(topValueOpportunity).toLocaleString()} = ${Math.round(topTotalPotentialValue).toLocaleString()}</>;
+                            return (
+                              <>
+                                <div>Adjusted value: ${Math.round(sdeValuation).toLocaleString()}</div>
+                                <div>Estimated improvement opportunity: ${Math.round(topValueOpportunity).toLocaleString()}</div>
+                                <div>Total potential value: ${Math.round(topTotalPotentialValue).toLocaleString()}</div>
+                              </>
+                            );
                           })()}
                         </div>
                       </div>
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569', whiteSpace: 'nowrap' }}>
                         SDE Multiple: {sdeMultiplier.toFixed(1)}x
                       </label>
                       <input
@@ -14241,13 +14253,11 @@ function FinancialScorePage() {
                         step="0.1"
                         value={sdeMultiplier}
                         onChange={(e) => setSdeMultiplier(parseFloat(e.target.value))}
-                        style={{ width: '100%', marginBottom: '4px' }}
+                        style={{ width: '300px', maxWidth: '45vw' }}
                       />
-                      <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Typical Range: 1.5x - 4.0x</span>
-                        <span>Industry Average: 2.5x</span>
-                      </div>
-                      <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                      <span style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>Typical Range: 1.5x - 4.0x</span>
+                      <span style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>Industry Average: 2.5x</span>
+                      <div style={{ marginLeft: 'auto' }}>
                         <button
                           onClick={() => {
                             const saveButton = document.getElementById('valuation-save-settings-btn') as HTMLButtonElement | null;
@@ -14415,15 +14425,21 @@ function FinancialScorePage() {
                     const alertItems = [
                       {
                         show: topCustomerPct > sdeSectorBenchmarks.customerQuality.top1Warn,
-                        text: `Revenue concentration above sector threshold ${sdeSectorBenchmarks.customerQuality.top1Warn.toFixed(1)}% (current ${topCustomerPct.toFixed(1)}%)`
+                        title: `Revenue concentration above sector threshold ${sdeSectorBenchmarks.customerQuality.top1Warn.toFixed(1)}% (current ${topCustomerPct.toFixed(1)}%)`,
+                        why: 'High customer concentration increases earnings volatility and buyer diligence risk if a major customer weakens.',
+                        action: 'Build a concentration reduction plan: protect top accounts, expand share of wallet in mid-tier accounts, and set a 2-quarter target to reduce top-customer concentration.'
                       },
                       {
                         show: cashConversionPct < sdeSectorBenchmarks.cashFlow.cashConversionWarn,
-                        text: `Cash conversion below sector threshold ${sdeSectorBenchmarks.cashFlow.cashConversionWarn.toFixed(1)}% (current ${cashConversionPct.toFixed(1)}%)`
+                        title: `Cash conversion below sector threshold ${sdeSectorBenchmarks.cashFlow.cashConversionWarn.toFixed(1)}% (current ${cashConversionPct.toFixed(1)}%)`,
+                        why: 'Lower cash conversion means less EBITDA turning into cash, which weakens debt capacity and can pressure valuation confidence.',
+                        action: `Launch a 90-day cash-conversion plan: reduce DSO toward ${sdeSectorBenchmarks.benchmarkTargets.dso.toFixed(0)} days, tighten inventory purchasing cadence, and preserve supplier payment discipline.`
                       },
                       {
                         show: workingCapitalInsights.cccTrend12 > sdeSectorBenchmarks.workingCapital.cccTrendWarn,
-                        text: `CCC deterioration above sector trend threshold ${sdeSectorBenchmarks.workingCapital.cccTrendWarn.toFixed(1)} days (12M change ${workingCapitalInsights.cccTrend12.toFixed(1)} days)`
+                        title: `CCC deterioration above sector trend threshold ${sdeSectorBenchmarks.workingCapital.cccTrendWarn.toFixed(1)} days (12M change ${workingCapitalInsights.cccTrend12.toFixed(1)} days)`,
+                        why: 'A worsening cash-conversion cycle ties up operating cash and increases external funding pressure.',
+                        action: 'Run a monthly CCC operating review and assign owners for AR aging, inventory turns, and vendor-term execution with explicit 30/60/90-day targets.'
                       },
                       {
                         show: (() => {
@@ -14431,316 +14447,174 @@ function FinancialScorePage() {
                           const revGrowth = revenuePriorTtm !== 0 ? ((revenueCurrentTtm - revenuePriorTtm) / Math.abs(revenuePriorTtm)) * 100 : 0;
                           return invGrowth > revGrowth;
                         })(),
-                        text: 'Inventory growth faster than revenue'
+                        title: 'Inventory growth faster than revenue',
+                        why: 'Inventory building faster than sales can absorb cash and raise obsolescence or margin-drag risk.',
+                        action: 'Reset buying to demand reality, clear slow-moving items, and enforce reorder controls to bring inventory growth below revenue growth.'
                       }
                     ].filter((item) => item.show);
+                    const fallbackExecutiveRows = [
+                      {
+                        area: 'Revenue Quality',
+                        status:
+                          topRevenueBucketPct >= 90
+                            ? 'high_risk'
+                            : topRevenueBucketPct >= 75
+                              ? 'moderate_risk'
+                              : 'healthy',
+                        impactValue: `Top revenue bucket concentration ${topRevenueBucketPct.toFixed(1)}%`,
+                      },
+                      {
+                        area: 'EBITDA Quality',
+                        status:
+                          ebitdaAdjustments > 0
+                            ? 'healthy'
+                            : ebitdaAdjustments === 0
+                              ? 'moderate_risk'
+                              : 'high_risk',
+                        impactValue: `Adjustment opportunity ${ebitdaAdjustments >= 0 ? '+' : ''}$${Math.round(ebitdaAdjustments).toLocaleString()}`,
+                      },
+                      {
+                        area: 'Working Capital Efficiency',
+                        status:
+                          wcTotalImpact >= 500000
+                            ? 'high_risk'
+                            : wcTotalImpact > 0
+                              ? 'moderate_risk'
+                              : 'healthy',
+                        impactValue: `Cash release potential $${Math.round(wcTotalImpact).toLocaleString()}`,
+                      },
+                      {
+                        area: 'Cash Flow Quality',
+                        status:
+                          cashConversionPct >= sdeSectorBenchmarks.cashFlow.cashConversionWarn
+                            ? 'healthy'
+                            : cashConversionPct >= (sdeSectorBenchmarks.cashFlow.cashConversionWarn - 10)
+                              ? 'moderate_risk'
+                              : 'high_risk',
+                        impactValue: `Cash conversion ${cashConversionPct.toFixed(1)}%`,
+                      },
+                    ] as const;
+                    const apiScorecardRows = (sdeExecutiveFinancialSummaryApi?.scorecard || []).map((card) => ({
+                      area:
+                        card.area === 'revenue_quality'
+                          ? 'Revenue Quality'
+                          : card.area === 'ebitda_quality'
+                            ? 'EBITDA Quality'
+                            : card.area === 'working_capital_efficiency'
+                              ? 'Working Capital Efficiency'
+                              : 'Cash Flow Quality',
+                      status: card.status as 'healthy' | 'moderate_risk' | 'high_risk',
+                      impactValue: card.impactValue,
+                    }));
+                    const apiRowsByArea = new Map(apiScorecardRows.map((row) => [row.area, row]));
+                    const executiveRows = fallbackExecutiveRows.map((row) => apiRowsByArea.get(row.area) || row);
+                    const balanceSheetExecutiveStatus: 'healthy' | 'moderate_risk' | 'high_risk' =
+                      multipleAdjustment > 0 ? 'healthy' : multipleAdjustment < 0 ? 'high_risk' : 'moderate_risk';
+                    const customerExecutiveStatus: 'healthy' | 'moderate_risk' | 'high_risk' =
+                      customerQualityInsights.hasData
+                        ? (topCustomerPct > sdeSectorBenchmarks.customerQuality.top1Warn ? 'high_risk' : 'healthy')
+                        : 'moderate_risk';
+                    const executiveStatusByArea = new Map<string, 'healthy' | 'moderate_risk' | 'high_risk'>([
+                      ...executiveRows.map((row) => [row.area, row.status as 'healthy' | 'moderate_risk' | 'high_risk']),
+                      ['Balance Sheet Quality', balanceSheetExecutiveStatus],
+                      ['Customer Quality', customerExecutiveStatus],
+                    ]);
+                    const executiveStatusLabel = (status: 'healthy' | 'moderate_risk' | 'high_risk') =>
+                      status === 'healthy' ? 'Healthy' : status === 'moderate_risk' ? 'Watch' : 'Risk';
+                    const valueOpportunityLow = Math.max(0, expenseNormalization * valuationMultiple);
+                    const valueOpportunityHigh = Math.max(valueOpportunityLow, totalValueOpportunity);
+                    const primaryWcDriver = [
+                      { label: 'Receivables', value: receivablesCashOpportunity },
+                      { label: 'Inventory', value: dioImpact },
+                      { label: 'Supplier terms', value: dpoImpact },
+                    ].sort((a, b) => b.value - a.value)[0];
+                    const wcQuantConfidence = (!contractTimingReceivablesLikely && customerQualityInsights.hasData) ? 'higher' : 'directional';
+                    const executiveCards = [
+                      {
+                        title: 'Revenue Quality',
+                        outcome: `Revenue is concentrated, with the top revenue bucket at ${topRevenueBucketPct.toFixed(1)}%.`,
+                        meaning: 'Concentration increases forecast risk and can pressure deal multiples unless addressed.',
+                        impact: `Potential EBITDA lift from pricing/mix actions: $${Math.round(pricingImprovement).toLocaleString()}.`,
+                        action: 'Protect margin in low-performing lines and diversify revenue contribution.',
+                      },
+                      {
+                        title: 'EBITDA Quality',
+                        outcome: `Quality-of-earnings review identified ${ebitdaAdjustments >= 0 ? 'add-back' : 'downside'} adjustments of ${ebitdaAdjustments >= 0 ? '+' : ''}$${Math.round(ebitdaAdjustments).toLocaleString()}.`,
+                        meaning: 'Normalized earnings are stronger than reported headline EBITDA, improving valuation credibility.',
+                        impact: `Estimated valuation impact at ${valuationMultiple.toFixed(1)}x: $${Math.round(valuationImpactFromAdjustments).toLocaleString()}.`,
+                        action: 'Document adjustment support and lock in recurring earnings improvements.',
+                      },
+                      {
+                        title: 'Working Capital',
+                        outcome: `Working capital opportunity is $${Math.round(wcTotalImpact).toLocaleString()}, led by ${primaryWcDriver.label.toLowerCase()} optimization.`,
+                        meaning: 'Improve cash generation through billing, collections, inventory, and vendor-term discipline without depending on new sales.',
+                        impact: wcQuantConfidence === 'higher'
+                          ? `${primaryWcDriver.label} is the primary lever, with an estimated $${Math.round(primaryWcDriver.value).toLocaleString()} cash impact.`
+                          : `${primaryWcDriver.label} is the primary lever; cash impact is directional until contract-timing and payables execution data are fully validated.`,
+                        action: 'Prioritize cycle-time actions tied to billing, purchasing, and payment-term execution.',
+                      },
+                      {
+                        title: 'Cash Flow Quality',
+                        outcome: `Cash conversion is ${cashConversionPct.toFixed(1)}% versus a sector target of ${sdeSectorBenchmarks.cashFlow.cashConversionWarn.toFixed(1)}%.`,
+                        meaning: 'Cash realization is lagging earnings performance, creating liquidity drag.',
+                        impact: `Operating cash flow is $${Math.round(opCashFlow).toLocaleString()} on EBITDA of $${Math.round(ebitdaBase).toLocaleString()}.`,
+                        action: 'Tighten conversion discipline through AR speed, inventory control, and purchasing cadence.',
+                      },
+                      {
+                        title: 'Balance Sheet Quality',
+                        outcome: `Balance-sheet confidence is ${confidenceLabel.toLowerCase()} with an adjusted multiple band of ${adjustedLowMultiple.toFixed(1)}x-${adjustedHighMultiple.toFixed(1)}x.`,
+                        meaning: 'Balance-sheet strength supports valuation defensibility in diligence and negotiation.',
+                        impact: `Strongest check: ${strongestCheck.label}; watch item: ${weakestCheck.label}.`,
+                        action: 'Address the weakest check first to reduce buyer diligence friction.',
+                      },
+                      {
+                        title: 'Customer Quality',
+                        outcome: customerQualityInsights.hasData
+                          ? `Top customer concentration is ${topCustomerPct.toFixed(1)}% with live customer-quality signals enabled.`
+                          : 'Customer-level concentration and retention feeds are not connected yet.',
+                        meaning: customerQualityInsights.hasData
+                          ? 'Customer concentration and retention can now be actively monitored for deal risk.'
+                          : 'Customer risk can only be assessed directionally until customer-level operational data is connected.',
+                        impact: customerQualityInsights.hasData
+                          ? 'Customer-risk insights are available for concentration, retention, and collections quality.'
+                          : 'No direct customer-quality valuation adjustment is applied until customer data is connected.',
+                        action: customerQualityInsights.hasData
+                          ? 'Use customer-quality signals to prioritize retention and concentration mitigation actions.'
+                          : 'Connect customer revenue, retention, and AR aging feeds to complete risk scoring.',
+                      },
+                    ] as const;
                     return (
                       <>
-                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '16px', color: '#1e293b', fontWeight: 700, marginBottom: '10px' }}>Executive Financial Health Summary</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.5fr', gap: '8px', marginBottom: '6px' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Area</div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Status</div>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Impact</div>
-                          </div>
-                          {(sdeExecutiveFinancialSummaryApi?.scorecard || []).map((card) => (
-                            <div key={`score-${card.area}`} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.5fr', gap: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '8px' }}>
-                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 600 }}>
-                                {card.area === 'revenue_quality' ? 'Revenue Quality' :
-                                 card.area === 'ebitda_quality' ? 'EBITDA Quality' :
-                                 card.area === 'working_capital_efficiency' ? 'Working Capital Efficiency' :
-                                 'Cash Flow Quality'}
-                              </div>
-                              <div style={{ fontSize: '12px', color: statusColor(card.status as 'healthy' | 'moderate_risk' | 'high_risk'), fontWeight: 700 }}>
-                                {statusLabel(card.status as 'healthy' | 'moderate_risk' | 'high_risk')}
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#334155' }}>{card.impactValue}</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>Corelytics Insight</div>
-                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
-                            {(sdeExecutiveFinancialSummaryApi?.coreInsights || []).slice(0, 4).map((insight) => (
-                              <div key={`insight-${insight.id}`} style={{ marginBottom: '4px' }}>• {insight.text}</div>
-                            ))}
-                            {(!sdeExecutiveFinancialSummaryApi || sdeExecutiveFinancialSummaryApi.coreInsights.length === 0) && (
-                              <div>• Insights will populate after recommendation model output is available.</div>
-                            )}
-                          </div>
-                          <div style={{ marginTop: '10px', fontSize: '13px', color: '#1e293b', fontWeight: 700 }}>
-                            Estimated value improvement opportunity: ${Math.round((sdeExecutiveFinancialSummaryApi?.valueOpportunity.ebitdaUpliftLow || 0) * sdeMultiplier).toLocaleString()} - ${Math.round((sdeExecutiveFinancialSummaryApi?.valueOpportunity.ebitdaUpliftHigh || 0) * sdeMultiplier).toLocaleString()}
-                          </div>
-                        </div>
-
                         <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '6px' }}>Balance Sheet Validation</div>
-                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
-                            Full scorecard, confidence score, adjusted multiple band, and CEO narrative now live in the dedicated <strong>Balance Sheet Quality</strong> tab.
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>2) EBITDA Quality Recommendations</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Value</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Reported EBITDA</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(reportedEbitda).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Adjustments</div>
-                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>{ebitdaAdjustments >= 0 ? '+' : ''}${Math.round(ebitdaAdjustments).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Normalized EBITDA</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(normalizedEbitda).toLocaleString()}</div>
-                          </div>
-                          <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px', fontSize: '12px', color: '#334155', marginBottom: '8px' }}>
-                            Assume {valuationMultiple.toFixed(1)}x multiple (selected): ${Math.round(ebitdaAdjustments).toLocaleString()} x {valuationMultiple.toFixed(1)} = ${Math.round(valuationImpactFromAdjustments).toLocaleString()} valuation impact
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '6px' }}>Management recommendations</div>
-                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
-                            {sdeRecommendationsApi.slice(0, 4).map((rec, idx) => (
-                              <div key={`ebitda-rec-${rec.id}`} style={{ marginBottom: '4px' }}>
-                                {idx + 1}. {rec.title} - Potential EBITDA improvement: ${Math.round(rec.impactRange.high).toLocaleString()}
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>Executive Outcome Brief</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            {executiveCards.map((card) => (
+                              <div key={`executive-card-${card.title}`} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                                <div style={{ fontSize: '13px', color: '#1e293b', fontWeight: 800, marginBottom: '6px' }}>
+                                  {card.title}: <span style={{ color: statusColor((executiveStatusByArea.get(card.title) || 'moderate_risk') as 'healthy' | 'moderate_risk' | 'high_risk') }}>
+                                    {executiveStatusLabel((executiveStatusByArea.get(card.title) || 'moderate_risk') as 'healthy' | 'moderate_risk' | 'high_risk')}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
+                                  <div><strong>What happened:</strong> {card.outcome}</div>
+                                  <div style={{ marginTop: '4px' }}><strong>Why it matters:</strong> {card.meaning}</div>
+                                  <div style={{ marginTop: '4px' }}><strong>Value impact:</strong> {card.impact}</div>
+                                  <div style={{ marginTop: '4px' }}><strong>Executive action:</strong> {card.action}</div>
+                                </div>
                               </div>
                             ))}
-                            {sdeRecommendationsApi.length === 0 && (
-                              <>
-                                <div style={{ marginBottom: '4px' }}>1. Normalize one-time or discretionary expenses to improve earnings quality.</div>
-                                <div style={{ marginBottom: '4px' }}>2. Document owner adjustments with support for diligence readiness.</div>
-                                <div style={{ marginBottom: '4px' }}>3. Prioritize actions that convert directly to recurring EBITDA.</div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>3) Working Capital Recommendations</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.8fr 0.8fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Current</div>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Target</div>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Cash Impact</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>DSO</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{dsoCurrent.toFixed(1)}</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b' }}>{dsoTarget}</div>
-                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>${Math.round(receivablesCashOpportunity).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>DIO</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{dioCurrent.toFixed(1)}</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b' }}>{dioTarget}</div>
-                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>${Math.round(dioImpact).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>DPO</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{dpoCurrent.toFixed(1)}</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b' }}>{dpoTarget}</div>
-                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>${Math.round(dpoImpact).toLocaleString()}</div>
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
-                            Sector targets ({sdeSectorBenchmarks.sectorLabel}): DSO {dsoTarget.toFixed(1)}, DIO {dioTarget.toFixed(1)}, CCC {cccTarget.toFixed(1)} (implied DPO {dpoTarget.toFixed(1)}).
-                          </div>
-                          {contractTimingReceivablesLikely && (
-                            <div style={{ fontSize: '11px', color: '#9a3412', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '6px', padding: '6px', marginBottom: '8px' }}>
-                              Contract-timing AR profile detected. Receivables cash-release is held at $0 until customer-level AR aging and billing milestone data are connected.
-                            </div>
-                          )}
-                          <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '8px' }}>
-                            Core insight: ${Math.round(wcTotalImpact).toLocaleString()} of working capital improvement possible
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
-                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Receivables</div>
-                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                                {contractTimingReceivablesLikely ? (
-                                  <>
-                                    • align billing milestones with contract terms<br />
-                                    • track contract AR conversion by cohort<br />
-                                    • focus collections on true delinquent balances
-                                  </>
-                                ) : (
-                                  <>
-                                    • tighten payment terms<br />
-                                    • enforce collections<br />
-                                    • reduce slow-pay customers
-                                  </>
-                                )}
-                              </div>
-                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>
-                                Potential cash release: ${Math.round(receivablesCashOpportunity).toLocaleString()}
-                              </div>
-                            </div>
-                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
-                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Inventory</div>
-                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                                • reduce slow moving SKUs<br />
-                                • improve purchasing forecast<br />
-                                • optimize reorder levels
-                              </div>
-                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>Potential cash release: ${Math.round(dioImpact).toLocaleString()}</div>
-                            </div>
-                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
-                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Supplier terms</div>
-                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                                • renegotiate payment terms<br />
-                                • consolidate purchasing
-                              </div>
-                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>Potential cash release: ${Math.round(dpoImpact).toLocaleString()}</div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>4) Revenue Quality Insights</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Value</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Recurring revenue</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{recurringRevenuePct.toFixed(1)}%</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Top revenue bucket concentration</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{topRevenueBucketPct.toFixed(1)}%</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Revenue volatility</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{revenueVolatilityPct > 20 ? 'High' : revenueVolatilityPct > 10 ? 'Moderate' : 'Low'}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Contracted revenue</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{contractedRevenuePct.toFixed(1)}%</div>
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
-                            Margin analysis recommendation: reprice lower-margin product lines and remove unprofitable SKUs.
-                            Potential EBITDA impact: ${Math.round(pricingImprovement).toLocaleString()}
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>5) Customer Quality Insights (Data Pending)</div>
-                          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '10px', marginBottom: '10px' }}>
-                            <div style={{ fontSize: '12px', color: '#1e3a8a', fontWeight: 700, marginBottom: '4px' }}>Current status</div>
-                            <div style={{ fontSize: '12px', color: '#1e40af', lineHeight: 1.55 }}>
-                              Customer-level concentration, retention, and collections-quality feeds are not connected yet. To avoid noisy placeholders, this section now shows only actionable setup requirements.
-                            </div>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
-                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Revenue durability inputs</div>
-                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.55 }}>
-                                • customer revenue ledger<br />
-                                • top 1 / top 5 concentration<br />
-                                • recurring vs contracted mix
-                              </div>
-                            </div>
-                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
-                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Collections-quality inputs</div>
-                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.55 }}>
-                                • AR aging by customer cohort<br />
-                                • average days late by top accounts<br />
-                                • disputes / credit memo events
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>6) Cash Flow Quality Analysis</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Value</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>EBITDA</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(ebitdaBase).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Operating Cash Flow</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(opCashFlow).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Cash conversion ratio</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{cashConversionPct.toFixed(1)}%</div>
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#334155', marginBottom: '8px' }}>
-                            Sector benchmark ({sdeSectorBenchmarks.sectorLabel}): target cash conversion {'>='} {sdeSectorBenchmarks.cashFlow.cashConversionWarn.toFixed(1)}%.
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Cash leakage source</div>
-                            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Impact</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Working capital growth</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(workingCapitalGrowth).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>CapEx gap</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(capexLeakage).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Inventory build</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(inventoryBuild).toLocaleString()}</div>
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                            Management actions: reduce inventory accumulation, tighten AR collections, and improve purchasing cycles.
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#14532d', fontWeight: 800, marginBottom: '8px' }}>7) Value Creation Dashboard</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>Initiative</div>
-                            <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>EBITDA / Cash Impact</div>
-                            <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>Valuation Impact ({valuationMultiple.toFixed(1)}x)</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Expense normalization</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(expenseNormalization).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(expenseNormalization * valuationMultiple).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Pricing improvement</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(pricingImprovement).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(pricingImprovement * valuationMultiple).toLocaleString()}</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Working capital improvement</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(wcTotalImpact).toLocaleString()} cash</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>-</div>
-                            <div style={{ fontSize: '12px', color: '#334155' }}>Inventory reduction</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>${Math.round(dioImpact).toLocaleString()} cash</div>
-                            <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>-</div>
-                          </div>
-                          <div style={{ marginTop: '8px', fontSize: '13px', color: '#14532d', fontWeight: 800 }}>
-                            Total value opportunity: ${Math.round(totalValueOpportunity).toLocaleString()}+
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>8) Priority Action List</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
-                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Immediate (0-90 days)</div>
-                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                                {immediateActions.slice(0, 3).map((rec) => <div key={`immediate-${rec.id}`}>• {rec.title}</div>)}
-                                {immediateActions.length === 0 && (
-                                  <>
-                                    <div>• reduce AR aging</div>
-                                    <div>• eliminate non-recurring expenses</div>
-                                    <div>• renegotiate vendor terms</div>
-                                  </>
-                                )}
-                              </div>
-                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>Cash impact: ${Math.round(immediateCashImpact).toLocaleString()}</div>
-                            </div>
-                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
-                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Medium term (3-12 months)</div>
-                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                                {mediumActions.slice(0, 3).map((rec) => <div key={`medium-${rec.id}`}>• {rec.title}</div>)}
-                                {mediumActions.length === 0 && (
-                                  <>
-                                    <div>• inventory optimization</div>
-                                    <div>• pricing strategy</div>
-                                    <div>• margin improvement</div>
-                                  </>
-                                )}
-                              </div>
-                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#1e40af', fontWeight: 700 }}>EBITDA impact: ${Math.round(mediumEbitdaImpact).toLocaleString()}</div>
-                            </div>
-                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
-                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Strategic (12-24 months)</div>
-                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                                {strategicActions.slice(0, 3).map((rec) => <div key={`strategic-${rec.id}`}>• {rec.title}</div>)}
-                                {strategicActions.length === 0 && (
-                                  <>
-                                    <div>• diversify customer base</div>
-                                    <div>• increase recurring revenue</div>
-                                    <div>• automate operations</div>
-                                  </>
-                                )}
-                              </div>
-                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#7c3aed', fontWeight: 700 }}>Value creation: ${Math.round(strategicValue).toLocaleString()}+</div>
-                            </div>
                           </div>
                         </div>
 
                         <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#9a3412', fontWeight: 800, marginBottom: '8px' }}>9) Alerts System</div>
+                          <div style={{ fontSize: '14px', color: '#9a3412', fontWeight: 800, marginBottom: '8px' }}>Key Alerts</div>
                           <div style={{ fontSize: '12px', color: '#7c2d12', lineHeight: 1.6 }}>
                             {alertItems.length > 0 ? alertItems.map((alert, idx) => (
-                              <div key={`alert-${idx}`}>⚠️ {alert.text}</div>
+                              <div key={`alert-${idx}`} style={{ marginBottom: '8px' }}>
+                                <div>⚠️ {alert.title}</div>
+                                <div><strong>Why it matters:</strong> {alert.why}</div>
+                                <div><strong>Executive action:</strong> {alert.action}</div>
+                              </div>
                             )) : (
                               <div>No active high-priority alerts right now.</div>
                             )}
