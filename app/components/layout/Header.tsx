@@ -419,18 +419,18 @@ export default function Header({
           </nav>
         </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, whiteSpace: 'nowrap' }}>
           <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>{displayedUserName}</span>
           {isSiteAdminPreviewMode && (
             <button
               onClick={onExitSiteAdminPreview}
               style={{
-                padding: '8px 16px',
+                padding: '6px 12px',
                 background: '#f59e0b',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: '700',
                 cursor: 'pointer',
               }}
