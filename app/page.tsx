@@ -880,7 +880,7 @@ function FinancialScorePage() {
   const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(2.0);
   const [valuationSaveStatus, setValuationSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
-  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'recommendations'>('ebitda-adjustments');
+  const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('ebitda-adjustments');
   const [revenueQualityCardInfoOpen, setRevenueQualityCardInfoOpen] = useState<Record<'topBucket' | 'cashGap' | 'dsoTrend' | 'arSpread', boolean>>({
     topBucket: false,
     cashGap: false,
@@ -10514,7 +10514,7 @@ function FinancialScorePage() {
       {currentView === 'valuation' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Business Valuation</h1>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>SDE VALUATION</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
                 id="valuation-save-settings-btn"
@@ -10713,12 +10713,10 @@ function FinancialScorePage() {
             const ttmInterest = last12.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
             const ttmStateTaxes = last12.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
             const ttmFederalTaxes = last12.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
-            const ttmTotalIncomeTaxes = ttmStateTaxes + ttmFederalTaxes;
             
             // Calculate Net Income correctly: Revenue - COGS - Operating Expenses
             const ttmGrossProfit = ttmRevenue - ttmCOGS;
             const ttmNetIncome = ttmRevenue - ttmCOGS - ttmExpense;
-            const ttmNetIncomeAfterTaxForDcf = ttmNetIncome - ttmTotalIncomeTaxes;
             // Calculate EBITDA: Net Income + Interest + Taxes + Depreciation + Amortization
             const ttmEBITDA = ttmNetIncome + ttmDepreciation + ttmInterest;
             // Note: We don't have a separate tax field, so this is technically EBIT if taxes are in 'expense'
@@ -10726,33 +10724,54 @@ function FinancialScorePage() {
             // Calculate valuations
             const ebitdaValuation = ttmEBITDA * ebitdaMultiplier;
             
-            // Calculate Free Cash Flow (FCF) for DCF
-            // FCF = Net Income + Depreciation - Changes in Working Capital - CapEx
-            const currentMonth = monthly[monthly.length - 1];
-            const month12Ago = monthly.length >= 13 ? monthly[monthly.length - 13] : monthly[0];
-            
-            // Working capital change over last 12 months
-            const currentWC = ((currentMonth.cash || 0) + (currentMonth.ar || 0) + (currentMonth.inventory || 0)) - ((currentMonth.ap || 0) + (currentMonth.loc || 0) + (currentMonth.otherCL || 0));
-            const priorWC = ((month12Ago.cash || 0) + (month12Ago.ar || 0) + (month12Ago.inventory || 0)) - ((month12Ago.ap || 0) + (month12Ago.loc || 0) + (month12Ago.otherCL || 0));
-            const changeInWC = currentWC - priorWC;
-            
-            // Capital expenditures (change in fixed assets + depreciation)
-            const changeInFixedAssets = (currentMonth.fixedAssets || 0) - (month12Ago.fixedAssets || 0);
-            const ttmCapEx = Math.max(0, changeInFixedAssets + ttmDepreciation);
-            
-            // Free Cash Flow using ACTUAL depreciation
-            const ttmFreeCashFlow = ttmNetIncomeAfterTaxForDcf + ttmDepreciation - changeInWC - ttmCapEx;
+            // Calculate Free Cash Flow (FCF) for DCF using the same
+            // monthly cash-flow method as the Cash Flow report tab.
+            const last12CashFlowRows = last12.map((curr, idx) => {
+              const prev =
+                idx === 0 && monthly.length > 12
+                  ? monthly[monthly.length - 13]
+                  : idx > 0
+                    ? last12[idx - 1]
+                    : curr;
+              const netIncome = (curr.revenue || 0) - (curr.cogsTotal || 0) - (curr.expense || 0);
+              const depreciation = curr.depreciationAmortization || 0;
+              const changeInAR = (curr.ar || 0) - (prev.ar || 0);
+              const changeInInventory = (curr.inventory || 0) - (prev.inventory || 0);
+              const changeInAP = (curr.ap || 0) - (prev.ap || 0);
+              const changeInWorkingCapital = -(changeInAR + changeInInventory - changeInAP);
+              const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
+              const changeInFixedAssets = (curr.fixedAssets || 0) - (prev.fixedAssets || 0);
+              const capitalExpenditures = changeInFixedAssets + depreciation;
+              return {
+                operatingCashFlow,
+                changeInWorkingCapital,
+                capitalExpenditures,
+              };
+            });
+            const changeInWC = last12CashFlowRows.reduce((sum, row) => sum + row.changeInWorkingCapital, 0);
+            const ttmCapEx = last12CashFlowRows.reduce((sum, row) => sum + Math.max(0, row.capitalExpenditures), 0);
+            const ttmOperatingCashFlow = last12CashFlowRows.reduce((sum, row) => sum + row.operatingCashFlow, 0);
+            const ttmNetIncomeForDcf = ttmRevenue - ttmCOGS - ttmExpense;
+            const ttmFreeCashFlow = ttmOperatingCashFlow - ttmCapEx;
             
             // DCF calculation with adjustable parameters using FCF
-            const growthRate = growth_24mo / 100;
+            const growthRateRaw = growth_24mo / 100;
             const discountRate = dcfDiscountRate / 100;
             const terminalGrowthRate = dcfTerminalGrowth / 100;
+            const startingGrowthRate = growthRateRaw;
+            const projectionGrowthRates = Array.from({ length: 5 }, (_, idx) => {
+              // Fade from starting rate in Year 1 to terminal growth by Year 5.
+              const fadeFactor = idx / 4;
+              return startingGrowthRate + (terminalGrowthRate - startingGrowthRate) * fadeFactor;
+            });
             let dcfValue = 0;
+            let projectedFCF = ttmFreeCashFlow;
             for (let year = 1; year <= 5; year++) {
-              const projectedFCF = ttmFreeCashFlow * Math.pow(1 + growthRate, year);
+              projectedFCF = projectedFCF * (1 + projectionGrowthRates[year - 1]);
               dcfValue += projectedFCF / Math.pow(1 + discountRate, year);
             }
-            const terminalValue = (ttmFreeCashFlow * Math.pow(1 + growthRate, 5) * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
+            const discountSpread = Math.max(0.01, discountRate - terminalGrowthRate);
+            const terminalValue = (projectedFCF * (1 + terminalGrowthRate)) / discountSpread;
             dcfValue += terminalValue / Math.pow(1 + discountRate, 5);
 
             const sumTtmField = (fieldName: string): number =>
@@ -11702,6 +11721,7 @@ function FinancialScorePage() {
                       { id: 'customer-quality' as const, label: 'Customer Quality' },
                       { id: 'working-capital' as const, label: 'Working Capital' },
                       { id: 'cash-flow-quality' as const, label: 'Cash Flow Quality' },
+                      { id: 'balance-sheet-quality' as const, label: 'Balance Sheet Quality' },
                       { id: 'recommendations' as const, label: 'Executive Summary' },
                     ].map((tab) => (
                       <button
@@ -11722,9 +11742,11 @@ function FinancialScorePage() {
                       </button>
                     ))}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
-                    Data source: Company financial data ({latestFinancialSource || 'connected source'}) | Operational context: {sdeHasRealOperationalData ? 'real data available' : 'not available'}
-                  </div>
+                  {sdeModuleTab !== 'balance-sheet-quality' && (
+                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
+                      Data source: Company financial data ({latestFinancialSource || 'connected source'}) | Operational context: {sdeHasRealOperationalData ? 'real data available' : 'not available'}
+                    </div>
+                  )}
                 </div>
                 {sdeModuleTab === 'ebitda-adjustments' && (
                 <>
@@ -11752,7 +11774,7 @@ function FinancialScorePage() {
                         transition: 'all 0.3s ease'
                       }}
                     >
-                      {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save SDE Analysis'}
+                      {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save SDE Valuation'}
                     </button>
                   </div>
 
@@ -13797,6 +13819,239 @@ function FinancialScorePage() {
                 </div>
                 </>
                 )}
+                {sdeModuleTab === 'balance-sheet-quality' && (
+                <>
+                <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Balance Sheet Quality</h2>
+                  <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
+                    Balance-sheet validation checks liquidity, leverage, equity cushion, and data integrity to validate how aggressive the SDE multiple should be.
+                  </p>
+                  {(() => {
+                    const statusLabel = (status: 'healthy' | 'moderate_risk' | 'high_risk') => {
+                      if (status === 'high_risk') return 'High risk';
+                      if (status === 'moderate_risk') return 'Moderate risk';
+                      return 'Healthy';
+                    };
+                    const statusColor = (status: 'healthy' | 'moderate_risk' | 'high_risk') => {
+                      if (status === 'high_risk') return '#dc2626';
+                      if (status === 'moderate_risk') return '#d97706';
+                      return '#059669';
+                    };
+                    const latestMonth: any = monthly[monthly.length - 1] || {};
+                    const equityFromComponents =
+                      (latestMonth.ownersCapital || 0) +
+                      (latestMonth.ownersDraw || 0) +
+                      (latestMonth.commonStock || 0) +
+                      (latestMonth.preferredStock || 0) +
+                      (latestMonth.retainedEarnings || 0) +
+                      (latestMonth.additionalPaidInCapital || 0) +
+                      (latestMonth.treasuryStock || 0);
+                    const latestTotalAssets = latestMonth.totalAssets || 0;
+                    const latestTotalLiabilities = latestMonth.totalLiab || 0;
+                    const latestTotalEquity = latestMonth.totalEquity || equityFromComponents;
+                    const latestCurrentAssets = latestMonth.tca || latestMonth.currentAssets || 0;
+                    const latestCurrentLiabilities = latestMonth.tcl || latestMonth.currentLiabilities || 0;
+                    const currentRatioBs = latestCurrentLiabilities > 0 ? latestCurrentAssets / latestCurrentLiabilities : 0;
+                    const debtToEquityBs = latestTotalEquity > 0 ? latestTotalLiabilities / latestTotalEquity : 999;
+                    const equityRatioBs = latestTotalAssets > 0 ? latestTotalEquity / latestTotalAssets : 0;
+                    const balanceGap = latestTotalAssets - (latestTotalLiabilities + latestTotalEquity);
+                    const balanceGapPct = latestTotalAssets > 0 ? Math.abs(balanceGap) / latestTotalAssets : 0;
+                    const safeDiv = (num: number, den: number) => (Math.abs(den) > 0 ? num / den : 0);
+                    const bsTrendRows = monthly.slice(-36).map((m) => {
+                      const equityFromDetail =
+                        (m.ownersCapital || 0) +
+                        (m.ownersDraw || 0) +
+                        (m.commonStock || 0) +
+                        (m.preferredStock || 0) +
+                        (m.retainedEarnings || 0) +
+                        (m.additionalPaidInCapital || 0) +
+                        (m.treasuryStock || 0);
+                      const totalEquity = m.totalEquity || equityFromDetail;
+                      const totalAssets = m.totalAssets || 0;
+                      const totalLiabilities = m.totalLiab || 0;
+                      const currentAssets = m.tca || m.currentAssets || 0;
+                      const currentLiabilities = m.tcl || m.currentLiabilities || 0;
+                      const integrityGapPct = totalAssets > 0 ? Math.abs(totalAssets - (totalLiabilities + totalEquity)) / totalAssets : 0;
+                      return {
+                        month: m.month,
+                        currentRatio: safeDiv(currentAssets, currentLiabilities),
+                        debtToEquity: totalEquity > 0 ? safeDiv(totalLiabilities, totalEquity) : 999,
+                        equityRatioPct: safeDiv(totalEquity, totalAssets) * 100,
+                        integrityGapPct: integrityGapPct * 100,
+                      };
+                    });
+                    const balanceSheetChecks = [
+                      {
+                        id: 'current-ratio',
+                        label: 'Liquidity coverage (Current Ratio)',
+                        description: 'Measures near-term ability to cover obligations. Higher is stronger and supports deal confidence.',
+                        currentText: `${currentRatioBs.toFixed(2)}x`,
+                        targetText: '>= 1.20x',
+                        status: currentRatioBs >= 1.2 ? 'healthy' : currentRatioBs >= 1.0 ? 'moderate_risk' : 'high_risk',
+                        scorePenalty: currentRatioBs >= 1.2 ? 0 : currentRatioBs >= 1.0 ? 8 : 18,
+                        benchmarkValue: 1.2,
+                        chartColor: '#0ea5e9',
+                        series: bsTrendRows.map((r) => ({ month: r.month, value: r.currentRatio })),
+                        formatter: (v: number) => `${v.toFixed(2)}x`,
+                      },
+                      {
+                        id: 'debt-to-equity',
+                        label: 'Leverage control (Debt / Equity)',
+                        description: 'Shows balance-sheet leverage. Lower is better because high debt can compress buyer multiples.',
+                        currentText: `${debtToEquityBs.toFixed(2)}x`,
+                        targetText: '<= 2.00x',
+                        status: debtToEquityBs <= 2.0 ? 'healthy' : debtToEquityBs <= 3.0 ? 'moderate_risk' : 'high_risk',
+                        scorePenalty: debtToEquityBs <= 2.0 ? 0 : debtToEquityBs <= 3.0 ? 10 : 20,
+                        benchmarkValue: 2.0,
+                        chartColor: '#ef4444',
+                        series: bsTrendRows.map((r) => ({ month: r.month, value: r.debtToEquity })),
+                        formatter: (v: number) => `${v.toFixed(2)}x`,
+                      },
+                      {
+                        id: 'equity-ratio',
+                        label: 'Equity cushion (Equity / Assets)',
+                        description: 'Indicates how much of assets are funded by equity. Stronger cushions support valuation resilience.',
+                        currentText: `${(equityRatioBs * 100).toFixed(1)}%`,
+                        targetText: '>= 25.0%',
+                        status: equityRatioBs >= 0.25 ? 'healthy' : equityRatioBs >= 0.15 ? 'moderate_risk' : 'high_risk',
+                        scorePenalty: equityRatioBs >= 0.25 ? 0 : equityRatioBs >= 0.15 ? 10 : 20,
+                        benchmarkValue: 25,
+                        chartColor: '#22c55e',
+                        series: bsTrendRows.map((r) => ({ month: r.month, value: r.equityRatioPct })),
+                        formatter: (v: number) => `${v.toFixed(1)}%`,
+                      },
+                      {
+                        id: 'integrity-gap',
+                        label: 'Balance-sheet integrity check',
+                        description: 'Verifies accounting consistency between assets and liabilities plus equity. Lower gap indicates cleaner data quality.',
+                        currentText: `${(balanceGapPct * 100).toFixed(2)}% gap`,
+                        targetText: '<= 1.00%',
+                        status: balanceGapPct <= 0.01 ? 'healthy' : balanceGapPct <= 0.03 ? 'moderate_risk' : 'high_risk',
+                        scorePenalty: balanceGapPct <= 0.01 ? 0 : balanceGapPct <= 0.03 ? 8 : 16,
+                        benchmarkValue: 1,
+                        chartColor: '#f59e0b',
+                        series: bsTrendRows.map((r) => ({ month: r.month, value: r.integrityGapPct })),
+                        formatter: (v: number) => `${v.toFixed(2)}%`,
+                      },
+                    ] as const;
+                    const balancePenaltyTotal = balanceSheetChecks.reduce((sum, check) => sum + check.scorePenalty, 0);
+                    const balanceSheetConfidenceScore = Math.max(0, Math.min(100, 100 - balancePenaltyTotal));
+                    const confidenceLabel =
+                      balanceSheetConfidenceScore >= 80
+                        ? 'High confidence'
+                        : balanceSheetConfidenceScore >= 60
+                          ? 'Moderate confidence'
+                          : 'Caution';
+                    const suggestedMultipleChangePct =
+                      balanceSheetConfidenceScore >= 85
+                        ? 12
+                        : balanceSheetConfidenceScore >= 75
+                          ? 6
+                          : balanceSheetConfidenceScore >= 60
+                            ? 0
+                            : balanceSheetConfidenceScore >= 45
+                              ? -8
+                              : -15;
+                    const suggestedMultiple = Math.max(1, Math.min(5, sdeMultiplier * (1 + suggestedMultipleChangePct / 100)));
+                    const strongestCheck = balanceSheetChecks
+                      .slice()
+                      .sort((a, b) => a.scorePenalty - b.scorePenalty)[0];
+                    const weakestCheck = balanceSheetChecks
+                      .slice()
+                      .sort((a, b) => b.scorePenalty - a.scorePenalty)[0];
+                    return (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 0.8fr 0.8fr 0.7fr', gap: '8px', marginBottom: '8px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Scorecard</div>
+                          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Current</div>
+                          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Target</div>
+                          <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Status</div>
+                          {balanceSheetChecks.map((check) => (
+                            <div key={`bs-check-tab-${check.label}`} style={{ display: 'contents' }}>
+                              <div style={{ fontSize: '12px', color: '#334155' }}>{check.label}</div>
+                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{check.currentText}</div>
+                              <div style={{ fontSize: '12px', color: '#334155' }}>{check.targetText}</div>
+                              <div style={{ fontSize: '12px', color: statusColor(check.status), fontWeight: 700 }}>
+                                {statusLabel(check.status)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                          <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '3px' }}>Confidence score</div>
+                            <div style={{ fontSize: '20px', color: '#1e293b', fontWeight: 800 }}>
+                              {balanceSheetConfidenceScore.toFixed(0)} / 100 ({confidenceLabel})
+                            </div>
+                          </div>
+                          <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, marginBottom: '3px' }}>Suggested multiple change vs base</div>
+                            <div style={{ fontSize: '20px', color: '#1e293b', fontWeight: 800 }}>
+                              {suggestedMultipleChangePct >= 0 ? '+' : ''}{suggestedMultipleChangePct.toFixed(0)}%
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px' }}>
+                              Base {sdeMultiplier.toFixed(1)}x to Suggested {suggestedMultiple.toFixed(1)}x
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe', padding: '8px', fontSize: '12px', color: '#1e3a8a', lineHeight: 1.6, marginBottom: '8px' }}>
+                          CEO narrative: Balance-sheet quality indicates <strong>{confidenceLabel.toLowerCase()}</strong> in the current SDE valuation.
+                          The strongest signal is <strong>{strongestCheck.label}</strong>, while the key risk driver is <strong>{weakestCheck.label}</strong>.
+                          Recommended deal posture is to keep the base multiple as the anchor and apply a <strong>{suggestedMultipleChangePct >= 0 ? '+' : ''}{suggestedMultipleChangePct.toFixed(0)}%</strong>{' '}
+                          adjustment to it (base {sdeMultiplier.toFixed(1)}x to suggested {suggestedMultiple.toFixed(1)}x) until the weakest factor improves.
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          {balanceSheetChecks.map((check) => (
+                            <div key={`bs-graph-${check.id}`} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>{check.label}</div>
+                              <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5, marginBottom: '8px' }}>{check.description}</div>
+                              <LineChart
+                                title="Last 36 Months"
+                                data={check.series}
+                                color={check.chartColor}
+                                compact
+                                benchmarkValue={check.benchmarkValue}
+                                formatter={check.formatter}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Cash Trend</div>
+                            <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5, marginBottom: '8px' }}>
+                              Tracks liquidity buffer available for operations, debt service, and deal readiness execution.
+                            </div>
+                            <LineChart
+                              title="Cash (Last 36 Months)"
+                              data={monthly.slice(-36).map((m: any) => ({ month: m.month, value: m.cash || 0 }))}
+                              color="#16a34a"
+                              compact
+                              showTrendLine
+                              formatter={(v) => `$${Math.round(v / 1000)}K`}
+                            />
+                          </div>
+                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Accounts Receivable Trend</div>
+                            <div style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5, marginBottom: '8px' }}>
+                              Highlights receivables build-up risk that can pressure cash conversion and working-capital quality.
+                            </div>
+                            <LineChart
+                              title="Accounts Receivable (Last 36 Months)"
+                              data={monthly.slice(-36).map((m: any) => ({ month: m.month, value: m.ar || 0 }))}
+                              color="#2563eb"
+                              compact
+                              showTrendLine
+                              formatter={(v) => `$${Math.round(v / 1000)}K`}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+                </>
+                )}
                 {sdeExplanationOpen && sdeExplanationContent[sdeExplanationOpen] && (
                   <div
                     style={{
@@ -13870,7 +14125,7 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
                       Seller's Discretionary Earnings (SDE) Method
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
                       <div style={{ background: '#f0fdf4', borderRadius: '8px', padding: '12px' }}>
                         <div style={{ marginBottom: '8px' }}>
                           <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months SDE</div>
@@ -13883,6 +14138,18 @@ function FinancialScorePage() {
                         </div>
                         <div style={{ fontSize: '28px', fontWeight: '700', color: '#10b981' }}>
                           ${Math.round(sdeValuation).toLocaleString()}
+                        </div>
+                      </div>
+                      <div style={{ background: '#ecfdf5', borderRadius: '8px', padding: '12px', border: '1px solid #86efac' }}>
+                        <div style={{ fontSize: '18px', fontWeight: '800', color: '#14532d', marginBottom: '6px' }}>Value Summary</div>
+                        <div style={{ fontSize: '14px', color: '#14532d', fontWeight: '800', lineHeight: 1.4 }}>
+                          {(() => {
+                            const topValueOpportunity = (Math.max(0, qoeTotalAdjustments) + sdeRecommendationsApi
+                              .filter((rec) => rec.module === 'Revenue Quality')
+                              .reduce((sum, rec) => sum + rec.impactRange.high, 0)) * sdeMultiplier;
+                            const topTotalPotentialValue = sdeValuation + topValueOpportunity;
+                            return <>Adjusted Value of ${Math.round(sdeValuation).toLocaleString()} + Value Opportunity of ${Math.round(topValueOpportunity).toLocaleString()} = ${Math.round(topTotalPotentialValue).toLocaleString()}</>;
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -13954,7 +14221,14 @@ function FinancialScorePage() {
                     const dsoImpact = Math.max(0, dsoCurrent - dsoTarget) * Math.max(0, Math.abs(workingCapitalInsights.annualRevenue) / 365);
                     const dioImpact = Math.max(0, dioCurrent - dioTarget) * Math.max(0, Math.abs(workingCapitalInsights.annualCogs) / 365);
                     const dpoImpact = Math.max(0, dpoTarget - dpoCurrent) * Math.max(0, Math.abs(workingCapitalInsights.annualCogs) / 365);
-                    const wcTotalImpact = dsoImpact + dioImpact + dpoImpact;
+                    // If AR appears structurally tied to contract-timing without customer-level aging data,
+                    // avoid implying immediate receivables cash release from collections tactics.
+                    const contractTimingReceivablesLikely =
+                      !customerQualityInsights.hasData &&
+                      revenueQualityInsights.arRevenueSpread > sdeSectorBenchmarks.dso.spreadWarn &&
+                      dsoCurrent <= dsoTarget + 10;
+                    const receivablesCashOpportunity = contractTimingReceivablesLikely ? 0 : dsoImpact;
+                    const wcTotalImpact = receivablesCashOpportunity + dioImpact + dpoImpact;
                     const recurringRevenuePct = Math.max(0, Math.min(100, 100 - Math.abs(revenueQualityInsights.avgGap12) * 4));
                     const topCustomerPct = customerQualityInsights.hasData
                       ? customerQualityInsights.top1Pct
@@ -13985,6 +14259,82 @@ function FinancialScorePage() {
                     const totalValueOpportunity = (expenseNormalization + pricingImprovement) * valuationMultiple;
                     const adjustedValueBase = sdeValuation;
                     const totalPotentialValue = adjustedValueBase + totalValueOpportunity;
+                    const latestMonth: any = monthly[monthly.length - 1] || {};
+                    const equityFromComponents =
+                      (latestMonth.ownersCapital || 0) +
+                      (latestMonth.ownersDraw || 0) +
+                      (latestMonth.commonStock || 0) +
+                      (latestMonth.preferredStock || 0) +
+                      (latestMonth.retainedEarnings || 0) +
+                      (latestMonth.additionalPaidInCapital || 0) +
+                      (latestMonth.treasuryStock || 0);
+                    const latestTotalAssets = latestMonth.totalAssets || 0;
+                    const latestTotalLiabilities = latestMonth.totalLiab || 0;
+                    const latestTotalEquity = latestMonth.totalEquity || equityFromComponents;
+                    const latestCurrentAssets = latestMonth.tca || latestMonth.currentAssets || 0;
+                    const latestCurrentLiabilities = latestMonth.tcl || latestMonth.currentLiabilities || 0;
+                    const currentRatioBs = latestCurrentLiabilities > 0 ? latestCurrentAssets / latestCurrentLiabilities : 0;
+                    const debtToEquityBs = latestTotalEquity > 0 ? latestTotalLiabilities / latestTotalEquity : 999;
+                    const equityRatioBs = latestTotalAssets > 0 ? latestTotalEquity / latestTotalAssets : 0;
+                    const balanceGap = latestTotalAssets - (latestTotalLiabilities + latestTotalEquity);
+                    const balanceGapPct = latestTotalAssets > 0 ? Math.abs(balanceGap) / latestTotalAssets : 0;
+                    const balanceSheetChecks = [
+                      {
+                        label: 'Liquidity coverage (Current Ratio)',
+                        currentText: `${currentRatioBs.toFixed(2)}x`,
+                        targetText: '>= 1.20x',
+                        status: currentRatioBs >= 1.2 ? 'healthy' : currentRatioBs >= 1.0 ? 'moderate_risk' : 'high_risk',
+                        scorePenalty: currentRatioBs >= 1.2 ? 0 : currentRatioBs >= 1.0 ? 8 : 18,
+                      },
+                      {
+                        label: 'Leverage control (Debt / Equity)',
+                        currentText: `${debtToEquityBs.toFixed(2)}x`,
+                        targetText: '<= 2.00x',
+                        status: debtToEquityBs <= 2.0 ? 'healthy' : debtToEquityBs <= 3.0 ? 'moderate_risk' : 'high_risk',
+                        scorePenalty: debtToEquityBs <= 2.0 ? 0 : debtToEquityBs <= 3.0 ? 10 : 20,
+                      },
+                      {
+                        label: 'Equity cushion (Equity / Assets)',
+                        currentText: `${(equityRatioBs * 100).toFixed(1)}%`,
+                        targetText: '>= 25.0%',
+                        status: equityRatioBs >= 0.25 ? 'healthy' : equityRatioBs >= 0.15 ? 'moderate_risk' : 'high_risk',
+                        scorePenalty: equityRatioBs >= 0.25 ? 0 : equityRatioBs >= 0.15 ? 10 : 20,
+                      },
+                      {
+                        label: 'Balance-sheet integrity check',
+                        currentText: `${(balanceGapPct * 100).toFixed(2)}% gap`,
+                        targetText: '<= 1.00%',
+                        status: balanceGapPct <= 0.01 ? 'healthy' : balanceGapPct <= 0.03 ? 'moderate_risk' : 'high_risk',
+                        scorePenalty: balanceGapPct <= 0.01 ? 0 : balanceGapPct <= 0.03 ? 8 : 16,
+                      },
+                    ] as const;
+                    const balancePenaltyTotal = balanceSheetChecks.reduce((sum, check) => sum + check.scorePenalty, 0);
+                    const balanceSheetConfidenceScore = Math.max(0, Math.min(100, 100 - balancePenaltyTotal));
+                    const confidenceLabel =
+                      balanceSheetConfidenceScore >= 80
+                        ? 'High confidence'
+                        : balanceSheetConfidenceScore >= 60
+                          ? 'Moderate confidence'
+                          : 'Caution';
+                    const multipleAdjustment =
+                      balanceSheetConfidenceScore >= 85
+                        ? 0.4
+                        : balanceSheetConfidenceScore >= 75
+                          ? 0.2
+                          : balanceSheetConfidenceScore >= 60
+                            ? 0
+                            : balanceSheetConfidenceScore >= 45
+                              ? -0.3
+                              : -0.6;
+                    const adjustedMidMultiple = Math.max(1, Math.min(5, valuationMultiple + multipleAdjustment));
+                    const adjustedLowMultiple = Math.max(1, Math.min(5, adjustedMidMultiple - 0.3));
+                    const adjustedHighMultiple = Math.max(1, Math.min(5, adjustedMidMultiple + 0.3));
+                    const strongestCheck = balanceSheetChecks
+                      .slice()
+                      .sort((a, b) => a.scorePenalty - b.scorePenalty)[0];
+                    const weakestCheck = balanceSheetChecks
+                      .slice()
+                      .sort((a, b) => b.scorePenalty - a.scorePenalty)[0];
                     const alertItems = [
                       {
                         show: topCustomerPct > sdeSectorBenchmarks.customerQuality.top1Warn,
@@ -14009,13 +14359,6 @@ function FinancialScorePage() {
                     ].filter((item) => item.show);
                     return (
                       <>
-                        <div style={{ background: '#ecfdf5', border: '1px solid #86efac', borderRadius: '8px', padding: '14px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '20px', color: '#14532d', fontWeight: 800, marginBottom: '8px' }}>Value Summary</div>
-                          <div style={{ fontSize: '18px', color: '#14532d', fontWeight: 800, marginBottom: '6px' }}>
-                            Adjusted Value of ${Math.round(adjustedValueBase).toLocaleString()} + Value Opportunity of ${Math.round(totalValueOpportunity).toLocaleString()} = ${Math.round(totalPotentialValue).toLocaleString()}
-                          </div>
-                        </div>
-
                         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                           <div style={{ fontSize: '16px', color: '#1e293b', fontWeight: 700, marginBottom: '10px' }}>Executive Financial Health Summary</div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.5fr', gap: '8px', marginBottom: '6px' }}>
@@ -14055,6 +14398,13 @@ function FinancialScorePage() {
                         </div>
 
                         <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '6px' }}>Balance Sheet Validation</div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
+                            Full scorecard, confidence score, adjusted multiple band, and CEO narrative now live in the dedicated <strong>Balance Sheet Quality</strong> tab.
+                          </div>
+                        </div>
+
+                        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                           <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>2) EBITDA Quality Recommendations</div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                             <div style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>Metric</div>
@@ -14089,7 +14439,7 @@ function FinancialScorePage() {
                             <div style={{ fontSize: '12px', color: '#334155' }}>DSO</div>
                             <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{dsoCurrent.toFixed(1)}</div>
                             <div style={{ fontSize: '12px', color: '#1e293b' }}>{dsoTarget}</div>
-                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>${Math.round(dsoImpact).toLocaleString()}</div>
+                            <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>${Math.round(receivablesCashOpportunity).toLocaleString()}</div>
                             <div style={{ fontSize: '12px', color: '#334155' }}>DIO</div>
                             <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{dioCurrent.toFixed(1)}</div>
                             <div style={{ fontSize: '12px', color: '#1e293b' }}>{dioTarget}</div>
@@ -14102,6 +14452,11 @@ function FinancialScorePage() {
                           <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
                             Sector targets ({sdeSectorBenchmarks.sectorLabel}): DSO {dsoTarget.toFixed(1)}, DIO {dioTarget.toFixed(1)}, CCC {cccTarget.toFixed(1)} (implied DPO {dpoTarget.toFixed(1)}).
                           </div>
+                          {contractTimingReceivablesLikely && (
+                            <div style={{ fontSize: '11px', color: '#9a3412', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '6px', padding: '6px', marginBottom: '8px' }}>
+                              Contract-timing AR profile detected. Receivables cash-release is held at $0 until customer-level AR aging and billing milestone data are connected.
+                            </div>
+                          )}
                           <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '8px' }}>
                             Core insight: ${Math.round(wcTotalImpact).toLocaleString()} of working capital improvement possible
                           </div>
@@ -14109,11 +14464,23 @@ function FinancialScorePage() {
                             <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
                               <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Receivables</div>
                               <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.5 }}>
-                                • tighten payment terms<br />
-                                • enforce collections<br />
-                                • reduce slow-pay customers
+                                {contractTimingReceivablesLikely ? (
+                                  <>
+                                    • align billing milestones with contract terms<br />
+                                    • track contract AR conversion by cohort<br />
+                                    • focus collections on true delinquent balances
+                                  </>
+                                ) : (
+                                  <>
+                                    • tighten payment terms<br />
+                                    • enforce collections<br />
+                                    • reduce slow-pay customers
+                                  </>
+                                )}
                               </div>
-                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>Potential cash release: ${Math.round(dsoImpact).toLocaleString()}</div>
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: '#059669', fontWeight: 700 }}>
+                                Potential cash release: ${Math.round(receivablesCashOpportunity).toLocaleString()}
+                              </div>
                             </div>
                             <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
                               <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>Inventory</div>
@@ -14384,9 +14751,11 @@ function FinancialScorePage() {
                     <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '10px' }}>
                         <div>
-                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Rate</div>
+                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Input</div>
                           <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{growth_24mo.toFixed(1)}%</div>
-                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Used for 5-year projection</div>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>
+                            Used as Year 1 growth and faded to terminal rate by Year 5
+                          </div>
                         </div>
                         <div>
                           <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Discount Rate</div>
@@ -14426,19 +14795,15 @@ function FinancialScorePage() {
                         <span style={{ fontWeight: '600' }}>${Math.round(ttmExpense).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>- Income Taxes</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(ttmTotalIncomeTaxes).toLocaleString()}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '6px', borderBottom: '1px solid #fcd34d' }}>
                         <span style={{ fontWeight: '600' }}>= Net Income</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(ttmNetIncomeAfterTaxForDcf).toLocaleString()}</span>
+                        <span style={{ fontWeight: '600' }}>${Math.round(ttmNetIncomeForDcf).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span>+ Depreciation/Amortization</span>
                         <span style={{ fontWeight: '600' }}>${Math.round(ttmDepreciation).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>- Change in Working Capital</span>
+                        <span>+ Change in Working Capital</span>
                         <span style={{ fontWeight: '600' }}>${Math.round(changeInWC).toLocaleString()}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px solid #fcd34d' }}>

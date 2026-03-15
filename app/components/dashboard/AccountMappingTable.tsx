@@ -41,6 +41,7 @@ export default function AccountMappingTable({
     revenue: false,
     cogs: false,
     expense: false,
+    nonOperating: false,
     asset: false,
     liability: false,
     equity: false
@@ -54,10 +55,89 @@ export default function AccountMappingTable({
     setIsClient(true);
   }, []);
 
-  const normalizeClassification = (value?: string): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' => {
+  const normalizeClassification = (
+    value?: string,
+    accountName?: string,
+    targetField?: string
+  ): 'revenue' | 'cogs' | 'expense' | 'nonOperating' | 'asset' | 'liability' | 'equity' | 'other' => {
+    const normalizedTarget = (targetField || '').trim().toLowerCase();
+    if (normalizedTarget && normalizedTarget !== 'unmapped') {
+      if (normalizedTarget === 'nonoperatingincome' || normalizedTarget === 'nonoperatingexpense') return 'nonOperating';
+      if (normalizedTarget === 'revenue' || normalizedTarget === 'otherrevenue' || normalizedTarget.startsWith('rev_')) return 'revenue';
+      if (
+        normalizedTarget === 'cogstotal' ||
+        normalizedTarget === 'costofgoodssold' ||
+        normalizedTarget.startsWith('cogs_') ||
+        normalizedTarget.startsWith('cogs')
+      ) return 'cogs';
+      if (
+        [
+          'payroll',
+          'ownerbasepay',
+          'ownersretirement',
+          'benefits',
+          'insurance',
+          'professionalfees',
+          'subcontractors',
+          'rent',
+          'taxlicense',
+          'stateincometaxes',
+          'federalincometaxes',
+          'phonecomm',
+          'infrastructure',
+          'autotravel',
+          'salesexpense',
+          'marketing',
+          'trainingcert',
+          'mealsentertainment',
+          'interestexpense',
+          'depreciationamortization',
+          'otherexpense',
+          'expense',
+          'operatingexpensetotal',
+        ].includes(normalizedTarget)
+      ) return 'expense';
+      if (['cash', 'ar', 'inventory', 'otherca', 'tca', 'fixedassets', 'otherassets', 'totalassets'].includes(normalizedTarget)) return 'asset';
+      if (['ap', 'loc', 'othercl', 'tcl', 'ltd', 'totalliab'].includes(normalizedTarget)) return 'liability';
+      if (
+        [
+          'ownerscapital',
+          'ownersdraw',
+          'commonstock',
+          'preferredstock',
+          'retainedearnings',
+          'additionalpaidincapital',
+          'treasurystock',
+          'totalequity',
+          'totallande',
+        ].includes(normalizedTarget)
+      ) return 'equity';
+    }
+
     const normalized = (value || '').trim().toLowerCase();
-    if (!normalized) return 'other';
+    const normalizedAccountName = (accountName || '').trim().toLowerCase();
     const compact = normalized.replace(/[\s_-]+/g, '');
+    const compactAccountName = normalizedAccountName.replace(/[\s_-]+/g, '');
+    const accountCodeMatch = normalizedAccountName.match(/^\s*(\d{4,})/);
+    const accountCode = accountCodeMatch ? Number(accountCodeMatch[1]) : NaN;
+    const isLikelyNonOperatingCode = Number.isFinite(accountCode) && accountCode >= 9000 && accountCode < 10000;
+    const isNonOperatingLabel =
+      normalized.includes('non-operating') ||
+      normalized.includes('non operating') ||
+      normalized.includes('other income') ||
+      normalized.includes('other expense') ||
+      compact.includes('nonoperating') ||
+      compact.includes('otherincome') ||
+      compact.includes('otherexpense') ||
+      normalizedAccountName.includes('non-operating') ||
+      normalizedAccountName.includes('non operating') ||
+      normalizedAccountName.includes('other income') ||
+      normalizedAccountName.includes('other expense') ||
+      compactAccountName.includes('nonoperating') ||
+      compactAccountName.includes('otherincome') ||
+      compactAccountName.includes('otherexpense');
+    if (isLikelyNonOperatingCode || isNonOperatingLabel) return 'nonOperating';
+    if (!normalized) return 'other';
     if (normalized === 'revenue' || normalized === 'income' || normalized.includes('revenue') || normalized.includes('income')) {
       return 'revenue';
     }
@@ -104,6 +184,28 @@ export default function AccountMappingTable({
     ) {
       return 'liability';
     }
+    // Handle common accounting-system equity labels that do not explicitly include "equity".
+    if (
+      normalized === 'retained earnings' ||
+      normalized === 'retainedearnings' ||
+      normalized === 'opening balance equity' ||
+      normalized === 'openingbalanceequity' ||
+      normalized === "owner's capital" ||
+      normalized === 'owners capital' ||
+      normalized === 'ownerscapital' ||
+      normalized === "owner's draw" ||
+      normalized === 'owners draw' ||
+      normalized === 'ownersdraw' ||
+      normalized === 'net assets' ||
+      normalized === 'netassets' ||
+      compact.includes('retainedearnings') ||
+      compact.includes('openingbalanceequity') ||
+      compact.includes('ownerscapital') ||
+      compact.includes('ownersdraw') ||
+      compact.includes('netassets')
+    ) {
+      return 'equity';
+    }
     if (normalized === 'expense' || normalized.includes('expense')) return 'expense';
     if (normalized === 'asset' || normalized.includes('asset')) return 'asset';
     if (normalized === 'liability' || normalized.includes('liabil')) return 'liability';
@@ -118,20 +220,38 @@ export default function AccountMappingTable({
     return isUnmapped || mapping.sourceStatus === 'new' || mapping.sourceStatus === 'changed';
   };
 
+  const getGroupingClassification = (mapping: AccountMapping) => {
+    // Group by source account type first so accounts stay in their native section
+    // (e.g. equity accounts always render under Equity).
+    const sourceClassification = normalizeClassification(
+      mapping.qbAccountClassification,
+      mapping.qbAccount,
+      undefined,
+    );
+    if (sourceClassification !== 'other') return sourceClassification;
+    return normalizeClassification(
+      mapping.qbAccountClassification,
+      mapping.qbAccount,
+      mapping.targetField,
+    );
+  };
+
   // Group mappings by normalized classification
   const groupedMappings = {
-    revenue: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'revenue' && isActionable(m)),
-    cogs: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'cogs' && isActionable(m)),
-    expense: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'expense' && isActionable(m)),
-    asset: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'asset' && isActionable(m)),
-    liability: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'liability' && isActionable(m)),
-    equity: mappings.filter(m => normalizeClassification(m.qbAccountClassification) === 'equity' && isActionable(m))
+    revenue: mappings.filter(m => getGroupingClassification(m) === 'revenue' && isActionable(m)),
+    cogs: mappings.filter(m => getGroupingClassification(m) === 'cogs' && isActionable(m)),
+    expense: mappings.filter(m => getGroupingClassification(m) === 'expense' && isActionable(m)),
+    nonOperating: mappings.filter(m => getGroupingClassification(m) === 'nonOperating' && isActionable(m)),
+    asset: mappings.filter(m => getGroupingClassification(m) === 'asset' && isActionable(m)),
+    liability: mappings.filter(m => getGroupingClassification(m) === 'liability' && isActionable(m)),
+    equity: mappings.filter(m => getGroupingClassification(m) === 'equity' && isActionable(m))
   };
 
   const sections = [
     { key: 'revenue', title: 'Revenue', icon: '💰', color: '#10b981', bgColor: '#f0fdf4', statementType: 'income' },
     { key: 'cogs', title: 'Cost of Goods Sold', icon: '📦', color: '#f59e0b', bgColor: '#fffbeb', statementType: 'income' },
     { key: 'expense', title: 'Operating Expenses', icon: '💳', color: '#ef4444', bgColor: '#fef2f2', statementType: 'income' },
+    { key: 'nonOperating', title: 'Non-Operating Income & Expense', icon: '🏷️', color: '#7c3aed', bgColor: '#f5f3ff', statementType: 'income' },
     { key: 'asset', title: 'Assets', icon: '🏦', color: '#3b82f6', bgColor: '#eff6ff', statementType: 'balance' },
     { key: 'liability', title: 'Liabilities', icon: '📊', color: '#8b5cf6', bgColor: '#faf5ff', statementType: 'balance' },
     { key: 'equity', title: 'Equity', icon: '💎', color: '#6366f1', bgColor: '#eef2ff', statementType: 'balance' }

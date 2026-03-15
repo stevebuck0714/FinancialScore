@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { sum } from '../../utils/financial';
 
 // LineChart Component
-export function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat, goalLineData }: { 
+export function LineChart({ title, data, valueKey, color, yMax, showTable, compact, formatter, benchmarkValue, showFormulaButton, onFormulaClick, labelFormat, goalLineData, showTrendLine }: { 
   title: string; 
   data: Array<any>;
   valueKey?: string;
@@ -18,6 +18,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   onFormulaClick?: () => void;
   labelFormat?: 'monthly' | 'quarterly' | 'semi-annual' | 'm-yy-adaptive';
   goalLineData?: number[];
+  showTrendLine?: boolean;
 }) {
   const MAX_MONTHS = 36;
 
@@ -118,6 +119,34 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
 
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+
+  const trendPathD = (() => {
+    if (!showTrendLine || visibleData.length < 2) return null;
+    const n = visibleData.length;
+    let sumX = 0;
+    let sumY = 0;
+    let sumXY = 0;
+    let sumX2 = 0;
+    for (let i = 0; i < n; i += 1) {
+      const y = Number(visibleData[i].value || 0);
+      sumX += i;
+      sumY += y;
+      sumXY += i * y;
+      sumX2 += i * i;
+    }
+    const denom = (n * sumX2) - (sumX * sumX);
+    const slope = denom === 0 ? 0 : ((n * sumXY) - (sumX * sumY)) / denom;
+    const intercept = (sumY - (slope * sumX)) / n;
+    const toY = (value: number) => {
+      const clampedValue = Math.max(yMinCalc, Math.min(yMaxCalc, value));
+      return padding.top + chartHeight - ((clampedValue - yMinCalc) / range) * chartHeight;
+    };
+    const startX = padding.left;
+    const endX = width - padding.right;
+    const startY = toY(intercept);
+    const endY = toY((slope * (n - 1)) + intercept);
+    return `M ${startX} ${startY} L ${endX} ${endY}`;
+  })();
 
   const formatMonthShort = (monthStr: string): string => {
     const date = parseMonthToDate(monthStr);
@@ -247,6 +276,9 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           </>
         )}
         <path d={pathD} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        {trendPathD && (
+          <path d={trendPathD} fill="none" stroke="#64748b" strokeWidth="2" strokeDasharray="6,6" />
+        )}
         {goalLineData && goalLineData.length === visibleData.length && (() => {
           const goalXDenominator = Math.max(visibleData.length - 1, 1);
           const goalPoints = visibleData.map((d, i) => {
@@ -325,24 +357,13 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           }
           
           if (format === 'quarterly') {
-            // Convert month to quarterly label
+            // Convert month to month/year label (no Q labels)
             const getQuarterLabel = (monthStr: string) => {
-              // Try to parse as Date first (e.g., "10/31/2022")
-              let date = new Date(monthStr);
-              if (!isNaN(date.getTime())) {
-                const year = date.getFullYear();
-                const month = date.getMonth() + 1; // 0-indexed
-                const quarter = Math.ceil(month / 3);
-                return `Q${quarter} '${year.toString().slice(-2)}`;
-              }
-              
-              // Try YYYY-MM format (e.g., "2023-03")
-              const parts = monthStr.split('-');
-              if (parts.length >= 2) {
-                const year = parts[0];
-                const month = parseInt(parts[1]);
-                const quarter = Math.ceil(month / 3);
-                return `Q${quarter} '${year.slice(-2)}`;
+              const parsed = parseMonthToDate(monthStr);
+              if (parsed) {
+                const year = parsed.getFullYear();
+                const month = parsed.getMonth() + 1;
+                return `${month}/${year.toString().slice(-2)}`;
               }
               return monthStr;
             };
@@ -350,15 +371,9 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
             // Only show labels for quarter-end months (March, June, September, December)
             // AND skip every other quarter to reduce crowding
             const isQuarterEnd = (monthStr: string) => {
-              let date = new Date(monthStr);
-              if (!isNaN(date.getTime())) {
-                const month = date.getMonth() + 1;
-                return month % 3 === 0; // Months 3, 6, 9, 12
-              }
-              
-              const parts = monthStr.split('-');
-              if (parts.length >= 2) {
-                const month = parseInt(parts[1]);
+              const parsed = parseMonthToDate(monthStr);
+              if (parsed) {
+                const month = parsed.getMonth() + 1;
                 return month % 3 === 0;
               }
               return false;
@@ -373,25 +388,21 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           } else {
             // Semi-annual format (default)
             const getSemiAnnualLabel = (monthStr: string) => {
-              const parts = monthStr.split('-');
-              if (parts.length >= 2) {
-                const year = parts[0];
-                const month = parseInt(parts[1]);
-                const half = month <= 6 ? 1 : 2;
-                return `H${half} '${year.slice(-2)}`;
+              const parsed = parseMonthToDate(monthStr);
+              if (parsed) {
+                const year = parsed.getFullYear();
+                const month = parsed.getMonth() + 1;
+                return `${month}/${year.toString().slice(-2)}`;
               }
               return monthStr;
             };
             
-            const parts = p.month.split('-');
-            const month = parts.length >= 2 ? parseInt(parts[1]) : 0;
+            const parsed = parseMonthToDate(p.month);
+            const month = parsed ? parsed.getMonth() + 1 : 0;
             const isSemiAnnualEnd = month === 6 || month === 12;
-            
-            // Fallback: show label every 6 data points if no semi-annual matches
-            const showEveryNth = points.length > 12 ? Math.floor(points.length / 4) : 3;
-            const showAsBackup = i % showEveryNth === 0 || i === points.length - 1;
-            
-            if (!isSemiAnnualEnd && !showAsBackup) return null;
+
+            // Only label June/December for clean half-year axis.
+            if (!isSemiAnnualEnd) return null;
             return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{getSemiAnnualLabel(p.month)}</text>;
           }
         })}
