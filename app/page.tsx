@@ -581,6 +581,56 @@ function FinancialScorePage() {
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
 
+  const normalizeFinancialSourceLabel = (value: unknown): string | null => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return null;
+    if (raw.includes('csv')) return 'csv_trial_balance';
+    if (raw.includes('quickbooks_desktop') || raw.includes('qb_desktop')) return 'quickbooks_desktop';
+    if (raw.includes('quickbooks') || raw.includes('qbo')) return 'quickbooks';
+    if (raw.includes('xero')) return 'xero';
+    if (raw.includes('sage_intacct') || raw.includes('intacct')) return 'sage_intacct';
+    if (raw.includes('sage')) return 'sage';
+    if (raw.includes('infor_m3')) return 'infor_m3';
+    if (raw.includes('infor')) return 'infor';
+    if (raw.includes('dynamics365')) return 'dynamics365';
+    if (raw.includes('dynamics')) return 'dynamics';
+    if (raw.includes('mock')) return 'mock';
+    return raw;
+  };
+
+  const inferSourceFromAccountingSystem = (accountingSystem: unknown): string | null => {
+    const system = String(accountingSystem || '').trim().toUpperCase();
+    if (!system) return null;
+    const bySystem: Record<string, string> = {
+      CSV_FILE: 'csv_trial_balance',
+      QUICKBOOKS: 'quickbooks',
+      QUICKBOOKS_DESKTOP: 'quickbooks_desktop',
+      XERO: 'xero',
+      SAGE: 'sage',
+      SAGE_INTACCT: 'sage_intacct',
+      INFOR_M3: 'infor_m3',
+      DYNAMICS: 'dynamics',
+      DYNAMICS365: 'dynamics365',
+    };
+    return bySystem[system] || null;
+  };
+
+  const resolveLatestFinancialSource = (latestRecord: any, accountingSystem: unknown): string | null => {
+    const explicitSource = normalizeFinancialSourceLabel(latestRecord?.columnMapping?.source);
+    if (explicitSource) return explicitSource;
+
+    const rawData = latestRecord?.rawData;
+    const isObjectRaw = rawData && typeof rawData === 'object' && !Array.isArray(rawData);
+    if (isObjectRaw && (rawData.profitAndLoss || rawData.balanceSheet)) {
+      return 'quickbooks';
+    }
+    if (isObjectRaw && (rawData.accountsByType || rawData.accounts || rawData.dates)) {
+      return 'csv_trial_balance';
+    }
+
+    return inferSourceFromAccountingSystem(accountingSystem);
+  };
+
   const normalizeMappingTargetField = (value: unknown): string => {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -2240,12 +2290,11 @@ function FinancialScorePage() {
           }
           // Track data source for UI branching (CSV vs API connections).
           // Prefer explicit columnMapping.source; fallback to heuristics for older records.
-          const inferredCsv =
-            latestRecord?.rawData &&
-            typeof latestRecord.rawData === 'object' &&
-            !Array.isArray(latestRecord.rawData) &&
-            (latestRecord.rawData.accountsByType || latestRecord.rawData.accounts || latestRecord.rawData.dates);
-          setLatestFinancialSource(latestRecord?.columnMapping?.source || (inferredCsv ? 'csv_trial_balance' : null));
+          const resolvedSource = resolveLatestFinancialSource(
+            latestRecord,
+            selectedCompany?.accountingSystem,
+          );
+          setLatestFinancialSource(resolvedSource);
           
           // Check if this is QuickBooks data and extract raw QB financial statements
           if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
@@ -2263,7 +2312,7 @@ function FinancialScorePage() {
               _companyId: selectedCompanyId,
               _recordId: latestRecord.id
             });
-            setLatestFinancialSource(latestRecord?.columnMapping?.source || 'quickbooks');
+            setLatestFinancialSource(resolveLatestFinancialSource(latestRecord, selectedCompany?.accountingSystem) || 'quickbooks');
             console.log(`?? Set qbRawData for company: ${selectedCompanyId}, record: ${latestRecord.id}`);
             // Force re-render of Financial Statements view
             setDataRefreshKey(prev => prev + 1);
@@ -2348,6 +2397,11 @@ function FinancialScorePage() {
             setQbRawData(null);
             // Hydrate raw Trial Balance payload from latest DB record so Data Mapping
             // can still show "Process & Save Monthly Data" after page reloads.
+            const inferredCsv =
+              latestRecord?.rawData &&
+              typeof latestRecord.rawData === 'object' &&
+              !Array.isArray(latestRecord.rawData) &&
+              (latestRecord.rawData.accountsByType || latestRecord.rawData.accounts || latestRecord.rawData.dates);
             if (inferredCsv) {
               const restoredCsvPayload = {
                 ...(latestRecord.rawData || {}),
