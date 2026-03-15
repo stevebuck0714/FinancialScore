@@ -14817,19 +14817,18 @@ function FinancialScorePage() {
                       return '#059669';
                     };
                     const latestMonth: any = monthly[monthly.length - 1] || {};
-                    const equityFromComponents =
-                      (latestMonth.ownersCapital || 0) +
-                      (latestMonth.ownersDraw || 0) +
-                      (latestMonth.commonStock || 0) +
-                      (latestMonth.preferredStock || 0) +
-                      (latestMonth.retainedEarnings || 0) +
-                      (latestMonth.additionalPaidInCapital || 0) +
-                      (latestMonth.treasuryStock || 0);
-                    const latestTotalAssets = latestMonth.totalAssets || 0;
-                    const latestTotalLiabilities = latestMonth.totalLiab || 0;
-                    const latestTotalEquity = latestMonth.totalEquity || equityFromComponents;
-                    const latestCurrentAssets = latestMonth.tca || latestMonth.currentAssets || 0;
-                    const latestCurrentLiabilities = latestMonth.tcl || latestMonth.currentLiabilities || 0;
+                    const latestTotalAssets = Number(latestMonth.totalAssets ?? 0);
+                    const latestTotalLiabilities = Number(latestMonth.totalLiab ?? 0);
+                    const latestTotalEquity =
+                      Number(latestMonth.ownersCapital ?? 0) +
+                      Number(latestMonth.ownersDraw ?? 0) +
+                      Number(latestMonth.commonStock ?? 0) +
+                      Number(latestMonth.preferredStock ?? 0) +
+                      Number(latestMonth.retainedEarnings ?? 0) +
+                      Number(latestMonth.additionalPaidInCapital ?? 0) +
+                      Number(latestMonth.treasuryStock ?? 0);
+                    const latestCurrentAssets = Number(latestMonth.tca ?? 0);
+                    const latestCurrentLiabilities = Number(latestMonth.tcl ?? 0);
                     const currentRatioBs = latestCurrentLiabilities > 0 ? latestCurrentAssets / latestCurrentLiabilities : 0;
                     const debtToEquityBs = latestTotalEquity > 0 ? latestTotalLiabilities / latestTotalEquity : 999;
                     const equityRatioBs = latestTotalAssets > 0 ? latestTotalEquity / latestTotalAssets : 0;
@@ -15243,19 +15242,18 @@ function FinancialScorePage() {
                     const adjustedValueBase = sdeValuation;
                     const totalPotentialValue = adjustedValueBase + totalValueOpportunity;
                     const latestMonth: any = monthly[monthly.length - 1] || {};
-                    const equityFromComponents =
-                      (latestMonth.ownersCapital || 0) +
-                      (latestMonth.ownersDraw || 0) +
-                      (latestMonth.commonStock || 0) +
-                      (latestMonth.preferredStock || 0) +
-                      (latestMonth.retainedEarnings || 0) +
-                      (latestMonth.additionalPaidInCapital || 0) +
-                      (latestMonth.treasuryStock || 0);
-                    const latestTotalAssets = latestMonth.totalAssets || 0;
-                    const latestTotalLiabilities = latestMonth.totalLiab || 0;
-                    const latestTotalEquity = latestMonth.totalEquity || equityFromComponents;
-                    const latestCurrentAssets = latestMonth.tca || latestMonth.currentAssets || 0;
-                    const latestCurrentLiabilities = latestMonth.tcl || latestMonth.currentLiabilities || 0;
+                    const latestTotalAssets = Number(latestMonth.totalAssets ?? 0);
+                    const latestTotalLiabilities = Number(latestMonth.totalLiab ?? 0);
+                    const latestTotalEquity =
+                      Number(latestMonth.ownersCapital ?? 0) +
+                      Number(latestMonth.ownersDraw ?? 0) +
+                      Number(latestMonth.commonStock ?? 0) +
+                      Number(latestMonth.preferredStock ?? 0) +
+                      Number(latestMonth.retainedEarnings ?? 0) +
+                      Number(latestMonth.additionalPaidInCapital ?? 0) +
+                      Number(latestMonth.treasuryStock ?? 0);
+                    const latestCurrentAssets = Number(latestMonth.tca ?? 0);
+                    const latestCurrentLiabilities = Number(latestMonth.tcl ?? 0);
                     const currentRatioBs = latestCurrentLiabilities > 0 ? latestCurrentAssets / latestCurrentLiabilities : 0;
                     const debtToEquityBs = latestTotalEquity > 0 ? latestTotalLiabilities / latestTotalEquity : 999;
                     const equityRatioBs = latestTotalAssets > 0 ? latestTotalEquity / latestTotalAssets : 0;
