@@ -109,9 +109,10 @@ export async function GET(request: NextRequest) {
     const snapshotByName = new Map(snapshot.map((row) => [normalize(row.accountName), row]));
 
     const allowedTargetFields = getAllowedTargetFieldSet(company?.industrySectorCategory || '01');
-    const invalidMappings = mappings.filter(
-      (m: any) => m.targetField && m.targetField.trim() !== "" && !allowedTargetFields.has(m.targetField),
-    );
+    const invalidMappings = mappings.filter((m: any) => {
+      const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
+      return normalizedTargetField && !allowedTargetFields.has(normalizedTargetField);
+    });
     const statusCounts = {
       total: mappings.length,
       new: 0,
@@ -122,8 +123,9 @@ export async function GET(request: NextRequest) {
     const sanitizedMappings = mappings.map((m: any) => {
       const sourceMatch =
         snapshotById.get(normalize(m.qbAccountId)) || snapshotByName.get(normalize(m.qbAccount));
+      const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
       const isUnmapped =
-        !m.targetField || m.targetField.trim() === "" || m.targetField.trim().toLowerCase() === "unmapped";
+        !normalizedTargetField || normalizedTargetField === "unmapped";
       let sourceStatus: "mapped" | "new" | "changed" | "inactive" = isUnmapped ? "new" : "mapped";
       if (snapshot.length > 0 && !sourceMatch) {
         sourceStatus = "inactive";
@@ -138,9 +140,10 @@ export async function GET(request: NextRequest) {
       if (sourceStatus === "inactive") statusCounts.inactive += 1;
       if (isUnmapped) statusCounts.unmapped += 1;
 
-      if (!m.targetField || m.targetField.trim() === "" || allowedTargetFields.has(m.targetField)) {
+      if (!normalizedTargetField || allowedTargetFields.has(normalizedTargetField)) {
         return {
           ...m,
+          targetField: normalizedTargetField,
           sourceStatus,
         };
       }

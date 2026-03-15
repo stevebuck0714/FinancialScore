@@ -52,6 +52,8 @@ export const ACCOUNT_TYPE_CLASSIFICATIONS: { [key: string]: string } = {
   // Expenses
   'CostOfGoodsSold': 'Cost of Goods Sold',
   'Expense': 'Expense',
+  'NonOperatingIncome': 'Non-Operating',
+  'NonOperatingExpense': 'Non-Operating',
 };
 
 // Common Trial Balance exports contain non-QB labels. Normalize them to our canonical types.
@@ -70,7 +72,12 @@ const ACCOUNT_TYPE_ALIASES: { [key: string]: string } = {
   expenses: 'Expense',
   'operating expense': 'Expense',
   'operating expenses': 'Expense',
+  'non-operating income': 'NonOperatingIncome',
+  'non operating income': 'NonOperatingIncome',
   'other expense': 'Expense',
+  'other income': 'NonOperatingIncome',
+  'non-operating expense': 'NonOperatingExpense',
+  'non operating expense': 'NonOperatingExpense',
 
   bank: 'Bank',
   cash: 'Bank',
@@ -106,7 +113,10 @@ const ACCOUNT_TYPE_ALIASES_COMPACT: { [key: string]: string } = {
   expenses: 'Expense',
   operatingexpense: 'Expense',
   operatingexpenses: 'Expense',
+  nonoperatingincome: 'NonOperatingIncome',
+  otherincome: 'NonOperatingIncome',
   otherexpense: 'Expense',
+  nonoperatingexpense: 'NonOperatingExpense',
 
   bank: 'Bank',
   cash: 'Bank',
@@ -140,10 +150,66 @@ export const ACCOUNT_TYPE_TO_TARGET_FIELD: { [key: string]: string } = {
   'Income': 'revenue',
   'CostOfGoodsSold': 'cogsTotal',
   'Expense': 'expense',
+  'NonOperatingIncome': 'nonOperatingIncome',
+  'NonOperatingExpense': 'nonOperatingExpense',
 };
 
-function normalizeAccountType(rawType: string | undefined, description: string): string {
+function getAccountCode(acctId: string | undefined): number | null {
+  const normalizedId = (acctId || '').trim();
+  const codeMatch = normalizedId.match(/^(\d{4,})/);
+  const accountCode = codeMatch ? Number(codeMatch[1]) : NaN;
+  return Number.isFinite(accountCode) ? accountCode : null;
+}
+
+function is9000Series(acctId: string | undefined): boolean {
+  const accountCode = getAccountCode(acctId);
+  return accountCode !== null && accountCode >= 9000 && accountCode < 10000;
+}
+
+function isLikelyNonOperatingIncome(description: string, rawType?: string): boolean {
+  const d = (description || '').toLowerCase();
+  const t = (rawType || '').toLowerCase();
+  return (
+    d.includes('non-operating income') ||
+    d.includes('non operating income') ||
+    d.includes('other income') ||
+    d.includes('gain') ||
+    d.includes('interest income') ||
+    d.includes('dividend income') ||
+    d.includes('investment income') ||
+    t.includes('income')
+  );
+}
+
+function isLikelyNonOperatingExpense(description: string): boolean {
+  const d = (description || '').toLowerCase();
+  if (
+    d.includes('non-operating expense') ||
+    d.includes('non operating expense') ||
+    d.includes('below the line expense') ||
+    d.includes('other non-operating')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function normalizeAccountType(rawType: string | undefined, description: string, acctId?: string): string {
   const trimmed = (rawType || '').trim();
+
+  // Company convention: 9000-series is reserved for non-operating items.
+  // Split income vs expense deterministically using labels/type.
+  // Cross-platform convention: 8010 is reserved for Non-Operating Income.
+  const accountCode = getAccountCode(acctId);
+  if (accountCode === 8010) {
+    return 'NonOperatingIncome';
+  }
+  if (is9000Series(acctId)) {
+    return isLikelyNonOperatingIncome(description, rawType) ? 'NonOperatingIncome' : 'NonOperatingExpense';
+  }
+  if (isLikelyNonOperatingIncome(description, rawType)) return 'NonOperatingIncome';
+  if (isLikelyNonOperatingExpense(description)) return 'NonOperatingExpense';
   if (!trimmed) return inferAccountTypeFromDescription(description);
 
   // Keep canonical types untouched.
@@ -167,6 +233,7 @@ function normalizeAccountType(rawType: string | undefined, description: string):
     compactKey.includes('costofgoods') ||
     compactKey === 'cogs'
   ) return 'CostOfGoodsSold';
+  if (normalizedKey.includes('non operating expense') || compactKey.includes('nonoperatingexpense')) return 'NonOperatingExpense';
   if (normalizedKey.includes('expense')) return 'Expense';
   if (normalizedKey.includes('asset')) return 'OtherAsset';
   if (normalizedKey.includes('liabil')) return 'OtherCurrentLiability';
@@ -178,6 +245,21 @@ function normalizeAccountType(rawType: string | undefined, description: string):
 
 function inferAccountTypeFromDescription(description: string): string {
   const d = (description || '').toLowerCase();
+  if (
+    d.includes('non-operating income') ||
+    d.includes('non operating income') ||
+    d.includes('other income') ||
+    d.includes('gain') ||
+    d.includes('interest income') ||
+    d.includes('dividend income') ||
+    d.includes('investment income')
+  ) return 'NonOperatingIncome';
+  if (
+    d.includes('non-operating expense') ||
+    d.includes('non operating expense') ||
+    d.includes('below the line expense') ||
+    d.includes('other non-operating')
+  ) return 'NonOperatingExpense';
   if (d.includes('income') || d.includes('revenue') || d.includes('sales')) return 'Income';
   if (d.includes('cost of goods') || d.includes('cogs') || d.includes('job material')) return 'CostOfGoodsSold';
   if (d.includes('accounts receivable')) return 'AccountsReceivable';
@@ -440,7 +522,7 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
     // Skip separator/subtotal rows and malformed lines.
     if (shouldSkipAccountRow(rawAcctType, acctId, description)) continue;
 
-    const acctType = normalizeAccountType(rawAcctType, description);
+    const acctType = normalizeAccountType(rawAcctType, description, acctId);
     
     // Parse values for each date column
     const dateValues: { [date: string]: number } = {};
@@ -512,7 +594,7 @@ export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ n
   const accountsForMapping: Array<{ name: string; classification: string; acctType: string; acctId: string }> = [];
   
   for (const account of parsedData.accounts) {
-    const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || ACCOUNT_TYPE_CLASSIFICATIONS[normalizeAccountType(account.acctType, account.description)] || 'Expense';
+    const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || ACCOUNT_TYPE_CLASSIFICATIONS[normalizeAccountType(account.acctType, account.description, account.acctId)] || 'Expense';
     
     accountsForMapping.push({
       name: account.description,
@@ -523,6 +605,15 @@ export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ n
   }
   
   return accountsForMapping;
+}
+
+function normalizeMappingTargetField(value: string | undefined): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  const normalized = raw.toLowerCase();
+  if (normalized === 'nonopertingincome') return 'nonOperatingIncome';
+  if (normalized === 'nonopertingexpense') return 'nonOperatingExpense';
+  return raw;
 }
 
 /**
@@ -546,14 +637,15 @@ export function processTrialBalanceToMonthly(
   const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
   
   for (const mapping of accountMappings) {
+    const normalizedTargetField = normalizeMappingTargetField(mapping.targetField);
     const normalizedKey = normalizeAccountName(mapping.qbAccount);
     mappingLookup[normalizedKey] = {
-      targetField: mapping.targetField,
+      targetField: normalizedTargetField,
       lobAllocations: mapping.lobAllocations,
     };
     // Also keep the original key for backwards compatibility
     mappingLookup[mapping.qbAccount] = {
-      targetField: mapping.targetField,
+      targetField: normalizedTargetField,
       lobAllocations: mapping.lobAllocations,
     };
   }
@@ -610,6 +702,7 @@ export function processTrialBalanceToMonthly(
       
       // Other Income/Expense
       nonOperatingIncome: 0,
+      nonOperatingExpense: 0,
       extraordinaryItems: 0,
       
       // Balance Sheet - Assets
@@ -673,6 +766,8 @@ export function processTrialBalanceToMonthly(
         } else if (mapping.targetField.startsWith('cogs_')) {
           monthlyRecord.cogsTotal += value;
           sectorCogsBreakdown[mapping.targetField] = (sectorCogsBreakdown[mapping.targetField] || 0) + value;
+        } else if (mapping.targetField === 'nonOperatingExpense') {
+          monthlyRecord.nonOperatingExpense += value;
         }
 
         // Collect account value for LOB allocation
@@ -746,6 +841,12 @@ export function processTrialBalanceToMonthly(
         ...sectorCogsBreakdown,
       };
     }
+    if ((monthlyRecord.nonOperatingExpense || 0) !== 0) {
+      monthlyRecord.expenseBreakdown = {
+        ...(monthlyRecord.expenseBreakdown || {}),
+        nonOperatingExpense: Number(monthlyRecord.nonOperatingExpense) || 0,
+      };
+    }
     
     monthlyRecords.push(monthlyRecord);
   }
@@ -786,9 +887,10 @@ export function processTrialBalanceToDailySnapshotsAndLines(
   const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
 
   for (const mapping of accountMappings) {
+    const normalizedTargetField = normalizeMappingTargetField(mapping.targetField);
     const normalizedKey = normalizeAccountName(mapping.qbAccount);
-    mappingLookup[normalizedKey] = { targetField: mapping.targetField, lobAllocations: mapping.lobAllocations };
-    mappingLookup[mapping.qbAccount] = { targetField: mapping.targetField, lobAllocations: mapping.lobAllocations };
+    mappingLookup[normalizedKey] = { targetField: normalizedTargetField, lobAllocations: mapping.lobAllocations };
+    mappingLookup[mapping.qbAccount] = { targetField: normalizedTargetField, lobAllocations: mapping.lobAllocations };
   }
 
   for (const dateStr of parsedData.dates) {
@@ -829,6 +931,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       depreciationAmortization: 0,
       otherExpense: 0,
       nonOperatingIncome: 0,
+      nonOperatingExpense: 0,
       extraordinaryItems: 0,
       cash: 0,
       ar: 0,

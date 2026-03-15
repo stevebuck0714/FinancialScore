@@ -9753,10 +9753,14 @@ function FinancialScorePage() {
                                 try {
                                   console.log('?? Processing CSV/Trial Balance data using mappings...');
                                   console.log('?? Total mappings:', aiMappings.length);
+                                  const normalizedMappingsForProcessing = aiMappings.map((m: any) => ({
+                                    ...m,
+                                    targetField: normalizeMappingTargetField(m?.targetField),
+                                  }));
 
                                   // Process the CSV data using mappings
-                                  const processedData = processTrialBalanceToMonthly(selectedCompanyCsvTrialBalanceData, aiMappings);
-                                  const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(selectedCompanyCsvTrialBalanceData, aiMappings);
+                                  const processedData = processTrialBalanceToMonthly(selectedCompanyCsvTrialBalanceData, normalizedMappingsForProcessing);
+                                  const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(selectedCompanyCsvTrialBalanceData, normalizedMappingsForProcessing);
 
                                   // Save to database
                                   const response = await fetch('/api/financials', {
@@ -9767,7 +9771,7 @@ function FinancialScorePage() {
                                       uploadedByUserId: currentUser.id,
                                       fileName: selectedCompanyCsvTrialBalanceData?.fileName || 'CSV Trial Balance Upload',
                                       rawData: selectedCompanyCsvTrialBalanceData,
-                                      columnMapping: { source: 'csv_trial_balance', mappings: aiMappings },
+                                      columnMapping: { source: 'csv_trial_balance', mappings: normalizedMappingsForProcessing },
                                       monthlyData: processedData
                                     })
                                   });
