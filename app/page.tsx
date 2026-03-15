@@ -14503,6 +14503,13 @@ function FinancialScorePage() {
                                 {idx + 1}. {rec.title} - Potential EBITDA improvement: ${Math.round(rec.impactRange.high).toLocaleString()}
                               </div>
                             ))}
+                            {sdeRecommendationsApi.length === 0 && (
+                              <>
+                                <div style={{ marginBottom: '4px' }}>1. Normalize one-time or discretionary expenses to improve earnings quality.</div>
+                                <div style={{ marginBottom: '4px' }}>2. Document owner adjustments with support for diligence readiness.</div>
+                                <div style={{ marginBottom: '4px' }}>3. Prioritize actions that convert directly to recurring EBITDA.</div>
+                              </>
+                            )}
                           </div>
                         </div>
 
@@ -14601,32 +14608,18 @@ function FinancialScorePage() {
 
                         <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                           <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>5) Customer Quality Insights</div>
-                          <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 800, marginBottom: '6px' }}>Preview format (connect ops data to populate)</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr 0.8fr 1.2fr', gap: '8px', marginBottom: '6px' }}>
-                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Metric</div>
-                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Current</div>
-                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Target / Threshold</div>
-                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Status</div>
-                              <div style={{ fontSize: '11px', color: '#475569', fontWeight: 700 }}>Impact</div>
+                          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '10px', marginBottom: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#1e3a8a', fontWeight: 700, marginBottom: '4px' }}>Data connection status</div>
+                            <div style={{ fontSize: '12px', color: '#1e40af', lineHeight: 1.55 }}>
+                              Customer-level concentration, retention, aging, and dispute metrics are not connected yet, so this section is shown as an implementation-ready summary instead of placeholder rows.
                             </div>
-                            {[
-                              ['Top 1 customer concentration', '##.#%', '< ##.#%', 'Watch / Risk', 'Revenue concentration risk'],
-                              ['Top 5 customer concentration', '##.#%', '< ##.#%', 'Watch / Risk', 'Portfolio concentration'],
-                              ['Revenue retention (NRR)', '##.#%', '> ###.#%', 'Healthy / Watch / Risk', 'Growth quality'],
-                              ['Gross retention (GRR)', '##.#%', '> ##.#%', 'Healthy / Watch / Risk', 'Churn pressure'],
-                              ['AR 90+ days (Top 10 customers)', '##.#%', '< #.#%', 'Watch / Risk', 'Cash conversion drag'],
-                              ['Disputed invoices rate', '#.#%', '< #.#%', 'Watch / Risk', 'Collections friction'],
-                              ['Avg days late (Top 10)', '## days', '< ## days', 'Watch / Risk', 'Liquidity stress'],
-                              ['Contracted revenue share', '##.#%', '> ##.#%', 'Healthy / Watch / Risk', 'Revenue durability'],
-                            ].map((row, idx) => (
-                              <div key={`cq-format-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr 0.8fr 1.2fr', gap: '8px', borderTop: '1px solid #dbeafe', paddingTop: '6px', marginTop: '6px' }}>
-                                <div style={{ fontSize: '11px', color: '#334155' }}>{row[0]}</div>
-                                <div style={{ fontSize: '11px', color: '#1e293b', fontWeight: 700 }}>{row[1]}</div>
-                                <div style={{ fontSize: '11px', color: '#334155' }}>{row[2]}</div>
-                                <div style={{ fontSize: '11px', color: '#92400e', fontWeight: 700 }}>{row[3]}</div>
-                                <div style={{ fontSize: '11px', color: '#334155' }}>{row[4]}</div>
-                              </div>
-                            ))}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
+                            <div style={{ marginBottom: '4px' }}>• Connect customer revenue ledger (top 1 / top 5 concentration and recurring mix)</div>
+                            <div style={{ marginBottom: '4px' }}>• Connect AR aging by customer cohort (90+ days, average days late)</div>
+                            <div style={{ marginBottom: '4px' }}>• Connect retention history (NRR/GRR trend)</div>
+                            <div>• Connect dispute/credit memo events for collections-friction monitoring</div>
+                          </div>
                         </div>
 
                         <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
