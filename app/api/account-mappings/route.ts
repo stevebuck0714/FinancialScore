@@ -4,6 +4,15 @@ import { getAllowedTargetFieldSet } from "@/lib/constants/sector-target-fields";
 
 export const dynamic = "force-dynamic";
 
+function normalizeTargetFieldValue(value: unknown): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+  const normalized = raw.toLowerCase();
+  if (normalized === "nonopertingincome") return "nonOperatingIncome";
+  if (normalized === "nonopertingexpense") return "nonOperatingExpense";
+  return raw;
+}
+
 type AccountSnapshotRow = {
   accountId: string;
   accountName: string;
@@ -231,9 +240,12 @@ export async function POST(request: NextRequest) {
         index === self.findIndex((m: any) => m.qbAccount === mapping.qbAccount),
     );
     const mappedRows = uniqueMappings.filter(
-      (m: any) => m.targetField && m.targetField.trim() !== "" && m.targetField !== "unmapped",
+      (m: any) => {
+        const targetField = normalizeTargetFieldValue(m.targetField);
+        return targetField && targetField !== "unmapped";
+      },
     );
-    const invalidMappings = mappedRows.filter((m: any) => !allowedTargetFields.has(m.targetField));
+    const invalidMappings = mappedRows.filter((m: any) => !allowedTargetFields.has(normalizeTargetFieldValue(m.targetField)));
     if (invalidMappings.length > 0) {
       return NextResponse.json(
         {
@@ -272,8 +284,9 @@ export async function POST(request: NextRequest) {
     let created = 0;
     let updated = 0;
     for (const m of uniqueMappings) {
+      const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
       const targetField =
-        m.targetField && m.targetField.trim() !== "" ? m.targetField.trim() : "unmapped";
+        normalizedTargetField && normalizedTargetField !== "" ? normalizedTargetField : "unmapped";
       const baseMappingData = {
         qbAccountId: m.qbAccountId || null,
         qbAccountCode: m.qbAccountCode || null,

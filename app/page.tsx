@@ -581,6 +581,21 @@ function FinancialScorePage() {
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
 
+  const normalizeMappingTargetField = (value: unknown): string => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const normalized = raw.toLowerCase();
+    if (normalized === 'nonopertingincome') return 'nonOperatingIncome';
+    if (normalized === 'nonopertingexpense') return 'nonOperatingExpense';
+    return raw;
+  };
+
+  const normalizeMappingsForUi = (mappings: any[]): any[] =>
+    (Array.isArray(mappings) ? mappings : []).map((m: any) => ({
+      ...m,
+      targetField: normalizeMappingTargetField(m?.targetField),
+    }));
+
   // Back-compat: if something sets the legacy top-level 'payments' tab,
   // redirect it into Company Management > Payments.
   useEffect(() => {
@@ -1815,12 +1830,7 @@ function FinancialScorePage() {
               qbAccountId: m.qbAccountId,
               qbAccountCode: m.qbAccountCode,
               qbAccountClassification: m.qbAccountClassification,
-              targetField:
-                String(m.targetField || '').toLowerCase() === 'nonopertingincome'
-                  ? 'nonOperatingIncome'
-                  : String(m.targetField || '').toLowerCase() === 'nonopertingexpense'
-                    ? 'nonOperatingExpense'
-                    : m.targetField,
+              targetField: normalizeMappingTargetField(m.targetField),
               confidence: m.confidence || 'medium',
               lobAllocations: m.lobAllocations,
               sourceStatus: m.sourceStatus || 'mapped',
@@ -2472,7 +2482,7 @@ function FinancialScorePage() {
             }
             if (mappings && mappings.length > 0) {
               console.log('Loaded saved account mappings:', mappings);
-              setAiMappings(mappings);
+              setAiMappings(normalizeMappingsForUi(mappings));
               if (savedLobs && Array.isArray(savedLobs) && savedLobs.length > 0) {
                 console.log('Loaded saved Lines of Business:', savedLobs);
               // Convert from stored format to LOBData format
@@ -4013,13 +4023,13 @@ function FinancialScorePage() {
           qbAccountId: m.qbAccountId,
           qbAccountCode: m.qbAccountCode,
           qbAccountClassification: m.qbAccountClassification,
-          targetField: m.targetField,
+          targetField: normalizeMappingTargetField(m.targetField),
           confidence: m.confidence || 'medium',
           lobAllocations: m.lobAllocations,
           sourceStatus: m.sourceStatus || 'mapped',
         }))
       : [];
-    setAiMappings(loadedMappings);
+    setAiMappings(normalizeMappingsForUi(loadedMappings));
     setShowMappingSection(loadedMappings.length > 0);
     setMappingSourceSummary(data.sourceSummary || null);
   };
@@ -9395,7 +9405,7 @@ function FinancialScorePage() {
                             }
 
                             const data = await response.json();
-                            setAiMappings(data.mappings || []);
+                            setAiMappings(normalizeMappingsForUi(data.mappings || []));
                             setMappingSourceSummary(null);
                             setShowMappingSection(true);
                           } catch (error: any) {
@@ -9503,7 +9513,7 @@ function FinancialScorePage() {
                             }
 
                             const data = await response.json();
-                            setAiMappings(data.mappings || []);
+                            setAiMappings(normalizeMappingsForUi(data.mappings || []));
                             setMappingSourceSummary(null);
                             setShowMappingSection(true);
                           } catch (error: any) {
@@ -9932,7 +9942,10 @@ function FinancialScorePage() {
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({
                                     companyId: currentCompany.id,
-                                    mappings: aiMappings,
+                                    mappings: aiMappings.map((m: any) => ({
+                                      ...m,
+                                      targetField: normalizeMappingTargetField(m?.targetField),
+                                    })),
                                     linesOfBusiness: linesOfBusiness
                                   })
                                 });
