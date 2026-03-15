@@ -8,7 +8,7 @@ const keywordRulesPath = '../route';
 const mappingRules = [
   // Non-operating income/expense (must be evaluated before generic revenue/expense keywords)
   { keywords: ['non-operating income', 'non operating income', 'other income', 'interest income', 'dividend income', 'gain on sale', 'gain on disposal', 'discount income', 'grant income', 'apprenticeship grant'], targetField: 'nonOperatingIncome', confidence: 'high' },
-  { keywords: ['non-operating expense', 'non operating expense', 'other non-operating expense'], targetField: 'nonOperatingExpense', confidence: 'high' },
+  { keywords: ['non-operating expense', 'non operating expense', 'other non-operating expense', 'covid expense', 'overhead allocation', 'overhead alocation'], targetField: 'nonOperatingExpense', confidence: 'high' },
 
   // Equity earnings (must run before generic "income" keyword rule)
   { keywords: ['net income', 'current year earnings', 'current earnings'], targetField: 'retainedEarnings', confidence: 'high' },
@@ -20,6 +20,7 @@ const mappingRules = [
   { keywords: ['cogs payroll', 'cost of sales payroll', 'production payroll', 'direct labor', 'employees wages', 'employee wages', 'wages'], targetField: 'cogsPayroll', confidence: 'high' },
   { keywords: ['cogs owner', 'owner draw cogs'], targetField: 'cogsOwnerPay', confidence: 'medium' },
   { keywords: ['cogs contractor', 'subcontractor cogs', 'job cost contractor'], targetField: 'cogsContractors', confidence: 'high' },
+  { keywords: ["worker's compensation insurance", 'workers compensation insurance', "workers' compensation insurance", "worker's compensation", 'workers compensation', "workers' compensation", 'work comp'], targetField: 'cogsOther', confidence: 'high' },
   { keywords: ['materials', 'supplies', 'cogs materials', 'job materials', 'raw materials'], targetField: 'cogsMaterials', confidence: 'high' },
   { keywords: ['cogs commission', 'sales commission cogs', 'commission cost'], targetField: 'cogsCommissions', confidence: 'medium' },
   { keywords: ['cost of goods', 'cost of sales', 'direct cost'], targetField: 'cogsOther', confidence: 'medium' },
@@ -30,11 +31,12 @@ const mappingRules = [
   { keywords: ['owner compensation', 'owner salary', 'owner wage', 'guaranteed payment', 'owner base'], targetField: 'ownerBasePay', confidence: 'high' },
   { keywords: ['benefits', 'health insurance employee', 'employee benefits'], targetField: 'benefits', confidence: 'high' },
   { keywords: ['insurance', 'liability insurance', 'general insurance', 'business insurance'], targetField: 'insurance', confidence: 'high' },
+  { keywords: ['ask my accountant'], targetField: 'otherExpense', confidence: 'high' },
   { keywords: ['professional', 'legal', 'accounting', 'consulting', 'attorney', 'professional fees', 'professional services'], targetField: 'professionalFees', confidence: 'high' },
-  { keywords: ['subcontractors', 'independent contractors', 'contract labor'], targetField: 'subcontractors', confidence: 'high' },
+  { keywords: ['subcontractors', 'subcontractor', 'sub-contractor', 'independent contractors', 'contract labor'], targetField: 'subcontractors', confidence: 'high' },
   { keywords: ['rent', 'lease', 'office rent', 'facility'], targetField: 'rent', confidence: 'high' },
   // Income taxes (NOT Tax & License)
-  { keywords: ['state income tax', 'state income taxes'], targetField: 'stateIncomeTaxes', confidence: 'high' },
+  { keywords: ['state income tax', 'state income taxes', 'ptet', 'pass-through entity tax', 'pass through entity tax'], targetField: 'stateIncomeTaxes', confidence: 'high' },
   { keywords: ['federal income tax', 'federal income taxes'], targetField: 'federalIncomeTaxes', confidence: 'high' },
   { keywords: ['income tax', 'income taxes'], targetField: 'federalIncomeTaxes', confidence: 'medium' },
   { keywords: ['tax expense', 'license fee', 'business license', 'license renewal', 'tax license', 'occupancy permit', 'property tax', 'real estate tax'], targetField: 'taxLicense', confidence: 'high' },

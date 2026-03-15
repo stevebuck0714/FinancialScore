@@ -646,6 +646,50 @@ function FinancialScorePage() {
       targetField: normalizeMappingTargetField(m?.targetField),
     }));
 
+  const normalizeAccountCodeForMatch = (value: unknown): string => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const match = raw.match(/(\d{4,})/);
+    if (!match) return '';
+    const numeric = Number(match[1]);
+    if (!Number.isFinite(numeric)) return '';
+    if (numeric >= 10000 && numeric % 10 === 0) return String(Math.floor(numeric / 10));
+    if (numeric >= 10000) return String(Number(String(numeric).slice(0, 4)));
+    return String(numeric);
+  };
+
+  const getMappingMatchKey = (mapping: any): string => {
+    const code =
+      normalizeAccountCodeForMatch(mapping?.qbAccountCode) ||
+      normalizeAccountCodeForMatch(mapping?.qbAccountId);
+    if (code) return `code:${code}`;
+    return '';
+  };
+
+  const mergeGeneratedMappingsWithExisting = (generated: any[], existing: any[]): any[] => {
+    const generatedNormalized = normalizeMappingsForUi(generated || []);
+    const existingNormalized = normalizeMappingsForUi(existing || []);
+    const existingByKey = new Map<string, any>();
+    for (const row of existingNormalized) {
+      const key = getMappingMatchKey(row);
+      if (key && !existingByKey.has(key)) existingByKey.set(key, row);
+    }
+    return generatedNormalized.map((row: any) => {
+      const key = getMappingMatchKey(row);
+      const prior = key ? existingByKey.get(key) : null;
+      const priorTarget = normalizeMappingTargetField(prior?.targetField);
+      const hasPriorExplicitMapping = !!priorTarget && priorTarget !== 'unmapped';
+      if (!hasPriorExplicitMapping) return row;
+      return {
+        ...row,
+        targetField: priorTarget,
+        allocationMethod: prior?.allocationMethod || row?.allocationMethod || 'manual',
+        lobAllocations: prior?.lobAllocations ?? row?.lobAllocations,
+        confidence: prior?.confidence || row?.confidence || 'high',
+      };
+    });
+  };
+
   // Back-compat: if something sets the legacy top-level 'payments' tab,
   // redirect it into Company Management > Payments.
   useEffect(() => {
@@ -9384,7 +9428,7 @@ function FinancialScorePage() {
                             }
 
                             const data = await response.json();
-                            setAiMappings(normalizeMappingsForUi(data.mappings || []));
+                            setAiMappings((prev) => mergeGeneratedMappingsWithExisting(data.mappings || [], prev));
                             setMappingSourceSummary(null);
                             setShowMappingSection(true);
                           } catch (error: any) {
@@ -9492,7 +9536,7 @@ function FinancialScorePage() {
                             }
 
                             const data = await response.json();
-                            setAiMappings(normalizeMappingsForUi(data.mappings || []));
+                            setAiMappings((prev) => mergeGeneratedMappingsWithExisting(data.mappings || [], prev));
                             setMappingSourceSummary(null);
                             setShowMappingSection(true);
                           } catch (error: any) {
