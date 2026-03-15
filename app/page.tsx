@@ -1815,7 +1815,12 @@ function FinancialScorePage() {
               qbAccountId: m.qbAccountId,
               qbAccountCode: m.qbAccountCode,
               qbAccountClassification: m.qbAccountClassification,
-              targetField: m.targetField,
+              targetField:
+                String(m.targetField || '').toLowerCase() === 'nonopertingincome'
+                  ? 'nonOperatingIncome'
+                  : String(m.targetField || '').toLowerCase() === 'nonopertingexpense'
+                    ? 'nonOperatingExpense'
+                    : m.targetField,
               confidence: m.confidence || 'medium',
               lobAllocations: m.lobAllocations,
               sourceStatus: m.sourceStatus || 'mapped',

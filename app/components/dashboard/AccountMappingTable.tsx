@@ -36,6 +36,19 @@ export default function AccountMappingTable({
   showOnlyActionable = false,
   onMappingChange
 }: AccountMappingTableProps) {
+  const canonicalizeTargetField = (value?: string): string => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const normalized = raw.toLowerCase();
+    if (normalized === 'nonopertingincome') return 'nonOperatingIncome';
+    if (normalized === 'nonopertingexpense') return 'nonOperatingExpense';
+    return raw;
+  };
+
+  const nonOperatingDefaults = [
+    { value: 'nonOperatingIncome', label: 'Non-Operating Income' },
+    { value: 'nonOperatingExpense', label: 'Non-Operating Expense' },
+  ];
 
   const [collapsedSections, setCollapsedSections] = useState<{[key: string]: boolean}>({
     revenue: false,
@@ -224,13 +237,13 @@ export default function AccountMappingTable({
     // Respect explicit user/AI target overrides for section placement.
     // When a target field is selected, rows should render in that section,
     // not stay locked to the source account classification.
-    const normalizedTarget = (mapping.targetField || '').trim().toLowerCase();
+    const normalizedTarget = canonicalizeTargetField(mapping.targetField).trim().toLowerCase();
     const hasSelectedTarget = normalizedTarget !== '' && normalizedTarget !== 'unmapped';
     if (hasSelectedTarget) {
       const targetClassification = normalizeClassification(
         undefined,
         mapping.qbAccount,
-        mapping.targetField,
+        canonicalizeTargetField(mapping.targetField),
       );
       if (targetClassification !== 'other') return targetClassification;
     }
@@ -279,17 +292,25 @@ export default function AccountMappingTable({
 
   const getTargetFieldOptionsForSection = (sectionKey: string) => {
     const options = targetFieldOptions[sectionKey as keyof typeof targetFieldOptions] || [];
+    const optionsWithNonOperatingDefaults =
+      sectionKey === 'nonOperating'
+        ? [...options, ...nonOperatingDefaults]
+        : options;
     if (sectionKey === 'revenue' || sectionKey === 'expense') {
-      const nonOperatingOptions = targetFieldOptions.nonOperating || [];
-      return [...options, ...nonOperatingOptions];
+      const nonOperatingOptions = [...(targetFieldOptions.nonOperating || []), ...nonOperatingDefaults];
+      const merged = [...optionsWithNonOperatingDefaults, ...nonOperatingOptions];
+      return merged.filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx);
     }
-    return options;
+    return optionsWithNonOperatingDefaults.filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx);
   };
 
   const getFieldLabel = (value: string): string => {
+    const canonicalValue = canonicalizeTargetField(value);
+    if (canonicalValue === 'nonOperatingIncome') return 'Non-Operating Income';
+    if (canonicalValue === 'nonOperatingExpense') return 'Non-Operating Expense';
     const allOptions = Object.values(targetFieldOptions).flat();
-    const option = allOptions.find(opt => opt.value === value);
-    return option ? option.label : value;
+    const option = allOptions.find(opt => opt.value === canonicalValue);
+    return option ? option.label : canonicalValue;
   };
 
   const renderMappingRow = (mapping: AccountMapping, sectionKey: string) => {
@@ -343,7 +364,7 @@ export default function AccountMappingTable({
                 border: '1px solid #cbd5e1',
                 borderRadius: '4px',
                 fontSize: '13px',
-                background: mapping.targetField ? '#f0fdf4' : '#fef3c7',
+                background: canonicalizeTargetField(mapping.targetField) ? '#f0fdf4' : '#fef3c7',
                 cursor: 'pointer',
                 textAlign: 'left',
                 display: 'flex',
@@ -351,8 +372,8 @@ export default function AccountMappingTable({
                 alignItems: 'center'
               }}
             >
-              <span style={{ color: mapping.targetField ? '#1e293b' : '#94a3b8' }}>
-                {mapping.targetField ? getFieldLabel(mapping.targetField) : '-- Select Field --'}
+              <span style={{ color: canonicalizeTargetField(mapping.targetField) ? '#1e293b' : '#94a3b8' }}>
+                {canonicalizeTargetField(mapping.targetField) ? getFieldLabel(mapping.targetField) : '-- Select Field --'}
               </span>
               <span style={{ fontSize: '10px', color: '#64748b' }}>{openTargetFieldDropdown === globalIdx ? '▲' : '▼'}</span>
             </button>
@@ -394,11 +415,11 @@ export default function AccountMappingTable({
                         cursor: 'pointer',
                         fontSize: '14px',
                         color: '#1e293b',
-                        background: mapping.targetField === opt.value ? '#dbeafe' : 'transparent',
+                        background: canonicalizeTargetField(mapping.targetField) === opt.value ? '#dbeafe' : 'transparent',
                         borderBottom: '1px solid #f3f4f6'
                       }}
                       onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
-                      onMouseOut={(e) => e.currentTarget.style.background = mapping.targetField === opt.value ? '#dbeafe' : 'transparent'}
+                      onMouseOut={(e) => e.currentTarget.style.background = canonicalizeTargetField(mapping.targetField) === opt.value ? '#dbeafe' : 'transparent'}
                     >
                       {opt.label}
                     </div>
