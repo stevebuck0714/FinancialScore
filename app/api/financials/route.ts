@@ -135,6 +135,13 @@ export async function POST(request: NextRequest) {
                     }
                     return acc;
                   }, {});
+            const derivedExpenseBreakdown =
+              month.expenseBreakdown && typeof month.expenseBreakdown === "object"
+                ? { ...month.expenseBreakdown }
+                : {};
+            if (Number(month.nonOperatingExpense || 0) !== 0) {
+              derivedExpenseBreakdown.nonOperatingExpense = Number(month.nonOperatingExpense || 0);
+            }
 
             return {
             companyId: companyId,
@@ -143,7 +150,8 @@ export async function POST(request: NextRequest) {
             revenueBreakdown:
               Object.keys(derivedRevenueBreakdown).length > 0 ? derivedRevenueBreakdown : null,
             expense: month.expense || 0,
-            expenseBreakdown: month.expenseBreakdown || null,
+            expenseBreakdown:
+              Object.keys(derivedExpenseBreakdown).length > 0 ? derivedExpenseBreakdown : null,
             cogsPayroll: month.cogsPayroll || 0,
             cogsOwnerPay: month.cogsOwnerPay || 0,
             cogsContractors: month.cogsContractors || 0,

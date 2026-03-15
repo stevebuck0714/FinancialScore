@@ -31,6 +31,7 @@ export const MONTHLY_FINANCIAL_NUMERIC_FIELDS = [
   'depreciationAmortization',
   'otherExpense',
   'nonOperatingIncome',
+  'nonOperatingExpense',
   'extraordinaryItems',
   'cash',
   'ar',
@@ -152,6 +153,7 @@ export function toMonthlyFinancialCreateInput(
     depreciationAmortization: row.depreciationAmortization,
     otherExpense: row.otherExpense,
     nonOperatingIncome: row.nonOperatingIncome,
+    nonOperatingExpense: row.nonOperatingExpense,
     extraordinaryItems: row.extraordinaryItems,
     lobBreakdowns: row.lobBreakdowns as any,
     cash: row.cash,
@@ -189,6 +191,7 @@ export function buildMasterDataRows(rows: CanonicalMonthlyFinancial[]) {
     cogsBreakdown: row.cogsBreakdown,
     lobBreakdowns: row.lobBreakdowns,
     ...(row.revenueBreakdown || {}),
+    ...(row.expenseBreakdown || {}),
     ...(row.cogsBreakdown || {}),
   }));
 }

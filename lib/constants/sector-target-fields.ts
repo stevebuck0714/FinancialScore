@@ -42,6 +42,10 @@ export const STATIC_TARGET_FIELD_OPTIONS = {
     { value: 'depreciationAmortization', label: 'Depreciation' },
     { value: 'otherExpense', label: 'Other Expense' },
   ] as TargetFieldOption[],
+  nonOperating: [
+    { value: 'nonOperatingIncome', label: 'Non-Operating Income' },
+    { value: 'nonOperatingExpense', label: 'Non-Operating Expense' },
+  ] as TargetFieldOption[],
   asset: [
     { value: 'cash', label: 'Cash' },
     { value: 'ar', label: 'A/R' },

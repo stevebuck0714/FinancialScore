@@ -338,6 +338,7 @@ model MonthlyFinancial {
   depreciationAmortization Float           @default(0)
   otherExpense             Float           @default(0)
   nonOperatingIncome       Float           @default(0)
+  nonOperatingExpense      Float           @default(0)
   extraordinaryItems       Float           @default(0)
   lobBreakdowns            Json?           // Comprehensive LOB breakdowns for all fields
   cash                     Float           @default(0)
@@ -1156,6 +1157,7 @@ model DailyFinancialSnapshot {
   depreciationAmortization Float   @default(0)
   otherExpense            Float    @default(0)
   nonOperatingIncome      Float    @default(0)
+  nonOperatingExpense     Float    @default(0)
   extraordinaryItems      Float    @default(0)
 
   // Balance sheet snapshot fields (point-in-time)

@@ -29,6 +29,7 @@ export const PNL_SUM_FIELDS = [
   'depreciationAmortization',
   'otherExpense',
   'nonOperatingIncome',
+  'nonOperatingExpense',
   'extraordinaryItems',
 ] as const;
 

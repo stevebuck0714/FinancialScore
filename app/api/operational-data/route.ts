@@ -791,7 +791,7 @@ export async function GET(request: NextRequest) {
         });
 
       case 'daily-financials':
-        // Daily mapped financial snapshots used by Operations only.
+        // Financial snapshots used by Operations (daily/weekly/monthly).
         const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
         const dailyMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
         if (!dailySnapshotDelegate) {
@@ -810,7 +810,7 @@ export async function GET(request: NextRequest) {
         data = await dailySnapshotDelegate.findMany({
           where: {
             companyId,
-            frequency: 'daily',
+            frequency,
             snapshotDate: dateFilter,
           },
           orderBy: { snapshotDate: 'desc' },
@@ -841,7 +841,7 @@ export async function GET(request: NextRequest) {
           ? await dailyMappedLineDelegate.findMany({
               where: {
                 companyId,
-                frequency: 'daily',
+                frequency,
                 snapshotDate: dateFilter,
               },
               orderBy: [{ snapshotDate: 'desc' }, { sourceAccountName: 'asc' }],

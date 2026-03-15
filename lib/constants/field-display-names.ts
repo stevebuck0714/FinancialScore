@@ -48,10 +48,12 @@ export const FIELD_DISPLAY_NAMES: Record<string, string> = {
   interestExpense: 'Interest Expense',
   depreciationAmortization: 'Depreciation & Amortization',
   otherExpense: 'Other Expense',
+  nonOperatingExpense: 'Non-Operating Expense',
   
   // Income Taxes (non-operating)
   stateIncomeTaxes: 'State Income Taxes',
   federalIncomeTaxes: 'Federal Income Taxes',
+  nonOperatingIncome: 'Non-Operating Income',
   
   // Calculated totals
   totalOperatingExpenses: 'Total Operating Expenses',

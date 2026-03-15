@@ -51,6 +51,7 @@ interface MonthlyData {
   depreciationAmortization?: number;
   operatingExpenseTotal?: number;
   nonOperatingIncome?: number;
+  nonOperatingExpense?: number;
   extraordinaryItems?: number;
   netProfit?: number;
   fixedAssets?: number;
@@ -1258,7 +1259,7 @@ export default function DashboardView({
                   'cogsMaterials', 'cogsCommissions', 'cogsOther', 'salesExpense', 'rent', 'utilities', 'equipment', 
                   'travel', 'professionalFees', 'insurance', 'marketing', 'payroll', 'ownerBasePay', 'ownersRetirement', 
                   'subcontractors', 'interestExpense', 'depreciationAmortization', 'operatingExpenseTotal', 'nonOperatingIncome', 
-                  'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 
+                  'nonOperatingExpense', 'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 
                   'otherAssets', 'totalLiab', 'ap', 'otherCL', 'tcl', 'ltd', 'totalEquity'];
                 
                 if (itemTrendFields.includes(widget)) {

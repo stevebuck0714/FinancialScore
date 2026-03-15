@@ -36,6 +36,7 @@ export type Mappings = {
   depreciationAmortization?: string;
   operatingExpenseTotal?: string;
   nonOperatingIncome?: string;
+  nonOperatingExpense?: string;
   extraordinaryItems?: string;
   expense?: string;
   netProfit?: string;
@@ -123,6 +124,7 @@ export type MonthlyDataRow = {
   depreciationAmortization: number;
   operatingExpenseTotal: number;
   nonOperatingIncome: number;
+  nonOperatingExpense: number;
   extraordinaryItems: number;
   netProfit: number;
   totalAssets: number;

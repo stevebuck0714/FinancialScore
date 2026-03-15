@@ -73,6 +73,7 @@ export function FinancialDataProvider({ children }: FinancialDataProviderProps) 
       depreciationAmortization: m.depreciationAmortization || 0,
       otherExpense: m.otherExpense || 0,
       nonOperatingIncome: m.nonOperatingIncome || 0,
+      nonOperatingExpense: m.nonOperatingExpense || 0,
       extraordinaryItems: m.extraordinaryItems || 0,
       netProfit: m.netProfit || 0,
       ownersRetirement: 0,
