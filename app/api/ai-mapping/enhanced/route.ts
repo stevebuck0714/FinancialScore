@@ -237,6 +237,35 @@ function forceNonOperatingOverride(
   return null;
 }
 
+function forceEquityOverride(
+  accountName: string,
+  classification: string,
+  accountCodeOrName: string,
+): { targetField: string; confidence: string; reasoning: string } | null {
+  const name = (accountName || '').toLowerCase();
+  const cls = (classification || '').toLowerCase();
+  const code = extractNumericCode(accountCodeOrName || accountName || '');
+
+  const isEquityCode = Number.isFinite(code) && (code as number) >= 3000 && (code as number) < 4000;
+  const isEquitySignal =
+    cls.includes('equity') ||
+    name.includes('retained earnings') ||
+    name.includes('opening balance equity') ||
+    name.includes('owners equity') ||
+    name.includes("owner's equity") ||
+    name.includes('current year earnings') ||
+    name.includes('net income');
+
+  if (isEquityCode || isEquitySignal) {
+    return {
+      targetField: 'unmapped',
+      confidence: 'high',
+      reasoning: 'Forced mapping: equity account excluded from revenue/COGS account mapping',
+    };
+  }
+  return null;
+}
+
 function mapAccountToFieldKeyword(accountName: string): { targetField: string; confidence: string; reasoning: string } | null {
   const lowerAccount = accountName.toLowerCase();
   
@@ -425,13 +454,21 @@ export async function POST(request: NextRequest) {
       let source: 'keyword' | 'learned' | 'similar' | 'accountCode' | 'none' = 'keyword';
       let hardLocked = false;
 
-      // 0. Hard non-operating overrides to prevent bad learned/history matches.
-      const forcedOverride = forceNonOperatingOverride(accountName, classification, codeSource);
-      if (forcedOverride) {
-        bestMapping = forcedOverride;
+      // 0. Hard overrides to prevent bad learned/history matches.
+      const forcedEquity = forceEquityOverride(accountName, classification, codeSource);
+      if (forcedEquity) {
+        bestMapping = forcedEquity;
         bestConfidence = 100;
         source = 'accountCode';
         hardLocked = true;
+      } else {
+        const forcedOverride = forceNonOperatingOverride(accountName, classification, codeSource);
+        if (forcedOverride) {
+          bestMapping = forcedOverride;
+          bestConfidence = 100;
+          source = 'accountCode';
+          hardLocked = true;
+        }
       }
 
       // 1. Try account code-based mapping first (most reliable for standard COA)

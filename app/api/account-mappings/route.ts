@@ -80,6 +80,49 @@ function parseAccountSnapshot(value: unknown): AccountSnapshotRow[] {
     .filter((row): row is AccountSnapshotRow => !!row);
 }
 
+function extractNormalizedAccountCode(...values: unknown[]): number | null {
+  for (const value of values) {
+    const raw = String(value || "").trim();
+    if (!raw) continue;
+    const match = raw.match(/(\d{4,})/);
+    if (!match) continue;
+    const numeric = Number(match[1]);
+    if (!Number.isFinite(numeric)) continue;
+    if (numeric >= 10000 && numeric % 10 === 0) return Math.floor(numeric / 10);
+    if (numeric >= 10000) {
+      const firstFour = Number(String(numeric).slice(0, 4));
+      if (Number.isFinite(firstFour)) return firstFour;
+    }
+    return numeric;
+  }
+  return null;
+}
+
+function isRevenueTargetField(targetField: string): boolean {
+  const normalized = String(targetField || "").trim().toLowerCase();
+  return normalized === "revenue" || normalized === "otherrevenue" || normalized.startsWith("rev_");
+}
+
+function isLikelyEquityMapping(mapping: {
+  qbAccount?: string | null;
+  qbAccountCode?: string | null;
+  qbAccountClassification?: string | null;
+}): boolean {
+  const classification = String(mapping.qbAccountClassification || "").toLowerCase();
+  const accountName = String(mapping.qbAccount || "").toLowerCase();
+  const code = extractNormalizedAccountCode(mapping.qbAccountCode, mapping.qbAccount);
+  const isEquityCode = Number.isFinite(code) && (code as number) >= 3000 && (code as number) < 4000;
+  const isEquityByLabel =
+    classification.includes("equity") ||
+    accountName.includes("retained earnings") ||
+    accountName.includes("opening balance equity") ||
+    accountName.includes("owner's equity") ||
+    accountName.includes("owners equity") ||
+    accountName.includes("current year earnings") ||
+    accountName.includes("net income");
+  return isEquityCode || isEquityByLabel;
+}
+
 // GET - Retrieve mappings for a company
 export async function GET(request: NextRequest) {
   try {
@@ -146,7 +189,10 @@ export async function GET(request: NextRequest) {
     const sectorCategory = company?.industrySectorCategory || '01';
     const invalidMappings = mappings.filter((m: any) => {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
-      return normalizedTargetField && !allowedTargetFields.has(normalizedTargetField);
+      if (!normalizedTargetField) return false;
+      const invalidForSector = !allowedTargetFields.has(normalizedTargetField);
+      const semanticallyInvalid = isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField);
+      return invalidForSector || semanticallyInvalid;
     });
     const invalidMappingIds = invalidMappings
       .map((m: any) => m.id)
@@ -177,8 +223,10 @@ export async function GET(request: NextRequest) {
       const sourceMatch =
         snapshotById.get(normalize(m.qbAccountId)) || snapshotByName.get(normalize(m.qbAccount));
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
+      const semanticallyInvalid = isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField);
+      const effectiveTargetField = semanticallyInvalid ? "unmapped" : normalizedTargetField;
       const isUnmapped =
-        !normalizedTargetField || normalizedTargetField === "unmapped";
+        !effectiveTargetField || effectiveTargetField === "unmapped";
       let sourceStatus: "mapped" | "new" | "changed" | "inactive" = isUnmapped ? "new" : "mapped";
       if (snapshot.length > 0 && !sourceMatch) {
         sourceStatus = "inactive";
@@ -193,10 +241,10 @@ export async function GET(request: NextRequest) {
       if (sourceStatus === "inactive") statusCounts.inactive += 1;
       if (isUnmapped) statusCounts.unmapped += 1;
 
-      if (!normalizedTargetField || normalizedTargetField === "unmapped" || allowedTargetFields.has(normalizedTargetField)) {
+      if (!effectiveTargetField || effectiveTargetField === "unmapped" || allowedTargetFields.has(effectiveTargetField)) {
         return {
           ...m,
-          targetField: normalizedTargetField,
+          targetField: effectiveTargetField,
           sourceStatus,
         };
       }
@@ -300,8 +348,9 @@ export async function POST(request: NextRequest) {
     );
     const sanitizedUniqueMappings = uniqueMappings.map((m: any) => {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
+      const semanticallyInvalid = isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField);
       const isExplicitlyMapped = normalizedTargetField && normalizedTargetField !== "unmapped";
-      if (isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) {
+      if ((isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) || semanticallyInvalid) {
         return {
           ...m,
           invalidTargetField: m.targetField,

@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback, ChangeEvent, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
-import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, ArrowLeft, CreditCard, MapPin, Lock } from 'lucide-react';
+import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, CreditCard, MapPin, Lock } from 'lucide-react';
 import { INDUSTRY_SECTORS, SECTOR_CATEGORIES } from '../data/industrySectors';
 import { assessmentData } from '../data/assessmentData';
 import { authApi, companiesApi, usersApi, consultantsApi, financialsApi, assessmentsApi, profilesApi, benchmarksApi, ApiError } from '@/lib/api-client';
@@ -7110,33 +7110,6 @@ function FinancialScorePage() {
           {/* Restrict access for assessment users - only show Team Assessment views */}
           {(!(currentUser?.userType === 'assessment') || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
-          {/* Persistent Exit Preview button for site admins when in company views outside admin/dashboard shells */}
-          {siteAdminViewingAs && currentView !== 'siteadmin' && currentView !== 'admin' && currentView !== 'consultant-dashboard' && (
-            <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 32px 0 32px' }}>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '0' }}>
-                <button
-                  onClick={exitSiteAdminPreview}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#f59e0b',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
-                >
-                  <ArrowLeft size={16} aria-hidden="true" />
-                  <span>Back to Site Admin</span>
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Site Administration */}
           {currentView === 'siteadmin' && currentUser?.role === 'siteadmin' && (
             <SiteAdminDashboard
@@ -7264,32 +7237,6 @@ function FinancialScorePage() {
           {/* Consultant Dashboard */}
           {currentView === 'consultant-dashboard' && currentUser?.role === 'consultant' && (
             <div>
-              {/* Exit Preview Mode button (only when site admin is previewing) */}
-              {siteAdminViewingAs && (
-                <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 32px 0 32px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '0' }}>
-                    <button
-                      onClick={exitSiteAdminPreview}
-                      style={{ 
-                        padding: '10px 20px', 
-                        background: '#f59e0b', 
-                        color: 'white', 
-                        border: 'none', 
-                        borderRadius: '8px', 
-                        fontSize: '14px', 
-                        fontWeight: '600', 
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <ArrowLeft size={16} aria-hidden="true" />
-                      <span>Return to Site Admin</span>
-                    </button>
-                  </div>
-                </div>
-              )}
               <ConsultantDashboard
                 currentUser={currentUser}
                 consultantDashboardTab={consultantDashboardTab}
@@ -7320,31 +7267,7 @@ function FinancialScorePage() {
           {/* Admin Dashboard */}
           {currentView === 'admin' && (currentUser?.role === 'siteadmin' || currentUser?.role === 'consultant' || (currentUser?.role === 'user' && currentUser?.userType === 'company')) && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
-          {/* Exit Preview Mode button (only when site admin is previewing) */}
-          {siteAdminViewingAs && (
-            <div className="dashboard-header-print-hide" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '20px' }}>
-              <button
-                onClick={exitSiteAdminPreview}
-                style={{ 
-                  padding: '10px 20px', 
-                  background: '#f59e0b', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  fontSize: '14px', 
-                  fontWeight: '600', 
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <ArrowLeft size={16} aria-hidden="true" />
-                <span>Back to Site Admin</span>
-              </button>
-            </div>
-          )}
-          
+
           {/* Tab Navigation */}
           <div
             className="dashboard-tabs-print-hide"
@@ -15656,9 +15579,10 @@ function FinancialScorePage() {
               // Other Income/Expense
               const interestExpense = currentMonth.interestExpense || 0;
               const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
+              const nonOperatingExpense = currentMonth.nonOperatingExpense || 0;
               const extraordinaryItems = currentMonth.extraordinaryItems || 0;
               
-              const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
               // Parse as numbers in case they come as strings
               const stateIncomeTaxes = Number(currentMonth.stateIncomeTaxes) || 0;
               const federalIncomeTaxes = Number(currentMonth.federalIncomeTaxes) || 0;
@@ -15775,13 +15699,19 @@ function FinancialScorePage() {
                   </div>
 
                   {/* Other Income/Expense */}
-                  {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
+                  {(interestExpense > 0 || nonOperatingIncome > 0 || nonOperatingExpense > 0 || extraordinaryItems !== 0) && (
                     <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income/(Expense)</div>
                       {nonOperatingIncome > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                           <span style={{ color: '#475569' }}>Non-Operating Income</span>
                           <span style={{ color: '#10b981' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      )}
+                      {nonOperatingExpense > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                          <span style={{ color: '#475569' }}>Non-Operating Expense</span>
+                          <span style={{ color: '#ef4444' }}>($  {nonOperatingExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
                         </div>
                       )}
                       {interestExpense > 0 && (
@@ -15890,9 +15820,10 @@ function FinancialScorePage() {
               // Other Income/Expense
               const interestExpense = currentMonth.interestExpense || 0;
               const nonOperatingIncome = currentMonth.nonOperatingIncome || 0;
+              const nonOperatingExpense = currentMonth.nonOperatingExpense || 0;
               const extraordinaryItems = currentMonth.extraordinaryItems || 0;
               
-              const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+              const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
               const stateIncomeTaxes = currentMonth.stateIncomeTaxes || 0;
               const federalIncomeTaxes = currentMonth.federalIncomeTaxes || 0;
               const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
@@ -16096,7 +16027,7 @@ function FinancialScorePage() {
                   </div>
 
                   {/* Other Income/Expense */}
-                  {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
+                  {(interestExpense > 0 || nonOperatingIncome > 0 || nonOperatingExpense > 0 || extraordinaryItems !== 0) && (
                     <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px', fontSize: '15px' }}>Other Income/(Expense)</div>
                       {nonOperatingIncome > 0 && (
@@ -16104,6 +16035,13 @@ function FinancialScorePage() {
                           <span style={{ color: '#475569', paddingLeft: '20px' }}>Non-Operating Income</span>
                           <span style={{ color: '#10b981', textAlign: 'right' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           <span style={{ color: '#10b981', textAlign: 'right' }}>{pct(nonOperatingIncome).toFixed(1)}%</span>
+                        </div>
+                      )}
+                      {nonOperatingExpense > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
+                          <span style={{ color: '#475569', paddingLeft: '20px' }}>Non-Operating Expense</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>($  {nonOperatingExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                          <span style={{ color: '#ef4444', textAlign: 'right' }}>({pct(nonOperatingExpense).toFixed(1)}%)</span>
                         </div>
                       )}
                       {interestExpense > 0 && (
@@ -16559,8 +16497,9 @@ function FinancialScorePage() {
                   // Other Income/Expense
                   const interestExpense = months.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                   const nonOperatingIncome = months.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
+                  const nonOperatingExpense = months.reduce((sum, m) => sum + (m.nonOperatingExpense || 0), 0);
                   const extraordinaryItems = months.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                  const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                  const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
                   // Parse income taxes - handle null, undefined, strings, and numbers
                   const stateIncomeTaxes = months.reduce((sum, m) => {
                     const val = m.stateIncomeTaxes;
@@ -16585,7 +16524,7 @@ function FinancialScorePage() {
                     ...expenses, // Include all expense fields dynamically
                     totalOpex,
                     operatingIncome,
-                    interestExpense, nonOperatingIncome, extraordinaryItems,
+                    interestExpense, nonOperatingIncome, nonOperatingExpense, extraordinaryItems,
                     incomeBeforeTax,
                     stateIncomeTaxes,
                     federalIncomeTaxes,
@@ -16717,7 +16656,7 @@ function FinancialScorePage() {
                         </div>
                         
                         {/* Other Income/Expense Section */}
-                        {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
+                        {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.nonOperatingExpense > 0 || p.extraordinaryItems !== 0) && (
                           <>
                             <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '12px 0 4px 0', fontSize: '14px', fontWeight: '600', marginTop: '12px' }}>
                               <div style={{ color: '#475569' }}>Other Income/(Expense)</div>
@@ -16736,6 +16675,14 @@ function FinancialScorePage() {
                                 <div style={{ color: '#64748b', paddingLeft: '20px' }}>Non-Operating Income</div>
                                 {periodsData.map((p, i) => (
                                   <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>${p.nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                                ))}
+                              </div>
+                            )}
+                            {periodsData.some(p => p.nonOperatingExpense > 0) && (
+                              <div style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
+                                <div style={{ color: '#64748b', paddingLeft: '20px' }}>Non-Operating Expense</div>
+                                {periodsData.map((p, i) => (
+                                  <div key={i} style={{ textAlign: 'right', color: '#64748b' }}>(${ p.nonOperatingExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
                                 ))}
                               </div>
                             )}
@@ -16834,8 +16781,9 @@ function FinancialScorePage() {
                 
                 const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                 const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
+                const nonOperatingExpense = periodMonths.reduce((sum, m) => sum + (m.nonOperatingExpense || 0), 0);
                 const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
-                const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
                 const stateIncomeTaxes = periodMonths.reduce((sum, m) => {
                   const raw = (m as any).stateIncomeTaxes;
                   if (raw === null || raw === undefined) return sum;
@@ -16943,6 +16891,12 @@ function FinancialScorePage() {
                             <span style={{ color: '#475569' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
+                        {nonOperatingExpense > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                            <span style={{ color: '#475569' }}>Non-Operating Expense</span>
+                            <span style={{ color: '#475569' }}>(${nonOperatingExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</span>
+                          </div>
+                        )}
                         {extraordinaryItems !== 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                             <span style={{ color: '#475569' }}>Extraordinary Items</span>
@@ -17022,6 +16976,7 @@ function FinancialScorePage() {
                     const marketing = calc(m, 'marketing');
                     const interestExpense = calc(m, 'interestExpense');
                     const nonOperatingIncome = calc(m, 'nonOperatingIncome');
+                    const nonOperatingExpense = calc(m, 'nonOperatingExpense');
                     const extraordinaryItems = calc(m, 'extraordinaryItems');
                     // Calculate all operating expenses - include all expense fields
                     const benefits = calc(m, 'benefits');
@@ -17034,7 +16989,7 @@ function FinancialScorePage() {
                     const totalOpex = payroll + ownerBasePay + ownersRetirement + professionalFees + rent + infrastructure + autoTravel + insurance + salesExpense + subcontractors + depreciationAmortization + marketing + benefits + taxLicense + phoneComm + mealsEntertainment + otherExpense;
                     const grossProfit = revenue - cogs;
                     const operatingIncome = grossProfit - totalOpex;
-                    const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                    const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
                     const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
                     const netIncome = incomeBeforeTax - totalIncomeTaxes;
                     return {
@@ -17065,6 +17020,7 @@ function FinancialScorePage() {
                       operatingIncome,
                       interestExpense,
                       nonOperatingIncome,
+                      nonOperatingExpense,
                       extraordinaryItems,
                       incomeBeforeTax,
                       stateIncomeTaxes,
@@ -17194,11 +17150,12 @@ function FinancialScorePage() {
                             );
                           })}
                         </div>
-                        {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.extraordinaryItems !== 0) && (
+                        {periodsData.some(p => p.interestExpense > 0 || p.nonOperatingIncome > 0 || p.nonOperatingExpense > 0 || p.extraordinaryItems !== 0) && (
                           <>
                             <div style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Other Income/(Expense)</div>
                             {periodsData.some(p => p.interestExpense > 0) && <RowWithPercent label="Interest Expense" values={periodsData.map(p => -p.interestExpense)} indent={20} />}
                             {periodsData.some(p => p.nonOperatingIncome > 0) && <RowWithPercent label="Non-Operating Income" values={periodsData.map(p => p.nonOperatingIncome)} indent={20} />}
+                            {periodsData.some(p => p.nonOperatingExpense > 0) && <RowWithPercent label="Non-Operating Expense" values={periodsData.map(p => -p.nonOperatingExpense)} indent={20} />}
                             {periodsData.some(p => p.extraordinaryItems !== 0) && <RowWithPercent label="Extraordinary Items" values={periodsData.map(p => p.extraordinaryItems)} indent={20} />}
                           </>
                         )}
@@ -17275,9 +17232,10 @@ function FinancialScorePage() {
                 
                 const interestExpense = periodMonths.reduce((sum, m) => sum + (m.interestExpense || 0), 0);
                 const nonOperatingIncome = periodMonths.reduce((sum, m) => sum + (m.nonOperatingIncome || 0), 0);
+                const nonOperatingExpense = periodMonths.reduce((sum, m) => sum + (m.nonOperatingExpense || 0), 0);
                 const extraordinaryItems = periodMonths.reduce((sum, m) => sum + (m.extraordinaryItems || 0), 0);
                 
-                const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
+                const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
                 const stateIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.stateIncomeTaxes || 0), 0);
                 const federalIncomeTaxes = periodMonths.reduce((sum, m) => sum + (m.federalIncomeTaxes || 0), 0);
                 const totalIncomeTaxes = stateIncomeTaxes + federalIncomeTaxes;
@@ -17396,7 +17354,7 @@ function FinancialScorePage() {
                       </div>
 
                       {/* Other Income/Expense */}
-                      {(interestExpense > 0 || nonOperatingIncome > 0 || extraordinaryItems !== 0) && (
+                      {(interestExpense > 0 || nonOperatingIncome > 0 || nonOperatingExpense > 0 || extraordinaryItems !== 0) && (
                         <div style={{ marginTop: '16px' }}>
                           <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px', fontSize: '14px' }}>Other Income/(Expense)</div>
                           {interestExpense > 0 && (
@@ -17411,6 +17369,13 @@ function FinancialScorePage() {
                               <div style={{ color: '#64748b' }}>Non-Operating Income</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>${nonOperatingIncome.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                               <div style={{ textAlign: 'right', color: '#64748b' }}>{calcPercent(nonOperatingIncome)}</div>
+                            </div>
+                          )}
+                          {nonOperatingExpense > 0 && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
+                              <div style={{ color: '#64748b' }}>Non-Operating Expense</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>(${nonOperatingExpense.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})</div>
+                              <div style={{ textAlign: 'right', color: '#64748b' }}>({calcPercent(nonOperatingExpense)})</div>
                             </div>
                           )}
                           {extraordinaryItems !== 0 && (

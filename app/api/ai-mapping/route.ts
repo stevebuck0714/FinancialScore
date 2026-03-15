@@ -78,6 +78,21 @@ const mappingRules = [
   { keywords: ['total liab and equity', 'total liabilities and equity'], targetField: 'totalLAndE', confidence: 'high' },
 ];
 
+function extractNumericCode(accountCodeOrName: string): number | null {
+  const raw = String(accountCodeOrName || '').trim();
+  if (!raw) return null;
+  const match = raw.match(/(\d{4,})/);
+  if (!match) return null;
+  const numeric = Number(match[1]);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric >= 10000 && numeric % 10 === 0) return Math.floor(numeric / 10);
+  if (numeric >= 10000) {
+    const firstFour = Number(String(numeric).slice(0, 4));
+    if (Number.isFinite(firstFour)) return firstFour;
+  }
+  return numeric;
+}
+
 function mapAccountToField(accountName: string): { targetField: string; confidence: string; reasoning: string } | null {
   const lowerAccount = accountName.toLowerCase();
   
@@ -133,7 +148,22 @@ export async function POST(request: NextRequest) {
     for (const account of accountsToMap) {
       const accountName = typeof account === 'string' ? account : account.name;
       const classification = typeof account === 'string' ? '' : (account.classification || '');
-      const mapping = mapAccountToField(accountName);
+      const codeSource = typeof account === 'string' ? accountName : (account.accountCode || accountName);
+      const code = extractNumericCode(codeSource);
+      const cls = String(classification || '').toLowerCase();
+      const name = String(accountName || '').toLowerCase();
+      const isEquityCode = Number.isFinite(code) && (code as number) >= 3000 && (code as number) < 4000;
+      const isEquitySignal =
+        cls.includes('equity') ||
+        name.includes('retained earnings') ||
+        name.includes('opening balance equity') ||
+        name.includes('owners equity') ||
+        name.includes("owner's equity") ||
+        name.includes('current year earnings') ||
+        name.includes('net income');
+      const mapping = isEquityCode || isEquitySignal
+        ? { targetField: 'unmapped', confidence: 'high', reasoning: 'Equity account excluded from revenue/COGS account mapping' }
+        : mapAccountToField(accountName);
       
       if (mapping) {
         mappings.push({
