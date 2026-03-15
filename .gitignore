@@ -25,3 +25,8 @@ staging_full.dump
 ~$*
 .vercel
 *.ionapi.txt
+
+# Local planning/docs artifacts
+docs/*.md
+docs/*.docx
+docs/*.txt
