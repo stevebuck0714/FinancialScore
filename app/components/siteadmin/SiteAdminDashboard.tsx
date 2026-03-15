@@ -1684,8 +1684,9 @@ export default function SiteAdminDashboard(props: any) {
                             <div>
                               <h3 
                                 onClick={() => {
-                                  // Save current admin user
-                                  setSiteAdminViewingAs(currentUser);
+                                  // Save original site-admin identity once per preview session.
+                                  // Do not overwrite with consultant/user identities while drilling deeper.
+                                  setSiteAdminViewingAs((prev: any) => prev || currentUser);
                                   // Seed preview with this consultant's companies while background reload runs.
                                   setCompanies(consultantCompanies);
                                   setLoadedConsultantId(null);
@@ -3834,8 +3835,9 @@ export default function SiteAdminDashboard(props: any) {
                                         alert('User not found for this company. Please ensure the business has a registered user.');
                                         return;
                                       }
-                                      // Save current admin user
-                                      setSiteAdminViewingAs(currentUser);
+                                      // Save original site-admin identity once per preview session.
+                                      // Do not overwrite with consultant/user identities while drilling deeper.
+                                      setSiteAdminViewingAs((prev: any) => prev || currentUser);
                                       // Load the specific company data with all fields from API
                                       fetch(`/api/companies?companyId=${businessCompany.id}`)
                                         .then(res => res.json())

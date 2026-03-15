@@ -40,8 +40,10 @@ export default function Header({
   const [showValuationMenu, setShowValuationMenu] = useState(false);
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && currentUser?.companyRole === 'admin';
-  const isSiteAdminPreviewMode = Boolean(previewAdminName && onExitSiteAdminPreview);
-  const displayedUserName = isSiteAdminPreviewMode ? previewAdminName : currentUser?.name;
+  const isSiteAdminPreviewMode = Boolean(onExitSiteAdminPreview);
+  const displayedUserName = isSiteAdminPreviewMode
+    ? (previewAdminName && previewAdminName.trim() ? previewAdminName : 'Site Admin')
+    : currentUser?.name;
 
   const allowedSections = (isCompanyUser && !isCompanyAdmin && Array.isArray(currentUser?.sidebarAccess))
     ? currentUser.sidebarAccess

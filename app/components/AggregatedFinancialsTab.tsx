@@ -317,7 +317,7 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
             <span style={{ color: '#475569' }}>${fmt(aggregated.professionalFees)}</span>
           </div>
         )}
-        {aggregated.subcontractors > 0 && (
+        {aggregated.subcontractors !== 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
             <span style={{ color: '#475569' }}>{getFieldDisplayName('subcontractors')}</span>
             <span style={{ color: '#475569' }}>${fmt(aggregated.subcontractors)}</span>

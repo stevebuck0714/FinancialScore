@@ -6881,7 +6881,7 @@ function FinancialScorePage() {
               }}
             >
               <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px', paddingLeft: '24px' }}>
-                {currentUser?.role === 'consultant' ? 'Consultant' : 'User'}
+                {siteAdminViewingAs ? 'Site Admin (Preview)' : (currentUser?.role === 'consultant' ? 'Consultant' : 'User')}
               </div>
               <div style={{ 
                 fontSize: '14px', 
@@ -6890,7 +6890,7 @@ function FinancialScorePage() {
                 paddingLeft: '24px',
                 transition: 'color 0.2s'
               }}>
-                {currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
+                {siteAdminViewingAs?.name || currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
               </div>
             </div>
             </div>
@@ -15153,22 +15153,6 @@ function FinancialScorePage() {
             />
           )}
 
-            {/* Line of Business Reporting Tab */}
-            {financialStatementsTab === 'line-of-business' && (
-              <LOBReportingTab
-                company={company}
-                selectedCompanyId={selectedCompanyId}
-                accountMappings={aiMappings}
-                statementType={statementType}
-                selectedLineOfBusiness={selectedLineOfBusiness}
-                statementPeriod={statementPeriod}
-                statementDisplay={statementDisplay}
-                onStatementTypeChange={setStatementType}
-                onLineOfBusinessChange={setSelectedLineOfBusiness}
-                onPeriodChange={setStatementPeriod}
-                onDisplayChange={setStatementDisplay}
-              />
-            )}
           </div>
         );
       })()}
@@ -15668,7 +15652,7 @@ function FinancialScorePage() {
                         <>
                           {expenseFields.map(field => {
                             const value = currentMonth[field.key as keyof typeof currentMonth] || 0;
-                            if (value > 0) {
+                            if (value !== 0) {
                               return (
                                 <div key={field.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
                                   <span style={{ color: '#475569' }}>{field.label}</span>
@@ -15933,7 +15917,7 @@ function FinancialScorePage() {
                         <span style={{ color: '#475569', textAlign: 'right' }}>{pct(professionalFees).toFixed(1)}%</span>
                       </div>
                     )}
-                    {(subcontractors && subcontractors > 0) && (
+                    {subcontractors !== 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '6px 0', fontSize: '14px' }}>
                         <span style={{ color: '#475569', paddingLeft: '20px' }}>Subcontractors</span>
                         <span style={{ color: '#475569', textAlign: 'right' }}>${subcontractors.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -16624,7 +16608,7 @@ function FinancialScorePage() {
                         {(() => {
                           // Render only fields that have values in at least one period
                           return operatingExpenseFieldDefinitions.map(fieldDef => {
-                            const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) > 0);
+                            const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) !== 0);
                             if (hasValue) {
                               return (
                                 <div key={fieldDef.key} style={{ display: 'grid', gridTemplateColumns: `180px repeat(${periodsData.length}, 110px)`, gap: '4px', padding: '4px 0', fontSize: '13px' }}>
@@ -17123,7 +17107,7 @@ function FinancialScorePage() {
 
                           // Render only fields that have values in at least one period
                           return expenseFieldDefinitions.map(fieldDef => {
-                            const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) > 0);
+                            const hasValue = periodsData.some(p => (p[fieldDef.key as keyof typeof p] as number) !== 0);
                             if (hasValue) {
                               return (
                                 <RowWithPercent
@@ -17327,7 +17311,7 @@ function FinancialScorePage() {
                           // Render only fields that have values > 0
                           return expenseFieldDefinitions.map(fieldDef => {
                             const value = expenses[fieldDef.key] || 0;
-                            if (value > 0) {
+                            if (value !== 0) {
                               return (
                                 <div key={fieldDef.key} style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 0.7fr', gap: '16px', padding: '4px 0 4px 20px', fontSize: '13px' }}>
                                   <div style={{ color: '#64748b' }}>{fieldDef.label}</div>
