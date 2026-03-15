@@ -221,6 +221,15 @@ export default function AccountMappingTable({
   };
 
   const getGroupingClassification = (mapping: AccountMapping) => {
+    // Respect explicit user/AI target overrides for non-operating so rows
+    // can move into the non-operating section after selection.
+    const targetClassification = normalizeClassification(
+      undefined,
+      mapping.qbAccount,
+      mapping.targetField,
+    );
+    if (targetClassification === 'nonOperating') return 'nonOperating';
+
     // Group by source account type first so accounts stay in their native section
     // (e.g. equity accounts always render under Equity).
     const sourceClassification = normalizeClassification(
@@ -262,6 +271,15 @@ export default function AccountMappingTable({
   };
 
   const targetFieldOptions = getTargetFieldOptions(industrySectorCategory || undefined);
+
+  const getTargetFieldOptionsForSection = (sectionKey: string) => {
+    const options = targetFieldOptions[sectionKey as keyof typeof targetFieldOptions] || [];
+    if (sectionKey === 'revenue' || sectionKey === 'expense') {
+      const nonOperatingOptions = targetFieldOptions.nonOperating || [];
+      return [...options, ...nonOperatingOptions];
+    }
+    return options;
+  };
 
   const getFieldLabel = (value: string): string => {
     const allOptions = Object.values(targetFieldOptions).flat();
@@ -359,7 +377,7 @@ export default function AccountMappingTable({
                   <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', fontWeight: '600', color: '#374151' }}>
                     Select Target Field
                   </div>
-                  {targetFieldOptions[sectionKey as keyof typeof targetFieldOptions]?.map(opt => (
+                  {getTargetFieldOptionsForSection(sectionKey).map(opt => (
                     <div
                       key={opt.value}
                       onClick={() => {
