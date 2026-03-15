@@ -10591,7 +10591,7 @@ function FinancialScorePage() {
       {currentView === 'valuation' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>SDE VALUATION</h1>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>SDE Valuations</h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
                 id="valuation-save-settings-btn"
