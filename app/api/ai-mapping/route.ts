@@ -7,6 +7,9 @@ const mappingRules = [
   { keywords: ['non-operating income', 'non operating income', 'other income', 'interest income', 'dividend income', 'gain on sale', 'gain on disposal', 'discount income', 'grant income', 'apprenticeship grant'], targetField: 'nonOperatingIncome', confidence: 'high' },
   { keywords: ['non-operating expense', 'non operating expense', 'other non-operating expense'], targetField: 'nonOperatingExpense', confidence: 'high' },
 
+  // Equity earnings (must run before generic "income" keyword rule)
+  { keywords: ['net income', 'current year earnings', 'current earnings'], targetField: 'retainedEarnings', confidence: 'high' },
+
   // Income/Revenue Categories
   { keywords: ['sales', 'service revenue', 'product sales', 'consulting income', 'service income', 'gross revenue', 'operating revenue', 'income', 'revenue'], targetField: 'revenue', confidence: 'high' },
 

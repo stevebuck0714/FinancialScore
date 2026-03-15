@@ -14,23 +14,34 @@ interface HeaderProps {
   currentUser: User | null;
   currentView: string;
   companyName?: string;
+  previewAdminName?: string | null;
+  onExitSiteAdminPreview?: () => void;
   // currentView is a large union in app/page.tsx; keep this flexible for reuse.
   setCurrentView: (view: any) => void;
   handleLogout: () => void;
   handleNavigation: (view: string) => void;
+  valuationMethodTab: 'sde' | 'ebitda' | 'dcf';
+  setValuationMethodTab: (tab: 'sde' | 'ebitda' | 'dcf') => void;
 }
 
 export default function Header({
   currentUser,
   currentView,
   companyName,
+  previewAdminName,
+  onExitSiteAdminPreview,
   setCurrentView,
   handleLogout,
-  handleNavigation
+  handleNavigation,
+  valuationMethodTab,
+  setValuationMethodTab
 }: HeaderProps) {
   const [showFinancialReportsMenu, setShowFinancialReportsMenu] = useState(false);
+  const [showValuationMenu, setShowValuationMenu] = useState(false);
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && currentUser?.companyRole === 'admin';
+  const isSiteAdminPreviewMode = Boolean(previewAdminName && onExitSiteAdminPreview);
+  const displayedUserName = isSiteAdminPreviewMode ? previewAdminName : currentUser?.name;
 
   const allowedSections = (isCompanyUser && !isCompanyAdmin && Array.isArray(currentUser?.sidebarAccess))
     ? currentUser.sidebarAccess
@@ -52,6 +63,11 @@ export default function Header({
     { id: 'cash-flow', label: 'Cash Flow' },
     { id: 'working-capital', label: 'Working Capital' },
     { id: 'covenants', label: 'Loan Covenants' }
+  ];
+  const valuationMethodViews = [
+    { id: 'sde' as const, label: 'SDE' },
+    { id: 'ebitda' as const, label: 'EBITDA Multiple' },
+    { id: 'dcf' as const, label: 'DCF' },
   ];
 
   const isFinancialReportsView = ['kpis', 'trend-analysis', 'goals', 'projections', 'cash-flow', 'working-capital', 'covenants'].includes(currentView);
@@ -318,32 +334,108 @@ export default function Header({
             >
               FINANCIAL STATEMENTS
             </button>
-            <button
-              onClick={() => handleNavigation('valuation')}
-              disabled={!canAccess('valuation')}
-              title={!canAccess('valuation') ? 'Access restricted' : undefined}
-              style={{
-                background: currentView === 'valuation' ? '#eef2ff' : 'none',
-                border: 'none',
-                fontSize: '16px',
-                fontWeight: '600',
-                color: '#000',
-                cursor: canAccess('valuation') ? 'pointer' : 'not-allowed',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                borderBottom: currentView === 'valuation' ? '3px solid #000' : '3px solid transparent',
-                whiteSpace: 'nowrap',
-                opacity: canAccess('valuation') ? 1 : 0.4
-              }}
-            >
-              VALUATION
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => {
+                  if (!canAccess('valuation')) return;
+                  setShowValuationMenu((prev) => !prev);
+                  handleNavigation('valuation');
+                }}
+                disabled={!canAccess('valuation')}
+                title={!canAccess('valuation') ? 'Access restricted' : undefined}
+                style={{
+                  background: currentView === 'valuation' ? '#eef2ff' : 'none',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#000',
+                  cursor: canAccess('valuation') ? 'pointer' : 'not-allowed',
+                  padding: '8px 12px',
+                  paddingRight: '26px',
+                  borderRadius: '6px',
+                  borderBottom: currentView === 'valuation' ? '3px solid #000' : '3px solid transparent',
+                  whiteSpace: 'nowrap',
+                  opacity: canAccess('valuation') ? 1 : 0.4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                aria-haspopup="menu"
+                aria-expanded={showValuationMenu}
+              >
+                <span>VALUATION</span>
+                <span style={{ fontSize: '12px' }}>▾</span>
+              </button>
+              {showValuationMenu && canAccess('valuation') && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    left: 0,
+                    background: 'white',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                    padding: '6px',
+                    minWidth: '220px',
+                    zIndex: 1100
+                  }}
+                  onMouseLeave={() => setShowValuationMenu(false)}
+                >
+                  {valuationMethodViews.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setValuationMethodTab(item.id);
+                        handleNavigation('valuation');
+                        setShowValuationMenu(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        background: valuationMethodTab === item.id ? '#eef2ff' : 'transparent',
+                        border: 'none',
+                        fontSize: '14px',
+                        fontWeight: valuationMethodTab === item.id ? '700' : '600',
+                        color: '#000',
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = valuationMethodTab === item.id ? '#eef2ff' : 'transparent';
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             </div>
           </nav>
         </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', flexShrink: 0 }}>
-          <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>{currentUser?.name}</span>
+          <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>{displayedUserName}</span>
+          {isSiteAdminPreviewMode && (
+            <button
+              onClick={onExitSiteAdminPreview}
+              style={{
+                padding: '8px 16px',
+                background: '#f59e0b',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: 'pointer',
+              }}
+            >
+              Return to Site Admin
+            </button>
+          )}
           <button
             onClick={handleLogout}
             style={{

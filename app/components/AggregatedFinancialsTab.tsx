@@ -82,6 +82,7 @@ function calculateAggregatedValues(monthly: any[], period: string) {
     otherExpense: 0,
     interestExpense: 0,
     nonOperatingIncome: 0,
+    nonOperatingExpense: 0,
     extraordinaryItems: 0,
     stateIncomeTaxes: 0,
     federalIncomeTaxes: 0,
@@ -119,6 +120,7 @@ function calculateAggregatedValues(monthly: any[], period: string) {
     aggregated.otherExpense += Number(month.otherExpense) || 0;
     aggregated.interestExpense += Number(month.interestExpense) || 0;
     aggregated.nonOperatingIncome += Number(month.nonOperatingIncome) || 0;
+    aggregated.nonOperatingExpense += Number(month.nonOperatingExpense) || 0;
     aggregated.extraordinaryItems += Number(month.extraordinaryItems) || 0;
 
     // Legacy detail fields
@@ -195,7 +197,8 @@ function calculateAggregatedValues(monthly: any[], period: string) {
   aggregated.operatingMargin = aggregated.revenue > 0 ? (aggregated.operatingIncome / aggregated.revenue) * 100 : 0;
   
   aggregated.incomeBeforeTax = aggregated.operatingIncome - aggregated.interestExpense +
-                               aggregated.nonOperatingIncome + aggregated.extraordinaryItems;
+                               aggregated.nonOperatingIncome - aggregated.nonOperatingExpense +
+                               aggregated.extraordinaryItems;
   
   // Ensure tax values are numbers for net income calculation
   const finalStateTax = Number(aggregated.stateIncomeTaxes) || 0;
@@ -392,7 +395,10 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
       </div>
 
       {/* Other Income/Expense */}
-      {(aggregated.interestExpense > 0 || aggregated.nonOperatingIncome !== 0 || aggregated.extraordinaryItems !== 0) && (
+      {(aggregated.interestExpense > 0 ||
+        aggregated.nonOperatingIncome !== 0 ||
+        aggregated.nonOperatingExpense !== 0 ||
+        aggregated.extraordinaryItems !== 0) && (
         <div style={{ marginBottom: '12px' }}>
           <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Other Income & Expense</div>
           {aggregated.interestExpense > 0 && (
@@ -403,9 +409,17 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
           )}
           {aggregated.nonOperatingIncome !== 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-              <span style={{ color: '#475569' }}>Non-Operating Income</span>
+              <span style={{ color: '#475569' }}>{getFieldDisplayName('nonOperatingIncome')}</span>
               <span style={{ color: aggregated.nonOperatingIncome >= 0 ? '#10b981' : '#ef4444' }}>
                 {aggregated.nonOperatingIncome >= 0 ? '$' : '($'}${fmt(Math.abs(aggregated.nonOperatingIncome))}{aggregated.nonOperatingIncome < 0 ? ')' : ''}
+              </span>
+            </div>
+          )}
+          {aggregated.nonOperatingExpense !== 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+              <span style={{ color: '#475569' }}>{getFieldDisplayName('nonOperatingExpense')}</span>
+              <span style={{ color: aggregated.nonOperatingExpense >= 0 ? '#ef4444' : '#10b981' }}>
+                {aggregated.nonOperatingExpense >= 0 ? '($' : '$'}{fmt(Math.abs(aggregated.nonOperatingExpense))}{aggregated.nonOperatingExpense >= 0 ? ')' : ''}
               </span>
             </div>
           )}
@@ -439,34 +453,17 @@ function IncomeStatement({ aggregated }: { aggregated: any }) {
           const federalTax = aggregated.federalIncomeTaxes !== null && aggregated.federalIncomeTaxes !== undefined 
             ? (typeof aggregated.federalIncomeTaxes === 'string' ? parseFloat(aggregated.federalIncomeTaxes) : Number(aggregated.federalIncomeTaxes)) || 0 
             : 0;
-          
-          // Always show the section - show individual lines only if > 0
-          const hasStateTax = stateTax > 0;
-          const hasFederalTax = federalTax > 0;
-          
-          if (!hasStateTax && !hasFederalTax) {
-            return (
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px', color: '#94a3b8', fontStyle: 'italic' }}>
-                <span>No income taxes recorded</span>
-                <span>$0</span>
-              </div>
-            );
-          }
-          
+
           return (
             <>
-              {hasStateTax && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                  <span style={{ color: '#475569' }}>{getFieldDisplayName('stateIncomeTaxes')}</span>
-                  <span style={{ color: '#475569' }}>(${fmt(stateTax)})</span>
-                </div>
-              )}
-              {hasFederalTax && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
-                  <span style={{ color: '#475569' }}>{getFieldDisplayName('federalIncomeTaxes')}</span>
-                  <span style={{ color: '#475569' }}>(${fmt(federalTax)})</span>
-                </div>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                <span style={{ color: '#475569' }}>{getFieldDisplayName('stateIncomeTaxes')}</span>
+                <span style={{ color: '#475569' }}>{stateTax > 0 ? `($${fmt(stateTax)})` : '$0'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 6px 20px', fontSize: '14px' }}>
+                <span style={{ color: '#475569' }}>{getFieldDisplayName('federalIncomeTaxes')}</span>
+                <span style={{ color: '#475569' }}>{federalTax > 0 ? `($${fmt(federalTax)})` : '$0'}</span>
+              </div>
             </>
           );
         })()}

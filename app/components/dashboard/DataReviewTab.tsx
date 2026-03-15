@@ -99,6 +99,33 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   const hasNonZeroValue = (field: string): boolean =>
     displayedMonths.some((m: any) => Number(m[field] || 0) !== 0);
 
+  const toNumber = (value: unknown): number => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    if (typeof value === "string") {
+      const parsed = Number(value.replace(/,/g, "").trim());
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  };
+
+  const getNonOperatingIncome = (month: any): number =>
+    toNumber(
+      month?.nonOperatingIncome ??
+        month?.nonOpertingIncome ??
+        month?.non_operating_income ??
+        month?.expenseBreakdown?.nonOperatingIncome ??
+        month?.expenseBreakdown?.nonOpertingIncome,
+    );
+
+  const getNonOperatingExpense = (month: any): number =>
+    toNumber(
+      month?.nonOperatingExpense ??
+        month?.nonOpertingExpense ??
+        month?.non_operating_expense ??
+        month?.expenseBreakdown?.nonOperatingExpense ??
+        month?.expenseBreakdown?.nonOpertingExpense,
+    );
+
   const sectorRevenueFields = Array.from(
     new Set(
       displayedMonths.flatMap((m: any) =>
@@ -1141,7 +1168,12 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                         (m.otherExpense || 0);
 
                       const incomeBeforeTax =
-                        (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
+                        (m.revenue || 0) -
+                        (m.cogsTotal || 0) -
+                        totalOpex +
+                        getNonOperatingIncome(m) -
+                        getNonOperatingExpense(m) +
+                        (m.extraordinaryItems || 0);
 
                       return (
                         <td
@@ -1230,6 +1262,100 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                     </tr>
                   )}
 
+                  {/* Non-Operating Income & Expense */}
+                  {(monthly.slice(-36).some((m: any) => getNonOperatingIncome(m) !== 0) ||
+                    monthly.slice(-36).some((m: any) => getNonOperatingExpense(m) !== 0) ||
+                    monthly.slice(-36).some((m: any) => (m.extraordinaryItems || 0) !== 0)) && (
+                    <>
+                      <tr
+                        style={{
+                          borderBottom: "1px solid #f1f5f9",
+                          background: "#f5f3ff",
+                        }}
+                      >
+                        <td
+                          style={{
+                            padding: "8px 10px",
+                            fontWeight: "700",
+                            position: "sticky",
+                            left: 0,
+                            background: "#f5f3ff",
+                            zIndex: 1,
+                          }}
+                        >
+                          Non-Operating Income & Expense
+                        </td>
+                        {monthly.slice(-36).map((m: any, idx: number) => (
+                          <td key={idx} style={{ padding: "8px 10px" }}></td>
+                        ))}
+                      </tr>
+                      {monthly.slice(-36).some((m: any) => getNonOperatingIncome(m) !== 0) && (
+                        <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td
+                            style={{
+                              padding: "8px 10px",
+                              paddingLeft: "20px",
+                              position: "sticky",
+                              left: 0,
+                              background: "white",
+                              zIndex: 1,
+                            }}
+                          >
+                            {getFieldDisplayName('nonOperatingIncome')}
+                          </td>
+                          {monthly.slice(-36).map((m: any, idx: number) => (
+                            <td
+                              key={idx}
+                              style={{
+                                padding: "8px 10px",
+                                textAlign: "right",
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              $
+                              {getNonOperatingIncome(m).toLocaleString("en-US", {
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                              })}
+                            </td>
+                          ))}
+                        </tr>
+                      )}
+                      {monthly.slice(-36).some((m: any) => getNonOperatingExpense(m) !== 0) && (
+                        <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td
+                            style={{
+                              padding: "8px 10px",
+                              paddingLeft: "20px",
+                              position: "sticky",
+                              left: 0,
+                              background: "white",
+                              zIndex: 1,
+                            }}
+                          >
+                            {getFieldDisplayName('nonOperatingExpense')}
+                          </td>
+                          {monthly.slice(-36).map((m: any, idx: number) => (
+                            <td
+                              key={idx}
+                              style={{
+                                padding: "8px 10px",
+                                textAlign: "right",
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              $
+                              {getNonOperatingExpense(m).toLocaleString("en-US", {
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                              })}
+                            </td>
+                          ))}
+                        </tr>
+                      )}
+                    </>
+                  )}
+
                   {/* Net Income */}
                   <tr
                     style={{
@@ -1274,7 +1400,12 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                         (m.mealsEntertainment || 0) +
                         (m.otherExpense || 0);
                       const incomeBeforeTax =
-                        (m.revenue || 0) - (m.cogsTotal || 0) - totalOpex;
+                        (m.revenue || 0) -
+                        (m.cogsTotal || 0) -
+                        totalOpex +
+                        getNonOperatingIncome(m) -
+                        getNonOperatingExpense(m) +
+                        (m.extraordinaryItems || 0);
                       const netIncome =
                         incomeBeforeTax -
                         (m.stateIncomeTaxes || 0) -

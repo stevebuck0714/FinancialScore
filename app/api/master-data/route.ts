@@ -52,6 +52,31 @@ export async function GET(request: NextRequest) {
       const cogsBreakdown = month.cogsBreakdown && typeof month.cogsBreakdown === 'object'
         ? month.cogsBreakdown
         : {};
+      const expenseBreakdown = month.expenseBreakdown && typeof month.expenseBreakdown === 'object'
+        ? month.expenseBreakdown
+        : {};
+      const nonOperatingIncomeFromBreakdown = Number(
+        (expenseBreakdown as any).nonOperatingIncome ||
+        (expenseBreakdown as any).nonOpertingIncome ||
+        0,
+      );
+      const nonOperatingIncome = Number(
+        month.nonOperatingIncome ||
+        month.nonOpertingIncome ||
+        month.non_operating_income ||
+        0,
+      ) || nonOperatingIncomeFromBreakdown;
+      const nonOperatingExpenseFromBreakdown = Number(
+        (expenseBreakdown as any).nonOperatingExpense ||
+        (expenseBreakdown as any).nonOpertingExpense ||
+        0,
+      );
+      const nonOperatingExpense = Number(
+        month.nonOperatingExpense ||
+        month.nonOpertingExpense ||
+        month.non_operating_expense ||
+        0,
+      ) || nonOperatingExpenseFromBreakdown;
 
       return {
       date: month.monthDate,
@@ -85,6 +110,9 @@ export async function GET(request: NextRequest) {
       interestExpense: month.interestExpense || 0,
       depreciationAmortization: month.depreciationAmortization || 0,
       otherExpense: month.otherExpense || 0,
+      nonOperatingIncome,
+      nonOperatingExpense,
+      extraordinaryItems: month.extraordinaryItems || 0,
       cash,
       ar,
       inventory,
@@ -108,9 +136,10 @@ export async function GET(request: NextRequest) {
       treasuryStock: month.treasuryStock || 0,
       totalEquity: month.totalEquity || 0,
       revenueBreakdown,
-      expenseBreakdown: month.expenseBreakdown,
+      expenseBreakdown,
       cogsBreakdown,
       ...revenueBreakdown,
+      ...expenseBreakdown,
       ...cogsBreakdown
       };
     });
