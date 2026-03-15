@@ -6,9 +6,12 @@ const keywordRulesPath = '../route';
 
 // Keyword-based mapping rules (same as current system)
 const mappingRules = [
+  // Non-operating income/expense (must be evaluated before generic revenue/expense keywords)
+  { keywords: ['non-operating income', 'non operating income', 'other income', 'interest income', 'dividend income', 'gain on sale', 'gain on disposal', 'discount income', 'grant income', 'apprenticeship grant'], targetField: 'nonOperatingIncome', confidence: 'high' },
+  { keywords: ['non-operating expense', 'non operating expense', 'other non-operating expense'], targetField: 'nonOperatingExpense', confidence: 'high' },
+
   // Income/Revenue Categories
   { keywords: ['sales', 'service revenue', 'product sales', 'consulting income', 'service income', 'gross revenue', 'operating revenue', 'income', 'revenue'], targetField: 'revenue', confidence: 'high' },
-  { keywords: ['non-operating income', 'other income', 'interest income', 'dividend income'], targetField: 'nonOperatingIncome', confidence: 'high' },
 
   // Cost of Goods Sold
   { keywords: ['cogs payroll', 'cost of sales payroll', 'production payroll', 'direct labor', 'employees wages', 'employee wages', 'wages'], targetField: 'cogsPayroll', confidence: 'high' },
@@ -119,21 +122,19 @@ const accountCodeRanges = [
 
 function extractNumericCode(accountCode: string): number | null {
   if (!accountCode) return null;
-  
-  // Handle formats like "1-1005", "1005", "1-1005 JBP", etc.
-  // Extract the main account number (ignore prefix like "1-" or "2-")
-  const match = accountCode.match(/(\d+)-?(\d+)/);
-  if (match) {
-    // If format is "1-1005", use the second part "1005"
-    // If format is just "1005", use that
-    const num = match[2] ? parseInt(match[2]) : parseInt(match[1]);
+
+  // Handle formats like "1-1005" by using the account family after the hyphen.
+  const hyphenMatch = accountCode.match(/(\d+)\s*-\s*(\d+)/);
+  if (hyphenMatch) {
+    const num = parseInt(hyphenMatch[2], 10);
     return isNaN(num) ? null : num;
   }
-  
-  // Try simple numeric extraction
-  const simpleMatch = accountCode.match(/(\d+)/);
+
+  // For plain codes (e.g. "70200"), use the first numeric token as-is.
+  const simpleMatch = accountCode.match(/(\d{3,})/);
   if (simpleMatch) {
-    return parseInt(simpleMatch[1]);
+    const num = parseInt(simpleMatch[1], 10);
+    return isNaN(num) ? null : num;
   }
   
   return null;
@@ -171,6 +172,65 @@ function mapAccountByCode(accountCode: string): { targetField: string; confidenc
     }
   }
   
+  return null;
+}
+
+function forceNonOperatingOverride(
+  accountName: string,
+  classification: string,
+  accountCodeOrName: string,
+): { targetField: string; confidence: string; reasoning: string } | null {
+  const name = (accountName || '').toLowerCase();
+  const cls = (classification || '').toLowerCase();
+  const rawCode = (accountCodeOrName || '').trim();
+  const codeMatch = rawCode.match(/^(\d{4,})/);
+  const code = codeMatch ? Number(codeMatch[1]) : NaN;
+
+  // Cross-platform convention: 8010 is Non-Operating Income.
+  if (code === 8010) {
+    return {
+      targetField: 'nonOperatingIncome',
+      confidence: 'high',
+      reasoning: 'Forced mapping: account code 8010 is reserved for Non-Operating Income',
+    };
+  }
+
+  const hasIncomeSignal =
+    name.includes('interest income') ||
+    name.includes('discount income') ||
+    name.includes('gain on sale') ||
+    name.includes('gain on disposal') ||
+    name.includes('grant') ||
+    name.includes('non-operating income') ||
+    name.includes('non operating income') ||
+    name.includes('other income');
+
+  const hasExpenseSignal =
+    name.includes('non-operating expense') ||
+    name.includes('non operating expense') ||
+    name.includes('other non-operating expense');
+
+  // User convention: 9000-series used for non-operating; split by signal.
+  if (Number.isFinite(code) && code >= 9000 && code < 10000) {
+    return {
+      targetField: hasIncomeSignal ? 'nonOperatingIncome' : 'nonOperatingExpense',
+      confidence: 'high',
+      reasoning: hasIncomeSignal
+        ? `Forced mapping: account code ${code} in 9000-series with income signal`
+        : `Forced mapping: account code ${code} in 9000-series defaults to non-operating expense`,
+    };
+  }
+
+  // Only force non-operating outside 9000-series when there is explicit keyword evidence.
+  // Do NOT force based on classification alone, which can be overly broad/noisy.
+  if (hasIncomeSignal || hasExpenseSignal) {
+    return {
+      targetField: hasIncomeSignal && !hasExpenseSignal ? 'nonOperatingIncome' : 'nonOperatingExpense',
+      confidence: 'high',
+      reasoning: 'Forced mapping from explicit non-operating keyword signal',
+    };
+  }
+
   return null;
 }
 
@@ -358,14 +418,25 @@ export async function POST(request: NextRequest) {
       const classification = typeof account === 'string' ? '' : (account.classification || '');
       const accountCode = typeof account === 'string' ? '' : (account.accountCode || '');
       const accountType = typeof account === 'string' ? '' : (account.accountType || '');
+      const codeSource = (accountCode && String(accountCode).trim()) ? String(accountCode).trim() : accountName;
 
       let bestMapping = null;
       let bestConfidence = 0;
       let source: 'keyword' | 'learned' | 'similar' | 'accountCode' | 'none' = 'keyword';
+      let hardLocked = false;
+
+      // 0. Hard non-operating overrides to prevent bad learned/history matches.
+      const forcedOverride = forceNonOperatingOverride(accountName, classification, codeSource);
+      if (forcedOverride) {
+        bestMapping = forcedOverride;
+        bestConfidence = 100;
+        source = 'accountCode';
+        hardLocked = true;
+      }
 
       // 1. Try account code-based mapping first (most reliable for standard COA)
-      if (accountCode) {
-        const codeMatch = mapAccountByCode(accountCode);
+      if (!hardLocked && codeSource) {
+        const codeMatch = mapAccountByCode(codeSource);
         if (codeMatch) {
           bestMapping = codeMatch;
           bestConfidence = confidenceToNumeric(codeMatch.confidence);
@@ -374,7 +445,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 2. Try keyword matching if no code match or lower confidence
-      const keywordMatch = mapAccountToFieldKeyword(accountName);
+      const keywordMatch = hardLocked ? null : mapAccountToFieldKeyword(accountName);
       if (keywordMatch && confidenceToNumeric(keywordMatch.confidence) > bestConfidence) {
         bestMapping = keywordMatch;
         bestConfidence = confidenceToNumeric(keywordMatch.confidence);
@@ -383,20 +454,22 @@ export async function POST(request: NextRequest) {
 
       // 3. Try machine learning suggestion (only if available and valid)
       try {
-        const mlSuggestion = await mappingLearner.getSuggestion(accountName, classification);
-        // Only use ML if it has a valid targetField (not empty, not unmapped)
-        if (mlSuggestion && 
-            mlSuggestion.targetField && 
-            mlSuggestion.targetField !== 'unmapped' &&
-            mlSuggestion.targetField !== '' &&
-            mlSuggestion.confidence > bestConfidence) {
-          bestMapping = {
-            targetField: mlSuggestion.targetField,
-            confidence: mlSuggestion.confidence >= 90 ? 'high' : mlSuggestion.confidence >= 70 ? 'medium' : 'low',
-            reasoning: mlSuggestion.reasoning
-          };
-          bestConfidence = mlSuggestion.confidence;
-          source = mlSuggestion.source;
+        if (!hardLocked) {
+          const mlSuggestion = await mappingLearner.getSuggestion(accountName, classification);
+          // Only use ML if it has a valid targetField (not empty, not unmapped)
+          if (mlSuggestion &&
+              mlSuggestion.targetField &&
+              mlSuggestion.targetField !== 'unmapped' &&
+              mlSuggestion.targetField !== '' &&
+              mlSuggestion.confidence > bestConfidence) {
+            bestMapping = {
+              targetField: mlSuggestion.targetField,
+              confidence: mlSuggestion.confidence >= 90 ? 'high' : mlSuggestion.confidence >= 70 ? 'medium' : 'low',
+              reasoning: mlSuggestion.reasoning
+            };
+            bestConfidence = mlSuggestion.confidence;
+            source = mlSuggestion.source;
+          }
         }
       } catch (mlError) {
         // ML system not available - continue with keyword match

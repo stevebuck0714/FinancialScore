@@ -221,17 +221,22 @@ export default function AccountMappingTable({
   };
 
   const getGroupingClassification = (mapping: AccountMapping) => {
-    // Respect explicit user/AI target overrides for non-operating so rows
-    // can move into the non-operating section after selection.
-    const targetClassification = normalizeClassification(
-      undefined,
-      mapping.qbAccount,
-      mapping.targetField,
-    );
-    if (targetClassification === 'nonOperating') return 'nonOperating';
+    // Respect explicit user/AI target overrides for section placement.
+    // When a target field is selected, rows should render in that section,
+    // not stay locked to the source account classification.
+    const normalizedTarget = (mapping.targetField || '').trim().toLowerCase();
+    const hasSelectedTarget = normalizedTarget !== '' && normalizedTarget !== 'unmapped';
+    if (hasSelectedTarget) {
+      const targetClassification = normalizeClassification(
+        undefined,
+        mapping.qbAccount,
+        mapping.targetField,
+      );
+      if (targetClassification !== 'other') return targetClassification;
+    }
 
     // Group by source account type first so accounts stay in their native section
-    // (e.g. equity accounts always render under Equity).
+    // when no target field has been selected yet.
     const sourceClassification = normalizeClassification(
       mapping.qbAccountClassification,
       mapping.qbAccount,
