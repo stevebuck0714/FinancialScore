@@ -8,8 +8,23 @@ function normalizeTargetFieldValue(value: unknown): string {
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return "";
   const normalized = raw.toLowerCase();
-  if (normalized === "nonopertingincome") return "nonOperatingIncome";
-  if (normalized === "nonopertingexpense") return "nonOperatingExpense";
+  const compact = normalized.replace(/[^a-z0-9]/g, "");
+  if (
+    compact === "nonoperatingincome" ||
+    compact === "nonopertingincome" ||
+    compact === "nonoperatngincome" ||
+    compact === "otherincome"
+  ) {
+    return "nonOperatingIncome";
+  }
+  if (
+    compact === "nonoperatingexpense" ||
+    compact === "nonopertingexpense" ||
+    compact === "nonoperatngexpense" ||
+    compact === "othernonoperatingexpense"
+  ) {
+    return "nonOperatingExpense";
+  }
   return raw;
 }
 
@@ -242,32 +257,29 @@ export async function POST(request: NextRequest) {
       (mapping: any, index: number, self: any[]) =>
         index === self.findIndex((m: any) => m.qbAccount === mapping.qbAccount),
     );
-    const mappedRows = uniqueMappings.filter(
-      (m: any) => {
-        const targetField = normalizeTargetFieldValue(m.targetField);
-        return targetField && targetField !== "unmapped";
-      },
+    const sanitizedUniqueMappings = uniqueMappings.map((m: any) => {
+      const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
+      const isExplicitlyMapped = normalizedTargetField && normalizedTargetField !== "unmapped";
+      if (isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) {
+        return {
+          ...m,
+          invalidTargetField: m.targetField,
+          targetField: "unmapped",
+        };
+      }
+      return {
+        ...m,
+        targetField: normalizedTargetField || "unmapped",
+      };
+    });
+    const mappedRows = sanitizedUniqueMappings.filter(
+      (m: any) => m.targetField && m.targetField !== "unmapped",
     );
-    const invalidMappings = mappedRows.filter((m: any) => !allowedTargetFields.has(normalizeTargetFieldValue(m.targetField)));
-    if (invalidMappings.length > 0) {
-      return NextResponse.json(
-        {
-          error: "One or more mappings use target fields that are not allowed for this company sector.",
-          details: invalidMappings.slice(0, 10).map((m: any) => ({
-            qbAccount: m.qbAccount,
-            targetField: m.targetField,
-            classification: m.qbAccountClassification,
-          })),
-          invalidCount: invalidMappings.length,
-          industrySectorCategory: company.industrySectorCategory || '01',
-        },
-        { status: 400 },
-      );
-    }
+    const invalidMappings = sanitizedUniqueMappings.filter((m: any) => m.invalidTargetField);
     console.log(
-      `Prepared ${mappedRows.length} mapped rows and ${uniqueMappings.length - mappedRows.length} unmapped rows`,
+      `Prepared ${mappedRows.length} mapped rows and ${sanitizedUniqueMappings.length - mappedRows.length} unmapped rows`,
     );
-    console.log("Mappings sample:", uniqueMappings.slice(0, 2));
+    console.log("Mappings sample:", sanitizedUniqueMappings.slice(0, 2));
 
     // Save the LOB names to the Company record if provided
     if (
@@ -286,7 +298,7 @@ export async function POST(request: NextRequest) {
 
     let created = 0;
     let updated = 0;
-    for (const m of uniqueMappings) {
+    for (const m of sanitizedUniqueMappings) {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
       const targetField =
         normalizedTargetField && normalizedTargetField !== "" ? normalizedTargetField : "unmapped";
@@ -379,8 +391,14 @@ export async function POST(request: NextRequest) {
       count: created + updated,
       created,
       updated,
-      filtered: mappings.length - mappedRows.length,
+      filtered: sanitizedUniqueMappings.length - mappedRows.length,
       duplicates: mappings.length - uniqueMappings.length,
+      invalidCount: invalidMappings.length,
+      invalidMappings: invalidMappings.slice(0, 10).map((m: any) => ({
+        qbAccount: m.qbAccount,
+        invalidTargetField: m.invalidTargetField,
+        classification: m.qbAccountClassification,
+      })),
       verified: verification.length,
     });
   } catch (error: any) {
