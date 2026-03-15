@@ -95,6 +95,44 @@ function extractNumericCode(accountCodeOrName: string): number | null {
   return numeric;
 }
 
+function forceCogsOverride(
+  accountName: string,
+  accountCodeOrName: string,
+): { targetField: string; confidence: string; reasoning: string } | null {
+  const name = String(accountName || '').toLowerCase();
+  const code = extractNumericCode(accountCodeOrName || accountName || '');
+  const isCogsCode = Number.isFinite(code) && (code as number) >= 5000 && (code as number) < 6000;
+  if (!isCogsCode) return null;
+
+  if (
+    name.includes('subcontractor') ||
+    name.includes('sub-contractor') ||
+    name.includes('contract labor') ||
+    name.includes('independent contractor')
+  ) {
+    return {
+      targetField: 'cogsContractors',
+      confidence: 'high',
+      reasoning: 'Forced mapping: 5000-series subcontractor account treated as COGS contractor cost',
+    };
+  }
+
+  if (
+    name.includes("worker's compensation") ||
+    name.includes("workers' compensation") ||
+    name.includes('workers compensation') ||
+    name.includes('work comp')
+  ) {
+    return {
+      targetField: 'cogsOther',
+      confidence: 'high',
+      reasoning: 'Forced mapping: 5000-series workers compensation account treated as COGS',
+    };
+  }
+
+  return null;
+}
+
 function mapAccountToField(accountName: string): { targetField: string; confidence: string; reasoning: string } | null {
   const lowerAccount = accountName.toLowerCase();
   
@@ -163,9 +201,10 @@ export async function POST(request: NextRequest) {
         name.includes("owner's equity") ||
         name.includes('current year earnings') ||
         name.includes('net income');
+      const forcedCogs = !isEquityCode && !isEquitySignal ? forceCogsOverride(accountName, codeSource) : null;
       const mapping = isEquityCode || isEquitySignal
         ? { targetField: 'unmapped', confidence: 'high', reasoning: 'Equity account excluded from revenue/COGS account mapping' }
-        : mapAccountToField(accountName);
+        : (forcedCogs || mapAccountToField(accountName));
       
       if (mapping) {
         mappings.push({

@@ -6679,7 +6679,6 @@ function FinancialScorePage() {
           currentUser={currentUser}
           companyName={companyName || (currentUser?.userType === 'company' ? (Array.isArray(companies) && companies.find(c => c.id === currentUser?.companyId)?.name) || '' : '')}
           previewAdminName={siteAdminViewingAs?.name || null}
-          onExitSiteAdminPreview={siteAdminViewingAs ? exitSiteAdminPreview : undefined}
           currentView={currentView}
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
@@ -6936,6 +6935,28 @@ function FinancialScorePage() {
               }}>
                 {siteAdminViewingAs?.name || currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
               </div>
+              {siteAdminViewingAs && (
+                <div style={{ paddingLeft: '24px', marginTop: '8px' }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      exitSiteAdminPreview();
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: '#f59e0b',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Return to Site Admin
+                  </button>
+                </div>
+              )}
             </div>
             </div>
 

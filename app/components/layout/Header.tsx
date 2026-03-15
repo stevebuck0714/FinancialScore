@@ -15,7 +15,6 @@ interface HeaderProps {
   currentView: string;
   companyName?: string;
   previewAdminName?: string | null;
-  onExitSiteAdminPreview?: () => void;
   // currentView is a large union in app/page.tsx; keep this flexible for reuse.
   setCurrentView: (view: any) => void;
   handleLogout: () => void;
@@ -29,7 +28,6 @@ export default function Header({
   currentView,
   companyName,
   previewAdminName,
-  onExitSiteAdminPreview,
   setCurrentView,
   handleLogout,
   handleNavigation,
@@ -40,10 +38,8 @@ export default function Header({
   const [showValuationMenu, setShowValuationMenu] = useState(false);
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && currentUser?.companyRole === 'admin';
-  const isSiteAdminPreviewMode = Boolean(onExitSiteAdminPreview);
-  const displayedUserName = isSiteAdminPreviewMode
-    ? (previewAdminName && previewAdminName.trim() ? previewAdminName : 'Site Admin')
-    : currentUser?.name;
+  const displayedUserName =
+    previewAdminName && previewAdminName.trim() ? previewAdminName : currentUser?.name;
 
   const allowedSections = (isCompanyUser && !isCompanyAdmin && Array.isArray(currentUser?.sidebarAccess))
     ? currentUser.sidebarAccess
@@ -419,25 +415,8 @@ export default function Header({
           </nav>
         </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0, whiteSpace: 'nowrap' }}>
           <span style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>{displayedUserName}</span>
-          {isSiteAdminPreviewMode && (
-            <button
-              onClick={onExitSiteAdminPreview}
-              style={{
-                padding: '6px 12px',
-                background: '#f59e0b',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '12px',
-                fontWeight: '700',
-                cursor: 'pointer',
-              }}
-            >
-              Return to Site Admin
-            </button>
-          )}
           <button
             onClick={handleLogout}
             style={{

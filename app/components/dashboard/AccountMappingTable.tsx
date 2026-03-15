@@ -73,6 +73,9 @@ export default function AccountMappingTable({
     accountName?: string,
     targetField?: string
   ): 'revenue' | 'cogs' | 'expense' | 'nonOperating' | 'asset' | 'liability' | 'equity' | 'other' => {
+    const accountCodeMatch = (accountName || '').trim().toLowerCase().match(/^\s*(\d{4,})/);
+    const accountCode = accountCodeMatch ? Number(accountCodeMatch[1]) : NaN;
+    const isLikelyCogsCode = Number.isFinite(accountCode) && accountCode >= 5000 && accountCode < 6000;
     const normalizedTarget = (targetField || '').trim().toLowerCase();
     if (normalizedTarget && normalizedTarget !== 'unmapped') {
       if (normalizedTarget === 'nonoperatingincome' || normalizedTarget === 'nonoperatingexpense') return 'nonOperating';
@@ -83,6 +86,7 @@ export default function AccountMappingTable({
         normalizedTarget.startsWith('cogs_') ||
         normalizedTarget.startsWith('cogs')
       ) return 'cogs';
+      if (normalizedTarget === 'subcontractors' && isLikelyCogsCode) return 'cogs';
       if (
         [
           'payroll',
@@ -131,8 +135,6 @@ export default function AccountMappingTable({
     const normalizedAccountName = (accountName || '').trim().toLowerCase();
     const compact = normalized.replace(/[\s_-]+/g, '');
     const compactAccountName = normalizedAccountName.replace(/[\s_-]+/g, '');
-    const accountCodeMatch = normalizedAccountName.match(/^\s*(\d{4,})/);
-    const accountCode = accountCodeMatch ? Number(accountCodeMatch[1]) : NaN;
     const isLikelyNonOperatingCode = Number.isFinite(accountCode) && accountCode >= 9000 && accountCode < 10000;
     const isNonOperatingLabel =
       normalized.includes('non-operating') ||

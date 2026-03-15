@@ -268,6 +268,44 @@ function forceEquityOverride(
   return null;
 }
 
+function forceCogsOverride(
+  accountName: string,
+  accountCodeOrName: string,
+): { targetField: string; confidence: string; reasoning: string } | null {
+  const name = (accountName || '').toLowerCase();
+  const code = extractNumericCode(accountCodeOrName || accountName || '');
+  const isCogsCode = Number.isFinite(code) && (code as number) >= 5000 && (code as number) < 6000;
+  if (!isCogsCode) return null;
+
+  if (
+    name.includes('subcontractor') ||
+    name.includes('sub-contractor') ||
+    name.includes('contract labor') ||
+    name.includes('independent contractor')
+  ) {
+    return {
+      targetField: 'cogsContractors',
+      confidence: 'high',
+      reasoning: 'Forced mapping: 5000-series subcontractor account treated as COGS contractor cost',
+    };
+  }
+
+  if (
+    name.includes("worker's compensation") ||
+    name.includes("workers' compensation") ||
+    name.includes('workers compensation') ||
+    name.includes('work comp')
+  ) {
+    return {
+      targetField: 'cogsOther',
+      confidence: 'high',
+      reasoning: 'Forced mapping: 5000-series workers compensation account treated as COGS',
+    };
+  }
+
+  return null;
+}
+
 function mapAccountToFieldKeyword(accountName: string): { targetField: string; confidence: string; reasoning: string } | null {
   const lowerAccount = accountName.toLowerCase();
   
@@ -464,12 +502,36 @@ export async function POST(request: NextRequest) {
         source = 'accountCode';
         hardLocked = true;
       } else {
-        const forcedOverride = forceNonOperatingOverride(accountName, classification, codeSource);
-        if (forcedOverride) {
-          bestMapping = forcedOverride;
+        const forcedCogs = forceCogsOverride(accountName, codeSource);
+        if (forcedCogs) {
+          bestMapping = forcedCogs;
           bestConfidence = 100;
           source = 'accountCode';
           hardLocked = true;
+        } else {
+          const forcedOverride = forceNonOperatingOverride(accountName, classification, codeSource);
+          if (forcedOverride) {
+            bestMapping = forcedOverride;
+            bestConfidence = 100;
+            source = 'accountCode';
+            hardLocked = true;
+          }
+        }
+      }
+
+      // 0.5 If code strongly indicates COGS, do not let keyword/ML move it to OPEX.
+      if (!hardLocked && codeSource) {
+        const codeMatch = mapAccountByCode(codeSource);
+        if (codeMatch) {
+          bestMapping = codeMatch;
+          bestConfidence = confidenceToNumeric(codeMatch.confidence);
+          source = 'accountCode';
+          if (
+            codeMatch.targetField === 'cogsTotal' ||
+            codeMatch.targetField.startsWith('cogs')
+          ) {
+            hardLocked = true;
+          }
         }
       }
 
