@@ -14607,18 +14607,30 @@ function FinancialScorePage() {
                         </div>
 
                         <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>5) Customer Quality Insights</div>
-                          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '10px', marginBottom: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#1e3a8a', fontWeight: 700, marginBottom: '4px' }}>Data connection status</div>
+                          <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>5) Customer Quality Insights (Data Pending)</div>
+                          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '10px', marginBottom: '10px' }}>
+                            <div style={{ fontSize: '12px', color: '#1e3a8a', fontWeight: 700, marginBottom: '4px' }}>Current status</div>
                             <div style={{ fontSize: '12px', color: '#1e40af', lineHeight: 1.55 }}>
-                              Customer-level concentration, retention, aging, and dispute metrics are not connected yet, so this section is shown as an implementation-ready summary instead of placeholder rows.
+                              Customer-level concentration, retention, and collections-quality feeds are not connected yet. To avoid noisy placeholders, this section now shows only actionable setup requirements.
                             </div>
                           </div>
-                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.6 }}>
-                            <div style={{ marginBottom: '4px' }}>• Connect customer revenue ledger (top 1 / top 5 concentration and recurring mix)</div>
-                            <div style={{ marginBottom: '4px' }}>• Connect AR aging by customer cohort (90+ days, average days late)</div>
-                            <div style={{ marginBottom: '4px' }}>• Connect retention history (NRR/GRR trend)</div>
-                            <div>• Connect dispute/credit memo events for collections-friction monitoring</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Revenue durability inputs</div>
+                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.55 }}>
+                                • customer revenue ledger<br />
+                                • top 1 / top 5 concentration<br />
+                                • recurring vs contracted mix
+                              </div>
+                            </div>
+                            <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700, marginBottom: '4px' }}>Collections-quality inputs</div>
+                              <div style={{ fontSize: '12px', color: '#334155', lineHeight: 1.55 }}>
+                                • AR aging by customer cohort<br />
+                                • average days late by top accounts<br />
+                                • disputes / credit memo events
+                              </div>
+                            </div>
                           </div>
                         </div>
 
