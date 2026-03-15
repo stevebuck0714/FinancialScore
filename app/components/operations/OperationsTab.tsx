@@ -20,6 +20,7 @@ import {
 import OpsDashboard from './OpsDashboard';
 import FinancialForecastTab from '../FinancialForecastTab';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
+import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
@@ -330,6 +331,7 @@ export default function OperationsTab({
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
+  const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
   const [dailyFinancialWindowStart, setDailyFinancialWindowStart] = useState(0);
   const [arSummaryPage, setArSummaryPage] = useState(1);
@@ -432,6 +434,38 @@ export default function OperationsTab({
       setActiveAccrualBasisForecastTab(initialForecastSubTab);
     }
   }, [initialForecastSubTab, initialForecastBasisTab, activeForecastBasisTab]);
+
+  useEffect(() => {
+    const needsCashConversionData =
+      activeTab === 'forecast' &&
+      activeForecastBasisTab === 'cash-basis';
+    if (!needsCashConversionData) return;
+
+    let cancelled = false;
+    Promise.all([fetchCashConversionFinancialData()])
+      .then(([nextFinancialSeries]) => {
+        if (cancelled) return;
+        if (nextFinancialSeries) setCashConversionFinancialData(nextFinancialSeries);
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          console.error('Failed to preload cash conversion analysis data:', err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    activeForecastBasisTab,
+    activeAccrualBasisForecastTab,
+    selectedCompanyId,
+    industrySectorCategory,
+    frequency,
+    startDate,
+    endDate,
+  ]);
 
   useEffect(() => {
     loadSummary();
@@ -558,6 +592,32 @@ export default function OperationsTab({
     const response = await fetch(`/api/operational-data?${params}`);
     if (!response.ok) throw new Error(`Failed to load ${type} data`);
     return response.json();
+  };
+
+  const fetchCashConversionFinancialData = async () => {
+    const response = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
+    if (!response.ok) throw new Error('Failed to load cash conversion financial data');
+    const payload = await response.json();
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const latestRecord = records[0];
+    const monthlyData = Array.isArray(latestRecord?.monthlyData) ? latestRecord.monthlyData : [];
+    const normalizedRecords = monthlyData
+      .map((row: any) => ({
+        ...row,
+        snapshotDate: row?.monthDate || row?.date || row?.snapshotDate,
+        frequency: 'monthly',
+      }))
+      .filter((row: any) => Boolean(row?.snapshotDate))
+      .sort((a: any, b: any) => new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime());
+
+    return {
+      records: normalizedRecords,
+      mappedLines: [],
+      summary: {
+        source: 'master-financials',
+        months: normalizedRecords.length,
+      },
+    };
   };
 
   const loadTabData = async (tab: string) => {
@@ -3958,6 +4018,486 @@ export default function OperationsTab({
   };
 
   const renderForecast = () => {
+    const renderCashConversionAnalysis = () => {
+      const financialRecords = Array.isArray(cashConversionFinancialData?.records) ? cashConversionFinancialData.records : [];
+      const mappedLines = Array.isArray(cashConversionFinancialData?.mappedLines) ? cashConversionFinancialData.mappedLines : [];
+      const inferredFrequency = String(financialRecords[0]?.frequency || 'monthly').toLowerCase();
+      const requiredPeriods = inferredFrequency === 'daily' ? 365 : 12;
+      const trailingRecords = financialRecords.slice(0, requiredPeriods);
+      const latestDaily = trailingRecords[0] || null;
+      const latestSnapshotDate = latestDaily?.snapshotDate
+        ? new Date(latestDaily.snapshotDate).toISOString().split('T')[0]
+        : null;
+      const mappedTotalsForLatestDate = mappedLines.reduce((acc: Record<string, number>, line: any) => {
+        if (!latestSnapshotDate) return acc;
+        const lineDate = line?.snapshotDate ? new Date(line.snapshotDate).toISOString().split('T')[0] : null;
+        if (lineDate !== latestSnapshotDate) return acc;
+        const target = String(line?.targetField || '').trim().toLowerCase();
+        if (!target) return acc;
+        acc[target] = Number(acc[target] || 0) + Number(line?.amount || 0);
+        return acc;
+      }, {});
+      const sumMappedTargets = (targets: string[]) =>
+        targets.reduce((sum, target) => sum + Number(mappedTotalsForLatestDate[target] || 0), 0);
+      const hasSnapshotAR =
+        (latestDaily?.ar !== undefined && latestDaily?.ar !== null) ||
+        (latestDaily?.accountsReceivable !== undefined && latestDaily?.accountsReceivable !== null) ||
+        (latestDaily?.accounts_receivable !== undefined && latestDaily?.accounts_receivable !== null);
+      const hasSnapshotInventory = latestDaily?.inventory !== undefined && latestDaily?.inventory !== null;
+      const hasSnapshotAP =
+        (latestDaily?.ap !== undefined && latestDaily?.ap !== null) ||
+        (latestDaily?.accountsPayable !== undefined && latestDaily?.accountsPayable !== null) ||
+        (latestDaily?.accounts_payable !== undefined && latestDaily?.accounts_payable !== null);
+      const arBalance = hasSnapshotAR
+        ? Number(latestDaily.ar ?? latestDaily.accountsReceivable ?? latestDaily.accounts_receivable ?? 0)
+        : sumMappedTargets(['ar', 'accountsreceivable', 'accounts_receivable', 'tradear', 'netar']);
+      const inventoryBalance = hasSnapshotInventory
+        ? Number(latestDaily.inventory || 0)
+        : sumMappedTargets(['inventory', 'inv', 'stock', 'inventoryasset']);
+      const apBalance = hasSnapshotAP
+        ? Number(latestDaily.ap ?? latestDaily.accountsPayable ?? latestDaily.accounts_payable ?? 0)
+        : sumMappedTargets(['ap', 'accountspayable', 'accounts_payable', 'tradeap']);
+      const sumRevenue = trailingRecords.reduce((sum: number, row: any) => sum + Number(row.revenue || 0), 0);
+      const sumCogs = trailingRecords.reduce((sum: number, row: any) => sum + Number(row.cogsTotal || row.cogs || 0), 0);
+      const hasRevenue = Number.isFinite(sumRevenue) && sumRevenue > 0;
+      const hasCogs = Number.isFinite(sumCogs) && sumCogs > 0;
+      const hasAr = Number.isFinite(arBalance);
+      const hasInventory = Number.isFinite(inventoryBalance);
+      const hasAp = Number.isFinite(apBalance);
+      const hasRealCashConversionInputs =
+        trailingRecords.length > 0 &&
+        hasRevenue &&
+        hasCogs &&
+        hasAr &&
+        hasInventory &&
+        hasAp;
+      const hasRequiredInputs = hasRealCashConversionInputs;
+      const availablePeriods = trailingRecords.length;
+      const missingInputs: string[] = [];
+      if (!hasRevenue) missingInputs.push('Revenue');
+      if (!hasCogs) missingInputs.push('COGS');
+      if (!hasAr) missingInputs.push('AR');
+      if (!hasInventory) missingInputs.push('Inventory');
+      if (!hasAp) missingInputs.push('AP');
+      const annualRevenue = sumRevenue;
+      const annualCogs = sumCogs;
+      const dailyRevenue = annualRevenue / 365;
+      const dailyCogs = annualCogs / 365;
+      const inventoryDollars = Number(inventoryBalance || 0);
+      const dso = dailyRevenue > 0 ? Number(arBalance || 0) / dailyRevenue : 0;
+      const dpo = dailyCogs > 0 ? Number(apBalance || 0) / dailyCogs : 0;
+      const dio = dailyCogs > 0 ? inventoryDollars / dailyCogs : 0;
+      const ccc = dso + dio - dpo;
+      const arDollars = dso * dailyRevenue;
+      const apDollars = dpo * dailyCogs;
+      const owc = arDollars + inventoryDollars - apDollars;
+      const owcPctRevenue = annualRevenue > 0 ? (owc / annualRevenue) * 100 : 0;
+      const cashPerCccDayShortcut = dailyRevenue;
+      const growthRateAssumption = 0.1;
+      const revenueGrowthDollars = annualRevenue * growthRateAssumption;
+      const growthCashNeeded = annualRevenue > 0 ? (owc / annualRevenue) * revenueGrowthDollars : 0;
+      const scenarioDays = [10, 20, 30];
+      const sectorBenchmarks = getSdeSectorBenchmarks(industrySectorCategory || null);
+      const targetDso = Number(sectorBenchmarks.benchmarkTargets.dso || 0);
+      const targetDio = Number(sectorBenchmarks.benchmarkTargets.inventoryDays || 0);
+      const targetCcc = Number(sectorBenchmarks.benchmarkTargets.ccc || 0);
+      const targetDpo = Math.max(0, targetDso + targetDio - targetCcc);
+      const actionLevers = [
+        {
+          label: 'DSO',
+          current: dso,
+          target: targetDso,
+          gapDays: dso - targetDso,
+          cashPerDay: dailyRevenue,
+          action: 'Tighten terms, enforce collections cadence, and focus top overdue accounts.',
+        },
+        {
+          label: 'DIO',
+          current: dio,
+          target: targetDio,
+          gapDays: dio - targetDio,
+          cashPerDay: dailyCogs,
+          action: 'Reduce slow movers, tighten reorder points, and improve demand planning.',
+        },
+        {
+          label: 'DPO',
+          current: dpo,
+          target: targetDpo,
+          gapDays: targetDpo - dpo,
+          cashPerDay: dailyCogs,
+          action: 'Renegotiate supplier terms and consistently use full approved payment windows.',
+        },
+      ].map((lever) => {
+        const gapDaysPositive = Math.max(0, lever.gapDays);
+        const cashImpact = gapDaysPositive * lever.cashPerDay;
+        const gapLabel = lever.gapDays >= 0 ? `+${lever.gapDays.toFixed(1)}` : lever.gapDays.toFixed(1);
+        const status = lever.gapDays > 1 ? 'Above target' : lever.gapDays < -1 ? 'Better than target' : 'On target';
+        return { ...lever, gapDaysPositive, cashImpact, gapLabel, status };
+      });
+
+      return (
+        <div style={{ background: 'white', borderRadius: '12px', padding: '0 20px 20px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: 0, marginBottom: '10px' }}>Cash Conversion Analysis</h3>
+          <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
+            Convert CCC days into cash dollars so leadership can quantify working-capital drag, release opportunities, and growth funding needs.
+          </p>
+          {!hasRequiredInputs ? (
+            <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '12px', color: '#9a3412' }}>
+              Cash Conversion Analysis requires master financial monthly data with Revenue, COGS, AR, Inventory, and AP fields. No fallback calculations are used.
+              {missingInputs.length > 0 && (
+                <div style={{ marginTop: '6px', fontSize: '12px', color: '#9a3412' }}>
+                  Missing/zero inputs detected: {missingInputs.join(', ')}.
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px', marginBottom: '12px' }}>
+                <div style={{ background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '10px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Cash Conversion Cycle</div>
+                  <div style={{ fontSize: '22px', fontWeight: '800', color: '#1e293b' }}>{ccc.toFixed(1)} days</div>
+                </div>
+                <div style={{ background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '10px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Operating Working Capital (OWC)</div>
+                  <div style={{ fontSize: '22px', fontWeight: '800', color: '#1e293b' }}>{formatCurrency(owc)}</div>
+                </div>
+                <div style={{ background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '10px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>OWC as % of Revenue</div>
+                  <div style={{ fontSize: '22px', fontWeight: '800', color: '#1e293b' }}>{owcPctRevenue.toFixed(1)}%</div>
+                </div>
+                <div style={{ background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '10px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>Cash Impact per CCC Day (shortcut)</div>
+                  <div style={{ fontSize: '22px', fontWeight: '800', color: '#1e293b' }}>{formatCurrency(cashPerCccDayShortcut)}</div>
+                </div>
+              </div>
+
+              <div style={{ background: '#eff6ff', borderRadius: '10px', border: '1px solid #bfdbfe', padding: '14px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e3a8a', marginBottom: '8px' }}>Executive insights</div>
+                <div style={{ fontSize: '15px', color: '#1e3a8a', lineHeight: 1.7 }}>
+                  <div>Cash tied up in operations: <strong>{formatCurrency(owc)}</strong> ({owcPctRevenue.toFixed(1)}% of annualized revenue).</div>
+                  <div>Every 1 CCC day currently represents approximately <strong>{formatCurrency(cashPerCccDayShortcut)}</strong> of cash impact.</div>
+                  <div>A 10-day CCC improvement can free approximately <strong>{formatCurrency(10 * cashPerCccDayShortcut)}</strong>.</div>
+                  <div>Growth cash requirement (assuming 10% revenue growth): <strong>{formatCurrency(growthCashNeeded)}</strong>.</div>
+                </div>
+              </div>
+
+              <div style={{ background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1', padding: '12px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>
+                  Action levers vs sector ({sectorBenchmarks.sectorLabel})
+                </div>
+                <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
+                  Current vs Sector, cash impact, and priority action.
+                </div>
+                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                  {actionLevers.map((lever, index) => {
+                    const cashPerDayRounded = Math.round(lever.cashPerDay / 1000);
+                    const impactRounded = Math.round(lever.cashImpact / 100000) / 10;
+                    const isDpo = lever.label === 'DPO';
+                    const isBelowTargetForDpo = isDpo && lever.gapDays > 0;
+                    const isAboveTargetForDsoDio = !isDpo && lever.gapDays > 0;
+                    const impactText =
+                      isBelowTargetForDpo
+                        ? `this leaves ~$${impactRounded}M of supplier financing on the table`
+                        : isAboveTargetForDsoDio
+                          ? `this ties up ~$${impactRounded}M`
+                          : `this is within/above sector and not tying up incremental cash`;
+
+                    return (
+                      <div
+                        key={lever.label}
+                        style={{
+                          fontSize: '14px',
+                          color: '#0f172a',
+                          lineHeight: 1.7,
+                          padding: index === 0 ? '0 0 6px 0' : '6px 0',
+                          borderTop: index === 0 ? 'none' : '1px solid #f1f5f9',
+                        }}
+                      >
+                        <strong>{lever.label}</strong> is {lever.current.toFixed(1)} vs sector {lever.target.toFixed(1)} ({lever.gapLabel}). At ~${cashPerDayRounded}k per day, {impactText}. Priority: {lever.action}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', padding: '12px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Five-step calculation walkthrough</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px', alignItems: 'start' }}>
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    <div id="cca-step5-calc" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Step 1 - CCC formula</div>
+                      <div style={{ fontSize: '12px', color: '#334155', marginTop: '3px' }}>
+                        CCC = DSO + DIO - DPO = {dso.toFixed(1)} + {dio.toFixed(1)} - {dpo.toFixed(1)} = <strong>{ccc.toFixed(1)} days</strong>
+                      </div>
+                    </div>
+
+                    <div id="cca-step4-calc" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Step 3 - Convert components into dollars</div>
+                      <div style={{ marginTop: '6px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
+                          <tbody>
+                            <tr style={{ background: '#ffffff' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>AR</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>DSO x Daily Revenue</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                {dso.toFixed(1)} x {formatCurrency(dailyRevenue)}
+                              </td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(arDollars)}
+                              </td>
+                            </tr>
+                            <tr style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Inventory</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>DIO x Daily COGS</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                {dio.toFixed(1)} x {formatCurrency(dailyCogs)}
+                              </td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(inventoryDollars)}
+                              </td>
+                            </tr>
+                            <tr style={{ background: '#ffffff', borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>AP</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>DPO x Daily COGS</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                {dpo.toFixed(1)} x {formatCurrency(dailyCogs)}
+                              </td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(apDollars)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Step 5 - Convert CCC days into dollars</div>
+                      <div style={{ marginTop: '6px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
+                          <tbody>
+                            <tr style={{ background: '#ffffff' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Shortcut</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>Cash impact per CCC day</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(annualRevenue)} / 365
+                              </td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(cashPerCccDayShortcut)}
+                              </td>
+                            </tr>
+                            <tr style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>1 DSO day</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>Cash impact</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>Daily Revenue</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(dailyRevenue)}
+                              </td>
+                            </tr>
+                            <tr style={{ background: '#ffffff', borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>1 DIO day</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>Cash impact</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>Daily COGS</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(dailyCogs)}
+                              </td>
+                            </tr>
+                            <tr style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>1 DPO day</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>Cash impact</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>Daily COGS</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(dailyCogs)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: '10px' }}>
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Step 2 - Daily operating activity</div>
+                      <div style={{ marginTop: '6px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
+                          <tbody>
+                            <tr style={{ background: '#ffffff' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Daily Revenue</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>TTM Revenue / 365</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(annualRevenue)} / 365
+                              </td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(dailyRevenue)}
+                              </td>
+                            </tr>
+                            <tr style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Daily COGS</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>TTM COGS / 365</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(annualCogs)} / 365
+                              </td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(dailyCogs)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
+                        {`Using trailing 12-month totals from ${availablePeriods} monthly master-financial snapshots, divided by 365.`}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>Step 4 - Operating Working Capital tied up</div>
+                      <div style={{ marginTop: '6px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
+                          <tbody>
+                            <tr style={{ background: '#ffffff' }}>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>OWC</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 0', whiteSpace: 'nowrap' }}>AR + Inventory - AP</td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(arDollars)} + {formatCurrency(inventoryDollars)} - {formatCurrency(apDollars)}
+                              </td>
+                              <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+                                {formatCurrency(owc)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ marginTop: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Definitions</div>
+                        <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                          <div><strong>CCC</strong>: Cash Conversion Cycle = DSO + DIO - DPO.</div>
+                          <div><strong>DSO</strong>: Days Sales Outstanding (how long it takes to collect receivables).</div>
+                          <div><strong>DIO</strong>: Days Inventory Outstanding (how long inventory sits before being sold).</div>
+                          <div><strong>DPO</strong>: Days Payables Outstanding (how long the company takes to pay suppliers).</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="cca-scenario-engine" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                <div style={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '10px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>CCC deterioration (cash consumed)</div>
+                  {scenarioDays.map((days) => (
+                    <div key={`worse-${days}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#334155', padding: '4px 0', borderTop: '1px solid #f1f5f9' }}>
+                      <span>+{days} days</span>
+                      <span style={{ fontWeight: 700, color: '#b91c1c' }}>{formatCurrency(days * cashPerCccDayShortcut)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '10px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>CCC improvement (cash released)</div>
+                  {scenarioDays.map((days) => (
+                    <div key={`better-${days}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#334155', padding: '4px 0', borderTop: '1px solid #f1f5f9' }}>
+                      <span>-{days} days</span>
+                      <span style={{ fontWeight: 700, color: '#166534' }}>{formatCurrency(days * cashPerCccDayShortcut)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                <div id="cca-growth-calc" style={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #c7d2fe', padding: '12px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#312e81', marginBottom: '8px' }}>Revenue growth cash requirement</div>
+                  <div style={{ marginTop: '4px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
+                      <tbody>
+                        <tr style={{ background: '#ffffff' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Formula</td>
+                          <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Cash Needed for Growth = CCC x Daily Revenue Growth</td>
+                        </tr>
+                        <tr style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Daily Revenue Growth</td>
+                          <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            ({formatCurrency(annualRevenue)} x {Math.round(growthRateAssumption * 100)}%) / 365 = {formatCurrency(revenueGrowthDollars / 365)}
+                          </td>
+                        </tr>
+                        <tr style={{ background: '#ffffff', borderTop: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Calculation</td>
+                          <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            {ccc.toFixed(1)} x {formatCurrency(revenueGrowthDollars / 365)} = <strong>{formatCurrency(growthCashNeeded)}</strong>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#334155', marginTop: '8px' }}>
+                    This tells management how much additional cash growth is expected to consume.
+                  </div>
+                </div>
+
+                <div style={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #86efac', padding: '12px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#14532d', marginBottom: '8px' }}>Working Capital Leverage Ratio</div>
+                  <div style={{ marginTop: '4px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
+                      <tbody>
+                        <tr style={{ background: '#ffffff' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Formula</td>
+                          <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>Working Capital as % of Revenue = OWC / Revenue</td>
+                        </tr>
+                        <tr style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>Calculation</td>
+                          <td style={{ padding: '8px 6px', color: '#64748b' }}>=</td>
+                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            {formatCurrency(owc)} / {formatCurrency(annualRevenue)} = <strong>{owcPctRevenue.toFixed(1)}%</strong>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#334155', marginTop: '8px' }}>
+                    Meaning: {owcPctRevenue.toFixed(1)}% of revenue is trapped in operations.
+                  </div>
+                </div>
+              </div>
+
+            </>
+          )}
+        </div>
+      );
+    };
+
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
@@ -3976,7 +4516,7 @@ export default function OperationsTab({
               transition: 'all 0.2s'
             }}
           >
-            Accural Cash Forecast
+            Accrual Cash Forecast
           </button>
           <button
             onClick={() => setActiveForecastBasisTab('cash-basis')}
@@ -3993,88 +4533,12 @@ export default function OperationsTab({
               transition: 'all 0.2s'
             }}
           >
-            Income Statemeent Forecast
+            Cash Conversion Analysis
           </button>
         </div>
 
         {activeForecastBasisTab === 'cash-basis' && (
-          <>
-            <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
-              <button
-                onClick={() => setActiveCashBasisForecastTab('income-statement-forecast')}
-                style={{
-                  padding: '12px 18px',
-                  background: activeCashBasisForecastTab === 'income-statement-forecast' ? '#667eea' : 'transparent',
-                  color: activeCashBasisForecastTab === 'income-statement-forecast' ? 'white' : '#64748b',
-                  border: 'none',
-                  borderBottom: activeCashBasisForecastTab === 'income-statement-forecast' ? '3px solid #667eea' : '3px solid transparent',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  borderRadius: '8px 8px 0 0',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Income Statement Forecast
-              </button>
-              <button
-                onClick={() => setActiveCashBasisForecastTab('cash-forecast')}
-                style={{
-                  padding: '12px 18px',
-                  background: activeCashBasisForecastTab === 'cash-forecast' ? '#667eea' : 'transparent',
-                  color: activeCashBasisForecastTab === 'cash-forecast' ? 'white' : '#64748b',
-                  border: 'none',
-                  borderBottom: activeCashBasisForecastTab === 'cash-forecast' ? '3px solid #667eea' : '3px solid transparent',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  borderRadius: '8px 8px 0 0',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Cash Forecast
-              </button>
-              <button
-                onClick={() => setActiveCashBasisForecastTab('graphs')}
-                style={{
-                  padding: '12px 18px',
-                  background: activeCashBasisForecastTab === 'graphs' ? '#667eea' : 'transparent',
-                  color: activeCashBasisForecastTab === 'graphs' ? 'white' : '#64748b',
-                  border: 'none',
-                  borderBottom: activeCashBasisForecastTab === 'graphs' ? '3px solid #667eea' : '3px solid transparent',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  borderRadius: '8px 8px 0 0',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Graphs
-              </button>
-            </div>
-
-            {activeCashBasisForecastTab === 'income-statement-forecast' && (
-              <FinancialForecastTab
-                selectedCompanyId={selectedCompanyId}
-                companyName={companyName}
-                industrySectorCategory={industrySectorCategory || null}
-                displayMode="no-graphs"
-                basisMode="cash"
-              />
-            )}
-            {activeCashBasisForecastTab === 'cash-forecast' && (
-              <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} basisMode="cash" />
-            )}
-            {activeCashBasisForecastTab === 'graphs' && (
-              <FinancialForecastTab
-                selectedCompanyId={selectedCompanyId}
-                companyName={companyName}
-                industrySectorCategory={industrySectorCategory || null}
-                displayMode="graphs-only"
-                basisMode="cash"
-              />
-            )}
-          </>
+          renderCashConversionAnalysis()
         )}
 
         {activeForecastBasisTab === 'accrual-basis' && (
