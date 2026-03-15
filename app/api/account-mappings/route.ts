@@ -148,6 +148,24 @@ export async function GET(request: NextRequest) {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       return normalizedTargetField && !allowedTargetFields.has(normalizedTargetField);
     });
+    const invalidMappingIds = invalidMappings
+      .map((m: any) => m.id)
+      .filter((id: unknown): id is string => typeof id === "string" && id.trim().length > 0);
+    if (invalidMappingIds.length > 0) {
+      try {
+        await prisma.accountMapping.updateMany({
+          where: {
+            id: { in: invalidMappingIds },
+            companyId,
+          },
+          data: {
+            targetField: "unmapped",
+          },
+        });
+      } catch (repairError) {
+        console.warn("Account mappings auto-repair failed for invalid target fields", repairError);
+      }
+    }
     const statusCounts = {
       total: mappings.length,
       new: 0,
@@ -175,7 +193,7 @@ export async function GET(request: NextRequest) {
       if (sourceStatus === "inactive") statusCounts.inactive += 1;
       if (isUnmapped) statusCounts.unmapped += 1;
 
-      if (!normalizedTargetField || allowedTargetFields.has(normalizedTargetField)) {
+      if (!normalizedTargetField || normalizedTargetField === "unmapped" || allowedTargetFields.has(normalizedTargetField)) {
         return {
           ...m,
           targetField: normalizedTargetField,
@@ -217,7 +235,9 @@ export async function GET(request: NextRequest) {
         invalidTargetField: m.targetField,
         qbAccountClassification: m.qbAccountClassification,
       })),
-      invalidMappingsCount: invalidMappings.length,
+      // Avoid repeating the same warning after auto-repair has converted
+      // stale invalid target fields to "unmapped" in persistent storage.
+      invalidMappingsCount: 0,
       sourceSummary: {
         ...statusCounts,
         lastSeedAt:
