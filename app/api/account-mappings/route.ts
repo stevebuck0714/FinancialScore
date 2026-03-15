@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getAllowedTargetFieldSet } from "@/lib/constants/sector-target-fields";
+import { getAllowedTargetFieldSet, getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
 
 export const dynamic = "force-dynamic";
 
-function normalizeTargetFieldValue(value: unknown): string {
+function normalizeForCompare(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function normalizeTargetFieldValue(value: unknown, industrySectorCategory?: string | null): string {
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return "";
   const normalized = raw.toLowerCase();
@@ -25,6 +32,18 @@ function normalizeTargetFieldValue(value: unknown): string {
   ) {
     return "nonOperatingExpense";
   }
+  // Coerce legacy label-style values (e.g., "Other Revenue") to valid option values.
+  const sectorCategory = industrySectorCategory || "01";
+  const options = Object.values(getTargetFieldOptions(sectorCategory)).flat();
+  const byExactValue = options.find((opt) => opt.value.toLowerCase() === normalized);
+  if (byExactValue) return byExactValue.value;
+
+  const rawComparable = normalizeForCompare(raw);
+  const byValueComparable = options.find((opt) => normalizeForCompare(opt.value) === rawComparable);
+  if (byValueComparable) return byValueComparable.value;
+  const byLabelComparable = options.find((opt) => normalizeForCompare(opt.label) === rawComparable);
+  if (byLabelComparable) return byLabelComparable.value;
+
   return raw;
 }
 
@@ -124,8 +143,9 @@ export async function GET(request: NextRequest) {
     const snapshotByName = new Map(snapshot.map((row) => [normalize(row.accountName), row]));
 
     const allowedTargetFields = getAllowedTargetFieldSet(company?.industrySectorCategory || '01');
+    const sectorCategory = company?.industrySectorCategory || '01';
     const invalidMappings = mappings.filter((m: any) => {
-      const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
+      const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       return normalizedTargetField && !allowedTargetFields.has(normalizedTargetField);
     });
     const statusCounts = {
@@ -138,7 +158,7 @@ export async function GET(request: NextRequest) {
     const sanitizedMappings = mappings.map((m: any) => {
       const sourceMatch =
         snapshotById.get(normalize(m.qbAccountId)) || snapshotByName.get(normalize(m.qbAccount));
-      const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
+      const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const isUnmapped =
         !normalizedTargetField || normalizedTargetField === "unmapped";
       let sourceStatus: "mapped" | "new" | "changed" | "inactive" = isUnmapped ? "new" : "mapped";
@@ -251,14 +271,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const allowedTargetFields = getAllowedTargetFieldSet(company.industrySectorCategory || '01');
+    const sectorCategory = company.industrySectorCategory || '01';
+    const allowedTargetFields = getAllowedTargetFieldSet(sectorCategory);
 
     const uniqueMappings = mappings.filter(
       (mapping: any, index: number, self: any[]) =>
         index === self.findIndex((m: any) => m.qbAccount === mapping.qbAccount),
     );
     const sanitizedUniqueMappings = uniqueMappings.map((m: any) => {
-      const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
+      const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const isExplicitlyMapped = normalizedTargetField && normalizedTargetField !== "unmapped";
       if (isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) {
         return {
@@ -299,7 +320,7 @@ export async function POST(request: NextRequest) {
     let created = 0;
     let updated = 0;
     for (const m of sanitizedUniqueMappings) {
-      const normalizedTargetField = normalizeTargetFieldValue(m.targetField);
+      const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const targetField =
         normalizedTargetField && normalizedTargetField !== "" ? normalizedTargetField : "unmapped";
       const baseMappingData = {
