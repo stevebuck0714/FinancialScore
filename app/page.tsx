@@ -907,6 +907,7 @@ function FinancialScorePage() {
     defaultDataRoomConsultantAnnualPrice,
   ]);
   const isDataRoomPaymentRequired = (dataRoomPricing.monthly > 0) || (dataRoomPricing.quarterly > 0) || (dataRoomPricing.annual > 0);
+  const canShowDataRoomEntry = Boolean(selectedCompanyId) && (isDataRoomEnabledByAdmin || !isDataRoomPaymentRequired);
 
   const handleToggleDataRoomEnabledByAdmin = async (enabled: boolean) => {
     if (!selectedCompanyId) {
@@ -955,8 +956,10 @@ function FinancialScorePage() {
         return;
       }
       if (!isDataRoomEnabledByAdmin) {
-        alert('DataRoom is not enabled for this company.');
-        return;
+        if (isDataRoomPaymentRequired) {
+          alert('DataRoom is not enabled for this company.');
+          return;
+        }
       }
       if (!isDataRoomActive) {
         if (!isDataRoomPaymentRequired) {
@@ -1179,7 +1182,7 @@ function FinancialScorePage() {
 
   // Master data for dynamic goals
   const [masterDataCategories, setMasterDataCategories] = useState<any[]>([]);
-  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation'>('profile');
+  const [companyManagementSubTab, setCompanyManagementSubTab] = useState<'details' | 'profile' | 'payments' | 'documentation' | 'dataroom'>('profile');
   const [consultantDashboardTab, setConsultantDashboardTab] = useState<'team-management' | 'company-list' | 'documentation'>('company-list');
   const [siteAdminTab, setSiteAdminTab] = useState<'consultants' | 'businesses' | 'affiliates' | 'default-pricing' | 'billing' | 'siteadmins'>('consultants');
   const [siteAdminBusinessesLoading, setSiteAdminBusinessesLoading] = useState(false);
@@ -1308,7 +1311,41 @@ function FinancialScorePage() {
   const [companyToDelete, setCompanyToDelete] = useState<{companyId: string, businessId: string, companyName: string} | null>(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [siteAdminViewingAs, setSiteAdminViewingAs] = useState<any>(null);
+  const [siteAdminSessionUser, setSiteAdminSessionUser] = useState<any>(null);
   const [showAddConsultantForm, setShowAddConsultantForm] = useState(false);
+  // Persist the original Site Administrator identity so "Return to Site Administration"
+  // remains available while previewing companies across navigation.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = localStorage.getItem('fs_siteAdminSessionUser');
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && String(parsed.role || '').toLowerCase() === 'siteadmin') {
+        setSiteAdminSessionUser(parsed);
+      } else {
+        localStorage.removeItem('fs_siteAdminSessionUser');
+      }
+    } catch {
+      localStorage.removeItem('fs_siteAdminSessionUser');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (currentUser && String(currentUser.role || '').toLowerCase() === 'siteadmin') {
+      setSiteAdminSessionUser(currentUser);
+      localStorage.setItem('fs_siteAdminSessionUser', JSON.stringify(currentUser));
+    }
+  }, [currentUser]);
+
+  const canReturnToSiteAdmin = Boolean(
+    siteAdminViewingAs ||
+      (siteAdminSessionUser && String(currentUser?.role || '').toLowerCase() !== 'siteadmin')
+  );
+
+  const siteAdminReturnUser = siteAdminViewingAs || siteAdminSessionUser;
+
   
   // Affiliate management state
   const [affiliates, setAffiliates] = useState<any[]>([]);
@@ -4465,13 +4502,20 @@ function FinancialScorePage() {
     setFile(null);
     setColumns([]);
     localStorage.removeItem('fs_currentUser');
+    localStorage.removeItem('fs_siteAdminSessionUser');
     localStorage.removeItem('fs_selectedCompanyId');
+    setSiteAdminViewingAs(null);
+    setSiteAdminSessionUser(null);
   };
 
   const exitSiteAdminPreview = () => {
-    if (!siteAdminViewingAs) return;
-    setCurrentUser(siteAdminViewingAs);
+    if (!siteAdminReturnUser) return;
+    setCurrentUser(siteAdminReturnUser);
     setSiteAdminViewingAs(null);
+    setSiteAdminSessionUser(siteAdminReturnUser);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('fs_siteAdminSessionUser', JSON.stringify(siteAdminReturnUser));
+    }
     setCurrentView('siteadmin');
     setLoadedConsultantId(null);
     safeSetCompanies([]); // Clear companies to prevent cross-account data leakage
@@ -7542,7 +7586,7 @@ function FinancialScorePage() {
               </div>
             )}
 
-            {isDataRoomEnabledByAdmin && selectedCompanyId && (
+            {canShowDataRoomEntry && (
               <div style={{ marginBottom: '10px' }}>
                 <h3
                   onClick={() => handleNavigation('dataroom')}
@@ -7630,7 +7674,7 @@ function FinancialScorePage() {
               }}
             >
               <div style={{ fontSize: '11px', fontWeight: '600', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px', paddingLeft: '24px' }}>
-                {siteAdminViewingAs ? 'Site Admin (Preview)' : (currentUser?.role === 'consultant' ? 'Consultant' : 'User')}
+                {canReturnToSiteAdmin ? 'Site Admin (Preview)' : (currentUser?.role === 'consultant' ? 'Consultant' : 'User')}
               </div>
               <div style={{ 
                 fontSize: '14px', 
@@ -7639,9 +7683,9 @@ function FinancialScorePage() {
                 paddingLeft: '24px',
                 transition: 'color 0.2s'
               }}>
-                {siteAdminViewingAs?.name || currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email}
+                {(siteAdminReturnUser?.name && canReturnToSiteAdmin) ? siteAdminReturnUser.name : (currentUser?.consultantCompanyName || currentUser?.name || currentUser?.email)}
               </div>
-              {siteAdminViewingAs && (
+              {canReturnToSiteAdmin && (
                 <div style={{ paddingLeft: '24px', marginTop: '8px' }}>
                   <button
                     onClick={(e) => {
@@ -7878,6 +7922,42 @@ function FinancialScorePage() {
 
         {/* Main Content Area */}
         <main className="app-shell-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: '8px' }}>
+          {canReturnToSiteAdmin && (
+            <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '8px 24px 0 24px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  background: '#fffbeb',
+                  border: '1px solid #fcd34d',
+                  borderRadius: '10px',
+                  padding: '10px 12px',
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#92400e' }}>
+                  Preview mode active. Return to Site Administration at any time.
+                </div>
+                <button
+                  onClick={exitSiteAdminPreview}
+                  style={{
+                    padding: '8px 12px',
+                    background: '#f59e0b',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Return to Site Admin
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Restrict access for assessment users - only show Team Assessment views */}
           {(!(currentUser?.userType === 'assessment') || currentView === 'ma-questionnaire' || currentView === 'ma-your-results' || currentView === 'ma-scores-summary' || currentView === 'ma-charts' || currentView === 'ma-scoring-guide') && (
           <>
@@ -8245,6 +8325,8 @@ function FinancialScorePage() {
               dataRoomEnabledByAdmin={isDataRoomEnabledByAdmin}
               dataRoomSubscriptionStatus={dataRoomSubscriptionStatus}
               onToggleDataRoomEnabledByAdmin={handleToggleDataRoomEnabledByAdmin}
+              showDataRoomTab={canShowDataRoomEntry}
+              onOpenDataRoom={() => handleNavigation('dataroom')}
             />
           )}
 

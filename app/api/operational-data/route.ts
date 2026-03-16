@@ -137,9 +137,9 @@ export async function GET(request: NextRequest) {
       await activateRealOperationalData(companyId);
       hasRealOperationalData = true;
     }
-    // In production, hard-disable mock/fallback operational responses.
-    // In non-production, mock data remains explicit opt-in only.
-    const shouldUseMockData = !isProduction && company.forceOperationalMockData === true;
+    // Explicit admin override for demos: if enabled, use mock/fallback operational responses
+    // in any environment (including production).
+    const shouldUseMockData = company.forceOperationalMockData === true;
 
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
 
