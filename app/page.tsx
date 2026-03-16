@@ -1453,6 +1453,8 @@ function FinancialScorePage() {
   const [sdeAnalysisTotalsState, setSdeAnalysisTotalsState] = useState<Record<string, number>>({});
   const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
   const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
+  const [ebitdaAnalysisTab, setEbitdaAnalysisTab] = useState<'revenue-quality' | 'customer-mix' | 'cash-flow-quality' | 'balance-sheet-quality'>('revenue-quality');
+  const [dcfAnalysisTab, setDcfAnalysisTab] = useState<'working-capital' | 'cash-flow-quality' | 'revenue-durability' | 'balance-sheet-quality'>('working-capital');
   const [revenueQualityCardInfoOpen, setRevenueQualityCardInfoOpen] = useState<Record<'topBucket' | 'cashGap' | 'dsoTrend' | 'arSpread', boolean>>({
     topBucket: false,
     cashGap: false,
@@ -11108,7 +11110,9 @@ function FinancialScorePage() {
       {currentView === 'valuation' && selectedCompanyId && monthly.length > 0 && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>SDE Valuations</h1>
+            <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+              {valuationMethodTab === 'sde' ? 'SDE Valuation' : valuationMethodTab === 'ebitda' ? 'EBITDA Valuation' : 'DCF Valuation'}
+            </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <button
                 id="valuation-save-settings-btn"
@@ -12301,7 +12305,7 @@ function FinancialScorePage() {
                       <br />
                       <strong>Source approved for SDE:</strong> {sdeIsApprovedSource ? 'Yes' : 'No'}
                       <br />
-                      <strong>Operational data:</strong> {sdeHasRealOperationalData ? 'Real operational data available' : 'Not available or mock-forced'}
+                      <strong>Operational data:</strong> Optional for future enrichment (not required for current SDE scoring)
                       <br />
                       To continue, load validated company financial data (no mock source).
                     </div>
@@ -12339,7 +12343,7 @@ function FinancialScorePage() {
                   </div>
                   {sdeModuleTab !== 'balance-sheet-quality' && (
                     <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
-                      Data source: Company financial data ({latestFinancialSource || 'connected source'}) | Operational context: {sdeHasRealOperationalData ? 'real data available' : 'not available'}
+                      Data source: Company financial data ({latestFinancialSource || 'connected source'}) | Scoring mode: Financial-data baseline
                     </div>
                   )}
                 </div>
@@ -13397,7 +13401,7 @@ function FinancialScorePage() {
                 <div style={{ background: 'white', borderRadius: '10px', padding: '8px 16px 16px 16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '10px' }}>SDE Module: Customer Quality</h2>
                   <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
-                    Customer concentration and dependency risk based on customer-level operational sales snapshots (TTM rolling analysis).
+                    Customer concentration and dependency risk is handled with financial proxies today, with customer-level operational feeds as optional future enhancement.
                   </p>
 
                   {customerQualityLoading && (
@@ -13418,7 +13422,7 @@ function FinancialScorePage() {
                           <div key={`cq-placeholder-card-${title}`} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>{title}</div>
                             <div style={{ fontSize: '18px', color: '#94a3b8', fontWeight: 700 }}>--</div>
-                            <div style={{ marginTop: '4px', fontSize: '11px', color: '#94a3b8' }}>Ops data pending</div>
+                            <div style={{ marginTop: '4px', fontSize: '11px', color: '#94a3b8' }}>Financial baseline active</div>
                           </div>
                         ))}
                       </div>
@@ -13446,7 +13450,7 @@ function FinancialScorePage() {
                             <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>--</div>
                             <div style={{ fontSize: '11px', color: '#94a3b8' }}>--</div>
                             <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>Pending</div>
-                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Ops data pending</div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Optional ops enrichment</div>
                           </div>
                         ))}
                       </div>
@@ -15198,18 +15202,18 @@ function FinancialScorePage() {
                         title: 'Customer Quality',
                         outcome: customerQualityInsights.hasData
                           ? `Top customer concentration is ${topCustomerPct.toFixed(1)}% with live customer-quality signals enabled.`
-                          : 'Customer-level concentration and retention feeds are not connected yet.',
+                          : 'Customer-level feeds are not connected; financial proxy signals are used in Revenue Quality for now.',
                         meaning: customerQualityInsights.hasData
                           ? 'Customer concentration and retention can now be actively monitored for deal risk.'
-                          : 'Customer risk can only be assessed directionally until customer-level operational data is connected.',
+                          : 'Current underwriting remains actionable using financial-data proxies while preserving an optional ops upgrade path.',
                         valueAdjustment: 'Direct pre-multiple adjustment: N/A until retention/churn economics are modeled.',
                         valueImpact: 'Indirect impact via risk premium / multiple confidence; show as qualitative until modeled.',
                         impact: customerQualityInsights.hasData
                           ? 'Customer-risk insights are available for concentration, retention, and collections quality.'
-                          : 'No direct customer-quality valuation adjustment is applied until customer data is connected.',
+                          : 'No direct customer-feed valuation adjustment is applied in financial-only mode.',
                         action: customerQualityInsights.hasData
                           ? 'Use customer-quality signals to prioritize retention and concentration mitigation actions.'
-                          : 'Connect customer revenue, retention, and AR aging feeds to complete risk scoring.',
+                          : 'Continue using financial proxy monitoring now; optionally connect customer feeds later for deeper segmentation.',
                       },
                     ] as const;
                     return (
@@ -15278,19 +15282,58 @@ function FinancialScorePage() {
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     EBITDA Multiple Method
                   </h2>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    {[
+                      { id: 'revenue-quality' as const, label: 'Revenue Quality' },
+                      { id: 'customer-mix' as const, label: 'Customer Mix / Concentration' },
+                      { id: 'cash-flow-quality' as const, label: 'Cash Flow Quality' },
+                      { id: 'balance-sheet-quality' as const, label: 'Balance Sheet Quality' },
+                    ].map((tab) => (
+                      <button
+                        key={`ebitda-analysis-top-tab-${tab.id}`}
+                        onClick={() => setEbitdaAnalysisTab(tab.id)}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          background: ebitdaAnalysisTab === tab.id ? '#667eea' : '#f1f5f9',
+                          color: ebitdaAnalysisTab === tab.id ? 'white' : '#334155'
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
                   
-                  <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                    <div style={{ marginBottom: '8px' }}>
-                      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months EBITDA</div>
-                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>${(ttmEBITDA / 1000).toFixed(0)}K</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '12px' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Trailing 12 Months EBITDA</div>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#667eea' }}>${Math.round(ttmEBITDA).toLocaleString()}</div>
+                      </div>
+                      
+                      <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                        <strong>Calculation:</strong> Net Income + Interest + Depreciation & Amortization
+                        <br/>
+                        = ${(ttmNetIncome / 1000).toFixed(0)}K + ${(ttmInterest / 1000).toFixed(0)}K + ${(ttmDepreciation / 1000).toFixed(0)}K
+                        <br/>
+                        <em style={{ fontSize: '12px', color: '#64748b' }}>Note: D&A and Interest are added back to Net Income</em>
+                      </div>
                     </div>
-                    
-                    <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                      <strong>Calculation:</strong> Net Income + Interest + Depreciation & Amortization
-                      <br/>
-                      = ${(ttmNetIncome / 1000).toFixed(0)}K + ${(ttmInterest / 1000).toFixed(0)}K + ${(ttmDepreciation / 1000).toFixed(0)}K
-                      <br/>
-                      <em style={{ fontSize: '12px', color: '#64748b' }}>Note: D&A and Interest are added back to Net Income</em>
+
+                    <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+                        Estimated Business Value (EBITDA)
+                      </div>
+                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>
+                        ${Math.round(ebitdaValuation).toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                        Range: ${Math.round(ttmEBITDA * 3.0).toLocaleString()} - ${Math.round(ttmEBITDA * 8.0).toLocaleString()}
+                      </div>
                     </div>
                   </div>
                   
@@ -15313,16 +15356,357 @@ function FinancialScorePage() {
                     </div>
                   </div>
                   
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-                      Estimated Business Value (EBITDA)
+                  <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 3fr', gap: '12px', alignItems: 'start' }}>
+                    <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>
+                        EBITDA Operating Quality Lens (Financial Baseline)
+                      </div>
+                      <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', border: '1px solid #e2e8f0' }}>
+                        {ebitdaAnalysisTab === 'revenue-quality' && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Revenue Quality</div>
+                            <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                              <div>Top revenue bucket proxy: {revenueQualityInsights.topBucketSharePct !== null ? `${revenueQualityInsights.topBucketSharePct.toFixed(1)}%` : 'N/A'}</div>
+                              <div>DSO trend (12M): {revenueQualityInsights.dsoTrend12 >= 0 ? '+' : ''}{revenueQualityInsights.dsoTrend12.toFixed(1)} days</div>
+                              <div>AR vs revenue spread: {revenueQualityInsights.arRevenueSpread >= 0 ? '+' : ''}{revenueQualityInsights.arRevenueSpread.toFixed(1)} pts</div>
+                            </div>
+                          </>
+                        )}
+                        {ebitdaAnalysisTab === 'customer-mix' && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Customer Mix / Concentration</div>
+                            <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                              {customerQualityInsights.hasData ? (
+                                <>
+                                  <div>Top 1 customer: {customerQualityInsights.top1Pct.toFixed(1)}%</div>
+                                  <div>Top 5 customers: {customerQualityInsights.top5Pct.toFixed(1)}%</div>
+                                  <div>HHI: {Math.round(customerQualityInsights.hhi).toLocaleString()}</div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>Customer-level feeds not connected.</div>
+                                  <div>Using revenue concentration proxy in Revenue Quality for now.</div>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}
+                        {ebitdaAnalysisTab === 'cash-flow-quality' && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Cash Flow Quality (Support)</div>
+                            <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                              <div>Cash conversion: {cashFlowQualityInsights.cashConversionPct.toFixed(1)}%</div>
+                              <div>FCF durability: {cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}%</div>
+                              <div>CapEx gap: {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}</div>
+                            </div>
+                          </>
+                        )}
+                        {ebitdaAnalysisTab === 'balance-sheet-quality' && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Balance Sheet Risk Flags</div>
+                            {(() => {
+                              const latestMonth: any = monthly[monthly.length - 1] || {};
+                              const latestCurrentAssets = Number(latestMonth.tca ?? 0);
+                              const latestCurrentLiabilities = Number(latestMonth.tcl ?? 0);
+                              const latestTotalAssets = Number(latestMonth.totalAssets ?? 0);
+                              const latestTotalLiabilities = Number(latestMonth.totalLiab ?? 0);
+                              const latestTotalEquity =
+                                Number(latestMonth.ownersCapital ?? 0) +
+                                Number(latestMonth.ownersDraw ?? 0) +
+                                Number(latestMonth.commonStock ?? 0) +
+                                Number(latestMonth.preferredStock ?? 0) +
+                                Number(latestMonth.retainedEarnings ?? 0) +
+                                Number(latestMonth.additionalPaidInCapital ?? 0) +
+                                Number(latestMonth.treasuryStock ?? 0);
+                              const currentRatioBs = latestCurrentLiabilities > 0 ? latestCurrentAssets / latestCurrentLiabilities : 0;
+                              const debtToEquityBs = latestTotalEquity > 0 ? latestTotalLiabilities / latestTotalEquity : 0;
+                              const equityRatioBs = latestTotalAssets > 0 ? (latestTotalEquity / latestTotalAssets) * 100 : 0;
+                              return (
+                                <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                                  <div>Current ratio: {currentRatioBs.toFixed(2)}x</div>
+                                  <div>Debt / equity: {debtToEquityBs.toFixed(2)}x</div>
+                                  <div>Equity / assets: {equityRatioBs.toFixed(1)}%</div>
+                                </div>
+                              );
+                            })()}
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#667eea' }}>
-                      ${Math.round(ebitdaValuation).toLocaleString()}
+
+                    <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>
+                      {ebitdaAnalysisTab === 'revenue-quality' && 'Revenue Quality Detail'}
+                      {ebitdaAnalysisTab === 'customer-mix' && 'Customer Mix / Concentration Detail'}
+                      {ebitdaAnalysisTab === 'cash-flow-quality' && 'Cash Flow Quality Detail'}
+                      {ebitdaAnalysisTab === 'balance-sheet-quality' && 'Balance Sheet Quality Detail'}
                     </div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                      Range: ${Math.round(ttmEBITDA * 3.0).toLocaleString()} - ${Math.round(ttmEBITDA * 8.0).toLocaleString()}
+                    {ebitdaAnalysisTab === 'revenue-quality' && (
+                      (() => {
+                        const topBucket = revenueQualityInsights.topBucketSharePct ?? 0;
+                        const revenueRiskScore =
+                          (Math.max(0, revenueQualityInsights.dsoTrend12) > sdeSectorBenchmarks.dso.trendWarn ? 30 : 0) +
+                          (Math.max(0, revenueQualityInsights.arRevenueSpread) > sdeSectorBenchmarks.dso.spreadWarn ? 30 : 0) +
+                          (Math.abs(revenueQualityInsights.avgGap12) > sdeSectorBenchmarks.dso.gapWarn ? 20 : 0) +
+                          (topBucket >= 85 ? 20 : topBucket >= 70 ? 10 : 0);
+                        const confidenceLabel = revenueRiskScore >= 60 ? 'Low confidence' : revenueRiskScore >= 30 ? 'Moderate confidence' : 'High confidence';
+                        const impliedMultipleAdj = revenueRiskScore >= 60 ? -0.4 : revenueRiskScore >= 30 ? -0.2 : 0.1;
+                        return (
+                          <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                            <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Revenue quality conviction is <strong style={{ color: '#1e293b' }}>{confidenceLabel}</strong> with risk score {revenueRiskScore}/100.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Evidence:</strong> DSO trend {revenueQualityInsights.dsoTrend12 >= 0 ? '+' : ''}{revenueQualityInsights.dsoTrend12.toFixed(1)} days, AR spread {revenueQualityInsights.arRevenueSpread >= 0 ? '+' : ''}{revenueQualityInsights.arRevenueSpread.toFixed(1)} pts, revenue-to-cash gap {revenueQualityInsights.avgGap12 >= 0 ? '+' : ''}{revenueQualityInsights.avgGap12.toFixed(1)}%, concentration proxy {topBucket.toFixed(1)}%.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Revenue quality supports an EBITDA multiple move of {impliedMultipleAdj >= 0 ? '+' : ''}{impliedMultipleAdj.toFixed(1)}x versus base case.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Verify AR aging quality and invoicing discipline to defend premium multiple positioning.</div>
+                          </div>
+                        );
+                      })()
+                    )}
+                    {ebitdaAnalysisTab === 'customer-mix' && (
+                      <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                        {customerQualityInsights.hasData ? (
+                          <>
+                            <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Concentration risk is measurable with top customer at {customerQualityInsights.top1Pct.toFixed(1)}% and top 5 at {customerQualityInsights.top5Pct.toFixed(1)}%.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Evidence:</strong> HHI is {Math.round(customerQualityInsights.hhi).toLocaleString()} across {customerQualityInsights.customerCount.toLocaleString()} active customers.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Higher concentration warrants tighter EBITDA multiple bands and higher buyer diligence scrutiny.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Confirm contract durability and renewal depth for top accounts before underwriting upside.</div>
+                          </>
+                        ) : (
+                          <>
+                            <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Customer concentration is assessed with financial proxies only.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Keep EBITDA multiple assumptions conservative until customer-level concentration and retention are verified.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Prioritize top-customer revenue validation and churn/renewal evidence in the next data package.</div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {ebitdaAnalysisTab === 'cash-flow-quality' && (
+                      (() => {
+                        const conversion = cashFlowQualityInsights.cashConversionPct;
+                        const durability = cashFlowQualityInsights.fcfDurabilityPct;
+                        const qualityLabel = conversion >= 80 && durability >= 20 ? 'Strong support' : conversion >= 60 && durability >= 10 ? 'Adequate support' : 'Weak support';
+                        const impliedMultipleAdj = conversion >= 80 ? 0.2 : conversion >= 60 ? 0 : -0.3;
+                        return (
+                          <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                            <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> EBITDA quality has <strong style={{ color: '#1e293b' }}>{qualityLabel}</strong> from a cash-realization perspective.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Evidence:</strong> Cash conversion {conversion.toFixed(1)}%, FCF durability {durability.toFixed(1)}%, maintenance CapEx gap {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Cash-quality profile implies {impliedMultipleAdj >= 0 ? '+' : ''}{impliedMultipleAdj.toFixed(1)}x adjustment to defendable EBITDA multiple.</div>
+                            <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Confirm recurring conversion versus one-off working-capital timing benefits.</div>
+                          </div>
+                        );
+                      })()
+                    )}
+                    {ebitdaAnalysisTab === 'balance-sheet-quality' && (
+                      <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                        {(() => {
+                          const latestMonth: any = monthly[monthly.length - 1] || {};
+                          const latestCurrentAssets = Number(latestMonth.tca ?? 0);
+                          const latestCurrentLiabilities = Number(latestMonth.tcl ?? 0);
+                          const latestTotalAssets = Number(latestMonth.totalAssets ?? 0);
+                          const latestTotalLiabilities = Number(latestMonth.totalLiab ?? 0);
+                          const latestTotalEquity =
+                            Number(latestMonth.ownersCapital ?? 0) +
+                            Number(latestMonth.ownersDraw ?? 0) +
+                            Number(latestMonth.commonStock ?? 0) +
+                            Number(latestMonth.preferredStock ?? 0) +
+                            Number(latestMonth.retainedEarnings ?? 0) +
+                            Number(latestMonth.additionalPaidInCapital ?? 0) +
+                            Number(latestMonth.treasuryStock ?? 0);
+                          const currentRatioBs = latestCurrentLiabilities > 0 ? latestCurrentAssets / latestCurrentLiabilities : 0;
+                          const debtToEquityBs = latestTotalEquity > 0 ? latestTotalLiabilities / latestTotalEquity : 0;
+                          const equityRatioBs = latestTotalAssets > 0 ? (latestTotalEquity / latestTotalAssets) * 100 : 0;
+                          const bsRiskScore = (currentRatioBs < 1.2 ? 35 : 0) + (debtToEquityBs > 2 ? 35 : 0) + (equityRatioBs < 25 ? 30 : 0);
+                          const bsConfidence = bsRiskScore >= 60 ? 'Low' : bsRiskScore >= 30 ? 'Moderate' : 'High';
+                          return (
+                            <>
+                              <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Balance-sheet support for multiple is <strong style={{ color: '#1e293b' }}>{bsConfidence}</strong> confidence.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Evidence:</strong> Current ratio {currentRatioBs.toFixed(2)}x (target {'>='} 1.20x), Debt/Equity {debtToEquityBs.toFixed(2)}x (target {'<='} 2.00x), Equity/Assets {equityRatioBs.toFixed(1)}% (target {'>='} 25.0%).</div>
+                              <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Stronger balance-sheet quality widens support for upper-end EBITDA multiple selection.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Prioritize leverage covenant headroom and near-term liquidity resilience.</div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
                     </div>
+                  </div>
+
+                  <div style={{ marginTop: '16px', background: '#ffffff', borderRadius: '10px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>
+                      EBITDA Operating Quality Lens Trends (Financial Baseline)
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
+                      Graphs update by selected EBITDA tab to visualize trend direction and valuation risk/defensibility.
+                    </div>
+
+                    {ebitdaAnalysisTab === 'revenue-quality' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <LineChart
+                          title="DSO Trend (Last 36 Months)"
+                          data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.dso }))}
+                          color="#f59e0b"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(0)} days`}
+                        />
+                        <LineChart
+                          title="Revenue-to-Cash Gap % (Last 36 Months)"
+                          data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.gapPct }))}
+                          color="#ef4444"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                        <LineChart
+                          title="AR vs Revenue Growth Spread (Last 36 Months)"
+                          data={revenueQualityInsights.arRevenueSpreadSeries.filter((d) => d.hasData).map((d) => ({ month: d.month, value: d.value }))}
+                          color="#8b5cf6"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(1)} pts`}
+                        />
+                      </div>
+                    )}
+
+                    {ebitdaAnalysisTab === 'customer-mix' && (
+                      <>
+                        {customerQualityInsights.hasData ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <LineChart
+                              title="Top 1 Customer Concentration % (Rolling 12M)"
+                              data={customerQualityInsights.top1Series}
+                              color="#ef4444"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${v.toFixed(1)}%`}
+                            />
+                            <LineChart
+                              title="Top 5 Customers Concentration % (Rolling 12M)"
+                              data={customerQualityInsights.top5Series}
+                              color="#f59e0b"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${v.toFixed(1)}%`}
+                            />
+                            <LineChart
+                              title="Customer Concentration Index (HHI)"
+                              data={customerQualityInsights.hhiSeries}
+                              color="#6366f1"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${Math.round(v).toLocaleString()}`}
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: '12px', color: '#475569', marginBottom: '10px' }}>
+                              Customer-level records are not connected yet; using revenue-quality proxy trends for concentration risk context.
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                              <LineChart
+                                title="DSO Trend Proxy (Last 36 Months)"
+                                data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.dso }))}
+                                color="#f59e0b"
+                                compact
+                                labelFormat="m-yy-adaptive"
+                                formatter={(v) => `${v.toFixed(0)} days`}
+                              />
+                              <LineChart
+                                title="AR vs Revenue Growth Spread Proxy"
+                                data={revenueQualityInsights.arRevenueSpreadSeries.filter((d) => d.hasData).map((d) => ({ month: d.month, value: d.value }))}
+                                color="#8b5cf6"
+                                compact
+                                labelFormat="m-yy-adaptive"
+                                formatter={(v) => `${v.toFixed(1)} pts`}
+                              />
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+
+                    {ebitdaAnalysisTab === 'cash-flow-quality' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <LineChart
+                          title="Cash Conversion % (OCF / EBITDA)"
+                          data={cashFlowQualityInsights.cashConversionMiniSeries}
+                          color="#10b981"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                        <LineChart
+                          title="FCF Durability % (FCF / EBITDA)"
+                          data={cashFlowQualityInsights.fcfDurabilityMiniSeries}
+                          color="#0ea5e9"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                        <LineChart
+                          title="Maintenance CapEx Gap ($)"
+                          data={cashFlowQualityInsights.capexGapMiniSeries}
+                          color="#f97316"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v < 0 ? '-' : ''}$${Math.round(Math.abs(v)).toLocaleString()}`}
+                        />
+                      </div>
+                    )}
+
+                    {ebitdaAnalysisTab === 'balance-sheet-quality' && (
+                      (() => {
+                        const safeDiv = (num: number, den: number) => (Math.abs(den) > 0 ? num / den : 0);
+                        const bsTrendRows = monthly.slice(-36).map((m: any) => {
+                          const equityFromDetail =
+                            Number(m.ownersCapital || 0) +
+                            Number(m.ownersDraw || 0) +
+                            Number(m.commonStock || 0) +
+                            Number(m.preferredStock || 0) +
+                            Number(m.retainedEarnings || 0) +
+                            Number(m.additionalPaidInCapital || 0) +
+                            Number(m.treasuryStock || 0);
+                          const totalEquity = Number(m.totalEquity || equityFromDetail || 0);
+                          const totalAssets = Number(m.totalAssets || 0);
+                          const totalLiabilities = Number(m.totalLiab || 0);
+                          const currentAssets = Number(m.tca || m.currentAssets || 0);
+                          const currentLiabilities = Number(m.tcl || m.currentLiabilities || 0);
+                          return {
+                            month: String(m.month || ''),
+                            currentRatio: safeDiv(currentAssets, currentLiabilities),
+                            debtToEquity: totalEquity > 0 ? safeDiv(totalLiabilities, totalEquity) : 0,
+                            equityRatioPct: safeDiv(totalEquity, totalAssets) * 100,
+                          };
+                        });
+                        return (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <LineChart
+                              title="Current Ratio Trend"
+                              data={bsTrendRows.map((r) => ({ month: r.month, value: r.currentRatio }))}
+                              color="#0ea5e9"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${v.toFixed(2)}x`}
+                            />
+                            <LineChart
+                              title="Debt / Equity Trend"
+                              data={bsTrendRows.map((r) => ({ month: r.month, value: r.debtToEquity }))}
+                              color="#ef4444"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${v.toFixed(2)}x`}
+                            />
+                            <LineChart
+                              title="Equity / Assets % Trend"
+                              data={bsTrendRows.map((r) => ({ month: r.month, value: r.equityRatioPct }))}
+                              color="#22c55e"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${v.toFixed(1)}%`}
+                            />
+                          </div>
+                        );
+                      })()
+                    )}
                   </div>
                 </div>
                 )}
@@ -15333,73 +15717,110 @@ function FinancialScorePage() {
                   <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
                     Discounted Cash Flow (DCF) Method
                   </h2>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    {[
+                      { id: 'working-capital' as const, label: 'Working Capital' },
+                      { id: 'cash-flow-quality' as const, label: 'Cash Flow Quality' },
+                      { id: 'revenue-durability' as const, label: 'Revenue Durability' },
+                      { id: 'balance-sheet-quality' as const, label: 'Balance Sheet Quality' },
+                    ].map((tab) => (
+                      <button
+                        key={`dcf-analysis-top-tab-${tab.id}`}
+                        onClick={() => setDcfAnalysisTab(tab.id)}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          background: dcfAnalysisTab === tab.id ? '#667eea' : '#f1f5f9',
+                          color: dcfAnalysisTab === tab.id ? 'white' : '#334155'
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                    <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '10px' }}>
-                        <div>
-                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Historical Growth Input</div>
-                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{growth_24mo.toFixed(1)}%</div>
-                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>
-                            Used as Year 1 growth and faded to terminal rate by Year 5
-                          </div>
+                    <div style={{ background: '#ffffff', borderRadius: '10px', padding: '14px', border: '1px solid #fde68a' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e', marginBottom: '10px' }}>
+                        Key DCF Inputs
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>Historical Growth</div>
+                          <div style={{ fontSize: '20px', fontWeight: 700, color: '#d97706' }}>{growth_24mo.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#a16207', marginTop: '4px' }}>Year 1 anchor, fades to terminal by Year 5</div>
                         </div>
-                        <div>
-                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Discount Rate</div>
-                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfDiscountRate.toFixed(1)}%</div>
-                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Risk-adjusted rate</div>
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>Discount Rate</div>
+                          <div style={{ fontSize: '20px', fontWeight: 700, color: '#d97706' }}>{dcfDiscountRate.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#a16207', marginTop: '4px' }}>Risk-adjusted return</div>
                         </div>
-                        <div>
-                          <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>Terminal Growth</div>
-                          <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>{dcfTerminalGrowth.toFixed(1)}%</div>
-                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>Perpetuity growth</div>
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>Terminal Growth</div>
+                          <div style={{ fontSize: '20px', fontWeight: 700, color: '#d97706' }}>{dcfTerminalGrowth.toFixed(1)}%</div>
+                          <div style={{ fontSize: '11px', color: '#a16207', marginTop: '4px' }}>Perpetuity assumption</div>
                         </div>
                       </div>
-                      
-                      <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.6', marginBottom: '16px' }}>
-                        5-year free cash flow projection based on historical growth rate, discounted to present value. Includes terminal value calculation for perpetuity beyond forecast period.
+                      <div style={{ marginTop: '10px', fontSize: '12px', color: '#78350f', lineHeight: 1.6 }}>
+                        5-year free cash flow projection discounted to present value, plus terminal value.
+                      </div>
+                      <div style={{ marginTop: '12px', background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+                          Estimated Business Value (DCF)
+                        </div>
+                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
+                          ${Math.round(dcfValue).toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>
+                          <strong>Note:</strong> DCF based on Free Cash Flow (FCF) projections. Valuations are highly sensitive to assumptions about growth rates, discount rates, working capital, and capital expenditures.
+                        </div>
                       </div>
                     </div>
-                    
-                    {/* Free Cash Flow Calculation */}
-                    <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '12px', border: '1px solid #fcd34d' }}>
-                      <div style={{ marginBottom: '10px' }}>
-                        <div style={{ fontSize: '13px', color: '#92400e', marginBottom: '4px', fontWeight: '600' }}>Trailing 12 Months Free Cash Flow</div>
-                        <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</div>
+
+                    <div style={{ background: '#ffffff', borderRadius: '10px', padding: '14px', border: '1px solid #fde68a' }}>
+                      <div style={{ marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid #fde68a' }}>
+                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '3px', fontWeight: 700 }}>Trailing 12 Months Free Cash Flow</div>
+                        <div style={{ fontSize: '24px', fontWeight: 700, color: '#d97706' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</div>
                       </div>
-                      
-                      <div style={{ fontSize: '13px', color: '#78350f', lineHeight: '1.8' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>TTM Revenue</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(ttmRevenue).toLocaleString()}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>- COGS</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(ttmCOGS).toLocaleString()}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>- Operating Expenses</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(ttmExpense).toLocaleString()}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span style={{ fontWeight: '600' }}>= Net Income</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(ttmNetIncomeForDcf).toLocaleString()}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>+ Depreciation/Amortization</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(ttmDepreciation).toLocaleString()}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>+ Change in Working Capital</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(changeInWC).toLocaleString()}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px solid #fcd34d' }}>
-                        <span>- Capital Expenditures</span>
-                        <span style={{ fontWeight: '600' }}>${Math.round(ttmCapEx).toLocaleString()}</span>
-                      </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-                          <span style={{ fontWeight: '700' }}>= Free Cash Flow</span>
-                          <span style={{ fontWeight: '700', color: '#f59e0b' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</span>
+
+                      <div style={{ fontSize: '12px', color: '#78350f', lineHeight: 1.6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                          <span>TTM Revenue</span>
+                          <span style={{ fontWeight: 600 }}>${Math.round(ttmRevenue).toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                          <span>- COGS</span>
+                          <span style={{ fontWeight: 600 }}>(${Math.round(ttmCOGS).toLocaleString()})</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                          <span>- Operating Expenses</span>
+                          <span style={{ fontWeight: 600 }}>(${Math.round(ttmExpense).toLocaleString()})</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                          <span style={{ fontWeight: 600 }}>= Net Income</span>
+                          <span style={{ fontWeight: 600 }}>${Math.round(ttmNetIncomeForDcf).toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                          <span>+ Depreciation/Amortization</span>
+                          <span style={{ fontWeight: 600 }}>${Math.round(ttmDepreciation).toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                          <span>+ Change in Working Capital</span>
+                          <span style={{ fontWeight: 600 }}>
+                            {changeInWC >= 0 ? '+' : '-'}${Math.round(Math.abs(changeInWC)).toLocaleString()}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px solid #fde68a' }}>
+                          <span>- Capital Expenditures</span>
+                          <span style={{ fontWeight: 600 }}>(${Math.round(ttmCapEx).toLocaleString()})</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                          <span style={{ fontWeight: 700 }}>= Free Cash Flow</span>
+                          <span style={{ fontWeight: 700, color: '#d97706' }}>${Math.round(ttmFreeCashFlow).toLocaleString()}</span>
                         </div>
                       </div>
                     </div>
@@ -15445,18 +15866,336 @@ function FinancialScorePage() {
                       <span>Optimistic: 3-5%</span>
                     </div>
                   </div>
-                  
-                  <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
-                      Estimated Business Value (DCF)
+
+                  <div style={{ marginBottom: '12px', display: 'grid', gridTemplateColumns: '1fr 3fr', gap: '12px', alignItems: 'start' }}>
+                    <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>
+                        DCF Assumption Risk Drivers (Financial Baseline)
+                      </div>
+                      <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', border: '1px solid #e2e8f0' }}>
+                        {dcfAnalysisTab === 'working-capital' && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Working Capital Drag</div>
+                            <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                              <div>Current CCC: {workingCapitalInsights.currentCcc.toFixed(1)} days</div>
+                              <div>WC intensity (12M): {workingCapitalInsights.avgWcIntensity12.toFixed(1)}%</div>
+                              <div>Cash needed for growth: ${Math.round(workingCapitalInsights.cashNeededForGrowth).toLocaleString()}</div>
+                            </div>
+                          </>
+                        )}
+                        {dcfAnalysisTab === 'cash-flow-quality' && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Cash Flow Quality</div>
+                            <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                              <div>Cash conversion: {cashFlowQualityInsights.cashConversionPct.toFixed(1)}%</div>
+                              <div>FCF durability: {cashFlowQualityInsights.fcfDurabilityPct.toFixed(1)}% of EBITDA</div>
+                              <div>CapEx gap: {cashFlowQualityInsights.capexGap >= 0 ? '+' : ''}${Math.round(cashFlowQualityInsights.capexGap).toLocaleString()}</div>
+                            </div>
+                          </>
+                        )}
+                        {dcfAnalysisTab === 'revenue-durability' && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Revenue / Customer Durability Inputs</div>
+                            <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                              <div>Historical growth input: {growth_24mo.toFixed(1)}%</div>
+                              <div>DSO vs target: {revenueQualityInsights.currentDso.toFixed(1)}d vs {sdeSectorBenchmarks.benchmarkTargets.dso.toFixed(1)}d</div>
+                              <div>
+                                Concentration signal: {customerQualityInsights.hasData
+                                  ? `Top 1 customer ${customerQualityInsights.top1Pct.toFixed(1)}%`
+                                  : (revenueQualityInsights.topBucketSharePct !== null ? `Top revenue bucket proxy ${revenueQualityInsights.topBucketSharePct.toFixed(1)}%` : 'N/A')}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        {dcfAnalysisTab === 'balance-sheet-quality' && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>Balance Sheet Risk Context</div>
+                            {(() => {
+                              const latestMonth: any = monthly[monthly.length - 1] || {};
+                              const latestCurrentAssets = Number(latestMonth.tca ?? 0);
+                              const latestCurrentLiabilities = Number(latestMonth.tcl ?? 0);
+                              const latestTotalAssets = Number(latestMonth.totalAssets ?? 0);
+                              const latestTotalLiabilities = Number(latestMonth.totalLiab ?? 0);
+                              const latestTotalEquity =
+                                Number(latestMonth.ownersCapital ?? 0) +
+                                Number(latestMonth.ownersDraw ?? 0) +
+                                Number(latestMonth.commonStock ?? 0) +
+                                Number(latestMonth.preferredStock ?? 0) +
+                                Number(latestMonth.retainedEarnings ?? 0) +
+                                Number(latestMonth.additionalPaidInCapital ?? 0) +
+                                Number(latestMonth.treasuryStock ?? 0);
+                              const currentRatioBs = latestCurrentLiabilities > 0 ? latestCurrentAssets / latestCurrentLiabilities : 0;
+                              const debtToEquityBs = latestTotalEquity > 0 ? latestTotalLiabilities / latestTotalEquity : 0;
+                              const equityRatioBs = latestTotalAssets > 0 ? (latestTotalEquity / latestTotalAssets) * 100 : 0;
+                              return (
+                                <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                                  <div>Current ratio: {currentRatioBs.toFixed(2)}x</div>
+                                  <div>Debt / equity: {debtToEquityBs.toFixed(2)}x</div>
+                                  <div>Equity / assets: {equityRatioBs.toFixed(1)}%</div>
+                                </div>
+                              );
+                            })()}
+                          </>
+                        )}
+                      </div>
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                        Use these drivers to calibrate discount rate and terminal growth assumptions; stronger quality supports tighter risk premiums.
+                      </div>
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#f59e0b' }}>
-                      ${Math.round(dcfValue).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '8px' }}>
-                      <strong>Note:</strong> DCF based on Free Cash Flow (FCF) projections. Valuations are highly sensitive to assumptions about growth rates, discount rates, working capital, and capital expenditures.
+
+                    <div style={{ background: '#ffffff', borderRadius: '8px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginBottom: '8px' }}>
+                        {dcfAnalysisTab === 'working-capital' && 'Working Capital Detail'}
+                        {dcfAnalysisTab === 'cash-flow-quality' && 'Cash Flow Quality Detail'}
+                        {dcfAnalysisTab === 'revenue-durability' && 'Revenue Durability Detail'}
+                        {dcfAnalysisTab === 'balance-sheet-quality' && 'Balance Sheet Quality Detail'}
+                      </div>
+                      {dcfAnalysisTab === 'working-capital' && (
+                        (() => {
+                          const perDayImpact = Math.round(Math.abs(workingCapitalInsights.cashImpactPerCccDay));
+                          const ccc = workingCapitalInsights.currentCcc;
+                          const wcRisk = ccc > sdeSectorBenchmarks.workingCapital.cccWarn ? 'Elevated' : ccc > 45 ? 'Moderate' : 'Controlled';
+                          return (
+                            <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                              <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Working-capital drag on forecast cash flows is <strong style={{ color: '#1e293b' }}>{wcRisk}</strong>.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Sensitivity:</strong> At current CCC of {ccc.toFixed(1)} days, each 1-day movement changes cash requirement by about ${perDayImpact.toLocaleString()}.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Higher CCC directly reduces near-term FCF and present value.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Underwrite AR, inventory, and payables policies as explicit DCF assumption risks.</div>
+                            </div>
+                          );
+                        })()
+                      )}
+                      {dcfAnalysisTab === 'cash-flow-quality' && (
+                        (() => {
+                          const cashQualityLabel =
+                            cashFlowQualityInsights.cashConversionPct >= 80 && cashFlowQualityInsights.fcfDurabilityPct >= 20
+                              ? 'High forecast credibility'
+                              : cashFlowQualityInsights.cashConversionPct >= 60
+                                ? 'Moderate forecast credibility'
+                                : 'Low forecast credibility';
+                          const year1FcfBase = ttmFreeCashFlow * (1 + growth_24mo / 100);
+                          const year1FcfDownside = year1FcfBase * 0.85;
+                          return (
+                            <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                              <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Cash-flow forecast credibility is <strong style={{ color: '#1e293b' }}>{cashQualityLabel}</strong>.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Base / stress:</strong> Year-1 FCF base ${Math.round(year1FcfBase).toLocaleString()} vs conservative case ${Math.round(year1FcfDownside).toLocaleString()}.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> If conversion weakens, DCF downside is immediate through lower projected FCF.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Diligence focus:</strong> Validate sustainability of conversion and maintenance reinvestment assumptions.</div>
+                            </div>
+                          );
+                        })()
+                      )}
+                      {dcfAnalysisTab === 'revenue-durability' && (
+                        (() => {
+                          const dsoExcess = Math.max(0, revenueQualityInsights.currentDso - sdeSectorBenchmarks.benchmarkTargets.dso);
+                          const concentrationRisk = customerQualityInsights.hasData ? customerQualityInsights.top1Pct : (revenueQualityInsights.topBucketSharePct || 0);
+                          const riskPenalty = (dsoExcess > 10 ? 2 : 0) + (concentrationRisk > 25 ? 2 : concentrationRisk > 15 ? 1 : 0);
+                          const adjustedGrowth = Math.max(0, growth_24mo - riskPenalty);
+                          return (
+                            <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                              <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Growth durability is moderated by collections discipline and concentration risk.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Underwriting adjustment:</strong> Base growth {growth_24mo.toFixed(1)}% vs durability-adjusted planning growth {adjustedGrowth.toFixed(1)}%.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Inputs:</strong> DSO variance ({revenueQualityInsights.currentDso.toFixed(1)}d vs {sdeSectorBenchmarks.benchmarkTargets.dso.toFixed(1)}d) and concentration ({concentrationRisk.toFixed(1)}%).</div>
+                              <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Use a more conservative growth path until durability signals improve.</div>
+                            </div>
+                          );
+                        })()
+                      )}
+                      {dcfAnalysisTab === 'balance-sheet-quality' && (
+                        (() => {
+                          const latestMonth: any = monthly[monthly.length - 1] || {};
+                          const latestCurrentAssets = Number(latestMonth.tca ?? 0);
+                          const latestCurrentLiabilities = Number(latestMonth.tcl ?? 0);
+                          const latestTotalAssets = Number(latestMonth.totalAssets ?? 0);
+                          const latestTotalLiabilities = Number(latestMonth.totalLiab ?? 0);
+                          const latestTotalEquity =
+                            Number(latestMonth.ownersCapital ?? 0) +
+                            Number(latestMonth.ownersDraw ?? 0) +
+                            Number(latestMonth.commonStock ?? 0) +
+                            Number(latestMonth.preferredStock ?? 0) +
+                            Number(latestMonth.retainedEarnings ?? 0) +
+                            Number(latestMonth.additionalPaidInCapital ?? 0) +
+                            Number(latestMonth.treasuryStock ?? 0);
+                          const currentRatioBs = latestCurrentLiabilities > 0 ? latestCurrentAssets / latestCurrentLiabilities : 0;
+                          const debtToEquityBs = latestTotalEquity > 0 ? latestTotalLiabilities / latestTotalEquity : 0;
+                          const equityRatioBs = latestTotalAssets > 0 ? (latestTotalEquity / latestTotalAssets) * 100 : 0;
+                          const rateAdderBps = (currentRatioBs < 1.2 ? 75 : 0) + (debtToEquityBs > 2.0 ? 75 : 0) + (equityRatioBs < 25 ? 50 : 0);
+                          const suggestedDiscountRate = dcfDiscountRate + rateAdderBps / 100;
+                          return (
+                            <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.7 }}>
+                              <div><strong style={{ color: '#1e293b' }}>Investment view:</strong> Balance-sheet structure implies a risk premium of +{rateAdderBps} bps.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Discount-rate impact:</strong> Current {dcfDiscountRate.toFixed(1)}% vs risk-adjusted planning rate {suggestedDiscountRate.toFixed(2)}%.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Drivers:</strong> Current ratio {currentRatioBs.toFixed(2)}x, debt/equity {debtToEquityBs.toFixed(2)}x, equity/assets {equityRatioBs.toFixed(1)}%.</div>
+                              <div><strong style={{ color: '#1e293b' }}>Valuation implication:</strong> Capital structure weakness should flow through WACC rather than optimistic growth assumptions.</div>
+                            </div>
+                          );
+                        })()
+                      )}
                     </div>
                   </div>
+
+                  <div style={{ marginBottom: '12px', background: '#ffffff', borderRadius: '10px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b', marginBottom: '4px' }}>
+                      DCF Assumption Risk Trends (Financial Baseline)
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
+                      Graphs update by selected DCF tab to support assumption setting for growth, discount rate, and terminal value.
+                    </div>
+
+                    {dcfAnalysisTab === 'working-capital' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <LineChart
+                          title="Cash Conversion Cycle (CCC) Days"
+                          data={workingCapitalInsights.cccMiniSeries}
+                          color="#f59e0b"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(1)} days`}
+                        />
+                        <LineChart
+                          title="Working Capital Adjustment vs Normalized Target ($)"
+                          data={workingCapitalInsights.wcAdjustmentSeries}
+                          color="#ef4444"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v < 0 ? '-' : ''}$${Math.round(Math.abs(v)).toLocaleString()}`}
+                        />
+                        <LineChart
+                          title="Operating Working Capital ($)"
+                          data={workingCapitalInsights.currentWcSeries}
+                          color="#0ea5e9"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v < 0 ? '-' : ''}$${Math.round(Math.abs(v)).toLocaleString()}`}
+                        />
+                      </div>
+                    )}
+
+                    {dcfAnalysisTab === 'cash-flow-quality' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <LineChart
+                          title="Cash Conversion % (OCF / EBITDA)"
+                          data={cashFlowQualityInsights.cashConversionMiniSeries}
+                          color="#10b981"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                        <LineChart
+                          title="FCF Durability % (FCF / EBITDA)"
+                          data={cashFlowQualityInsights.fcfDurabilityMiniSeries}
+                          color="#0ea5e9"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                        <LineChart
+                          title="Maintenance CapEx Gap ($)"
+                          data={cashFlowQualityInsights.capexGapMiniSeries}
+                          color="#f97316"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v < 0 ? '-' : ''}$${Math.round(Math.abs(v)).toLocaleString()}`}
+                        />
+                      </div>
+                    )}
+
+                    {dcfAnalysisTab === 'revenue-durability' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <LineChart
+                          title="DSO Trend (Collections Discipline)"
+                          data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.dso }))}
+                          color="#f59e0b"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(0)} days`}
+                        />
+                        <LineChart
+                          title="Revenue-to-Cash Gap %"
+                          data={revenueQualitySeries.map((r) => ({ month: r.month, value: r.gapPct }))}
+                          color="#ef4444"
+                          compact
+                          labelFormat="m-yy-adaptive"
+                          formatter={(v) => `${v.toFixed(1)}%`}
+                        />
+                        {customerQualityInsights.hasData ? (
+                          <LineChart
+                            title="Top 1 Customer Concentration %"
+                            data={customerQualityInsights.top1Series}
+                            color="#6366f1"
+                            compact
+                            labelFormat="m-yy-adaptive"
+                            formatter={(v) => `${v.toFixed(1)}%`}
+                          />
+                        ) : (
+                          <LineChart
+                            title="AR vs Revenue Growth Spread Proxy"
+                            data={revenueQualityInsights.arRevenueSpreadSeries.filter((d) => d.hasData).map((d) => ({ month: d.month, value: d.value }))}
+                            color="#8b5cf6"
+                            compact
+                            labelFormat="m-yy-adaptive"
+                            formatter={(v) => `${v.toFixed(1)} pts`}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {dcfAnalysisTab === 'balance-sheet-quality' && (
+                      (() => {
+                        const safeDiv = (num: number, den: number) => (Math.abs(den) > 0 ? num / den : 0);
+                        const bsTrendRows = monthly.slice(-36).map((m: any) => {
+                          const equityFromDetail =
+                            Number(m.ownersCapital || 0) +
+                            Number(m.ownersDraw || 0) +
+                            Number(m.commonStock || 0) +
+                            Number(m.preferredStock || 0) +
+                            Number(m.retainedEarnings || 0) +
+                            Number(m.additionalPaidInCapital || 0) +
+                            Number(m.treasuryStock || 0);
+                          const totalEquity = Number(m.totalEquity || equityFromDetail || 0);
+                          const totalAssets = Number(m.totalAssets || 0);
+                          const totalLiabilities = Number(m.totalLiab || 0);
+                          const currentAssets = Number(m.tca || m.currentAssets || 0);
+                          const currentLiabilities = Number(m.tcl || m.currentLiabilities || 0);
+                          return {
+                            month: String(m.month || ''),
+                            currentRatio: safeDiv(currentAssets, currentLiabilities),
+                            debtToEquity: totalEquity > 0 ? safeDiv(totalLiabilities, totalEquity) : 0,
+                            equityRatioPct: safeDiv(totalEquity, totalAssets) * 100,
+                          };
+                        });
+                        return (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <LineChart
+                              title="Current Ratio Trend"
+                              data={bsTrendRows.map((r) => ({ month: r.month, value: r.currentRatio }))}
+                              color="#0ea5e9"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${v.toFixed(2)}x`}
+                            />
+                            <LineChart
+                              title="Debt / Equity Trend"
+                              data={bsTrendRows.map((r) => ({ month: r.month, value: r.debtToEquity }))}
+                              color="#ef4444"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${v.toFixed(2)}x`}
+                            />
+                            <LineChart
+                              title="Equity / Assets % Trend"
+                              data={bsTrendRows.map((r) => ({ month: r.month, value: r.equityRatioPct }))}
+                              color="#22c55e"
+                              compact
+                              labelFormat="m-yy-adaptive"
+                              formatter={(v) => `${v.toFixed(1)}%`}
+                            />
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+                  
                 </div>
                 )}
               </>
