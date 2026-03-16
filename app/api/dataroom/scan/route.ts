@@ -2,9 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getDataRoomState, upsertDataRoomState } from '@/lib/dataroom/state';
-import { scanDataRoomDocument } from '@/lib/dataroom/malware-scan';
+import { scanDataRoomDocumentWithProvider } from '@/lib/dataroom/scan-provider';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
 import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
+
+const MAX_SCAN_ATTEMPTS = Number(process.env.DATAROOM_SCAN_MAX_ATTEMPTS || 5);
+const BASE_RETRY_SECONDS = Number(process.env.DATAROOM_SCAN_BASE_RETRY_SECONDS || 30);
+
+function canRetry(item: any, nowMs: number) {
+  const attempts = Number(item?.scanAttempts || 0);
+  if (attempts >= MAX_SCAN_ATTEMPTS) return false;
+  const nextScanAt = item?.nextScanAt ? new Date(item.nextScanAt).getTime() : 0;
+  return Number.isFinite(nextScanAt) ? nextScanAt <= nowMs : true;
+}
+
+function nextRetryAt(attempts: number) {
+  const backoffSeconds = BASE_RETRY_SECONDS * Math.pow(2, Math.max(0, attempts - 1));
+  return new Date(Date.now() + backoffSeconds * 1000).toISOString();
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,6 +27,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
     const documentId = body?.documentId ? String(body.documentId).trim() : null;
+    const force = body?.force === true;
 
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
@@ -43,69 +59,109 @@ export async function POST(request: NextRequest) {
     const state = getDataRoomState(company.userDefinedAllocations);
     const currentIndex = Array.isArray(state.documentIndex) ? state.documentIndex : [];
 
+    const nowMs = Date.now();
     const targetIds = new Set<string>();
     for (const item of currentIndex) {
       const id = String(item?.documentId || '');
       if (!id) continue;
       if (documentId && id !== documentId) continue;
-      // Treat missing scanStatus as pending_scan for backward compatibility
-      // with documents indexed before scanStatus was introduced.
-      const currentStatus = String(item?.scanStatus || 'pending_scan');
-      if (!documentId && currentStatus !== 'pending_scan') continue;
-      targetIds.add(id);
+      const status = String(item?.scanStatus || 'pending_scan').toLowerCase();
+      const retryEligible = force || canRetry(item, nowMs);
+      if (documentId) {
+        if (retryEligible) targetIds.add(id);
+        continue;
+      }
+      const isQueued = status === 'pending_scan' || status === 'scan_failed';
+      if (isQueued && retryEligible) targetIds.add(id);
     }
 
     if (targetIds.size === 0) {
-      return NextResponse.json({ success: true, scanned: 0, message: 'No pending DataRoom scans.' });
+      return NextResponse.json({
+        success: true,
+        scanned: 0,
+        cleanCount: 0,
+        blockedCount: 0,
+        failedCount: 0,
+        message: 'No queued DataRoom scans.',
+      });
     }
 
     const docs = await prisma.companyDocument.findMany({
-      where: {
-        companyId,
-        id: { in: Array.from(targetIds) },
-      },
+      where: { companyId, id: { in: Array.from(targetIds) } },
       select: {
         id: true,
         originalFileName: true,
         contentType: true,
         sizeBytes: true,
+        blobUrl: true,
       },
     });
 
     const docMap = new Map(docs.map((d) => [d.id, d]));
     const now = new Date().toISOString();
-    const nextIndex = currentIndex.map((item: any) => {
-      const id = String(item?.documentId || '');
-      if (!targetIds.has(id)) return item;
+    let cleanCount = 0;
+    let blockedCount = 0;
+    let failedCount = 0;
 
-      const doc = docMap.get(id);
-      if (!doc) {
-        return {
-          ...item,
-          scanStatus: 'blocked',
-          scanReason: 'Document metadata not found for scan.',
-          scannedAt: now,
-          updatedAt: now,
-        };
+    const nextIndex: any[] = [];
+    for (const item of currentIndex) {
+      const id = String(item?.documentId || '');
+      if (!targetIds.has(id)) {
+        nextIndex.push(item);
+        continue;
       }
 
-      const result = scanDataRoomDocument({
-        fileName: doc.originalFileName,
-        contentType: doc.contentType,
-        sizeBytes: doc.sizeBytes,
-      });
+      const attempts = Number(item?.scanAttempts || 0) + 1;
+      const doc = docMap.get(id);
+      if (!doc) {
+        failedCount += 1;
+        nextIndex.push({
+          ...item,
+          scanStatus: 'scan_failed',
+          scanReason: item?.scanReason || null,
+          scanAttempts: attempts,
+          scanLastError: 'Document metadata not found for scan.',
+          nextScanAt: attempts >= MAX_SCAN_ATTEMPTS ? null : nextRetryAt(attempts),
+          updatedAt: now,
+        });
+        continue;
+      }
 
-      return {
-        ...item,
-        scanStatus: result.status,
-        scanReason: result.reason,
-        scannedAt: now,
-        updatedAt: now,
-      };
-    });
+      try {
+        const result = await scanDataRoomDocumentWithProvider({
+          fileUrl: doc.blobUrl || null,
+          fileName: doc.originalFileName,
+          contentType: doc.contentType,
+          sizeBytes: doc.sizeBytes,
+        });
+        if (result.status === 'clean') cleanCount += 1;
+        if (result.status === 'blocked') blockedCount += 1;
+        nextIndex.push({
+          ...item,
+          scanStatus: result.status,
+          scanReason: result.reason,
+          scannedAt: now,
+          scanAttempts: attempts,
+          scanProvider: result.provider || 'policy',
+          scanLastError: null,
+          nextScanAt: null,
+          updatedAt: now,
+        });
+      } catch (error: any) {
+        failedCount += 1;
+        const message = String(error?.message || 'Scan provider failed');
+        nextIndex.push({
+          ...item,
+          scanStatus: 'scan_failed',
+          scanReason: item?.scanReason || null,
+          scanAttempts: attempts,
+          scanLastError: message,
+          nextScanAt: attempts >= MAX_SCAN_ATTEMPTS ? null : nextRetryAt(attempts),
+          updatedAt: now,
+        });
+      }
+    }
 
-    const blockedCount = nextIndex.filter((d: any) => targetIds.has(String(d?.documentId || '')) && String(d?.scanStatus || '') === 'blocked').length;
-    const cleanCount = nextIndex.filter((d: any) => targetIds.has(String(d?.documentId || '')) && String(d?.scanStatus || '') === 'clean').length;
     const updatedUDA = appendDataRoomAuditEvents(
       upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex }),
       [
@@ -119,7 +175,10 @@ export async function POST(request: NextRequest) {
             scannedCount: targetIds.size,
             cleanCount,
             blockedCount,
+            failedCount,
             mode: documentId ? 'single' : 'batch',
+            force,
+            maxAttempts: MAX_SCAN_ATTEMPTS,
           },
         }),
       ],
@@ -129,7 +188,13 @@ export async function POST(request: NextRequest) {
       data: { userDefinedAllocations: updatedUDA },
     });
 
-    return NextResponse.json({ success: true, scanned: targetIds.size });
+    return NextResponse.json({
+      success: true,
+      scanned: targetIds.size,
+      cleanCount,
+      blockedCount,
+      failedCount,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Failed to scan DataRoom documents' }, { status: 500 });
   }

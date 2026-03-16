@@ -83,7 +83,10 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
         (count, folder) =>
           count +
           folder.documents.filter(
-            (doc) => String(doc.scanStatus || 'pending_scan').toLowerCase() === 'pending_scan',
+            (doc) => {
+              const status = String(doc.scanStatus || 'pending_scan').toLowerCase();
+              return status === 'pending_scan' || status === 'scan_failed';
+            },
           ).length,
         0,
       ),
@@ -185,6 +188,20 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
         throw new Error(assignData?.error || 'Failed to assign DataRoom folder');
       }
 
+      // Best-effort auto-scan trigger after assignment.
+      try {
+        await fetch('/api/dataroom/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            documentId: docId,
+          }),
+        });
+      } catch {
+        // Ignore trigger failures; user can run "Scan Pending" manually.
+      }
+
       if (fileInputRef.current) fileInputRef.current.value = '';
       await loadOverview();
     } catch (e: any) {
@@ -244,6 +261,9 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     if (s === 'blocked') {
       return { bg: '#fee2e2', fg: '#991b1b', label: 'blocked' };
     }
+    if (s === 'scan_failed') {
+      return { bg: '#fff7ed', fg: '#9a3412', label: 'scan_failed' };
+    }
     return { bg: '#e0f2fe', fg: '#0c4a6e', label: 'pending_scan' };
   };
 
@@ -256,6 +276,8 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     if (scanStatus !== 'clean') {
       if (scanStatus === 'pending_scan') {
         alert('This document is pending malware scan. Click "Scan Pending" and try again.');
+      } else if (scanStatus === 'scan_failed') {
+        alert('This document scan failed. Click "Scan Pending" to retry scanning.');
       } else {
         alert('This document is quarantined and cannot be opened until scan status is clean.');
       }

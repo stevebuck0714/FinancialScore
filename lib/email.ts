@@ -73,6 +73,16 @@ interface DataRoomPastDueNotificationProps {
   reason?: string;
 }
 
+interface CompanyUserInviteEmailProps {
+  to: string;
+  inviteeName: string;
+  companyName: string;
+  inviterNameOrEmail: string;
+  inviteLink: string;
+  expiresAt: string;
+  userType: 'COMPANY' | 'ASSESSMENT';
+}
+
 export async function sendPasswordResetEmail({ 
   to, 
   userName, 
@@ -972,6 +982,84 @@ export async function sendDataRoomPastDueNotification({
     return { success: true, data };
   } catch (sendError) {
     console.error('❌ Error sending DataRoom past-due notification:', sendError);
+    return { success: false, error: sendError };
+  }
+}
+
+export async function sendCompanyUserInviteEmail({
+  to,
+  inviteeName,
+  companyName,
+  inviterNameOrEmail,
+  inviteLink,
+  expiresAt,
+  userType,
+}: CompanyUserInviteEmailProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping company user invite email');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const safeCompany = escapeHtml(companyName);
+  const safeInviter = escapeHtml(inviterNameOrEmail);
+  const safeInvitee = escapeHtml(inviteeName || to);
+  const safeInviteLink = escapeHtml(inviteLink);
+  const safeRole = userType === 'ASSESSMENT' ? 'Team Assessment User' : 'Company User';
+  const safeExpires = escapeHtml(
+    new Date(expiresAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+  );
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: [to],
+      subject: `You're invited to Corelytics - ${companyName}`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Corelytics Invite</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="680" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:22px 26px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;color:#1e293b;font-size:22px;">You are invited to Corelytics</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">You have been invited to access <strong>${safeCompany}</strong> as a <strong>${safeRole}</strong>.</p>
+        </td></tr>
+        <tr><td style="padding:20px 26px;">
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;">Hello ${safeInvitee},</p>
+          <p style="margin:0 0 10px;color:#334155;font-size:14px;">
+            ${safeInviter} invited you to join Corelytics for company access.
+          </p>
+          <p style="margin:0 0 14px;color:#334155;font-size:14px;">
+            Click the button below to accept the invite, create your login, and complete security steps.
+          </p>
+          <p style="margin:0 0 16px;">
+            <a href="${safeInviteLink}" style="display:inline-block;padding:12px 18px;background:#1F70C1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
+              Accept Invite
+            </a>
+          </p>
+          <p style="margin:0 0 8px;color:#64748b;font-size:13px;word-break:break-all;">
+            Or paste this link into your browser:<br />
+            <a href="${safeInviteLink}" style="color:#2563eb;text-decoration:none;">${safeInviteLink}</a>
+          </p>
+          <p style="margin:10px 0 0;color:#b45309;font-size:13px;">
+            This invite expires on ${safeExpires}.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) throw new Error(`Failed to send email: ${error.message}`);
+    return { success: true, data };
+  } catch (sendError) {
+    console.error('❌ Error sending company invite email:', sendError);
     return { success: false, error: sendError };
   }
 }

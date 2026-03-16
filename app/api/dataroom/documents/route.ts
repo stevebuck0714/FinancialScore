@@ -4,7 +4,6 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { DATAROOM_DEFAULT_FOLDERS } from '@/lib/dataroom/constants';
 import { getDataRoomState, upsertDataRoomState } from '@/lib/dataroom/state';
 import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
-import { scanDataRoomDocument } from '@/lib/dataroom/malware-scan';
 import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
 
 export async function POST(request: NextRequest) {
@@ -46,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     const doc = await prisma.companyDocument.findUnique({
       where: { id: documentId },
-      select: { id: true, companyId: true, originalFileName: true, contentType: true, sizeBytes: true },
+      select: { id: true, companyId: true },
     });
     if (!doc || doc.companyId !== companyId) {
       return NextResponse.json({ error: 'Document not found for this company' }, { status: 404 });
@@ -58,21 +57,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid folderId' }, { status: 400 });
     }
 
-    const scanResult = scanDataRoomDocument({
-      fileName: doc.originalFileName,
-      contentType: doc.contentType,
-      sizeBytes: doc.sizeBytes,
-    });
     const nowIso = new Date().toISOString();
     const currentIndex = Array.isArray(state.documentIndex) ? state.documentIndex : [];
     const filtered = currentIndex.filter((d: any) => String(d?.documentId || '') !== documentId);
     filtered.push({
       documentId,
       folderId,
-      scanStatus: scanResult.status,
-      scanReason: scanResult.reason,
+      scanStatus: 'pending_scan',
+      scanReason: null,
       scanQueuedAt: nowIso,
-      scannedAt: nowIso,
+      scanAttempts: 0,
+      nextScanAt: nowIso,
       watermarkOnDownload: true,
       updatedAt: nowIso,
     });
@@ -87,7 +82,7 @@ export async function POST(request: NextRequest) {
           userEmail: context.email,
           folderId,
           documentId,
-          details: { scanStatus: scanResult.status },
+          details: { scanStatus: 'pending_scan' },
         }),
       ],
     );

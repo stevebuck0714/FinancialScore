@@ -5794,39 +5794,53 @@ function FinancialScorePage() {
 
     setIsLoading(true);
     try {
-      const { user, linkedExistingUser } = await usersApi.create({
-        name,
-        email,
-        password: undefined,
-        companyId,
-        userType: userType.toUpperCase() as 'COMPANY' | 'ASSESSMENT',
+      const response = await fetch('/api/company-invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          name,
+          email,
+          userType: userType.toUpperCase(),
+        }),
       });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new ApiError(response.status, data?.error || 'Failed to invite user');
+      }
 
-      const normalizedUser = {
-        ...user,
-        companyId,
-        role: user.role.toLowerCase(),
-        // Show in the selected section immediately after grant.
-        userType: userType.toLowerCase(),
-      };
-      setUsers((prev) => {
-        const existingIndex = prev.findIndex(
-          (u) => u.id === normalizedUser.id && u.companyId === companyId
-        );
-        if (existingIndex >= 0) {
-          const next = [...prev];
-          next[existingIndex] = { ...next[existingIndex], ...normalizedUser };
-          return next;
-        }
-        return [...prev, normalizedUser];
-      });
+      const linkedExistingUser = Boolean(data?.linkedExistingUser);
+      const user = data?.user;
+      if (linkedExistingUser && user) {
+        const normalizedUser = {
+          ...user,
+          companyId,
+          role: String(user.role || '').toLowerCase(),
+          userType: userType.toLowerCase(),
+        };
+        setUsers((prev) => {
+          const existingIndex = prev.findIndex(
+            (u) => u.id === normalizedUser.id && u.companyId === companyId
+          );
+          if (existingIndex >= 0) {
+            const next = [...prev];
+            next[existingIndex] = { ...next[existingIndex], ...normalizedUser };
+            return next;
+          }
+          return [...prev, normalizedUser];
+        });
+      }
 
       if (linkedExistingUser) {
         alert(
           `Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`,
         );
+      } else if (data?.inviteSent) {
+        alert(
+          `Invite sent:\n\n${email}\n\nThe recipient can use the invite link to create/login and will complete MFA in production.`,
+        );
       } else {
-        alert(`User created and added:\n\n${email}`);
+        alert(`Invite processed for:\n\n${email}`);
       }
 
       if (userType === 'company') {
@@ -5840,15 +5854,11 @@ function FinancialScorePage() {
       if (error instanceof ApiError) {
         if (error.message.includes('already has access to this company')) {
           alert(`User already has access\n\n"${email}" already has access to this company.`);
-        } else if (error.message.toLowerCase().includes('password is required')) {
-          alert(
-            `No existing account found for:\n\n${email}\n\nUse "Create New User" and set a password to create this user.`,
-          );
         } else {
           alert(error.message);
         }
       } else {
-        alert('Failed to grant access');
+        alert('Failed to send invite');
       }
     } finally {
       setIsLoading(false);

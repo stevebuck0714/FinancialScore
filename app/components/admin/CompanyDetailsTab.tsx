@@ -1502,9 +1502,9 @@ export default function CompanyDetailsTab({
                         marginBottom: "8px",
                       }}
                     >
-                      Invite an outside user to this company. If the email
-                      already exists, access is granted. If not, create the
-                      user first and they will authenticate via normal login
+                      Invite an outside user to this company. Existing accounts
+                      get access immediately; new users receive an invite link
+                      to create credentials, then authenticate via normal login
                       (including MFA in production).
                     </div>
                     <div style={{ display: "grid", gap: "6px" }}>
@@ -1862,9 +1862,10 @@ export default function CompanyDetailsTab({
                           }}
                         >
                           Invite an outside assessment user to this company.
-                          If the email already exists, access is granted. If
-                          not, create the user first and they will authenticate
-                          via normal login (including MFA in production).
+                          Existing accounts get access immediately; new users
+                          receive an invite link to create credentials, then
+                          authenticate via normal login (including MFA in
+                          production).
                         </div>
                         <div style={{ display: "grid", gap: "6px" }}>
                           <input
