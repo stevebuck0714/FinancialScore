@@ -63,6 +63,16 @@ interface SyncFailureNotificationProps {
   actionUrl?: string;
 }
 
+interface DataRoomPastDueNotificationProps {
+  recipients: string[];
+  companyName: string;
+  companyId: string;
+  plan: string;
+  amount: number;
+  graceDays: number;
+  reason?: string;
+}
+
 export async function sendPasswordResetEmail({ 
   to, 
   userName, 
@@ -890,6 +900,78 @@ export async function sendSyncFailureNotification({
     return { success: true, data };
   } catch (sendError) {
     console.error('❌ Error sending sync failure notification:', sendError);
+    return { success: false, error: sendError };
+  }
+}
+
+export async function sendDataRoomPastDueNotification({
+  recipients,
+  companyName,
+  companyId,
+  plan,
+  amount,
+  graceDays,
+  reason,
+}: DataRoomPastDueNotificationProps) {
+  const client = getResendClient();
+  if (!client) {
+    console.warn('⚠️ RESEND_API_KEY not configured - skipping DataRoom past-due notification');
+    return { success: false, reason: 'Email service not configured' };
+  }
+
+  const uniqueRecipients = Array.from(new Set(recipients.map((email) => email.trim().toLowerCase()).filter(Boolean)));
+  if (uniqueRecipients.length === 0) {
+    return { success: false, reason: 'No recipients' };
+  }
+
+  const safeCompany = escapeHtml(companyName);
+  const safeCompanyId = escapeHtml(companyId);
+  const safePlan = escapeHtml(plan);
+  const safeReason = reason ? escapeHtml(reason) : 'Payment processor declined this recurring charge.';
+
+  try {
+    const { data, error } = await client.emails.send({
+      from: DEFAULT_FROM,
+      to: uniqueRecipients,
+      subject: `⚠️ DataRoom payment past due - ${companyName}`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>DataRoom Payment Past Due</title></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px;">
+    <tr><td align="center">
+      <table width="680" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;">
+        <tr><td style="padding:22px 26px;border-bottom:1px solid #e2e8f0;">
+          <h2 style="margin:0;color:#b91c1c;font-size:22px;">Corelytics DataRoom Payment Past Due</h2>
+          <p style="margin:8px 0 0;color:#64748b;font-size:14px;">Your DataRoom add-on payment did not process successfully.</p>
+        </td></tr>
+        <tr><td style="padding:20px 26px;">
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Company:</strong> ${safeCompany}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Company ID:</strong> ${safeCompanyId}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Plan:</strong> ${safePlan}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Recurring Amount:</strong> $${Number(amount || 0).toFixed(2)}</p>
+          <p style="margin:0 0 8px;color:#334155;font-size:14px;"><strong>Reason:</strong> ${safeReason}</p>
+          <p style="margin:12px 0 0;color:#334155;font-size:14px;">
+            You are now in a <strong>${graceDays}-day grace period</strong>. If payment is not resolved, DataRoom access may be restricted.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+      `.trim(),
+    });
+
+    if (error) {
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+
+    console.log('✅ DataRoom past-due notification sent:', data);
+    return { success: true, data };
+  } catch (sendError) {
+    console.error('❌ Error sending DataRoom past-due notification:', sendError);
     return { success: false, error: sendError };
   }
 }

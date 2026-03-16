@@ -107,6 +107,15 @@ export async function POST(request: NextRequest) {
         pricingToUse = defaultPricing;
       }
     }
+    let dataRoomPricingToUse: { businessMonthlyPrice?: number; businessQuarterlyPrice?: number; businessAnnualPrice?: number } = {};
+    try {
+      const defaultDataRoomPricing = await prisma.systemSettings.findUnique({
+        where: { key: 'default_dataroom_pricing' }
+      });
+      dataRoomPricingToUse = defaultDataRoomPricing || {};
+    } catch (error) {
+      console.warn('Could not load default DataRoom pricing during registration, using fallback.', error);
+    }
 
     // Create user and either consultant OR company based on registration type
     const result = await prisma.$transaction(async (tx) => {
@@ -147,6 +156,19 @@ export async function POST(request: NextRequest) {
           subscriptionAnnualPrice: finalPricing.annual,
           subscriptionSetupFee: finalPricing.setupFee,
           subscriptionStatus: finalPricing.requiresPayment ? "active" : "free",
+          userDefinedAllocations: {
+            dataRoom: {
+              enabledByAdmin: false,
+              pricing: {
+                monthly: Number(dataRoomPricingToUse.businessMonthlyPrice ?? 195),
+                quarterly: Number(dataRoomPricingToUse.businessQuarterlyPrice ?? 500),
+                annual: Number(dataRoomPricingToUse.businessAnnualPrice ?? 1750),
+              },
+              subscription: {
+                status: 'inactive',
+              },
+            },
+          },
           // DO NOT set selectedSubscriptionPlan - they must pay first
         };
 

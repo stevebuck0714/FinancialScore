@@ -23,6 +23,27 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const company = await prisma.company.findUnique({
+      where: { id: doc.companyId },
+      select: { userDefinedAllocations: true },
+    });
+    const dataRoomIndex =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? (company.userDefinedAllocations as any)?.dataRoom?.documentIndex
+        : null;
+    if (Array.isArray(dataRoomIndex)) {
+      const entry = dataRoomIndex.find((d: any) => String(d?.documentId || '') === String(id));
+      const scanStatus = String(entry?.scanStatus || '');
+      if (entry && scanStatus !== 'clean') {
+        return NextResponse.json(
+          { error: `Document is quarantined until malware scan is clean (current status: ${scanStatus || 'pending_scan'}).` },
+          { status: 423 },
+        );
+      }
+    }
+
     // We use a redirect so this URL can be used both as:
     // - a "hyperlink to open the document"
     // - a stable URL for AI citations

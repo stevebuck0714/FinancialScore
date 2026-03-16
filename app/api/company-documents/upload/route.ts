@@ -4,6 +4,8 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { extractTextFromArrayBuffer, sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
+import { DATAROOM_ALLOWED_CONTENT_TYPES } from '@/lib/dataroom/constants';
+import { validateDataRoomFilePolicy } from '@/lib/dataroom/file-policy';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,16 +64,18 @@ export async function POST(request: Request): Promise<Response> {
           throw new Error('Missing upload payload (companyId/category/originalFileName)');
         }
 
+        const filePolicy = validateDataRoomFilePolicy({ fileName: originalFileName });
+        if (!filePolicy.valid) {
+          throw new Error(filePolicy.error);
+        }
+
         const hasAccess = await validateCompanyAccess(companyId);
         if (!hasAccess) {
           throw new Error('Forbidden');
         }
 
         return {
-          allowedContentTypes: [
-            'application/pdf',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          ],
+          allowedContentTypes: [...DATAROOM_ALLOWED_CONTENT_TYPES],
           addRandomSuffix: true,
           tokenPayload: JSON.stringify({
             companyId,

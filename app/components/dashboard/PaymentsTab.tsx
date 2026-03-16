@@ -43,6 +43,9 @@ interface PaymentsTabProps {
   subscriptionQuarterlyPrice?: number;
   subscriptionAnnualPrice?: number;
   subscriptionSetupFee?: number;
+  dataRoomEnabledByAdmin: boolean;
+  dataRoomSubscriptionStatus: string;
+  onToggleDataRoomEnabledByAdmin: (enabled: boolean) => void;
 }
 
 export default function PaymentsTab({
@@ -58,7 +61,10 @@ export default function PaymentsTab({
   subscriptionMonthlyPrice = 0,
   subscriptionQuarterlyPrice = 0,
   subscriptionAnnualPrice = 0,
-  subscriptionSetupFee = 0
+  subscriptionSetupFee = 0,
+  dataRoomEnabledByAdmin,
+  dataRoomSubscriptionStatus,
+  onToggleDataRoomEnabledByAdmin
 }: PaymentsTabProps) {
   const monthlyPrice = subscriptionMonthlyPrice;
   const quarterlyPrice = subscriptionQuarterlyPrice;
@@ -68,6 +74,37 @@ export default function PaymentsTab({
   return (
     <>
       <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '20px' }}>Payments & Subscription</h2>
+
+      <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>Corelytics DataRoom Module</div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+              Enable this module to show DataRoom in the left sidebar for this company.
+            </div>
+            <div style={{ fontSize: '12px', color: '#334155', marginTop: '6px', textTransform: 'capitalize' }}>
+              Subscription status: {dataRoomSubscriptionStatus || 'inactive'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onToggleDataRoomEnabledByAdmin(!dataRoomEnabledByAdmin)}
+            style={{
+              padding: '10px 14px',
+              background: dataRoomEnabledByAdmin ? '#dc2626' : '#0f766e',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {dataRoomEnabledByAdmin ? 'Disable DataRoom' : 'Enable DataRoom'}
+          </button>
+        </div>
+      </div>
       
       {/* Two Column Layout */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '20px' }}>

@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { calculateBillingPeriod } from '@/lib/billing/invoiceGenerator';
 import { verifyWebhookSignature } from '@/lib/usaepay';
 import { addMonthsClamped, billingIntervalMonths } from '@/lib/billing/dateMath';
+import { sendDataRoomPastDueNotification } from '@/lib/email';
 
 /**
  * Webhook handler for USAePay notifications
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
       schedule_id, // Recurring billing ID
     } = body;
 
-    // Find subscription by customer ID or billing ID
+    // Find primary platform subscription by customer ID or billing ID
     let subscription = null;
     
     if (customer) {
@@ -63,7 +64,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!subscription) {
+    const dataRoomContext = !subscription
+      ? await findDataRoomCompanyByProcessorIds({
+          scheduleId: schedule_id || null,
+          customerId: customer || null,
+        })
+      : null;
+
+    if (!subscription && !dataRoomContext) {
       console.warn('[USAePay Webhook] Subscription not found for customer:', customer, 'or schedule:', schedule_id);
       // Still return 200 to acknowledge receipt
       return NextResponse.json({ received: true });
@@ -76,8 +84,15 @@ export async function POST(request: NextRequest) {
 
     if (isStandaloneTransaction) {
       const txnId = key || refnum;
-      if (txnId && subscription.setupFeeTransactionId && txnId === subscription.setupFeeTransactionId) {
+      if (subscription && txnId && subscription.setupFeeTransactionId && txnId === subscription.setupFeeTransactionId) {
         console.log('[USAePay Webhook] ℹ️ Setup fee transaction webhook received; already recorded:', txnId);
+      } else if (dataRoomContext) {
+        console.log('[USAePay Webhook] ℹ️ DataRoom standalone transaction ignored:', {
+          companyId: dataRoomContext.company.id,
+          transactionId: txnId,
+          status,
+          amount,
+        });
       } else {
         console.log('[USAePay Webhook] ℹ️ Non-recurring transaction webhook ignored (no schedule_id):', {
           transactionId: txnId,
@@ -88,7 +103,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    if (isRecurringEvent) {
+    if (isRecurringEvent && dataRoomContext) {
+      const txnAmount = parseFloat(amount || '0');
+      const transactionId = key || refnum || `DR-${dataRoomContext.company.id}-${Date.now()}`;
+      const errMessage = error || result || 'Payment declined';
+
+      if (status === 'Approved') {
+        await handleDataRoomSuccessfulPayment(dataRoomContext, {
+          transactionId,
+          amount: txnAmount,
+          cardLast4: cc_number,
+          cardType: cardtype,
+        });
+      } else if (status === 'Declined' || status === 'Error') {
+        await handleDataRoomFailedPayment(dataRoomContext, {
+          transactionId,
+          amount: txnAmount,
+          errorMessage: errMessage,
+          cardLast4: cc_number,
+          cardType: cardtype,
+        });
+      }
+    } else if (isRecurringEvent && subscription) {
       if (status === 'Approved') {
         // Successful payment
         await handleSuccessfulPayment(subscription, {
@@ -108,7 +144,7 @@ export async function POST(request: NextRequest) {
           cardType: cardtype,
         });
       }
-    } else if (type === 'refund' || type === 'void') {
+    } else if ((type === 'refund' || type === 'void') && subscription) {
       // Refund or void transaction
       await handleRefund(subscription, {
         transactionId: key || refnum,
@@ -403,6 +439,209 @@ async function handleRefund(
   } catch (error) {
     console.error('[USAePay Webhook] Error recording refund:', error);
     throw error;
+  }
+}
+
+type DataRoomCompanyContext = {
+  company: {
+    id: string;
+    name: string;
+    userDefinedAllocations: any;
+  };
+  dataRoom: any;
+};
+
+async function findDataRoomCompanyByProcessorIds(params: {
+  scheduleId: string | null;
+  customerId: string | null;
+}): Promise<DataRoomCompanyContext | null> {
+  const { scheduleId, customerId } = params;
+  if (!scheduleId && !customerId) return null;
+
+  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; userDefinedAllocations: any }>>`
+    SELECT id, name, "userDefinedAllocations"
+    FROM "Company"
+    WHERE (
+      (${scheduleId} IS NOT NULL AND ("userDefinedAllocations"->'dataRoom'->'subscription'->>'usaepayBillingId') = ${scheduleId})
+      OR
+      (${customerId} IS NOT NULL AND ("userDefinedAllocations"->'dataRoom'->'subscription'->>'usaepayCustomerId') = ${customerId})
+    )
+    LIMIT 1
+  `;
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const root = row.userDefinedAllocations && typeof row.userDefinedAllocations === 'object' ? row.userDefinedAllocations : {};
+  const dataRoom = root?.dataRoom && typeof root.dataRoom === 'object' ? root.dataRoom : {};
+  return {
+    company: row,
+    dataRoom,
+  };
+}
+
+async function handleDataRoomSuccessfulPayment(
+  context: DataRoomCompanyContext,
+  paymentData: {
+    transactionId: string;
+    amount: number;
+    cardLast4?: string;
+    cardType?: string;
+  },
+) {
+  const companyId = context.company.id;
+  const now = new Date();
+  const currentPlan = String(context.dataRoom?.subscription?.plan || 'monthly') as 'monthly' | 'quarterly' | 'annual';
+  const plan = ['monthly', 'quarterly', 'annual'].includes(currentPlan) ? currentPlan : 'monthly';
+  const nextBillingDate = addMonthsClamped(now, billingIntervalMonths(plan));
+  const existingFailedCount = Number(context.dataRoom?.subscription?.failedPaymentCount || 0);
+
+  const updatedUDA = {
+    ...(context.company.userDefinedAllocations || {}),
+    dataRoom: {
+      ...(context.dataRoom || {}),
+      enabledByAdmin: true,
+      subscription: {
+        ...(context.dataRoom?.subscription || {}),
+        status: 'active',
+        plan,
+        amount: Number(paymentData.amount || context.dataRoom?.subscription?.amount || 0),
+        lastPaymentDate: now.toISOString(),
+        nextBillingDate: nextBillingDate.toISOString(),
+        pastDueSince: null,
+        graceEndsAt: null,
+        lastFailureReason: null,
+        failedPaymentCount: Math.max(0, existingFailedCount - 1),
+      },
+    },
+  };
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { userDefinedAllocations: updatedUDA },
+  });
+
+  await prisma.paymentTransaction.create({
+    data: {
+      companyId,
+      amount: Number(paymentData.amount || 0),
+      status: 'SUCCESS',
+      type: 'RECURRING',
+      transactionId: paymentData.transactionId,
+      cardLast4: paymentData.cardLast4,
+      cardType: paymentData.cardType,
+      description: `DataRoom ${plan} recurring payment`,
+      invoice: `DATAROOM-REC-${companyId}-${Date.now()}`,
+    },
+  });
+
+  await prisma.subscriptionEvent.create({
+    data: {
+      companyId,
+      eventType: 'dataroom_payment_received',
+      newValue: paymentData.transactionId,
+      notes: `DataRoom recurring payment received: $${Number(paymentData.amount || 0).toFixed(2)} (${plan})`,
+    },
+  });
+}
+
+async function handleDataRoomFailedPayment(
+  context: DataRoomCompanyContext,
+  paymentData: {
+    transactionId?: string;
+    amount: number;
+    errorMessage?: string;
+    cardLast4?: string;
+    cardType?: string;
+  },
+) {
+  const companyId = context.company.id;
+  const now = new Date();
+  const currentPlan = String(context.dataRoom?.subscription?.plan || 'monthly') as 'monthly' | 'quarterly' | 'annual';
+  const plan = ['monthly', 'quarterly', 'annual'].includes(currentPlan) ? currentPlan : 'monthly';
+  const failedCount = Number(context.dataRoom?.subscription?.failedPaymentCount || 0) + 1;
+  const pastDueSince = context.dataRoom?.subscription?.pastDueSince || now.toISOString();
+  const graceEndsAt = new Date(now);
+  graceEndsAt.setDate(graceEndsAt.getDate() + 30);
+
+  const updatedUDA = {
+    ...(context.company.userDefinedAllocations || {}),
+    dataRoom: {
+      ...(context.dataRoom || {}),
+      enabledByAdmin: true,
+      subscription: {
+        ...(context.dataRoom?.subscription || {}),
+        status: 'past_due',
+        plan,
+        amount: Number(context.dataRoom?.subscription?.amount || paymentData.amount || 0),
+        pastDueSince,
+        graceEndsAt: graceEndsAt.toISOString(),
+        lastFailureReason: paymentData.errorMessage || 'Payment declined',
+        failedPaymentCount: failedCount,
+      },
+    },
+  };
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data: { userDefinedAllocations: updatedUDA },
+  });
+
+  await prisma.paymentTransaction.create({
+    data: {
+      companyId,
+      amount: Number(paymentData.amount || 0),
+      status: 'FAILED',
+      type: 'RECURRING',
+      transactionId: paymentData.transactionId,
+      cardLast4: paymentData.cardLast4,
+      cardType: paymentData.cardType,
+      errorMessage: paymentData.errorMessage || 'DataRoom recurring payment failed',
+      description: `Failed DataRoom ${plan} recurring payment`,
+      invoice: `DATAROOM-FAIL-${companyId}-${Date.now()}`,
+    },
+  });
+
+  await prisma.subscriptionEvent.create({
+    data: {
+      companyId,
+      eventType: 'dataroom_payment_failed',
+      newValue: paymentData.transactionId || 'unknown',
+      notes: `DataRoom payment failed: ${paymentData.errorMessage || 'Payment declined'}`,
+    },
+  });
+
+  const primaryRecipients = await prisma.user.findMany({
+    where: {
+      companyId,
+      userType: 'COMPANY',
+      OR: [{ companyRole: 'admin' }, { isPrimaryContact: true }],
+    },
+    select: { email: true },
+  });
+
+  const fallbackRecipients =
+    primaryRecipients.length === 0
+      ? await prisma.user.findMany({
+          where: { companyId, userType: 'COMPANY' },
+          select: { email: true },
+        })
+      : [];
+
+  const recipients = (primaryRecipients.length > 0 ? primaryRecipients : fallbackRecipients)
+    .map((u) => u.email)
+    .filter(Boolean);
+
+  if (recipients.length > 0) {
+    await sendDataRoomPastDueNotification({
+      recipients,
+      companyName: context.company.name,
+      companyId,
+      plan,
+      amount: Number(context.dataRoom?.subscription?.amount || paymentData.amount || 0),
+      graceDays: 30,
+      reason: paymentData.errorMessage || 'Payment declined by processor',
+    });
   }
 }
 

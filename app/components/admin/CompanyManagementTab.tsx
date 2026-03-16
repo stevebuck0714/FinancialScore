@@ -86,6 +86,9 @@ interface CompanyManagementTabProps {
   subscriptionQuarterlyPrice: number;
   subscriptionAnnualPrice: number;
   subscriptionSetupFee: number;
+  dataRoomEnabledByAdmin: boolean;
+  dataRoomSubscriptionStatus: string;
+  onToggleDataRoomEnabledByAdmin: (enabled: boolean) => void;
 }
 
 export default function CompanyManagementTab(props: CompanyManagementTabProps) {
@@ -236,6 +239,9 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
               subscriptionQuarterlyPrice={props.subscriptionQuarterlyPrice}
               subscriptionAnnualPrice={props.subscriptionAnnualPrice}
               subscriptionSetupFee={props.subscriptionSetupFee}
+              dataRoomEnabledByAdmin={props.dataRoomEnabledByAdmin}
+              dataRoomSubscriptionStatus={props.dataRoomSubscriptionStatus}
+              onToggleDataRoomEnabledByAdmin={props.onToggleDataRoomEnabledByAdmin}
             />
           )}
         </>

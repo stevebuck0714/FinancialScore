@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { extractTextFromArrayBuffer, sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
+import { validateDataRoomFilePolicy } from '@/lib/dataroom/file-policy';
 
 export const dynamic = 'force-dynamic';
 
@@ -107,6 +108,15 @@ export async function POST(req: NextRequest) {
     if (!category) return NextResponse.json({ error: 'category is required' }, { status: 400 });
     if (!originalFileName) return NextResponse.json({ error: 'originalFileName is required' }, { status: 400 });
     if (!blobUrl) return NextResponse.json({ error: 'blob.url is required' }, { status: 400 });
+
+    const policy = validateDataRoomFilePolicy({
+      fileName: originalFileName,
+      contentType,
+      sizeBytes,
+    });
+    if (!policy.valid) {
+      return NextResponse.json({ error: policy.error }, { status: 400 });
+    }
 
     const hasAccess = await validateCompanyAccess(companyId);
     if (!hasAccess) {

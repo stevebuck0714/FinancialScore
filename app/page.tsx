@@ -41,6 +41,7 @@ const COVENANTS_ENABLED = process.env.NEXT_PUBLIC_COVENANTS_ENABLED === 'true' |
 const CovenantsTab = dynamic(() => import('./covenants/components/CovenantsTab'), { ssr: false });
 const OperationsTab = dynamic(() => import('./components/operations/OperationsTab'), { ssr: false });
 const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlertsView'), { ssr: false });
+const DataRoomView = dynamic(() => import('./components/dataroom/DataRoomView'), { ssr: false });
 
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
 const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
@@ -628,6 +629,8 @@ function FinancialScorePage() {
   // State - Subscription Selection
   const [selectedSubscriptionPlan, setSelectedSubscriptionPlan] = useState<string | null>(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [dataRoomCheckoutPlan, setDataRoomCheckoutPlan] = useState<'monthly' | 'quarterly' | 'annual' | null>(null);
+  const [showDataRoomCheckoutModal, setShowDataRoomCheckoutModal] = useState(false);
   
   // State - Active Subscription Management
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
@@ -760,6 +763,12 @@ function FinancialScorePage() {
   const [defaultConsultantQuarterlyPrice, setDefaultConsultantQuarterlyPrice] = useState(500);
   const [defaultConsultantAnnualPrice, setDefaultConsultantAnnualPrice] = useState(1750);
   const [defaultConsultantSetupFee, setDefaultConsultantSetupFee] = useState(0);
+  const [defaultDataRoomBusinessMonthlyPrice, setDefaultDataRoomBusinessMonthlyPrice] = useState(195);
+  const [defaultDataRoomBusinessQuarterlyPrice, setDefaultDataRoomBusinessQuarterlyPrice] = useState(500);
+  const [defaultDataRoomBusinessAnnualPrice, setDefaultDataRoomBusinessAnnualPrice] = useState(1750);
+  const [defaultDataRoomConsultantMonthlyPrice, setDefaultDataRoomConsultantMonthlyPrice] = useState(195);
+  const [defaultDataRoomConsultantQuarterlyPrice, setDefaultDataRoomConsultantQuarterlyPrice] = useState(500);
+  const [defaultDataRoomConsultantAnnualPrice, setDefaultDataRoomConsultantAnnualPrice] = useState(1750);
   
   // State - Projections
   const [defaultBestCaseRevMult, setDefaultBestCaseRevMult] = useState(1.5);
@@ -781,7 +790,7 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom'>('login');
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -817,6 +826,118 @@ function FinancialScorePage() {
     return null;
   };
 
+  const loadAllCompanies = useCallback(async () => {
+    try {
+      if (!currentUser) return;
+
+      if (currentUser.role === 'consultant' && currentUser.consultantId) {
+        const loaded = await companiesApi.getAll(currentUser.consultantId);
+        safeSetCompanies(loaded);
+        return;
+      }
+
+      if (currentUser.userType === 'company' && currentUser.companyId) {
+        const response = await fetch(`/api/companies?companyId=${currentUser.companyId}`, { cache: 'no-store' });
+        const data = await response.json();
+        safeSetCompanies(data.companies || []);
+        return;
+      }
+
+      if (currentUser.role === 'siteadmin') {
+        const response = await fetch('/api/companies', { cache: 'no-store' });
+        const data = await response.json();
+        safeSetCompanies(data.companies || []);
+      }
+    } catch (error) {
+      console.error('Failed to reload companies:', error);
+    }
+  }, [currentUser]);
+
+  const dataRoomState = useMemo(() => {
+    if (!selectedCompanyId || !Array.isArray(companies)) {
+      return { enabledByAdmin: false, subscriptionStatus: 'inactive' as const };
+    }
+    const selectedCompany = companies.find((c) => c.id === selectedCompanyId) as any;
+    const dataRoom = selectedCompany?.userDefinedAllocations?.dataRoom || {};
+    const rawStatus = String(dataRoom?.subscription?.status || 'inactive').toLowerCase();
+    const subscriptionStatus =
+      rawStatus === 'active' || rawStatus === 'past_due' || rawStatus === 'canceled'
+        ? (rawStatus as 'active' | 'past_due' | 'canceled')
+        : ('inactive' as const);
+
+    return {
+      enabledByAdmin: Boolean(dataRoom?.enabledByAdmin),
+      subscriptionStatus,
+    };
+  }, [companies, selectedCompanyId]);
+
+  const isDataRoomEnabledByAdmin = dataRoomState.enabledByAdmin;
+  const dataRoomSubscriptionStatus = dataRoomState.subscriptionStatus;
+  const isDataRoomActive = dataRoomSubscriptionStatus === 'active';
+  const dataRoomPricing = useMemo(() => {
+    const selectedCompany = Array.isArray(companies)
+      ? (companies.find((c: any) => c.id === selectedCompanyId) as any)
+      : null;
+    const isBusinessCompany = selectedCompany?.consultantId === null;
+    const defaults = isBusinessCompany
+      ? {
+          monthly: defaultDataRoomBusinessMonthlyPrice ?? 195,
+          quarterly: defaultDataRoomBusinessQuarterlyPrice ?? 500,
+          annual: defaultDataRoomBusinessAnnualPrice ?? 1750,
+        }
+      : {
+          monthly: defaultDataRoomConsultantMonthlyPrice ?? 195,
+          quarterly: defaultDataRoomConsultantQuarterlyPrice ?? 500,
+          annual: defaultDataRoomConsultantAnnualPrice ?? 1750,
+        };
+    const savedPricing = selectedCompany?.userDefinedAllocations?.dataRoom?.pricing;
+    return {
+      monthly: Number(savedPricing?.monthly ?? defaults.monthly),
+      quarterly: Number(savedPricing?.quarterly ?? defaults.quarterly),
+      annual: Number(savedPricing?.annual ?? defaults.annual),
+    };
+  }, [
+    companies,
+    selectedCompanyId,
+    defaultDataRoomBusinessMonthlyPrice,
+    defaultDataRoomBusinessQuarterlyPrice,
+    defaultDataRoomBusinessAnnualPrice,
+    defaultDataRoomConsultantMonthlyPrice,
+    defaultDataRoomConsultantQuarterlyPrice,
+    defaultDataRoomConsultantAnnualPrice,
+  ]);
+  const isDataRoomPaymentRequired = (dataRoomPricing.monthly > 0) || (dataRoomPricing.quarterly > 0) || (dataRoomPricing.annual > 0);
+
+  const handleToggleDataRoomEnabledByAdmin = async (enabled: boolean) => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedCompanyId,
+          dataRoomEnabledByAdmin: enabled,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result?.company) {
+        throw new Error(result?.error || 'Failed to update DataRoom setting');
+      }
+      await loadAllCompanies();
+      if (!enabled && currentView === 'dataroom') {
+        setCurrentView('admin');
+      }
+      alert(enabled ? 'DataRoom has been enabled for this company.' : 'DataRoom has been disabled for this company.');
+    } catch (error) {
+      console.error('Error updating DataRoom setting:', error);
+      alert('Failed to update DataRoom setting. Please try again.');
+    }
+  };
+
   // Handle navigation with payment gate
   const handleNavigation = (view: string) => {
     const section = viewToCompanySection(view);
@@ -826,6 +947,28 @@ function FinancialScorePage() {
         alert('Access Restricted\n\nYour account does not have access to this section.');
         return;
       }
+    }
+
+    if (view === 'dataroom') {
+      if (!selectedCompanyId) {
+        alert('Please select a company first.');
+        return;
+      }
+      if (!isDataRoomEnabledByAdmin) {
+        alert('DataRoom is not enabled for this company.');
+        return;
+      }
+      if (!isDataRoomActive) {
+        if (!isDataRoomPaymentRequired) {
+          setCurrentView('dataroom');
+          return;
+        }
+        setDataRoomCheckoutPlan('monthly');
+        setShowDataRoomCheckoutModal(true);
+        return;
+      }
+      setCurrentView('dataroom');
+      return;
     }
 
     if (isPaymentRequired()) {
@@ -2704,6 +2847,12 @@ function FinancialScorePage() {
           setDefaultConsultantQuarterlyPrice(data.settings.consultantQuarterlyPrice ?? 500);
           setDefaultConsultantAnnualPrice(data.settings.consultantAnnualPrice ?? 1750);
           setDefaultConsultantSetupFee(data.settings.consultantSetupFee ?? 0);
+          setDefaultDataRoomBusinessMonthlyPrice(data.dataRoomSettings?.businessMonthlyPrice ?? 195);
+          setDefaultDataRoomBusinessQuarterlyPrice(data.dataRoomSettings?.businessQuarterlyPrice ?? 500);
+          setDefaultDataRoomBusinessAnnualPrice(data.dataRoomSettings?.businessAnnualPrice ?? 1750);
+          setDefaultDataRoomConsultantMonthlyPrice(data.dataRoomSettings?.consultantMonthlyPrice ?? 195);
+          setDefaultDataRoomConsultantQuarterlyPrice(data.dataRoomSettings?.consultantQuarterlyPrice ?? 500);
+          setDefaultDataRoomConsultantAnnualPrice(data.dataRoomSettings?.consultantAnnualPrice ?? 1750);
           console.log('? Loaded default pricing from SystemSettings:', {
             business: {
               monthly: data.settings.businessMonthlyPrice ?? 195,
@@ -2716,6 +2865,16 @@ function FinancialScorePage() {
               quarterly: data.settings.consultantQuarterlyPrice ?? 500,
               annual: data.settings.consultantAnnualPrice ?? 1750,
               setupFee: data.settings.consultantSetupFee ?? 0,
+            },
+            dataRoomBusiness: {
+              monthly: data.dataRoomSettings?.businessMonthlyPrice ?? 195,
+              quarterly: data.dataRoomSettings?.businessQuarterlyPrice ?? 500,
+              annual: data.dataRoomSettings?.businessAnnualPrice ?? 1750,
+            },
+            dataRoomConsultant: {
+              monthly: data.dataRoomSettings?.consultantMonthlyPrice ?? 195,
+              quarterly: data.dataRoomSettings?.consultantQuarterlyPrice ?? 500,
+              annual: data.dataRoomSettings?.consultantAnnualPrice ?? 1750,
             }
           });
         }
@@ -7383,6 +7542,34 @@ function FinancialScorePage() {
               </div>
             )}
 
+            {isDataRoomEnabledByAdmin && selectedCompanyId && (
+              <div style={{ marginBottom: '10px' }}>
+                <h3
+                  onClick={() => handleNavigation('dataroom')}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: currentView === 'dataroom' ? '#1F70C1' : '#1e293b',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '8px 24px',
+                    marginBottom: '6px',
+                    cursor: 'pointer',
+                    transition: 'color 0.2s',
+                    borderLeft: currentView === 'dataroom' ? '4px solid #1F70C1' : '4px solid transparent'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#1F70C1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = currentView === 'dataroom' ? '#1F70C1' : '#1e293b';
+                  }}
+                >
+                  Corelytics DataRoom
+                </h3>
+              </div>
+            )}
+
             {/* Bottom section: Print Packages + User/Consultant - grouped at bottom of sidebar */}
             <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
               {/* Print Packages Section - For Consultants and Company Users only */}
@@ -7723,6 +7910,18 @@ function FinancialScorePage() {
               setDefaultConsultantAnnualPrice={setDefaultConsultantAnnualPrice}
               defaultConsultantSetupFee={defaultConsultantSetupFee}
               setDefaultConsultantSetupFee={setDefaultConsultantSetupFee}
+              defaultDataRoomBusinessMonthlyPrice={defaultDataRoomBusinessMonthlyPrice}
+              setDefaultDataRoomBusinessMonthlyPrice={setDefaultDataRoomBusinessMonthlyPrice}
+              defaultDataRoomBusinessQuarterlyPrice={defaultDataRoomBusinessQuarterlyPrice}
+              setDefaultDataRoomBusinessQuarterlyPrice={setDefaultDataRoomBusinessQuarterlyPrice}
+              defaultDataRoomBusinessAnnualPrice={defaultDataRoomBusinessAnnualPrice}
+              setDefaultDataRoomBusinessAnnualPrice={setDefaultDataRoomBusinessAnnualPrice}
+              defaultDataRoomConsultantMonthlyPrice={defaultDataRoomConsultantMonthlyPrice}
+              setDefaultDataRoomConsultantMonthlyPrice={setDefaultDataRoomConsultantMonthlyPrice}
+              defaultDataRoomConsultantQuarterlyPrice={defaultDataRoomConsultantQuarterlyPrice}
+              setDefaultDataRoomConsultantQuarterlyPrice={setDefaultDataRoomConsultantQuarterlyPrice}
+              defaultDataRoomConsultantAnnualPrice={defaultDataRoomConsultantAnnualPrice}
+              setDefaultDataRoomConsultantAnnualPrice={setDefaultDataRoomConsultantAnnualPrice}
               updateCompanyPricing={updateCompanyPricing}
               affiliates={affiliates}
               setAffiliates={setAffiliates}
@@ -8043,6 +8242,9 @@ function FinancialScorePage() {
               subscriptionQuarterlyPrice={paymentsPricing.quarterly}
               subscriptionAnnualPrice={paymentsPricing.annual}
               subscriptionSetupFee={paymentsPricing.setupFee}
+              dataRoomEnabledByAdmin={isDataRoomEnabledByAdmin}
+              dataRoomSubscriptionStatus={dataRoomSubscriptionStatus}
+              onToggleDataRoomEnabledByAdmin={handleToggleDataRoomEnabledByAdmin}
             />
           )}
 
@@ -9051,6 +9253,165 @@ function FinancialScorePage() {
           <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to view daily alerts.</p>
         </div>
       )}
+
+      {currentView === 'dataroom' && selectedCompanyId && (
+        <DataRoomView selectedCompanyId={selectedCompanyId} companyName={companyName || ''} />
+      )}
+      {currentView === 'dataroom' && !selectedCompanyId && (
+        <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '64px 32px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '28px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>No Company Selected</h2>
+          <p style={{ fontSize: '16px', color: '#64748b', marginBottom: '12px' }}>Please select a company to access DataRoom.</p>
+        </div>
+      )}
+
+      {showDataRoomCheckoutModal && dataRoomCheckoutPlan && selectedCompanyId && (() => {
+        const amount =
+          dataRoomCheckoutPlan === 'monthly'
+            ? dataRoomPricing.monthly
+            : dataRoomCheckoutPlan === 'quarterly'
+              ? dataRoomPricing.quarterly
+              : dataRoomPricing.annual;
+
+        return (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+            <div style={{ background: 'white', borderRadius: '12px', padding: '28px', maxWidth: '640px', width: '92%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Enable Corelytics DataRoom</h2>
+                <button
+                  onClick={() => setShowDataRoomCheckoutModal(false)}
+                  style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', padding: '0', lineHeight: '1' }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <p style={{ fontSize: '13px', color: '#475569', marginBottom: '14px' }}>
+                Secure document vault for diligence with controlled sharing and auditability.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '14px' }}>
+                {(['monthly', 'quarterly', 'annual'] as const).map((plan) => (
+                  <button
+                    key={plan}
+                    type="button"
+                    onClick={() => setDataRoomCheckoutPlan(plan)}
+                    style={{
+                      padding: '10px 8px',
+                      borderRadius: '8px',
+                      border: dataRoomCheckoutPlan === plan ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                      background: dataRoomCheckoutPlan === plan ? '#eff6ff' : 'white',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      color: '#1e293b',
+                      cursor: 'pointer',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {plan}
+                  </button>
+                ))}
+              </div>
+
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+
+                  try {
+                    const response = await fetch('/api/dataroom/checkout', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        companyId: selectedCompanyId,
+                        plan: dataRoomCheckoutPlan,
+                        cardNumber: formData.get('cardNumber'),
+                        cardholderName: formData.get('cardholderName'),
+                        expirationMonth: formData.get('expMonth'),
+                        expirationYear: formData.get('expYear'),
+                        cvv: formData.get('cvv'),
+                        billingAddress: {
+                          street: formData.get('street') as string,
+                          city: formData.get('city') as string,
+                          state: formData.get('state') as string,
+                          zip: formData.get('zip') as string,
+                        },
+                      }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result?.success) {
+                      throw new Error(result?.error || 'Payment failed');
+                    }
+
+                    alert('DataRoom activated successfully.');
+                    setShowDataRoomCheckoutModal(false);
+                    await loadAllCompanies();
+                    setCurrentView('dataroom');
+                  } catch (error: any) {
+                    alert(error?.message || 'Failed to activate DataRoom.');
+                  }
+                }}
+              >
+                <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '14px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', textTransform: 'capitalize' }}>
+                      DataRoom {dataRoomCheckoutPlan}
+                    </span>
+                    <span style={{ fontSize: '22px', fontWeight: '800', color: '#2563eb' }}>${amount.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+                  <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CreditCard size={15} /> Card Details
+                  </h4>
+                  <input name="cardNumber" autoComplete="cc-number" placeholder="Card Number" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
+                  <input name="cardholderName" autoComplete="cc-name" placeholder="Cardholder Name" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                    <input name="expMonth" autoComplete="cc-exp-month" placeholder="MM" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                    <input name="expYear" autoComplete="cc-exp-year" placeholder="YYYY" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                    <input name="cvv" autoComplete="cc-csc" placeholder="CVV" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '14px', border: '1px solid #e2e8f0' }}>
+                  <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#1e293b', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <MapPin size={15} /> Billing Address
+                  </h4>
+                  <input name="street" placeholder="Street Address" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <input name="city" placeholder="City" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                    <input name="state" placeholder="State" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </div>
+                  <input name="zip" placeholder="ZIP" required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowDataRoomCheckoutModal(false)}
+                    style={{ flex: 1, padding: '12px', background: 'white', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Not now
+                  </button>
+                  <button
+                    type="submit"
+                    style={{ flex: 1.5, padding: '12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}
+                  >
+                    Activate DataRoom
+                  </button>
+                </div>
+              </form>
+
+              <div style={{ marginTop: '12px', padding: '10px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Lock size={14} color="#059669" />
+                <span style={{ fontSize: '12px', color: '#059669', fontWeight: 600 }}>
+                  Secured by USAePay. Card data is encrypted in transit.
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Admin Dashboard */}
       {currentView === 'admin' && (

@@ -4,6 +4,7 @@ import { requireAuth, validateCompanyAccess, validateConsultantAccess, getCompan
 import { auditCompanyOperation, auditForbiddenAccess } from "@/lib/audit-logger";
 import { sendAccountingSystemSelectionNotification } from "@/lib/email";
 import { listAccessibleCompaniesForUser } from "@/lib/user-company-access";
+import { DATAROOM_DEFAULT_FOLDERS } from "@/lib/dataroom/constants";
 
 async function hasCompanyColumn(columnName: string): Promise<boolean> {
   // Guard against generated Prisma client drift:
@@ -626,6 +627,35 @@ export async function POST(request: NextRequest) {
         setupFee = 0;
       }
     }
+    let dataRoomMonthlyPrice = 195;
+    let dataRoomQuarterlyPrice = 500;
+    let dataRoomAnnualPrice = 1750;
+    try {
+      let defaultDataRoomPricing = await prisma.systemSettings.findUnique({
+        where: { key: "default_dataroom_pricing" },
+      });
+      if (!defaultDataRoomPricing) {
+        defaultDataRoomPricing = await prisma.systemSettings.create({
+          data: {
+            key: "default_dataroom_pricing",
+            businessMonthlyPrice: 195,
+            businessQuarterlyPrice: 500,
+            businessAnnualPrice: 1750,
+            businessSetupFee: 0,
+            consultantMonthlyPrice: 195,
+            consultantQuarterlyPrice: 500,
+            consultantAnnualPrice: 1750,
+            consultantSetupFee: 0,
+          },
+        });
+      }
+      const isBusinessUser = consultant?.type === "business";
+      dataRoomMonthlyPrice = Number(isBusinessUser ? (defaultDataRoomPricing.businessMonthlyPrice ?? 195) : (defaultDataRoomPricing.consultantMonthlyPrice ?? 195));
+      dataRoomQuarterlyPrice = Number(isBusinessUser ? (defaultDataRoomPricing.businessQuarterlyPrice ?? 500) : (defaultDataRoomPricing.consultantQuarterlyPrice ?? 500));
+      dataRoomAnnualPrice = Number(isBusinessUser ? (defaultDataRoomPricing.businessAnnualPrice ?? 1750) : (defaultDataRoomPricing.consultantAnnualPrice ?? 1750));
+    } catch (error) {
+      console.warn("Could not load default DataRoom pricing, using fallback.", error);
+    }
 
     console.log("🔍 About to create company with final data:", {
       name,
@@ -694,6 +724,23 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      const baseUserDefinedAllocations = useAffiliatePricing
+        ? {
+            subscriptionPricing: {
+              monthly: monthlyPrice ?? 0,
+              quarterly: quarterlyPrice ?? 0,
+              annual: annualPrice ?? 0,
+              isFree:
+                (monthlyPrice ?? 0) === 0 &&
+                (quarterlyPrice ?? 0) === 0 &&
+                (annualPrice ?? 0) === 0 &&
+                (setupFee ?? 0) === 0,
+              setupFee: setupFee ?? 0,
+              source: "affiliate_code",
+              createdAt: new Date().toISOString(),
+            },
+          }
+        : {};
       const company = await prisma.company.create({
         data: {
           name,
@@ -728,23 +775,20 @@ export async function POST(request: NextRequest) {
           ...(includeTier1SupportContactEmail
             ? { tier1SupportContactEmail: finalTier1SupportContactEmail }
             : {}),
-          // Store pricing in userDefinedAllocations (only for affiliate codes, not for default pricing)
-          // Only store userDefinedAllocations if affiliate code was used
-          userDefinedAllocations: useAffiliatePricing ? {
-            subscriptionPricing: {
-              monthly: monthlyPrice ?? 0,
-              quarterly: quarterlyPrice ?? 0,
-              annual: annualPrice ?? 0,
-              isFree:
-                (monthlyPrice ?? 0) === 0 &&
-                (quarterlyPrice ?? 0) === 0 &&
-                (annualPrice ?? 0) === 0 &&
-                (setupFee ?? 0) === 0,
-              setupFee: setupFee ?? 0,
-              source: "affiliate_code",
-              createdAt: new Date().toISOString(),
+          userDefinedAllocations: {
+            ...baseUserDefinedAllocations,
+            dataRoom: {
+              enabledByAdmin: false,
+              pricing: {
+                monthly: dataRoomMonthlyPrice,
+                quarterly: dataRoomQuarterlyPrice,
+                annual: dataRoomAnnualPrice,
+              },
+              subscription: {
+                status: "inactive",
+              },
             },
-          } : undefined,
+          },
           // DO NOT store affiliate code or affiliate ID with company
           // Affiliate codes are used ONLY to determine pricing, then discarded
         },
@@ -878,7 +922,7 @@ export async function PATCH(request: NextRequest) {
 
     const existingCompany = await prisma.company.findUnique({
       where: { id: targetCompanyId },
-      select: { id: true, name: true, accountingSystem: true },
+      select: { id: true, name: true, accountingSystem: true, userDefinedAllocations: true },
     });
     if (!existingCompany) {
       return NextResponse.json(
@@ -1128,6 +1172,71 @@ export async function PATCH(request: NextRequest) {
     // Name
     if (updateFields.name !== undefined) updateData.name = updateFields.name;
 
+    // DataRoom settings (stored in userDefinedAllocations.dataRoom)
+    const hasDataRoomSettingsUpdate =
+      updateFields.dataRoomEnabledByAdmin !== undefined ||
+      updateFields.dataRoomMonthlyPrice !== undefined ||
+      updateFields.dataRoomQuarterlyPrice !== undefined ||
+      updateFields.dataRoomAnnualPrice !== undefined;
+    if (hasDataRoomSettingsUpdate) {
+      const currentUDA =
+        existingCompany?.userDefinedAllocations &&
+        typeof existingCompany.userDefinedAllocations === 'object' &&
+        !Array.isArray(existingCompany.userDefinedAllocations)
+          ? (existingCompany.userDefinedAllocations as Record<string, any>)
+          : {};
+      const currentDataRoom =
+        currentUDA.dataRoom &&
+        typeof currentUDA.dataRoom === 'object' &&
+        !Array.isArray(currentUDA.dataRoom)
+          ? (currentUDA.dataRoom as Record<string, any>)
+          : {};
+      const currentPricing =
+        currentDataRoom.pricing &&
+        typeof currentDataRoom.pricing === 'object' &&
+        !Array.isArray(currentDataRoom.pricing)
+          ? (currentDataRoom.pricing as Record<string, any>)
+          : {};
+
+      const nextEnabled =
+        updateFields.dataRoomEnabledByAdmin !== undefined
+          ? Boolean(updateFields.dataRoomEnabledByAdmin)
+          : Boolean(currentDataRoom.enabledByAdmin);
+      const nextMonthly =
+        updateFields.dataRoomMonthlyPrice !== undefined
+          ? Number(updateFields.dataRoomMonthlyPrice)
+          : Number(currentPricing.monthly ?? 0);
+      const nextQuarterly =
+        updateFields.dataRoomQuarterlyPrice !== undefined
+          ? Number(updateFields.dataRoomQuarterlyPrice)
+          : Number(currentPricing.quarterly ?? 0);
+      const nextAnnual =
+        updateFields.dataRoomAnnualPrice !== undefined
+          ? Number(updateFields.dataRoomAnnualPrice)
+          : Number(currentPricing.annual ?? 0);
+
+      updateData.userDefinedAllocations = {
+        ...currentUDA,
+        dataRoom: {
+          ...currentDataRoom,
+          enabledByAdmin: nextEnabled,
+          pricing: {
+            ...currentPricing,
+            monthly: Number.isFinite(nextMonthly) ? nextMonthly : 0,
+            quarterly: Number.isFinite(nextQuarterly) ? nextQuarterly : 0,
+            annual: Number.isFinite(nextAnnual) ? nextAnnual : 0,
+          },
+          folders:
+            nextEnabled
+              ? (Array.isArray(currentDataRoom.folders) && currentDataRoom.folders.length > 0
+                  ? currentDataRoom.folders
+                  : DATAROOM_DEFAULT_FOLDERS)
+              : currentDataRoom.folders,
+          documentIndex: Array.isArray(currentDataRoom.documentIndex) ? currentDataRoom.documentIndex : [],
+        },
+      };
+    }
+
     // Lines of Business and allocations (legacy LOB endpoint usage)
     if (updateFields.linesOfBusiness !== undefined)
       updateData.linesOfBusiness = updateFields.linesOfBusiness;
@@ -1167,6 +1276,7 @@ export async function PATCH(request: NextRequest) {
       addressCountry: true,
       industrySector: true,
       linesOfBusiness: true,
+      userDefinedAllocations: true,
       createdAt: true,
     };
 
