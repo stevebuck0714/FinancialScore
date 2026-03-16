@@ -36,6 +36,16 @@ type DataRoomFolder = {
   documents: FolderDoc[];
 };
 
+type AuditEvent = {
+  id: string;
+  at: string;
+  action: string;
+  userEmail: string;
+  documentId: string | null;
+  folderId: string | null;
+  ipAddress: string;
+};
+
 const ACCEPTED_FILES = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt';
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 
@@ -71,6 +81,14 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
   const [scanning, setScanning] = useState(false);
   const [workingDocId, setWorkingDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditActionFilter, setAuditActionFilter] = useState('');
+  const [auditUserFilter, setAuditUserFilter] = useState('');
+  const [auditFromFilter, setAuditFromFilter] = useState('');
+  const [auditToFilter, setAuditToFilter] = useState('');
+  const [auditOffset, setAuditOffset] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedFolder = useMemo(
@@ -129,10 +147,62 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     }
   };
 
+  const loadAudit = async (overrideOffset?: number) => {
+    if (!selectedCompanyId || !capabilities.manage) return;
+    const nextOffset = typeof overrideOffset === 'number' ? overrideOffset : auditOffset;
+    setAuditLoading(true);
+    try {
+      const params = new URLSearchParams({
+        companyId: selectedCompanyId,
+        limit: '25',
+        offset: String(nextOffset),
+      });
+      if (auditActionFilter) params.set('action', auditActionFilter);
+      if (auditUserFilter) params.set('userEmail', auditUserFilter);
+      if (auditFromFilter) params.set('from', new Date(auditFromFilter).toISOString());
+      if (auditToFilter) params.set('to', new Date(auditToFilter).toISOString());
+      const res = await fetch(`/api/dataroom/audit?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to load audit log');
+      setAuditEvents(Array.isArray(data?.events) ? data.events : []);
+      setAuditTotal(Number(data?.total || 0));
+      setAuditOffset(nextOffset);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load DataRoom audit log');
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const exportAuditCsv = async () => {
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      format: 'csv',
+      limit: '1000',
+      offset: '0',
+    });
+    if (auditActionFilter) params.set('action', auditActionFilter);
+    if (auditUserFilter) params.set('userEmail', auditUserFilter);
+    if (auditFromFilter) params.set('from', new Date(auditFromFilter).toISOString());
+    if (auditToFilter) params.set('to', new Date(auditToFilter).toISOString());
+    window.open(`/api/dataroom/audit?${params.toString()}`, '_blank', 'noreferrer');
+  };
+
   useEffect(() => {
     loadOverview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (capabilities.manage && selectedCompanyId) {
+      loadAudit(0);
+    } else {
+      setAuditEvents([]);
+      setAuditTotal(0);
+      setAuditOffset(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capabilities.manage, selectedCompanyId]);
 
   const uploadToCurrentFolder = async () => {
     const file = fileInputRef.current?.files?.[0];
@@ -545,6 +615,112 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
             </div>
           </div>
         </div>
+        {capabilities.manage && (
+          <div style={{ marginTop: '16px', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+            <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>
+                DataRoom Audit Trail ({auditTotal})
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  value={auditActionFilter}
+                  onChange={(e) => setAuditActionFilter(e.target.value)}
+                  style={{ padding: '7px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                >
+                  <option value="">All actions</option>
+                  <option value="document_assigned">document_assigned</option>
+                  <option value="document_moved">document_moved</option>
+                  <option value="document_removed">document_removed</option>
+                  <option value="document_opened">document_opened</option>
+                  <option value="document_open_blocked">document_open_blocked</option>
+                  <option value="scan_completed">scan_completed</option>
+                  <option value="overview_viewed">overview_viewed</option>
+                  <option value="permissions_updated">permissions_updated</option>
+                </select>
+                <input
+                  type="text"
+                  value={auditUserFilter}
+                  onChange={(e) => setAuditUserFilter(e.target.value)}
+                  placeholder="Filter by user email"
+                  style={{ padding: '7px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                />
+                <input
+                  type="datetime-local"
+                  value={auditFromFilter}
+                  onChange={(e) => setAuditFromFilter(e.target.value)}
+                  style={{ padding: '7px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                />
+                <input
+                  type="datetime-local"
+                  value={auditToFilter}
+                  onChange={(e) => setAuditToFilter(e.target.value)}
+                  style={{ padding: '7px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => loadAudit(0)}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#1e293b', padding: '8px 12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Apply
+                </button>
+                <button
+                  type="button"
+                  onClick={exportAuditCsv}
+                  style={{ border: 'none', borderRadius: '8px', background: '#0f766e', color: 'white', padding: '8px 12px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Export CSV
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: '12px' }}>
+              {auditLoading ? (
+                <div style={{ color: '#64748b', fontSize: '13px' }}>Loading audit log...</div>
+              ) : auditEvents.length === 0 ? (
+                <div style={{ color: '#64748b', fontSize: '13px' }}>No audit events found for current filters.</div>
+              ) : (
+                <div style={{ display: 'grid', gap: '8px' }}>
+                  {auditEvents.map((evt) => (
+                    <div
+                      key={evt.id || `${evt.at}-${evt.action}-${evt.userEmail}`}
+                      style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px', display: 'grid', gap: '4px' }}
+                    >
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>
+                        {evt.action}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        <span>{formatDateTime(evt.at) || evt.at}</span>
+                        <span>User: {evt.userEmail || 'unknown'}</span>
+                        {evt.documentId ? <span>Doc: {evt.documentId}</span> : null}
+                        {evt.folderId ? <span>Folder: {evt.folderId}</span> : null}
+                        <span>IP: {evt.ipAddress || 'unknown'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {auditTotal > 25 && (
+                <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => loadAudit(Math.max(0, auditOffset - 25))}
+                    disabled={auditOffset <= 0 || auditLoading}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#1e293b', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: auditOffset <= 0 || auditLoading ? 'not-allowed' : 'pointer' }}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => loadAudit(auditOffset + 25)}
+                    disabled={auditOffset + 25 >= auditTotal || auditLoading}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', color: '#1e293b', padding: '6px 10px', fontSize: '12px', fontWeight: 700, cursor: auditOffset + 25 >= auditTotal || auditLoading ? 'not-allowed' : 'pointer' }}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
