@@ -17,6 +17,15 @@ type FolderDoc = {
   createdAt: string;
   extractionStatus: string;
   scanStatus: string;
+  uploadedByName: string;
+  lastDownloadedByName: string | null;
+  lastDownloadedAt: string | null;
+  canDownload?: boolean;
+  canManage?: boolean;
+  downloadHistory?: Array<{
+    downloadedByName: string | null;
+    downloadedAt: string | null;
+  }>;
 };
 
 type DataRoomFolder = {
@@ -40,8 +49,22 @@ function formatBytes(n: number | null) {
   return `${gb.toFixed(2)} GB`;
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return null;
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt.toLocaleString();
+}
+
 export default function DataRoomView({ selectedCompanyId, companyName }: DataRoomViewProps) {
   const [folders, setFolders] = useState<DataRoomFolder[]>([]);
+  const [capabilities, setCapabilities] = useState({
+    view: true,
+    download: true,
+    upload: true,
+    share: true,
+    manage: true,
+  });
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -54,6 +77,18 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     () => folders.find((f) => f.id === selectedFolderId) || null,
     [folders, selectedFolderId],
   );
+  const pendingDocCount = useMemo(
+    () =>
+      folders.reduce(
+        (count, folder) =>
+          count +
+          folder.documents.filter(
+            (doc) => String(doc.scanStatus || 'pending_scan').toLowerCase() === 'pending_scan',
+          ).length,
+        0,
+      ),
+    [folders],
+  );
 
   const loadOverview = async () => {
     if (!selectedCompanyId) return;
@@ -64,6 +99,19 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load DataRoom');
       const incoming = Array.isArray(data?.folders) ? data.folders : [];
+      const incomingCapabilities =
+        data?.capabilities && typeof data.capabilities === 'object'
+          ? data.capabilities
+          : null;
+      if (incomingCapabilities) {
+        setCapabilities({
+          view: Boolean((incomingCapabilities as any).view),
+          download: Boolean((incomingCapabilities as any).download),
+          upload: Boolean((incomingCapabilities as any).upload),
+          share: Boolean((incomingCapabilities as any).share),
+          manage: Boolean((incomingCapabilities as any).manage),
+        });
+      }
       setFolders(incoming);
       if (!selectedFolderId && incoming.length > 0) {
         setSelectedFolderId(String(incoming[0].id));
@@ -146,29 +194,6 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     }
   };
 
-  const moveDocument = async (documentId: string, folderId: string) => {
-    setWorkingDocId(documentId);
-    setError(null);
-    try {
-      const res = await fetch('/api/dataroom/documents', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          documentId,
-          folderId,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Failed to move document');
-      await loadOverview();
-    } catch (e: any) {
-      setError(e?.message || 'Failed to move document');
-    } finally {
-      setWorkingDocId(null);
-    }
-  };
-
   const removeFromDataRoom = async (documentId: string) => {
     if (!confirm('Remove this document from DataRoom folder index? (File remains in company documents)')) {
       return;
@@ -220,6 +245,23 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       return { bg: '#fee2e2', fg: '#991b1b', label: 'blocked' };
     }
     return { bg: '#e0f2fe', fg: '#0c4a6e', label: 'pending_scan' };
+  };
+
+  const openDocument = async (doc: FolderDoc) => {
+    if (doc.canDownload === false) {
+      alert('You do not have download access for this document.');
+      return;
+    }
+    const scanStatus = String(doc.scanStatus || '').toLowerCase();
+    if (scanStatus !== 'clean') {
+      if (scanStatus === 'pending_scan') {
+        alert('This document is pending malware scan. Click "Scan Pending" and try again.');
+      } else {
+        alert('This document is quarantined and cannot be opened until scan status is clean.');
+      }
+      return;
+    }
+    window.open(`/api/company-documents/${doc.id}/open`, '_blank', 'noreferrer');
   };
 
   return (
@@ -280,11 +322,11 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                 {selectedFolder?.name || 'Folder'} Documents
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <input ref={fileInputRef} type="file" accept={ACCEPTED_FILES} disabled={uploading} />
+                <input ref={fileInputRef} type="file" accept={ACCEPTED_FILES} disabled={uploading || !capabilities.upload} />
                 <button
                   type="button"
                   onClick={uploadToCurrentFolder}
-                  disabled={uploading || !selectedFolderId}
+                  disabled={uploading || !selectedFolderId || !capabilities.upload}
                   style={{
                     border: 'none',
                     borderRadius: '8px',
@@ -293,7 +335,8 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                     padding: '8px 12px',
                     fontSize: '12px',
                     fontWeight: 800,
-                    cursor: uploading || !selectedFolderId ? 'not-allowed' : 'pointer',
+                    cursor: uploading || !selectedFolderId || !capabilities.upload ? 'not-allowed' : 'pointer',
+                    opacity: capabilities.upload ? 1 : 0.5,
                   }}
                 >
                   {uploading ? 'Uploading...' : 'Upload'}
@@ -315,23 +358,25 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                 >
                   Refresh
                 </button>
-                <button
-                  type="button"
-                  onClick={scanPending}
-                  disabled={loading || uploading || scanning}
-                  style={{
-                    border: 'none',
-                    borderRadius: '8px',
-                    background: scanning ? '#94a3b8' : '#0f766e',
-                    color: 'white',
-                    padding: '8px 12px',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    cursor: loading || uploading || scanning ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {scanning ? 'Scanning...' : 'Scan Pending'}
-                </button>
+                {pendingDocCount > 0 && capabilities.manage && (
+                  <button
+                    type="button"
+                    onClick={scanPending}
+                    disabled={loading || uploading || scanning}
+                    style={{
+                      border: 'none',
+                      borderRadius: '8px',
+                      background: scanning ? '#94a3b8' : '#0f766e',
+                      color: 'white',
+                      padding: '8px 12px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      cursor: loading || uploading || scanning ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {scanning ? 'Scanning...' : 'Scan Pending'}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -364,57 +409,76 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
+                        {(() => {
+                          const historyFromApi = Array.isArray(doc.downloadHistory)
+                            ? doc.downloadHistory
+                                .map((h) => ({
+                                  downloadedByName: h?.downloadedByName || null,
+                                  downloadedAt: h?.downloadedAt || null,
+                                }))
+                                .filter((h) => h.downloadedByName || h.downloadedAt)
+                            : [];
+                          const fallbackHistory =
+                            doc.lastDownloadedByName || doc.lastDownloadedAt
+                              ? [
+                                  {
+                                    downloadedByName: doc.lastDownloadedByName || null,
+                                    downloadedAt: doc.lastDownloadedAt || null,
+                                  },
+                                ]
+                              : [];
+                          const downloadLines = (historyFromApi.length > 0 ? historyFromApi : fallbackHistory).slice(0, 2);
+                          return (
+                            <>
                         <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {doc.originalFileName}
                         </div>
-                        <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                          <span>{new Date(doc.createdAt).toLocaleString()}</span>
+                        <div style={{ marginTop: '3px', fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                          <span>Uploaded by: {doc.uploadedByName || 'Unknown'}</span>
+                          <span>Uploaded: {formatDateTime(doc.createdAt) || '—'}</span>
                           {doc.sizeBytes ? <span>{formatBytes(doc.sizeBytes)}</span> : null}
-                          {(() => {
-                            const pill = scanStatusPill(doc.scanStatus);
-                            return (
-                              <span
-                                style={{
-                                  background: pill.bg,
-                                  color: pill.fg,
-                                  borderRadius: '999px',
-                                  padding: '1px 8px',
-                                  fontWeight: 800,
-                                }}
-                              >
-                                Scan: {pill.label}
-                              </span>
-                            );
-                          })()}
-                          <span>Extract: {doc.extractionStatus}</span>
                         </div>
+                        {downloadLines.length > 0 ? (
+                          downloadLines.map((entry, idx) => (
+                            <div
+                              key={`${doc.id}-download-${idx}`}
+                              style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}
+                            >
+                              <span>Downloaded by: {entry.downloadedByName || '—'}</span>
+                              <span>Downloaded: {formatDateTime(entry.downloadedAt) || '—'}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <span>Downloaded by: —</span>
+                            <span>Downloaded: —</span>
+                          </div>
+                        )}
+                            </>
+                          );
+                        })()}
                       </div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
-                        <select
-                          defaultValue={doc.folderId}
-                          onChange={(e) => moveDocument(doc.id, e.target.value)}
-                          disabled={workingDocId === doc.id}
-                          style={{
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '8px',
-                            background: 'white',
-                            color: '#1e293b',
-                            padding: '7px 8px',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: workingDocId === doc.id ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {folders.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.name}
-                            </option>
-                          ))}
-                        </select>
+                        {(() => {
+                          const pill = scanStatusPill(doc.scanStatus);
+                          return (
+                            <span
+                              style={{
+                                background: pill.bg,
+                                color: pill.fg,
+                                borderRadius: '999px',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                              }}
+                            >
+                              Scan: {pill.label}
+                            </span>
+                          );
+                        })()}
                         <button
                           type="button"
-                          onClick={() => window.open(`/api/company-documents/${doc.id}/open`, '_blank', 'noreferrer')}
-                          disabled={String(doc.scanStatus || '').toLowerCase() !== 'clean'}
+                          onClick={() => openDocument(doc)}
                           style={{
                             border: '1px solid #cbd5e1',
                             borderRadius: '8px',
@@ -423,8 +487,8 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                             padding: '8px 10px',
                             fontSize: '12px',
                             fontWeight: 800,
-                            cursor: String(doc.scanStatus || '').toLowerCase() === 'clean' ? 'pointer' : 'not-allowed',
-                            opacity: String(doc.scanStatus || '').toLowerCase() === 'clean' ? 1 : 0.55,
+                            cursor: 'pointer',
+                            opacity: 1,
                           }}
                         >
                           Open
@@ -432,7 +496,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                         <button
                           type="button"
                           onClick={() => removeFromDataRoom(doc.id)}
-                          disabled={workingDocId === doc.id}
+                          disabled={workingDocId === doc.id || doc.canManage === false}
                           style={{
                             border: '1px solid #fecaca',
                             borderRadius: '8px',
@@ -441,7 +505,8 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                             padding: '8px 10px',
                             fontSize: '12px',
                             fontWeight: 800,
-                            cursor: workingDocId === doc.id ? 'not-allowed' : 'pointer',
+                            cursor: workingDocId === doc.id || doc.canManage === false ? 'not-allowed' : 'pointer',
+                            opacity: doc.canManage === false ? 0.5 : 1,
                           }}
                         >
                           Remove

@@ -3,10 +3,13 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { DATAROOM_DEFAULT_FOLDERS } from '@/lib/dataroom/constants';
 import { getDataRoomState, upsertDataRoomState } from '@/lib/dataroom/state';
+import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
+import { scanDataRoomDocument } from '@/lib/dataroom/malware-scan';
+import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth();
+    const context = await requireAuth();
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
     const documentId = String(body?.documentId || '').trim();
@@ -21,14 +24,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const doc = await prisma.companyDocument.findUnique({
-      where: { id: documentId },
-      select: { id: true, companyId: true },
-    });
-    if (!doc || doc.companyId !== companyId) {
-      return NextResponse.json({ error: 'Document not found for this company' }, { status: 404 });
-    }
-
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { id: true, userDefinedAllocations: true },
@@ -37,25 +32,65 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Company not found' }, { status: 404 });
     }
 
+    const capabilities = await resolveDataRoomCapabilities({
+      userId: context.userId,
+      role: context.role,
+      companyId,
+      userDefinedAllocations: company.userDefinedAllocations,
+      folderId,
+      documentId,
+    });
+    if (!capabilities.upload && !capabilities.manage) {
+      return NextResponse.json({ error: 'Forbidden: upload access required' }, { status: 403 });
+    }
+
+    const doc = await prisma.companyDocument.findUnique({
+      where: { id: documentId },
+      select: { id: true, companyId: true, originalFileName: true, contentType: true, sizeBytes: true },
+    });
+    if (!doc || doc.companyId !== companyId) {
+      return NextResponse.json({ error: 'Document not found for this company' }, { status: 404 });
+    }
+
     const state = getDataRoomState(company.userDefinedAllocations);
     const validFolderIds = new Set((state.folders || DATAROOM_DEFAULT_FOLDERS).map((f: any) => String(f.id)));
     if (!validFolderIds.has(folderId)) {
       return NextResponse.json({ error: 'Invalid folderId' }, { status: 400 });
     }
 
+    const scanResult = scanDataRoomDocument({
+      fileName: doc.originalFileName,
+      contentType: doc.contentType,
+      sizeBytes: doc.sizeBytes,
+    });
+    const nowIso = new Date().toISOString();
     const currentIndex = Array.isArray(state.documentIndex) ? state.documentIndex : [];
     const filtered = currentIndex.filter((d: any) => String(d?.documentId || '') !== documentId);
     filtered.push({
       documentId,
       folderId,
-      scanStatus: 'pending_scan',
-      scanReason: null,
-      scanQueuedAt: new Date().toISOString(),
+      scanStatus: scanResult.status,
+      scanReason: scanResult.reason,
+      scanQueuedAt: nowIso,
+      scannedAt: nowIso,
       watermarkOnDownload: true,
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
     });
 
-    const updatedUDA = upsertDataRoomState(company.userDefinedAllocations, { documentIndex: filtered });
+    const updatedUDA = appendDataRoomAuditEvents(
+      upsertDataRoomState(company.userDefinedAllocations, { documentIndex: filtered }),
+      [
+        buildDataRoomAuditEvent({
+          action: 'document_assigned',
+          companyId,
+          userId: context.userId,
+          userEmail: context.email,
+          folderId,
+          documentId,
+          details: { scanStatus: scanResult.status },
+        }),
+      ],
+    );
     await prisma.company.update({
       where: { id: companyId },
       data: { userDefinedAllocations: updatedUDA },
@@ -69,7 +104,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    await requireAuth();
+    const context = await requireAuth();
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
     const documentId = String(body?.documentId || '').trim();
@@ -90,6 +125,18 @@ export async function PATCH(request: NextRequest) {
     });
     if (!company) {
       return NextResponse.json({ error: 'Company not found' }, { status: 404 });
+    }
+
+    const capabilities = await resolveDataRoomCapabilities({
+      userId: context.userId,
+      role: context.role,
+      companyId,
+      userDefinedAllocations: company.userDefinedAllocations,
+      folderId,
+      documentId,
+    });
+    if (!capabilities.manage) {
+      return NextResponse.json({ error: 'Forbidden: manage access required' }, { status: 403 });
     }
 
     const state = getDataRoomState(company.userDefinedAllocations);
@@ -110,7 +157,19 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Document is not currently indexed in DataRoom' }, { status: 404 });
     }
 
-    const updatedUDA = upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex });
+    const updatedUDA = appendDataRoomAuditEvents(
+      upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex }),
+      [
+        buildDataRoomAuditEvent({
+          action: 'document_moved',
+          companyId,
+          userId: context.userId,
+          userEmail: context.email,
+          folderId,
+          documentId,
+        }),
+      ],
+    );
     await prisma.company.update({
       where: { id: companyId },
       data: { userDefinedAllocations: updatedUDA },
@@ -124,7 +183,7 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await requireAuth();
+    const context = await requireAuth();
     const { searchParams } = new URL(request.url);
     const companyId = String(searchParams.get('companyId') || '').trim();
     const documentId = String(searchParams.get('documentId') || '').trim();
@@ -146,6 +205,17 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Company not found' }, { status: 404 });
     }
 
+    const capabilities = await resolveDataRoomCapabilities({
+      userId: context.userId,
+      role: context.role,
+      companyId,
+      userDefinedAllocations: company.userDefinedAllocations,
+      documentId,
+    });
+    if (!capabilities.manage) {
+      return NextResponse.json({ error: 'Forbidden: manage access required' }, { status: 403 });
+    }
+
     const state = getDataRoomState(company.userDefinedAllocations);
     const currentIndex = Array.isArray(state.documentIndex) ? state.documentIndex : [];
     const nextIndex = currentIndex.filter((d: any) => String(d?.documentId || '') !== documentId);
@@ -154,7 +224,18 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Document is not currently indexed in DataRoom' }, { status: 404 });
     }
 
-    const updatedUDA = upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex });
+    const updatedUDA = appendDataRoomAuditEvents(
+      upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex }),
+      [
+        buildDataRoomAuditEvent({
+          action: 'document_removed',
+          companyId,
+          userId: context.userId,
+          userEmail: context.email,
+          documentId,
+        }),
+      ],
+    );
     await prisma.company.update({
       where: { id: companyId },
       data: { userDefinedAllocations: updatedUDA },

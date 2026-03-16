@@ -3,10 +3,28 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { DATAROOM_DEFAULT_FOLDERS } from '@/lib/dataroom/constants';
 import { getDataRoomState } from '@/lib/dataroom/state';
+import {
+  applyDocumentPolicyOverrides,
+  isCompanyAdminForDataRoom,
+  resolveDataRoomCapabilities,
+} from '@/lib/dataroom/access';
+import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
+
+function getDisplayName(name: string | null | undefined, email: string | null | undefined) {
+  const trimmedName = String(name || '').trim();
+  if (trimmedName) return trimmedName;
+  const trimmedEmail = String(email || '').trim();
+  if (trimmedEmail) {
+    const beforeAt = trimmedEmail.split('@')[0]?.trim();
+    if (beforeAt) return beforeAt;
+    return trimmedEmail;
+  }
+  return 'Unknown';
+}
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth();
+    const context = await requireAuth();
     const { searchParams } = new URL(request.url);
     const companyId = String(searchParams.get('companyId') || '').trim();
     if (!companyId) {
@@ -36,10 +54,31 @@ export async function GET(request: NextRequest) {
         sizeBytes: true,
         createdAt: true,
         extractionStatus: true,
+        uploadedBy: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
       },
     });
 
     const state = getDataRoomState(company.userDefinedAllocations);
+    const isCompanyAdmin =
+      context.role === 'SITEADMIN' ||
+      context.role === 'CONSULTANT' ||
+      (await isCompanyAdminForDataRoom(context.userId, companyId));
+    const baseCapabilities = await resolveDataRoomCapabilities({
+      userId: context.userId,
+      role: context.role,
+      companyId,
+      userDefinedAllocations: company.userDefinedAllocations,
+      isCompanyAdmin,
+    });
+    if (!baseCapabilities.view) {
+      return NextResponse.json({ error: 'Forbidden: DataRoom view access required' }, { status: 403 });
+    }
+
     const folders = state.folders;
     if (!Array.isArray(folders) || folders.length === 0) {
       return NextResponse.json(
@@ -62,8 +101,27 @@ export async function GET(request: NextRequest) {
       if (!idx) continue;
       const folderIdRaw = String(idx?.folderId || '');
       const folderId = folderIds.has(folderIdRaw) ? folderIdRaw : fallbackFolderId;
+      const perDocBaseCaps = await resolveDataRoomCapabilities({
+        userId: context.userId,
+        role: context.role,
+        companyId,
+        userDefinedAllocations: company.userDefinedAllocations,
+        folderId,
+        documentId: doc.id,
+        isCompanyAdmin,
+      });
+      const perDocCaps = applyDocumentPolicyOverrides(perDocBaseCaps, idx);
+      if (!perDocCaps.view) continue;
       const target = groupedById.get(folderId);
       if (!target) continue;
+      const history = Array.isArray(idx?.downloadHistory)
+        ? idx.downloadHistory
+            .map((h: any) => ({
+              downloadedByName: h?.downloadedByName ? String(h.downloadedByName) : null,
+              downloadedAt: h?.downloadedAt ? String(h.downloadedAt) : null,
+            }))
+            .filter((h: any) => h.downloadedByName || h.downloadedAt)
+        : [];
       target.documents.push({
         id: doc.id,
         folderId,
@@ -73,13 +131,49 @@ export async function GET(request: NextRequest) {
         createdAt: doc.createdAt,
         extractionStatus: doc.extractionStatus,
         scanStatus: String(idx?.scanStatus || 'pending_scan'),
+        uploadedByName: getDisplayName(doc.uploadedBy?.name, doc.uploadedBy?.email),
+        lastDownloadedByName: idx?.lastDownloadedByName ? String(idx.lastDownloadedByName) : null,
+        lastDownloadedAt: idx?.lastDownloadedAt ? String(idx.lastDownloadedAt) : null,
+        downloadHistory: history,
+        canDownload: perDocCaps.download,
+        canManage: perDocCaps.manage,
       });
+    }
+
+    // Keep each folder list in chronological order (oldest -> newest).
+    for (const folder of grouped) {
+      folder.documents.sort(
+        (a: any, b: any) =>
+          new Date(a?.createdAt || 0).getTime() - new Date(b?.createdAt || 0).getTime()
+      );
+    }
+
+    try {
+      const updatedUDA = appendDataRoomAuditEvents(company.userDefinedAllocations, [
+        buildDataRoomAuditEvent({
+          action: 'overview_viewed',
+          companyId,
+          userId: context.userId,
+          userEmail: context.email,
+          details: {
+            visibleFolderCount: grouped.length,
+            visibleDocumentCount: grouped.reduce((sum: number, f: any) => sum + (Array.isArray(f.documents) ? f.documents.length : 0), 0),
+          },
+        }),
+      ]);
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { userDefinedAllocations: updatedUDA as any },
+      });
+    } catch {
+      // Best-effort audit write.
     }
 
     return NextResponse.json({
       company: { id: company.id, name: company.name },
       enabledByAdmin: Boolean(state.dataRoom.enabledByAdmin),
       subscription: state.subscription,
+      capabilities: baseCapabilities,
       folders: grouped,
     });
   } catch (error: any) {

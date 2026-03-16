@@ -3,10 +3,12 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { getDataRoomState, upsertDataRoomState } from '@/lib/dataroom/state';
 import { scanDataRoomDocument } from '@/lib/dataroom/malware-scan';
+import { resolveDataRoomCapabilities } from '@/lib/dataroom/access';
+import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth();
+    const context = await requireAuth();
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
     const documentId = body?.documentId ? String(body.documentId).trim() : null;
@@ -28,6 +30,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Company not found' }, { status: 404 });
     }
 
+    const capabilities = await resolveDataRoomCapabilities({
+      userId: context.userId,
+      role: context.role,
+      companyId,
+      userDefinedAllocations: company.userDefinedAllocations,
+    });
+    if (!capabilities.manage) {
+      return NextResponse.json({ error: 'Forbidden: manage access required' }, { status: 403 });
+    }
+
     const state = getDataRoomState(company.userDefinedAllocations);
     const currentIndex = Array.isArray(state.documentIndex) ? state.documentIndex : [];
 
@@ -36,7 +48,10 @@ export async function POST(request: NextRequest) {
       const id = String(item?.documentId || '');
       if (!id) continue;
       if (documentId && id !== documentId) continue;
-      if (!documentId && String(item?.scanStatus || '') !== 'pending_scan') continue;
+      // Treat missing scanStatus as pending_scan for backward compatibility
+      // with documents indexed before scanStatus was introduced.
+      const currentStatus = String(item?.scanStatus || 'pending_scan');
+      if (!documentId && currentStatus !== 'pending_scan') continue;
       targetIds.add(id);
     }
 
@@ -89,7 +104,26 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    const updatedUDA = upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex });
+    const blockedCount = nextIndex.filter((d: any) => targetIds.has(String(d?.documentId || '')) && String(d?.scanStatus || '') === 'blocked').length;
+    const cleanCount = nextIndex.filter((d: any) => targetIds.has(String(d?.documentId || '')) && String(d?.scanStatus || '') === 'clean').length;
+    const updatedUDA = appendDataRoomAuditEvents(
+      upsertDataRoomState(company.userDefinedAllocations, { documentIndex: nextIndex }),
+      [
+        buildDataRoomAuditEvent({
+          action: 'scan_completed',
+          companyId,
+          userId: context.userId,
+          userEmail: context.email,
+          documentId: documentId || null,
+          details: {
+            scannedCount: targetIds.size,
+            cleanCount,
+            blockedCount,
+            mode: documentId ? 'single' : 'batch',
+          },
+        }),
+      ],
+    );
     await prisma.company.update({
       where: { id: companyId },
       data: { userDefinedAllocations: updatedUDA },

@@ -143,16 +143,22 @@ export default function CompanyDetailsTab({
   grantExistingUserAccess,
   setSelectedCompanyId,
 }: CompanyDetailsTabProps) {
-  const RESTRICTABLE_SECTIONS: { id: string; label: string }[] = [
+  const ACCESSIBLE_SECTIONS: { id: string; label: string }[] = [
+    { id: "ask-corelytics", label: "Ask Corelytics" },
+    { id: "business-pulse", label: "Business Pulse" },
+    { id: "operational-dashboard", label: "Operational Dashboard" },
     { id: "company-dashboard", label: "Company Dashboard" },
-    { id: "performance-analytics", label: "Performance Analytics" },
-    { id: "valuation", label: "Valuation" },
+    { id: "financial-reports", label: "Financial Reports" },
     { id: "financial-statements", label: "Financial Statements" },
+    { id: "valuation", label: "Valuation" },
+    { id: "expert-analysis", label: "Expert Analysis" },
+    { id: "mda", label: "MD&A" },
     { id: "management-assessment", label: "Team Assessment" },
+    { id: "dataroom", label: "Corelytics DataRoom" },
   ];
 
   // Stored in DB as allowed/visible sections for a company user.
-  const DEFAULT_ALLOWED_SECTIONS = RESTRICTABLE_SECTIONS.map((s) => s.id);
+  const DEFAULT_ALLOWED_SECTIONS = ACCESSIBLE_SECTIONS.map((s) => s.id);
 
   // State for user permissions
   const [userPermissions, setUserPermissions] = React.useState<{
@@ -161,6 +167,9 @@ export default function CompanyDetailsTab({
       sidebarAccess: string[];
     };
   }>({});
+  const [expandedCompanyUsers, setExpandedCompanyUsers] = React.useState<
+    Record<string, boolean>
+  >({});
   const [savingUserId, setSavingUserId] = React.useState<string | null>(null);
 
   // Initialize permissions from users
@@ -207,10 +216,9 @@ export default function CompanyDetailsTab({
     }
   };
 
-  const toggleRestrictedSection = (userId: string, section: string) => {
+  const toggleAllowedSection = (userId: string, section: string) => {
     setUserPermissions((prev) => {
       const currentAllowed = prev[userId]?.sidebarAccess || DEFAULT_ALLOWED_SECTIONS;
-      // In the UI we toggle "restricted". Stored value remains "allowed".
       const updatedAllowed = currentAllowed.includes(section)
         ? currentAllowed.filter((s) => s !== section)
         : [...currentAllowed, section];
@@ -232,6 +240,13 @@ export default function CompanyDetailsTab({
         ...prev[userId],
         role,
       },
+    }));
+  };
+
+  const toggleCompanyUserExpanded = (userId: string) => {
+    setExpandedCompanyUsers((prev) => ({
+      ...prev,
+      [userId]: !prev[userId],
     }));
   };
   // For business users, auto-select their company if not already selected
@@ -457,6 +472,7 @@ export default function CompanyDetailsTab({
                       const allowedSections = userPerm.sidebarAccess?.length
                         ? userPerm.sidebarAccess
                         : DEFAULT_ALLOWED_SECTIONS;
+                      const isExpanded = Boolean(expandedCompanyUsers[u.id]);
 
                       return (
                         <div
@@ -532,30 +548,54 @@ export default function CompanyDetailsTab({
                                 )}
                               </div>
                             </div>
-                            <button
-                              onClick={() => deleteUser(u.id, comp.id)}
+                            <div
                               style={{
-                                padding: "4px 8px",
-                                background: "#ef4444",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                fontSize: "10px",
-                                cursor: "pointer",
-                                fontWeight: "600",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
                               }}
                             >
-                              Delete
-                            </button>
+                              <button
+                                onClick={() => toggleCompanyUserExpanded(u.id)}
+                                style={{
+                                  padding: "4px 8px",
+                                  background: "white",
+                                  color: "#1e293b",
+                                  border: "1px solid #cbd5e1",
+                                  borderRadius: "4px",
+                                  fontSize: "10px",
+                                  cursor: "pointer",
+                                  fontWeight: "700",
+                                }}
+                              >
+                                {isExpanded ? "Collapse" : "Expand"}
+                              </button>
+                              <button
+                                onClick={() => deleteUser(u.id, comp.id)}
+                                style={{
+                                  padding: "4px 8px",
+                                  background: "#ef4444",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "4px",
+                                  fontSize: "10px",
+                                  cursor: "pointer",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </div>
 
                           {/* Role Selection */}
-                          <div
-                            style={{
-                              borderTop: "1px solid #d1fae5",
-                              paddingTop: "12px",
-                            }}
-                          >
+                          {isExpanded && (
+                            <div
+                              style={{
+                                borderTop: "1px solid #d1fae5",
+                                paddingTop: "12px",
+                              }}
+                            >
                             <div
                               style={{
                                 fontSize: "12px",
@@ -640,7 +680,7 @@ export default function CompanyDetailsTab({
                                     marginBottom: "6px",
                                   }}
                                 >
-                                  Access Rights (check restricted sections):
+                                  Access Rights (check sections to allow):
                                 </div>
                                 <div
                                   style={{
@@ -650,8 +690,8 @@ export default function CompanyDetailsTab({
                                     fontSize: "11px",
                                   }}
                                 >
-                                  {RESTRICTABLE_SECTIONS.map((section) => {
-                                    const isRestricted = !allowedSections.includes(section.id);
+                                  {ACCESSIBLE_SECTIONS.map((section) => {
+                                    const isAllowed = allowedSections.includes(section.id);
                                     return (
                                     <label
                                       key={section.id}
@@ -664,9 +704,9 @@ export default function CompanyDetailsTab({
                                     >
                                       <input
                                         type="checkbox"
-                                        checked={isRestricted}
+                                        checked={isAllowed}
                                         onChange={() =>
-                                          toggleRestrictedSection(u.id, section.id)
+                                          toggleAllowedSection(u.id, section.id)
                                         }
                                         style={{ cursor: "pointer" }}
                                       />
@@ -703,7 +743,8 @@ export default function CompanyDetailsTab({
                                 ? "Saving..."
                                 : "Save Access Rights"}
                             </button>
-                          </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -873,7 +914,7 @@ export default function CompanyDetailsTab({
                         marginBottom: "8px",
                       }}
                     >
-                      Grant Access to Existing User
+                      Invite External User
                     </h5>
                     <div
                       style={{
@@ -882,14 +923,16 @@ export default function CompanyDetailsTab({
                         marginBottom: "8px",
                       }}
                     >
-                      Use this when the user already has a Corelytics account.
-                      No password needed.
+                      Invite an outside user to this company. If the email
+                      already exists, access is granted. If not, create the
+                      user first and they will authenticate via normal login
+                      (including MFA in production).
                     </div>
                     <div style={{ display: "grid", gap: "6px" }}>
                       <input
                         type="text"
                         name="existing_company_user_name"
-                        placeholder="Existing user name"
+                        placeholder="External user name"
                         value={existingCompanyUserName}
                         onChange={(e) =>
                           setExistingCompanyUserName(e.target.value)
@@ -906,7 +949,7 @@ export default function CompanyDetailsTab({
                       <input
                         type="text"
                         name="existing_company_user_email"
-                        placeholder="Existing user email"
+                        placeholder="External user email"
                         value={existingCompanyUserEmail}
                         onChange={(e) =>
                           setExistingCompanyUserEmail(e.target.value)
@@ -934,7 +977,7 @@ export default function CompanyDetailsTab({
                           whiteSpace: "nowrap",
                         }}
                       >
-                        Grant Access
+                        Invite User
                       </button>
                       </div>
                     </div>
@@ -1230,7 +1273,7 @@ export default function CompanyDetailsTab({
                             marginBottom: "8px",
                           }}
                         >
-                          Grant Access to Existing User
+                          Invite External User
                         </h5>
                         <div
                           style={{
@@ -1239,14 +1282,16 @@ export default function CompanyDetailsTab({
                             marginBottom: "8px",
                           }}
                         >
-                          Use this when the assessment user already has a
-                          Corelytics account. No password needed.
+                          Invite an outside assessment user to this company.
+                          If the email already exists, access is granted. If
+                          not, create the user first and they will authenticate
+                          via normal login (including MFA in production).
                         </div>
                         <div style={{ display: "grid", gap: "6px" }}>
                           <input
                             type="text"
                             name="existing_assessment_user_name"
-                            placeholder="Existing user name"
+                            placeholder="External user name"
                             value={existingAssessmentUserName}
                             onChange={(e) =>
                               setExistingAssessmentUserName(e.target.value)
@@ -1263,7 +1308,7 @@ export default function CompanyDetailsTab({
                           <input
                             type="text"
                             name="existing_assessment_user_email"
-                            placeholder="Existing user email"
+                            placeholder="External user email"
                             value={existingAssessmentUserEmail}
                             onChange={(e) =>
                               setExistingAssessmentUserEmail(e.target.value)
@@ -1293,7 +1338,7 @@ export default function CompanyDetailsTab({
                               whiteSpace: "nowrap",
                             }}
                           >
-                            Grant Access
+                            Invite User
                           </button>
                           </div>
                         </div>

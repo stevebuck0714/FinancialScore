@@ -805,7 +805,19 @@ function FinancialScorePage() {
   };
 
   // Company user access control (non-admin company users only).
-  const COMPANY_USER_SECTIONS = ['company-dashboard', 'performance-analytics', 'valuation', 'financial-statements', 'management-assessment'] as const;
+  const COMPANY_USER_SECTIONS = [
+    'ask-corelytics',
+    'business-pulse',
+    'operational-dashboard',
+    'company-dashboard',
+    'financial-reports',
+    'financial-statements',
+    'valuation',
+    'expert-analysis',
+    'mda',
+    'management-assessment',
+    'dataroom',
+  ] as const;
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && (currentUser as any)?.companyRole === 'admin';
   const allowedSectionsForCompanyUser = useMemo(() => {
@@ -817,13 +829,33 @@ function FinancialScorePage() {
   }, [currentUser, isCompanyUser, isCompanyAdmin]);
 
   const viewToCompanySection = (view: string): string | null => {
+    if (view === 'ai-analysis') return 'ask-corelytics';
+    if (view === 'daily-alerts') return 'business-pulse';
+    if (view === 'operations') return 'operational-dashboard';
     if (view === 'dashboard') return 'company-dashboard';
-    if (view === 'valuation') return 'valuation';
+    if (view === 'kpis') return 'financial-reports';
+    if (view === 'trend-analysis') return 'financial-reports';
+    if (view === 'goals') return 'financial-reports';
+    if (view === 'projections') return 'financial-reports';
+    if (view === 'cash-flow') return 'financial-reports';
+    if (view === 'working-capital') return 'financial-reports';
+    if (view === 'covenants') return 'financial-reports';
     if (view === 'financial-statements') return 'financial-statements';
-    if (view === 'daily-alerts') return 'performance-analytics';
-    if (view.startsWith('pa-')) return 'performance-analytics';
+    if (view === 'valuation') return 'valuation';
+    if (view.startsWith('pa-')) return 'expert-analysis';
+    if (view === 'mda') return 'mda';
+    if (view === 'dataroom') return 'dataroom';
     if (view.startsWith('ma-')) return 'management-assessment';
     return null;
+  };
+
+  const hasCompanySectionAccess = (section: string) => {
+    if (!isCompanyUser || isCompanyAdmin) return true;
+    const allowed = allowedSectionsForCompanyUser || (COMPANY_USER_SECTIONS as unknown as string[]);
+    if (allowed.includes(section)) return true;
+    // Backward compatibility for existing saved permissions.
+    if (section === 'expert-analysis' && allowed.includes('performance-analytics')) return true;
+    return false;
   };
 
   const loadAllCompanies = useCallback(async () => {
@@ -907,7 +939,11 @@ function FinancialScorePage() {
     defaultDataRoomConsultantAnnualPrice,
   ]);
   const isDataRoomPaymentRequired = (dataRoomPricing.monthly > 0) || (dataRoomPricing.quarterly > 0) || (dataRoomPricing.annual > 0);
-  const canShowDataRoomEntry = Boolean(selectedCompanyId) && (isDataRoomEnabledByAdmin || !isDataRoomPaymentRequired);
+  const canCompanyUserAccessDataRoom = hasCompanySectionAccess('dataroom');
+  const canShowDataRoomEntry =
+    Boolean(selectedCompanyId) &&
+    canCompanyUserAccessDataRoom &&
+    (isDataRoomEnabledByAdmin || !isDataRoomPaymentRequired);
 
   const handleToggleDataRoomEnabledByAdmin = async (enabled: boolean) => {
     if (!selectedCompanyId) {
@@ -940,14 +976,11 @@ function FinancialScorePage() {
   };
 
   // Handle navigation with payment gate
-  const handleNavigation = (view: string) => {
+  const handleNavigation = async (view: string) => {
     const section = viewToCompanySection(view);
-    if (section && isCompanyUser && !isCompanyAdmin) {
-      const allowed = allowedSectionsForCompanyUser || (COMPANY_USER_SECTIONS as unknown as string[]);
-      if (!allowed.includes(section)) {
-        alert('Access Restricted\n\nYour account does not have access to this section.');
-        return;
-      }
+    if (section && !hasCompanySectionAccess(section)) {
+      alert('Access Restricted\n\nYour account does not have access to this section.');
+      return;
     }
 
     if (view === 'dataroom') {
@@ -958,6 +991,24 @@ function FinancialScorePage() {
       if (!isDataRoomEnabledByAdmin) {
         if (isDataRoomPaymentRequired) {
           alert('DataRoom is not enabled for this company.');
+          return;
+        }
+        try {
+          const response = await fetch('/api/companies', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: selectedCompanyId,
+              dataRoomEnabledByAdmin: true,
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok || !result?.company) {
+            throw new Error(result?.error || 'Failed to initialize DataRoom');
+          }
+          await loadAllCompanies();
+        } catch (error: any) {
+          alert(error?.message || 'Failed to initialize DataRoom for this company.');
           return;
         }
       }
@@ -7478,7 +7529,7 @@ function FinancialScorePage() {
               >
                 {currentView === 'pa-overview' && '› '}Expert Analysis
               </h3>
-              {(!isCompanyUser || isCompanyAdmin || (allowedSectionsForCompanyUser || []).includes('performance-analytics')) && (
+              {hasCompanySectionAccess('expert-analysis') && (
                 <>
                   <div style={{ paddingLeft: '28px' }}>
                     {[
@@ -7552,7 +7603,7 @@ function FinancialScorePage() {
             {/* Team Assessment - moved to Support page; link there goes to /?view=ma-welcome */}
 
             {/* Company Dashboard Section - For Business Users (Company Users) */}
-            {currentUser?.role === 'user' && currentUser?.userType === 'company' && (!allowedSectionsForCompanyUser || allowedSectionsForCompanyUser.includes('company-dashboard')) && (
+            {currentUser?.role === 'user' && currentUser?.userType === 'company' && hasCompanySectionAccess('company-dashboard') && (
               <div style={{ marginBottom: '12px' }}>
                 <h3 
                   onClick={() => {
