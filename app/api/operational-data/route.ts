@@ -79,6 +79,7 @@ function addMonths(date: Date, months: number): Date {
  */
 export async function GET(request: NextRequest) {
   try {
+    const isProduction = process.env.NODE_ENV === 'production';
     // SECURITY: Require authentication
     await requireAuth();
     
@@ -136,9 +137,9 @@ export async function GET(request: NextRequest) {
       await activateRealOperationalData(companyId);
       hasRealOperationalData = true;
     }
-    // Mock data is now an explicit opt-in only.
-    // If "Use Real Data" is selected and no records exist yet, APIs return empty datasets.
-    const shouldUseMockData = company.forceOperationalMockData === true;
+    // In production, hard-disable mock/fallback operational responses.
+    // In non-production, mock data remains explicit opt-in only.
+    const shouldUseMockData = !isProduction && company.forceOperationalMockData === true;
 
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
 
@@ -377,7 +378,7 @@ export async function GET(request: NextRequest) {
             .slice(0, 25) as any[];
         }
 
-        if (!data.length && (shouldUseMockData || process.env.NODE_ENV === 'development')) {
+        if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'ar-aging',
@@ -582,7 +583,7 @@ export async function GET(request: NextRequest) {
             .slice(0, 25) as any[];
         }
 
-        if (!data.length && (shouldUseMockData || process.env.NODE_ENV === 'development')) {
+        if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'ap-aging',
