@@ -97,6 +97,49 @@ type RevenueAnalysisQualifiers = {
   renewalVisibility: 'low' | 'medium' | 'high';
 };
 
+type RevenueQualifierOptionSet = {
+  revenueNature: Array<RevenueAnalysisQualifiers['revenueNature']>;
+  contractSizeProfile: Array<RevenueAnalysisQualifiers['contractSizeProfile']>;
+  clientCreditProfile: Array<RevenueAnalysisQualifiers['clientCreditProfile']>;
+  billingModel: Array<RevenueAnalysisQualifiers['billingModel']>;
+  renewalVisibility: Array<RevenueAnalysisQualifiers['renewalVisibility']>;
+};
+
+const getRevenueQualifierOptionSet = (sectorCategory?: string | null): RevenueQualifierOptionSet => {
+  const sector = String(sectorCategory || '').trim();
+  if (sector === '45' || sector === '72') {
+    // Retail / Hospitality: keep qualifier choices realistic for short-cycle transaction models.
+    return {
+      revenueNature: ['short_term_projects', 'mixed'],
+      contractSizeProfile: ['many_small', 'mixed'],
+      clientCreditProfile: ['smb', 'mixed'],
+      billingModel: ['mixed', 'time_materials'],
+      renewalVisibility: ['low', 'medium'],
+    };
+  }
+  return {
+    revenueNature: ['short_term_projects', 'long_term_contracts', 'mixed'],
+    contractSizeProfile: ['few_large', 'mixed', 'many_small'],
+    clientCreditProfile: ['regulated_utility', 'enterprise', 'mixed', 'smb'],
+    billingModel: ['milestone', 'progress', 'time_materials', 'mixed'],
+    renewalVisibility: ['low', 'medium', 'high'],
+  };
+};
+
+const sanitizeRevenueQualifiersBySector = (
+  qualifiers: RevenueAnalysisQualifiers,
+  sectorCategory?: string | null,
+): RevenueAnalysisQualifiers => {
+  const options = getRevenueQualifierOptionSet(sectorCategory);
+  return {
+    revenueNature: options.revenueNature.includes(qualifiers.revenueNature) ? qualifiers.revenueNature : options.revenueNature[0],
+    contractSizeProfile: options.contractSizeProfile.includes(qualifiers.contractSizeProfile) ? qualifiers.contractSizeProfile : options.contractSizeProfile[0],
+    clientCreditProfile: options.clientCreditProfile.includes(qualifiers.clientCreditProfile) ? qualifiers.clientCreditProfile : options.clientCreditProfile[0],
+    billingModel: options.billingModel.includes(qualifiers.billingModel) ? qualifiers.billingModel : options.billingModel[0],
+    renewalVisibility: options.renewalVisibility.includes(qualifiers.renewalVisibility) ? qualifiers.renewalVisibility : options.renewalVisibility[0],
+  };
+};
+
 const getIndustryGroupMeta = (industryGroupId?: number | null) => {
   const id = Number(industryGroupId || 0);
   if (!Number.isFinite(id) || id <= 0) return null;
@@ -127,7 +170,7 @@ const defaultRevenueAnalysisQualifiers = (
     return {
       revenueNature: 'long_term_contracts',
       contractSizeProfile: 'few_large',
-      clientCreditProfile: 'regulated_utility',
+      clientCreditProfile: 'mixed',
       billingModel: 'milestone',
       renewalVisibility: 'medium',
     };
@@ -163,7 +206,7 @@ const defaultRevenueAnalysisQualifiers = (
     return {
       revenueNature: 'long_term_contracts',
       contractSizeProfile: 'few_large',
-      clientCreditProfile: 'regulated_utility',
+      clientCreditProfile: 'mixed',
       billingModel: 'milestone',
       renewalVisibility: 'medium',
     };
@@ -227,15 +270,16 @@ const normalizeRevenueAnalysisQualifiers = (
   industryGroupId?: number | null,
 ): RevenueAnalysisQualifiers => {
   const defaults = defaultRevenueAnalysisQualifiers(sectorCategory, industryGroupId);
-  if (!raw || typeof raw !== 'object') return defaults;
+  if (!raw || typeof raw !== 'object') return sanitizeRevenueQualifiersBySector(defaults, sectorCategory);
   const input = raw as Partial<RevenueAnalysisQualifiers>;
-  return {
+  const normalized: RevenueAnalysisQualifiers = {
     revenueNature: input.revenueNature || defaults.revenueNature,
     contractSizeProfile: input.contractSizeProfile || defaults.contractSizeProfile,
     clientCreditProfile: input.clientCreditProfile || defaults.clientCreditProfile,
     billingModel: input.billingModel || defaults.billingModel,
     renewalVisibility: input.renewalVisibility || defaults.renewalVisibility,
   };
+  return sanitizeRevenueQualifiersBySector(normalized, sectorCategory);
 };
 
 type RevenueQualifierFieldSource = 'manual' | 'ops_inferred' | 'sector_group_default';
@@ -349,12 +393,7 @@ const inferRevenueQualifiersFromSignals = (params: {
   }
 
   const sector = String(sectorCategory || '').trim();
-  if (sector === '23' && inferred.contractSizeProfile === 'few_large') {
-    if (inferred.clientCreditProfile !== 'regulated_utility') {
-      inferred.clientCreditProfile = 'regulated_utility';
-      changed = true;
-    }
-  } else if ((sector === '45' || sector === '72') && inferred.clientCreditProfile === 'mixed') {
+  if ((sector === '45' || sector === '72') && inferred.clientCreditProfile === 'mixed') {
     inferred.clientCreditProfile = 'smb';
     changed = true;
   }
@@ -385,7 +424,7 @@ const getRevenueQualityExecutiveNarrative = (params: {
   const highConcentration = topRevenueBucketPct >= 90;
   const contractBackedModel =
     qualifiers.revenueNature === 'long_term_contracts' &&
-    (qualifiers.clientCreditProfile === 'regulated_utility' || qualifiers.clientCreditProfile === 'enterprise');
+    qualifiers.clientCreditProfile !== 'smb';
   const sectorContractFriendly = ['23', '32', '54', '62'].includes(String(sectorCategory || '').trim());
   const confidence = hasOpsData ? 'High' : hasQualifierOverrides ? 'Medium' : 'Low';
 
@@ -2179,12 +2218,14 @@ function FinancialScorePage() {
     setSdeManualInputs((prev) => {
       const hasQualifiers = Boolean((prev as any)?.analysisQualifiers && typeof (prev as any).analysisQualifiers === 'object');
       const mode = (prev as any)?.analysisQualifierMode;
+      const auditMode = (prev as any)?.analysisQualifierAudit?.mode;
       if (hasQualifiers) {
-        // Preserve existing saved qualifier values; default legacy records to manual mode.
-        if (mode === 'auto' || mode === 'manual') return prev;
+        // Legacy migration: when mode is missing (or manual without audit), default to auto inference.
+        if (mode === 'auto') return prev;
+        if (mode === 'manual' && auditMode === 'manual') return prev;
         return {
           ...prev,
-          analysisQualifierMode: 'manual',
+          analysisQualifierMode: 'auto',
         };
       }
       return {
@@ -12817,85 +12858,29 @@ function FinancialScorePage() {
                   </p>
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                     <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 800, marginBottom: '8px' }}>
-                      Revenue Context Qualifiers ({sdeSectorBenchmarks.sectorLabel})
+                      Auto-Inferred Revenue Context ({sdeSectorBenchmarks.sectorLabel})
                     </div>
                     {(() => {
-                      const rawRevenueQualifiers = (sdeManualInputs as any)?.analysisQualifiers;
-                      const hasQualifierOverrides = Boolean(rawRevenueQualifiers && typeof rawRevenueQualifiers === 'object');
-                      const revenueQualifiers = normalizeRevenueAnalysisQualifiers(
-                        rawRevenueQualifiers,
+                      const hasInferenceData = customerQualityInsights.hasData || sdeHasRealOperationalData;
+                      if (!hasInferenceData) {
+                        return (
+                          <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.6 }}>
+                            Waiting for operational data import to infer revenue context. Once customer concentration and contract signals are available, this section will populate automatically.
+                          </div>
+                        );
+                      }
+                      const baseQualifiers = defaultRevenueAnalysisQualifiers(
                         sdeSectorCategory,
                         company?.industrySector,
                       );
-                      const qualifierMode: 'auto' | 'manual' = (sdeManualInputs as any)?.analysisQualifierMode === 'manual' ? 'manual' : 'auto';
-                      const qualifierPrefillSource = describeRevenueQualifierPreset(
-                        sdeSectorCategory,
-                        company?.industrySector,
-                      );
-                      const defaultQualifierSet = defaultRevenueAnalysisQualifiers(
-                        sdeSectorCategory,
-                        company?.industrySector,
-                      );
-                      const resetRevenueQualifiersToDefaults = () => {
-                        const nextInputs = {
-                          ...(sdeManualInputs || {}),
-                          analysisQualifiers: defaultQualifierSet,
-                          analysisQualifierMode: 'auto' as const,
-                          analysisQualifierAudit: {
-                            updatedAt: new Date().toISOString(),
-                            mode: 'auto',
-                            fieldSources: {
-                              revenueNature: 'sector_group_default',
-                              contractSizeProfile: 'sector_group_default',
-                              clientCreditProfile: 'sector_group_default',
-                              billingModel: 'sector_group_default',
-                              renewalVisibility: 'sector_group_default',
-                            },
-                          },
-                        };
-                        setSdeManualInputs((prev) => ({
-                          ...prev,
-                          analysisQualifiers: defaultQualifierSet,
-                          analysisQualifierMode: 'auto',
-                          analysisQualifierAudit: nextInputs.analysisQualifierAudit,
-                        }));
-                        if (!selectedCompanyId) return;
-                        if (qualifierAutosaveTimerRef.current) clearTimeout(qualifierAutosaveTimerRef.current);
-                        qualifierAutosaveTimerRef.current = setTimeout(async () => {
-                          try {
-                            setQualifierAutosaveStatus('saving');
-                            const response = await fetch('/api/valuation-settings', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                companyId: selectedCompanyId,
-                                sdeMultiplier,
-                                ebitdaMultiplier,
-                                dcfDiscountRate,
-                                dcfTerminalGrowth,
-                                sdeManualInputs: nextInputs,
-                                sdeAnalysisTotals: sdeAnalysisTotalsState || {},
-                              }),
-                            });
-                            if (response.ok) {
-                              setQualifierAutosaveStatus('saved');
-                              setTimeout(() => setQualifierAutosaveStatus('idle'), 1500);
-                            } else {
-                              setQualifierAutosaveStatus('error');
-                            }
-                          } catch {
-                            setQualifierAutosaveStatus('error');
-                          }
-                        }, 400);
-                      };
                       const contractTimingReceivablesLikely =
                         revenueQualityInsights.arRevenueSpread > sdeSectorBenchmarks.dso.spreadWarn &&
                         revenueQualityInsights.currentDso <= sdeSectorBenchmarks.benchmarkTargets.dso + 10;
                       const revenueVolatilityPct = Math.max(0, (revenueQualityInsights.volatilitySeries.slice(-1)[0]?.value || 0) * 100);
                       const inferredRevenue = inferRevenueQualifiersFromSignals({
-                        baseQualifiers: revenueQualifiers,
-                        qualifierMode,
-                        hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
+                        baseQualifiers,
+                        qualifierMode: 'auto',
+                        hasOpsData: hasInferenceData,
                         sectorCategory: sdeSectorCategory,
                         contractTimingReceivablesLikely,
                         top1Pct: customerQualityInsights.hasData ? customerQualityInsights.top1Pct : null,
@@ -12903,277 +12888,41 @@ function FinancialScorePage() {
                         customerCount: customerQualityInsights.hasData ? customerQualityInsights.customerCount : null,
                         revenueVolatilityPct,
                       });
-                      const qualifierFieldSources = deriveRevenueQualifierFieldSources({
-                        baseQualifiers: revenueQualifiers,
+                      const fieldSources = deriveRevenueQualifierFieldSources({
+                        baseQualifiers,
                         finalQualifiers: inferredRevenue.qualifiers,
-                        qualifierMode,
+                        qualifierMode: 'auto',
                       });
-                      const revenueNarrative = getRevenueQualityExecutiveNarrative({
-                        topRevenueBucketPct: revenueQualityInsights.topBucketSharePct || 0,
-                        pricingImprovement:
-                          sdeRecommendationsApi
-                            .filter((rec) => rec.module === 'Revenue Quality')
-                            .reduce((sum, rec) => sum + rec.impactRange.high, 0),
-                        sectorLabel: sdeSectorBenchmarks.sectorLabel,
-                        sectorCategory: sdeSectorCategory,
-                        qualifiers: inferredRevenue.qualifiers,
-                        hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
-                        hasQualifierOverrides,
-                        contractTimingReceivablesLikely,
-                      });
-                      const qualifierEvidence = {
-                        sector: sdeSectorBenchmarks.sectorLabel,
-                        top1Pct: customerQualityInsights.hasData ? Number(customerQualityInsights.top1Pct || 0) : null,
-                        top5Pct: customerQualityInsights.hasData ? Number(customerQualityInsights.top5Pct || 0) : null,
-                        customerCount: customerQualityInsights.hasData ? Number(customerQualityInsights.customerCount || 0) : null,
-                        revenueVolatilityPct,
-                        contractTimingReceivablesLikely,
-                      };
-                      const queueQualifierAutosave = (nextManualInputs: any) => {
-                        if (!selectedCompanyId) return;
-                        if (qualifierAutosaveTimerRef.current) {
-                          clearTimeout(qualifierAutosaveTimerRef.current);
-                        }
-                        qualifierAutosaveTimerRef.current = setTimeout(async () => {
-                          try {
-                            setQualifierAutosaveStatus('saving');
-                            const response = await fetch('/api/valuation-settings', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                companyId: selectedCompanyId,
-                                sdeMultiplier,
-                                ebitdaMultiplier,
-                                dcfDiscountRate,
-                                dcfTerminalGrowth,
-                                sdeManualInputs: nextManualInputs,
-                                sdeAnalysisTotals: sdeAnalysisTotalsState || {},
-                              }),
-                            });
-                            if (response.ok) {
-                              setQualifierAutosaveStatus('saved');
-                              setTimeout(() => setQualifierAutosaveStatus('idle'), 1500);
-                            } else {
-                              setQualifierAutosaveStatus('error');
-                            }
-                          } catch {
-                            setQualifierAutosaveStatus('error');
-                          }
-                        }, 900);
-                      };
-                      const updateRevenueQualifier = <K extends keyof RevenueAnalysisQualifiers>(
-                        key: K,
-                        value: RevenueAnalysisQualifiers[K],
+                      const row = (
+                        label: string,
+                        value: string,
+                        source: RevenueQualifierFieldSource,
                       ) => {
-                        setSdeManualInputs((prev) => {
-                          const previous = normalizeRevenueAnalysisQualifiers(
-                            (prev as any)?.analysisQualifiers,
-                            sdeSectorCategory,
-                            company?.industrySector,
-                          );
-                          return {
-                            ...prev,
-                            analysisQualifiers: {
-                              ...previous,
-                              [key]: value,
-                            },
-                            analysisQualifierMode: 'manual',
-                            analysisQualifierAudit: {
-                              updatedAt: new Date().toISOString(),
-                              mode: 'manual',
-                              fieldSources: {
-                                revenueNature: 'manual',
-                                contractSizeProfile: 'manual',
-                                clientCreditProfile: 'manual',
-                                billingModel: 'manual',
-                                renewalVisibility: 'manual',
-                              },
-                              evidence: qualifierEvidence,
-                            },
-                          };
-                        });
-                        queueQualifierAutosave({
-                          ...(sdeManualInputs || {}),
-                          analysisQualifiers: {
-                            ...revenueQualifiers,
-                            [key]: value,
-                          },
-                          analysisQualifierMode: 'manual',
-                          analysisQualifierAudit: {
-                            updatedAt: new Date().toISOString(),
-                            mode: 'manual',
-                            fieldSources: {
-                              revenueNature: 'manual',
-                              contractSizeProfile: 'manual',
-                              clientCreditProfile: 'manual',
-                              billingModel: 'manual',
-                              renewalVisibility: 'manual',
-                            },
-                            evidence: qualifierEvidence,
-                          },
-                        });
+                        const badge = qualifierSourceBadge(source);
+                        return (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', padding: '6px 0' }}>
+                            <div style={{ fontSize: '12px', color: '#334155' }}>{label}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#1e293b', fontWeight: 700 }}>{value}</div>
+                              <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
+                                {badge.label}
+                              </span>
+                            </div>
+                          </div>
+                        );
                       };
                       return (
-                        <>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px', flexWrap: 'wrap' }}>
-                            <div style={{ fontSize: '12px', color: '#475569' }}>
-                              Prefill source: <strong>{qualifierPrefillSource}</strong>
-                            </div>
-                            <button
-                              onClick={resetRevenueQualifiersToDefaults}
-                              style={{
-                                background: '#eef2ff',
-                                border: '1px solid #c7d2fe',
-                                color: '#1d4ed8',
-                                borderRadius: '6px',
-                                padding: '4px 8px',
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Reset to sector/group defaults
-                            </button>
+                        <div style={{ fontSize: '12px', color: '#475569' }}>
+                          <div>Source model: <strong>{describeRevenueQualifierPreset(sdeSectorCategory, company?.industrySector)}</strong></div>
+                          {row('Revenue nature', inferredRevenue.qualifiers.revenueNature.replaceAll('_', ' '), fieldSources.revenueNature)}
+                          {row('Contract size profile', inferredRevenue.qualifiers.contractSizeProfile.replaceAll('_', ' '), fieldSources.contractSizeProfile)}
+                          {row('Client credit profile', inferredRevenue.qualifiers.clientCreditProfile.replaceAll('_', ' '), fieldSources.clientCreditProfile)}
+                          {row('Billing model', inferredRevenue.qualifiers.billingModel.replaceAll('_', ' '), fieldSources.billingModel)}
+                          {row('Renewal visibility', inferredRevenue.qualifiers.renewalVisibility, fieldSources.renewalVisibility)}
+                          <div style={{ marginTop: '6px' }}>
+                            <strong>Inference evidence:</strong> Top1 {customerQualityInsights.hasData ? `${Number(customerQualityInsights.top1Pct || 0).toFixed(1)}%` : 'n/a'}, Top5 {customerQualityInsights.hasData ? `${Number(customerQualityInsights.top5Pct || 0).toFixed(1)}%` : 'n/a'}, Customers {customerQualityInsights.hasData ? Number(customerQualityInsights.customerCount || 0) : 'n/a'}, Volatility {revenueVolatilityPct.toFixed(1)}%, Contract-timing AR {contractTimingReceivablesLikely ? 'yes' : 'no'}.
                           </div>
-                          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '8px' }}>
-                            Auto-save status:{' '}
-                            <strong>
-                              {qualifierAutosaveStatus === 'saving'
-                                ? 'Saving...'
-                                : qualifierAutosaveStatus === 'saved'
-                                  ? 'Saved'
-                                  : qualifierAutosaveStatus === 'error'
-                                    ? 'Error'
-                                    : 'Idle'}
-                            </strong>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(130px, 1fr))', gap: '8px' }}>
-                            <label style={{ fontSize: '12px', color: '#334155' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <span>Revenue nature</span>
-                                {(() => {
-                                  const badge = qualifierSourceBadge(qualifierFieldSources.revenueNature);
-                                  return (
-                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
-                                      {badge.label}
-                                    </span>
-                                  );
-                                })()}
-                              </span>
-                              <select
-                                value={inferredRevenue.qualifiers.revenueNature}
-                                onChange={(e) => updateRevenueQualifier('revenueNature', e.target.value as RevenueAnalysisQualifiers['revenueNature'])}
-                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                              >
-                                <option value="short_term_projects">Short-term projects</option>
-                                <option value="long_term_contracts">Long-term contracts</option>
-                                <option value="mixed">Mixed</option>
-                              </select>
-                            </label>
-                            <label style={{ fontSize: '12px', color: '#334155' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <span>Contract size profile</span>
-                                {(() => {
-                                  const badge = qualifierSourceBadge(qualifierFieldSources.contractSizeProfile);
-                                  return (
-                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
-                                      {badge.label}
-                                    </span>
-                                  );
-                                })()}
-                              </span>
-                              <select
-                                value={inferredRevenue.qualifiers.contractSizeProfile}
-                                onChange={(e) => updateRevenueQualifier('contractSizeProfile', e.target.value as RevenueAnalysisQualifiers['contractSizeProfile'])}
-                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                              >
-                                <option value="few_large">Few large contracts</option>
-                                <option value="mixed">Mixed</option>
-                                <option value="many_small">Many small contracts</option>
-                              </select>
-                            </label>
-                            <label style={{ fontSize: '12px', color: '#334155' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <span>Client credit profile</span>
-                                {(() => {
-                                  const badge = qualifierSourceBadge(qualifierFieldSources.clientCreditProfile);
-                                  return (
-                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
-                                      {badge.label}
-                                    </span>
-                                  );
-                                })()}
-                              </span>
-                              <select
-                                value={inferredRevenue.qualifiers.clientCreditProfile}
-                                onChange={(e) => updateRevenueQualifier('clientCreditProfile', e.target.value as RevenueAnalysisQualifiers['clientCreditProfile'])}
-                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                              >
-                                <option value="regulated_utility">Regulated utility</option>
-                                <option value="enterprise">Enterprise</option>
-                                <option value="mixed">Mixed</option>
-                                <option value="smb">SMB</option>
-                              </select>
-                            </label>
-                            <label style={{ fontSize: '12px', color: '#334155' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <span>Billing model</span>
-                                {(() => {
-                                  const badge = qualifierSourceBadge(qualifierFieldSources.billingModel);
-                                  return (
-                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
-                                      {badge.label}
-                                    </span>
-                                  );
-                                })()}
-                              </span>
-                              <select
-                                value={inferredRevenue.qualifiers.billingModel}
-                                onChange={(e) => updateRevenueQualifier('billingModel', e.target.value as RevenueAnalysisQualifiers['billingModel'])}
-                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                              >
-                                <option value="milestone">Milestone</option>
-                                <option value="progress">Percent complete</option>
-                                <option value="time_materials">Time & materials</option>
-                                <option value="mixed">Mixed</option>
-                              </select>
-                            </label>
-                            <label style={{ fontSize: '12px', color: '#334155' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <span>Renewal visibility</span>
-                                {(() => {
-                                  const badge = qualifierSourceBadge(qualifierFieldSources.renewalVisibility);
-                                  return (
-                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '999px', background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
-                                      {badge.label}
-                                    </span>
-                                  );
-                                })()}
-                              </span>
-                              <select
-                                value={inferredRevenue.qualifiers.renewalVisibility}
-                                onChange={(e) => updateRevenueQualifier('renewalVisibility', e.target.value as RevenueAnalysisQualifiers['renewalVisibility'])}
-                                style={{ width: '100%', marginTop: '4px', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                              >
-                                <option value="low">Low</option>
-                                <option value="medium">Medium</option>
-                                <option value="high">High</option>
-                              </select>
-                            </label>
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#475569', marginTop: '8px' }}>
-                            Revenue narrative confidence: <strong>{revenueNarrative.confidenceLabel}</strong>. Use Save Settings to persist qualifier updates.
-                          </div>
-                          <div style={{ marginTop: '6px', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
-                            <strong>Inference evidence:</strong>{' '}
-                            Top1 {qualifierEvidence.top1Pct !== null ? `${qualifierEvidence.top1Pct.toFixed(1)}%` : 'n/a'}, Top5 {qualifierEvidence.top5Pct !== null ? `${qualifierEvidence.top5Pct.toFixed(1)}%` : 'n/a'}, Customers {qualifierEvidence.customerCount !== null ? qualifierEvidence.customerCount : 'n/a'}, Volatility {qualifierEvidence.revenueVolatilityPct.toFixed(1)}%, Contract-timing AR {qualifierEvidence.contractTimingReceivablesLikely ? 'yes' : 'no'}.
-                          </div>
-                          {qualifierMode === 'auto' && inferredRevenue.inferenceApplied && (
-                            <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
-                              Ops inference active: qualifier defaults are being adjusted from available operational signals.
-                            </div>
-                          )}
-                        </>
+                        </div>
                       );
                     })()}
                   </div>
@@ -14090,16 +13839,14 @@ function FinancialScorePage() {
                       { label: 'Inventory', value: dioImpact },
                       { label: 'Supplier terms', value: dpoImpact },
                     ].sort((a, b) => b.value - a.value)[0];
-                    const revenueQualifiers = normalizeRevenueAnalysisQualifiers(
-                      (sdeManualInputs as any)?.analysisQualifiers,
+                    const revenueQualifiers = defaultRevenueAnalysisQualifiers(
                       sdeSectorCategory,
                       company?.industrySector,
                     );
-                    const qualifierMode: 'auto' | 'manual' = (sdeManualInputs as any)?.analysisQualifierMode === 'manual' ? 'manual' : 'auto';
                     const revenueVolatilityPct = Math.max(0, (revenueQualityInsights.volatilitySeries.slice(-1)[0]?.value || 0) * 100);
                     const inferredRevenue = inferRevenueQualifiersFromSignals({
                       baseQualifiers: revenueQualifiers,
-                      qualifierMode,
+                      qualifierMode: 'auto',
                       hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
                       sectorCategory: sdeSectorCategory,
                       contractTimingReceivablesLikely,
@@ -15422,17 +15169,14 @@ function FinancialScorePage() {
                       { label: 'Inventory', value: dioImpact },
                       { label: 'Supplier terms', value: dpoImpact },
                     ].sort((a, b) => b.value - a.value)[0];
-                    const rawRevenueQualifiers = (sdeManualInputs as any)?.analysisQualifiers;
-                    const hasQualifierOverrides = Boolean(rawRevenueQualifiers && typeof rawRevenueQualifiers === 'object');
-                    const revenueQualifiers = normalizeRevenueAnalysisQualifiers(
-                      rawRevenueQualifiers,
+                    const hasQualifierOverrides = false;
+                    const revenueQualifiers = defaultRevenueAnalysisQualifiers(
                       sdeSectorCategory,
                       company?.industrySector,
                     );
-                    const qualifierMode: 'auto' | 'manual' = (sdeManualInputs as any)?.analysisQualifierMode === 'manual' ? 'manual' : 'auto';
                     const inferredRevenue = inferRevenueQualifiersFromSignals({
                       baseQualifiers: revenueQualifiers,
-                      qualifierMode,
+                      qualifierMode: 'auto',
                       hasOpsData: customerQualityInsights.hasData || sdeHasRealOperationalData,
                       sectorCategory: sdeSectorCategory,
                       contractTimingReceivablesLikely,
@@ -15474,26 +15218,6 @@ function FinancialScorePage() {
                       ((sdeSectorBenchmarks.cashFlow.cashConversionWarn - cashConversionPct) / 100) * Math.max(0, ebitdaBase),
                     );
                     const balanceSheetValueDelta = ttmSDE * multipleAdjustment;
-                    const updateRevenueQualifier = <K extends keyof RevenueAnalysisQualifiers>(
-                      key: K,
-                      value: RevenueAnalysisQualifiers[K],
-                    ) => {
-                      setSdeManualInputs((prev) => {
-                        const previous = normalizeRevenueAnalysisQualifiers(
-                          (prev as any)?.analysisQualifiers,
-                          sdeSectorCategory,
-                          company?.industrySector,
-                        );
-                        return {
-                          ...prev,
-                          analysisQualifiers: {
-                            ...previous,
-                            [key]: value,
-                          },
-                          analysisQualifierMode: 'manual',
-                        };
-                      });
-                    };
                     const executiveCards = [
                       {
                         title: 'Revenue Quality',
