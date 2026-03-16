@@ -156,6 +156,34 @@ export default function CompanyDetailsTab({
     { id: "management-assessment", label: "Team Assessment" },
     { id: "dataroom", label: "Corelytics DataRoom" },
   ];
+  const DATAROOM_CAPABILITIES: Array<{
+    id: "view" | "download" | "upload" | "share" | "manage";
+    label: string;
+  }> = [
+    { id: "view", label: "View" },
+    { id: "download", label: "Download" },
+    { id: "upload", label: "Upload" },
+    { id: "share", label: "Share" },
+    { id: "manage", label: "Manage" },
+  ];
+  const DEFAULT_DATAROOM_CAPS = {
+    view: true,
+    download: true,
+    upload: true,
+    share: true,
+    manage: true,
+  };
+  type DataRoomCaps = typeof DEFAULT_DATAROOM_CAPS;
+  type DataRoomPermissionRule = {
+    default: DataRoomCaps;
+    folders: Record<string, DataRoomCaps>;
+    documents: Record<string, DataRoomCaps>;
+  };
+  type DataRoomFolderRef = {
+    id: string;
+    name: string;
+    documents: Array<{ id: string; name: string }>;
+  };
 
   // Stored in DB as allowed/visible sections for a company user.
   const DEFAULT_ALLOWED_SECTIONS = ACCESSIBLE_SECTIONS.map((s) => s.id);
@@ -171,6 +199,19 @@ export default function CompanyDetailsTab({
     Record<string, boolean>
   >({});
   const [savingUserId, setSavingUserId] = React.useState<string | null>(null);
+  const [dataRoomPermissionsByUser, setDataRoomPermissionsByUser] =
+    React.useState<Record<string, DataRoomPermissionRule>>({});
+  const [dataRoomFolders, setDataRoomFolders] = React.useState<
+    DataRoomFolderRef[]
+  >([]);
+  const [loadingDataRoomPermissions, setLoadingDataRoomPermissions] =
+    React.useState(false);
+  const [savingDataRoomPermissionsUserId, setSavingDataRoomPermissionsUserId] =
+    React.useState<string | null>(null);
+  const [dataRoomPermissionsError, setDataRoomPermissionsError] =
+    React.useState<string | null>(null);
+  const [expandedDataRoomOverridesByUser, setExpandedDataRoomOverridesByUser] =
+    React.useState<Record<string, boolean>>({});
 
   // Initialize permissions from users
   React.useEffect(() => {
@@ -185,6 +226,157 @@ export default function CompanyDetailsTab({
       });
     setUserPermissions(permissions);
   }, [users, selectedCompanyId]);
+
+  React.useEffect(() => {
+    if (!selectedCompanyId) {
+      setDataRoomPermissionsByUser({});
+      setDataRoomFolders([]);
+      setDataRoomPermissionsError(null);
+      return;
+    }
+
+    const loadDataRoomPermissionContext = async () => {
+      setLoadingDataRoomPermissions(true);
+      setDataRoomPermissionsError(null);
+      try {
+        const [permissionsRes, overviewRes] = await Promise.all([
+          fetch(
+            `/api/dataroom/permissions?companyId=${encodeURIComponent(
+              selectedCompanyId,
+            )}`,
+          ),
+          fetch(
+            `/api/dataroom/overview?companyId=${encodeURIComponent(
+              selectedCompanyId,
+            )}`,
+          ),
+        ]);
+
+        if (permissionsRes.ok) {
+          const permissionsData = await permissionsRes.json();
+          const usersRules = Array.isArray(permissionsData?.permissions?.users)
+            ? permissionsData.permissions.users
+            : [];
+          const byUser: Record<string, DataRoomPermissionRule> = {};
+          usersRules.forEach((rule: any) => {
+            const userId = String(rule?.userId || "");
+            if (!userId) return;
+            byUser[userId] = {
+              default: {
+                view:
+                  typeof rule?.default?.view === "boolean"
+                    ? rule.default.view
+                    : DEFAULT_DATAROOM_CAPS.view,
+                download:
+                  typeof rule?.default?.download === "boolean"
+                    ? rule.default.download
+                    : DEFAULT_DATAROOM_CAPS.download,
+                upload:
+                  typeof rule?.default?.upload === "boolean"
+                    ? rule.default.upload
+                    : DEFAULT_DATAROOM_CAPS.upload,
+                share:
+                  typeof rule?.default?.share === "boolean"
+                    ? rule.default.share
+                    : DEFAULT_DATAROOM_CAPS.share,
+                manage:
+                  typeof rule?.default?.manage === "boolean"
+                    ? rule.default.manage
+                    : DEFAULT_DATAROOM_CAPS.manage,
+              },
+              folders: Object.fromEntries(
+                Object.entries(rule?.folders || {}).map(([id, caps]: any) => [
+                  String(id),
+                  {
+                    view:
+                      typeof caps?.view === "boolean"
+                        ? caps.view
+                        : DEFAULT_DATAROOM_CAPS.view,
+                    download:
+                      typeof caps?.download === "boolean"
+                        ? caps.download
+                        : DEFAULT_DATAROOM_CAPS.download,
+                    upload:
+                      typeof caps?.upload === "boolean"
+                        ? caps.upload
+                        : DEFAULT_DATAROOM_CAPS.upload,
+                    share:
+                      typeof caps?.share === "boolean"
+                        ? caps.share
+                        : DEFAULT_DATAROOM_CAPS.share,
+                    manage:
+                      typeof caps?.manage === "boolean"
+                        ? caps.manage
+                        : DEFAULT_DATAROOM_CAPS.manage,
+                  },
+                ]),
+              ),
+              documents: Object.fromEntries(
+                Object.entries(rule?.documents || {}).map(([id, caps]: any) => [
+                  String(id),
+                  {
+                    view:
+                      typeof caps?.view === "boolean"
+                        ? caps.view
+                        : DEFAULT_DATAROOM_CAPS.view,
+                    download:
+                      typeof caps?.download === "boolean"
+                        ? caps.download
+                        : DEFAULT_DATAROOM_CAPS.download,
+                    upload:
+                      typeof caps?.upload === "boolean"
+                        ? caps.upload
+                        : DEFAULT_DATAROOM_CAPS.upload,
+                    share:
+                      typeof caps?.share === "boolean"
+                        ? caps.share
+                        : DEFAULT_DATAROOM_CAPS.share,
+                    manage:
+                      typeof caps?.manage === "boolean"
+                        ? caps.manage
+                        : DEFAULT_DATAROOM_CAPS.manage,
+                  },
+                ]),
+              ),
+            };
+          });
+          setDataRoomPermissionsByUser(byUser);
+        } else if (permissionsRes.status === 403) {
+          setDataRoomPermissionsError(
+            "You do not have DataRoom manage rights to edit DataRoom permissions.",
+          );
+        } else {
+          setDataRoomPermissionsError("Failed to load DataRoom permissions.");
+        }
+
+        if (overviewRes.ok) {
+          const overviewData = await overviewRes.json();
+          const foldersFromApi = Array.isArray(overviewData?.folders)
+            ? overviewData.folders
+            : [];
+          const normalizedFolders = foldersFromApi.map((folder: any) => ({
+            id: String(folder?.id || ""),
+            name: String(folder?.name || "Folder"),
+            documents: Array.isArray(folder?.documents)
+              ? folder.documents.map((doc: any) => ({
+                  id: String(doc?.id || ""),
+                  name: String(doc?.originalFileName || "Document"),
+                }))
+              : [],
+          }));
+          setDataRoomFolders(normalizedFolders.filter((f) => f.id));
+        } else {
+          setDataRoomFolders([]);
+        }
+      } catch {
+        setDataRoomPermissionsError("Failed to load DataRoom permissions.");
+      } finally {
+        setLoadingDataRoomPermissions(false);
+      }
+    };
+
+    loadDataRoomPermissionContext();
+  }, [selectedCompanyId]);
 
   const saveUserPermissions = async (userId: string) => {
     setSavingUserId(userId);
@@ -248,6 +440,97 @@ export default function CompanyDetailsTab({
       ...prev,
       [userId]: !prev[userId],
     }));
+  };
+
+  const toggleDataRoomOverrideExpanded = (userId: string) => {
+    setExpandedDataRoomOverridesByUser((prev) => ({
+      ...prev,
+      [userId]: !prev[userId],
+    }));
+  };
+
+  const getDataRoomRule = (
+    userId: string,
+    source?: Record<string, DataRoomPermissionRule>,
+  ): DataRoomPermissionRule =>
+    (source || dataRoomPermissionsByUser)[userId] || {
+      default: { ...DEFAULT_DATAROOM_CAPS },
+      folders: {},
+      documents: {},
+    };
+
+  const toggleDataRoomCapability = (
+    userId: string,
+    scope: "default" | "folder" | "document",
+    scopeId: string | null,
+    capability: keyof DataRoomCaps,
+  ) => {
+    setDataRoomPermissionsByUser((prev) => {
+      const current = getDataRoomRule(userId, prev);
+      if (scope === "default") {
+        return {
+          ...prev,
+          [userId]: {
+            ...current,
+            default: {
+              ...current.default,
+              [capability]: !current.default[capability],
+            },
+          },
+        };
+      }
+
+      const container =
+        scope === "folder" ? { ...current.folders } : { ...current.documents };
+      const key = String(scopeId || "");
+      const currentCaps = container[key]
+        ? { ...container[key] }
+        : { ...current.default };
+      container[key] = {
+        ...currentCaps,
+        [capability]: !currentCaps[capability],
+      };
+
+      return {
+        ...prev,
+        [userId]: {
+          ...current,
+          folders: scope === "folder" ? container : current.folders,
+          documents: scope === "document" ? container : current.documents,
+        },
+      };
+    });
+  };
+
+  const saveDataRoomPermissions = async (userId: string) => {
+    setSavingDataRoomPermissionsUserId(userId);
+    try {
+      const rule = getDataRoomRule(userId);
+      const response = await fetch("/api/dataroom/permissions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          userId,
+          default: rule.default,
+          folders: rule.folders,
+          documents: rule.documents,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to save DataRoom permissions");
+      }
+      alert("DataRoom permissions updated successfully!");
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to update DataRoom permissions",
+      );
+    } finally {
+      setSavingDataRoomPermissionsUserId(null);
+    }
   };
   // For business users, auto-select their company if not already selected
   React.useEffect(() => {
@@ -473,6 +756,10 @@ export default function CompanyDetailsTab({
                         ? userPerm.sidebarAccess
                         : DEFAULT_ALLOWED_SECTIONS;
                       const isExpanded = Boolean(expandedCompanyUsers[u.id]);
+                      const dataRoomRule = getDataRoomRule(u.id);
+                      const showDataRoomOverrides = Boolean(
+                        expandedDataRoomOverridesByUser[u.id],
+                      );
 
                       return (
                         <div
@@ -718,6 +1005,267 @@ export default function CompanyDetailsTab({
                               </>
                             )}
 
+                            <div
+                              style={{
+                                marginTop: "12px",
+                                borderTop: "1px solid #d1fae5",
+                                paddingTop: "12px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: "700",
+                                  color: "#0f766e",
+                                  marginBottom: "8px",
+                                }}
+                              >
+                                DataRoom Permissions
+                              </div>
+                              {loadingDataRoomPermissions ? (
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "#64748b",
+                                    marginBottom: "8px",
+                                  }}
+                                >
+                                  Loading DataRoom permissions...
+                                </div>
+                              ) : dataRoomPermissionsError ? (
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "#b91c1c",
+                                    marginBottom: "8px",
+                                  }}
+                                >
+                                  {dataRoomPermissionsError}
+                                </div>
+                              ) : (
+                                <>
+                                  <div
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#64748b",
+                                      marginBottom: "6px",
+                                    }}
+                                  >
+                                    Default capabilities (applies across DataRoom):
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                                      gap: "6px",
+                                      fontSize: "11px",
+                                    }}
+                                  >
+                                    {DATAROOM_CAPABILITIES.map((capability) => (
+                                      <label
+                                        key={`${u.id}-dataroom-default-${capability.id}`}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(
+                                            dataRoomRule.default[capability.id],
+                                          )}
+                                          onChange={() =>
+                                            toggleDataRoomCapability(
+                                              u.id,
+                                              "default",
+                                              null,
+                                              capability.id,
+                                            )
+                                          }
+                                        />
+                                        <span>{capability.label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleDataRoomOverrideExpanded(u.id)}
+                                    style={{
+                                      marginTop: "8px",
+                                      padding: "6px 10px",
+                                      background: "white",
+                                      color: "#0f766e",
+                                      border: "1px solid #99f6e4",
+                                      borderRadius: "6px",
+                                      fontSize: "11px",
+                                      fontWeight: "700",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    {showDataRoomOverrides
+                                      ? "Hide Folder/Document Overrides"
+                                      : "Show Folder/Document Overrides"}
+                                  </button>
+
+                                  {showDataRoomOverrides && (
+                                    <div style={{ marginTop: "10px", display: "grid", gap: "8px" }}>
+                                      {dataRoomFolders.length === 0 ? (
+                                        <div
+                                          style={{
+                                            fontSize: "11px",
+                                            color: "#64748b",
+                                          }}
+                                        >
+                                          No DataRoom folders available yet. Enable DataRoom and add documents to configure overrides.
+                                        </div>
+                                      ) : (
+                                        dataRoomFolders.map((folder) => (
+                                          <div
+                                            key={`${u.id}-folder-override-${folder.id}`}
+                                            style={{
+                                              border: "1px solid #d1fae5",
+                                              borderRadius: "6px",
+                                              padding: "8px",
+                                              background: "#f8fffc",
+                                            }}
+                                          >
+                                            <div
+                                              style={{
+                                                fontSize: "11px",
+                                                fontWeight: "700",
+                                                color: "#166534",
+                                                marginBottom: "6px",
+                                              }}
+                                            >
+                                              Folder: {folder.name}
+                                            </div>
+                                            <div
+                                              style={{
+                                                display: "grid",
+                                                gridTemplateColumns:
+                                                  "repeat(5, minmax(0, 1fr))",
+                                                gap: "6px",
+                                                fontSize: "11px",
+                                              }}
+                                            >
+                                              {DATAROOM_CAPABILITIES.map((capability) => {
+                                                const currentCaps =
+                                                  dataRoomRule.folders[folder.id] ||
+                                                  dataRoomRule.default;
+                                                return (
+                                                  <label
+                                                    key={`${u.id}-folder-${folder.id}-${capability.id}`}
+                                                    style={{
+                                                      display: "flex",
+                                                      alignItems: "center",
+                                                      gap: "6px",
+                                                      cursor: "pointer",
+                                                    }}
+                                                  >
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={Boolean(
+                                                        currentCaps[capability.id],
+                                                      )}
+                                                      onChange={() =>
+                                                        toggleDataRoomCapability(
+                                                          u.id,
+                                                          "folder",
+                                                          folder.id,
+                                                          capability.id,
+                                                        )
+                                                      }
+                                                    />
+                                                    <span>{capability.label}</span>
+                                                  </label>
+                                                );
+                                              })}
+                                            </div>
+
+                                            {folder.documents.length > 0 && (
+                                              <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                                                {folder.documents.map((doc) => {
+                                                  const docCaps =
+                                                    dataRoomRule.documents[doc.id] ||
+                                                    dataRoomRule.folders[folder.id] ||
+                                                    dataRoomRule.default;
+                                                  return (
+                                                    <div
+                                                      key={`${u.id}-document-${doc.id}`}
+                                                      style={{
+                                                        borderTop: "1px dashed #bbf7d0",
+                                                        paddingTop: "6px",
+                                                      }}
+                                                    >
+                                                      <div
+                                                        style={{
+                                                          fontSize: "11px",
+                                                          color: "#166534",
+                                                          marginBottom: "4px",
+                                                        }}
+                                                      >
+                                                        Document: {doc.name}
+                                                      </div>
+                                                      <div
+                                                        style={{
+                                                          display: "grid",
+                                                          gridTemplateColumns:
+                                                            "repeat(5, minmax(0, 1fr))",
+                                                          gap: "6px",
+                                                          fontSize: "11px",
+                                                        }}
+                                                      >
+                                                        {DATAROOM_CAPABILITIES.map(
+                                                          (capability) => (
+                                                            <label
+                                                              key={`${u.id}-document-${doc.id}-${capability.id}`}
+                                                              style={{
+                                                                display: "flex",
+                                                                alignItems: "center",
+                                                                gap: "6px",
+                                                                cursor: "pointer",
+                                                              }}
+                                                            >
+                                                              <input
+                                                                type="checkbox"
+                                                                checked={Boolean(
+                                                                  docCaps[
+                                                                    capability.id
+                                                                  ],
+                                                                )}
+                                                                onChange={() =>
+                                                                  toggleDataRoomCapability(
+                                                                    u.id,
+                                                                    "document",
+                                                                    doc.id,
+                                                                    capability.id,
+                                                                  )
+                                                                }
+                                                              />
+                                                              <span>
+                                                                {capability.label}
+                                                              </span>
+                                                            </label>
+                                                          ),
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+
                             {/* Save Button */}
                             <button
                               onClick={() => saveUserPermissions(u.id)}
@@ -742,6 +1290,37 @@ export default function CompanyDetailsTab({
                               {savingUserId === u.id
                                 ? "Saving..."
                                 : "Save Access Rights"}
+                            </button>
+                            <button
+                              onClick={() => saveDataRoomPermissions(u.id)}
+                              disabled={
+                                savingDataRoomPermissionsUserId === u.id ||
+                                Boolean(dataRoomPermissionsError)
+                              }
+                              style={{
+                                marginTop: "8px",
+                                padding: "6px 12px",
+                                background:
+                                  savingDataRoomPermissionsUserId === u.id
+                                    ? "#94a3b8"
+                                    : "#0f766e",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "6px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                cursor:
+                                  savingDataRoomPermissionsUserId === u.id ||
+                                  Boolean(dataRoomPermissionsError)
+                                    ? "not-allowed"
+                                    : "pointer",
+                                width: "100%",
+                                opacity: dataRoomPermissionsError ? 0.6 : 1,
+                              }}
+                            >
+                              {savingDataRoomPermissionsUserId === u.id
+                                ? "Saving..."
+                                : "Save DataRoom Permissions"}
                             </button>
                             </div>
                           )}
