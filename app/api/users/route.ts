@@ -7,6 +7,20 @@ import { auditUserOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import { createUserSchema, validateInput } from '@/lib/validation-schemas';
 import { grantUserCompanyAccess } from '@/lib/user-company-access';
 
+const DEFAULT_ALLOWED_SECTIONS = [
+  'ask-corelytics',
+  'business-pulse',
+  'operational-dashboard',
+  'company-dashboard',
+  'financial-reports',
+  'financial-statements',
+  'valuation',
+  'expert-analysis',
+  'mda',
+  'management-assessment',
+  'dataroom',
+];
+
 // GET users for a company (or all users if no companyId provided - for site admin)
 export async function GET(request: NextRequest) {
   try {
@@ -69,6 +83,7 @@ export async function GET(request: NextRequest) {
               email: true,
               userType: true,
               role: true,
+              consultantId: true,
               companyId: true,
               createdAt: true,
               companyRole: true,
@@ -88,6 +103,46 @@ export async function GET(request: NextRequest) {
         sidebarAccess: (m.sidebarAccess ?? m.user.sidebarAccess) as any,
       }));
 
+      // Ensure consultant primary + team members are visible in Manage Users for consultant-owned companies.
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { consultantId: true },
+      });
+      if (company?.consultantId) {
+        const consultantTeam = await prisma.user.findMany({
+          where: {
+            consultantId: company.consultantId,
+            role: 'CONSULTANT',
+          },
+          select: {
+            id: true,
+            name: true,
+            title: true,
+            phone: true,
+            email: true,
+            userType: true,
+            role: true,
+            consultantId: true,
+            companyId: true,
+            createdAt: true,
+            companyRole: true,
+            sidebarAccess: true,
+          },
+          orderBy: [{ isPrimaryContact: 'desc' }, { name: 'asc' }],
+        });
+
+        const existingIds = new Set(users.map((u) => u.id));
+        const consultantUsers = consultantTeam
+          .filter((u) => !existingIds.has(u.id))
+          .map((u) => ({
+            ...u,
+            companyId,
+            companyRole: 'admin',
+            sidebarAccess: Array.isArray(u.sidebarAccess) ? u.sidebarAccess : DEFAULT_ALLOWED_SECTIONS,
+          }));
+        users = [...users, ...consultantUsers];
+      }
+
       if (users.length === 0) {
         const fallbackUsers = await prisma.user.findMany({
           where: {
@@ -102,6 +157,7 @@ export async function GET(request: NextRequest) {
             email: true,
             userType: true,
             role: true,
+            consultantId: true,
             companyRole: true,
             sidebarAccess: true,
             companyId: true,
@@ -122,6 +178,7 @@ export async function GET(request: NextRequest) {
           email: true,
           userType: true,
           role: true,
+          consultantId: true,
           companyRole: true,
           sidebarAccess: true,
           companyId: true,

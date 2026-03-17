@@ -12,6 +12,8 @@ interface User {
   phone?: string | null;
   title?: string | null;
   companyId?: string;
+  consultantId?: string | null;
+  role?: string;
   userType?: string;
 }
 
@@ -217,15 +219,31 @@ export default function CompanyDetailsTab({
   React.useEffect(() => {
     const permissions: typeof userPermissions = {};
     users
-      .filter((u) => u.companyId === selectedCompanyId && u.userType === "company")
+      .filter((u) =>
+        u.companyId === selectedCompanyId &&
+        (u.userType === "company" ||
+          (String(u.role || "").toUpperCase() === "CONSULTANT" &&
+            Boolean(
+              companies.find((c) => c.id === selectedCompanyId)?.consultantId &&
+                String(u.consultantId || "") ===
+                  String(
+                    companies.find((c) => c.id === selectedCompanyId)?.consultantId ||
+                      "",
+                  ),
+            ))),
+      )
       .forEach((u) => {
+        const isConsultantTeamMember =
+          String(u.role || "").toUpperCase() === "CONSULTANT";
         permissions[u.id] = {
-          role: (u as any).companyRole || "user",
+          role: isConsultantTeamMember
+            ? "admin"
+            : (u as any).companyRole || "user",
           sidebarAccess: (u as any).sidebarAccess || DEFAULT_ALLOWED_SECTIONS,
         };
       });
     setUserPermissions(permissions);
-  }, [users, selectedCompanyId]);
+  }, [users, selectedCompanyId, companies]);
 
   React.useEffect(() => {
     if (!selectedCompanyId) {
@@ -736,7 +754,13 @@ export default function CompanyDetailsTab({
                     {
                       users.filter(
                         (u) =>
-                          u.companyId === comp.id && u.userType === "company",
+                          u.companyId === comp.id &&
+                          (u.userType === "company" ||
+                            (String(u.role || "").toUpperCase() ===
+                              "CONSULTANT" &&
+                              Boolean(comp.consultantId) &&
+                              String(u.consultantId || "") ===
+                                String(comp.consultantId || ""))),
                       ).length
                     }
                   </div>
@@ -744,7 +768,13 @@ export default function CompanyDetailsTab({
                   {users
                     .filter(
                       (u) =>
-                        u.companyId === comp.id && u.userType === "company",
+                        u.companyId === comp.id &&
+                        (u.userType === "company" ||
+                          (String(u.role || "").toUpperCase() ===
+                            "CONSULTANT" &&
+                            Boolean(comp.consultantId) &&
+                            String(u.consultantId || "") ===
+                              String(comp.consultantId || ""))),
                     )
                     .map((u) => {
                       const userPerm = userPermissions[u.id] || {
@@ -859,14 +889,23 @@ export default function CompanyDetailsTab({
                               </button>
                               <button
                                 onClick={() => deleteUser(u.id, comp.id)}
+                                disabled={String(u.role || "").toUpperCase() === "CONSULTANT"}
                                 style={{
                                   padding: "4px 8px",
-                                  background: "#ef4444",
+                                  background:
+                                    String(u.role || "").toUpperCase() ===
+                                    "CONSULTANT"
+                                      ? "#cbd5e1"
+                                      : "#ef4444",
                                   color: "white",
                                   border: "none",
                                   borderRadius: "4px",
                                   fontSize: "10px",
-                                  cursor: "pointer",
+                                  cursor:
+                                    String(u.role || "").toUpperCase() ===
+                                    "CONSULTANT"
+                                      ? "not-allowed"
+                                      : "pointer",
                                   fontWeight: "600",
                                 }}
                               >
@@ -1837,92 +1876,6 @@ export default function CompanyDetailsTab({
                         </button>
                       </div>
 
-                      <div
-                        style={{
-                          borderTop: "1px solid #ede9fe",
-                          paddingTop: "12px",
-                          marginTop: "12px",
-                        }}
-                      >
-                        <h5
-                          style={{
-                            fontSize: "13px",
-                            fontWeight: "600",
-                            color: "#475569",
-                            marginBottom: "8px",
-                          }}
-                        >
-                          Invite External User
-                        </h5>
-                        <div
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            marginBottom: "8px",
-                          }}
-                        >
-                          Invite an outside assessment user to this company.
-                          Existing accounts get access immediately; new users
-                          receive an invite link to create credentials, then
-                          authenticate via normal login (including MFA in
-                          production).
-                        </div>
-                        <div style={{ display: "grid", gap: "6px" }}>
-                          <input
-                            type="text"
-                            name="existing_assessment_user_name"
-                            placeholder="External user name"
-                            value={existingAssessmentUserName}
-                            onChange={(e) =>
-                              setExistingAssessmentUserName(e.target.value)
-                            }
-                            autoComplete="off"
-                            style={{
-                              padding: "8px",
-                              borderRadius: "6px",
-                              border: "1px solid #cbd5e1",
-                              fontSize: "12px",
-                            }}
-                          />
-                          <div style={{ display: "flex", gap: "6px" }}>
-                          <input
-                            type="text"
-                            name="existing_assessment_user_email"
-                            placeholder="External user email"
-                            value={existingAssessmentUserEmail}
-                            onChange={(e) =>
-                              setExistingAssessmentUserEmail(e.target.value)
-                            }
-                            autoComplete="off"
-                            style={{
-                              flex: 1,
-                              padding: "8px",
-                              borderRadius: "6px",
-                              border: "1px solid #cbd5e1",
-                              fontSize: "12px",
-                            }}
-                          />
-                          <button
-                            onClick={() =>
-                              grantExistingUserAccess(comp.id, "assessment")
-                            }
-                            style={{
-                              padding: "8px 12px",
-                              background: "#6d28d9",
-                              color: "white",
-                              border: "none",
-                              borderRadius: "6px",
-                              fontSize: "12px",
-                              fontWeight: "600",
-                              cursor: "pointer",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            Invite User
-                          </button>
-                          </div>
-                        </div>
-                      </div>
                     </div>
                   ) : (
                     <div
