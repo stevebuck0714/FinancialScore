@@ -3689,7 +3689,7 @@ export default function SiteAdminDashboard(props: any) {
                                           
                                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))', gap: '10px', marginBottom: companyUsers.length > 0 ? '8px' : '0' }}>
                                             {/* Subscription Pricing */}
-                                            <div style={{ padding: '10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <div style={{ padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
                                               {editing ? (
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -3796,7 +3796,7 @@ export default function SiteAdminDashboard(props: any) {
                                               )}
                                             </div>
 
-                                            <div style={{ padding: '10px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                                            <div style={{ padding: '4px 10px 10px 10px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#1e3a8a', marginBottom: '8px' }}>DataRoom Pricing</h6>
                                               {editingDataRoomPricingByCompany[company.id] ? (
                                                 <div>
@@ -6033,7 +6033,7 @@ export default function SiteAdminDashboard(props: any) {
 
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))', gap: '10px' }}>
                                   {/* Subscription Pricing */}
-                                  <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px' }}>
+                                  <div style={{ padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
                                     {editing ? (
                                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -6140,7 +6140,7 @@ export default function SiteAdminDashboard(props: any) {
                                     )}
                                   </div>
 
-                                  <div style={{ padding: '12px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                                  <div style={{ padding: '4px 12px 12px 12px', background: '#eff6ff', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e3a8a', marginBottom: '8px' }}>DataRoom Pricing</h4>
                                     {editingDataRoomPricingByCompany[businessCompany.id] ? (
                                       <div>

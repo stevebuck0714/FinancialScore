@@ -988,8 +988,34 @@ function FinancialScorePage() {
         alert('Please select a company first.');
         return;
       }
-      if (!isDataRoomEnabledByAdmin) {
-        if (isDataRoomPaymentRequired) {
+      let nextEnabledByAdmin = isDataRoomEnabledByAdmin;
+      let nextPaymentRequired = isDataRoomPaymentRequired;
+      let nextIsActive = isDataRoomActive;
+
+      // Re-check current DataRoom state from server to avoid stale client state bypass.
+      try {
+        const companyRes = await fetch(`/api/companies?companyId=${encodeURIComponent(selectedCompanyId)}`, {
+          cache: 'no-store',
+        });
+        const companyJson = await companyRes.json();
+        if (companyRes.ok && Array.isArray(companyJson?.companies) && companyJson.companies.length > 0) {
+          const freshCompany = companyJson.companies[0] as any;
+          const freshDataRoom = freshCompany?.userDefinedAllocations?.dataRoom || {};
+          const freshPricing = freshDataRoom?.pricing || {};
+          const freshStatus = String(freshDataRoom?.subscription?.status || 'inactive').toLowerCase();
+          nextEnabledByAdmin = Boolean(freshDataRoom?.enabledByAdmin);
+          nextPaymentRequired =
+            Number(freshPricing?.monthly || 0) > 0 ||
+            Number(freshPricing?.quarterly || 0) > 0 ||
+            Number(freshPricing?.annual || 0) > 0;
+          nextIsActive = freshStatus === 'active';
+        }
+      } catch {
+        // Fallback to current in-memory state if refresh fails.
+      }
+
+      if (!nextEnabledByAdmin) {
+        if (nextPaymentRequired) {
           alert('DataRoom is not enabled for this company.');
           return;
         }
@@ -1012,8 +1038,8 @@ function FinancialScorePage() {
           return;
         }
       }
-      if (!isDataRoomActive) {
-        if (!isDataRoomPaymentRequired) {
+      if (!nextIsActive) {
+        if (!nextPaymentRequired) {
           setCurrentView('dataroom');
           return;
         }
@@ -7643,34 +7669,6 @@ function FinancialScorePage() {
                   onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'dashboard' || currentView === 'admin') ? '#1F70C1' : '#1e293b'}
                 >
                   Company Dashboard
-                </h3>
-              </div>
-            )}
-
-            {canShowDataRoomEntry && (
-              <div style={{ marginBottom: '10px' }}>
-                <h3
-                  onClick={() => handleNavigation('dataroom')}
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: '700',
-                    color: currentView === 'dataroom' ? '#1F70C1' : '#1e293b',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    padding: '8px 24px',
-                    marginBottom: '6px',
-                    cursor: 'pointer',
-                    transition: 'color 0.2s',
-                    borderLeft: currentView === 'dataroom' ? '4px solid #1F70C1' : '4px solid transparent'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#1F70C1';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = currentView === 'dataroom' ? '#1F70C1' : '#1e293b';
-                  }}
-                >
-                  Corelytics DataRoom
                 </h3>
               </div>
             )}
