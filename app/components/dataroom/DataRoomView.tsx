@@ -8,9 +8,30 @@ interface DataRoomViewProps {
   companyName: string;
 }
 
+type AskResponse = {
+  shortAnswer: string;
+  longAnswer: string;
+  citedBullets: Array<{
+    text: string;
+    citations: Array<{
+      url: string;
+      title?: string;
+      publishedDate?: string | null;
+    }>;
+  }>;
+  howThisImpactsUs: string;
+  sources: Array<{
+    url: string;
+    title?: string;
+    publishedDate?: string | null;
+    snippet?: string;
+  }>;
+};
+
 type FolderDoc = {
   id: string;
   folderId: string;
+  category?: string | null;
   originalFileName: string;
   contentType: string | null;
   sizeBytes: number | null;
@@ -25,6 +46,12 @@ type FolderDoc = {
   downloadHistory?: Array<{
     downloadedByName: string | null;
     downloadedAt: string | null;
+  }>;
+  lastViewedByName?: string | null;
+  lastViewedAt?: string | null;
+  viewHistory?: Array<{
+    viewedByName: string | null;
+    viewedAt: string | null;
   }>;
 };
 
@@ -43,11 +70,28 @@ type AuditEvent = {
   userEmail: string;
   documentId: string | null;
   folderId: string | null;
+  folderName?: string | null;
   ipAddress: string;
 };
 
 const ACCEPTED_FILES = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt';
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const DOC_CATEGORY_ORDER = [
+  'LOAN_DOCUMENTS',
+  'FINANCING_DOCUMENTS',
+  'LEGAL_AND_REGULATORY',
+  'TAX_DOCUMENTS',
+  'OTHER',
+] as const;
+
+function categoryLabel(value: string | null | undefined) {
+  const key = String(value || 'OTHER').toUpperCase();
+  if (key === 'LOAN_DOCUMENTS') return 'Loan Documents';
+  if (key === 'FINANCING_DOCUMENTS') return 'Financing Documents';
+  if (key === 'LEGAL_AND_REGULATORY') return 'Legal and Regulatory';
+  if (key === 'TAX_DOCUMENTS') return 'Tax Documents';
+  return 'Other';
+}
 
 function formatBytes(n: number | null) {
   if (!n || n <= 0) return '';
@@ -63,7 +107,14 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return null;
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return null;
-  return dt.toLocaleString();
+  return dt.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
 export default function DataRoomView({ selectedCompanyId, companyName }: DataRoomViewProps) {
@@ -86,15 +137,73 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditActionFilter, setAuditActionFilter] = useState('');
   const [auditUserFilter, setAuditUserFilter] = useState('');
+  const [auditFolderFilter, setAuditFolderFilter] = useState('');
   const [auditFromFilter, setAuditFromFilter] = useState('');
   const [auditToFilter, setAuditToFilter] = useState('');
   const [auditOffset, setAuditOffset] = useState(0);
+  const [docSearchDocumentId, setDocSearchDocumentId] = useState('');
+  const [docSearchQuestion, setDocSearchQuestion] = useState('');
+  const [docSearchLoading, setDocSearchLoading] = useState(false);
+  const [docSearchError, setDocSearchError] = useState<string | null>(null);
+  const [docSearchResponse, setDocSearchResponse] = useState<AskResponse | null>(null);
+  const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Record<string, boolean>>({});
+  const [collapsedAuditFolderKeys, setCollapsedAuditFolderKeys] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedFolder = useMemo(
     () => folders.find((f) => f.id === selectedFolderId) || null,
     [folders, selectedFolderId],
   );
+  const selectedFolderDocumentsByCategory = useMemo(() => {
+    const docs = selectedFolder?.documents || [];
+    const grouped: Record<string, FolderDoc[]> = {};
+    for (const doc of docs) {
+      const key = String(doc.category || 'OTHER').toUpperCase();
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(doc);
+    }
+    const orderedKeys = [
+      ...DOC_CATEGORY_ORDER.filter((key) => (grouped[key] || []).length > 0),
+      ...Object.keys(grouped).filter((key) => !DOC_CATEGORY_ORDER.includes(key as any)),
+    ];
+    return orderedKeys.map((key) => ({
+      key,
+      label: categoryLabel(key),
+      documents: grouped[key] || [],
+    }));
+  }, [selectedFolder]);
+  const folderNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const folder of folders) {
+      map.set(String(folder.id), String(folder.name || folder.id));
+    }
+    return map;
+  }, [folders]);
+  const auditEventsByFolder = useMemo(() => {
+    const grouped = new Map<string, { folderName: string; events: AuditEvent[] }>();
+    for (const evt of auditEvents) {
+      const folderName = String(evt.folderName || (evt.folderId ? folderNameById.get(String(evt.folderId)) : '') || 'General');
+      if (!grouped.has(folderName)) {
+        grouped.set(folderName, { folderName, events: [] });
+      }
+      grouped.get(folderName)!.events.push(evt);
+    }
+    return Array.from(grouped.values()).sort((a, b) => a.folderName.localeCompare(b.folderName));
+  }, [auditEvents, folderNameById]);
+  const toggleAuditFolderCollapsed = (folderName: string) => {
+    setCollapsedAuditFolderKeys((prev) => ({
+      ...prev,
+      [folderName]: !Boolean(prev[folderName]),
+    }));
+  };
+  const toggleCategoryCollapsed = (categoryKey: string) => {
+    if (!selectedFolderId) return;
+    const stateKey = `${selectedFolderId}:${categoryKey}`;
+    setCollapsedCategoryKeys((prev) => ({
+      ...prev,
+      [stateKey]: !Boolean(prev[stateKey]),
+    }));
+  };
   const pendingDocCount = useMemo(
     () =>
       folders.reduce(
@@ -109,6 +218,20 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
         0,
       ),
     [folders],
+  );
+  const allDataRoomDocs = useMemo(
+    () =>
+      folders.flatMap((folder) =>
+        (Array.isArray(folder.documents) ? folder.documents : []).map((doc) => ({
+          ...doc,
+          folderName: folder.name,
+        })),
+      ),
+    [folders],
+  );
+  const selectedSearchDoc = useMemo(
+    () => allDataRoomDocs.find((d) => d.id === docSearchDocumentId) || null,
+    [allDataRoomDocs, docSearchDocumentId],
   );
 
   const loadOverview = async () => {
@@ -139,6 +262,9 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       } else if (selectedFolderId && incoming.length > 0 && !incoming.some((f: any) => String(f.id) === selectedFolderId)) {
         setSelectedFolderId(String(incoming[0].id));
       }
+      if (docSearchDocumentId && !incoming.some((f: any) => Array.isArray(f?.documents) && f.documents.some((d: any) => String(d?.id) === docSearchDocumentId))) {
+        setDocSearchDocumentId('');
+      }
     } catch (e: any) {
       setError(e?.message || 'Failed to load DataRoom');
       setFolders([]);
@@ -159,12 +285,18 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       });
       if (auditActionFilter) params.set('action', auditActionFilter);
       if (auditUserFilter) params.set('userEmail', auditUserFilter);
+      if (auditFolderFilter) params.set('folderId', auditFolderFilter);
       if (auditFromFilter) params.set('from', new Date(auditFromFilter).toISOString());
       if (auditToFilter) params.set('to', new Date(auditToFilter).toISOString());
       const res = await fetch(`/api/dataroom/audit?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load audit log');
-      setAuditEvents(Array.isArray(data?.events) ? data.events : []);
+      const incoming = Array.isArray(data?.events) ? data.events : [];
+      const withFolderName = incoming.map((evt: any) => ({
+        ...evt,
+        folderName: evt?.folderId ? folderNameById.get(String(evt.folderId)) || String(evt.folderId) : null,
+      }));
+      setAuditEvents(withFolderName);
       setAuditTotal(Number(data?.total || 0));
       setAuditOffset(nextOffset);
     } catch (e: any) {
@@ -183,6 +315,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     });
     if (auditActionFilter) params.set('action', auditActionFilter);
     if (auditUserFilter) params.set('userEmail', auditUserFilter);
+    if (auditFolderFilter) params.set('folderId', auditFolderFilter);
     if (auditFromFilter) params.set('from', new Date(auditFromFilter).toISOString());
     if (auditToFilter) params.set('to', new Date(auditToFilter).toISOString());
     window.open(`/api/dataroom/audit?${params.toString()}`, '_blank', 'noreferrer');
@@ -202,7 +335,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       setAuditOffset(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [capabilities.manage, selectedCompanyId]);
+  }, [capabilities.manage, selectedCompanyId, folderNameById]);
 
   const uploadToCurrentFolder = async () => {
     const file = fileInputRef.current?.files?.[0];
@@ -349,11 +482,63 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       } else if (scanStatus === 'scan_failed') {
         alert('This document scan failed. Click "Scan Pending" to retry scanning.');
       } else {
-        alert('This document is quarantined and cannot be opened until scan status is clean.');
+        alert('This document is quarantined and cannot be downloaded until scan status is clean.');
       }
       return;
     }
     window.open(`/api/company-documents/${doc.id}/open`, '_blank', 'noreferrer');
+    // Refresh shortly after open so repeated downloads show up in history.
+    window.setTimeout(() => {
+      loadOverview();
+    }, 900);
+  };
+
+  const viewDocument = async (doc: FolderDoc) => {
+    const scanStatus = String(doc.scanStatus || '').toLowerCase();
+    if (scanStatus !== 'clean') {
+      if (scanStatus === 'pending_scan') {
+        alert('This document is pending malware scan. Click "Scan Pending" and try again.');
+      } else if (scanStatus === 'scan_failed') {
+        alert('This document scan failed. Click "Scan Pending" to retry scanning.');
+      } else {
+        alert('This document is quarantined and cannot be viewed until scan status is clean.');
+      }
+      return;
+    }
+    window.open(`/api/company-documents/${doc.id}/view`, '_blank', 'noreferrer');
+  };
+
+  const runDocumentSearch = async () => {
+    const question = docSearchQuestion.trim();
+    if (!docSearchDocumentId || !question) return;
+    if (selectedSearchDoc && String(selectedSearchDoc.extractionStatus || '').toUpperCase() !== 'DONE') {
+      alert('This document is still processing text extraction. Try again once status is DONE.');
+      return;
+    }
+    setDocSearchLoading(true);
+    setDocSearchError(null);
+    setDocSearchResponse(null);
+    try {
+      const res = await fetch('/api/ai-analysis/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          companyName,
+          question,
+          useExternalSources: false,
+          documentId: docSearchDocumentId,
+          mode: 'document',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to search document');
+      setDocSearchResponse(data as AskResponse);
+    } catch (e: any) {
+      setDocSearchError(e?.message || 'Failed to search document');
+    } finally {
+      setDocSearchLoading(false);
+    }
   };
 
   return (
@@ -370,10 +555,6 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
         <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
           Corelytics DataRoom
         </h1>
-        <p style={{ marginTop: '10px', color: '#475569', fontSize: '15px' }}>
-          Secure document vault for {companyName || 'your company'}.
-        </p>
-
         <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', marginTop: '20px' }}>
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
             <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 12px', fontSize: '12px', fontWeight: 800, color: '#334155' }}>
@@ -487,123 +668,158 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                 <div style={{ color: '#64748b', fontSize: '13px' }}>No documents in this folder yet.</div>
               ) : (
                 <div style={{ display: 'grid', gap: '8px' }}>
-                  {selectedFolder.documents.map((doc) => (
-                    <div
-                      key={doc.id}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: '10px',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                      }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        {(() => {
-                          const historyFromApi = Array.isArray(doc.downloadHistory)
-                            ? doc.downloadHistory
-                                .map((h) => ({
-                                  downloadedByName: h?.downloadedByName || null,
-                                  downloadedAt: h?.downloadedAt || null,
-                                }))
-                                .filter((h) => h.downloadedByName || h.downloadedAt)
-                            : [];
-                          const fallbackHistory =
-                            doc.lastDownloadedByName || doc.lastDownloadedAt
-                              ? [
-                                  {
-                                    downloadedByName: doc.lastDownloadedByName || null,
-                                    downloadedAt: doc.lastDownloadedAt || null,
-                                  },
-                                ]
-                              : [];
-                          const downloadLines = (historyFromApi.length > 0 ? historyFromApi : fallbackHistory).slice(0, 2);
-                          return (
-                            <>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {doc.originalFileName}
-                        </div>
-                        <div style={{ marginTop: '3px', fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                          <span>Uploaded by: {doc.uploadedByName || 'Unknown'}</span>
-                          <span>Uploaded: {formatDateTime(doc.createdAt) || '—'}</span>
-                          {doc.sizeBytes ? <span>{formatBytes(doc.sizeBytes)}</span> : null}
-                        </div>
-                        {downloadLines.length > 0 ? (
-                          downloadLines.map((entry, idx) => (
-                            <div
-                              key={`${doc.id}-download-${idx}`}
-                              style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}
-                            >
-                              <span>Downloaded by: {entry.downloadedByName || '—'}</span>
-                              <span>Downloaded: {formatDateTime(entry.downloadedAt) || '—'}</span>
-                            </div>
-                          ))
-                        ) : (
-                          <div style={{ marginTop: '2px', fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                            <span>Downloaded by: —</span>
-                            <span>Downloaded: —</span>
-                          </div>
-                        )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
-                        {(() => {
-                          const pill = scanStatusPill(doc.scanStatus);
-                          return (
-                            <span
+                  {selectedFolderDocumentsByCategory.map((section) => (
+                    <div key={section.key} style={{ display: 'grid', gap: '8px' }}>
+                      {(() => {
+                        const stateKey = `${selectedFolderId}:${section.key}`;
+                        const isCollapsed = Boolean(collapsedCategoryKeys[stateKey]);
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => toggleCategoryCollapsed(section.key)}
                               style={{
-                                background: pill.bg,
-                                color: pill.fg,
-                                borderRadius: '999px',
-                                padding: '4px 8px',
-                                fontSize: '11px',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '8px',
+                                background: '#f8fafc',
+                                color: '#334155',
+                                padding: '8px 10px',
+                                fontSize: '12px',
                                 fontWeight: 800,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.08em',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
                               }}
                             >
-                              Scan: {pill.label}
-                            </span>
-                          );
-                        })()}
-                        <button
-                          type="button"
-                          onClick={() => openDocument(doc)}
+                              <span>{section.label} ({section.documents.length})</span>
+                              <span>{isCollapsed ? 'Expand' : 'Collapse'}</span>
+                            </button>
+                            {!isCollapsed && section.documents.map((doc) => (
+                        <div
+                          key={doc.id}
                           style={{
-                            border: '1px solid #cbd5e1',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '10px',
+                            border: '1px solid #e2e8f0',
                             borderRadius: '8px',
-                            background: 'white',
-                            color: '#1e293b',
-                            padding: '8px 10px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            opacity: 1,
+                            padding: '10px 12px',
                           }}
                         >
-                          Open
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeFromDataRoom(doc.id)}
-                          disabled={workingDocId === doc.id || doc.canManage === false}
-                          style={{
-                            border: '1px solid #fecaca',
-                            borderRadius: '8px',
-                            background: 'white',
-                            color: '#991b1b',
-                            padding: '8px 10px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            cursor: workingDocId === doc.id || doc.canManage === false ? 'not-allowed' : 'pointer',
-                            opacity: doc.canManage === false ? 0.5 : 1,
-                          }}
-                        >
-                          Remove
-                        </button>
-                      </div>
+                          <div style={{ minWidth: 0 }}>
+                            {(() => {
+                              const historyFromApi = Array.isArray(doc.downloadHistory)
+                                ? doc.downloadHistory
+                                    .map((h) => ({
+                                      downloadedByName: h?.downloadedByName || null,
+                                      downloadedAt: h?.downloadedAt || null,
+                                    }))
+                                    .filter((h) => h.downloadedByName || h.downloadedAt)
+                                : [];
+                              const fallbackHistory =
+                                doc.lastDownloadedByName || doc.lastDownloadedAt
+                                  ? [
+                                      {
+                                        downloadedByName: doc.lastDownloadedByName || null,
+                                        downloadedAt: doc.lastDownloadedAt || null,
+                                      },
+                                    ]
+                                  : [];
+                              const downloadLines = (historyFromApi.length > 0 ? historyFromApi : fallbackHistory).slice(0, 2);
+                              return (
+                                <>
+                                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {doc.originalFileName}
+                                  </div>
+                                  <div style={{ marginTop: '3px', fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                    <span>Uploaded by: {doc.uploadedByName || 'Unknown'}</span>
+                                    <span>Uploaded: {formatDateTime(doc.createdAt) || '—'}</span>
+                                    {doc.sizeBytes ? <span>{formatBytes(doc.sizeBytes)}</span> : null}
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+                            {(() => {
+                              const pill = scanStatusPill(doc.scanStatus);
+                              return (
+                                <span
+                                  style={{
+                                    background: pill.bg,
+                                    color: pill.fg,
+                                    borderRadius: '999px',
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  Scan: {pill.label}
+                                </span>
+                              );
+                            })()}
+                            <button
+                              type="button"
+                              onClick={() => viewDocument(doc)}
+                              style={{
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                background: 'white',
+                                color: '#1e293b',
+                                padding: '8px 10px',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                opacity: 1,
+                              }}
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openDocument(doc)}
+                              style={{
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                background: 'white',
+                                color: '#1e293b',
+                                padding: '8px 10px',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                opacity: 1,
+                              }}
+                            >
+                              Download
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeFromDataRoom(doc.id)}
+                              disabled={workingDocId === doc.id || doc.canManage === false}
+                              style={{
+                                border: '1px solid #fecaca',
+                                borderRadius: '8px',
+                                background: 'white',
+                                color: '#991b1b',
+                                padding: '8px 10px',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                cursor: workingDocId === doc.id || doc.canManage === false ? 'not-allowed' : 'pointer',
+                                opacity: doc.canManage === false ? 0.5 : 1,
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                            ))}
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -613,6 +829,92 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
             <div style={{ borderTop: '1px solid #e2e8f0', background: '#fafafa', padding: '10px 12px', fontSize: '11px', color: '#64748b' }}>
               Allowed types: PDF, Office docs, CSV, TXT. Max file size: 100 MB.
             </div>
+          </div>
+        </div>
+        <div style={{ marginTop: '16px', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+          <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 12px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>Search Documents</div>
+            <div style={{ marginTop: '2px', fontSize: '12px', color: '#64748b' }}>
+              Ask questions against a selected DataRoom document.
+            </div>
+          </div>
+          <div style={{ padding: '12px', display: 'grid', gap: '10px' }}>
+            <select
+              value={docSearchDocumentId}
+              onChange={(e) => setDocSearchDocumentId(e.target.value)}
+              style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+            >
+              <option value="">Select document</option>
+              {allDataRoomDocs.map((doc) => (
+                <option key={doc.id} value={doc.id}>
+                  {doc.originalFileName} ({doc.folderName})
+                </option>
+              ))}
+            </select>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                value={docSearchQuestion}
+                onChange={(e) => setDocSearchQuestion(e.target.value)}
+                placeholder={docSearchDocumentId ? 'Ask about this document...' : 'Select a document first...'}
+                disabled={!docSearchDocumentId}
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    runDocumentSearch();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={runDocumentSearch}
+                disabled={
+                  docSearchLoading ||
+                  !docSearchDocumentId ||
+                  !docSearchQuestion.trim() ||
+                  (selectedSearchDoc ? String(selectedSearchDoc.extractionStatus || '').toUpperCase() !== 'DONE' : false)
+                }
+                style={{
+                  border: 'none',
+                  borderRadius: '8px',
+                  background: docSearchLoading ? '#94a3b8' : '#0ea5e9',
+                  color: 'white',
+                  padding: '10px 12px',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  cursor: docSearchLoading || !docSearchDocumentId || !docSearchQuestion.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {docSearchLoading ? 'Searching...' : 'Search Document'}
+              </button>
+            </div>
+            {selectedSearchDoc && String(selectedSearchDoc.extractionStatus || '').toUpperCase() !== 'DONE' && (
+              <div style={{ padding: '10px 12px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', borderRadius: '8px', fontSize: '12px' }}>
+                Document text extraction is {String(selectedSearchDoc.extractionStatus)}. Search works after extraction is DONE.
+              </div>
+            )}
+            {docSearchError && (
+              <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '8px', fontSize: '12px' }}>
+                {docSearchError}
+              </div>
+            )}
+            {docSearchResponse && (
+              <div style={{ display: 'grid', gap: '8px', marginTop: '4px' }}>
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Short answer</div>
+                  <div style={{ marginTop: '4px', color: '#0f172a', fontSize: '13px', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>{docSearchResponse.shortAnswer}</div>
+                </div>
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Cited bullets</div>
+                  <div style={{ marginTop: '6px', display: 'grid', gap: '6px' }}>
+                    {docSearchResponse.citedBullets.map((item, idx) => (
+                      <div key={`${idx}-${item.text.slice(0, 24)}`} style={{ fontSize: '13px', color: '#0f172a', lineHeight: '1.45' }}>
+                        • {item.text}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         {capabilities.manage && (
@@ -631,6 +933,8 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                   <option value="document_assigned">document_assigned</option>
                   <option value="document_moved">document_moved</option>
                   <option value="document_removed">document_removed</option>
+                  <option value="document_viewed">document_viewed</option>
+                  <option value="document_view_blocked">document_view_blocked</option>
                   <option value="document_opened">document_opened</option>
                   <option value="document_open_blocked">document_open_blocked</option>
                   <option value="scan_completed">scan_completed</option>
@@ -644,6 +948,18 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                   placeholder="Filter by user email"
                   style={{ padding: '7px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
                 />
+                <select
+                  value={auditFolderFilter}
+                  onChange={(e) => setAuditFolderFilter(e.target.value)}
+                  style={{ padding: '7px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                >
+                  <option value="">All folders</option>
+                  {folders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
                 <input
                   type="datetime-local"
                   value={auditFromFilter}
@@ -679,21 +995,53 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                 <div style={{ color: '#64748b', fontSize: '13px' }}>No audit events found for current filters.</div>
               ) : (
                 <div style={{ display: 'grid', gap: '8px' }}>
-                  {auditEvents.map((evt) => (
-                    <div
-                      key={evt.id || `${evt.at}-${evt.action}-${evt.userEmail}`}
-                      style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px', display: 'grid', gap: '4px' }}
-                    >
-                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>
-                        {evt.action}
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                        <span>{formatDateTime(evt.at) || evt.at}</span>
-                        <span>User: {evt.userEmail || 'unknown'}</span>
-                        {evt.documentId ? <span>Doc: {evt.documentId}</span> : null}
-                        {evt.folderId ? <span>Folder: {evt.folderId}</span> : null}
-                        <span>IP: {evt.ipAddress || 'unknown'}</span>
-                      </div>
+                  {auditEventsByFolder.map((group) => (
+                    <div key={group.folderName} style={{ display: 'grid', gap: '8px' }}>
+                      {(() => {
+                        const isCollapsed = Boolean(collapsedAuditFolderKeys[group.folderName]);
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => toggleAuditFolderCollapsed(group.folderName)}
+                              style={{
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '8px',
+                                background: '#f8fafc',
+                                color: '#334155',
+                                padding: '8px 10px',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.08em',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                              }}
+                            >
+                              <span>{group.folderName} ({group.events.length})</span>
+                              <span>{isCollapsed ? 'Expand' : 'Collapse'}</span>
+                            </button>
+                            {!isCollapsed && group.events.map((evt) => (
+                        <div
+                          key={evt.id || `${evt.at}-${evt.action}-${evt.userEmail}`}
+                          style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px', display: 'grid', gap: '4px' }}
+                        >
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b' }}>
+                            {evt.action}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <span>{formatDateTime(evt.at) || evt.at}</span>
+                            <span>User: {evt.userEmail || 'unknown'}</span>
+                            {evt.documentId ? <span>Doc: {evt.documentId}</span> : null}
+                            <span>IP: {evt.ipAddress || 'unknown'}</span>
+                          </div>
+                        </div>
+                            ))}
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>

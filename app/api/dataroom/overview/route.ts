@@ -8,7 +8,6 @@ import {
   isCompanyAdminForDataRoom,
   resolveDataRoomCapabilities,
 } from '@/lib/dataroom/access';
-import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
 
 function getDisplayName(name: string | null | undefined, email: string | null | undefined) {
   const trimmedName = String(name || '').trim();
@@ -49,6 +48,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        category: true,
         originalFileName: true,
         contentType: true,
         sizeBytes: true,
@@ -122,9 +122,18 @@ export async function GET(request: NextRequest) {
             }))
             .filter((h: any) => h.downloadedByName || h.downloadedAt)
         : [];
+      const viewHistory = Array.isArray(idx?.viewHistory)
+        ? idx.viewHistory
+            .map((h: any) => ({
+              viewedByName: h?.viewedByName ? String(h.viewedByName) : null,
+              viewedAt: h?.viewedAt ? String(h.viewedAt) : null,
+            }))
+            .filter((h: any) => h.viewedByName || h.viewedAt)
+        : [];
       target.documents.push({
         id: doc.id,
         folderId,
+        category: String(doc.category || 'OTHER'),
         originalFileName: doc.originalFileName,
         contentType: doc.contentType,
         sizeBytes: doc.sizeBytes,
@@ -135,6 +144,9 @@ export async function GET(request: NextRequest) {
         lastDownloadedByName: idx?.lastDownloadedByName ? String(idx.lastDownloadedByName) : null,
         lastDownloadedAt: idx?.lastDownloadedAt ? String(idx.lastDownloadedAt) : null,
         downloadHistory: history,
+        lastViewedByName: idx?.lastViewedByName ? String(idx.lastViewedByName) : null,
+        lastViewedAt: idx?.lastViewedAt ? String(idx.lastViewedAt) : null,
+        viewHistory,
         canDownload: perDocCaps.download,
         canManage: perDocCaps.manage,
       });
@@ -146,27 +158,6 @@ export async function GET(request: NextRequest) {
         (a: any, b: any) =>
           new Date(a?.createdAt || 0).getTime() - new Date(b?.createdAt || 0).getTime()
       );
-    }
-
-    try {
-      const updatedUDA = appendDataRoomAuditEvents(company.userDefinedAllocations, [
-        buildDataRoomAuditEvent({
-          action: 'overview_viewed',
-          companyId,
-          userId: context.userId,
-          userEmail: context.email,
-          details: {
-            visibleFolderCount: grouped.length,
-            visibleDocumentCount: grouped.reduce((sum: number, f: any) => sum + (Array.isArray(f.documents) ? f.documents.length : 0), 0),
-          },
-        }),
-      ]);
-      await prisma.company.update({
-        where: { id: companyId },
-        data: { userDefinedAllocations: updatedUDA as any },
-      });
-    } catch {
-      // Best-effort audit write.
     }
 
     return NextResponse.json({

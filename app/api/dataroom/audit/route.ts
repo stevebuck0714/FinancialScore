@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     const action = String(searchParams.get('action') || '').trim().toLowerCase();
     const userEmail = String(searchParams.get('userEmail') || '').trim().toLowerCase();
     const documentId = String(searchParams.get('documentId') || '').trim();
+    const folderId = String(searchParams.get('folderId') || '').trim();
     const from = String(searchParams.get('from') || '').trim();
     const to = String(searchParams.get('to') || '').trim();
     const format = String(searchParams.get('format') || 'json').trim().toLowerCase();
@@ -88,6 +89,9 @@ export async function GET(request: NextRequest) {
     }
     if (documentId) {
       events = events.filter((e: any) => String(e.documentId || '') === documentId);
+    }
+    if (folderId) {
+      events = events.filter((e: any) => String(e.folderId || '') === folderId);
     }
     if (from) {
       const fromTs = new Date(from).getTime();

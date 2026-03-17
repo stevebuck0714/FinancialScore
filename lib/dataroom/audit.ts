@@ -12,6 +12,8 @@ export type DataRoomAuditEvent = {
     | 'document_assigned'
     | 'document_moved'
     | 'document_removed'
+    | 'document_viewed'
+    | 'document_view_blocked'
     | 'document_opened'
     | 'document_open_blocked'
     | 'scan_completed'

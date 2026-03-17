@@ -10,6 +10,37 @@ import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataro
 
 export const dynamic = 'force-dynamic';
 
+function isPreviewableDocument(contentType: string | null, fileName: string) {
+  const ct = String(contentType || '').toLowerCase();
+  if (ct.startsWith('image/')) return true;
+  if (ct === 'application/pdf') return true;
+  if (ct.startsWith('text/')) return true;
+  const lowerName = String(fileName || '').toLowerCase();
+  return lowerName.endsWith('.pdf') || lowerName.endsWith('.txt') || lowerName.endsWith('.csv');
+}
+
+function isOfficePreviewable(contentType: string | null, fileName: string) {
+  const ct = String(contentType || '').toLowerCase();
+  const officeTypes = new Set([
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ]);
+  if (officeTypes.has(ct)) return true;
+  const lowerName = String(fileName || '').toLowerCase();
+  return (
+    lowerName.endsWith('.doc') ||
+    lowerName.endsWith('.docx') ||
+    lowerName.endsWith('.xls') ||
+    lowerName.endsWith('.xlsx') ||
+    lowerName.endsWith('.ppt') ||
+    lowerName.endsWith('.pptx')
+  );
+}
+
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const context = await requireAuth();
@@ -17,7 +48,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
     const doc = await prisma.companyDocument.findUnique({
       where: { id },
-      select: { blobUrl: true, companyId: true },
+      select: { blobUrl: true, companyId: true, contentType: true, originalFileName: true },
     });
 
     if (!doc) {
@@ -29,11 +60,13 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const canInlinePreview = isPreviewableDocument(doc.contentType, doc.originalFileName);
+    const canOfficePreview = isOfficePreviewable(doc.contentType, doc.originalFileName);
+
     const company = await prisma.company.findUnique({
       where: { id: doc.companyId },
       select: { userDefinedAllocations: true },
     });
-    let watermarkHeaderValue: string | null = null;
     const dataRoomIndex =
       company?.userDefinedAllocations &&
       typeof company.userDefinedAllocations === 'object' &&
@@ -56,17 +89,17 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         isCompanyAdmin,
       });
       const caps = applyDocumentPolicyOverrides(baseCaps, entry);
-      if (!caps.download) {
+      if (!caps.view) {
         try {
           const nextUDA = appendDataRoomAuditEvents(company?.userDefinedAllocations, [
             buildDataRoomAuditEvent({
-              action: 'document_open_blocked',
+              action: 'document_view_blocked',
               companyId: doc.companyId,
               userId: context.userId,
               userEmail: context.email,
               documentId: id,
               folderId: entry?.folderId ? String(entry.folderId) : null,
-              details: { reason: 'download_not_allowed' },
+              details: { reason: 'view_not_allowed' },
             }),
           ]);
           await prisma.company.update({
@@ -76,7 +109,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         } catch {
           // Ignore audit-write failures.
         }
-        return NextResponse.json({ error: 'Download is not allowed for this document.' }, { status: 403 });
+        return NextResponse.json({ error: 'View is not allowed for this document.' }, { status: 403 });
       }
 
       const scanStatus = String(entry?.scanStatus || '');
@@ -84,7 +117,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         try {
           const nextUDA = appendDataRoomAuditEvents(company?.userDefinedAllocations, [
             buildDataRoomAuditEvent({
-              action: 'document_open_blocked',
+              action: 'document_view_blocked',
               companyId: doc.companyId,
               userId: context.userId,
               userEmail: context.email,
@@ -106,8 +139,6 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         );
       }
 
-      // Best-effort audit trail in DataRoom index for last downloader.
-      // This powers lightweight "Downloaded by" display in DataRoom rows.
       try {
         const latestCompany = await prisma.company.findUnique({
           where: { id: doc.companyId },
@@ -128,38 +159,35 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         const indexArray = Array.isArray(latestDataRoom.documentIndex)
           ? latestDataRoom.documentIndex
           : [];
-        const downloader = await prisma.user.findUnique({
+        const viewer = await prisma.user.findUnique({
           where: { id: context.userId },
           select: { name: true, email: true },
         });
-        const downloadedAt = new Date().toISOString();
-        const downloaderName = String(downloader?.name || downloader?.email || context.email || 'Unknown');
+        const viewedAt = new Date().toISOString();
+        const viewerName = String(viewer?.name || viewer?.email || context.email || 'Unknown');
         const updatedIndex = indexArray.map((d: any) =>
           String(d?.documentId || '') === String(id)
             ? (() => {
-                const historyRaw = Array.isArray(d?.downloadHistory) ? d.downloadHistory : [];
+                const historyRaw = Array.isArray(d?.viewHistory) ? d.viewHistory : [];
                 const nextHistory = [
                   {
-                    downloadedByUserId: context.userId,
-                    downloadedByName: downloaderName,
-                    downloadedAt,
+                    viewedByUserId: context.userId,
+                    viewedByName: viewerName,
+                    viewedAt,
                   },
                   ...historyRaw,
                 ].slice(0, 10);
                 return {
                   ...d,
-                  lastDownloadedByUserId: context.userId,
-                  lastDownloadedByName: downloaderName,
-                  lastDownloadedAt: downloadedAt,
-                  downloadHistory: nextHistory,
+                  lastViewedByUserId: context.userId,
+                  lastViewedByName: viewerName,
+                  lastViewedAt: viewedAt,
+                  viewHistory: nextHistory,
                 };
               })()
             : d
         );
-        if (Boolean(entry?.watermarkOnDownload)) {
-          watermarkHeaderValue = `Corelytics | ${context.email} | ${downloadedAt}`;
-        }
-        const updatedUDA = appendDataRoomAuditEvents(
+        const nextUDA = appendDataRoomAuditEvents(
           {
             ...latestRoot,
             dataRoom: {
@@ -168,42 +196,43 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
             },
           },
           [
-            buildDataRoomAuditEvent({
-              action: 'document_opened',
-              companyId: doc.companyId,
-              userId: context.userId,
-              userEmail: context.email,
-              documentId: id,
-              folderId: entry?.folderId ? String(entry.folderId) : null,
-              details: {
-                watermarkOnDownload: Boolean(entry?.watermarkOnDownload),
-                downloadDisabled: Boolean(entry?.downloadDisabled),
-              },
-            }),
+          buildDataRoomAuditEvent({
+            action: 'document_viewed',
+            companyId: doc.companyId,
+            userId: context.userId,
+            userEmail: context.email,
+            documentId: id,
+            folderId: entry?.folderId ? String(entry.folderId) : null,
+            details: {
+              contentType: doc.contentType || null,
+              previewOnly: true,
+              previewMode: canInlinePreview ? 'inline' : canOfficePreview ? 'office_viewer' : 'unsupported',
+            },
+          }),
           ],
         );
         await prisma.company.update({
           where: { id: doc.companyId },
-          data: {
-            userDefinedAllocations: updatedUDA as any,
-          },
+          data: { userDefinedAllocations: nextUDA as any },
         });
       } catch {
-        // Ignore audit-write failures; document open should still succeed.
+        // Ignore audit-write failures; preview should still work.
       }
     }
 
-    // We use a redirect so this URL can be used both as:
-    // - a "hyperlink to open the document"
-    // - a stable URL for AI citations
-    const response = NextResponse.redirect(doc.blobUrl, { status: 302 });
-    if (watermarkHeaderValue) {
-      // For clients/services that can consume this marker and apply visual watermarking.
-      response.headers.set('x-corelytics-watermark', watermarkHeaderValue);
+    if (canInlinePreview) {
+      return NextResponse.redirect(doc.blobUrl, { status: 302 });
     }
-    return response;
+    if (canOfficePreview) {
+      const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(doc.blobUrl)}`;
+      return NextResponse.redirect(officeViewerUrl, { status: 302 });
+    }
+    return NextResponse.json(
+      { error: 'This file type cannot be previewed yet. Use Download instead.' },
+      { status: 422 },
+    );
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Failed to open document' }, { status: 500 });
+    return NextResponse.json({ error: e?.message || 'Failed to view document' }, { status: 500 });
   }
 }
 
