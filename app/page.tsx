@@ -753,6 +753,7 @@ function FinancialScorePage() {
   const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
   const [isExpertAnalysisExpanded, setIsExpertAnalysisExpanded] = useState(false);
+  const [isValuationExpanded, setIsValuationExpanded] = useState(false);
   // const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false); // Financial Score section removed from sidebar
   
   // State - Default Pricing
@@ -865,10 +866,22 @@ function FinancialScorePage() {
     }
   }, [currentView]);
 
+  useEffect(() => {
+    if (currentView === 'valuation') {
+      setIsValuationExpanded(true);
+    }
+  }, [currentView]);
+
   const handleExpertAnalysisClick = () => {
     const shouldCollapse = currentView === 'pa-overview' && isExpertAnalysisExpanded;
     handleNavigation('pa-overview');
     setIsExpertAnalysisExpanded(!shouldCollapse);
+  };
+
+  const handleValuationClick = () => {
+    const shouldCollapse = currentView === 'valuation' && isValuationExpanded;
+    handleNavigation('valuation');
+    setIsValuationExpanded(!shouldCollapse);
   };
 
   const loadAllCompanies = useCallback(async () => {
@@ -7657,30 +7670,74 @@ function FinancialScorePage() {
                 </h3>
               )}
               {hasCompanySectionAccess('valuation') && (
-                <h3
-                  onClick={() => handleNavigation('valuation')}
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: '700',
-                    color: currentView === 'valuation' ? '#1F70C1' : '#334155',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    padding: '1px 32px',
-                    margin: '16px 0 0 0',
-                    cursor: 'pointer',
-                    transition: 'color 0.2s',
-                    whiteSpace: 'normal',
-                    lineHeight: '1.25'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#1F70C1';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = currentView === 'valuation' ? '#1F70C1' : '#334155';
-                  }}
-                >
-                  {currentView === 'valuation' && '› '}VALUATION
-                </h3>
+                <>
+                  <h3
+                    onClick={handleValuationClick}
+                    style={{
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      color: currentView === 'valuation' ? '#1F70C1' : '#334155',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      padding: '1px 32px',
+                      margin: isValuationExpanded ? '16px 0 8px 0' : '16px 0 0 0',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s',
+                      whiteSpace: 'normal',
+                      lineHeight: '1.25'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#1F70C1';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = currentView === 'valuation' ? '#1F70C1' : '#334155';
+                    }}
+                  >
+                    {currentView === 'valuation' && '› '}VALUATION {isValuationExpanded ? '▾' : '▸'}
+                  </h3>
+                  {isValuationExpanded && (
+                    <div style={{ paddingLeft: '36px' }}>
+                      {[
+                        { id: 'sde' as const, label: 'SDE' },
+                        { id: 'ebitda' as const, label: 'EBITDA ANALYSIS' },
+                        { id: 'dcf' as const, label: 'DCF ANALYSIS' }
+                      ].map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            setValuationMethodTab(item.id);
+                            handleNavigation('valuation');
+                          }}
+                          style={{
+                            fontSize: '13px',
+                            color: currentView === 'valuation' && valuationMethodTab === item.id ? '#1F70C1' : '#475569',
+                            padding: '5px 12px',
+                            cursor: 'pointer',
+                            borderRadius: '6px',
+                            marginBottom: '4px',
+                            background: currentView === 'valuation' && valuationMethodTab === item.id ? '#e0f2fe' : 'transparent',
+                            fontWeight: currentView === 'valuation' && valuationMethodTab === item.id ? '600' : '400',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!(currentView === 'valuation' && valuationMethodTab === item.id)) {
+                              e.currentTarget.style.background = '#f8fafc';
+                              e.currentTarget.style.color = '#1F70C1';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!(currentView === 'valuation' && valuationMethodTab === item.id)) {
+                              e.currentTarget.style.background = 'transparent';
+                              e.currentTarget.style.color = '#475569';
+                            }
+                          }}
+                        >
+                          {currentView === 'valuation' && valuationMethodTab === item.id && '› '}{item.label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -11800,19 +11857,40 @@ function FinancialScorePage() {
                 }}
                 disabled={valuationSaveStatus === 'saving'}
                 style={{
-                  padding: '12px 32px',
-                  background: valuationSaveStatus === 'saved' ? '#10b981' : valuationSaveStatus === 'error' ? '#ef4444' : valuationSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
+                  padding: '8px 14px',
+                  background:
+                    valuationSaveStatus === 'saved'
+                      ? '#ecfdf3'
+                      : valuationSaveStatus === 'error'
+                        ? '#fef2f2'
+                        : valuationSaveStatus === 'saving'
+                          ? '#f8fafc'
+                          : '#1f70c1',
+                  color:
+                    valuationSaveStatus === 'saved'
+                      ? '#166534'
+                      : valuationSaveStatus === 'error'
+                        ? '#991b1b'
+                        : valuationSaveStatus === 'saving'
+                          ? '#64748b'
+                          : 'white',
+                  border:
+                    valuationSaveStatus === 'saved'
+                      ? '1px solid #86efac'
+                      : valuationSaveStatus === 'error'
+                        ? '1px solid #fecaca'
+                        : valuationSaveStatus === 'saving'
+                          ? '1px solid #cbd5e1'
+                          : '1px solid #1f70c1',
+                  borderRadius: '6px',
+                  fontSize: '13px',
                   fontWeight: '600',
                   cursor: valuationSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
                   whiteSpace: 'nowrap',
-                  transition: 'all 0.3s ease'
+                  transition: 'all 0.2s ease'
                 }}
               >
-                {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save Settings'}
+                {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved' : valuationSaveStatus === 'error' ? 'Retry Save' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -12869,27 +12947,6 @@ function FinancialScorePage() {
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
                       SDE Analysis
                     </h2>
-                    <button
-                      onClick={() => {
-                        const saveButton = document.getElementById('valuation-save-settings-btn') as HTMLButtonElement | null;
-                        saveButton?.click();
-                      }}
-                      disabled={valuationSaveStatus === 'saving'}
-                      style={{
-                        padding: '8px 16px',
-                        background: valuationSaveStatus === 'saved' ? '#10b981' : valuationSaveStatus === 'error' ? '#ef4444' : valuationSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        fontWeight: '600',
-                        cursor: valuationSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
-                        whiteSpace: 'nowrap',
-                        transition: 'all 0.3s ease'
-                      }}
-                    >
-                      {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved!' : valuationSaveStatus === 'error' ? 'Error' : 'Save SDE Valuation'}
-                    </button>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
@@ -15348,28 +15405,6 @@ function FinancialScorePage() {
                       />
                       <span style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>Typical Range: 1.5x - 4.0x</span>
                       <span style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>Industry Average: 2.5x</span>
-                      <div style={{ marginLeft: 'auto' }}>
-                        <button
-                          onClick={() => {
-                            const saveButton = document.getElementById('valuation-save-settings-btn') as HTMLButtonElement | null;
-                            saveButton?.click();
-                          }}
-                          disabled={valuationSaveStatus === 'saving'}
-                          style={{
-                            padding: '8px 14px',
-                            background: valuationSaveStatus === 'saved' ? '#10b981' : valuationSaveStatus === 'error' ? '#ef4444' : valuationSaveStatus === 'saving' ? '#94a3b8' : '#667eea',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '12px',
-                            fontWeight: '700',
-                            cursor: valuationSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
-                            transition: 'all 0.2s ease'
-                          }}
-                        >
-                          {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Multiple Saved' : valuationSaveStatus === 'error' ? 'Save Failed' : 'Save Multiple'}
-                        </button>
-                      </div>
                     </div>
                   </div>
                   {(() => {
