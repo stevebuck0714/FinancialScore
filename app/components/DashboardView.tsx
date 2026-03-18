@@ -310,7 +310,7 @@ export default function DashboardView({
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              Dashboard
+              Financial KPI's
             </h1>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
