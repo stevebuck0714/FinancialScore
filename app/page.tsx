@@ -752,6 +752,7 @@ function FinancialScorePage() {
   const [industrySectorCategory, setIndustrySectorCategory] = useState('01');
   const [expandedCompanyInfoId, setExpandedCompanyInfoId] = useState('');
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
+  const [isExpertAnalysisExpanded, setIsExpertAnalysisExpanded] = useState(false);
   // const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false); // Financial Score section removed from sidebar
   
   // State - Default Pricing
@@ -858,6 +859,18 @@ function FinancialScorePage() {
     return false;
   };
 
+  useEffect(() => {
+    if (currentView.startsWith('pa-')) {
+      setIsExpertAnalysisExpanded(true);
+    }
+  }, [currentView]);
+
+  const handleExpertAnalysisClick = () => {
+    const shouldCollapse = currentView === 'pa-overview' && isExpertAnalysisExpanded;
+    handleNavigation('pa-overview');
+    setIsExpertAnalysisExpanded(!shouldCollapse);
+  };
+
   const loadAllCompanies = useCallback(async () => {
     try {
       if (!currentUser) return;
@@ -939,11 +952,6 @@ function FinancialScorePage() {
     defaultDataRoomConsultantAnnualPrice,
   ]);
   const isDataRoomPaymentRequired = (dataRoomPricing.monthly > 0) || (dataRoomPricing.quarterly > 0) || (dataRoomPricing.annual > 0);
-  const canCompanyUserAccessDataRoom = hasCompanySectionAccess('dataroom');
-  const canShowDataRoomEntry =
-    Boolean(selectedCompanyId) &&
-    canCompanyUserAccessDataRoom &&
-    (isDataRoomEnabledByAdmin || !isDataRoomPaymentRequired);
 
   const handleToggleDataRoomEnabledByAdmin = async (enabled: boolean) => {
     if (!selectedCompanyId) {
@@ -7492,8 +7500,6 @@ function FinancialScorePage() {
           setCurrentView={setCurrentView as any}
           handleLogout={handleLogout}
           handleNavigation={handleNavigation}
-          valuationMethodTab={valuationMethodTab}
-          setValuationMethodTab={setValuationMethodTab}
         />
       </div>
 
@@ -7512,20 +7518,35 @@ function FinancialScorePage() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '24px' }}>
+          <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '12px' }}>
             {currentUser?.userType !== 'assessment' && null}
 
-            <div style={{ marginBottom: '6px' }}>
+            <div
+              style={{
+                fontSize: '16px',
+                fontWeight: '800',
+                color: '#1e293b',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                padding: '1px 24px 10px 24px',
+                margin: '0 0 12px 0',
+                borderBottom: '1px solid #e2e8f0'
+              }}
+            >
+              ANALYTICS
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={() => handleNavigation('ai-analysis')}
                 style={{
-                  fontSize: '16px',
+                  fontSize: '14px',
                   fontWeight: '700',
-                  color: currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b',
+                  color: currentView === 'ai-analysis' ? '#1F70C1' : '#334155',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  margin: '0 0 8px 0',
+                  padding: '1px 32px',
+                  margin: '0',
                   cursor: 'pointer',
                   transition: 'color 0.2s',
                   whiteSpace: 'nowrap'
@@ -7534,7 +7555,7 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#1F70C1';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.color = currentView === 'ai-analysis' ? '#1F70C1' : '#1e293b';
+                  e.currentTarget.style.color = currentView === 'ai-analysis' ? '#1F70C1' : '#334155';
                 }}
               >
                 {currentView === 'ai-analysis' && '› '}ASK CORELYTICS
@@ -7544,15 +7565,15 @@ function FinancialScorePage() {
             {/* Analysis Section */}
             <div style={{ marginBottom: '16px' }}>
               <h3
-                onClick={() => handleNavigation('pa-overview')}
+                onClick={handleExpertAnalysisClick}
                 style={{
-                  fontSize: '16px',
+                  fontSize: '14px',
                   fontWeight: '700',
-                  color: currentView.startsWith('pa-') ? '#1F70C1' : '#1e293b',
+                  color: currentView.startsWith('pa-') ? '#1F70C1' : '#334155',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
-                  padding: '1px 24px',
-                  marginBottom: '8px',
+                  padding: '1px 32px',
+                  margin: isExpertAnalysisExpanded ? '0 0 8px 0' : '0',
                   cursor: 'pointer',
                   transition: 'color 0.2s'
                 }}
@@ -7560,77 +7581,103 @@ function FinancialScorePage() {
                   e.currentTarget.style.color = '#1F70C1';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.color = currentView.startsWith('pa-') ? '#1F70C1' : '#1e293b';
+                  e.currentTarget.style.color = currentView.startsWith('pa-') ? '#1F70C1' : '#334155';
                 }}
               >
-                {currentView === 'pa-overview' && '› '}Expert Analysis
+                {currentView === 'pa-overview' && '› '}Expert Analysis {isExpertAnalysisExpanded ? '▾' : '▸'}
               </h3>
-              {hasCompanySectionAccess('expert-analysis') && (
-                <>
-                  <div style={{ paddingLeft: '28px' }}>
-                    {[
-                      { id: 'pa-critical-issues', label: 'Critical Issues' },
-                      { id: 'pa-focus-board', label: 'Major Trends' },
-                      { id: 'pa-trend-explorer', label: 'Trend Explorer' },
-                      { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
-                      { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
-                    ].map((item) => (
-                      <div
-                        key={item.id}
-                        onClick={() => handleNavigation(item.id)}
-                        style={{
-                          fontSize: '16px',
-                          color: currentView === item.id ? '#1F70C1' : '#475569',
-                          padding: '6px 12px',
-                          cursor: 'pointer',
-                          borderRadius: '6px',
-                          marginBottom: '4px',
-                          background: currentView === item.id ? '#e0f2fe' : 'transparent',
-                          fontWeight: currentView === item.id ? '600' : '400',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (currentView !== item.id) {
-                            e.currentTarget.style.background = '#f8fafc';
-                            e.currentTarget.style.color = '#1F70C1';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (currentView !== item.id) {
-                            e.currentTarget.style.background = 'transparent';
-                            e.currentTarget.style.color = '#475569';
-                          }
-                        }}
-                      >
-                        {currentView === item.id && '› '}{item.label}
-                      </div>
-                    ))}
-                  </div>
-                  <h3
-                    onClick={() => handleNavigation('mda')}
-                    style={{
-                      fontSize: '16px',
-                      fontWeight: '700',
-                      color: currentView === 'mda' ? '#1F70C1' : '#1e293b',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      padding: '1px 24px',
-                      margin: '6px 0 8px 0',
-                      cursor: 'pointer',
-                      transition: 'color 0.2s',
-                      whiteSpace: 'normal',
-                      lineHeight: '1.25'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = '#1F70C1';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = currentView === 'mda' ? '#1F70C1' : '#1e293b';
-                    }}
-                  >
-                    {currentView === 'mda' && '› '}MANAGEMENT DISCUSSION AND ANALYSIS
-                  </h3>
-                </>
+              {hasCompanySectionAccess('expert-analysis') && isExpertAnalysisExpanded && (
+                <div style={{ paddingLeft: '28px' }}>
+                  {[
+                    { id: 'pa-critical-issues', label: 'Critical Issues' },
+                    { id: 'pa-focus-board', label: 'Major Trends' },
+                    { id: 'pa-trend-explorer', label: 'Trend Explorer' },
+                    { id: 'pa-anomaly-inbox', label: 'Anomaly Inbox' },
+                    { id: 'pa-opportunity-workspace', label: 'Actions/Monitor' }
+                  ].map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleNavigation(item.id)}
+                      style={{
+                        fontSize: '16px',
+                        color: currentView === item.id ? '#1F70C1' : '#475569',
+                        padding: '6px 12px',
+                        cursor: 'pointer',
+                        borderRadius: '6px',
+                        marginBottom: '4px',
+                        background: currentView === item.id ? '#e0f2fe' : 'transparent',
+                        fontWeight: currentView === item.id ? '600' : '400',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (currentView !== item.id) {
+                          e.currentTarget.style.background = '#f8fafc';
+                          e.currentTarget.style.color = '#1F70C1';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (currentView !== item.id) {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.color = '#475569';
+                        }
+                      }}
+                    >
+                      {currentView === item.id && '› '}{item.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {hasCompanySectionAccess('mda') && (
+                <h3
+                  onClick={() => handleNavigation('mda')}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: currentView === 'mda' ? '#1F70C1' : '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '16px 0 0 0',
+                    cursor: 'pointer',
+                    transition: 'color 0.2s',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#1F70C1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = currentView === 'mda' ? '#1F70C1' : '#334155';
+                  }}
+                >
+                  {currentView === 'mda' && '› '}MANAGEMENT DISCUSSION AND ANALYSIS
+                </h3>
+              )}
+              {hasCompanySectionAccess('valuation') && (
+                <h3
+                  onClick={() => handleNavigation('valuation')}
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    color: currentView === 'valuation' ? '#1F70C1' : '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    padding: '1px 32px',
+                    margin: '16px 0 0 0',
+                    cursor: 'pointer',
+                    transition: 'color 0.2s',
+                    whiteSpace: 'normal',
+                    lineHeight: '1.25'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#1F70C1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = currentView === 'valuation' ? '#1F70C1' : '#334155';
+                  }}
+                >
+                  {currentView === 'valuation' && '› '}VALUATION
+                </h3>
               )}
             </div>
 
@@ -8384,8 +8431,6 @@ function FinancialScorePage() {
               dataRoomEnabledByAdmin={isDataRoomEnabledByAdmin}
               dataRoomSubscriptionStatus={dataRoomSubscriptionStatus}
               onToggleDataRoomEnabledByAdmin={handleToggleDataRoomEnabledByAdmin}
-              showDataRoomTab={canShowDataRoomEntry}
-              onOpenDataRoom={() => handleNavigation('dataroom')}
             />
           )}
 

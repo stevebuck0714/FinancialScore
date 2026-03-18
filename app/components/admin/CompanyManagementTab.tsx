@@ -89,8 +89,6 @@ interface CompanyManagementTabProps {
   dataRoomEnabledByAdmin: boolean;
   dataRoomSubscriptionStatus: string;
   onToggleDataRoomEnabledByAdmin: (enabled: boolean) => void;
-  showDataRoomTab?: boolean;
-  onOpenDataRoom?: () => void;
 }
 
 export default function CompanyManagementTab(props: CompanyManagementTabProps) {
@@ -175,25 +173,6 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
         >
           Documentation
         </button>
-        {props.showDataRoomTab && (
-          <button
-            onClick={() => props.onOpenDataRoom?.()}
-            style={{
-              padding: '10px 20px',
-              background: 'transparent',
-              color: '#64748b',
-              border: 'none',
-              borderBottom: '3px solid transparent',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              borderRadius: '6px 6px 0 0',
-              transition: 'all 0.2s'
-            }}
-          >
-            DataRoom
-          </button>
-        )}
       </div>
       
       {/* Profile Sub-tab */}

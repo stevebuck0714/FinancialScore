@@ -19,8 +19,6 @@ interface HeaderProps {
   setCurrentView: (view: any) => void;
   handleLogout: () => void;
   handleNavigation: (view: string) => void;
-  valuationMethodTab: 'sde' | 'ebitda' | 'dcf';
-  setValuationMethodTab: (tab: 'sde' | 'ebitda' | 'dcf') => void;
 }
 
 export default function Header({
@@ -30,12 +28,9 @@ export default function Header({
   previewAdminName,
   setCurrentView,
   handleLogout,
-  handleNavigation,
-  valuationMethodTab,
-  setValuationMethodTab
+  handleNavigation
 }: HeaderProps) {
   const [showFinancialReportsMenu, setShowFinancialReportsMenu] = useState(false);
-  const [showValuationMenu, setShowValuationMenu] = useState(false);
   const isCompanyUser = currentUser?.role === 'user' && currentUser?.userType === 'company';
   const isCompanyAdmin = isCompanyUser && currentUser?.companyRole === 'admin';
   const displayedUserName =
@@ -60,15 +55,10 @@ export default function Header({
     { id: 'projections', label: 'Projections' },
     { id: 'cash-flow', label: 'Cash Flow' },
     { id: 'working-capital', label: 'Working Capital' },
-    { id: 'covenants', label: 'Loan Covenants' }
+    { id: 'covenants', label: 'Loan Covenants' },
+    { id: 'financial-statements', label: 'Financial Statements' }
   ];
-  const valuationMethodViews = [
-    { id: 'sde' as const, label: 'SDE' },
-    { id: 'ebitda' as const, label: 'EBITDA Multiple' },
-    { id: 'dcf' as const, label: 'DCF' },
-  ];
-
-  const isFinancialReportsView = ['kpis', 'trend-analysis', 'goals', 'projections', 'cash-flow', 'working-capital', 'covenants'].includes(currentView);
+  const isFinancialReportsView = ['kpis', 'trend-analysis', 'goals', 'projections', 'cash-flow', 'working-capital', 'covenants', 'financial-statements'].includes(currentView);
 
   if (!currentUser) return null;
 
@@ -201,7 +191,7 @@ export default function Header({
                   textAlign: 'center'
                 }}
               >
-                BUSINESS PULSE
+                COMPANY PULSE
               </button>
               <button
                 onClick={() => handleNavigation('operations')}
@@ -219,7 +209,7 @@ export default function Header({
                   textAlign: 'center'
                 }}
               >
-                OPERATIONAL DASHBOARD
+                OPERATIONS HUB
               </button>
               <button
                 onClick={() => canAccess('company-dashboard') && handleNavigation('dashboard')}
@@ -239,7 +229,7 @@ export default function Header({
                   opacity: canAccess('company-dashboard') ? 1 : 0.4
                 }}
               >
-                <span style={{ whiteSpace: 'normal', lineHeight: '1.1' }}>FINANCIAL DASHBOARD</span>
+                <span style={{ whiteSpace: 'normal', lineHeight: '1.1' }}>FINANCIAL KPI'S</span>
               </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
@@ -288,9 +278,11 @@ export default function Header({
                     <button
                       key={item.id}
                       onClick={() => {
+                        if (item.id === 'financial-statements' && !canAccess('financial-statements')) return;
                         handleNavigation(item.id);
                         setShowFinancialReportsMenu(false);
                       }}
+                      title={item.id === 'financial-statements' && !canAccess('financial-statements') ? 'Access restricted' : undefined}
                       style={{
                         width: '100%',
                         textAlign: 'left',
@@ -301,9 +293,13 @@ export default function Header({
                         color: '#000',
                         padding: '8px 10px',
                         borderRadius: '6px',
-                        cursor: 'pointer'
+                        cursor: item.id === 'financial-statements' && !canAccess('financial-statements') ? 'not-allowed' : 'pointer',
+                        opacity: item.id === 'financial-statements' && !canAccess('financial-statements') ? 0.4 : 1
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
+                      onMouseEnter={(e) => {
+                        if (item.id === 'financial-statements' && !canAccess('financial-statements')) return;
+                        e.currentTarget.style.background = '#f1f5f9';
+                      }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                     >
                       {item.label}
@@ -313,104 +309,24 @@ export default function Header({
               )}
             </div>
             <button
-              onClick={() => handleNavigation('financial-statements')}
-              disabled={!canAccess('financial-statements')}
-              title={!canAccess('financial-statements') ? 'Access restricted' : undefined}
+              onClick={() => canAccess('dataroom') && handleNavigation('dataroom')}
+              title={!canAccess('dataroom') ? 'Access restricted' : undefined}
               style={{
-                background: currentView === 'financial-statements' ? '#eef2ff' : 'none',
+                background: currentView === 'dataroom' ? '#eef2ff' : 'none',
                 border: 'none',
                 fontSize: '16px',
                 fontWeight: '600',
                 color: '#000',
-                cursor: canAccess('financial-statements') ? 'pointer' : 'not-allowed',
+                cursor: canAccess('dataroom') ? 'pointer' : 'not-allowed',
                 padding: '8px 12px',
                 borderRadius: '6px',
-                borderBottom: currentView === 'financial-statements' ? '3px solid #000' : '3px solid transparent',
+                borderBottom: currentView === 'dataroom' ? '3px solid #000' : '3px solid transparent',
                 whiteSpace: 'nowrap',
-                opacity: canAccess('financial-statements') ? 1 : 0.4
+                opacity: canAccess('dataroom') ? 1 : 0.4
               }}
             >
-              FINANCIAL STATEMENTS
+              DATAROOM
             </button>
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => {
-                  if (!canAccess('valuation')) return;
-                  setShowValuationMenu((prev) => !prev);
-                  handleNavigation('valuation');
-                }}
-                disabled={!canAccess('valuation')}
-                title={!canAccess('valuation') ? 'Access restricted' : undefined}
-                style={{
-                  background: currentView === 'valuation' ? '#eef2ff' : 'none',
-                  border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#000',
-                  cursor: canAccess('valuation') ? 'pointer' : 'not-allowed',
-                  padding: '8px 12px',
-                  paddingRight: '26px',
-                  borderRadius: '6px',
-                  borderBottom: currentView === 'valuation' ? '3px solid #000' : '3px solid transparent',
-                  whiteSpace: 'nowrap',
-                  opacity: canAccess('valuation') ? 1 : 0.4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-                aria-haspopup="menu"
-                aria-expanded={showValuationMenu}
-              >
-                <span>VALUATION</span>
-                <span style={{ fontSize: '12px' }}>▾</span>
-              </button>
-              {showValuationMenu && canAccess('valuation') && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 6px)',
-                    left: 0,
-                    background: 'white',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                    padding: '6px',
-                    minWidth: '220px',
-                    zIndex: 1100
-                  }}
-                  onMouseLeave={() => setShowValuationMenu(false)}
-                >
-                  {valuationMethodViews.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        setValuationMethodTab(item.id);
-                        handleNavigation('valuation');
-                        setShowValuationMenu(false);
-                      }}
-                      style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        background: valuationMethodTab === item.id ? '#eef2ff' : 'transparent',
-                        border: 'none',
-                        fontSize: '14px',
-                        fontWeight: valuationMethodTab === item.id ? '700' : '600',
-                        color: '#000',
-                        padding: '8px 10px',
-                        borderRadius: '6px',
-                        cursor: 'pointer'
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#f1f5f9'; }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = valuationMethodTab === item.id ? '#eef2ff' : 'transparent';
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
             </div>
           </nav>
         </div>
