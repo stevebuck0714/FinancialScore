@@ -1187,7 +1187,8 @@ function FinancialScorePage() {
                 });
             }
           } else {
-            setCurrentView('upload');
+            // Legacy business users without userType set also land on Company Pulse.
+            setCurrentView('daily-alerts');
             // For business users without userType set, try to load their company
             if (user.companyId) {
               setSelectedCompanyId(user.companyId);
@@ -2359,7 +2360,8 @@ function FinancialScorePage() {
       } else if ((user.userType || '').toLowerCase() === 'company') {
         setCurrentView('daily-alerts');
       } else {
-        setCurrentView('upload');
+        // Legacy business users without userType set also land on Company Pulse.
+        setCurrentView('daily-alerts');
       }
     }
   }, []);
@@ -4131,7 +4133,8 @@ function FinancialScorePage() {
         // Company users land on Daily Alerts.
         setCurrentView('daily-alerts');
       } else {
-        setCurrentView('upload');
+        // Legacy business users without userType set also land on Company Pulse.
+        setCurrentView('daily-alerts');
       }
       
       if (normalizedUser.role !== 'consultant' && normalizedUser.role !== 'siteadmin') {
@@ -7684,41 +7687,6 @@ function FinancialScorePage() {
             {/* Financial Score Section - removed from sidebar; functionality commented out below */}
 
             {/* Team Assessment - moved to Support page; link there goes to /?view=ma-welcome */}
-
-            {/* Company Dashboard Section - For Business Users (Company Users) */}
-            {currentUser?.role === 'user' && currentUser?.userType === 'company' && hasCompanySectionAccess('company-dashboard') && (
-              <div style={{ marginBottom: '12px' }}>
-                <h3 
-                  onClick={() => {
-                    if (selectedCompanyId) {
-                      handleNavigation('dashboard');
-                    } else {
-                      setCurrentView('admin');
-                      setAdminDashboardTab('company-management');
-                    }
-                  }}
-                  style={{ 
-                    fontSize: '14px', 
-                    fontWeight: '700', 
-                    color: (currentView === 'dashboard' || currentView === 'admin') ? '#1F70C1' : '#1e293b',
-                    textTransform: 'uppercase', 
-                    letterSpacing: '0.5px',
-                    padding: '8px 24px',
-                    marginBottom: '8px',
-                    cursor: 'pointer',
-                    transition: 'color 0.2s',
-                    borderLeft: (currentView === 'dashboard' || currentView === 'admin') ? '4px solid #1F70C1' : '4px solid transparent'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#1F70C1';
-                    e.currentTarget.title = 'Company Dashboard';
-                  }}
-                  onMouseLeave={(e) => e.currentTarget.style.color = (currentView === 'dashboard' || currentView === 'admin') ? '#1F70C1' : '#1e293b'}
-                >
-                  Company Dashboard
-                </h3>
-              </div>
-            )}
 
             {/* Bottom section: Print Packages + User/Consultant - grouped at bottom of sidebar */}
             <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column' }}>
