@@ -130,7 +130,7 @@ export default function DashboardView({
 }: DashboardViewProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isPreparingPrint, setIsPreparingPrint] = useState(false);
-  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
+  const [printOrientation] = useState<'portrait' | 'landscape'>('portrait');
   
   const handleSaveDashboard = async () => {
     if (!onSaveDashboardPrefs) return;
@@ -312,80 +312,94 @@ export default function DashboardView({
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
               Financial KPI's
             </h1>
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                className="no-print"
+                onClick={() => setShowDashboardCustomizer(!showDashboardCustomizer)}
+                style={{
+                  background: '#1f70c1',
+                  color: 'white',
+                  border: '1px solid #1f70c1',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s, border-color 0.2s, color 0.2s'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = '#175da2';
+                  e.currentTarget.style.borderColor = '#175da2';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = '#1f70c1';
+                  e.currentTarget.style.borderColor = '#1f70c1';
+                }}
+              >
+                {showDashboardCustomizer ? 'Done' : 'Customize'}
+              </button>
               <button
                 className="no-print"
                 onClick={handleSaveDashboard}
                 disabled={isSaving}
                 style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 24px',
-                  borderRadius: '8px',
-                  fontSize: '14px',
+                  background: 'white',
+                  color: '#334155',
+                  border: '1px solid #cbd5e1',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
                   fontWeight: '600',
                   cursor: isSaving ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                  transition: 'all 0.3s',
+                  transition: 'background 0.2s, border-color 0.2s, opacity 0.2s',
                   opacity: isSaving ? 0.6 : 1
                 }}
-                onMouseOver={(e) => !isSaving && (e.currentTarget.style.transform = 'translateY(-2px)')}
-                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                onMouseOver={(e) => {
+                  if (!isSaving) {
+                    e.currentTarget.style.background = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#94a3b8';
+                    e.currentTarget.style.color = '#1e293b';
+                  }
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'white';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.color = '#334155';
+                }}
               >
-                {isSaving ? '💾 Saving...' : '💾 Save Dashboard'}
+                {isSaving ? 'Saving...' : 'Save'}
               </button>
-              <select
-                className="no-print"
-                value={printOrientation}
-                onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
-                style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
-              >
-                <option value="portrait">Portrait</option>
-                <option value="landscape">Landscape</option>
-              </select>
               <button
                 className="no-print"
                 type="button"
                 onClick={handlePrintDashboard}
                 disabled={isPreparingPrint}
                 style={{
-                  background: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 24px',
-                  borderRadius: '8px',
-                  fontSize: '14px',
+                  background: 'white',
+                  color: '#334155',
+                  border: '1px solid #cbd5e1',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
                   fontWeight: '600',
                   cursor: isPreparingPrint ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                  transition: 'all 0.3s',
+                  transition: 'background 0.2s, border-color 0.2s, color 0.2s, opacity 0.2s',
                   opacity: isPreparingPrint ? 0.7 : 1
                 }}
-                onMouseOver={(e) => !isPreparingPrint && (e.currentTarget.style.transform = 'translateY(-2px)')}
-                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-              >
-                {isPreparingPrint ? 'Preparing print...' : '🖨️ Print Dashboard'}
-              </button>
-              <button
-                className="no-print"
-                onClick={() => setShowDashboardCustomizer(!showDashboardCustomizer)}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 24px',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
-                  transition: 'all 0.3s'
+                onMouseOver={(e) => {
+                  if (!isPreparingPrint) {
+                    e.currentTarget.style.background = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#94a3b8';
+                    e.currentTarget.style.color = '#1e293b';
+                  }
                 }}
-                onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'white';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.color = '#334155';
+                }}
               >
-                {showDashboardCustomizer ? 'Done Customizing' : '⚙️ Customize Dashboard'}
+                {isPreparingPrint ? 'Preparing print...' : 'Print'}
               </button>
             </div>
           </div>

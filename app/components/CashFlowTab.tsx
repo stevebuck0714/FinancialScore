@@ -22,7 +22,7 @@ export default function CashFlowTab({
   const monthly = hasPrefetchedData ? prefetchedMonthlyData : (monthlyData || []);
   
   const [cashFlowDisplay, setCashFlowDisplay] = useState<'monthly' | 'quarterly' | 'annual'>(initialDisplay);
-  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
+  const [printOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
   React.useEffect(() => {
     setCashFlowDisplay(initialDisplay);
@@ -350,15 +350,6 @@ export default function CashFlowTab({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Cash Flow Analysis</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <select
-            className="no-print"
-            value={printOrientation}
-            onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
-            style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
-          >
-            <option value="portrait">Portrait</option>
-            <option value="landscape">Landscape</option>
-          </select>
           {cashFlowDisplay !== 'monthly' && (
             <button 
               className="no-print"

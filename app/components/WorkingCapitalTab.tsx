@@ -33,7 +33,7 @@ export default function WorkingCapitalTab({
   const [showDaysWCFormula, setShowDaysWCFormula] = React.useState(false);
   const [showCCCFormula, setShowCCCFormula] = React.useState(false);
   const [assetsLiabHover, setAssetsLiabHover] = useState<{ index: number; x: number; y: number; month: string; assets: number; liabilities: number } | null>(null);
-  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('landscape');
+  const [printOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
   if (!monthly || monthly.length === 0) {
     return (
@@ -68,33 +68,36 @@ export default function WorkingCapitalTab({
         <div>
           <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: '0 0 8px 0' }}>Working Capital Analysis</h1>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <select
-            className="no-print"
-            value={printOrientation}
-            onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
-            style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
-          >
-            <option value="portrait">Portrait</option>
-            <option value="landscape">Landscape</option>
-          </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             onClick={() => window.print()}
+            className="no-print"
             style={{
-              padding: '12px 24px',
-              background: '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
+              padding: '8px 14px',
+              background: 'white',
+              color: '#334155',
+              border: '1px solid #cbd5e1',
+              borderRadius: '6px',
+              fontSize: '13px',
               fontWeight: '600',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px'
+              gap: '6px',
+              transition: 'background 0.2s, border-color 0.2s, color 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#f8fafc';
+              e.currentTarget.style.borderColor = '#94a3b8';
+              e.currentTarget.style.color = '#1e293b';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'white';
+              e.currentTarget.style.borderColor = '#cbd5e1';
+              e.currentTarget.style.color = '#334155';
             }}
           >
-            🖨️ Print Report
+            Print Report
           </button>
         </div>
       </div>

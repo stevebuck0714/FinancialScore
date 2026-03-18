@@ -102,7 +102,7 @@ export default function MDAView({
   onExportToWord
 }: MDAViewProps) {
   const [mdaTab, setMdaTab] = useState<'executive-summary' | 'strengths-insights' | 'key-metrics'>('executive-summary');
-  const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [printOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
   // Helper function to format currency
   const formatDollar = (value: number): string => {
@@ -373,15 +373,6 @@ export default function MDAView({
           >
             🖨️ Print
           </button>
-          <select
-            className="no-print"
-            value={printOrientation}
-            onChange={(e) => setPrintOrientation(e.target.value as 'portrait' | 'landscape')}
-            style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', background: 'white', cursor: 'pointer' }}
-          >
-            <option value="portrait">Portrait</option>
-            <option value="landscape">Landscape</option>
-          </select>
           <TextToSpeech 
             targetElementId={
               mdaTab === 'executive-summary' ? 'mda-executive-summary-container' :
