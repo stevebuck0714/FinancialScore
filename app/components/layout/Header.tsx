@@ -49,9 +49,9 @@ export default function Header({
   };
 
   const financialReportsViews = [
-    { id: 'kpis', label: 'Ratios' },
-    { id: 'trend-analysis', label: 'Trends' },
-    { id: 'goals', label: 'Goals' },
+    { id: 'kpis', label: 'Key Ratios' },
+    { id: 'trend-analysis', label: 'Performance Trends' },
+    { id: 'goals', label: 'Targets and Goals' },
     { id: 'projections', label: 'Projections' },
     { id: 'cash-flow', label: 'Cash Flow' },
     { id: 'working-capital', label: 'Working Capital' },
@@ -255,7 +255,7 @@ export default function Header({
                 aria-haspopup="menu"
                 aria-expanded={showFinancialReportsMenu}
               >
-                <span>FINANCIAL REPORTS</span>
+                <span>PERFORMANCE HUB</span>
                 <span style={{ fontSize: '12px' }}>▾</span>
               </button>
               {showFinancialReportsMenu && (

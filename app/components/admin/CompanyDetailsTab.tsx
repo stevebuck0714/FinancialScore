@@ -720,51 +720,20 @@ export default function CompanyDetailsTab({
                   style={{
                     background: "white",
                     borderRadius: "8px",
-                    padding: "16px",
+                    padding: "10px",
                     border: "2px solid #10b981",
                   }}
                 >
                   <h4
                     style={{
-                      fontSize: "16px",
+                      fontSize: "15px",
                       fontWeight: "600",
                       color: "#475569",
-                      marginBottom: "4px",
+                      margin: "0 0 6px 0",
                     }}
                   >
                     Company Users
                   </h4>
-                  <p
-                    style={{
-                      fontSize: "11px",
-                      color: "#64748b",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    Management team - can view all company pages
-                  </p>
-                  <div
-                    style={{
-                      fontSize: "20px",
-                      fontWeight: "700",
-                      color: "#10b981",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    {
-                      users.filter(
-                        (u) =>
-                          u.companyId === comp.id &&
-                          (u.userType === "company" ||
-                            (String(u.role || "").toUpperCase() ===
-                              "CONSULTANT" &&
-                              Boolean(comp.consultantId) &&
-                              String(u.consultantId || "") ===
-                                String(comp.consultantId || ""))),
-                      ).length
-                    }
-                  </div>
-
                   {users
                     .filter(
                       (u) =>
@@ -796,9 +765,9 @@ export default function CompanyDetailsTab({
                           key={u.id}
                           style={{
                             background: "#f0fdf4",
-                            borderRadius: "8px",
-                            padding: "12px",
-                            marginBottom: "8px",
+                            borderRadius: "6px",
+                            padding: "6px",
+                            marginBottom: "4px",
                             border: "1px solid #86efac",
                           }}
                         >
@@ -807,19 +776,19 @@ export default function CompanyDetailsTab({
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "start",
-                              marginBottom: "12px",
+                              marginBottom: "6px",
                             }}
                           >
                             <div style={{ flex: 1 }}>
                               <div
                                 style={{
-                                  fontSize: "14px",
+                                  fontSize: "13px",
                                   fontWeight: "600",
                                   color: "#1e293b",
-                                  marginBottom: "6px",
+                                  marginBottom: "2px",
                                   display: "flex",
                                   alignItems: "center",
-                                  gap: "8px",
+                                  gap: "6px",
                                   flexWrap: "wrap",
                                 }}
                               >
@@ -827,11 +796,11 @@ export default function CompanyDetailsTab({
                                 {u.title && (
                                   <span
                                     style={{
-                                      fontSize: "12px",
+                                      fontSize: "11px",
                                       fontWeight: "500",
                                       color: "#059669",
                                       background: "#d1fae5",
-                                      padding: "2px 8px",
+                                      padding: "1px 6px",
                                       borderRadius: "4px",
                                     }}
                                   >
@@ -841,11 +810,11 @@ export default function CompanyDetailsTab({
                               </div>
                               <div
                                 style={{
-                                  fontSize: "12px",
+                                  fontSize: "11px",
                                   color: "#64748b",
                                   display: "flex",
                                   alignItems: "center",
-                                  gap: "12px",
+                                  gap: "6px",
                                   flexWrap: "wrap",
                                 }}
                               >
@@ -869,18 +838,18 @@ export default function CompanyDetailsTab({
                               style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: "8px",
+                                gap: "4px",
                               }}
                             >
                               <button
                                 onClick={() => toggleCompanyUserExpanded(u.id)}
                                 style={{
-                                  padding: "4px 8px",
+                                  padding: "3px 6px",
                                   background: "white",
                                   color: "#1e293b",
                                   border: "1px solid #cbd5e1",
                                   borderRadius: "4px",
-                                  fontSize: "10px",
+                                  fontSize: "9px",
                                   cursor: "pointer",
                                   fontWeight: "700",
                                 }}
@@ -891,7 +860,7 @@ export default function CompanyDetailsTab({
                                 onClick={() => deleteUser(u.id, comp.id)}
                                 disabled={String(u.role || "").toUpperCase() === "CONSULTANT"}
                                 style={{
-                                  padding: "4px 8px",
+                                  padding: "3px 6px",
                                   background:
                                     String(u.role || "").toUpperCase() ===
                                     "CONSULTANT"
@@ -900,7 +869,7 @@ export default function CompanyDetailsTab({
                                   color: "white",
                                   border: "none",
                                   borderRadius: "4px",
-                                  fontSize: "10px",
+                                  fontSize: "9px",
                                   cursor:
                                     String(u.role || "").toUpperCase() ===
                                     "CONSULTANT"
@@ -919,7 +888,7 @@ export default function CompanyDetailsTab({
                             <div
                               style={{
                                 borderTop: "1px solid #d1fae5",
-                                paddingTop: "12px",
+                                paddingTop: "6px",
                               }}
                             >
                             <div
@@ -935,8 +904,8 @@ export default function CompanyDetailsTab({
                             <div
                               style={{
                                 display: "flex",
-                                gap: "16px",
-                                marginBottom: "12px",
+                                gap: "8px",
+                                marginBottom: "6px",
                               }}
                             >
                               <label
@@ -981,10 +950,10 @@ export default function CompanyDetailsTab({
                             {isAdmin ? (
                               <div
                                 style={{
-                                  padding: "8px 12px",
+                                  padding: "5px 8px",
                                   background: "#d1fae5",
                                   borderRadius: "6px",
-                                  fontSize: "12px",
+                                  fontSize: "11px",
                                   color: "#059669",
                                   display: "flex",
                                   alignItems: "center",
@@ -1000,10 +969,10 @@ export default function CompanyDetailsTab({
                               <>
                                 <div
                                   style={{
-                                    fontSize: "11px",
+                                    fontSize: "10px",
                                     fontWeight: "600",
                                     color: "#475569",
-                                    marginBottom: "6px",
+                                    marginBottom: "3px",
                                   }}
                                 >
                                   Access Rights (check sections to allow):
@@ -1012,8 +981,8 @@ export default function CompanyDetailsTab({
                                   style={{
                                     display: "grid",
                                     gridTemplateColumns: "1fr 1fr",
-                                    gap: "6px",
-                                    fontSize: "11px",
+                                    gap: "3px",
+                                    fontSize: "10px",
                                   }}
                                 >
                                   {ACCESSIBLE_SECTIONS.map((section) => {
@@ -1024,7 +993,7 @@ export default function CompanyDetailsTab({
                                       style={{
                                         display: "flex",
                                         alignItems: "center",
-                                        gap: "6px",
+                                        gap: "4px",
                                         cursor: "pointer",
                                       }}
                                     >
@@ -1046,9 +1015,9 @@ export default function CompanyDetailsTab({
 
                             <div
                               style={{
-                                marginTop: "12px",
+                                marginTop: "6px",
                                 borderTop: "1px solid #d1fae5",
-                                paddingTop: "12px",
+                                paddingTop: "6px",
                               }}
                             >
                               <div
@@ -1133,13 +1102,13 @@ export default function CompanyDetailsTab({
                                     type="button"
                                     onClick={() => toggleDataRoomOverrideExpanded(u.id)}
                                     style={{
-                                      marginTop: "8px",
-                                      padding: "6px 10px",
+                                      marginTop: "4px",
+                                      padding: "4px 7px",
                                       background: "white",
                                       color: "#0f766e",
                                       border: "1px solid #99f6e4",
                                       borderRadius: "6px",
-                                      fontSize: "11px",
+                                      fontSize: "10px",
                                       fontWeight: "700",
                                       cursor: "pointer",
                                     }}
@@ -1150,7 +1119,7 @@ export default function CompanyDetailsTab({
                                   </button>
 
                                   {showDataRoomOverrides && (
-                                    <div style={{ marginTop: "10px", display: "grid", gap: "8px" }}>
+                                    <div style={{ marginTop: "6px", display: "grid", gap: "4px" }}>
                                       {dataRoomFolders.length === 0 ? (
                                         <div
                                           style={{
@@ -1167,7 +1136,7 @@ export default function CompanyDetailsTab({
                                             style={{
                                               border: "1px solid #d1fae5",
                                               borderRadius: "6px",
-                                              padding: "8px",
+                                              padding: "5px",
                                               background: "#f8fffc",
                                             }}
                                           >
@@ -1310,14 +1279,14 @@ export default function CompanyDetailsTab({
                               onClick={() => saveUserPermissions(u.id)}
                               disabled={savingUserId === u.id}
                               style={{
-                                marginTop: "12px",
-                                padding: "6px 12px",
+                                marginTop: "6px",
+                                padding: "5px 10px",
                                 background:
                                   savingUserId === u.id ? "#94a3b8" : "#10b981",
                                 color: "white",
                                 border: "none",
                                 borderRadius: "6px",
-                                fontSize: "11px",
+                                fontSize: "10px",
                                 fontWeight: "600",
                                 cursor:
                                   savingUserId === u.id
@@ -1337,8 +1306,8 @@ export default function CompanyDetailsTab({
                                 Boolean(dataRoomPermissionsError)
                               }
                               style={{
-                                marginTop: "8px",
-                                padding: "6px 12px",
+                                marginTop: "4px",
+                                padding: "5px 10px",
                                 background:
                                   savingDataRoomPermissionsUserId === u.id
                                     ? "#94a3b8"
@@ -1346,7 +1315,7 @@ export default function CompanyDetailsTab({
                                 color: "white",
                                 border: "none",
                                 borderRadius: "6px",
-                                fontSize: "11px",
+                                fontSize: "10px",
                                 fontWeight: "600",
                                 cursor:
                                   savingDataRoomPermissionsUserId === u.id ||
@@ -1370,8 +1339,8 @@ export default function CompanyDetailsTab({
                   <div
                     style={{
                       borderTop: "1px solid #d1fae5",
-                      paddingTop: "12px",
-                      marginTop: "12px",
+                      paddingTop: "6px",
+                      marginTop: "6px",
                     }}
                   >
                     <h5
@@ -1616,7 +1585,7 @@ export default function CompanyDetailsTab({
                       fontSize: "16px",
                       fontWeight: "600",
                       color: "#475569",
-                      marginBottom: "4px",
+                      margin: "0 0 6px 0",
                     }}
                   >
                     Team Assessment Users
