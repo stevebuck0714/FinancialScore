@@ -9,6 +9,7 @@ import {
 import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataroom/audit';
 
 export const dynamic = 'force-dynamic';
+const OFFICE_WEB_VIEWER_MAX_BYTES = 25 * 1024 * 1024;
 
 function isPreviewableDocument(contentType: string | null, fileName: string) {
   const ct = String(contentType || '').toLowerCase();
@@ -41,14 +42,14 @@ function isOfficePreviewable(contentType: string | null, fileName: string) {
   );
 }
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const context = await requireAuth();
     const { id } = await ctx.params;
 
     const doc = await prisma.companyDocument.findUnique({
       where: { id },
-      select: { blobUrl: true, companyId: true, contentType: true, originalFileName: true },
+      select: { blobUrl: true, companyId: true, contentType: true, originalFileName: true, sizeBytes: true },
     });
 
     if (!doc) {
@@ -221,9 +222,21 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     }
 
     if (canInlinePreview) {
+      const isPdf =
+        String(doc.contentType || '').toLowerCase() === 'application/pdf' ||
+        String(doc.originalFileName || '').toLowerCase().endsWith('.pdf');
+      if (isPdf) {
+        const pdfViewerUrl = new URL('/dataroom/pdf-view', req.url);
+        pdfViewerUrl.searchParams.set('src', doc.blobUrl);
+        pdfViewerUrl.searchParams.set('name', doc.originalFileName || 'Document.pdf');
+        return NextResponse.redirect(pdfViewerUrl, { status: 302 });
+      }
       return NextResponse.redirect(doc.blobUrl, { status: 302 });
     }
     if (canOfficePreview) {
+      if (typeof doc.sizeBytes === 'number' && doc.sizeBytes > OFFICE_WEB_VIEWER_MAX_BYTES) {
+        return NextResponse.redirect(doc.blobUrl, { status: 302 });
+      }
       const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(doc.blobUrl)}`;
       return NextResponse.redirect(officeViewerUrl, { status: 302 });
     }
