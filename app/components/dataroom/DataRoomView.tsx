@@ -76,6 +76,7 @@ type AuditEvent = {
 
 const ACCEPTED_FILES = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt';
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_SPREADSHEET_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const DOC_CATEGORY_ORDER = [
   'LOAN_DOCUMENTS',
   'FINANCING_DOCUMENTS',
@@ -115,6 +116,11 @@ function formatDateTime(value: string | null | undefined) {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+function isSpreadsheetFileName(fileName: string): boolean {
+  const lower = String(fileName || '').toLowerCase();
+  return lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.csv');
 }
 
 export default function DataRoomView({ selectedCompanyId, companyName }: DataRoomViewProps) {
@@ -341,6 +347,11 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     const file = fileInputRef.current?.files?.[0];
     if (!file || !selectedFolderId) return;
 
+    if (isSpreadsheetFileName(file.name) && file.size > MAX_SPREADSHEET_FILE_SIZE_BYTES) {
+      alert('Spreadsheet file too large. Maximum spreadsheet file size is 25 MB.');
+      return;
+    }
+
     if (file.size > MAX_FILE_SIZE_BYTES) {
       alert('File too large. Maximum file size is 100 MB.');
       return;
@@ -356,6 +367,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
           companyId: selectedCompanyId,
           category: 'OTHER',
           originalFileName: file.name,
+          sizeBytes: file.size,
         }),
       });
 
@@ -827,7 +839,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
             </div>
 
             <div style={{ borderTop: '1px solid #e2e8f0', background: '#fafafa', padding: '10px 12px', fontSize: '11px', color: '#64748b' }}>
-              Allowed types: PDF, Office docs, CSV, TXT. Max file size: 100 MB.
+              Allowed types: PDF, Office docs, CSV, TXT. Max file size: 100 MB (spreadsheets: 25 MB).
             </div>
           </div>
         </div>

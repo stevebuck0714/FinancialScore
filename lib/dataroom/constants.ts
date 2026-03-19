@@ -6,6 +6,7 @@ export type DataRoomFolder = {
 };
 
 export const DATAROOM_MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+export const DATAROOM_MAX_SPREADSHEET_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
 
 export const DATAROOM_ALLOWED_EXTENSIONS = [
   '.pdf',

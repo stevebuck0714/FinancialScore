@@ -58,13 +58,17 @@ export async function POST(request: Request): Promise<Response> {
         const companyId = String(payload.companyId || '').trim();
         const category = asCategory(payload.category);
         const originalFileName = String(payload.originalFileName || '').trim();
+        const sizeBytes = typeof payload.sizeBytes === 'number' ? Math.trunc(payload.sizeBytes) : null;
 
         if (!companyId || !category || !originalFileName) {
           console.warn('❌ Missing upload payload', { companyId, category, originalFileName });
           throw new Error('Missing upload payload (companyId/category/originalFileName)');
         }
 
-        const filePolicy = validateDataRoomFilePolicy({ fileName: originalFileName });
+        const filePolicy = validateDataRoomFilePolicy({
+          fileName: originalFileName,
+          sizeBytes,
+        });
         if (!filePolicy.valid) {
           throw new Error(filePolicy.error);
         }
