@@ -229,7 +229,7 @@ export default function Header({
                   opacity: canAccess('company-dashboard') ? 1 : 0.4
                 }}
               >
-                <span style={{ whiteSpace: 'normal', lineHeight: '1.1' }}>FINANCIAL KPI'S</span>
+                <span style={{ whiteSpace: 'normal', lineHeight: '1.1' }}>KPI'S</span>
               </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
@@ -255,7 +255,7 @@ export default function Header({
                 aria-haspopup="menu"
                 aria-expanded={showFinancialReportsMenu}
               >
-                <span>PERFORMANCE HUB</span>
+                <span>REPORTS HUB</span>
                 <span style={{ fontSize: '12px' }}>▾</span>
               </button>
               {showFinancialReportsMenu && (
