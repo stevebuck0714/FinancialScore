@@ -78,6 +78,21 @@ export default function SiteAdminDashboard(props: any) {
   >({});
   const [savingDataRoomPricingCompanyId, setSavingDataRoomPricingCompanyId] = React.useState<string | null>(null);
 
+  const getAccountingSystemLabel = (value: unknown): string => {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (!normalized) return 'Not selected';
+    if (normalized === 'INFOR_M3') return 'Infor M3';
+    if (normalized === 'INFOR_CSI') return 'Infor SyteLine CSI';
+    if (normalized === 'QUICKBOOKS') return 'QuickBooks Online';
+    if (normalized === 'QUICKBOOKS_DESKTOP') return 'QuickBooks Desktop';
+    if (normalized === 'DYNAMICS' || normalized === 'DYNAMICS365') return 'Dynamics 365';
+    if (normalized === 'ACUMATICA') return 'Acumatica';
+    if (normalized === 'SAGE_INTACCT') return 'Sage Intacct';
+    if (normalized === 'SAGE') return 'Sage';
+    if (normalized === 'ODOO') return 'Odoo';
+    return String(value);
+  };
+
   const [editingBusinessInfoByCompany, setEditingBusinessInfoByCompany] = React.useState<
     Record<string, { email: string; name: string; phone: string; addressStreet: string; addressCity: string; addressState: string; addressZip: string; addressCountry: string }>
   >({});
@@ -2237,9 +2252,12 @@ export default function SiteAdminDashboard(props: any) {
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                                 <div>
                                                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
+                                                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                                    {getAccountingSystemLabel(company.accountingSystem)}
+                                                  </div>
                                                 </div>
                                                 {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) && (
-                                                  <div style={{ display: 'grid', gap: '8px', width: '100%', maxWidth: '760px' }}>
+                                                  <div style={{ display: 'grid', gap: '8px', marginLeft: 'auto', width: 'fit-content' }}>
                                                     <input
                                                       id={`consultant-infor-json-file-${company.id}`}
                                                       type="file"
@@ -2249,10 +2267,10 @@ export default function SiteAdminDashboard(props: any) {
                                                         handleInforCredentialsFileImport(event, company.id, company.name)
                                                       }
                                                     />
-                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
-                                                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>DATA WINDOW</div>
-                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 248px))', justifyContent: 'end', gap: '8px' }}>
+                                                      <div style={{ width: '248px', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>CONNECTION</div>
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center' }}>
                                                           <button
                                                             onClick={() => {
                                                               const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
@@ -2270,11 +2288,6 @@ export default function SiteAdminDashboard(props: any) {
                                                           >
                                                             Test Token
                                                           </button>
-                                                        </div>
-                                                      </div>
-                                                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>CONNECTION</div>
-                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                                           <button
                                                             onClick={() =>
                                                               saveInforM3Credentials?.(company.id, {
@@ -2297,14 +2310,14 @@ export default function SiteAdminDashboard(props: any) {
                                                           <button
                                                             onClick={() => disconnectInforM3?.(company.id)}
                                                             disabled={inforBusy || !inforConnected}
-                                                            style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                            style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                                           >
                                                             Disconnect
                                                           </button>
                                                         </div>
                                                       </div>
-                                                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>SYNC ACTIONS</div>
+                                                      <div style={{ width: '248px', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
                                                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                                           <button
                                                             onClick={() => runInforM3OperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
@@ -2565,32 +2578,48 @@ export default function SiteAdminDashboard(props: any) {
                                                     </div>
                                                   </div>
 
-                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gridAutoFlow: 'row dense', gap: '6px', marginBottom: '8px' }}>
                                                     {[
-                                                      { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
                                                       { key: 'clientName', label: 'Client Name', type: 'text' },
+                                                      { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
                                                       { key: 'clientId', label: 'Client ID *', type: 'text' },
-                                                      { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
                                                       { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
+                                                      { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
                                                       { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
-                                                      { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
                                                       { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
+                                                      { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
                                                     ].map((field) => (
-                                                      <label key={`${company.id}-${field.key}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                      <label
+                                                        key={`${company.id}-${field.key}`}
+                                                        style={{
+                                                          display: 'flex',
+                                                          flexDirection: 'column',
+                                                          gap: '4px',
+                                                          fontSize: '12px',
+                                                          color: '#334155',
+                                                          gridColumn:
+                                                            field.key === 'tenantId' ||
+                                                            field.key === 'ionApiBaseUrl' ||
+                                                            field.key === 'ssoBaseUrl'
+                                                              ? '2'
+                                                              : field.key === 'serviceAccountAccessKey'
+                                                              ? '1'
+                                                              : field.key === 'serviceAccountSecretKey'
+                                                                ? '1'
+                                                                : undefined,
+                                                        }}
+                                                      >
                                                         <span style={{ fontWeight: 600 }}>{field.label}</span>
                                                         <input
                                                           type={field.type}
                                                           value={inforCredentials?.[field.key] || ''}
                                                           onChange={(e) => setInforCredentials?.((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
                                                           placeholder={field.label.replace(' *', '')}
-                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                         />
                                                       </label>
                                                     ))}
-                                                  </div>
-
-                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px', marginBottom: '8px' }}>
-                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
                                                       <span style={{ fontWeight: 600 }}>Operational Pull Frequency</span>
                                                       <select
                                                         value={getCompanyOperationalSettings(company.id).frequency}
@@ -2599,15 +2628,14 @@ export default function SiteAdminDashboard(props: any) {
                                                             frequency: e.target.value as 'daily' | 'weekly' | 'monthly',
                                                           })
                                                         }
-                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       >
                                                         <option value="daily">Daily</option>
                                                         <option value="weekly">Weekly</option>
                                                         <option value="monthly">Monthly</option>
                                                       </select>
                                                     </label>
-
-                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
                                                       <span style={{ fontWeight: 600 }}>Auto Pull Time (Local)</span>
                                                       <select
                                                         value={getCompanyOperationalSettings(company.id).pullTime}
@@ -2616,7 +2644,7 @@ export default function SiteAdminDashboard(props: any) {
                                                             pullTime: e.target.value,
                                                           })
                                                         }
-                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       >
                                                         {Array.from({ length: 24 }).map((_, hour) => {
                                                           const hh = String(hour).padStart(2, '0');
@@ -4415,8 +4443,11 @@ export default function SiteAdminDashboard(props: any) {
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                       <div>
                                         <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
+                                        <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                          {getAccountingSystemLabel(businessCompany.accountingSystem)}
+                                        </div>
                                       </div>
-                                      <div style={{ display: 'grid', gap: '8px', width: '100%', maxWidth: '760px' }}>
+                                      <div style={{ display: 'grid', gap: '8px', marginLeft: 'auto', width: 'fit-content' }}>
                                         <input
                                           id={`infor-json-file-${businessCompany.id}`}
                                           type="file"
@@ -4426,10 +4457,10 @@ export default function SiteAdminDashboard(props: any) {
                                             handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
                                           }
                                         />
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
-                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>DATA WINDOW</div>
-                                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 248px))', justifyContent: 'end', gap: '8px' }}>
+                                          <div style={{ width: '248px', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>CONNECTION</div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center' }}>
                                               <button
                                                 onClick={() => {
                                                   const fileInput = document.getElementById(`infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
@@ -4447,11 +4478,6 @@ export default function SiteAdminDashboard(props: any) {
                                               >
                                                 Test Token
                                               </button>
-                                            </div>
-                                          </div>
-                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>CONNECTION</div>
-                                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                               <button
                                                 onClick={() =>
                                                   saveInforM3Credentials?.(businessCompany.id, {
@@ -4474,14 +4500,14 @@ export default function SiteAdminDashboard(props: any) {
                                               <button
                                                 onClick={() => disconnectInforM3?.(businessCompany.id)}
                                                 disabled={inforBusy || !inforConnected}
-                                                style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                               >
                                                 Disconnect
                                               </button>
                                             </div>
                                           </div>
-                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px' }}>SYNC ACTIONS</div>
+                                          <div style={{ width: '248px', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
                                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                               <button
                                                 onClick={() => runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency)}
@@ -4578,32 +4604,48 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     </div>
 
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gridAutoFlow: 'row dense', gap: '6px', marginBottom: '8px' }}>
                                       {[
-                                        { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
                                         { key: 'clientName', label: 'Client Name', type: 'text' },
+                                        { key: 'tenantId', label: 'Tenant ID *', type: 'text' },
                                         { key: 'clientId', label: 'Client ID *', type: 'text' },
-                                        { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
                                         { key: 'ionApiBaseUrl', label: 'ION API Base URL *', type: 'text' },
+                                        { key: 'clientSecret', label: 'Client Secret *', type: 'password' },
                                         { key: 'ssoBaseUrl', label: 'SSO Base URL *', type: 'text' },
-                                        { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
                                         { key: 'serviceAccountSecretKey', label: 'Service Account Secret Key *', type: 'password' },
+                                        { key: 'serviceAccountAccessKey', label: 'Service Account Access Key *', type: 'text' },
                                       ].map((field) => (
-                                        <label key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                        <label
+                                          key={field.key}
+                                          style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '4px',
+                                            fontSize: '12px',
+                                            color: '#334155',
+                                            gridColumn:
+                                              field.key === 'tenantId' ||
+                                              field.key === 'ionApiBaseUrl' ||
+                                              field.key === 'ssoBaseUrl'
+                                                ? '2'
+                                                : field.key === 'serviceAccountAccessKey'
+                                                ? '1'
+                                                : field.key === 'serviceAccountSecretKey'
+                                                  ? '1'
+                                                  : undefined,
+                                          }}
+                                        >
                                           <span style={{ fontWeight: 600 }}>{field.label}</span>
                                           <input
                                             type={field.type}
                                             value={inforCredentials?.[field.key] || ''}
                                             onChange={(e) => setInforCredentials?.((prev: any) => ({ ...prev, [field.key]: e.target.value }))}
                                             placeholder={field.label.replace(' *', '')}
-                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                           />
                                         </label>
                                       ))}
-                                    </div>
-
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px', marginBottom: '8px' }}>
-                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
                                         <span style={{ fontWeight: 600 }}>Operational Pull Frequency</span>
                                         <select
                                           value={operationalSettings.frequency}
@@ -4612,15 +4654,14 @@ export default function SiteAdminDashboard(props: any) {
                                               frequency: e.target.value as 'daily' | 'weekly' | 'monthly',
                                             })
                                           }
-                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                         >
                                           <option value="daily">Daily</option>
                                           <option value="weekly">Weekly</option>
                                           <option value="monthly">Monthly</option>
                                         </select>
                                       </label>
-
-                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
                                         <span style={{ fontWeight: 600 }}>Auto Pull Time (Local)</span>
                                         <select
                                           value={operationalSettings.pullTime}
@@ -4629,7 +4670,7 @@ export default function SiteAdminDashboard(props: any) {
                                               pullTime: e.target.value,
                                             })
                                           }
-                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                          style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                         >
                                           {Array.from({ length: 24 }).map((_, hour) => {
                                             const hh = String(hour).padStart(2, '0');
