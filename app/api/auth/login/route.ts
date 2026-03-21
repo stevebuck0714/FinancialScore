@@ -7,6 +7,8 @@ import { getMfaAppScope } from '@/lib/mfa-app-scope';
 import { clearMfaDeviceCookie, getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 
+const DEV_DEFAULT_COMPANY_NAME = 'test atlantic precision CSI';
+
 export async function POST(request: NextRequest) {
   try {
     console.log('🔐 Login attempt starting...');
@@ -143,6 +145,11 @@ export async function POST(request: NextRequest) {
     const cookieActiveCompanyId = request.cookies.get('fs_active_company')?.value;
     const activeCompanyId =
       accessibleCompanies.find((c) => c.companyId === cookieActiveCompanyId)?.companyId ||
+      (process.env.NODE_ENV !== 'production'
+        ? accessibleCompanies.find(
+            (c) => c.name.toLowerCase() === DEV_DEFAULT_COMPANY_NAME.toLowerCase()
+          )?.companyId
+        : null) ||
       accessibleCompanies[0]?.companyId ||
       user.companyId ||
       null;

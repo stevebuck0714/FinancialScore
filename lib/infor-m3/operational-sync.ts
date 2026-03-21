@@ -108,6 +108,125 @@ function parseMaybeDate(value: string | null): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+type AgingTotals = {
+  total: number;
+  current: number;
+  days1to30: number;
+  days31to60: number;
+  days61to90: number;
+  days90plus: number;
+};
+
+function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function calculateAgingTotalsFromTransactions(
+  records: Record<string, unknown>[],
+  options: {
+    dueDateKeys: string[];
+    balanceKeys: string[];
+    amountKeys: string[];
+    openFlagKeys: string[];
+    statusKeys: string[];
+  }
+): AgingTotals {
+  const asOf = startOfUtcDay(new Date()).getTime();
+  const totals: AgingTotals = {
+    total: 0,
+    current: 0,
+    days1to30: 0,
+    days31to60: 0,
+    days61to90: 0,
+    days90plus: 0,
+  };
+
+  for (const record of records) {
+    if (!isOpenAgingRecord(record, { openFlagKeys: options.openFlagKeys, statusKeys: options.statusKeys })) {
+      continue;
+    }
+    const dueDate = parseMaybeDate(pickString(record, options.dueDateKeys));
+    if (!dueDate) continue;
+
+    const rawBalance = pickNumber(record, options.balanceKeys);
+    const fallbackAmount = pickNumber(record, options.amountKeys);
+    const outstanding = Math.abs(rawBalance !== 0 ? rawBalance : fallbackAmount);
+    if (!Number.isFinite(outstanding) || outstanding === 0) continue;
+
+    const due = startOfUtcDay(dueDate).getTime();
+    const daysOutstanding = Math.floor((asOf - due) / (1000 * 60 * 60 * 24));
+
+    totals.total += outstanding;
+    if (daysOutstanding <= 0) {
+      totals.current += outstanding;
+    } else if (daysOutstanding <= 30) {
+      totals.days1to30 += outstanding;
+    } else if (daysOutstanding <= 60) {
+      totals.days31to60 += outstanding;
+    } else if (daysOutstanding <= 90) {
+      totals.days61to90 += outstanding;
+    } else {
+      totals.days90plus += outstanding;
+    }
+  }
+
+  return totals;
+}
+
+function normalizeToken(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized || null;
+  }
+  if (typeof value === 'number' || typeof value === 'bigint' || typeof value === 'boolean') {
+    return String(value).trim().toLowerCase();
+  }
+  return null;
+}
+
+function readOpenFlag(record: Record<string, unknown>, keys: string[]): boolean | null {
+  for (const key of keys) {
+    if (!(key in record)) continue;
+    const token = normalizeToken(record[key]);
+    if (!token) continue;
+    if (['1', 'true', 't', 'yes', 'y', 'open', 'o'].includes(token)) return true;
+    if (['0', 'false', 'f', 'no', 'n', 'closed', 'c'].includes(token)) return false;
+  }
+  return null;
+}
+
+function readStatusToken(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    if (!(key in record)) continue;
+    const token = normalizeToken(record[key]);
+    if (token) return token;
+  }
+  return null;
+}
+
+function isOpenAgingRecord(
+  record: Record<string, unknown>,
+  options: { openFlagKeys: string[]; statusKeys: string[] }
+): boolean {
+  const explicitOpen = readOpenFlag(record, options.openFlagKeys);
+  if (explicitOpen === false) return false;
+  if (explicitOpen === true) return true;
+
+  const status = readStatusToken(record, options.statusKeys);
+  if (!status) return true;
+  if (
+    status.includes('closed') ||
+    status.includes('paid') ||
+    status.includes('void') ||
+    status.includes('cancel') ||
+    status.includes('settled') ||
+    status.includes('history')
+  ) {
+    return false;
+  }
+  return true;
+}
+
 async function pruneCompanyOperationalData(companyId: string): Promise<void> {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 3);
@@ -165,7 +284,7 @@ async function saveARAging(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
-  const totals = records.reduce(
+  const fromBuckets = records.reduce(
     (acc, record) => {
       acc.totalAR += pickNumber(record, ['totalAR', 'total', 'TOTAR']);
       acc.current += pickNumber(record, ['current', 'CURAR', 'currentAmount']);
@@ -177,6 +296,26 @@ async function saveARAging(
     },
     { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
   );
+
+  const derived = calculateAgingTotalsFromTransactions(records, {
+    dueDateKeys: ['DueDate', 'dueDate', 'DUDT'],
+    balanceKeys: ['Balance', 'balance', 'openBalance', 'openAmount', 'amountDue'],
+    amountKeys: ['Amount', 'amount', 'invoiceAmount'],
+    openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
+    statusKeys: ['Status', 'status', 'STAT', 'state', 'State'],
+  });
+
+  const totals =
+    fromBuckets.totalAR !== 0
+      ? fromBuckets
+      : {
+          totalAR: derived.total,
+          current: derived.current,
+          days1to30: derived.days1to30,
+          days31to60: derived.days31to60,
+          days61to90: derived.days61to90,
+          days90plus: derived.days90plus,
+        };
 
   if (totals.totalAR === 0) return 0;
 
@@ -283,7 +422,7 @@ async function saveAPAging(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
-  const totals = records.reduce(
+  const fromBuckets = records.reduce(
     (acc, record) => {
       acc.totalAP += pickNumber(record, ['totalAP', 'total', 'TOTAP']);
       acc.current += pickNumber(record, ['current', 'CURAP', 'currentAmount']);
@@ -295,6 +434,26 @@ async function saveAPAging(
     },
     { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
   );
+
+  const derived = calculateAgingTotalsFromTransactions(records, {
+    dueDateKeys: ['DueDate', 'dueDate', 'DUDT'],
+    balanceKeys: ['Balance', 'balance', 'openBalance', 'openAmount', 'amountDue'],
+    amountKeys: ['Amount', 'amount', 'invoiceAmount'],
+    openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
+    statusKeys: ['Status', 'status', 'STAT', 'state', 'State'],
+  });
+
+  const totals =
+    fromBuckets.totalAP !== 0
+      ? fromBuckets
+      : {
+          totalAP: derived.total,
+          current: derived.current,
+          days1to30: derived.days1to30,
+          days31to60: derived.days31to60,
+          days61to90: derived.days61to90,
+          days90plus: derived.days90plus,
+        };
 
   if (totals.totalAP === 0) return 0;
 

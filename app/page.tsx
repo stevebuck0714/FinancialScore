@@ -1916,7 +1916,7 @@ function FinancialScorePage() {
     serviceAccountAccessKey: '',
     serviceAccountSecretKey: '',
   });
-  const [inforProbePath, setInforProbePath] = useState('/ionapi/metadata/v1/APR_PRD/version');
+  const [inforProbePath, setInforProbePath] = useState('/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
   const [inforCaoPulling, setInforCaoPulling] = useState(false);
   const [inforCaoMessage, setInforCaoMessage] = useState<string | null>(null);

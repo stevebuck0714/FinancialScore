@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 
 export const dynamic = 'force-dynamic';
+const DEV_DEFAULT_COMPANY_NAME = 'test atlantic precision CSI';
 
 export async function GET(request: NextRequest) {
   try {
@@ -62,6 +63,11 @@ export async function GET(request: NextRequest) {
 
     const activeCompanyId =
       cookieCompanyId ||
+      (process.env.NODE_ENV !== 'production'
+        ? accessibleCompanies.find(
+            (c) => c.name.toLowerCase() === DEV_DEFAULT_COMPANY_NAME.toLowerCase()
+          )?.companyId
+        : null) ||
       accessibleCompanies[0]?.companyId ||
       user.companyId ||
       null;

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
         {
           error: 'Missing required query parameter: path',
           example:
-            '/api/infor-m3/probe?path=/APR_PRD/IDORequestService/IDOCollections/Customers',
+            '/api/infor-m3/probe?path=/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1',
         },
         { status: 400 }
       );

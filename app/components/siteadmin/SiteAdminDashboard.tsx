@@ -2651,7 +2651,7 @@ export default function SiteAdminDashboard(props: any) {
                                                         type="text"
                                                         value={inforProbePath || ''}
                                                         onChange={(e) => setInforProbePath?.(e.target.value)}
-                                                        placeholder="/ionapi/metadata/v1/APR_PRD/version"
+                                                        placeholder="/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1"
                                                         style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       />
                                                     </label>
@@ -4687,7 +4687,7 @@ export default function SiteAdminDashboard(props: any) {
                                           type="text"
                                           value={inforProbePath || ''}
                                           onChange={(e) => setInforProbePath?.(e.target.value)}
-                                          placeholder="/ionapi/metadata/v1/APR_PRD/version"
+                                          placeholder="/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1"
                                           style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                         />
                                       </label>
