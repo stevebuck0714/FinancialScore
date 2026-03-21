@@ -338,6 +338,11 @@ export default function OperationsTab({
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
+  const [selectedDailyTrendMetrics, setSelectedDailyTrendMetrics] = useState<Array<'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct'>>([
+    'revenue',
+    'expense',
+    'net',
+  ]);
   const [dailyFinancialWindowStart, setDailyFinancialWindowStart] = useState(0);
   const [arSummaryPage, setArSummaryPage] = useState(1);
   const [unpaidInvoicesPage, setUnpaidInvoicesPage] = useState(1);
@@ -4443,6 +4448,12 @@ export default function OperationsTab({
         date: new Date(row.snapshotDate).toLocaleDateString(),
         revenue: Number(row.revenue || 0),
         expense: Number(row.expense || 0),
+        cogs: Number(row.cogsTotal || 0),
+        grossMargin: Number(row.revenue || 0) - Number(row.cogsTotal || 0),
+        marginPct:
+          Number(row.revenue || 0) !== 0
+            ? ((Number(row.revenue || 0) - Number(row.cogsTotal || 0)) / Number(row.revenue || 0)) * 100
+            : null,
         net: Number(row.revenue || 0) - Number(row.expense || 0),
         cash: Number(row.cash || 0),
       }));
@@ -4453,6 +4464,35 @@ export default function OperationsTab({
     const avgNet30 =
       recent30Days.reduce((sum: number, row: any) => sum + (Number(row.revenue || 0) - Number(row.expense || 0)), 0) / recent30Count;
     const avgCash30 = recent30Days.reduce((sum: number, row: any) => sum + Number(row.cash || 0), 0) / recent30Count;
+    const dailyTrendMetricOptions: Array<{
+      key: 'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct';
+      label: string;
+      color: string;
+    }> = [
+      { key: 'revenue', label: 'Revenue', color: '#3b82f6' },
+      { key: 'expense', label: 'Expense', color: '#ef4444' },
+      { key: 'net', label: 'Net', color: '#10b981' },
+      { key: 'cash', label: 'Cash', color: '#8b5cf6' },
+      { key: 'grossMargin', label: 'Gross Margin', color: '#f59e0b' },
+      { key: 'marginPct', label: 'Margin %', color: '#7c3aed' },
+    ];
+    const toggleDailyTrendMetric = (metric: 'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct') => {
+      setSelectedDailyTrendMetrics((prev) => {
+        const isSelected = prev.includes(metric);
+        if (isSelected) {
+          // Keep at least one metric active.
+          if (prev.length === 1) return prev;
+          return prev.filter((entry) => entry !== metric);
+        }
+        return [...prev, metric];
+      });
+    };
+    const marginPctValues = trendRows
+      .map((row: any) => Number(row.marginPct))
+      .filter((value) => Number.isFinite(value));
+    const marginPctMin = marginPctValues.length > 0 ? Math.min(...marginPctValues) : -10;
+    const marginPctMax = marginPctValues.length > 0 ? Math.max(...marginPctValues) : 50;
+    const marginPctDomain: [number, number] = [Math.floor((Math.min(0, marginPctMin) - 5) / 5) * 5, Math.ceil((Math.max(0, marginPctMax) + 5) / 5) * 5];
 
     const statementDays = statementWindow.map((row: any) => {
       const revenue = Number(row.revenue || 0);
@@ -4804,18 +4844,74 @@ export default function OperationsTab({
             </div>
 
             <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '16px' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#0f172a' }}>Daily Trend</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <h3 style={{ marginTop: 0, marginBottom: 0, color: '#0f172a' }}>Daily Trend</h3>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {dailyTrendMetricOptions.map((option) => {
+                    const selected = selectedDailyTrendMetrics.includes(option.key);
+                    return (
+                      <button
+                        key={option.key}
+                        onClick={() => toggleDailyTrendMetric(option.key)}
+                        style={{
+                          border: `1px solid ${selected ? option.color : '#cbd5e1'}`,
+                          borderRadius: '999px',
+                          padding: '6px 10px',
+                          background: selected ? `${option.color}12` : '#ffffff',
+                          color: selected ? option.color : '#475569',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div style={{ width: '100%', height: 320 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={trendRows}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="date" stroke="#64748b" />
-                    <YAxis stroke="#64748b" />
-                    <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                    <YAxis yAxisId="left" stroke="#64748b" />
+                    {selectedDailyTrendMetrics.includes('marginPct') && (
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        stroke="#7c3aed"
+                        tickFormatter={(value) => `${Number(value || 0).toFixed(0)}%`}
+                        domain={marginPctDomain}
+                      />
+                    )}
+                    <Tooltip
+                      formatter={(value: any, name: any) => {
+                        if (String(name || '').toLowerCase().includes('margin')) {
+                          return `${Number(value || 0).toFixed(1)}%`;
+                        }
+                        return formatCurrency(Number(value || 0));
+                      }}
+                    />
                     <Legend />
-                    <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="net" stroke="#10b981" strokeWidth={2} dot={false} />
+                    {selectedDailyTrendMetrics.includes('revenue') && (
+                      <Line yAxisId="left" type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} dot={false} name="Revenue" />
+                    )}
+                    {selectedDailyTrendMetrics.includes('expense') && (
+                      <Line yAxisId="left" type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} dot={false} name="Expense" />
+                    )}
+                    {selectedDailyTrendMetrics.includes('net') && (
+                      <Line yAxisId="left" type="monotone" dataKey="net" stroke="#10b981" strokeWidth={2} dot={false} name="Net" />
+                    )}
+                    {selectedDailyTrendMetrics.includes('cash') && (
+                      <Line yAxisId="left" type="monotone" dataKey="cash" stroke="#8b5cf6" strokeWidth={2} dot={false} name="Cash" />
+                    )}
+                    {selectedDailyTrendMetrics.includes('grossMargin') && (
+                      <Line yAxisId="left" type="monotone" dataKey="grossMargin" stroke="#f59e0b" strokeWidth={2} dot={false} name="Gross Margin" />
+                    )}
+                    {selectedDailyTrendMetrics.includes('marginPct') && (
+                      <Line yAxisId="right" type="monotone" dataKey="marginPct" stroke="#7c3aed" strokeWidth={2} dot={false} name="Margin %" connectNulls />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
