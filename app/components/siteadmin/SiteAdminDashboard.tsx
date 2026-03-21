@@ -2222,27 +2222,27 @@ export default function SiteAdminDashboard(props: any) {
                                       {isCompanyExpanded && (
                                         <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '8px' }}>
                                           <div style={{ marginBottom: '8px' }}>
-                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <div style={{ padding: '0 12px 12px 12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>Company Information</h4>
                                               <div
                                                 style={{
                                                   display: 'grid',
-                                                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                                                  gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
                                                   gap: '6px 14px',
                                                   fontSize: '13px',
                                                   color: '#64748b',
                                                   lineHeight: '1.5',
                                                 }}
                                               >
-                                                <div><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
-                                                <div><strong>ID:</strong> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company?.id}</span></div>
-                                                <div><strong>Industry:</strong> {company?.industrySector ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` : 'Not set'}</div>
-                                                <div><strong>Type:</strong> Consultant Business</div>
-                                                <div><strong>Address Street:</strong> {company?.addressStreet || 'Not provided'}</div>
-                                                <div><strong>Address City:</strong> {company?.addressCity || 'Not provided'}</div>
-                                                <div><strong>Address State:</strong> {company?.addressState || 'Not provided'}</div>
-                                                <div><strong>Address ZIP:</strong> {company?.addressZip || 'Not provided'}</div>
-                                                <div><strong>Address Country:</strong> {company?.addressCountry || 'Not provided'}</div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>ID:</strong> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company?.id}</span></div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Industry:</strong> {company?.industrySector ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` : 'Not set'}</div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Type:</strong> Consultant Business</div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address Street:</strong> {company?.addressStreet || 'Not provided'}</div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address City:</strong> {company?.addressCity || 'Not provided'}</div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address State:</strong> {company?.addressState || 'Not provided'}</div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address ZIP:</strong> {company?.addressZip || 'Not provided'}</div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address Country:</strong> {company?.addressCountry || 'Not provided'}</div>
                                               </div>
                                             </div>
                                           </div>
