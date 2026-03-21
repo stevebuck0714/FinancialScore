@@ -23,10 +23,13 @@ interface CompanySettingsTabProps {
 
 interface AccountingProgram {
   module: string;
-  miProgram: string;
-  transactions: string[];
-  cono: string;
-  divi: string;
+  miProgram?: string;
+  transactions?: string[];
+  cono?: string;
+  divi?: string;
+  endpointPath?: string;
+  mongooseConfig?: string;
+  site?: string;
   enabled: boolean;
 }
 
@@ -120,6 +123,9 @@ export default function CompanySettingsTab({
             transactions: Array.isArray(row?.transactions) ? row.transactions.map((t: any) => String(t || '').trim()).filter(Boolean) : [],
             cono: String(row?.cono || ''),
             divi: String(row?.divi || ''),
+            endpointPath: String(row?.endpointPath || ''),
+            mongooseConfig: String(row?.mongooseConfig || ''),
+            site: String(row?.site || ''),
             enabled: row?.enabled !== false,
           }))
         );
@@ -190,6 +196,7 @@ export default function CompanySettingsTab({
 
   const totalHeadcountPercentage = lobs.reduce((sum, lob) => sum + (lob.headcountPercentage || 0), 0);
   const totalCustomPercentage = lobs.reduce((sum, lob) => sum + (lob.customPercentage || 0), 0);
+  const isCsiSystem = String(companyAccountingSystem || '').toUpperCase() === 'INFOR_CSI';
 
   const saveSettings = async () => {
     setIsSaving(true);
@@ -220,9 +227,12 @@ export default function CompanySettingsTab({
         if (['INFOR_M3', 'INFOR_CSI'].includes(String(companyAccountingSystem || '').toUpperCase()) && accountingPrograms.length > 0) {
           // The endpoint enforces full required fields only for enabled rows.
           // Auto-disable incomplete rows to prevent save failure while keeping data visible/editable.
+          const isCsi = String(companyAccountingSystem || '').toUpperCase() === 'INFOR_CSI';
           const normalizedPrograms = accountingPrograms.map((row) => ({
             ...row,
-            enabled: row.enabled && row.transactions.length > 0 && String(row.divi || '').trim().length > 0,
+            enabled: isCsi
+              ? row.enabled && (String(row.miProgram || '').trim().length > 0 || String(row.endpointPath || '').trim().length > 0)
+              : row.enabled && (row.transactions || []).length > 0 && String(row.divi || '').trim().length > 0,
           }));
           const programsResponse = await fetch('/api/infor-m3/programs', {
             method: 'POST',
@@ -339,10 +349,10 @@ export default function CompanySettingsTab({
                     <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Enabled</th>
                       <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
-                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
-                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (comma-separated)</th>
-                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
-                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>{isCsiSystem ? 'CSI IDO' : 'MI Program'}</th>
+                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>{isCsiSystem ? 'CSI Endpoint Path' : 'Transactions (comma-separated)'}</th>
+                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>{isCsiSystem ? 'Mongoose Config' : 'CONO'}</th>
+                      <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>{isCsiSystem ? 'Site' : 'DIVI'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -359,7 +369,7 @@ export default function CompanySettingsTab({
                         <td style={{ padding: '6px' }}>
                           <input
                             type="text"
-                            value={row.miProgram}
+                            value={row.miProgram || ''}
                             onChange={(e) => updateProgram(index, { miProgram: e.target.value })}
                             style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                           />
@@ -367,13 +377,17 @@ export default function CompanySettingsTab({
                         <td style={{ padding: '6px' }}>
                           <input
                             type="text"
-                            value={row.transactions.join(', ')}
+                            value={isCsiSystem ? (row.endpointPath || '') : (row.transactions || []).join(', ')}
                             onChange={(e) =>
                               updateProgram(index, {
-                                transactions: e.target.value
-                                  .split(',')
-                                  .map((v) => v.trim())
-                                  .filter(Boolean),
+                                ...(isCsiSystem
+                                  ? { endpointPath: e.target.value }
+                                  : {
+                                      transactions: e.target.value
+                                        .split(',')
+                                        .map((v) => v.trim())
+                                        .filter(Boolean),
+                                    }),
                               })
                             }
                             style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
@@ -382,16 +396,16 @@ export default function CompanySettingsTab({
                         <td style={{ padding: '6px' }}>
                           <input
                             type="text"
-                            value={row.cono}
-                            onChange={(e) => updateProgram(index, { cono: e.target.value })}
+                            value={isCsiSystem ? (row.mongooseConfig || '') : (row.cono || '')}
+                            onChange={(e) => updateProgram(index, isCsiSystem ? { mongooseConfig: e.target.value } : { cono: e.target.value })}
                             style={{ width: '90px', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                           />
                         </td>
                         <td style={{ padding: '6px' }}>
                           <input
                             type="text"
-                            value={row.divi}
-                            onChange={(e) => updateProgram(index, { divi: e.target.value })}
+                            value={isCsiSystem ? (row.site || '') : (row.divi || '')}
+                            onChange={(e) => updateProgram(index, isCsiSystem ? { site: e.target.value } : { divi: e.target.value })}
                             style={{ width: '90px', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
                           />
                         </td>

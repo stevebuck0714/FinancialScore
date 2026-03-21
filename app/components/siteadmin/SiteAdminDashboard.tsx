@@ -459,6 +459,7 @@ export default function SiteAdminDashboard(props: any) {
     divi: string;
     endpointPath?: string;
     mongooseConfig?: string;
+    site?: string;
     recordCap?: number;
     properties?: string[];
     enabled: boolean;
@@ -470,6 +471,9 @@ export default function SiteAdminDashboard(props: any) {
     transactions: [],
     cono: '',
     divi: '',
+    endpointPath: '',
+    mongooseConfig: '',
+    site: '',
     enabled: true,
   });
 
@@ -488,12 +492,17 @@ export default function SiteAdminDashboard(props: any) {
 
   const defaultAccountingPrograms: InforAccountingProgramRow[] = [
     // CSI IDO-based defaults for operational tab population.
-    { module: 'Customers', miProgram: 'SLCustomers', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'AR', miProgram: 'SLArtrans', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'AP', miProgram: 'SLAptrxs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxs?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Sales', miProgram: 'SLCoitems', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Inventory', miProgram: 'SLItems', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Cash', miProgram: 'SLBankHdrs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Customers', miProgram: 'SLCustomers', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'AR', miProgram: 'SLArtrans', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'AP', miProgram: 'SLAptrxps', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxps?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Sales', miProgram: 'SLCoitems', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Sales', miProgram: 'SLInvHdrs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLInvHdrs?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Inventory', miProgram: 'SLItems', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Inventory', miProgram: 'SLItemlocs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItemlocs?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Vendors', miProgram: 'SLVendors', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLVendors?properties=VendNum,Name&recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Cash', miProgram: 'SLBankHdrs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'GL', miProgram: 'SLCharts', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCharts?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'GL', miProgram: 'SLLedgers', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLLedgers?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
   ];
 
   const getCompanyPrograms = (companyId: string) =>
@@ -3562,10 +3571,10 @@ export default function SiteAdminDashboard(props: any) {
                                                     <thead>
                                                       <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (one per line)</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
-                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CSI IDO</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CSI Endpoint Path</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Mongoose Config</th>
+                                                        <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Site</th>
                                                         <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
                                                         <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                                       </tr>
@@ -3587,57 +3596,34 @@ export default function SiteAdminDashboard(props: any) {
                                                               type="text"
                                                               value={row.miProgram}
                                                               onChange={(e) => updateCompanyProgram(company.id, index, 'miProgram', e.target.value)}
-                                                              placeholder="MI Program"
-                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
-                                                            />
-                                                          </td>
-                                                          <td style={{ padding: '6px' }}>
-                                                            <textarea
-                                                              value={formatTransactionsForInput(row.transactions)}
-                                                              onChange={(e) =>
-                                                                updateCompanyProgram(
-                                                                  company.id,
-                                                                  index,
-                                                                  'transactions',
-                                                                  parseTransactionsFromInput(e.target.value)
-                                                                )
-                                                              }
-                                                              onKeyDown={(e) => {
-                                                                e.stopPropagation();
-                                                                if (e.key !== 'Enter') return;
-                                                                e.preventDefault();
-                                                                const currentValue = formatTransactionsForInput(row.transactions);
-                                                                const start = e.currentTarget.selectionStart ?? currentValue.length;
-                                                                const end = e.currentTarget.selectionEnd ?? currentValue.length;
-                                                                const nextValue =
-                                                                  `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`;
-                                                                updateCompanyProgram(
-                                                                  company.id,
-                                                                  index,
-                                                                  'transactions',
-                                                                  parseTransactionsFromInput(nextValue)
-                                                                );
-                                                              }}
-                                                              placeholder={"Enter CSI transaction names (one per line)\nExample: List / Get / Search"}
-                                                              rows={3}
-                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
-                                                            />
-                                                          </td>
-                                                          <td style={{ padding: '6px' }}>
-                                                            <input
-                                                              type="text"
-                                                              value={row.cono}
-                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'cono', e.target.value)}
-                                                              placeholder="CSI CONO (e.g. 100)"
+                                                              placeholder="CSI IDO (e.g. SLCustomers)"
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                             />
                                                           </td>
                                                           <td style={{ padding: '6px' }}>
                                                             <input
                                                               type="text"
-                                                              value={row.divi}
-                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'divi', e.target.value)}
-                                                              placeholder="CSI DIVI (e.g. AAA)"
+                                                              value={row.endpointPath || ''}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'endpointPath', e.target.value)}
+                                                              placeholder="/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?recordCap=500"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.mongooseConfig || ''}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'mongooseConfig', e.target.value)}
+                                                              placeholder="TMSManager"
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </td>
+                                                          <td style={{ padding: '6px' }}>
+                                                            <input
+                                                              type="text"
+                                                              value={row.site || ''}
+                                                              onChange={(e) => updateCompanyProgram(company.id, index, 'site', e.target.value)}
+                                                              placeholder="Optional site (e.g. MAIN)"
                                                               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                             />
                                                           </td>
@@ -4711,10 +4697,10 @@ export default function SiteAdminDashboard(props: any) {
                                           <thead>
                                             <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>MI Program</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Transactions (one per line)</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CONO</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>DIVI</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CSI IDO</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CSI Endpoint Path</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Mongoose Config</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Site</th>
                                               <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
                                               <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
                                             </tr>
@@ -4736,57 +4722,34 @@ export default function SiteAdminDashboard(props: any) {
                                                     type="text"
                                                     value={row.miProgram}
                                                     onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'miProgram', e.target.value)}
-                                                    placeholder="MI Program"
-                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
-                                                  />
-                                                </td>
-                                                <td style={{ padding: '6px' }}>
-                                                  <textarea
-                                                    value={formatTransactionsForInput(row.transactions)}
-                                                    onChange={(e) =>
-                                                      updateCompanyProgram(
-                                                        businessCompany.id,
-                                                        index,
-                                                        'transactions',
-                                                        parseTransactionsFromInput(e.target.value)
-                                                      )
-                                                    }
-                                                    onKeyDown={(e) => {
-                                                      e.stopPropagation();
-                                                      if (e.key !== 'Enter') return;
-                                                      e.preventDefault();
-                                                      const currentValue = formatTransactionsForInput(row.transactions);
-                                                      const start = e.currentTarget.selectionStart ?? currentValue.length;
-                                                      const end = e.currentTarget.selectionEnd ?? currentValue.length;
-                                                      const nextValue =
-                                                        `${currentValue.slice(0, start)}\n${currentValue.slice(end)}`;
-                                                      updateCompanyProgram(
-                                                        businessCompany.id,
-                                                        index,
-                                                        'transactions',
-                                                        parseTransactionsFromInput(nextValue)
-                                                      );
-                                                    }}
-                                                    placeholder={"Enter CSI transaction names (one per line)\nExample: List / Get / Search"}
-                                                    rows={3}
-                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white', resize: 'vertical' }}
-                                                  />
-                                                </td>
-                                                <td style={{ padding: '6px' }}>
-                                                  <input
-                                                    type="text"
-                                                    value={row.cono}
-                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'cono', e.target.value)}
-                                                    placeholder="CSI CONO (e.g. 100)"
+                                                    placeholder="CSI IDO (e.g. SLCustomers)"
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                   />
                                                 </td>
                                                 <td style={{ padding: '6px' }}>
                                                   <input
                                                     type="text"
-                                                    value={row.divi}
-                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'divi', e.target.value)}
-                                                    placeholder="CSI DIVI (e.g. AAA)"
+                                                    value={row.endpointPath || ''}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'endpointPath', e.target.value)}
+                                                    placeholder="/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?recordCap=500"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.mongooseConfig || ''}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'mongooseConfig', e.target.value)}
+                                                    placeholder="TMSManager"
+                                                    style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </td>
+                                                <td style={{ padding: '6px' }}>
+                                                  <input
+                                                    type="text"
+                                                    value={row.site || ''}
+                                                    onChange={(e) => updateCompanyProgram(businessCompany.id, index, 'site', e.target.value)}
+                                                    placeholder="Optional site (e.g. MAIN)"
                                                     style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '6px', fontSize: '12px', background: 'white' }}
                                                   />
                                                 </td>

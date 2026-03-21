@@ -11,10 +11,23 @@ type AccountingProgram = {
   divi?: string;
   endpointPath?: string;
   mongooseConfig?: string;
+  site?: string;
   recordCap?: number;
   properties?: string[];
   enabled: boolean;
 };
+
+type SitePolicy = 'required' | 'optional' | 'none';
+
+const SITE_REQUIRED_CSI_IDOS = new Set(['SLITEMLOCS', 'SLCOITEMS', 'SLINVHDRS', 'SLBANKHDRS']);
+const SITE_OPTIONAL_CSI_IDOS = new Set(['SLITEMS', 'SLARTRANS', 'SLAPTRXPS', 'SLCUSTOMERS', 'SLVENDORS']);
+
+function resolveCsiSitePolicy(program: AccountingProgram): SitePolicy {
+  const ido = String(program.miProgram || '').trim().toUpperCase();
+  if (SITE_REQUIRED_CSI_IDOS.has(ido)) return 'required';
+  if (SITE_OPTIONAL_CSI_IDOS.has(ido)) return 'optional';
+  return 'none';
+}
 
 function isLegacyTransactionPlaceholder(value: string): boolean {
   const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -41,6 +54,7 @@ const DEFAULT_PROGRAMS: AccountingProgram[] = [
     endpointPath:
       '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500',
     mongooseConfig: 'TMSManager',
+    site: '',
     enabled: true,
   },
   {
@@ -48,13 +62,15 @@ const DEFAULT_PROGRAMS: AccountingProgram[] = [
     miProgram: 'SLArtrans',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
     enabled: true,
   },
   {
     module: 'AP',
-    miProgram: 'SLAptrxs',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxs?recordCap=1000',
+    miProgram: 'SLAptrxps',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxps?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
     enabled: true,
   },
   {
@@ -62,6 +78,15 @@ const DEFAULT_PROGRAMS: AccountingProgram[] = [
     miProgram: 'SLCoitems',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
+    enabled: true,
+  },
+  {
+    module: 'Sales',
+    miProgram: 'SLInvHdrs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLInvHdrs?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
     enabled: true,
   },
   {
@@ -69,6 +94,23 @@ const DEFAULT_PROGRAMS: AccountingProgram[] = [
     miProgram: 'SLItems',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
+    enabled: true,
+  },
+  {
+    module: 'Inventory',
+    miProgram: 'SLItemlocs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItemlocs?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    enabled: true,
+  },
+  {
+    module: 'Vendors',
+    miProgram: 'SLVendors',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLVendors?properties=VendNum,Name&recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
     enabled: true,
   },
   {
@@ -76,6 +118,23 @@ const DEFAULT_PROGRAMS: AccountingProgram[] = [
     miProgram: 'SLBankHdrs',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
+    enabled: true,
+  },
+  {
+    module: 'GL',
+    miProgram: 'SLCharts',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCharts?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    enabled: true,
+  },
+  {
+    module: 'GL',
+    miProgram: 'SLLedgers',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLLedgers?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
     enabled: true,
   },
 ];
@@ -105,6 +164,7 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
     const transactions = normalizeTransactions(row).filter((tx) => !isLegacyTransactionPlaceholder(tx));
     const endpointPath = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
     const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
+    const site = typeof row?.site === 'string' ? row.site.trim() : '';
     const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
     const properties = Array.isArray(row?.properties)
       ? row.properties
@@ -119,7 +179,7 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
     if (!module || (!miProgram && !endpointPath)) {
       throw new Error('Each accounting program row must include module plus MI program or endpoint path.');
     }
-    const dedupeKey = `${module}::${miProgram || ''}::${endpointPath || ''}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
+    const dedupeKey = `${module}::${miProgram || ''}::${endpointPath || ''}::${site || ''}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
     if (seen.has(dedupeKey)) {
       throw new Error(
         `Duplicate accounting program row detected for ${module} / ${miProgram || endpointPath}.`
@@ -134,12 +194,58 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
       cono: cono || undefined,
       divi: divi || undefined,
       mongooseConfig: mongooseConfig || undefined,
+      site: site || undefined,
       recordCap,
       properties: properties.length ? Array.from(new Set(properties)) : undefined,
       enabled,
     });
   }
   return cleaned;
+}
+
+function normalizeCsiProgramAliases(program: AccountingProgram): AccountingProgram {
+  const miProgram = String(program.miProgram || '').trim();
+  const normalizedProgram = miProgram.toUpperCase();
+  if (normalizedProgram !== 'SLAPTRXS') return program;
+
+  const endpointPath = String(program.endpointPath || '');
+  return {
+    ...program,
+    miProgram: 'SLAptrxps',
+    endpointPath: endpointPath
+      ? endpointPath.replace(/SLAptrxs/gi, 'SLAptrxps')
+      : '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxps?recordCap=1000',
+  };
+}
+
+function mergeWithCsiDefaults(programs: AccountingProgram[]): AccountingProgram[] {
+  const normalizedExisting = programs.map(normalizeCsiProgramAliases);
+  const byProgram = new Map<string, AccountingProgram>();
+  const passthrough: AccountingProgram[] = [];
+
+  normalizedExisting.forEach((row) => {
+    const key = String(row.miProgram || '').trim().toUpperCase();
+    if (key) {
+      byProgram.set(key, row);
+    } else {
+      passthrough.push(row);
+    }
+  });
+
+  const mergedDefaults = DEFAULT_PROGRAMS.map((def) => {
+    const key = String(def.miProgram || '').trim().toUpperCase();
+    const existing = key ? byProgram.get(key) : null;
+    if (!existing) return def;
+    if (key) byProgram.delete(key);
+    return {
+      ...def,
+      ...existing,
+      // Keep canonical CSI program ID where aliases are known.
+      miProgram: def.miProgram || existing.miProgram,
+    };
+  });
+
+  return [...mergedDefaults, ...Array.from(byProgram.values()), ...passthrough];
 }
 
 export const dynamic = 'force-dynamic';
@@ -179,12 +285,25 @@ export async function GET(request: NextRequest) {
         : {};
     const scopedPrograms = bySystem[inforSystem] ?? metadata.accountingPrograms;
     const programs = sanitizePrograms(scopedPrograms, { requireComplete: false });
+    const csiPrograms = inforSystem === 'INFOR_CSI' ? mergeWithCsiDefaults(programs) : programs;
+    const effectivePrograms = csiPrograms.length > 0 ? csiPrograms : DEFAULT_PROGRAMS;
+    const programsWithSitePolicy =
+      inforSystem === 'INFOR_CSI'
+        ? effectivePrograms.map((program) => ({ ...program, sitePolicy: resolveCsiSitePolicy(program) }))
+        : effectivePrograms;
 
     return NextResponse.json({
       ok: true,
       companyId,
       inforSystem,
-      programs: programs.length > 0 ? programs : DEFAULT_PROGRAMS,
+      programs: programsWithSitePolicy,
+      siteScopedIdos:
+        inforSystem === 'INFOR_CSI'
+          ? {
+              required: Array.from(SITE_REQUIRED_CSI_IDOS.values()),
+              optional: Array.from(SITE_OPTIONAL_CSI_IDOS.values()),
+            }
+          : undefined,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

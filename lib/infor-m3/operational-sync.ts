@@ -11,6 +11,7 @@ type InforProgramRow = {
   divi?: string;
   endpointPath?: string;
   mongooseConfig?: string;
+  site?: string;
   recordCap?: number;
   properties?: string[];
   enabled: boolean;
@@ -22,12 +23,15 @@ type InforOperationalSyncResult = {
   errors: string[];
 };
 
+type SitePolicy = 'required' | 'optional' | 'none';
+
 const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   {
     module: 'Customers',
     miProgram: 'SLCustomers',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500',
     mongooseConfig: 'TMSManager',
+    site: '',
     transactions: ['CSI_LOAD'],
     enabled: true,
   },
@@ -36,14 +40,16 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     miProgram: 'SLArtrans',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
     transactions: ['CSI_LOAD'],
     enabled: true,
   },
   {
     module: 'AP',
-    miProgram: 'SLAptrxs',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxs?recordCap=1000',
+    miProgram: 'SLAptrxps',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxps?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
     transactions: ['CSI_LOAD'],
     enabled: true,
   },
@@ -52,6 +58,16 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     miProgram: 'SLCoitems',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Sales',
+    miProgram: 'SLInvHdrs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLInvHdrs?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
     transactions: ['CSI_LOAD'],
     enabled: true,
   },
@@ -60,6 +76,16 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     miProgram: 'SLItems',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Inventory',
+    miProgram: 'SLItemlocs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItemlocs?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
     transactions: ['CSI_LOAD'],
     enabled: true,
   },
@@ -68,10 +94,252 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     miProgram: 'SLBankHdrs',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000',
     mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Vendors',
+    miProgram: 'SLVendors',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLVendors?properties=VendNum,Name&recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'GL',
+    miProgram: 'SLCharts',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCharts?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'GL',
+    miProgram: 'SLLedgers',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLLedgers?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
     transactions: ['CSI_LOAD'],
     enabled: true,
   },
 ];
+
+function recordSiteValue(record: Record<string, unknown>): string | null {
+  return (
+    pickString(record, ['Site', 'site', 'SITE']) ||
+    pickString(record, ['Whse', 'whse', 'warehouse']) ||
+    null
+  );
+}
+
+function filterRecordsBySiteIfSupported(records: Record<string, unknown>[], site: string | undefined): Record<string, unknown>[] {
+  const requested = String(site || '').trim();
+  if (!requested) return records;
+  const hasSiteField = records.some((record) => recordSiteValue(record) !== null);
+  if (!hasSiteField) return records;
+  return records.filter((record) => {
+    const value = recordSiteValue(record);
+    return Boolean(value && value.toLowerCase() === requested.toLowerCase());
+  });
+}
+
+const SITE_REQUIRED_CSI_IDOS = new Set(['SLITEMLOCS', 'SLCOITEMS', 'SLINVHDRS', 'SLBANKHDRS']);
+const SITE_OPTIONAL_CSI_IDOS = new Set(['SLITEMS', 'SLARTRANS', 'SLAPTRXPS', 'SLCUSTOMERS', 'SLVENDORS']);
+
+function resolveSitePolicy(row: InforProgramRow, moduleType: ReturnType<typeof classifyModule>): SitePolicy {
+  const ido = String(row.miProgram || '').trim().toUpperCase();
+  if (SITE_REQUIRED_CSI_IDOS.has(ido)) return 'required';
+  if (SITE_OPTIONAL_CSI_IDOS.has(ido)) return 'optional';
+  if (moduleType === 'inventory' || moduleType === 'sales' || moduleType === 'cash') return 'optional';
+  return 'none';
+}
+
+function hasRecordSiteDimension(records: Record<string, unknown>[]): boolean {
+  return records.some((record) => recordSiteValue(record) !== null);
+}
+
+function classifyArApFlow(moduleType: 'ar' | 'ap', transaction: string): 'payments' | 'open' | 'aging' {
+  const tx = transaction.trim().toLowerCase();
+  if (moduleType === 'ar') {
+    if (tx.includes('pay') || tx.includes('receipt') || tx.includes('settlement') || tx.includes('cash')) return 'payments';
+    if (tx.includes('open') || tx.includes('invoice') || tx.includes('outstanding') || tx.includes('cust') || tx.includes('csi')) return 'open';
+    return 'aging';
+  }
+  if (tx.includes('pay') || tx.includes('settlement') || tx.includes('disburs') || tx.includes('cash')) return 'payments';
+  if (tx.includes('open') || tx.includes('invoice') || tx.includes('bill') || tx.includes('supplier') || tx.includes('vendor') || tx.includes('csi')) return 'open';
+  return 'aging';
+}
+
+function aggregateForCompanyRollup(
+  records: Record<string, unknown>[],
+  moduleType: ReturnType<typeof classifyModule>,
+  flow: 'payments' | 'open' | 'aging' | null
+): Record<string, unknown>[] {
+  if (!records.length) return records;
+  const grouped = new Map<string, Record<string, unknown>>();
+
+  const upsert = (key: string, seed: Record<string, unknown>, merge: (acc: Record<string, unknown>) => void) => {
+    if (!grouped.has(key)) grouped.set(key, seed);
+    const acc = grouped.get(key)!;
+    merge(acc);
+  };
+
+  for (const record of records) {
+    if (moduleType === 'ar' && flow === 'open') {
+      const customerName = pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || 'Unknown Customer';
+      const customerId = pickString(record, ['customerId', 'customerNumber', 'CUNO', 'customerNo']) || '';
+      const invoiceNo = pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO', 'voucher']) || '';
+      const key = `${customerId}|${customerName}|${invoiceNo}`;
+      upsert(
+        key,
+        {
+          customerName,
+          customerId,
+          invoiceNo,
+          invoiceDate: pickString(record, ['invoiceDate', 'date', 'IVDT']) || null,
+          dueDate: pickString(record, ['dueDate', 'DUDT']) || null,
+          status: pickString(record, ['status', 'STAT']) || null,
+          currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']) || null,
+          amountCurrency: 0,
+          amountHome: 0,
+          amountDueHome: 0,
+          current: 0,
+          days1to30: 0,
+          days31to60: 0,
+          days61to90: 0,
+          days90plus: 0,
+        },
+        (acc) => {
+          acc.amountCurrency = Number(acc.amountCurrency || 0) + pickNumber(record, ['amountCurrency', 'invoiceAmount', 'CUAM']);
+          acc.amountHome = Number(acc.amountHome || 0) + pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']);
+          acc.amountDueHome = Number(acc.amountDueHome || 0) + pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
+          acc.current = Number(acc.current || 0) + pickNumber(record, ['current', 'bucket0']);
+          acc.days1to30 = Number(acc.days1to30 || 0) + pickNumber(record, ['days1to30', 'bucket1']);
+          acc.days31to60 = Number(acc.days31to60 || 0) + pickNumber(record, ['days31to60', 'bucket2']);
+          acc.days61to90 = Number(acc.days61to90 || 0) + pickNumber(record, ['days61to90', 'bucket3']);
+          acc.days90plus = Number(acc.days90plus || 0) + pickNumber(record, ['days90plus', 'bucket4']);
+        }
+      );
+      continue;
+    }
+
+    if (moduleType === 'ap' && flow === 'open') {
+      const vendorName = pickString(record, ['vendorName', 'name', 'SUNM', 'vendor', 'supplier']) || 'Unknown Vendor';
+      const vendorId = pickString(record, ['vendorId', 'supplierId', 'SUNO', 'vendorNo']) || '';
+      const billNo = pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'voucher', 'SINO']) || '';
+      const key = `${vendorId}|${vendorName}|${billNo}`;
+      upsert(
+        key,
+        {
+          vendorName,
+          vendorId,
+          billNo,
+          billDate: pickString(record, ['billDate', 'invoiceDate', 'date', 'IVDT']) || null,
+          dueDate: pickString(record, ['dueDate', 'DUDT']) || null,
+          status: pickString(record, ['status', 'STAT']) || null,
+          currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']) || null,
+          amountCurrency: 0,
+          amountHome: 0,
+          amountDueHome: 0,
+          current: 0,
+          days1to30: 0,
+          days31to60: 0,
+          days61to90: 0,
+          days90plus: 0,
+        },
+        (acc) => {
+          acc.amountCurrency = Number(acc.amountCurrency || 0) + pickNumber(record, ['amountCurrency', 'billAmount', 'CUAM']);
+          acc.amountHome = Number(acc.amountHome || 0) + pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']);
+          acc.amountDueHome = Number(acc.amountDueHome || 0) + pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
+          acc.current = Number(acc.current || 0) + pickNumber(record, ['current', 'bucket0']);
+          acc.days1to30 = Number(acc.days1to30 || 0) + pickNumber(record, ['days1to30', 'bucket1']);
+          acc.days31to60 = Number(acc.days31to60 || 0) + pickNumber(record, ['days31to60', 'bucket2']);
+          acc.days61to90 = Number(acc.days61to90 || 0) + pickNumber(record, ['days61to90', 'bucket3']);
+          acc.days90plus = Number(acc.days90plus || 0) + pickNumber(record, ['days90plus', 'bucket4']);
+        }
+      );
+      continue;
+    }
+
+    if (moduleType === 'customer') {
+      const customerName = pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || 'Unknown Customer';
+      const customerId = pickString(record, ['customerId', 'CUNO', 'customerNumber']) || '';
+      const key = `${customerId}|${customerName}`;
+      upsert(
+        key,
+        { customerName, customerId, revenue: 0, invoiceCount: 0 },
+        (acc) => {
+          acc.revenue = Number(acc.revenue || 0) + pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA']);
+          acc.invoiceCount =
+            Number(acc.invoiceCount || 0) +
+            Math.max(0, Math.round(pickNumber(record, ['invoiceCount', 'count', 'IVNO_COUNT']) || 1));
+        }
+      );
+      continue;
+    }
+
+    if (moduleType === 'sales') {
+      const itemName = pickString(record, ['itemName', 'name', 'ITDS']) || 'Unknown Item';
+      const itemId = pickString(record, ['itemId', 'ITNO', 'sku']) || '';
+      const sku = pickString(record, ['sku', 'itemCode', 'ITNO']) || '';
+      const key = `${itemId}|${itemName}|${sku}`;
+      upsert(
+        key,
+        { itemName, itemId, sku, quantity: 0, revenue: 0, cogs: 0 },
+        (acc) => {
+          acc.quantity = Number(acc.quantity || 0) + pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold']);
+          acc.revenue = Number(acc.revenue || 0) + pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA']);
+          acc.cogs = Number(acc.cogs || 0) + pickNumber(record, ['cogs', 'costOfGoods', 'COGS']);
+        }
+      );
+      continue;
+    }
+
+    if (moduleType === 'inventory') {
+      const itemName = pickString(record, ['itemName', 'name', 'ITDS']) || 'Unknown Item';
+      const itemId = pickString(record, ['itemId', 'ITNO', 'sku']) || '';
+      const sku = pickString(record, ['sku', 'itemCode', 'ITNO']) || '';
+      const key = `${itemId}|${itemName}|${sku}`;
+      upsert(
+        key,
+        { itemName, itemId, sku, qtyOnHand: 0, assetValue: 0, avgCost: 0 },
+        (acc) => {
+          const qty = pickNumber(record, ['qtyOnHand', 'quantity', 'QTY', 'onHand']);
+          const avgCost = pickNumber(record, ['avgCost', 'cost', 'averageCost']);
+          const value = pickNumber(record, ['assetValue', 'value', 'inventoryValue']) || qty * avgCost;
+          acc.qtyOnHand = Number(acc.qtyOnHand || 0) + qty;
+          acc.assetValue = Number(acc.assetValue || 0) + value;
+          acc.avgCost = Number(acc.qtyOnHand || 0) > 0 ? Number(acc.assetValue || 0) / Number(acc.qtyOnHand || 0) : 0;
+        }
+      );
+      continue;
+    }
+
+    if (moduleType === 'cash') {
+      const accountName =
+        pickString(record, ['accountName', 'bankAccount', 'name', 'ACNM', 'bankName']) || 'Cash Account';
+      const accountId = pickString(record, ['accountId', 'accountNumber', 'ACID', 'bankId']) || '';
+      const accountNumber = pickString(record, ['accountNumber', 'ACNO']) || '';
+      const key = `${accountId}|${accountName}|${accountNumber}`;
+      upsert(
+        key,
+        { accountName, accountId, accountNumber, balance: 0 },
+        (acc) => {
+          acc.balance = Number(acc.balance || 0) + pickNumber(record, ['balance', 'cashBalance', 'amount', 'BALA', 'BAL']);
+        }
+      );
+      continue;
+    }
+
+    const fallbackKey = JSON.stringify(record);
+    upsert(fallbackKey, { ...record }, () => undefined);
+  }
+
+  return Array.from(grouped.values());
+}
 
 function normalizeTransactions(row: any): string[] {
   const fromArray = Array.isArray(row?.transactions)
@@ -89,12 +357,18 @@ function parsePrograms(value: unknown): InforProgramRow[] {
   const rows: InforProgramRow[] = [];
   for (const row of value) {
     const module = typeof row?.module === 'string' ? row.module.trim() : '';
-    const miProgram = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
+    const miProgramRaw = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
+    const miProgram = miProgramRaw.toUpperCase() === 'SLAPTRXS' ? 'SLAptrxps' : miProgramRaw;
     const transactions = normalizeTransactions(row);
     const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
     const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
-    const endpointPath = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
+    const endpointPathRaw = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
+    const endpointPath =
+      miProgramRaw.toUpperCase() === 'SLAPTRXS'
+        ? endpointPathRaw.replace(/SLAptrxs/gi, 'SLAptrxps')
+        : endpointPathRaw;
     const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
+    const site = typeof row?.site === 'string' ? row.site.trim() : '';
     const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
     const properties = Array.isArray(row?.properties)
       ? row.properties
@@ -112,6 +386,7 @@ function parsePrograms(value: unknown): InforProgramRow[] {
       cono: cono || undefined,
       divi: divi || undefined,
       mongooseConfig: mongooseConfig || undefined,
+      site: site || undefined,
       recordCap,
       properties: properties.length ? Array.from(new Set(properties)) : undefined,
       enabled,
@@ -849,7 +1124,17 @@ export async function syncInforM3OperationalData(
         headers: req.headers,
       });
       const moduleType = classifyModule(row.module);
-      const records = extractRecords(response.body);
+      const rawRecords = extractRecords(response.body);
+      const sitePolicy = resolveSitePolicy(row, moduleType);
+      const siteDetected = hasRecordSiteDimension(rawRecords);
+      const recordsAfterSiteFilter = filterRecordsBySiteIfSupported(rawRecords, row.site);
+      const requestedSite = String(row.site || '').trim();
+      const arApFlow = moduleType === 'ar' || moduleType === 'ap' ? classifyArApFlow(moduleType, req.transaction) : null;
+      const shouldAggregateForRollup =
+        !requestedSite && siteDetected && (sitePolicy === 'required' || sitePolicy === 'optional');
+      const records = shouldAggregateForRollup
+        ? aggregateForCompanyRollup(recordsAfterSiteFilter, moduleType, arApFlow)
+        : recordsAfterSiteFilter;
       const payloadOk = isTransportAndPayloadSuccess(response);
       const statusText = payloadOk ? 'success' : 'error';
 
@@ -862,28 +1147,18 @@ export async function syncInforM3OperationalData(
               break;
             case 'ar':
               {
-                const tx = req.transaction.trim().toLowerCase();
                 const context = {
                   miProgram: row.miProgram || row.module,
                   transaction: req.transaction,
                   cono: row.cono,
                   divi: row.divi,
                 };
-                if (
-                  tx.includes('pay') ||
-                  tx.includes('receipt') ||
-                  tx.includes('settlement') ||
-                  tx.includes('cash')
-                ) {
+                if (arApFlow === 'payments') {
                   moduleRecordsCreated = await saveARPayments(companyId, records, context);
-                } else if (
-                  tx.includes('open') ||
-                  tx.includes('invoice') ||
-                  tx.includes('outstanding') ||
-                  tx.includes('cust') ||
-                  tx.includes('csi')
-                ) {
-                  moduleRecordsCreated = await saveAROpenInvoices(companyId, snapshotDate, frequency, records, context);
+                } else if (arApFlow === 'open') {
+                  const openRowsCreated = await saveAROpenInvoices(companyId, snapshotDate, frequency, records, context);
+                  const agingRowsCreated = await saveARAging(companyId, snapshotDate, frequency, records);
+                  moduleRecordsCreated = openRowsCreated + agingRowsCreated;
                 } else {
                   moduleRecordsCreated = await saveARAging(companyId, snapshotDate, frequency, records);
                 }
@@ -891,29 +1166,18 @@ export async function syncInforM3OperationalData(
               break;
             case 'ap':
               {
-                const tx = req.transaction.trim().toLowerCase();
                 const context = {
                   miProgram: row.miProgram || row.module,
                   transaction: req.transaction,
                   cono: row.cono,
                   divi: row.divi,
                 };
-                if (
-                  tx.includes('pay') ||
-                  tx.includes('settlement') ||
-                  tx.includes('disburs') ||
-                  tx.includes('cash')
-                ) {
+                if (arApFlow === 'payments') {
                   moduleRecordsCreated = await saveAPPayments(companyId, records, context);
-                } else if (
-                  tx.includes('open') ||
-                  tx.includes('invoice') ||
-                  tx.includes('bill') ||
-                  tx.includes('supplier') ||
-                  tx.includes('vendor') ||
-                  tx.includes('csi')
-                ) {
-                  moduleRecordsCreated = await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
+                } else if (arApFlow === 'open') {
+                  const openRowsCreated = await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
+                  const agingRowsCreated = await saveAPAging(companyId, snapshotDate, frequency, records);
+                  moduleRecordsCreated = openRowsCreated + agingRowsCreated;
                 } else {
                   moduleRecordsCreated = await saveAPAging(companyId, snapshotDate, frequency, records);
                 }
@@ -966,6 +1230,12 @@ export async function syncInforM3OperationalData(
             mongooseConfig: row.mongooseConfig || null,
             endpointPath: req.endpointPath,
             responseStatus: response.status,
+            sitePolicy,
+            requestedSite: requestedSite || null,
+            siteDetected,
+            sourceRecordCount: rawRecords.length,
+            persistedRecordCount: records.length,
+            companyRollupApplied: shouldAggregateForRollup,
             response: response.body,
           },
         },
