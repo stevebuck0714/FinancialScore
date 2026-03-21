@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { normalizeInforSystem } from '@/lib/infor-m3/system';
+import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,12 +39,28 @@ export async function GET(request: NextRequest) {
     }
 
     const endpointPath = request.nextUrl.searchParams.get('path');
+    const requestedSite = String(request.nextUrl.searchParams.get('site') || '').trim();
     if (!endpointPath) {
       return NextResponse.json(
         {
           error: 'Missing required query parameter: path',
           example:
-            '/api/infor-m3/probe?path=/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1',
+            '/api/infor-m3/probe?site=MAIN&path=/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1',
+        },
+        { status: 400 }
+      );
+    }
+
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { accountingSystem: true },
+    });
+    const inforSystem = normalizeInforSystem(company?.accountingSystem);
+    if (inforSystem === 'INFOR_CSI' && !requestedSite) {
+      return NextResponse.json(
+        {
+          error: 'Missing required query parameter: site',
+          hint: 'CSI probe requires a site value from the accounting program configuration.',
         },
         { status: 400 }
       );
@@ -58,12 +76,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const result = await callInforIonApi(credentials, endpointPath, { timeoutMs: 15000 });
+    const result = await callInforIonApi(credentials, endpointPath, {
+      timeoutMs: 15000,
+      headers: requestedSite ? { 'X-Infor-Site': requestedSite } : undefined,
+    });
     return NextResponse.json(
       {
         ok: result.ok,
         source,
         companyId,
+        site: requestedSite || null,
         status: result.status,
         url: result.url,
         token: {

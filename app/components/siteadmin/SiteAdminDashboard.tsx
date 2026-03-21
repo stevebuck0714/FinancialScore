@@ -451,6 +451,25 @@ export default function SiteAdminDashboard(props: any) {
     }));
   };
 
+  const resolveCompanyCsiSite = (companyId: string): string => {
+    const programs = getCompanyPrograms(companyId);
+    const sites = programs
+      .filter((row) => row.enabled !== false)
+      .map((row) => String(row.site || '').trim())
+      .filter(Boolean);
+    return sites[0] || '';
+  };
+
+  const requireCompanyCsiSite = (companyId: string): string | null => {
+    const company = Array.isArray(companies) ? companies.find((entry: any) => entry.id === companyId) : null;
+    const isCsi = String(company?.accountingSystem || '').trim().toUpperCase() === 'INFOR_CSI';
+    if (!isCsi) return '';
+    const site = resolveCompanyCsiSite(companyId);
+    if (site) return site;
+    alert('Site is required for CSI probe and sync. Set Site in Accounting Programs first.');
+    return null;
+  };
+
   const getCompanyFinancialImportSettings = (companyId: string) =>
     financialImportSettingsByCompany[companyId] || { targetMonth: currentMonthKey };
 
@@ -2320,7 +2339,11 @@ export default function SiteAdminDashboard(props: any) {
                                                         <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
                                                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                                           <button
-                                                            onClick={() => runInforM3OperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency)}
+                                                            onClick={() => {
+                                                              const site = requireCompanyCsiSite(company.id);
+                                                              if (!site) return;
+                                                              runInforM3OperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency, site);
+                                                            }}
                                                             disabled={inforBusy || !inforConnected}
                                                             style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                                           >
@@ -2671,7 +2694,11 @@ export default function SiteAdminDashboard(props: any) {
                                                       />
                                                     </label>
                                                     <button
-                                                      onClick={() => probeInforM3?.(company.id)}
+                                                      onClick={() => {
+                                                        const site = requireCompanyCsiSite(company.id);
+                                                        if (!site) return;
+                                                        probeInforM3?.(company.id, site);
+                                                      }}
                                                       disabled={inforBusy || !inforConnected}
                                                       style={{ padding: '8px 12px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                                     >
@@ -4510,7 +4537,11 @@ export default function SiteAdminDashboard(props: any) {
                                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
                                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                               <button
-                                                onClick={() => runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency)}
+                                                onClick={() => {
+                                                  const site = requireCompanyCsiSite(businessCompany.id);
+                                                  if (!site) return;
+                                                  runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency, site);
+                                                }}
                                                 disabled={inforBusy || !inforConnected}
                                                 style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                               >
@@ -4697,7 +4728,11 @@ export default function SiteAdminDashboard(props: any) {
                                         />
                                       </label>
                                       <button
-                                        onClick={() => probeInforM3?.(businessCompany.id)}
+                                        onClick={() => {
+                                          const site = requireCompanyCsiSite(businessCompany.id);
+                                          if (!site) return;
+                                          probeInforM3?.(businessCompany.id, site);
+                                        }}
                                         disabled={inforBusy || !inforConnected}
                                         style={{ padding: '8px 12px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                       >

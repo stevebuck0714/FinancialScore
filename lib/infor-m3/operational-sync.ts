@@ -1,6 +1,6 @@
 import prisma from '@/lib/prisma';
 import { callInforIonApi } from '@/lib/infor-m3/client';
-import { getInforM3CredentialsForCompany } from '@/lib/infor-m3/credentials';
+import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
 
 type InforProgramRow = {
@@ -21,6 +21,7 @@ type InforOperationalSyncResult = {
   success: boolean;
   recordsCreated: number;
   errors: string[];
+  credentialSource: 'database' | 'env' | null;
 };
 
 type SitePolicy = 'required' | 'optional' | 'none';
@@ -1037,7 +1038,8 @@ async function saveInventory(
 
 export async function syncInforM3OperationalData(
   companyId: string,
-  frequency: 'daily' | 'weekly' | 'monthly' = 'daily'
+  frequency: 'daily' | 'weekly' | 'monthly' = 'daily',
+  siteOverride?: string
 ): Promise<InforOperationalSyncResult> {
   const errors: string[] = [];
   let recordsCreated = 0;
@@ -1080,15 +1082,20 @@ export async function syncInforM3OperationalData(
       success: true,
       recordsCreated: 0,
       errors: [],
+      credentialSource: null,
     };
   }
 
-  const credentials = await getInforM3CredentialsForCompany(companyId, inforSystem);
+  const { credentials, source: credentialSource } = await getInforM3CredentialsWithOptionalEnvFallback(
+    companyId,
+    inforSystem
+  );
   if (!credentials) {
     return {
       success: false,
       recordsCreated: 0,
-      errors: ['Infor M3 credentials are not configured for this company.'],
+      errors: ['Infor M3 credentials are not configured for this company (no database/env credentials resolved).'],
+      credentialSource: null,
     };
   }
 
@@ -1128,7 +1135,7 @@ export async function syncInforM3OperationalData(
       const sitePolicy = resolveSitePolicy(row, moduleType);
       const siteDetected = hasRecordSiteDimension(rawRecords);
       const recordsAfterSiteFilter = filterRecordsBySiteIfSupported(rawRecords, row.site);
-      const requestedSite = String(row.site || '').trim();
+      const requestedSite = String(row.site || siteOverride || '').trim();
       const arApFlow = moduleType === 'ar' || moduleType === 'ap' ? classifyArApFlow(moduleType, req.transaction) : null;
       const shouldAggregateForRollup =
         !requestedSite && siteDetected && (sitePolicy === 'required' || sitePolicy === 'optional');
@@ -1198,7 +1205,9 @@ export async function syncInforM3OperationalData(
           }
         } catch (persistError) {
           const message = persistError instanceof Error ? persistError.message : 'Failed to persist records';
-          errors.push(`${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${message}`);
+          errors.push(
+            `${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${message} (credentials source: ${credentialSource})`
+          );
         }
       } else {
         const payloadMsg =
@@ -1207,7 +1216,9 @@ export async function syncInforM3OperationalData(
               ((response.body as Record<string, unknown>).error as string | undefined) ||
               `HTTP ${response.status}`
             : `HTTP ${response.status}`;
-        errors.push(`${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${payloadMsg}`);
+        errors.push(
+          `${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${payloadMsg} (credentials source: ${credentialSource})`
+        );
       }
 
       recordsCreated += moduleRecordsCreated;
@@ -1229,6 +1240,7 @@ export async function syncInforM3OperationalData(
             divi: row.divi || null,
             mongooseConfig: row.mongooseConfig || null,
             endpointPath: req.endpointPath,
+            credentialsSource: credentialSource,
             responseStatus: response.status,
             sitePolicy,
             requestedSite: requestedSite || null,
@@ -1249,5 +1261,6 @@ export async function syncInforM3OperationalData(
     success: errors.length === 0,
     recordsCreated,
     errors,
+    credentialSource,
   };
 }

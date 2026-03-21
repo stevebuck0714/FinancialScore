@@ -5423,25 +5423,32 @@ function FinancialScorePage() {
     }
   };
 
-  const probeInforM3 = async (targetCompanyId?: string) => {
+  const probeInforM3 = async (targetCompanyId?: string, site?: string) => {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) return;
     if (!inforProbePath.trim()) {
       alert('Please enter an Infor CSI probe path');
       return;
     }
+    const companyForProbe = Array.isArray(companies) ? companies.find((company) => company.id === companyId) : null;
+    const isCsiCompany = String(companyForProbe?.accountingSystem || '').toUpperCase() === 'INFOR_CSI';
+    if (isCsiCompany && !String(site || '').trim()) {
+      alert('Site is required for CSI probe.');
+      return;
+    }
     setInforBusy(true);
     setInforError(null);
     try {
+      const siteParam = String(site || '').trim();
       const response = await fetch(
-        `/api/infor-m3/probe?companyId=${companyId}&path=${encodeURIComponent(inforProbePath.trim())}`
+        `/api/infor-m3/probe?companyId=${companyId}${siteParam ? `&site=${encodeURIComponent(siteParam)}` : ''}&path=${encodeURIComponent(inforProbePath.trim())}`
       );
       const data = await response.json();
       if (!response.ok || !data.ok) {
         throw new Error(data.details || data.error || 'Probe failed');
       }
 
-      const summary = `Probe OK (${data.status}) - ${data.url}`;
+      const summary = `Probe OK (${data.status}) - ${data.url}${siteParam ? ` (site: ${siteParam})` : ''}`;
       setInforProbeSummary(summary);
       alert(summary);
     } catch (error: any) {
@@ -5490,17 +5497,24 @@ function FinancialScorePage() {
 
   const runInforM3OperationalSync = async (
     targetCompanyId?: string,
-    frequency: 'daily' | 'weekly' | 'monthly' = 'daily'
+    frequency: 'daily' | 'weekly' | 'monthly' = 'daily',
+    site?: string
   ) => {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) return;
+    const companyForSync = Array.isArray(companies) ? companies.find((company) => company.id === companyId) : null;
+    const isCsiCompany = String(companyForSync?.accountingSystem || '').toUpperCase() === 'INFOR_CSI';
+    if (isCsiCompany && !String(site || '').trim()) {
+      alert('Site is required for CSI operational sync.');
+      return;
+    }
     setInforBusy(true);
     setInforError(null);
     try {
       const response = await fetch('/api/infor-m3/operational-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, frequency }),
+        body: JSON.stringify({ companyId, frequency, ...(String(site || '').trim() ? { site: String(site).trim() } : {}) }),
       });
       const data = await response.json();
       if (!response.ok || !data?.ok) {
@@ -5510,7 +5524,8 @@ function FinancialScorePage() {
         throw new Error(details);
       }
       await checkInforM3Status(companyId);
-      alert(`Infor M3 operational sync complete. Records created: ${data.recordsCreated ?? 0}.`);
+      const siteSuffix = String(site || '').trim() ? ` Site: ${String(site).trim()}.` : '';
+      alert(`Infor M3 operational sync complete. Records created: ${data.recordsCreated ?? 0}.${siteSuffix}`);
     } catch (error: any) {
       const message = error?.message || 'Failed to run Infor M3 operational sync';
       setInforError(message);
