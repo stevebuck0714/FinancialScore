@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { normalizeInforSystem, type InforSystem } from '@/lib/infor-m3/system';
 
 type AccountingProgram = {
   module: string;
-  miProgram: string;
-  transactions: string[];
-  cono: string;
-  divi: string;
+  miProgram?: string;
+  transactions?: string[];
+  cono?: string;
+  divi?: string;
+  endpointPath?: string;
+  mongooseConfig?: string;
+  recordCap?: number;
+  properties?: string[];
   enabled: boolean;
 };
 
@@ -29,39 +34,50 @@ function normalizeLegacyProgramField(value: string, placeholder: 'cono' | 'divi'
 }
 
 const DEFAULT_PROGRAMS: AccountingProgram[] = [
-  // Infor CSI (SyteLine) extraction mapping defaults.
-  { module: 'Chart of Accounts', miProgram: 'ChartOfAccounts', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Accounting Dimensions', miProgram: 'DimensionCodes', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'GL Transactions', miProgram: 'LedgerTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'GL Period Balances', miProgram: 'LedgerBalances', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Customers', miProgram: 'Customers', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Customer Addresses', miProgram: 'CustomerAddresses', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'AR Invoices', miProgram: 'CustomerInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'AR Payments', miProgram: 'ARPayments', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'AR Transactions', miProgram: 'ARPostedTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Vendors', miProgram: 'Vendors', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Vendor Addresses', miProgram: 'VendorAddresses', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'AP Invoices', miProgram: 'VendorInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'AP Payments', miProgram: 'APPayments', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'AP Transactions', miProgram: 'APPostedTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Bank Accounts', miProgram: 'BankAccounts', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Cash Ledger', miProgram: 'BankTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Payment Transactions', miProgram: 'CashReceipts', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Items', miProgram: 'Items', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Item Warehouse Balance', miProgram: 'ItemWarehouseBalances', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Inventory Transactions', miProgram: 'InventoryTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Lot/Serial Inventory', miProgram: 'ItemLotLocations', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Sales Orders', miProgram: 'SalesOrders', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Sales Order Lines', miProgram: 'SalesOrderLines', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Sales Invoices', miProgram: 'CustomerInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Customer Shipments', miProgram: 'CustomerShipments', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Purchase Orders', miProgram: 'PurchaseOrders', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'PO Lines', miProgram: 'PurchaseOrderLines', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Goods Receipts', miProgram: 'PurchaseOrderReceipts', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Work Orders', miProgram: 'Jobs', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Work Order Operations', miProgram: 'JobOperations', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'Production Reporting', miProgram: 'JobTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-  { module: 'BOM', miProgram: 'BillOfMaterials', transactions: ['GET'], cono: '', divi: '', enabled: true },
+  // Infor CSI (SyteLine) IDO pull defaults for operational tabs.
+  {
+    module: 'Customers',
+    miProgram: 'SLCustomers',
+    endpointPath:
+      '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500',
+    mongooseConfig: 'TMSManager',
+    enabled: true,
+  },
+  {
+    module: 'AR',
+    miProgram: 'SLArtrans',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    enabled: true,
+  },
+  {
+    module: 'AP',
+    miProgram: 'SLAptrxs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxs?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    enabled: true,
+  },
+  {
+    module: 'Sales',
+    miProgram: 'SLCoitems',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    enabled: true,
+  },
+  {
+    module: 'Inventory',
+    miProgram: 'SLItems',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    enabled: true,
+  },
+  {
+    module: 'Cash',
+    miProgram: 'SLBankHdrs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    enabled: true,
+  },
 ];
 
 function normalizeTransactions(row: any): string[] {
@@ -87,29 +103,39 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
     const module = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgram = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
     const transactions = normalizeTransactions(row).filter((tx) => !isLegacyTransactionPlaceholder(tx));
+    const endpointPath = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
+    const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
+    const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
+    const properties = Array.isArray(row?.properties)
+      ? row.properties
+          .map((p: unknown) => (typeof p === 'string' ? p.trim() : ''))
+          .filter(Boolean)
+      : [];
     const cono = normalizeLegacyProgramField(typeof row?.cono === 'string' ? row.cono : '', 'cono');
     const divi = normalizeLegacyProgramField(typeof row?.divi === 'string' ? row.divi : '', 'divi');
     const requestedEnabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
     const enabled = requestedEnabled;
-    if (!module && !miProgram && transactions.length === 0 && !cono && !divi) continue;
-    if (!module || !miProgram) {
-      throw new Error('Each accounting program row must include module and MI program.');
+    if (!module && !miProgram && !endpointPath && transactions.length === 0 && !cono && !divi) continue;
+    if (!module || (!miProgram && !endpointPath)) {
+      throw new Error('Each accounting program row must include module plus MI program or endpoint path.');
     }
-    // For CSI mappings, module + program are the required fields.
-    // Transactions/CONO/DIVI are optional and environment-specific.
-    const dedupeKey = `${module}::${miProgram}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
+    const dedupeKey = `${module}::${miProgram || ''}::${endpointPath || ''}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
     if (seen.has(dedupeKey)) {
       throw new Error(
-        `Duplicate accounting program row detected for ${module} / ${miProgram} / ${transactions.join(', ')} / ${cono} / ${divi}.`
+        `Duplicate accounting program row detected for ${module} / ${miProgram || endpointPath}.`
       );
     }
     seen.add(dedupeKey);
     cleaned.push({
       module,
-      miProgram,
-      transactions,
-      cono,
-      divi,
+      miProgram: miProgram || undefined,
+      endpointPath: endpointPath || undefined,
+      transactions: transactions.length ? transactions : undefined,
+      cono: cono || undefined,
+      divi: divi || undefined,
+      mongooseConfig: mongooseConfig || undefined,
+      recordCap,
+      properties: properties.length ? Array.from(new Set(properties)) : undefined,
       enabled,
     });
   }
@@ -117,6 +143,14 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
 }
 
 export const dynamic = 'force-dynamic';
+
+async function resolveInforSystem(companyId: string): Promise<InforSystem> {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { accountingSystem: true },
+  });
+  return normalizeInforSystem(company?.accountingSystem);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -138,12 +172,18 @@ export async function GET(request: NextRequest) {
       connection?.connectionMetadata && typeof connection.connectionMetadata === 'object'
         ? (connection.connectionMetadata as Record<string, unknown>)
         : {};
-
-    const programs = sanitizePrograms(metadata.accountingPrograms, { requireComplete: false });
+    const inforSystem = await resolveInforSystem(companyId);
+    const bySystem =
+      metadata.accountingProgramsBySystem && typeof metadata.accountingProgramsBySystem === 'object'
+        ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
+        : {};
+    const scopedPrograms = bySystem[inforSystem] ?? metadata.accountingPrograms;
+    const programs = sanitizePrograms(scopedPrograms, { requireComplete: false });
 
     return NextResponse.json({
       ok: true,
       companyId,
+      inforSystem,
       programs: programs.length > 0 ? programs : DEFAULT_PROGRAMS,
     });
   } catch (error) {
@@ -163,6 +203,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
+    const inforSystem = await resolveInforSystem(companyId);
     const programs = sanitizePrograms(body.programs, { requireComplete: true });
 
     const existing = await prisma.accountingConnection.findUnique({
@@ -185,6 +226,10 @@ export async function POST(request: NextRequest) {
     const mergedMetadata = {
       ...existingMetadata,
       accountingPrograms: programs,
+      accountingProgramsBySystem: {
+        ...((existingMetadata.accountingProgramsBySystem as Record<string, unknown>) || {}),
+        [inforSystem]: programs,
+      },
       accountingProgramsUpdatedAt: new Date().toISOString(),
     };
 
@@ -211,6 +256,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       companyId,
+      inforSystem,
       programs,
       message: 'Accounting programs saved for this company.',
     });

@@ -1314,6 +1314,7 @@ function FinancialScorePage() {
       SAGE: 'sage',
       SAGE_INTACCT: 'sage_intacct',
       INFOR_M3: 'infor_m3',
+      INFOR_CSI: 'infor_csi',
       DYNAMICS: 'dynamics',
       DYNAMICS365: 'dynamics365',
     };
@@ -3556,7 +3557,10 @@ function FinancialScorePage() {
         // Check Xero connection status
         await checkXeroStatus(selectedCompanyId);
         // Infor M3 setup/status is restricted to site admins.
-        if (String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' && company?.accountingSystem === 'INFOR_M3') {
+        if (
+          String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' &&
+          ['INFOR_M3', 'INFOR_CSI'].includes(String(company?.accountingSystem || '').toUpperCase())
+        ) {
           await checkInforM3Status(selectedCompanyId);
           await fetchInforLastCaoPull(selectedCompanyId);
         }
@@ -4964,7 +4968,10 @@ function FinancialScorePage() {
       alert('Select a valid Through month first (YYYY-MM).');
       return;
     }
-    if (!selectedAccountingSystem || !['QUICKBOOKS_DESKTOP', 'INFOR_M3'].includes(String(selectedAccountingSystem).toUpperCase())) {
+    if (
+      !selectedAccountingSystem ||
+      !['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'].includes(String(selectedAccountingSystem).toUpperCase())
+    ) {
       alert('ERP COA Load is currently available for QuickBooks Desktop and Infor M3.');
       return;
     }
@@ -5557,7 +5564,7 @@ function FinancialScorePage() {
         await checkQBStatus(companyId);
       } else if (accountingSystem === 'XERO') {
         await checkXeroStatus(companyId);
-      } else if (accountingSystem === 'INFOR_M3') {
+      } else if (accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI') {
         await checkInforM3Status(companyId);
       }
 
@@ -7128,7 +7135,9 @@ function FinancialScorePage() {
       case 'IFS':
         return 'IFS';
       case 'INFOR_M3':
-        return 'Infor Syteline CSI';
+        return 'Infor M3';
+      case 'INFOR_CSI':
+        return 'Infor SyteLine CSI';
       case 'NETSUITE':
         return 'NetSuite';
       case 'QAD':
@@ -8832,7 +8841,7 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem &&
-                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
                     {selectedAccountingSystemLabel} is not supported yet.
                   </div>
@@ -9078,7 +9087,7 @@ function FinancialScorePage() {
               </div>
               )}
 
-              {selectedAccountingSystem === 'INFOR_M3' && (
+              {(selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI') && (
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '16px', border: '2px solid #e2e8f0' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
                     Infor Syteline CSI Monthly COA Pull
@@ -10303,7 +10312,11 @@ function FinancialScorePage() {
                     );
                   }
 
-                  if (selectedAccountingSystem === 'QUICKBOOKS_DESKTOP' || selectedAccountingSystem === 'INFOR_M3') {
+                  if (
+                    selectedAccountingSystem === 'QUICKBOOKS_DESKTOP' ||
+                    selectedAccountingSystem === 'INFOR_M3' ||
+                    selectedAccountingSystem === 'INFOR_CSI'
+                  ) {
                     return (
                       <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '16px', border: '2px solid #fed7aa' }}>
                         <div style={{ fontSize: '16px', fontWeight: '700', color: '#9a3412', marginBottom: '8px', textAlign: 'center' }}>
@@ -10403,11 +10416,11 @@ function FinancialScorePage() {
               selectedAccountingSystem === 'CSV_FILE' ||
               hasCsvData ||
               hasSavedCsvInLocalStorage;
-            const hasSupportedApiReprocessPlatform = ['QUICKBOOKS', 'XERO', 'INFOR_M3', 'QUICKBOOKS_DESKTOP', 'SAGE', 'SAGE_INTACCT'].includes(
+            const hasSupportedApiReprocessPlatform = ['QUICKBOOKS', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'QUICKBOOKS_DESKTOP', 'SAGE', 'SAGE_INTACCT'].includes(
               String(selectedAccountingSystem || '').toUpperCase()
             );
             const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
-            const erpCaoEnabledSystems = ['QUICKBOOKS_DESKTOP', 'INFOR_M3'];
+            const erpCaoEnabledSystems = ['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'];
             const erpCaoFutureSystems = ['ACUMATICA', 'DYNAMICS', 'DYNAMICS365', 'SAGE_INTACCT', 'SAGE'];
             const showErpCaoLoadPanel = erpCaoEnabledSystems.includes(selectedSystemNormalized);
             const showProcessButton =

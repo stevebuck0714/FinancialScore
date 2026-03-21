@@ -104,7 +104,7 @@ export async function requestInforM3AccessToken(
 export async function callInforIonApi(
   credentials: InforM3Credentials,
   endpointPath: string,
-  options?: { timeoutMs?: number }
+  options?: { timeoutMs?: number; headers?: Record<string, string> }
 ): Promise<{
   ok: boolean;
   status: number;
@@ -139,6 +139,7 @@ export async function callInforIonApi(
     headers: {
       Authorization: `Bearer ${tokenResult.accessToken}`,
       Accept: 'application/json',
+      ...(options?.headers || {}),
     },
     cache: 'no-store',
     signal: controller.signal,

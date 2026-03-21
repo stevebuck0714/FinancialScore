@@ -1,13 +1,18 @@
 import prisma from '@/lib/prisma';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsForCompany } from '@/lib/infor-m3/credentials';
+import { normalizeInforSystem } from '@/lib/infor-m3/system';
 
 type InforProgramRow = {
   module: string;
-  miProgram: string;
+  miProgram?: string;
   transactions: string[];
-  cono: string;
-  divi: string;
+  cono?: string;
+  divi?: string;
+  endpointPath?: string;
+  mongooseConfig?: string;
+  recordCap?: number;
+  properties?: string[];
   enabled: boolean;
 };
 
@@ -16,6 +21,57 @@ type InforOperationalSyncResult = {
   recordsCreated: number;
   errors: string[];
 };
+
+const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
+  {
+    module: 'Customers',
+    miProgram: 'SLCustomers',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500',
+    mongooseConfig: 'TMSManager',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'AR',
+    miProgram: 'SLArtrans',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'AP',
+    miProgram: 'SLAptrxs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxs?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Sales',
+    miProgram: 'SLCoitems',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Inventory',
+    miProgram: 'SLItems',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Cash',
+    miProgram: 'SLBankHdrs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+];
 
 function normalizeTransactions(row: any): string[] {
   const fromArray = Array.isArray(row?.transactions)
@@ -37,9 +93,29 @@ function parsePrograms(value: unknown): InforProgramRow[] {
     const transactions = normalizeTransactions(row);
     const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
     const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
+    const endpointPath = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
+    const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
+    const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
+    const properties = Array.isArray(row?.properties)
+      ? row.properties
+          .map((value: unknown) => (typeof value === 'string' ? value.trim() : ''))
+          .filter(Boolean)
+      : [];
     const enabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
-    if (!module || !miProgram || !divi || transactions.length === 0 || !enabled) continue;
-    rows.push({ module, miProgram, transactions, cono, divi, enabled });
+    if (!enabled || !module) continue;
+    if (!endpointPath && !miProgram) continue;
+    rows.push({
+      module,
+      miProgram: miProgram || undefined,
+      endpointPath: endpointPath || undefined,
+      transactions,
+      cono: cono || undefined,
+      divi: divi || undefined,
+      mongooseConfig: mongooseConfig || undefined,
+      recordCap,
+      properties: properties.length ? Array.from(new Set(properties)) : undefined,
+      enabled,
+    });
   }
   return rows;
 }
@@ -49,9 +125,43 @@ function extractRecords(body: unknown): Record<string, unknown>[] {
   const data = body as Record<string, unknown>;
   if (Array.isArray(data.results)) return data.results as Record<string, unknown>[];
   if (Array.isArray(data.records)) return data.records as Record<string, unknown>[];
+  if (Array.isArray(data.Items)) return data.Items as Record<string, unknown>[];
   if (Array.isArray(data.items)) return data.items as Record<string, unknown>[];
   if (Array.isArray(data.MIRecord)) return data.MIRecord as Record<string, unknown>[];
   return [];
+}
+
+function isTransportAndPayloadSuccess(response: { ok: boolean; body: Record<string, unknown> | string }): boolean {
+  if (!response.ok) return false;
+  if (!response.body || typeof response.body !== 'object') return true;
+  const payload = response.body as Record<string, unknown>;
+  if (typeof payload.Success === 'boolean') {
+    return payload.Success;
+  }
+  return true;
+}
+
+function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'other' {
+  const m = moduleName.trim().toLowerCase();
+  if (m === 'cash' || m.includes('cash') || m.includes('bank')) return 'cash';
+  if (m === 'ar' || m.includes('ar') || m.includes('receivable')) return 'ar';
+  if (m === 'ap' || m.includes('ap') || m.includes('payable')) return 'ap';
+  if (m === 'customer' || m.includes('customer')) return 'customer';
+  if (m === 'sales' || m.includes('sales') || m.includes('invoice') || m.includes('order')) return 'sales';
+  if (m === 'inventory' || m.includes('inventory') || m.includes('item')) return 'inventory';
+  return 'other';
+}
+
+function buildCsiEndpointPath(row: InforProgramRow): string | null {
+  if (row.endpointPath && row.endpointPath.length > 0) return row.endpointPath;
+  if (!row.miProgram) return null;
+  const params = new URLSearchParams();
+  if (row.properties && row.properties.length > 0) {
+    params.set('properties', row.properties.join(','));
+  }
+  const cap = row.recordCap && row.recordCap > 0 ? row.recordCap : 1000;
+  params.set('recordCap', String(cap));
+  return `/APR_PRD/CSI/IDORequestService/ido/load/${row.miProgram}?${params.toString()}`;
 }
 
 function asString(value: unknown): string | null {
@@ -675,10 +785,20 @@ export async function syncInforM3OperationalData(
     connection?.connectionMetadata && typeof connection.connectionMetadata === 'object'
       ? (connection.connectionMetadata as Record<string, unknown>)
       : {};
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { accountingSystem: true },
+  });
+  const inforSystem = normalizeInforSystem(company?.accountingSystem);
+  const programsBySystem =
+    metadata.accountingProgramsBySystem && typeof metadata.accountingProgramsBySystem === 'object'
+      ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
+      : {};
 
-  const programRows = parsePrograms(metadata.accountingPrograms).filter(
+  const parsedProgramRows = parsePrograms(programsBySystem[inforSystem] ?? metadata.accountingPrograms).filter(
     (row) => row.module.trim().toLowerCase() !== 'accounts'
   );
+  const programRows = parsedProgramRows.length > 0 ? parsedProgramRows : DEFAULT_CSI_PROGRAM_ROWS;
 
   if (programRows.length === 0) {
     return {
@@ -688,7 +808,7 @@ export async function syncInforM3OperationalData(
     };
   }
 
-  const credentials = await getInforM3CredentialsForCompany(companyId);
+  const credentials = await getInforM3CredentialsForCompany(companyId, inforSystem);
   if (!credentials) {
     return {
       success: false,
@@ -698,30 +818,57 @@ export async function syncInforM3OperationalData(
   }
 
   for (const row of programRows) {
-    for (const transaction of row.transactions) {
-      const params = new URLSearchParams({
-        DIVI: row.divi,
-      });
-      if (row.cono) {
-        params.set('CONO', row.cono);
+    const requests: Array<{ transaction: string; endpointPath: string; headers?: Record<string, string> }> = [];
+
+    if (row.endpointPath || (row.miProgram && row.miProgram.toUpperCase().startsWith('SL'))) {
+      const endpointPath = buildCsiEndpointPath(row);
+      if (endpointPath) {
+        requests.push({
+          transaction: row.endpointPath ? 'CSI_LOAD' : 'CSI_AUTO',
+          endpointPath,
+          headers: row.mongooseConfig ? { 'X-Infor-MongooseConfig': row.mongooseConfig } : undefined,
+        });
       }
-      const endpointPath = `/M3/m3api-rest/execute/${row.miProgram}/${transaction}?${params.toString()}`;
+    } else if (row.miProgram) {
+      const txs = row.transactions.length > 0 ? row.transactions : ['GET'];
+      for (const transaction of txs) {
+        const params = new URLSearchParams();
+        if (row.divi) params.set('DIVI', row.divi);
+        if (row.cono) params.set('CONO', row.cono);
+        const endpointPath = `/M3/m3api-rest/execute/${row.miProgram}/${transaction}${
+          params.toString() ? `?${params.toString()}` : ''
+        }`;
+        requests.push({ transaction, endpointPath });
+      }
+    }
+
+    for (const req of requests) {
       const startedAt = Date.now();
-      const response = await callInforIonApi(credentials, endpointPath, { timeoutMs: 30000 });
-      const moduleName = row.module.trim().toLowerCase();
+      const response = await callInforIonApi(credentials, req.endpointPath, {
+        timeoutMs: 30000,
+        headers: req.headers,
+      });
+      const moduleType = classifyModule(row.module);
       const records = extractRecords(response.body);
+      const payloadOk = isTransportAndPayloadSuccess(response);
+      const statusText = payloadOk ? 'success' : 'error';
 
       let moduleRecordsCreated = 0;
-      if (response.ok) {
+      if (payloadOk) {
         try {
-          switch (moduleName) {
+          switch (moduleType) {
             case 'cash':
               moduleRecordsCreated = await saveCash(companyId, snapshotDate, frequency, records);
               break;
             case 'ar':
               {
-                const tx = transaction.trim().toLowerCase();
-                const context = { miProgram: row.miProgram, transaction, cono: row.cono, divi: row.divi };
+                const tx = req.transaction.trim().toLowerCase();
+                const context = {
+                  miProgram: row.miProgram || row.module,
+                  transaction: req.transaction,
+                  cono: row.cono,
+                  divi: row.divi,
+                };
                 if (
                   tx.includes('pay') ||
                   tx.includes('receipt') ||
@@ -733,15 +880,10 @@ export async function syncInforM3OperationalData(
                   tx.includes('open') ||
                   tx.includes('invoice') ||
                   tx.includes('outstanding') ||
-                  tx.includes('cust')
+                  tx.includes('cust') ||
+                  tx.includes('csi')
                 ) {
-                  moduleRecordsCreated = await saveAROpenInvoices(
-                    companyId,
-                    snapshotDate,
-                    frequency,
-                    records,
-                    context
-                  );
+                  moduleRecordsCreated = await saveAROpenInvoices(companyId, snapshotDate, frequency, records, context);
                 } else {
                   moduleRecordsCreated = await saveARAging(companyId, snapshotDate, frequency, records);
                 }
@@ -749,8 +891,13 @@ export async function syncInforM3OperationalData(
               break;
             case 'ap':
               {
-                const tx = transaction.trim().toLowerCase();
-                const context = { miProgram: row.miProgram, transaction, cono: row.cono, divi: row.divi };
+                const tx = req.transaction.trim().toLowerCase();
+                const context = {
+                  miProgram: row.miProgram || row.module,
+                  transaction: req.transaction,
+                  cono: row.cono,
+                  divi: row.divi,
+                };
                 if (
                   tx.includes('pay') ||
                   tx.includes('settlement') ||
@@ -763,7 +910,8 @@ export async function syncInforM3OperationalData(
                   tx.includes('invoice') ||
                   tx.includes('bill') ||
                   tx.includes('supplier') ||
-                  tx.includes('vendor')
+                  tx.includes('vendor') ||
+                  tx.includes('csi')
                 ) {
                   moduleRecordsCreated = await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
                 } else {
@@ -786,10 +934,16 @@ export async function syncInforM3OperationalData(
           }
         } catch (persistError) {
           const message = persistError instanceof Error ? persistError.message : 'Failed to persist records';
-          errors.push(`${row.module}/${row.miProgram}/${transaction}: ${message}`);
+          errors.push(`${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${message}`);
         }
       } else {
-        errors.push(`${row.module}/${row.miProgram}/${transaction}: HTTP ${response.status}`);
+        const payloadMsg =
+          typeof response.body === 'object' && response.body
+            ? ((response.body as Record<string, unknown>).Message as string | undefined) ||
+              ((response.body as Record<string, unknown>).error as string | undefined) ||
+              `HTTP ${response.status}`
+            : `HTTP ${response.status}`;
+        errors.push(`${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${payloadMsg}`);
       }
 
       recordsCreated += moduleRecordsCreated;
@@ -798,18 +952,19 @@ export async function syncInforM3OperationalData(
         data: {
           companyId,
           platform: 'INFOR_M3',
-          syncType: `operational_${moduleName}_${transaction}`,
-          status: response.ok ? 'success' : 'error',
+          syncType: `operational_${moduleType}_${req.transaction}`,
+          status: statusText,
           recordsImported: moduleRecordsCreated,
-          errorCount: response.ok ? 0 : 1,
+          errorCount: statusText === 'success' ? 0 : 1,
           duration: Date.now() - startedAt,
           errorDetails: {
             module: row.module,
-            miProgram: row.miProgram,
-            transaction,
-            cono: row.cono,
-            divi: row.divi,
-            endpointPath,
+            miProgram: row.miProgram || null,
+            transaction: req.transaction,
+            cono: row.cono || null,
+            divi: row.divi || null,
+            mongooseConfig: row.mongooseConfig || null,
+            endpointPath: req.endpointPath,
             responseStatus: response.status,
             response: response.body,
           },

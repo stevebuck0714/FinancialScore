@@ -43,6 +43,18 @@ const ERP_COA_CONNECTORS: Record<string, ConnectorConfig> = {
     seedSnapshotMetadataKey: 'inforM3AccountSeedSnapshot',
     seedActiveIdsMetadataKey: 'inforM3ActiveAccountIds',
   },
+  INFOR_CSI: {
+    enabled: true,
+    platform: 'INFOR_M3',
+    source: 'infor-csi',
+    payloadMetadataKey: 'inforCsiFinancialPayload',
+    lastPushAtMetadataKey: 'inforCsiFinancialLastPushAt',
+    lastPushFrequencyMetadataKey: 'inforCsiFinancialLastPushFrequency',
+    seedLastRunAtMetadataKey: 'inforCsiAccountSeedLastRunAt',
+    seedSummaryMetadataKey: 'inforCsiAccountSeedSummary',
+    seedSnapshotMetadataKey: 'inforCsiAccountSeedSnapshot',
+    seedActiveIdsMetadataKey: 'inforCsiActiveAccountIds',
+  },
   ACUMATICA: {
     enabled: false,
     platform: 'ACUMATICA',
@@ -144,7 +156,7 @@ export async function POST(request: NextRequest) {
         {
           ok: false,
           error: `${accountingSystem} ERP COA load wiring is reserved for a future release.`,
-          supportedToday: ['QUICKBOOKS_DESKTOP', 'INFOR_M3'],
+          supportedToday: ['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'],
         },
         { status: 501 }
       );
@@ -206,7 +218,7 @@ export async function POST(request: NextRequest) {
 
     if (accountingSystem === 'QUICKBOOKS_DESKTOP') {
       seedSummary = await seedQuickBooksDesktopAccountMappings(companyId, payload);
-    } else if (accountingSystem === 'INFOR_M3') {
+    } else if (accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI') {
       seedSummary = await seedInforAccountMappings(companyId, payload);
     }
 

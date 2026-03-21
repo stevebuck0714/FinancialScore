@@ -149,10 +149,11 @@ export async function GET(request: NextRequest) {
       select: { linesOfBusiness: true, industrySectorCategory: true, accountingSystem: true },
     });
 
+    const accountingSystem = String(company?.accountingSystem || '').toUpperCase();
     const seededPlatform =
-      company?.accountingSystem === "INFOR_M3"
+      accountingSystem === "INFOR_M3" || accountingSystem === "INFOR_CSI"
         ? "INFOR_M3"
-        : company?.accountingSystem === "QUICKBOOKS_DESKTOP"
+        : accountingSystem === "QUICKBOOKS_DESKTOP"
           ? "QUICKBOOKS"
           : null;
 
@@ -177,9 +178,11 @@ export async function GET(request: NextRequest) {
         ? (seededConnection.connectionMetadata as Record<string, unknown>)
         : {};
     const snapshot =
-      company?.accountingSystem === "INFOR_M3"
+      accountingSystem === "INFOR_M3"
         ? parseAccountSnapshot(connectionMetadata.inforM3AccountSeedSnapshot)
-        : company?.accountingSystem === "QUICKBOOKS_DESKTOP"
+        : accountingSystem === "INFOR_CSI"
+          ? parseAccountSnapshot(connectionMetadata.inforCsiAccountSeedSnapshot)
+          : accountingSystem === "QUICKBOOKS_DESKTOP"
           ? parseAccountSnapshot(connectionMetadata.quickbooksDesktopAccountSeedSnapshot)
           : [];
     const snapshotById = new Map(snapshot.map((row) => [normalize(row.accountId), row]));
@@ -289,11 +292,15 @@ export async function GET(request: NextRequest) {
       sourceSummary: {
         ...statusCounts,
         lastSeedAt:
-          company?.accountingSystem === "INFOR_M3"
+          accountingSystem === "INFOR_M3"
             ? typeof connectionMetadata.inforM3AccountSeedLastRunAt === "string"
               ? connectionMetadata.inforM3AccountSeedLastRunAt
               : null
-            : company?.accountingSystem === "QUICKBOOKS_DESKTOP"
+            : accountingSystem === "INFOR_CSI"
+              ? typeof connectionMetadata.inforCsiAccountSeedLastRunAt === "string"
+                ? connectionMetadata.inforCsiAccountSeedLastRunAt
+                : null
+            : accountingSystem === "QUICKBOOKS_DESKTOP"
               ? typeof connectionMetadata.quickbooksDesktopAccountSeedLastRunAt === "string"
                 ? connectionMetadata.quickbooksDesktopAccountSeedLastRunAt
                 : null

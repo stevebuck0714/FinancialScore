@@ -16,7 +16,7 @@ function normalizeFrequency(value: unknown): SyncFrequency {
 
 function mapAccountingSystemToPlatform(system: unknown): AccountingPlatform | null {
   const normalized = String(system || '').trim().toUpperCase();
-  if (normalized === 'INFOR_M3') return 'INFOR_M3';
+  if (normalized === 'INFOR_M3' || normalized === 'INFOR_CSI') return 'INFOR_M3';
   if (normalized === 'QUICKBOOKS' || normalized === 'QUICKBOOKS_DESKTOP') return 'QUICKBOOKS';
   if (normalized === 'DYNAMICS' || normalized === 'DYNAMICS365') return 'DYNAMICS365';
   if (normalized === 'ACUMATICA') return 'ACUMATICA';

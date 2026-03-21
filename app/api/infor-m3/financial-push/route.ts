@@ -62,9 +62,9 @@ export async function POST(request: NextRequest) {
     if (!company) {
       return NextResponse.json({ ok: false, error: 'Company not found' }, { status: 404 });
     }
-    if (String(company.accountingSystem || '').toUpperCase() !== 'INFOR_M3') {
+    if (!['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase())) {
       return NextResponse.json(
-        { ok: false, error: 'Financial push is only supported for INFOR_M3 companies.' },
+        { ok: false, error: 'Financial push is only supported for INFOR_M3 / INFOR_CSI companies.' },
         { status: 400 },
       );
     }

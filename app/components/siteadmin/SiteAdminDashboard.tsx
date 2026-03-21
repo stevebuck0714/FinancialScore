@@ -453,10 +453,14 @@ export default function SiteAdminDashboard(props: any) {
 
   type InforAccountingProgramRow = {
     module: string;
-    miProgram: string;
+    miProgram?: string;
     transactions: string[];
     cono: string;
     divi: string;
+    endpointPath?: string;
+    mongooseConfig?: string;
+    recordCap?: number;
+    properties?: string[];
     enabled: boolean;
   };
 
@@ -483,39 +487,13 @@ export default function SiteAdminDashboard(props: any) {
   >({});
 
   const defaultAccountingPrograms: InforAccountingProgramRow[] = [
-    // Infor CSI (SyteLine) extraction mapping defaults.
-    { module: 'Chart of Accounts', miProgram: 'ChartOfAccounts', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Accounting Dimensions', miProgram: 'DimensionCodes', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'GL Transactions', miProgram: 'LedgerTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'GL Period Balances', miProgram: 'LedgerBalances', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Customers', miProgram: 'Customers', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Customer Addresses', miProgram: 'CustomerAddresses', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'AR Invoices', miProgram: 'CustomerInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'AR Payments', miProgram: 'ARPayments', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'AR Transactions', miProgram: 'ARPostedTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Vendors', miProgram: 'Vendors', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Vendor Addresses', miProgram: 'VendorAddresses', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'AP Invoices', miProgram: 'VendorInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'AP Payments', miProgram: 'APPayments', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'AP Transactions', miProgram: 'APPostedTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Bank Accounts', miProgram: 'BankAccounts', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Cash Ledger', miProgram: 'BankTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Payment Transactions', miProgram: 'CashReceipts', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Items', miProgram: 'Items', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Item Warehouse Balance', miProgram: 'ItemWarehouseBalances', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Inventory Transactions', miProgram: 'InventoryTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Lot/Serial Inventory', miProgram: 'ItemLotLocations', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Sales Orders', miProgram: 'SalesOrders', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Sales Order Lines', miProgram: 'SalesOrderLines', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Sales Invoices', miProgram: 'CustomerInvoices', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Customer Shipments', miProgram: 'CustomerShipments', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Purchase Orders', miProgram: 'PurchaseOrders', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'PO Lines', miProgram: 'PurchaseOrderLines', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Goods Receipts', miProgram: 'PurchaseOrderReceipts', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Work Orders', miProgram: 'Jobs', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Work Order Operations', miProgram: 'JobOperations', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'Production Reporting', miProgram: 'JobTransactions', transactions: ['GET'], cono: '', divi: '', enabled: true },
-    { module: 'BOM', miProgram: 'BillOfMaterials', transactions: ['GET'], cono: '', divi: '', enabled: true },
+    // CSI IDO-based defaults for operational tab population.
+    { module: 'Customers', miProgram: 'SLCustomers', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'AR', miProgram: 'SLArtrans', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'AP', miProgram: 'SLAptrxs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxs?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Sales', miProgram: 'SLCoitems', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Inventory', miProgram: 'SLItems', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
+    { module: 'Cash', miProgram: 'SLBankHdrs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000', mongooseConfig: 'TMSManager', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
   ];
 
   const getCompanyPrograms = (companyId: string) =>
@@ -2169,7 +2147,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   return prev.filter(id => id !== company.id);
                                                 }
                                                 setSelectedCompanyId(company.id);
-                                                if (company.accountingSystem === 'INFOR_M3') {
+                                                if (['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase())) {
                                                   loadInforM3Credentials?.(company.id);
                                                   loadCompanyPrograms(company.id);
                                                   checkInforM3Status?.(company.id).then((statusData: any) => {
@@ -2251,7 +2229,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 <div>
                                                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
                                                 </div>
-                                                {company.accountingSystem === 'INFOR_M3' && (
+                                                {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) && (
                                                   <div style={{ display: 'grid', gap: '8px', width: '100%', maxWidth: '760px' }}>
                                                     <input
                                                       id={`consultant-infor-json-file-${company.id}`}
@@ -2559,7 +2537,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 </div>
                                               </div>
 
-                                              {company.accountingSystem === 'INFOR_M3' ? (
+                                              {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) ? (
                                                 <>
                                                   <div
                                                     style={{
@@ -4178,7 +4156,7 @@ export default function SiteAdminDashboard(props: any) {
                                       } else {
                                         newSet.add(businessCompany.id);
                                         setSelectedCompanyId(businessCompany.id);
-                                        if (businessCompany.accountingSystem === 'INFOR_M3') {
+                                        if (['INFOR_M3', 'INFOR_CSI'].includes(String(businessCompany.accountingSystem || '').toUpperCase())) {
                                           loadInforM3Credentials?.(businessCompany.id);
                                           loadCompanyPrograms(businessCompany.id);
                                           checkInforM3Status?.(businessCompany.id).then((statusData: any) => {
@@ -4445,7 +4423,7 @@ export default function SiteAdminDashboard(props: any) {
                                   );
                                 })()}
 
-                                {businessCompany?.accountingSystem === 'INFOR_M3' ? (
+                                {['INFOR_M3', 'INFOR_CSI'].includes(String(businessCompany?.accountingSystem || '').toUpperCase()) ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>

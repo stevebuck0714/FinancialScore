@@ -103,7 +103,7 @@ export default function CompanySettingsTab({
 
   useEffect(() => {
     const loadPrograms = async () => {
-      if (companyAccountingSystem !== 'INFOR_M3' || !selectedCompanyId) return;
+      if (!['INFOR_M3', 'INFOR_CSI'].includes(String(companyAccountingSystem || '').toUpperCase()) || !selectedCompanyId) return;
       setProgramsLoading(true);
       setProgramsMessage(null);
       try {
@@ -217,7 +217,7 @@ export default function CompanySettingsTab({
       });
 
       if (response.ok) {
-        if (companyAccountingSystem === 'INFOR_M3' && accountingPrograms.length > 0) {
+        if (['INFOR_M3', 'INFOR_CSI'].includes(String(companyAccountingSystem || '').toUpperCase()) && accountingPrograms.length > 0) {
           // The endpoint enforces full required fields only for enabled rows.
           // Auto-disable incomplete rows to prevent save failure while keeping data visible/editable.
           const normalizedPrograms = accountingPrograms.map((row) => ({
@@ -292,10 +292,10 @@ export default function CompanySettingsTab({
       {/* Accounting System Section */}
       <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '24px' }}>
         <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-          {companyAccountingSystem === 'INFOR_M3' ? 'CSI Accounting Integration' : 'Accounting Integration'}
+          {['INFOR_M3', 'INFOR_CSI'].includes(String(companyAccountingSystem || '').toUpperCase()) ? 'CSI Accounting Integration' : 'Accounting Integration'}
         </h2>
         <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-          Select the accounting system{companyAccountingSystem === 'INFOR_M3' ? ' and manage CSI accounting programs' : ''} for this company.
+          Select the accounting system{['INFOR_M3', 'INFOR_CSI'].includes(String(companyAccountingSystem || '').toUpperCase()) ? ' and manage CSI accounting programs' : ''} for this company.
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '10px 12px', alignItems: 'center' }}>
           <div style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
@@ -322,7 +322,7 @@ export default function CompanySettingsTab({
           </select>
         </div>
 
-        {companyAccountingSystem === 'INFOR_M3' && (
+        {['INFOR_M3', 'INFOR_CSI'].includes(String(companyAccountingSystem || '').toUpperCase()) && (
           <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
             <div style={{ fontSize: '14px', fontWeight: '600', color: '#334155', marginBottom: '8px' }}>
               CSI Accounting Programs
