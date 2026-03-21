@@ -11,6 +11,22 @@ import { appendDataRoomAuditEvents, buildDataRoomAuditEvent } from '@/lib/dataro
 export const dynamic = 'force-dynamic';
 const OFFICE_WEB_VIEWER_MAX_BYTES = 25 * 1024 * 1024;
 
+async function resolveDocumentSizeBytes(blobUrl: string, knownSizeBytes: number | null): Promise<number | null> {
+  if (typeof knownSizeBytes === 'number' && Number.isFinite(knownSizeBytes) && knownSizeBytes >= 0) {
+    return knownSizeBytes;
+  }
+  try {
+    const res = await fetch(blobUrl, { method: 'HEAD' });
+    if (!res.ok) return null;
+    const raw = res.headers.get('content-length');
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function isPreviewableDocument(contentType: string | null, fileName: string) {
   const ct = String(contentType || '').toLowerCase();
   if (ct.startsWith('image/')) return true;
@@ -234,8 +250,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return NextResponse.redirect(doc.blobUrl, { status: 302 });
     }
     if (canOfficePreview) {
-      if (typeof doc.sizeBytes === 'number' && doc.sizeBytes > OFFICE_WEB_VIEWER_MAX_BYTES) {
-        return NextResponse.redirect(doc.blobUrl, { status: 302 });
+      const sizeBytes = await resolveDocumentSizeBytes(doc.blobUrl, doc.sizeBytes ?? null);
+      if (typeof sizeBytes === 'number' && sizeBytes > OFFICE_WEB_VIEWER_MAX_BYTES) {
+        const gviewUrl = `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(doc.blobUrl)}`;
+        return NextResponse.redirect(gviewUrl, { status: 302 });
       }
       const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(doc.blobUrl)}`;
       return NextResponse.redirect(officeViewerUrl, { status: 302 });

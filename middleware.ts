@@ -267,6 +267,7 @@ export async function middleware(request: NextRequest) {
     "img-src 'self' data: https:",
     "font-src 'self' data:",
     "connect-src 'self' https:",
+    "frame-src 'self' https://docs.google.com https://view.officeapps.live.com",
     "frame-ancestors 'none'",
   ].join('; ')
   response.headers.set('Content-Security-Policy', csp)
