@@ -7,7 +7,7 @@ import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
 import BillingDashboard from '@/app/components/billing/BillingDashboard';
 import { getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
-import { getModuleLabel } from '@/lib/operations/module-registry';
+import { getModuleLabel, mapModuleToDataType } from '@/lib/operations/module-registry';
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsPriceCostComparison', label: 'Products: Weekly Price-Cost Comparison', group: 'Products' },
@@ -42,23 +42,24 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'customersAtRiskQueue', label: 'Customers: At-Risk Accounts Queue', group: 'Customers' },
 ];
 
-const OPERATIONAL_HUB_GROUP_TAB_DEPENDENCIES: Record<string, string[]> = {
-  Products: ['products', 'products_skus', 'products_assortment'],
-  Inventory: ['inventory'],
-  Cash: ['cash', 'cash_liquidity'],
-  AR: ['ar', 'billing_ar', 'ar_receipts', 'receivables'],
-  AP: ['ap', 'payables'],
-  Customers: [
-    'customers',
-    'clients_customers',
-    'customers_accounts',
-    'customers_members',
-    'tenants_customers',
-    'customers_sites',
-    'payors_customers',
-    'guests_customers',
-  ],
-  'Daily Financials': ['daily_financials'],
+const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
+  customers: 'Customers',
+  'ar-aging': 'AR',
+  'ap-aging': 'AP',
+  products: 'Products',
+  inventory: 'Inventory',
+  cash: 'Cash',
+  'daily-financials': 'Daily Financials',
+};
+
+type OperationalHubCustomReport = {
+  id: string;
+  label: string;
+  tabKey: string;
+  dataType: string;
+  scope: 'company' | 'global';
+  createdAt: string;
+  createdByCompanyId: string;
 };
 
 export default function SiteAdminDashboard(props: any) {
@@ -128,6 +129,10 @@ export default function SiteAdminDashboard(props: any) {
   const [savingOperationalDataModeCompanyId, setSavingOperationalDataModeCompanyId] = React.useState<string | null>(null);
   const [savingOperationalHubConfigCompanyId, setSavingOperationalHubConfigCompanyId] = React.useState<string | null>(null);
   const [editingOperationalHubConfigByCompany, setEditingOperationalHubConfigByCompany] = React.useState<Record<string, Record<string, boolean>>>({});
+  const [addingOperationalHubReportCompanyId, setAddingOperationalHubReportCompanyId] = React.useState<string | null>(null);
+  const [newOperationalHubReportByCompany, setNewOperationalHubReportByCompany] = React.useState<
+    Record<string, { label: string; tabKey: string; scope: 'company' | 'global' }>
+  >({});
   const [savingDataRoomCompanyId, setSavingDataRoomCompanyId] = React.useState<string | null>(null);
   const [editingDataRoomPricingByCompany, setEditingDataRoomPricingByCompany] = React.useState<
     Record<string, { monthly: number; quarterly: number; annual: number }>
@@ -352,19 +357,24 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
-  const getOperationalHubConfig = (company: any): Record<string, any> => {
+  const getOperationalHubSettings = (company: any): Record<string, any> => {
     const uda =
       company?.userDefinedAllocations &&
       typeof company.userDefinedAllocations === 'object' &&
       !Array.isArray(company.userDefinedAllocations)
         ? company.userDefinedAllocations
         : {};
-    const operationalHub =
+    return (
       uda?.operationalHub &&
       typeof uda.operationalHub === 'object' &&
       !Array.isArray(uda.operationalHub)
         ? uda.operationalHub
-        : {};
+        : {}
+    );
+  };
+
+  const getOperationalHubConfig = (company: any): Record<string, any> => {
+    const operationalHub = getOperationalHubSettings(company);
     const sections =
       operationalHub?.sections &&
       typeof operationalHub.sections === 'object' &&
@@ -372,6 +382,24 @@ export default function SiteAdminDashboard(props: any) {
         ? operationalHub.sections
         : {};
     return sections;
+  };
+
+  const getOperationalHubCustomReports = (company: any): OperationalHubCustomReport[] => {
+    const operationalHub = getOperationalHubSettings(company);
+    const customReports = Array.isArray(operationalHub?.customReports) ? operationalHub.customReports : [];
+    return customReports
+      .map((entry: any) => {
+        const id = String(entry?.id || '').trim();
+        const label = String(entry?.label || '').trim();
+        const tabKey = String(entry?.tabKey || '').trim();
+        const dataType = String(entry?.dataType || '').trim();
+        const scope = entry?.scope === 'global' ? 'global' : 'company';
+        const createdAt = String(entry?.createdAt || new Date().toISOString());
+        const createdByCompanyId = String(entry?.createdByCompanyId || company?.id || '');
+        if (!id || !label || !tabKey || !dataType) return null;
+        return { id, label, tabKey, dataType, scope, createdAt, createdByCompanyId } as OperationalHubCustomReport;
+      })
+      .filter(Boolean) as OperationalHubCustomReport[];
   };
 
   const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
@@ -399,35 +427,49 @@ export default function SiteAdminDashboard(props: any) {
   };
 
   const getSelectedTabCategoryCardGroups = (company: any, draft?: Record<string, boolean>): string[] => {
-    const enabledTabKeys = getSelectedTabCategoryKeys(company, draft);
-    const mappedGroups = Object.entries(OPERATIONAL_HUB_GROUP_TAB_DEPENDENCIES)
-      .filter(([, dependencyKeys]) => dependencyKeys.some((key) => enabledTabKeys.has(key)))
-      .map(([group]) => group);
     const tabOptions = getOperationalHubTabCategoryOptions(company);
-    const explicitlySelectedUnmappedLabels = tabOptions
+    return tabOptions
       .filter((option) => {
         const explicit = draft ? draft[option.key] : undefined;
         return explicit === undefined ? true : explicit !== false;
       })
-      .filter((option) => {
-        const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
-        return !Object.values(OPERATIONAL_HUB_GROUP_TAB_DEPENDENCIES).some((dependencyKeys) => dependencyKeys.includes(moduleKey));
-      })
       .map((option) => option.label);
-    return Array.from(new Set([...mappedGroups, ...explicitlySelectedUnmappedLabels]));
+  };
+
+  const getSectorNameForCompany = (company: any): string => {
+    const sectorCategory = String(company?.industrySectorCategory || '').trim();
+    const sectorCode = Number.parseInt(sectorCategory, 10);
+    const sectorByCode = INDUSTRY_SECTORS.find((item) => Number(item?.sectorCode) === sectorCode);
+    return sectorByCode?.sectorName || `Sector ${sectorCategory}`;
   };
 
   const getOperationalHubSectionOptionsForCompany = (company: any, draft?: Record<string, boolean>): Array<{ key: string; label: string; group: string }> => {
     const tabOptions = getOperationalHubTabCategoryOptions(company);
-    const enabledTabKeys = getSelectedTabCategoryKeys(company, draft);
-    const filteredSectionOptions = OPERATIONAL_HUB_SECTION_OPTIONS.filter((option) => {
-      const requiredTabKeys = OPERATIONAL_HUB_GROUP_TAB_DEPENDENCIES[option.group];
-      if (!requiredTabKeys || requiredTabKeys.length === 0) {
-        return true;
-      }
-      return requiredTabKeys.some((requiredKey) => enabledTabKeys.has(requiredKey));
+    const selectedTabOptions = tabOptions.filter((option) => {
+      const explicit = draft ? draft[option.key] : undefined;
+      return explicit === undefined ? true : explicit !== false;
     });
-    return [...tabOptions, ...filteredSectionOptions];
+    const sectionOptionsBySelectedTab = selectedTabOptions.flatMap((option) => {
+      const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
+      const dataType = mapModuleToDataType(moduleKey);
+      const sourceGroup = dataType ? OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP[dataType] : null;
+      if (!sourceGroup) return [];
+      return OPERATIONAL_HUB_SECTION_OPTIONS.filter((item) => item.group === sourceGroup).map((item) => ({
+        ...item,
+        group: option.label,
+      }));
+    });
+    const customReportOptionsBySelectedTab = selectedTabOptions.flatMap((option) => {
+      const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
+      return getOperationalHubCustomReports(company)
+        .filter((report) => report.tabKey === moduleKey)
+        .map((report) => ({
+          key: `customReport:${report.id}`,
+          label: report.scope === 'global' ? `${report.label} (global)` : report.label,
+          group: option.label,
+        }));
+    });
+    return [...tabOptions, ...sectionOptionsBySelectedTab, ...customReportOptionsBySelectedTab];
   };
 
   const getOperationalHubDraft = (company: any): Record<string, boolean> => {
@@ -467,6 +509,7 @@ export default function SiteAdminDashboard(props: any) {
       const targetCompany = Array.isArray(companies)
         ? companies.find((company: any) => company?.id === companyId)
         : null;
+      const existingOperationalHub = targetCompany ? getOperationalHubSettings(targetCompany) : {};
       const existingSections = targetCompany ? getOperationalHubConfig(targetCompany) : {};
       const mergedSections = { ...existingSections, ...draft };
       const response = await fetch('/api/companies', {
@@ -475,6 +518,7 @@ export default function SiteAdminDashboard(props: any) {
         body: JSON.stringify({
           id: companyId,
           operationalHubConfig: {
+            ...existingOperationalHub,
             sections: mergedSections,
             updatedAt: new Date().toISOString(),
           },
@@ -506,9 +550,125 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const getNewOperationalHubReportDraft = (company: any): { label: string; tabKey: string; scope: 'company' | 'global' } => {
+    const existing = newOperationalHubReportByCompany[company?.id];
+    if (existing) return existing;
+    const firstTabKey = getOperationalHubTabCategoryOptions(company)[0]?.key?.replace(/^tab:/, '') || '';
+    return { label: '', tabKey: firstTabKey, scope: 'company' };
+  };
+
+  const setNewOperationalHubReportDraft = (
+    companyId: string,
+    patch: Partial<{ label: string; tabKey: string; scope: 'company' | 'global' }>
+  ) => {
+    setNewOperationalHubReportByCompany((prev) => {
+      const current = prev[companyId] || { label: '', tabKey: '', scope: 'company' as const };
+      return {
+        ...prev,
+        [companyId]: {
+          ...current,
+          ...patch,
+        },
+      };
+    });
+  };
+
+  const upsertOperationalHubCustomReport = (
+    company: any,
+    report: OperationalHubCustomReport
+  ): Record<string, any> => {
+    const currentConfig = getOperationalHubSettings(company);
+    const existingReports = getOperationalHubCustomReports(company);
+    const nextReports = [...existingReports, report];
+    return {
+      ...currentConfig,
+      customReports: nextReports,
+      updatedAt: new Date().toISOString(),
+    };
+  };
+
+  const createOperationalHubCustomReport = async (company: any) => {
+    const draft = getNewOperationalHubReportDraft(company);
+    const label = draft.label.trim();
+    const tabKey = String(draft.tabKey || '').trim();
+    if (!label) {
+      alert('Enter a report name.');
+      return;
+    }
+    if (!tabKey) {
+      alert('Select a tab category.');
+      return;
+    }
+    const dataType = mapModuleToDataType(tabKey);
+    if (!dataType) {
+      alert('Selected tab category is not mapped to a report family yet.');
+      return;
+    }
+    const report: OperationalHubCustomReport = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label,
+      tabKey,
+      dataType,
+      scope: draft.scope,
+      createdAt: new Date().toISOString(),
+      createdByCompanyId: String(company?.id || ''),
+    };
+
+    setAddingOperationalHubReportCompanyId(company.id);
+    try {
+      const targetCompanies =
+        draft.scope === 'global'
+          ? (Array.isArray(companies) ? companies : [])
+          : [company];
+      for (const target of targetCompanies) {
+        const nextOperationalHubConfig = upsertOperationalHubCustomReport(target, report);
+        const response = await fetch('/api/companies', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: target.id,
+            operationalHubConfig: nextOperationalHubConfig,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.error || `Failed to add report for ${target?.name || 'company'}`);
+        }
+        setCompanies((prev: any[]) =>
+          Array.isArray(prev)
+            ? prev.map((entry: any) =>
+                entry.id === target.id
+                  ? {
+                      ...entry,
+                      ...data?.company,
+                    }
+                  : entry
+              )
+            : prev
+        );
+      }
+
+      setNewOperationalHubReportByCompany((prev) => {
+        const next = { ...prev };
+        next[company.id] = {
+          ...getNewOperationalHubReportDraft(company),
+          label: '',
+        };
+        return next;
+      });
+      alert(draft.scope === 'global' ? 'Report added for all companies.' : 'Report added for this company.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to add custom report');
+    } finally {
+      setAddingOperationalHubReportCompanyId(null);
+    }
+  };
+
   const renderOperationalHubCustomizationCard = (company: any) => {
     const draft = getOperationalHubDraft(company);
     const options = getOperationalHubSectionOptionsForCompany(company, draft);
+    const newReportDraft = getNewOperationalHubReportDraft(company);
+    const tabOptions = getOperationalHubTabCategoryOptions(company);
     const selectedTabGroups = getSelectedTabCategoryCardGroups(company, draft);
     const groups = Array.from(new Set(['Tab Categories', ...selectedTabGroups, ...options.map((option) => option.group)]));
     return (
@@ -518,6 +678,50 @@ export default function SiteAdminDashboard(props: any) {
             <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155' }}>Operational Hub Customization</div>
             <div style={{ fontSize: '11px', color: '#64748b' }}>
               Company-level section overrides (takes precedence over sector defaults).
+            </div>
+            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                value={newReportDraft.label}
+                onChange={(event) => setNewOperationalHubReportDraft(company.id, { label: event.target.value })}
+                placeholder="New report name"
+                style={{ fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', minWidth: '180px', background: 'white' }}
+              />
+              <select
+                value={newReportDraft.tabKey}
+                onChange={(event) => setNewOperationalHubReportDraft(company.id, { tabKey: event.target.value })}
+                style={{ fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', background: 'white' }}
+              >
+                {tabOptions.map((option) => (
+                  <option key={`${company.id}-new-report-${option.key}`} value={option.key.replace(/^tab:/, '')}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={newReportDraft.scope}
+                onChange={(event) => setNewOperationalHubReportDraft(company.id, { scope: event.target.value === 'global' ? 'global' : 'company' })}
+                style={{ fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 8px', background: 'white' }}
+              >
+                <option value="company">Company only</option>
+                <option value="global">All companies (global)</option>
+              </select>
+              <button
+                onClick={() => createOperationalHubCustomReport(company)}
+                disabled={addingOperationalHubReportCompanyId === company.id}
+                style={{
+                  padding: '6px 10px',
+                  border: '1px solid #0f766e',
+                  borderRadius: '6px',
+                  background: '#0f766e',
+                  color: 'white',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: addingOperationalHubReportCompanyId === company.id ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Add Report
+              </button>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -567,7 +771,16 @@ export default function SiteAdminDashboard(props: any) {
               }}
             >
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
-                {group === 'Tab Categories' ? 'TAB CATEGORIES' : group}
+                {group === 'Tab Categories' ? (
+                  <div style={{ display: 'grid', gap: '4px' }}>
+                    <span>TAB CATEGORIES</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e3a8a', textTransform: 'uppercase' }}>
+                      SECTOR: {getSectorNameForCompany(company)}
+                    </span>
+                  </div>
+                ) : (
+                  group
+                )}
               </div>
               <div style={{ display: 'grid', gap: '6px' }}>
                 {(() => {

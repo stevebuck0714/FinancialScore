@@ -43,6 +43,7 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'production', label: 'Production', dataType: 'products' },
   { key: 'demand_usage', label: 'Demand & Usage', dataType: 'products' },
   { key: 'projects_wip', label: 'Projects / WIP', dataType: 'products' },
+  { key: 'projects_engagements', label: 'Projects / Engagements', dataType: 'products' },
   { key: 'work_orders_service_delivery', label: 'Work Orders / Service Delivery', dataType: 'products' },
   { key: 'patients_encounters', label: 'Patients / Encounters', dataType: 'products' },
   { key: 'events_programming', label: 'Events / Programming', dataType: 'products' },
