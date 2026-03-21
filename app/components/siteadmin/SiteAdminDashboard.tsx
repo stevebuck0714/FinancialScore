@@ -557,8 +557,18 @@ export default function SiteAdminDashboard(props: any) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(200px, 1fr))', gap: '8px' }}>
           {groups.map((group) => (
-            <div key={`${company.id}-${group}`} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>{group}</div>
+            <div
+              key={`${company.id}-${group}`}
+              style={{
+                background: group === 'Tab Categories' ? '#eff6ff' : 'white',
+                border: group === 'Tab Categories' ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                borderRadius: '6px',
+                padding: '8px',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
+                {group === 'Tab Categories' ? 'TAB CATEGORIES' : group}
+              </div>
               <div style={{ display: 'grid', gap: '6px' }}>
                 {(() => {
                   const groupOptions = options.filter((option) => option.group === group);
