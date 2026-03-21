@@ -1237,6 +1237,39 @@ export async function PATCH(request: NextRequest) {
       };
     }
 
+    const hasOperationalHubConfigUpdate = updateFields.operationalHubConfig !== undefined;
+    if (hasOperationalHubConfigUpdate) {
+      if (context.role !== 'SITEADMIN') {
+        return NextResponse.json(
+          { error: "Only site admins can update operational hub customization settings" },
+          { status: 403 },
+        );
+      }
+
+      const currentUDA =
+        existingCompany?.userDefinedAllocations &&
+        typeof existingCompany.userDefinedAllocations === 'object' &&
+        !Array.isArray(existingCompany.userDefinedAllocations)
+          ? (existingCompany.userDefinedAllocations as Record<string, any>)
+          : {};
+
+      const nextOperationalHubConfig =
+        updateFields.operationalHubConfig &&
+        typeof updateFields.operationalHubConfig === 'object' &&
+        !Array.isArray(updateFields.operationalHubConfig)
+          ? (updateFields.operationalHubConfig as Record<string, any>)
+          : null;
+
+      const nextUDA = { ...currentUDA };
+      if (nextOperationalHubConfig) {
+        nextUDA.operationalHub = nextOperationalHubConfig;
+      } else {
+        delete nextUDA.operationalHub;
+      }
+
+      updateData.userDefinedAllocations = nextUDA;
+    }
+
     // Lines of Business and allocations (legacy LOB endpoint usage)
     if (updateFields.linesOfBusiness !== undefined)
       updateData.linesOfBusiness = updateFields.linesOfBusiness;

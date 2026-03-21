@@ -6,6 +6,60 @@ import { INDUSTRY_SECTORS } from '@/data/industrySectors';
 import { formatPhoneNumber } from '@/app/utils/phone';
 import PasswordInput from '@/app/components/common/PasswordInput';
 import BillingDashboard from '@/app/components/billing/BillingDashboard';
+import { getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
+import { getModuleLabel } from '@/lib/operations/module-registry';
+
+const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
+  { key: 'productsPriceCostComparison', label: 'Products: Weekly Price-Cost Comparison', group: 'Products' },
+  { key: 'productsPareto', label: 'Products: Top Products Pareto', group: 'Products' },
+  { key: 'productsScatter', label: 'Products: Profitability Scatter', group: 'Products' },
+  { key: 'productsScopeSelector', label: 'Products: Scope Selector', group: 'Products' },
+  { key: 'productsPriceCostTrend', label: 'Products: Price-Cost Trend', group: 'Products' },
+  { key: 'productsPriceCostWaterfall', label: 'Products: Price-Cost Waterfall', group: 'Products' },
+  { key: 'productsBottomLossMakers', label: 'Products: Bottom Products (Loss Makers)', group: 'Products' },
+  { key: 'productsFreightOtherTracker', label: 'Products: Freight/Other Tracker', group: 'Products' },
+  { key: 'inventoryValueTrend', label: 'Inventory: Value Trend', group: 'Inventory' },
+  { key: 'inventoryCurrentTable', label: 'Inventory: Current Inventory Table', group: 'Inventory' },
+  { key: 'inventoryDistribution', label: 'Inventory: Value Distribution', group: 'Inventory' },
+  { key: 'cashBankAccounts', label: 'Cash: Bank Accounts Table', group: 'Cash' },
+  { key: 'cashDistributionByAccount', label: 'Cash: Distribution by Account', group: 'Cash' },
+  { key: 'dailySummaryCards', label: 'Daily Financials: Summary KPI Cards', group: 'Daily Financials' },
+  { key: 'dailyTrendChart', label: 'Daily Financials: Daily Trend Chart', group: 'Daily Financials' },
+  { key: 'dailyIncomeStatement', label: 'Daily Financials: Income Statement View', group: 'Daily Financials' },
+  { key: 'dailyBalanceSheet', label: 'Daily Financials: Balance Sheet View', group: 'Daily Financials' },
+  { key: 'dailyCashflowStatement', label: 'Daily Financials: Cash Flow View', group: 'Daily Financials' },
+  { key: 'arCollectionsTrend', label: 'AR: Collections Trend / DSO Proxy', group: 'AR' },
+  { key: 'arCollectionsRiskQueue', label: 'AR: Collections Risk Queue', group: 'AR' },
+  { key: 'apPaymentCadenceTrend', label: 'AP: Payment Cadence / DPO Proxy', group: 'AP' },
+  { key: 'apPastDueRiskQueue', label: 'AP: Past-Due Risk Queue', group: 'AP' },
+  { key: 'apUpcomingDueCalendar', label: 'AP: Upcoming Due Calendar', group: 'AP' },
+  { key: 'cash13WeekTrend', label: 'Cash: 13-Week Trend', group: 'Cash' },
+  { key: 'cashBridge', label: 'Cash: Bridge (Receipts vs Disbursements)', group: 'Cash' },
+  { key: 'cashCovenantMonitor', label: 'Cash: Minimum Covenant Monitor', group: 'Cash' },
+  { key: 'customersConcentrationRisk', label: 'Customers: Concentration Risk', group: 'Customers' },
+  { key: 'customersRetentionProxy', label: 'Customers: Revenue Retention Proxy', group: 'Customers' },
+  { key: 'customersInvoiceVelocity', label: 'Customers: Revenue vs Invoice Velocity', group: 'Customers' },
+  { key: 'customersAtRiskQueue', label: 'Customers: At-Risk Accounts Queue', group: 'Customers' },
+];
+
+const OPERATIONAL_HUB_GROUP_TAB_DEPENDENCIES: Record<string, string[]> = {
+  Products: ['products', 'products_skus', 'products_assortment'],
+  Inventory: ['inventory'],
+  Cash: ['cash', 'cash_liquidity'],
+  AR: ['ar', 'billing_ar', 'ar_receipts', 'receivables'],
+  AP: ['ap', 'payables'],
+  Customers: [
+    'customers',
+    'clients_customers',
+    'customers_accounts',
+    'customers_members',
+    'tenants_customers',
+    'customers_sites',
+    'payors_customers',
+    'guests_customers',
+  ],
+  'Daily Financials': ['daily_financials'],
+};
 
 export default function SiteAdminDashboard(props: any) {
   const {
@@ -72,6 +126,8 @@ export default function SiteAdminDashboard(props: any) {
   >({});
   const [savingTier1RoutingCompanyId, setSavingTier1RoutingCompanyId] = React.useState<string | null>(null);
   const [savingOperationalDataModeCompanyId, setSavingOperationalDataModeCompanyId] = React.useState<string | null>(null);
+  const [savingOperationalHubConfigCompanyId, setSavingOperationalHubConfigCompanyId] = React.useState<string | null>(null);
+  const [editingOperationalHubConfigByCompany, setEditingOperationalHubConfigByCompany] = React.useState<Record<string, Record<string, boolean>>>({});
   const [savingDataRoomCompanyId, setSavingDataRoomCompanyId] = React.useState<string | null>(null);
   const [editingDataRoomPricingByCompany, setEditingDataRoomPricingByCompany] = React.useState<
     Record<string, { monthly: number; quarterly: number; annual: number }>
@@ -294,6 +350,242 @@ export default function SiteAdminDashboard(props: any) {
     } finally {
       setSavingOperationalDataModeCompanyId(null);
     }
+  };
+
+  const getOperationalHubConfig = (company: any): Record<string, any> => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const operationalHub =
+      uda?.operationalHub &&
+      typeof uda.operationalHub === 'object' &&
+      !Array.isArray(uda.operationalHub)
+        ? uda.operationalHub
+        : {};
+    const sections =
+      operationalHub?.sections &&
+      typeof operationalHub.sections === 'object' &&
+      !Array.isArray(operationalHub.sections)
+        ? operationalHub.sections
+        : {};
+    return sections;
+  };
+
+  const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
+    const sectorModules = getTopLineBucketsForSector(company?.industrySectorCategory || null).map((bucket) => String(bucket.key || '').trim());
+    const moduleSet = Array.from(new Set([...sectorModules, 'daily_financials'].filter(Boolean)));
+    return moduleSet.map((moduleKey) => ({
+      key: `tab:${moduleKey}`,
+      label: getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' '),
+      group: 'Tab Categories',
+    }));
+  };
+
+  const getSelectedTabCategoryKeys = (company: any, draft?: Record<string, boolean>): Set<string> => {
+    const tabOptions = getOperationalHubTabCategoryOptions(company);
+    const enabledTabKeys = new Set<string>();
+    tabOptions.forEach((option) => {
+      const sectionKey = option.key;
+      const explicit = draft ? draft[sectionKey] : undefined;
+      const enabled = explicit === undefined ? true : explicit !== false;
+      if (enabled && sectionKey.startsWith('tab:')) {
+        enabledTabKeys.add(sectionKey.slice(4));
+      }
+    });
+    return enabledTabKeys;
+  };
+
+  const getSelectedTabCategoryCardGroups = (company: any, draft?: Record<string, boolean>): string[] => {
+    const enabledTabKeys = getSelectedTabCategoryKeys(company, draft);
+    const mappedGroups = Object.entries(OPERATIONAL_HUB_GROUP_TAB_DEPENDENCIES)
+      .filter(([, dependencyKeys]) => dependencyKeys.some((key) => enabledTabKeys.has(key)))
+      .map(([group]) => group);
+    const tabOptions = getOperationalHubTabCategoryOptions(company);
+    const explicitlySelectedUnmappedLabels = tabOptions
+      .filter((option) => {
+        const explicit = draft ? draft[option.key] : undefined;
+        return explicit === undefined ? true : explicit !== false;
+      })
+      .filter((option) => {
+        const moduleKey = option.key.startsWith('tab:') ? option.key.slice(4) : option.key;
+        return !Object.values(OPERATIONAL_HUB_GROUP_TAB_DEPENDENCIES).some((dependencyKeys) => dependencyKeys.includes(moduleKey));
+      })
+      .map((option) => option.label);
+    return Array.from(new Set([...mappedGroups, ...explicitlySelectedUnmappedLabels]));
+  };
+
+  const getOperationalHubSectionOptionsForCompany = (company: any, draft?: Record<string, boolean>): Array<{ key: string; label: string; group: string }> => {
+    const tabOptions = getOperationalHubTabCategoryOptions(company);
+    const enabledTabKeys = getSelectedTabCategoryKeys(company, draft);
+    const filteredSectionOptions = OPERATIONAL_HUB_SECTION_OPTIONS.filter((option) => {
+      const requiredTabKeys = OPERATIONAL_HUB_GROUP_TAB_DEPENDENCIES[option.group];
+      if (!requiredTabKeys || requiredTabKeys.length === 0) {
+        return true;
+      }
+      return requiredTabKeys.some((requiredKey) => enabledTabKeys.has(requiredKey));
+    });
+    return [...tabOptions, ...filteredSectionOptions];
+  };
+
+  const getOperationalHubDraft = (company: any): Record<string, boolean> => {
+    const existing = editingOperationalHubConfigByCompany[company?.id];
+    if (existing) return existing;
+    const sections = getOperationalHubConfig(company);
+    const options = getOperationalHubSectionOptionsForCompany(company, sections);
+    return options.reduce<Record<string, boolean>>((acc, option) => {
+      const explicit = sections[option.key];
+      acc[option.key] = explicit === undefined ? true : explicit !== false;
+      return acc;
+    }, {});
+  };
+
+  const setOperationalHubSection = (company: any, key: string, enabled: boolean) => {
+    const draft = getOperationalHubDraft(company);
+    setEditingOperationalHubConfigByCompany((prev) => ({
+      ...prev,
+      [company.id]: {
+        ...draft,
+        [key]: enabled,
+      },
+    }));
+  };
+
+  const resetOperationalHubConfig = (companyId: string) => {
+    setEditingOperationalHubConfigByCompany((prev) => {
+      const next = { ...prev };
+      delete next[companyId];
+      return next;
+    });
+  };
+
+  const saveOperationalHubConfig = async (companyId: string, draft: Record<string, boolean>) => {
+    setSavingOperationalHubConfigCompanyId(companyId);
+    try {
+      const targetCompany = Array.isArray(companies)
+        ? companies.find((company: any) => company?.id === companyId)
+        : null;
+      const existingSections = targetCompany ? getOperationalHubConfig(targetCompany) : {};
+      const mergedSections = { ...existingSections, ...draft };
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          operationalHubConfig: {
+            sections: mergedSections,
+            updatedAt: new Date().toISOString(),
+          },
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save Operational Hub customization');
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((company: any) =>
+              company.id === companyId
+                ? {
+                    ...company,
+                    ...data?.company,
+                  }
+                : company
+            )
+          : prev
+      );
+      resetOperationalHubConfig(companyId);
+      alert('Operational Hub customization saved.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to save Operational Hub customization');
+    } finally {
+      setSavingOperationalHubConfigCompanyId(null);
+    }
+  };
+
+  const renderOperationalHubCustomizationCard = (company: any) => {
+    const draft = getOperationalHubDraft(company);
+    const options = getOperationalHubSectionOptionsForCompany(company, draft);
+    const selectedTabGroups = getSelectedTabCategoryCardGroups(company, draft);
+    const groups = Array.from(new Set(['Tab Categories', ...selectedTabGroups, ...options.map((option) => option.group)]));
+    return (
+      <div style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155' }}>Operational Hub Customization</div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>
+              Company-level section overrides (takes precedence over sector defaults).
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => resetOperationalHubConfig(company.id)}
+              disabled={savingOperationalHubConfigCompanyId === company.id}
+              style={{
+                padding: '6px 10px',
+                border: '1px solid #cbd5e1',
+                borderRadius: '6px',
+                background: 'white',
+                color: '#334155',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: savingOperationalHubConfigCompanyId === company.id ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Reset
+            </button>
+            <button
+              onClick={() => saveOperationalHubConfig(company.id, draft)}
+              disabled={savingOperationalHubConfigCompanyId === company.id}
+              style={{
+                padding: '6px 10px',
+                border: '1px solid #1d4ed8',
+                borderRadius: '6px',
+                background: '#1d4ed8',
+                color: 'white',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: savingOperationalHubConfigCompanyId === company.id ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(200px, 1fr))', gap: '8px' }}>
+          {groups.map((group) => (
+            <div key={`${company.id}-${group}`} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>{group}</div>
+              <div style={{ display: 'grid', gap: '6px' }}>
+                {(() => {
+                  const groupOptions = options.filter((option) => option.group === group);
+                  if (groupOptions.length === 0) {
+                    return (
+                      <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                        No section-level toggles available for this tab yet.
+                      </div>
+                    );
+                  }
+                  return groupOptions.map((option) => (
+                    <label key={`${company.id}-${option.key}`} style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', color: '#334155' }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(draft[option.key])}
+                        onChange={(event) => setOperationalHubSection(company, option.key, event.target.checked)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ));
+                })()}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const getDataRoomEnabledByAdmin = (company: any) => {
@@ -2581,7 +2873,6 @@ export default function SiteAdminDashboard(props: any) {
                                                   </div>
                                                 </div>
                                               </div>
-
                                               {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) ? (
                                                 <>
                                                   <div
@@ -3311,7 +3602,7 @@ export default function SiteAdminDashboard(props: any) {
                                               )}
                                             </div>
 
-                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1', order: 2 }}>
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                                 <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
                                                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -3703,6 +3994,9 @@ export default function SiteAdminDashboard(props: any) {
                                                   </table>
                                                 )}
                                               </div>
+                                            </div>
+                                            <div style={{ gridColumn: '1 / -1', order: 3 }}>
+                                              {renderOperationalHubCustomizationCard(company)}
                                             </div>
                                           </div>
                                           
@@ -4617,7 +4911,6 @@ export default function SiteAdminDashboard(props: any) {
                                         </div>
                                       </div>
                                     </div>
-
                                     <div
                                       style={{
                                         marginBottom: '8px',
@@ -4747,7 +5040,7 @@ export default function SiteAdminDashboard(props: any) {
                                     )}
                                   </div>
 
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', order: 2 }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                         <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', margin: 0 }}>Accounting Programs</h4>
                                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -4849,6 +5142,9 @@ export default function SiteAdminDashboard(props: any) {
                                           </tbody>
                                         </table>
                                       </div>
+                                    </div>
+                                    <div style={{ gridColumn: '1 / -1', order: 3 }}>
+                                      {renderOperationalHubCustomizationCard(businessCompany)}
                                     </div>
                                   </div>
                                 ) : businessCompany?.accountingSystem === 'QUICKBOOKS' ? (

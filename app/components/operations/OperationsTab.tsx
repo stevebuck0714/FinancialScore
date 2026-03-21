@@ -34,6 +34,7 @@ interface OperationsTabProps {
   selectedCompanyId: string;
   companyName: string;
   industrySectorCategory?: string | null;
+  operationalHubConfig?: any;
   viewMode?: 'full' | 'overview-only';
   initialTab?: string;
   initialForecastBasisTab?: 'cash-basis' | 'accrual-basis';
@@ -313,6 +314,7 @@ export default function OperationsTab({
   selectedCompanyId,
   companyName,
   industrySectorCategory,
+  operationalHubConfig,
   viewMode = 'full',
   initialTab,
   initialForecastBasisTab,
@@ -337,6 +339,7 @@ export default function OperationsTab({
   const [cashData, setCashData] = useState<any>(null);
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
+  const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
   const [selectedDailyTrendMetrics, setSelectedDailyTrendMetrics] = useState<Array<'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct'>>([
     'revenue',
@@ -360,6 +363,24 @@ export default function OperationsTab({
   const [priceCostSearchTerm, setPriceCostSearchTerm] = useState('');
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
+  const operationalHubSections =
+    companyOperationalHubConfig &&
+    typeof companyOperationalHubConfig === 'object' &&
+    companyOperationalHubConfig.sections &&
+    typeof companyOperationalHubConfig.sections === 'object' &&
+    !Array.isArray(companyOperationalHubConfig.sections)
+      ? (companyOperationalHubConfig.sections as Record<string, any>)
+      : {};
+  const isSectionEnabled = (sectionKey: string): boolean => {
+    const value = operationalHubSections[sectionKey];
+    return value === undefined ? true : value !== false;
+  };
+  const isTabModuleEnabled = (moduleKey: string): boolean => {
+    const normalized = String(moduleKey || '').trim();
+    if (!normalized) return true;
+    const value = operationalHubSections[`tab:${normalized}`];
+    return value === undefined ? true : value !== false;
+  };
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -388,7 +409,7 @@ export default function OperationsTab({
       'daily_financials',
       'working_capital_forecast',
     ])
-  ).filter((module) => !['cash', 'working_capital_forecast', 'working-capital-forecast'].includes(module));
+  ).filter((module) => isTabModuleEnabled(module) && !['cash', 'working_capital_forecast', 'working-capital-forecast'].includes(module));
   const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', 'forecast', ...availableModuleTabs];
   const moduleTitlesByType = Object.fromEntries(
     orderedDashboardDataTypes
@@ -511,6 +532,39 @@ export default function OperationsTab({
       loadTabData(activeTab);
     }
   }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
+
+  useEffect(() => {
+    setCompanyOperationalHubConfig(operationalHubConfig || null);
+  }, [operationalHubConfig]);
+
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    const controller = new AbortController();
+    fetch(`/api/companies?companyId=${encodeURIComponent(selectedCompanyId)}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        const company = Array.isArray(data?.companies) ? data.companies[0] : null;
+        const uda =
+          company?.userDefinedAllocations &&
+          typeof company.userDefinedAllocations === 'object' &&
+          !Array.isArray(company.userDefinedAllocations)
+            ? company.userDefinedAllocations
+            : {};
+        const nextConfig =
+          uda?.operationalHub &&
+          typeof uda.operationalHub === 'object' &&
+          !Array.isArray(uda.operationalHub)
+            ? uda.operationalHub
+            : null;
+        setCompanyOperationalHubConfig(nextConfig);
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.error('Failed to load company Operational Hub config:', error);
+        }
+      });
+    return () => controller.abort();
+  }, [selectedCompanyId]);
 
   useEffect(() => {
     const records = Array.isArray(dailyFinancialData?.records) ? dailyFinancialData.records : [];
@@ -1935,8 +1989,17 @@ export default function OperationsTab({
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-              <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            {(isSectionEnabled('customersConcentrationRisk') || isSectionEnabled('customersRetentionProxy')) && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isSectionEnabled('customersConcentrationRisk') && isSectionEnabled('customersRetentionProxy') ? '1fr 1fr' : '1fr',
+                  gap: '24px',
+                  marginBottom: '24px',
+                }}
+              >
+              {isSectionEnabled('customersConcentrationRisk') && (
+                <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                   Customer Concentration Risk
                 </h3>
@@ -1968,8 +2031,10 @@ export default function OperationsTab({
                   </tbody>
                 </table>
               </div>
+              )}
 
-              <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              {isSectionEnabled('customersRetentionProxy') && (
+                <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                   Revenue Retention Proxy (Top Accounts)
                 </h3>
@@ -1988,10 +2053,20 @@ export default function OperationsTab({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </div>
+            )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-              <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            {(isSectionEnabled('customersInvoiceVelocity') || isSectionEnabled('customersAtRiskQueue')) && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isSectionEnabled('customersInvoiceVelocity') && isSectionEnabled('customersAtRiskQueue') ? '1fr 1fr' : '1fr',
+                  gap: '24px',
+                }}
+              >
+              {isSectionEnabled('customersInvoiceVelocity') && (
+                <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                   Revenue vs Invoice Velocity
                 </h3>
@@ -2011,8 +2086,10 @@ export default function OperationsTab({
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
+              )}
 
-              <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              {isSectionEnabled('customersAtRiskQueue') && (
+                <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                   At-Risk Accounts Queue
                 </h3>
@@ -2052,7 +2129,9 @@ export default function OperationsTab({
                   </div>
                 )}
               </div>
+              )}
             </div>
+            )}
             </>
           );
         })()}
@@ -2702,8 +2781,17 @@ export default function OperationsTab({
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        {(isSectionEnabled('arCollectionsTrend') || isSectionEnabled('arCollectionsRiskQueue')) && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isSectionEnabled('arCollectionsTrend') && isSectionEnabled('arCollectionsRiskQueue') ? '1fr 1fr' : '1fr',
+              gap: '24px',
+              marginTop: '24px',
+            }}
+          >
+          {isSectionEnabled('arCollectionsTrend') && (
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Collections Trend / DSO Proxy
             </h3>
@@ -2724,8 +2812,10 @@ export default function OperationsTab({
               </LineChart>
             </ResponsiveContainer>
           </div>
+          )}
 
-          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          {isSectionEnabled('arCollectionsRiskQueue') && (
+            <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Collections Risk Queue
             </h3>
@@ -2761,7 +2851,9 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          )}
         </div>
+        )}
       </div>
     );
   };
@@ -3408,8 +3500,17 @@ export default function OperationsTab({
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '24px' }}>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        {(isSectionEnabled('apPaymentCadenceTrend') || isSectionEnabled('apPastDueRiskQueue')) && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isSectionEnabled('apPaymentCadenceTrend') && isSectionEnabled('apPastDueRiskQueue') ? '1fr 1fr' : '1fr',
+              gap: '24px',
+              marginTop: '24px',
+            }}
+          >
+          {isSectionEnabled('apPaymentCadenceTrend') && (
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               Payment Cadence / DPO Proxy
             </h3>
@@ -3430,7 +3531,9 @@ export default function OperationsTab({
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          )}
+          {isSectionEnabled('apPastDueRiskQueue') && (
+            <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
               AP Past-Due Risk Queue
             </h3>
@@ -3466,9 +3569,12 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+          )}
         </div>
+        )}
 
-        <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
+        {isSectionEnabled('apUpcomingDueCalendar') && (
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
             Upcoming Due Calendar (Next 30 Days)
           </h3>
@@ -3510,6 +3616,7 @@ export default function OperationsTab({
             </div>
           )}
         </div>
+        )}
       </div>
     );
   };
@@ -3656,7 +3763,8 @@ export default function OperationsTab({
           Product Sales Performance
         </h2>
 
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
+        {isSectionEnabled('productsPriceCostComparison') && (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '12px', flexWrap: 'wrap' }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Weekly Price-Cost Comparison</h3>
@@ -3763,9 +3871,19 @@ export default function OperationsTab({
             </table>
           </div>
         </div>
+        )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        {(isSectionEnabled('productsPareto') || isSectionEnabled('productsScatter')) && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isSectionEnabled('productsPareto') && isSectionEnabled('productsScatter') ? 'repeat(2, minmax(0, 1fr))' : '1fr',
+              gap: '12px',
+              marginBottom: '20px',
+            }}
+          >
+          {isSectionEnabled('productsPareto') && (
+            <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Top Products by Revenue (Pareto)</h3>
             {renderCoverageMeta()}
             <ResponsiveContainer width="100%" height={280}>
@@ -3781,8 +3899,10 @@ export default function OperationsTab({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          )}
 
-          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          {isSectionEnabled('productsScatter') && (
+            <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Product Profitability Scatter</h3>
             {renderCoverageMeta()}
             <ResponsiveContainer width="100%" height={280}>
@@ -3822,9 +3942,12 @@ export default function OperationsTab({
               </ScatterChart>
             </ResponsiveContainer>
           </div>
+          )}
         </div>
+        )}
 
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        {isSectionEnabled('productsScopeSelector') && (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Scope</span>
             <button
@@ -3875,9 +3998,19 @@ export default function OperationsTab({
             Applied to: Price-Cost Trend, Waterfall, Freight/Other Revenue Tracker
           </div>
         </div>
+        )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        {(isSectionEnabled('productsPriceCostTrend') || isSectionEnabled('productsPriceCostWaterfall')) && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isSectionEnabled('productsPriceCostTrend') && isSectionEnabled('productsPriceCostWaterfall') ? 'repeat(2, minmax(0, 1fr))' : '1fr',
+              gap: '12px',
+              marginBottom: '20px',
+            }}
+          >
+          {isSectionEnabled('productsPriceCostTrend') && (
+            <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
               Price-Cost Trend ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
             </h3>
@@ -3895,8 +4028,10 @@ export default function OperationsTab({
               </LineChart>
             </ResponsiveContainer>
           </div>
+          )}
 
-          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          {isSectionEnabled('productsPriceCostWaterfall') && (
+            <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
               Price-Cost Waterfall ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
             </h3>
@@ -3919,10 +4054,21 @@ export default function OperationsTab({
               </BarChart>
             </ResponsiveContainer>
           </div>
+          )}
         </div>
+        )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        {(isSectionEnabled('productsBottomLossMakers') || isSectionEnabled('productsFreightOtherTracker')) && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isSectionEnabled('productsBottomLossMakers') && isSectionEnabled('productsFreightOtherTracker') ? 'repeat(2, minmax(0, 1fr))' : '1fr',
+              gap: '12px',
+              marginBottom: '20px',
+            }}
+          >
+          {isSectionEnabled('productsBottomLossMakers') && (
+            <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Bottom Products (Loss Makers)</h3>
             {renderCoverageMeta()}
             <div style={{ overflowX: 'auto' }}>
@@ -3968,8 +4114,10 @@ export default function OperationsTab({
               </table>
             </div>
           </div>
+          )}
 
-          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          {isSectionEnabled('productsFreightOtherTracker') && (
+            <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
               Freight and Other Revenue Tracker ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
             </h3>
@@ -3987,7 +4135,9 @@ export default function OperationsTab({
               </LineChart>
             </ResponsiveContainer>
           </div>
+          )}
         </div>
+        )}
 
       </div>
     );
@@ -4049,7 +4199,8 @@ export default function OperationsTab({
         </div>
 
         {/* Inventory Value Trend */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+        {isSectionEnabled('inventoryValueTrend') && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Inventory Value Trend
           </h3>
@@ -4070,9 +4221,11 @@ export default function OperationsTab({
             </LineChart>
           </ResponsiveContainer>
         </div>
+        )}
 
         {/* Current Inventory Table */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+        {isSectionEnabled('inventoryCurrentTable') && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Current Inventory (Latest Month)
           </h3>
@@ -4107,9 +4260,11 @@ export default function OperationsTab({
             </table>
           </div>
         </div>
+        )}
 
         {/* Inventory Distribution Chart */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        {isSectionEnabled('inventoryDistribution') && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Inventory Value Distribution
           </h3>
@@ -4133,6 +4288,7 @@ export default function OperationsTab({
             </PieChart>
           </ResponsiveContainer>
         </div>
+        )}
       </div>
     );
   };
@@ -4272,8 +4428,17 @@ export default function OperationsTab({
           </ResponsiveContainer>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        {(isSectionEnabled('cash13WeekTrend') || isSectionEnabled('cashBridge')) && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isSectionEnabled('cash13WeekTrend') && isSectionEnabled('cashBridge') ? '1fr 1fr' : '1fr',
+              gap: '24px',
+              marginBottom: '24px',
+            }}
+          >
+          {isSectionEnabled('cash13WeekTrend') && (
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
               13-Week Cash Trend
             </h3>
@@ -4290,7 +4455,9 @@ export default function OperationsTab({
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          )}
+          {isSectionEnabled('cashBridge') && (
+            <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
               Cash Bridge (Receipts vs Disbursements)
             </h3>
@@ -4310,10 +4477,13 @@ export default function OperationsTab({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          )}
         </div>
+        )}
 
         {/* Account Breakdown Table */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+        {isSectionEnabled('cashBankAccounts') && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Bank Accounts
           </h3>
@@ -4352,9 +4522,11 @@ export default function OperationsTab({
             </table>
           </div>
         </div>
+        )}
 
         {/* Account Distribution Chart */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        {isSectionEnabled('cashDistributionByAccount') && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             Cash Distribution by Account
           </h3>
@@ -4378,8 +4550,10 @@ export default function OperationsTab({
             </PieChart>
           </ResponsiveContainer>
         </div>
+        )}
 
-        <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
+        {isSectionEnabled('cashCovenantMonitor') && (
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
             Minimum Cash Covenant Monitor
           </h3>
@@ -4424,6 +4598,7 @@ export default function OperationsTab({
             </div>
           )}
         </div>
+        )}
       </div>
     );
   };
@@ -4801,14 +4976,21 @@ export default function OperationsTab({
       <div>
         <div className="ops-print-hide" style={{ padding: '8px 24px 0', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button style={tabButtonStyle(dailyFinancialView === 'summary')} onClick={() => setDailyFinancialView('summary')}>Summary</button>
-          <button style={tabButtonStyle(dailyFinancialView === 'income')} onClick={() => setDailyFinancialView('income')}>Income Statements</button>
-          <button style={tabButtonStyle(dailyFinancialView === 'balance')} onClick={() => setDailyFinancialView('balance')}>Balance Sheets</button>
-          <button style={tabButtonStyle(dailyFinancialView === 'cashflow')} onClick={() => setDailyFinancialView('cashflow')}>Cash Flow Statement</button>
+          {isSectionEnabled('dailyIncomeStatement') && (
+            <button style={tabButtonStyle(dailyFinancialView === 'income')} onClick={() => setDailyFinancialView('income')}>Income Statements</button>
+          )}
+          {isSectionEnabled('dailyBalanceSheet') && (
+            <button style={tabButtonStyle(dailyFinancialView === 'balance')} onClick={() => setDailyFinancialView('balance')}>Balance Sheets</button>
+          )}
+          {isSectionEnabled('dailyCashflowStatement') && (
+            <button style={tabButtonStyle(dailyFinancialView === 'cashflow')} onClick={() => setDailyFinancialView('cashflow')}>Cash Flow Statement</button>
+          )}
         </div>
 
         {dailyFinancialView === 'summary' && (
           <div style={{ padding: '12px 24px 24px' }}>
-            <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(8, minmax(0, 1fr))', marginBottom: '24px' }}>
+            {isSectionEnabled('dailySummaryCards') && (
+              <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(8, minmax(0, 1fr))', marginBottom: '24px' }}>
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
                 <div style={{ color: '#3b82f6', fontSize: '12px' }}>Latest Daily Revenue</div>
                 <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(summary.latestRevenue || 0))}</div>
@@ -4842,8 +5024,10 @@ export default function OperationsTab({
                 <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(avgCash30)}</div>
               </div>
             </div>
+            )}
 
-            <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '16px' }}>
+            {isSectionEnabled('dailyTrendChart') && (
+              <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
                 <h3 style={{ marginTop: 0, marginBottom: 0, color: '#0f172a' }}>Daily Trend</h3>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -4916,10 +5100,11 @@ export default function OperationsTab({
                 </ResponsiveContainer>
               </div>
             </div>
+            )}
           </div>
         )}
 
-        {dailyFinancialView === 'income' && (
+        {dailyFinancialView === 'income' && isSectionEnabled('dailyIncomeStatement') && (
           <div style={{ padding: '12px 24px 24px' }}>
             {renderStatementWindowControls()}
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', overflowX: 'auto' }}>
@@ -4967,7 +5152,7 @@ export default function OperationsTab({
           </div>
         )}
 
-        {dailyFinancialView === 'balance' && (
+        {dailyFinancialView === 'balance' && isSectionEnabled('dailyBalanceSheet') && (
           <div style={{ padding: '12px 24px 24px' }}>
             {renderStatementWindowControls()}
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', overflowX: 'auto' }}>
@@ -5015,7 +5200,7 @@ export default function OperationsTab({
           </div>
         )}
 
-        {dailyFinancialView === 'cashflow' && (
+        {dailyFinancialView === 'cashflow' && isSectionEnabled('dailyCashflowStatement') && (
           <div style={{ padding: '12px 24px 24px' }}>
             {renderStatementWindowControls()}
             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', overflowX: 'auto' }}>
