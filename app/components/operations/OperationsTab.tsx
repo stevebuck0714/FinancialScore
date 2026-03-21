@@ -7,6 +7,10 @@ import {
   Line,
   BarChart,
   Bar,
+  ScatterChart,
+  Scatter,
+  ZAxis,
+  ComposedChart,
   PieChart,
   Pie,
   Cell,
@@ -23,6 +27,7 @@ import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
+import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 
 interface OperationsTabProps {
@@ -346,6 +351,10 @@ export default function OperationsTab({
   const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
   const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
   const [smartCardsLoading, setSmartCardsLoading] = useState(false);
+  const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
+  const [priceCostSearchTerm, setPriceCostSearchTerm] = useState('');
+  const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
+  const [selectedScopeSku, setSelectedScopeSku] = useState('');
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -3065,19 +3074,132 @@ export default function OperationsTab({
     if (!productData) return null;
 
     const { records, summary } = productData;
-
-    // Aggregate revenue by product over time
-    const productTrends: any = {};
-    records.forEach((record: any) => {
-      const period = formatDate(record.snapshotDate);
-      if (!productTrends[period]) {
-        productTrends[period] = { month: period };
-      }
-      productTrends[period][record.itemName] = record.revenue;
+    const weeklyMarginModel = buildWeeklyProductMarginModel({
+      records: Array.isArray(records) ? records : [],
+      topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
+      weeks: 12,
     });
 
-    const trendData = Object.values(productTrends);
-    const productNames = Array.from(new Set(records.map((r: any) => r.itemName)));
+    const filteredComparisonRows = weeklyMarginModel.comparisonRows.filter((row) => {
+      const matchesSearch =
+        !priceCostSearchTerm.trim() ||
+        row.itemName.toLowerCase().includes(priceCostSearchTerm.toLowerCase()) ||
+        row.sku.toLowerCase().includes(priceCostSearchTerm.toLowerCase()) ||
+        row.site.toLowerCase().includes(priceCostSearchTerm.toLowerCase());
+      const matchesException = !showPriceCostExceptionsOnly || row.status !== 'acceptable';
+      return matchesSearch && matchesException;
+    });
+    const paretoRows = [...weeklyMarginModel.comparisonRows]
+      .sort((a, b) => b.revenueThisWeek - a.revenueThisWeek)
+      .slice(0, 10);
+    const paretoRevenueTotal = paretoRows.reduce((sum, row) => sum + Number(row.revenueThisWeek || 0), 0);
+    let cumulativeRevenue = 0;
+    const paretoData = paretoRows.map((row) => {
+      cumulativeRevenue += Number(row.revenueThisWeek || 0);
+      return {
+        name: row.itemName,
+        revenue: Number(row.revenueThisWeek || 0),
+        cumulativePct: paretoRevenueTotal > 0 ? (cumulativeRevenue / paretoRevenueTotal) * 100 : 0,
+      };
+    });
+    const scatterData = weeklyMarginModel.comparisonRows.map((row) => ({
+      name: row.itemName,
+      sku: row.sku,
+      site: row.site,
+      revenue: Number(row.revenueThisWeek || 0),
+      marginPct: Number(row.marginPctThisWeek || 0),
+      contribution: Math.max(1, Math.abs(Number(row.marginAmountThisWeek || 0))),
+    }));
+    const lossMakers = [...weeklyMarginModel.comparisonRows]
+      .filter((row) => (row.marginPctThisWeek ?? 0) < 0 || (row.spreadThisWeek ?? 0) < 0)
+      .sort((a, b) => (a.marginAmountThisWeek ?? 0) - (b.marginAmountThisWeek ?? 0))
+      .slice(0, 10);
+    const productScopeOptions = [...weeklyMarginModel.comparisonRows]
+      .sort((a, b) => b.revenueThisWeek - a.revenueThisWeek)
+      .map((row) => ({
+        sku: row.sku,
+        label: `${row.itemName} (${row.sku})`,
+      }));
+    const effectiveScopeSku =
+      selectedScopeSku && productScopeOptions.some((option) => option.sku === selectedScopeSku)
+        ? selectedScopeSku
+        : (productScopeOptions[0]?.sku || '');
+    const scopedProductSeries = weeklyMarginModel.productWeekly
+      .filter((row) => row.sku === effectiveScopeSku)
+      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    const scopedSeriesByWeek = scopedProductSeries.reduce((acc: Record<string, any>, row: any) => {
+      acc[row.weekStart] = row;
+      return acc;
+    }, {});
+    const scopedSeries = weeklyMarginModel.weeks.map((row) => {
+      if (productScopeMode === 'total') {
+        return {
+          weekStart: row.weekStart,
+          units: row.units,
+          netRevenue: row.netRevenue,
+          cogs: row.cogs,
+          marginAmount: row.marginAmount,
+          returns: row.returns,
+          returnsMagnitude: row.returnsMagnitude,
+          freightBilled: row.freightBilled,
+          otherRevenue: row.otherRevenue,
+          price: row.units > 0 ? row.netRevenue / row.units : 0,
+          cost: row.units > 0 ? row.cogs / row.units : 0,
+          spread: row.units > 0 ? (row.netRevenue - row.cogs) / row.units : 0,
+        };
+      }
+      const scoped = scopedSeriesByWeek[row.weekStart];
+      return {
+        weekStart: row.weekStart,
+        units: Number(scoped?.units || 0),
+        netRevenue: Number(scoped?.netRevenue || 0),
+        cogs: Number(scoped?.cogs || 0),
+        marginAmount: Number(scoped?.marginAmount || 0),
+        returns: Number(scoped?.returns || 0),
+        returnsMagnitude: Number(scoped?.returnsMagnitude || 0),
+        freightBilled: Number(scoped?.freightBilled || 0),
+        otherRevenue: Number(scoped?.otherRevenue || 0),
+        price: Number(scoped?.pricePerUnit || 0),
+        cost: Number(scoped?.costPerUnit || 0),
+        spread: Number(scoped?.spreadPerUnit || 0),
+      };
+    });
+    const priceCostTrendData = scopedSeries;
+    const latestWeekRow = scopedSeries[scopedSeries.length - 1];
+    const priorWeekRow = scopedSeries[scopedSeries.length - 2];
+    const latestPrice = latestWeekRow && latestWeekRow.units > 0 ? latestWeekRow.netRevenue / latestWeekRow.units : 0;
+    const priorPrice = priorWeekRow && priorWeekRow.units > 0 ? priorWeekRow.netRevenue / priorWeekRow.units : 0;
+    const latestCost = latestWeekRow && latestWeekRow.units > 0 ? latestWeekRow.cogs / latestWeekRow.units : 0;
+    const priorCost = priorWeekRow && priorWeekRow.units > 0 ? priorWeekRow.cogs / priorWeekRow.units : 0;
+    const baselineUnits = Math.max(1, Number(priorWeekRow?.units || 1));
+    const priceImpact = (latestPrice - priorPrice) * baselineUnits;
+    const costImpact = -1 * (latestCost - priorCost) * baselineUnits;
+    const returnsImpact = -1 * (Math.abs(Number(latestWeekRow?.returns || 0)) - Math.abs(Number(priorWeekRow?.returns || 0)));
+    const totalDeltaMargin = Number(latestWeekRow?.marginAmount || 0) - Number(priorWeekRow?.marginAmount || 0);
+    const mixImpact = totalDeltaMargin - priceImpact - costImpact - returnsImpact;
+    const waterfallData = [
+      { step: 'Price Impact', value: priceImpact },
+      { step: 'Cost Impact', value: costImpact },
+      { step: 'Returns Impact', value: returnsImpact },
+      { step: 'Mix/Volume Impact', value: mixImpact },
+      { step: 'Total Margin Delta', value: totalDeltaMargin },
+    ];
+    const coverageStartWeek = weeklyMarginModel.weeks[0]?.weekStart;
+    const coverageEndWeek = weeklyMarginModel.weeks[weeklyMarginModel.weeks.length - 1]?.weekStart;
+    const formatCoverageDate = (isoDate?: string) =>
+      isoDate
+        ? new Date(`${isoDate}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+        : 'N/A';
+    const asOfDateLabel = formatCoverageDate(coverageEndWeek);
+    const coverageLabel =
+      coverageStartWeek && coverageEndWeek
+        ? `${formatCoverageDate(coverageStartWeek)} - ${formatCoverageDate(coverageEndWeek)} (EST)`
+        : 'N/A';
+    const renderCoverageMeta = () => (
+      <div style={{ marginTop: '4px', marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
+        As of: {asOfDateLabel} | Coverage: {coverageLabel}
+      </div>
+    );
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
@@ -3085,95 +3207,339 @@ export default function OperationsTab({
           Product Sales Performance
         </h2>
 
-        {/* KPI Cards */}
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Products</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
-              {summary.topProducts.length}
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '12px', flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Weekly Price-Cost Comparison</h3>
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+                Sorted by Spread Delta ascending (worst deterioration first).
+              </div>
+              {renderCoverageMeta()}
             </div>
-          </div>
-          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Revenue</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
-              {formatCurrency(summary.topProducts.reduce((sum: number, p: any) => sum + p.totalRevenue, 0))}
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Avg Margin %</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
-              {(summary.topProducts.reduce((sum: number, p: any) => sum + p.grossMarginPct, 0) / summary.topProducts.length).toFixed(1)}%
-            </div>
-          </div>
-        </div>
-
-        {/* Product Revenue Trend */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Revenue Trend by Product
-          </h3>
-          <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
-              <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-              <Tooltip 
-                formatter={(value: any) => formatCurrency(value)}
-                contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                value={priceCostSearchTerm}
+                onChange={(event) => setPriceCostSearchTerm(event.target.value)}
+                placeholder="Search SKU, item, site..."
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '220px' }}
               />
-              <Legend />
-              {productNames.map((name: any, index: number) => (
-                <Line 
-                  key={name} 
-                  type="monotone" 
-                  dataKey={name} 
-                  stroke={COLORS[index % COLORS.length]} 
-                  strokeWidth={2} 
-                  dot={{ r: 3 }} 
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+              <button
+                onClick={() => setShowPriceCostExceptionsOnly((prev) => !prev)}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  background: showPriceCostExceptionsOnly ? '#fff7ed' : '#ffffff',
+                  color: showPriceCostExceptionsOnly ? '#9a3412' : '#334155',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                }}
+              >
+                {showPriceCostExceptionsOnly ? 'Showing Exceptions' : 'Exceptions Only'}
+              </button>
+            </div>
+          </div>
 
-        {/* Top Products Table */}
-        <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Product Performance Summary
-          </h3>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1450px' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Rank</th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Product</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Total Revenue</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Units Sold</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Gross Margin</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Margin %</th>
+                <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Item</th>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>SKU</th>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Site</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Price (This)</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Price (Prior)</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Price Delta</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Cost (This)</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Cost (Prior)</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Cost Delta</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Spread (This)</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Spread (Prior)</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Spread Delta</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Margin % (This)</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Margin % (Prior)</th>
+                  <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Margin Delta pts</th>
+                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {summary.topProducts.map((product: any, index: number) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b' }}>#{index + 1}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{product.name}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrency(product.totalRevenue)}
+                {filteredComparisonRows.map((row, idx) => (
+                  <tr key={`${row.itemName}-${row.sku}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{row.itemName}</td>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.sku}</td>
+                    <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.site}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.priceThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.priceThisWeek)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.pricePriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.pricePriorWeek)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.priceDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
+                      {row.priceDelta == null ? 'N/A' : `${row.priceDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.priceDelta)}`}
                     </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>{product.totalQuantity}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#2563eb', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrency(product.grossMargin)}
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.costThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.costThisWeek)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.costPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.costPriorWeek)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.costDelta ?? 0) <= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
+                      {row.costDelta == null ? 'N/A' : `${row.costDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.costDelta)}`}
                     </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: product.grossMarginPct >= 50 ? '#16a34a' : '#f59e0b', textAlign: 'right', fontWeight: '600' }}>
-                      {product.grossMarginPct.toFixed(1)}%
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.spreadThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadThisWeek)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.spreadPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadPriorWeek)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.spreadDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 700 }}>
+                      {row.spreadDelta == null ? 'N/A' : `${row.spreadDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.spreadDelta)}`}
+                    </td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.marginPctThisWeek == null ? 'N/A' : `${row.marginPctThisWeek.toFixed(1)}%`}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.marginPctPriorWeek == null ? 'N/A' : `${row.marginPctPriorWeek.toFixed(1)}%`}</td>
+                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.marginDeltaPts ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 700 }}>
+                      {row.marginDeltaPts == null ? 'N/A' : `${row.marginDeltaPts >= 0 ? '+' : ''}${row.marginDeltaPts.toFixed(1)}`}
+                    </td>
+                    <td style={{ padding: '8px', fontSize: '12px' }}>
+                      <span style={{
+                        borderRadius: '999px',
+                        padding: '4px 8px',
+                        fontWeight: 700,
+                        textTransform: 'capitalize',
+                        background: row.status === 'acceptable' ? '#dcfce7' : row.status === 'warning' ? '#fef3c7' : '#fee2e2',
+                        color: row.status === 'acceptable' ? '#166534' : row.status === 'warning' ? '#92400e' : '#991b1b',
+                      }}>
+                        {row.status}
+                      </span>
                     </td>
                   </tr>
                 ))}
+                {filteredComparisonRows.length === 0 && (
+                  <tr>
+                    <td colSpan={16} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
+                      No rows match current filters.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Top Products by Revenue (Pareto)</h3>
+            {renderCoverageMeta()}
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={paretoData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" stroke="#64748b" style={{ fontSize: '11px' }} />
+                <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
+                <Tooltip />
+                <Legend />
+                <Bar yAxisId="left" dataKey="revenue" fill="#2563eb" name="Revenue" />
+                <Line yAxisId="right" type="monotone" dataKey="cumulativePct" stroke="#f97316" strokeWidth={2} dot={false} name="Cumulative %" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Product Profitability Scatter</h3>
+            {renderCoverageMeta()}
+            <ResponsiveContainer width="100%" height={280}>
+              <ScatterChart>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis type="number" dataKey="revenue" name="Revenue" stroke="#64748b" tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <YAxis type="number" dataKey="marginPct" name="Margin %" stroke="#64748b" tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
+                <ZAxis type="number" dataKey="contribution" range={[40, 320]} />
+                <Tooltip
+                  cursor={{ strokeDasharray: '3 3' }}
+                  content={({ active, payload }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const point = payload[0]?.payload || {};
+                    return (
+                      <div
+                        style={{
+                          background: '#ffffff',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '8px',
+                          padding: '10px',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                          fontSize: '12px',
+                          color: '#0f172a',
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, marginBottom: '2px' }}>{point.name || 'Unknown Product'}</div>
+                        <div style={{ color: '#475569', marginBottom: '6px' }}>SKU: {point.sku || 'N/A'} | Site: {point.site || 'N/A'}</div>
+                        <div>Revenue: {formatCurrency(Number(point.revenue || 0))}</div>
+                        <div>Margin %: {Number(point.marginPct || 0).toFixed(1)}%</div>
+                        <div>Margin $: {formatCurrency(Number(point.contribution || 0))}</div>
+                      </div>
+                    );
+                  }}
+                />
+                <Legend />
+                <Scatter data={scatterData} fill="#0ea5e9" name="Products" />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Scope</span>
+            <button
+              onClick={() => setProductScopeMode('total')}
+              style={{
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                background: productScopeMode === 'total' ? '#e0e7ff' : '#ffffff',
+                color: productScopeMode === 'total' ? '#3730a3' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '12px',
+              }}
+            >
+              Total
+            </button>
+            <button
+              onClick={() => setProductScopeMode('product')}
+              style={{
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                background: productScopeMode === 'product' ? '#e0e7ff' : '#ffffff',
+                color: productScopeMode === 'product' ? '#3730a3' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '12px',
+              }}
+            >
+              Product
+            </button>
+            {productScopeMode === 'product' && (
+              <select
+                value={effectiveScopeSku}
+                onChange={(event) => setSelectedScopeSku(event.target.value)}
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 10px', fontSize: '12px', minWidth: '240px' }}
+              >
+                {productScopeOptions.map((option) => (
+                  <option key={option.sku} value={option.sku}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748b' }}>
+            Applied to: Price-Cost Trend, Waterfall, Freight/Other Revenue Tracker
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
+              Price-Cost Trend ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
+            </h3>
+            {renderCoverageMeta()}
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={priceCostTrendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="weekStart" stroke="#64748b" style={{ fontSize: '11px' }} />
+                <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
+                <Tooltip formatter={(value: any) => formatCurrencyWithCents(Number(value || 0))} />
+                <Legend />
+                <Line type="monotone" dataKey="price" stroke="#0f766e" strokeWidth={2} dot={false} name="Avg Price/Unit" />
+                <Line type="monotone" dataKey="cost" stroke="#dc2626" strokeWidth={2} dot={false} name="Avg Cost/Unit" />
+                <Line type="monotone" dataKey="spread" stroke="#1d4ed8" strokeWidth={2} dot={false} name="Spread/Unit" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
+              Price-Cost Waterfall ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
+            </h3>
+            {renderCoverageMeta()}
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={waterfallData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="step" stroke="#64748b" style={{ fontSize: '11px' }} />
+                <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                <Bar
+                  dataKey="value"
+                  name="Margin Impact"
+                  fill="#64748b"
+                >
+                  {waterfallData.map((entry, index) => (
+                    <Cell key={`waterfall-${index}`} fill={entry.value >= 0 ? '#16a34a' : '#dc2626'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Bottom Products (Loss Makers)</h3>
+            {renderCoverageMeta()}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Item</th>
+                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Site</th>
+                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Revenue</th>
+                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Margin $</th>
+                    <th style={{ textAlign: 'right', padding: '8px', fontSize: '12px', color: '#334155' }}>Margin %</th>
+                    <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lossMakers.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
+                        No active loss makers in this weekly window.
+                      </td>
+                    </tr>
+                  ) : (
+                    lossMakers.map((row, idx) => (
+                      <tr key={`${row.itemName}-loss-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{row.itemName}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.site}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right' }}>{formatCurrency(row.revenueThisWeek)}</td>
+                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', color: '#b91c1c', fontWeight: 700 }}>
+                          {formatCurrency(row.marginAmountThisWeek)}
+                        </td>
+                        <td style={{ padding: '8px', fontSize: '13px', textAlign: 'right', color: '#b91c1c', fontWeight: 700 }}>
+                          {(row.marginPctThisWeek ?? 0).toFixed(1)}%
+                        </td>
+                        <td style={{ padding: '8px', fontSize: '12px' }}>
+                          <span style={{ borderRadius: '999px', padding: '4px 8px', background: '#fee2e2', color: '#991b1b', fontWeight: 700 }}>
+                            Investigate
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
+              Freight and Other Revenue Tracker ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
+            </h3>
+            {renderCoverageMeta()}
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={scopedSeries}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="weekStart" stroke="#64748b" style={{ fontSize: '11px' }} />
+                <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                <Legend />
+                <Line type="monotone" dataKey="freightBilled" stroke="#f59e0b" strokeWidth={2} dot={false} name="Freight (separate)" />
+                <Line type="monotone" dataKey="otherRevenue" stroke="#7c3aed" strokeWidth={2} dot={false} name="Other Revenue (separate)" />
+                <Line type="monotone" dataKey="returnsMagnitude" stroke="#dc2626" strokeWidth={2} dot={false} name="Returns (abs)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
       </div>
     );
   };
