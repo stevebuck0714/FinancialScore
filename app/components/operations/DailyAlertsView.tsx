@@ -889,6 +889,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       items: PULSE_POLICY_DEFINITIONS.filter((def) => def.section === section),
     }));
   }, []);
+  const policySettingsGridColumns =
+    'minmax(390px, 2.25fr) minmax(120px, 0.62fr) minmax(120px, 0.62fr) minmax(100px, 0.58fr) minmax(74px, 86px)';
 
   const hasPolicyOverride = (key: PulsePolicyKey) => Object.prototype.hasOwnProperty.call(policyOverrides, key);
 
@@ -1691,7 +1693,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'minmax(260px, 1.4fr) minmax(110px, 0.7fr) minmax(110px, 0.7fr) minmax(100px, 0.6fr) minmax(74px, 86px)',
+                    gridTemplateColumns: policySettingsGridColumns,
                     gap: '10px',
                     padding: '8px 10px',
                     background: '#f8fafc',
@@ -1725,7 +1727,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                       <div
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'minmax(260px, 1.4fr) minmax(110px, 0.7fr) minmax(110px, 0.7fr) minmax(100px, 0.6fr) minmax(74px, 86px)',
+                          gridTemplateColumns: policySettingsGridColumns,
                           gap: '10px',
                           alignItems: 'center',
                         }}
