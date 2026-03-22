@@ -106,6 +106,7 @@ type PreviewSpec = {
 
 const RESOLVED_STATUSES = new Set(['resolved', 'realized', 'closed', 'done', 'complete', 'completed']);
 const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
+const AR_TOP_CUSTOMER_MATERIALITY_LIMIT = 5;
 type PulseTab = 'alerts' | 'policy';
 
 function asNumber(value: unknown): number {
@@ -296,16 +297,30 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           const latestOver30 = ((asNumber(latest.days1to30) + asNumber(latest.days31to60) + asNumber(latest.days61to90) + asNumber(latest.days90plus)) / Math.max(asNumber(latest.totalAR), 1)) * 100;
           const prevOver30 = ((asNumber(prev.days1to30) + asNumber(prev.days31to60) + asNumber(prev.days61to90) + asNumber(prev.days90plus)) / Math.max(asNumber(prev.totalAR), 1)) * 100;
           const deltaPts = latestOver30 - prevOver30;
-          const topCustomer = (Array.isArray(arData?.summary?.unpaidByCustomer) ? arData.summary.unpaidByCustomer : [])
+          const materialOverdueThreshold = asNumber(
+            pulsePolicy['ar_daily_change.min_top_customer_overdue_amount']
+          );
+          const rankedCustomers = (Array.isArray(arData?.summary?.unpaidByCustomer) ? arData.summary.unpaidByCustomer : [])
             .map((row: any) => ({
               customerName: row.customerName,
               overdue: asNumber(row.days31to60) + asNumber(row.days61to90) + asNumber(row.days90plus),
             }))
-            .sort((a: any, b: any) => b.overdue - a.overdue)[0];
+            .sort((a: any, b: any) => b.overdue - a.overdue);
+          const scannedTopCustomers = rankedCustomers.slice(0, AR_TOP_CUSTOMER_MATERIALITY_LIMIT);
+          const materialTopCustomers = scannedTopCustomers.filter(
+            (customer: any) => customer.overdue >= materialOverdueThreshold
+          );
+          const topCustomer = rankedCustomers[0];
           if (
             latestOver30 >= pulsePolicy['ar_daily_change.min_over30_pct'] &&
-            deltaPts >= pulsePolicy['ar_daily_change.min_delta_pts']
+            deltaPts >= pulsePolicy['ar_daily_change.min_delta_pts'] &&
+            materialTopCustomers.length > 0
           ) {
+            const topMaterialCustomer = materialTopCustomers[0];
+            const materialCustomerNames = materialTopCustomers
+              .slice(0, 3)
+              .map((customer: any) => customer.customerName)
+              .filter(Boolean);
             built.push({
               id: `daily-ar-${latest.snapshotDate}`,
               fingerprint: `daily-ar-${latest.snapshotDate}`,
@@ -316,12 +331,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               drillView: 'pa-critical-issues',
               deltaText: `DoD ${deltaPts >= 0 ? '+' : ''}${deltaPts.toFixed(1)} pts`,
               updatedAt: latest.snapshotDate,
-              itemLabel: topCustomer?.customerName || undefined,
+              itemLabel: topMaterialCustomer?.customerName || topCustomer?.customerName || undefined,
               explainability: {
                 triggerName: 'AR Deteriorated Today',
-                formula: 'AR >30d % = (days1to30 + days31to60 + days61to90 + days90plus) / totalAR * 100; delta = latest - previous',
-                threshold: `latestOver30 >= ${pulsePolicy['ar_daily_change.min_over30_pct']} AND deltaPts >= ${pulsePolicy['ar_daily_change.min_delta_pts']}`,
-                reasonNow: `Latest ${latestOver30.toFixed(1)}%; delta ${deltaPts.toFixed(1)} pts`,
+                formula: 'AR >30d % = (days1to30 + days31to60 + days61to90 + days90plus) / totalAR * 100; delta = latest - previous; materiality requires any customer in top-N overdue list to exceed minimum overdue threshold',
+                threshold: `latestOver30 >= ${pulsePolicy['ar_daily_change.min_over30_pct']} AND deltaPts >= ${pulsePolicy['ar_daily_change.min_delta_pts']} AND any(top${AR_TOP_CUSTOMER_MATERIALITY_LIMIT}.overdue >= ${materialOverdueThreshold})`,
+                reasonNow: `Latest ${latestOver30.toFixed(1)}%; delta ${deltaPts.toFixed(1)} pts; material customer(s): ${materialCustomerNames.join(', ') || 'n/a'}`,
                 policySource: `Company Pulse policy (company override + sector default fallback)`,
                 dataRefs: ['AR aging daily snapshots', 'AR summary unpaid by customer'],
                 sourceTimestamp: latest.snapshotDate,

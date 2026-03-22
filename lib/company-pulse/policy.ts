@@ -73,8 +73,8 @@ const POLICY_DEFINITIONS = [
   },
   {
     key: 'ar_daily_change.min_top_customer_overdue_amount',
-    label: 'AR top customer minimum overdue amount',
-    description: 'Minimum overdue amount on the largest customer before AR deterioration is treated as material.',
+    label: 'AR top-5 customer minimum overdue amount',
+    description: 'Minimum >30-day overdue amount on any customer in the top-5 overdue customer list before AR deterioration is treated as material.',
     section: 'AR',
     unit: 'currency',
     step: 1000,
