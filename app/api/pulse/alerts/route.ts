@@ -25,6 +25,25 @@ function normalizeAlertInput(alert: any): PulseAlertInput | null {
   const owner = String(alert?.owner || '').trim() || 'Ops/Finance Owner';
   const drillView = String(alert?.drillView || '').trim() || 'pa-overview';
   if (!fingerprint || !source || !title || !detail) return null;
+  const explainability =
+    alert?.explainability && typeof alert.explainability === 'object'
+      ? {
+          triggerName: String(alert.explainability.triggerName || '').trim() || title,
+          formula: String(alert.explainability.formula || '').trim() || 'Derived from Company Pulse rule set for this alert source',
+          threshold: String(alert.explainability.threshold || '').trim() || 'See policy settings and source-specific trigger thresholds',
+          reasonNow: String(alert.explainability.reasonNow || '').trim() || detail,
+          policySource:
+            String(alert.explainability.policySource || '').trim() ||
+            'Company Pulse policy (company override + sector default fallback)',
+          dataRefs: Array.isArray(alert.explainability.dataRefs)
+            ? alert.explainability.dataRefs.map((v: any) => String(v || '').trim()).filter(Boolean)
+            : [],
+          sourceTimestamp:
+            typeof alert.explainability.sourceTimestamp === 'string'
+              ? alert.explainability.sourceTimestamp
+              : undefined,
+        }
+      : undefined;
   return {
     fingerprint,
     source,
@@ -38,6 +57,7 @@ function normalizeAlertInput(alert: any): PulseAlertInput | null {
     priorityScore: Number.isFinite(Number(alert?.priorityScore)) ? Number(alert.priorityScore) : undefined,
     bucket: alert?.bucket === 'attention' ? 'attention' : 'monitoring',
     priorityFocusTerm: typeof alert?.priorityFocusTerm === 'string' ? alert.priorityFocusTerm : undefined,
+    explainability,
   };
 }
 
@@ -122,9 +142,9 @@ export async function POST(request: NextRequest) {
         const id = createPulseId('pa');
         await prisma.$executeRawUnsafe(
           `INSERT INTO "PulseAlert"
-            (id, "companyId", "fingerprint", "source", "title", "detail", "owner", "drillView", "deltaText", "updatedAt", "itemLabel", "priorityScore", "bucket", "priorityFocusTerm", "status", "isActive", "lastSeenAt", "modifiedAt", "createdAt")
+            (id, "companyId", "fingerprint", "source", "title", "detail", "owner", "drillView", "deltaText", "updatedAt", "itemLabel", "priorityScore", "bucket", "priorityFocusTerm", "explainability", "status", "isActive", "lastSeenAt", "modifiedAt", "createdAt")
            VALUES
-            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamp, $11, $12, $13, $14, 'new', TRUE, $15::timestamp, $16::timestamp, $17::timestamp)`,
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamp, $11, $12, $13, $14, $15::jsonb, 'new', TRUE, $16::timestamp, $17::timestamp, $18::timestamp)`,
           id,
           companyId,
           alert.fingerprint,
@@ -139,6 +159,7 @@ export async function POST(request: NextRequest) {
           alert.priorityScore ?? null,
           alert.bucket || null,
           alert.priorityFocusTerm || null,
+          JSON.stringify(alert.explainability || {}),
           nowIso,
           nowIso,
           nowIso
@@ -185,12 +206,13 @@ export async function POST(request: NextRequest) {
              "priorityScore" = $9,
              "bucket" = $10,
              "priorityFocusTerm" = $11,
-             "status" = $12,
-             "resolvedAt" = $13::timestamp,
+             "explainability" = $12::jsonb,
+             "status" = $13,
+             "resolvedAt" = $14::timestamp,
              "isActive" = TRUE,
-             "lastSeenAt" = $14::timestamp,
-             "modifiedAt" = $15::timestamp
-         WHERE "id" = $16`,
+             "lastSeenAt" = $15::timestamp,
+             "modifiedAt" = $16::timestamp
+         WHERE "id" = $17`,
         alert.source,
         alert.title,
         alert.detail,
@@ -202,6 +224,7 @@ export async function POST(request: NextRequest) {
         alert.priorityScore ?? null,
         alert.bucket || null,
         alert.priorityFocusTerm || null,
+        JSON.stringify(alert.explainability || {}),
         nextStatus,
         resolvedAtIso,
         nowIso,

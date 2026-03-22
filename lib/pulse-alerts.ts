@@ -15,6 +15,15 @@ export type PulseAlertInput = {
   priorityScore?: number;
   bucket?: 'attention' | 'monitoring';
   priorityFocusTerm?: string;
+  explainability?: {
+    triggerName: string;
+    formula: string;
+    threshold: string;
+    reasonNow: string;
+    policySource: string;
+    dataRefs: string[];
+    sourceTimestamp?: string;
+  };
 };
 
 export type PulseAlertRow = {
@@ -32,6 +41,7 @@ export type PulseAlertRow = {
   priorityScore: number | null;
   bucket: string | null;
   priorityFocusTerm: string | null;
+  explainability: any;
   status: PulseAlertStatus;
   dueAt: Date | null;
   snoozedUntil: Date | null;
@@ -64,6 +74,7 @@ export async function ensurePulseAlertTables(): Promise<void> {
       "priorityScore" DOUBLE PRECISION,
       "bucket" TEXT,
       "priorityFocusTerm" TEXT,
+      "explainability" JSONB NOT NULL DEFAULT '{}'::jsonb,
       "status" TEXT NOT NULL DEFAULT 'new',
       "dueAt" TIMESTAMP,
       "snoozedUntil" TIMESTAMP,
@@ -74,6 +85,11 @@ export async function ensurePulseAlertTables(): Promise<void> {
       "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "modifiedAt" TIMESTAMP NOT NULL
     )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "PulseAlert"
+    ADD COLUMN IF NOT EXISTS "explainability" JSONB NOT NULL DEFAULT '{}'::jsonb
   `);
 
   await prisma.$executeRawUnsafe(`

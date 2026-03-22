@@ -34,6 +34,15 @@ type AlertItem = {
   notes?: Array<{ text: string; createdAt: string; author?: string }>;
   isActive?: boolean;
   modifiedAt?: string;
+  explainability?: {
+    triggerName: string;
+    formula: string;
+    threshold: string;
+    reasonNow: string;
+    policySource: string;
+    dataRefs: string[];
+    sourceTimestamp?: string;
+  };
 };
 
 type AlertEvent = {
@@ -186,6 +195,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [eventModalAlert, setEventModalAlert] = useState<AlertItem | null>(null);
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [explainabilityAlert, setExplainabilityAlert] = useState<AlertItem | null>(null);
   const [previewAlert, setPreviewAlert] = useState<AlertItem | null>(null);
   const [previewSpec, setPreviewSpec] = useState<PreviewSpec | null>(null);
   const [previewTrend, setPreviewTrend] = useState<TrendPoint[]>([]);
@@ -288,6 +298,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               deltaText: `DoD ${deltaPts >= 0 ? '+' : ''}${deltaPts.toFixed(1)} pts`,
               updatedAt: latest.snapshotDate,
               itemLabel: topCustomer?.customerName || undefined,
+              explainability: {
+                triggerName: 'AR Deteriorated Today',
+                formula: 'AR >30d % = (days1to30 + days31to60 + days61to90 + days90plus) / totalAR * 100; delta = latest - previous',
+                threshold: `latestOver30 >= ${pulsePolicy['ar_daily_change.min_over30_pct']} AND deltaPts >= ${pulsePolicy['ar_daily_change.min_delta_pts']}`,
+                reasonNow: `Latest ${latestOver30.toFixed(1)}%; delta ${deltaPts.toFixed(1)} pts`,
+                policySource: `Company Pulse policy (company override + sector default fallback)`,
+                dataRefs: ['AR aging daily snapshots', 'AR summary unpaid by customer'],
+                sourceTimestamp: latest.snapshotDate,
+              },
             });
           }
         }
@@ -320,6 +339,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               deltaText: `DoD ${deltaPts >= 0 ? '+' : ''}${deltaPts.toFixed(1)} pts`,
               updatedAt: latest.snapshotDate,
               itemLabel: topVendor?.vendorName || undefined,
+              explainability: {
+                triggerName: 'AP Pressure Increased Today',
+                formula: 'AP >30d % = (days1to30 + days31to60 + days61to90 + days90plus) / totalAP * 100; delta = latest - previous',
+                threshold: `latestOver30 >= ${pulsePolicy['ap_daily_change.min_over30_pct']} AND deltaPts >= ${pulsePolicy['ap_daily_change.min_delta_pts']}`,
+                reasonNow: `Latest ${latestOver30.toFixed(1)}%; delta ${deltaPts.toFixed(1)} pts`,
+                policySource: `Company Pulse policy (company override + sector default fallback)`,
+                dataRefs: ['AP aging daily snapshots', 'AP summary unpaid by vendor'],
+                sourceTimestamp: latest.snapshotDate,
+              },
             });
           }
         }
@@ -347,6 +375,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 drillView: 'pa-critical-issues',
                 deltaText: `DoD ${pct.toFixed(1)}%`,
                 updatedAt: orderedDates[0],
+                explainability: {
+                  triggerName: 'Cash Dropped Today',
+                  formula: 'DoD % = (latestTotalCash - previousTotalCash) / previousTotalCash * 100',
+                  threshold: `cash DoD % <= ${pulsePolicy['cash_daily_change.max_total_dod_pct']}`,
+                  reasonNow: `DoD ${pct.toFixed(1)}%`,
+                  policySource: `Company Pulse policy (company override + sector default fallback)`,
+                  dataRefs: ['Cash daily snapshots by account', 'Cash totals aggregated by date'],
+                  sourceTimestamp: orderedDates[0],
+                },
               });
             }
 
@@ -374,6 +411,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   deltaText: `DoD ${accountPct.toFixed(1)}%`,
                   updatedAt: orderedDates[0],
                   itemLabel: accountName,
+                  explainability: {
+                    triggerName: 'Cash Account Worsened Today',
+                    formula: 'Account DoD % = (latestBalance - previousBalance) / previousBalance * 100',
+                    threshold: `account DoD % <= ${pulsePolicy['cash_account_daily_change.max_dod_pct']}`,
+                    reasonNow: `${accountName} DoD ${accountPct.toFixed(1)}%`,
+                    policySource: `Company Pulse policy (company override + sector default fallback)`,
+                    dataRefs: ['Cash account daily snapshots'],
+                    sourceTimestamp: orderedDates[0],
+                  },
                 });
               }
             });
@@ -389,9 +435,18 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const apOver30 = asNumber(apSummary.over30Pct);
         const dso = asNumber(arSummary.dso);
         const cashChangePct = asNumber(cashSummary.changePercent);
+        const explicitRunwayWeeks = asNumber(cashSummary.runwayWeeks);
+        const hasExplicitRunway = Number.isFinite(explicitRunwayWeeks) && explicitRunwayWeeks > 0;
+        const allowProxyRunway = asNumber(pulsePolicy['cash_open_critical.allow_proxy_runway']) >= 1;
         const totalCash = asNumber(cashSummary.totalCash);
         const burnProxy = Math.max(1, Math.abs(asNumber(cashSummary.changeAmount)));
-        const runwayWeeks = (totalCash / burnProxy) * 4.33;
+        const proxyRunwayWeeks = (totalCash / burnProxy) * 4.33;
+        const runwayWeeks = hasExplicitRunway
+          ? explicitRunwayWeeks
+          : allowProxyRunway
+            ? proxyRunwayWeeks
+            : null;
+        const hasRunwaySignal = runwayWeeks !== null && Number.isFinite(runwayWeeks);
 
         if (
           arOver30 >= pulsePolicy['ar_open_critical.min_over30_pct'] ||
@@ -406,6 +461,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             owner: 'Collections Lead',
             drillView: 'pa-critical-issues',
             updatedAt: endDate,
+            explainability: {
+              triggerName: 'Outstanding Critical: AR Quality',
+              formula: 'Open critical if AR >30d % or DSO remains above critical threshold',
+              threshold: `AR >30d >= ${pulsePolicy['ar_open_critical.min_over30_pct']} OR DSO >= ${pulsePolicy['ar_open_critical.min_dso_days']}`,
+              reasonNow: `AR >30d ${arOver30.toFixed(1)}%, DSO ${dso.toFixed(1)} days`,
+              policySource: `Company Pulse policy (company override + sector default fallback)`,
+              dataRefs: ['AR daily summary over30Pct', 'AR daily summary DSO'],
+              sourceTimestamp: endDate,
+            },
           });
         }
         if (apOver30 >= pulsePolicy['ap_open_critical.min_over30_pct']) {
@@ -418,21 +482,74 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             owner: 'AP Manager',
             drillView: 'pa-critical-issues',
             updatedAt: endDate,
+            explainability: {
+              triggerName: 'Outstanding Critical: AP Pressure',
+              formula: 'Open critical if AP >30d % remains above threshold',
+              threshold: `AP >30d >= ${pulsePolicy['ap_open_critical.min_over30_pct']}`,
+              reasonNow: `AP >30d ${apOver30.toFixed(1)}%`,
+              policySource: `Company Pulse policy (company override + sector default fallback)`,
+              dataRefs: ['AP daily summary over30Pct'],
+              sourceTimestamp: endDate,
+            },
           });
         }
         if (
           cashChangePct <= pulsePolicy['cash_open_critical.max_change_pct'] ||
-          runwayWeeks < pulsePolicy['cash_open_critical.min_runway_weeks']
+          (hasRunwaySignal && asNumber(runwayWeeks) < pulsePolicy['cash_open_critical.min_runway_weeks'])
         ) {
           built.push({
             id: `open-critical-cash-${endDate}`,
             fingerprint: 'open-critical-cash',
             source: 'open-critical',
             title: 'Outstanding Critical: Cash Risk',
-            detail: `Cash change ${cashChangePct.toFixed(1)}% | Runway ~${runwayWeeks.toFixed(1)} weeks`,
+            detail: hasRunwaySignal
+              ? `Cash change ${cashChangePct.toFixed(1)}% | Runway ${asNumber(runwayWeeks).toFixed(1)} weeks`
+              : `Cash change ${cashChangePct.toFixed(1)}% | Runway signal unavailable (insufficient source data)`,
             owner: 'Controller',
             drillView: 'pa-critical-issues',
             updatedAt: endDate,
+            explainability: {
+              triggerName: 'Outstanding Critical: Cash Risk',
+              formula: hasRunwaySignal
+                ? 'Open critical if current cash change is severe OR sourced runway weeks is below minimum'
+                : 'Open critical based on sourced cash change only; runway signal suppressed due to missing sourced runway inputs',
+              threshold: hasRunwaySignal
+                ? `cashChangePct <= ${pulsePolicy['cash_open_critical.max_change_pct']} OR runwayWeeks < ${pulsePolicy['cash_open_critical.min_runway_weeks']}`
+                : `cashChangePct <= ${pulsePolicy['cash_open_critical.max_change_pct']} (runway suppressed)`,
+              reasonNow: hasRunwaySignal
+                ? `Cash change ${cashChangePct.toFixed(1)}%; runway ${asNumber(runwayWeeks).toFixed(1)} weeks`
+                : `Cash change ${cashChangePct.toFixed(1)}%; runway unavailable due to insufficient source data`,
+              policySource: `Company Pulse policy (company override + sector default fallback)`,
+              dataRefs: hasRunwaySignal
+                ? ['Cash summary changePercent', 'Cash summary runwayWeeks', allowProxyRunway ? 'Proxy runway enabled by policy' : '']
+                    .filter(Boolean)
+                : ['Cash summary changePercent', 'Runway source fields missing: runwayWeeks'],
+              sourceTimestamp: endDate,
+            },
+          });
+        }
+
+        if (!hasRunwaySignal) {
+          built.push({
+            id: `data-gap-cash-runway-${endDate}`,
+            fingerprint: 'data-gap-cash-runway',
+            source: 'unresolved',
+            title: 'Runway Signal Unavailable',
+            detail: 'Insufficient source data for runway. Alerting uses explicit cash-change signal only.',
+            owner: 'Controller',
+            drillView: 'pa-overview',
+            updatedAt: endDate,
+            explainability: {
+              triggerName: 'Insufficient Source Data: Runway',
+              formula: 'Runway-based trigger suppressed when sourced runway inputs are unavailable',
+              threshold: 'Requires sourced runwayWeeks (or policy-approved proxy runway)',
+              reasonNow: allowProxyRunway
+                ? 'Proxy runway was allowed but source runway field is still preferred and currently unavailable'
+                : 'Proxy runway disabled by policy; sourced runway field unavailable',
+              policySource: `cash_open_critical.allow_proxy_runway = ${asNumber(pulsePolicy['cash_open_critical.allow_proxy_runway'])}`,
+              dataRefs: ['Cash summary runwayWeeks missing or invalid'],
+              sourceTimestamp: endDate,
+            },
           });
         }
 
@@ -454,6 +571,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               drillView: finding?.type === 'anomaly' ? 'pa-anomaly-inbox' : 'pa-critical-issues',
               updatedAt: finding?.updatedAt,
               itemLabel: finding?.metric || undefined,
+              explainability: {
+                triggerName: 'Unresolved Critical Finding',
+                formula: 'Include unresolved critical findings from performance analytics feed',
+                threshold: 'status not in resolved/realized/closed/done/complete/completed',
+                reasonNow: `Finding remains unresolved (${finding?.type || 'critical'})`,
+                policySource: 'Findings ingestion rule + Pulse priority policy',
+                dataRefs: ['/api/performance-analytics/findings?severity=critical'],
+                sourceTimestamp: finding?.updatedAt,
+              },
             });
           });
 
@@ -468,6 +594,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             drillView: 'pa-overview',
             updatedAt: endDate,
             itemLabel: term,
+            explainability: {
+              triggerName: 'Priority Focus Watch',
+              formula: 'Inject watch item for configured operational focus term',
+              threshold: 'Term exists in __focusWatchlist',
+              reasonNow: `"${term}" configured as priority focus`,
+              policySource: '__focusWatchlist operational goal',
+              dataRefs: ['/api/operational-goals'],
+              sourceTimestamp: endDate,
+            },
           });
         });
 
@@ -521,6 +656,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 priorityScore: alert.priorityScore,
                 bucket: alert.bucket,
                 priorityFocusTerm: alert.priorityFocusTerm,
+                explainability: alert.explainability,
               })),
             }),
           });
@@ -547,6 +683,18 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 notes: Array.isArray(row.notes) ? row.notes : [],
                 isActive: Boolean(row.isActive),
                 modifiedAt: row.modifiedAt || undefined,
+                explainability:
+                  row && typeof row.explainability === 'object'
+                    ? row.explainability
+                    : {
+                        triggerName: row?.title || 'Pulse Alert',
+                        formula: 'Derived from Company Pulse rule set for this alert source',
+                        threshold: 'See policy settings and source-specific trigger thresholds',
+                        reasonNow: row?.detail || 'Condition met in latest run',
+                        policySource: 'Company Pulse policy (company override + sector default fallback)',
+                        dataRefs: [row?.source || 'pulse-source'],
+                        sourceTimestamp: row?.updatedAt || undefined,
+                      },
               }));
             }
           }
@@ -863,17 +1011,19 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       return totals.map((row) => ({ date: row.date, value: row.value }));
     }
 
-    // cash-runway-weeks
-    return totals.map((row, idx) => {
-      if (idx === 0) return { date: row.date, value: 0 };
-      const prev = totals[idx - 1].value;
-      const change = row.value - prev;
-      const burnProxy = Math.max(1, Math.abs(change));
-      return {
-        date: row.date,
-        value: (row.value / burnProxy) * 4.33,
-      };
+    // cash-runway-weeks: sourced runway only (no proxy inference).
+    const byDate = new Map<string, number>();
+    cashRows.forEach((row: any) => {
+      const date = String(row.snapshotDate || '');
+      if (!date) return;
+      const runway = asNumber(row.runwayWeeks);
+      if (Number.isFinite(runway) && runway > 0) {
+        byDate.set(date, runway);
+      }
     });
+    return Array.from(byDate.entries())
+      .map(([date, value]) => ({ date, value }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
   const openPreview = async (alert: AlertItem, spec: PreviewSpec) => {
@@ -1012,7 +1162,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             onClick={() => runAlertAction(alert, { action: 'resolve' })}
             style={{ fontSize: '11px', fontWeight: 700, color: '#166534', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '7px', padding: '3px 7px', cursor: isBusy ? 'not-allowed' : 'pointer' }}
           >
-            Resolve
+            Mark Resolved
           </button>
         )}
         {alert.status === 'resolved' && (
@@ -1090,6 +1240,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           style={{ fontSize: '11px', fontWeight: 700, color: '#334155', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '7px', padding: '3px 7px', cursor: 'pointer' }}
         >
           History
+        </button>
+        <button
+          onClick={() => setExplainabilityAlert(alert)}
+          style={{ fontSize: '11px', fontWeight: 700, color: '#334155', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '7px', padding: '3px 7px', cursor: 'pointer' }}
+        >
+          Why
         </button>
       </div>
     );
@@ -1238,22 +1394,29 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               <div key={alert.id} style={{ border: '1px solid #fecaca', borderRadius: '10px', padding: '12px', background: '#fff7f7' }}>
                 <div style={{ display: 'grid', gap: '8px' }}>
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ fontSize: '17px', fontWeight: 700, color: '#7f1d1d' }}>{alert.title}</div>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          borderRadius: '999px',
-                          padding: '3px 8px',
-                          background: statusColor(alert.status).bg,
-                          color: statusColor(alert.status).fg,
-                          border: `1px solid ${statusColor(alert.status).border}`,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {(alert.status || 'new').toUpperCase()}
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <div style={{ fontSize: '17px', fontWeight: 700, color: '#7f1d1d', minWidth: 0, overflowWrap: 'anywhere' }}>{alert.title}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            borderRadius: '999px',
+                            padding: '3px 8px',
+                            background: statusColor(alert.status).bg,
+                            color: statusColor(alert.status).fg,
+                            border: `1px solid ${statusColor(alert.status).border}`,
+                          }}
+                        >
+                          {(alert.status || 'new').toUpperCase()}
+                        </span>
+                        <button
+                          onClick={() => onNavigate(alert.drillView)}
+                          style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Open
+                        </button>
+                      </div>
                     </div>
                     <div style={{ fontSize: '14px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
@@ -1276,14 +1439,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                       ))}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                    {renderLifecycleActions(alert)}
-                    <button
-                      onClick={() => onNavigate(alert.drillView)}
-                      style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
-                    >
-                      Open
-                    </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ minWidth: 0 }}>
+                      {renderLifecycleActions(alert)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1298,22 +1457,29 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               <div key={alert.id} style={{ border: '1px solid #fde68a', borderRadius: '10px', padding: '12px', background: '#fffbeb' }}>
                 <div style={{ display: 'grid', gap: '8px' }}>
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#92400e' }}>{alert.title}</div>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          borderRadius: '999px',
-                          padding: '3px 8px',
-                          background: statusColor(alert.status).bg,
-                          color: statusColor(alert.status).fg,
-                          border: `1px solid ${statusColor(alert.status).border}`,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {(alert.status || 'new').toUpperCase()}
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#92400e', minWidth: 0, overflowWrap: 'anywhere' }}>{alert.title}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            borderRadius: '999px',
+                            padding: '3px 8px',
+                            background: statusColor(alert.status).bg,
+                            color: statusColor(alert.status).fg,
+                            border: `1px solid ${statusColor(alert.status).border}`,
+                          }}
+                        >
+                          {(alert.status || 'new').toUpperCase()}
+                        </span>
+                        <button
+                          onClick={() => onNavigate(alert.drillView)}
+                          style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          Open
+                        </button>
+                      </div>
                     </div>
                     <div style={{ fontSize: '14px', color: '#334155', marginTop: '2px' }}>{alert.detail}</div>
                     <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
@@ -1336,14 +1502,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                       ))}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                    {renderLifecycleActions(alert)}
-                    <button
-                      onClick={() => onNavigate(alert.drillView)}
-                      style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
-                    >
-                      Open
-                    </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ minWidth: 0 }}>
+                      {renderLifecycleActions(alert)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1364,14 +1526,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                           {alert.modifiedAt ? ` | Updated ${formatDateTime(alert.modifiedAt)}` : ''}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                        {renderLifecycleActions(alert)}
-                        <button
-                          onClick={() => onNavigate(alert.drillView)}
-                          style={{ fontSize: '13px', fontWeight: 700, color: '#1f70c1', background: 'transparent', border: 'none', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
-                        >
-                          Open
-                        </button>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ minWidth: 0 }}>
+                          {renderLifecycleActions(alert)}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1573,6 +1731,86 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                     )}
                   </div>
                 ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {explainabilityAlert && (
+        <div
+          onClick={() => setExplainabilityAlert(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            zIndex: 2150,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(820px, 96vw)',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 16px 40px rgba(15, 23, 42, 0.25)',
+              padding: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+              <div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>Why This Alert Triggered</div>
+                <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>{explainabilityAlert.title}</div>
+              </div>
+              <button
+                onClick={() => setExplainabilityAlert(null)}
+                style={{ border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: '12px', display: 'grid', gap: '10px' }}>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Trigger</div>
+                <div style={{ fontSize: '14px', color: '#0f172a', marginTop: '4px' }}>{explainabilityAlert.explainability?.triggerName || explainabilityAlert.title}</div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Exact Formula</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>{explainabilityAlert.explainability?.formula || 'See alert source rule logic.'}</div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Threshold / Policy Used</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>{explainabilityAlert.explainability?.threshold || 'Policy thresholds applied at run time.'}</div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{explainabilityAlert.explainability?.policySource || 'Company override + sector default fallback'}</div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Why Now (Delta vs Baseline)</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>{explainabilityAlert.explainability?.reasonNow || explainabilityAlert.detail}</div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Source Records & Time</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>
+                  {Array.isArray(explainabilityAlert.explainability?.dataRefs) && explainabilityAlert.explainability?.dataRefs?.length
+                    ? explainabilityAlert.explainability?.dataRefs.join(' | ')
+                    : 'Operational data + findings feeds'}
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                  Source timestamp: {formatDateTime(explainabilityAlert.explainability?.sourceTimestamp || explainabilityAlert.updatedAt)}
+                </div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Transition History</div>
+                <div style={{ fontSize: '13px', color: '#1f70c1', marginTop: '4px' }}>
+                  Use the <strong>History</strong> action on this alert to view the full lifecycle audit trail.
+                </div>
+              </div>
             </div>
           </div>
         </div>

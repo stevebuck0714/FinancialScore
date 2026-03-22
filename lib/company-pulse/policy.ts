@@ -18,6 +18,7 @@ export type PulsePolicyKey =
   | 'cash_account_daily_change.min_balance_floor'
   | 'cash_open_critical.max_change_pct'
   | 'cash_open_critical.min_runway_weeks'
+  | 'cash_open_critical.allow_proxy_runway'
   | 'cash_open_critical.min_consecutive_days'
   | 'unresolved_findings.max_age_days_without_owner'
   | 'unresolved_findings.max_age_days_unacknowledged'
@@ -234,6 +235,17 @@ const POLICY_DEFINITIONS = [
     min: 0,
     max: 104,
     defaultValue: 8,
+  },
+  {
+    key: 'cash_open_critical.allow_proxy_runway',
+    label: 'Cash open critical allow proxy runway',
+    description: 'Set to 1 only if proxy runway math is explicitly approved when sourced runway data is unavailable.',
+    section: 'Cash',
+    unit: 'score',
+    step: 1,
+    min: 0,
+    max: 1,
+    defaultValue: 0,
   },
   {
     key: 'cash_open_critical.min_consecutive_days',
