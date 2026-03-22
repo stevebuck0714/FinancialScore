@@ -95,8 +95,8 @@ const POLICY_DEFINITIONS = [
   },
   {
     key: 'ar_open_critical.min_dso_days',
-    label: 'AR open critical minimum DSO days',
-    description: 'DSO threshold above which AR remains in an open critical condition.',
+    label: 'AR open critical minimum Days Sales Outstanding',
+    description: 'Days Sales Outstanding threshold above which AR remains in an open critical condition.',
     section: 'AR',
     unit: 'days',
     step: 1,

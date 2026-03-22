@@ -109,6 +109,15 @@ const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
 const AR_TOP_CUSTOMER_MATERIALITY_LIMIT = 5;
 type PulseTab = 'alerts' | 'policy';
 
+type PolicyExplainer = {
+  what: string;
+  evaluation: string;
+  higherMeans: string;
+  lowerMeans: string;
+  example: string;
+  dataNotes: string;
+};
+
 function asNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -198,6 +207,76 @@ function readinessColor(status: ReadinessStatus) {
   return { bg: '#fee2e2', fg: '#991b1b', border: '#fecaca' };
 }
 
+function buildPolicyExplainer(def: (typeof PULSE_POLICY_DEFINITIONS)[number]): PolicyExplainer {
+  const defaultEvaluation = `Pulse evaluates this using the active threshold (${formatPolicyNumber(def.defaultValue, def.unit)} by default, sector/company overrides may change it).`;
+  const defaultHigher = 'Higher values generally make this check less sensitive and may reduce alerts.';
+  const defaultLower = 'Lower values generally make this check more sensitive and may increase alerts.';
+  const defaultExample = `If set to ${formatPolicyNumber(def.defaultValue, def.unit)}, this policy controls when "${def.label}" is considered materially out of bounds.`;
+  const defaultDataNotes = 'Depends on the relevant operational snapshots feeding this metric.';
+
+  const map: Partial<Record<PulsePolicyKey, PolicyExplainer>> = {
+    'ar_daily_change.min_over30_pct': {
+      what: 'Sets the AR overdue percentage floor before a daily AR deterioration alert can fire.',
+      evaluation: 'Triggered when AR >30d % is at or above this threshold and the AR day-over-day change threshold is also met.',
+      higherMeans: 'Requires a worse overdue level before alerting.',
+      lowerMeans: 'Alerts earlier on smaller AR overdue levels.',
+      example: 'At 30%, AR daily deterioration can only trigger when AR >30d is at least 30%.',
+      dataNotes: 'Uses AR aging daily snapshots.',
+    },
+    'ar_daily_change.min_delta_pts': {
+      what: 'Sets minimum day-over-day deterioration in AR overdue percentage points.',
+      evaluation: 'Triggered when latest AR >30d % minus prior AR >30d % is at or above this threshold.',
+      higherMeans: 'Requires a larger one-day worsening before alerting.',
+      lowerMeans: 'Allows alerts on smaller daily deteriorations.',
+      example: 'At 2.0 pts, a move from 31.0% to 33.2% qualifies (+2.2 pts).',
+      dataNotes: 'Uses consecutive AR daily snapshots.',
+    },
+    'ar_daily_change.min_top_customer_overdue_amount': {
+      what: `Adds materiality gating for concentration risk in AR deterioration checks.`,
+      evaluation: `At least one customer in the top ${AR_TOP_CUSTOMER_MATERIALITY_LIMIT} overdue customers (>30d) must be at or above this amount.`,
+      higherMeans: 'Only larger customer exposures are treated as material.',
+      lowerMeans: 'Smaller customer exposures can satisfy materiality.',
+      example: `At $25,000, if any top ${AR_TOP_CUSTOMER_MATERIALITY_LIMIT} overdue customer exceeds $25,000 (>30d), materiality is met.`,
+      dataNotes: 'Uses AR summary overdue-by-customer data (>30d buckets only).',
+    },
+    'ar_open_critical.min_over30_pct': {
+      what: 'Defines the overdue percentage threshold for AR to remain in open critical status.',
+      evaluation: 'AR stays open critical when AR >30d % is at or above this threshold.',
+      higherMeans: 'Needs a more severe overdue percentage to remain critical.',
+      lowerMeans: 'Keeps AR in critical status at lower overdue percentages.',
+      example: 'At 35%, AR >30d at 37% keeps AR in open critical.',
+      dataNotes: 'Uses AR daily summary over30Pct.',
+    },
+    'ar_open_critical.min_dso_days': {
+      what: 'Defines the Days Sales Outstanding threshold for AR to remain open critical.',
+      evaluation: 'AR stays open critical when Days Sales Outstanding is at or above this threshold.',
+      higherMeans: 'Allows longer collection cycles before marking critical.',
+      lowerMeans: 'Flags critical sooner on slower collections.',
+      example: 'At 55 days, Days Sales Outstanding of 61 keeps AR open critical.',
+      dataNotes: 'Uses AR daily summary Days Sales Outstanding.',
+    },
+    'cash_open_critical.allow_proxy_runway': {
+      what: 'Controls whether estimated (proxy) runway is allowed when sourced runway inputs are missing.',
+      evaluation: '0 disables proxy runway; 1 enables proxy runway fallback.',
+      higherMeans: 'At 1, more permissive: allows inferred runway fallback.',
+      lowerMeans: 'At 0, stricter: requires sourced runway data.',
+      example: 'Set to 0 to suppress guessed runway and show data-gap behavior instead.',
+      dataNotes: 'Runway quality depends on line-level sourced runway fields.',
+    },
+  };
+
+  return (
+    map[def.key] || {
+      what: def.description,
+      evaluation: defaultEvaluation,
+      higherMeans: defaultHigher,
+      lowerMeans: defaultLower,
+      example: defaultExample,
+      dataNotes: defaultDataNotes,
+    }
+  );
+}
+
 export default function DailyAlertsView({ companyId, companyName, onNavigate }: DailyAlertsViewProps) {
   const [activeTab, setActiveTab] = useState<PulseTab>('alerts');
   const [loading, setLoading] = useState(true);
@@ -216,6 +295,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [alertEvents, setAlertEvents] = useState<AlertEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [explainabilityAlert, setExplainabilityAlert] = useState<AlertItem | null>(null);
+  const [policyDetailKey, setPolicyDetailKey] = useState<PulsePolicyKey | null>(null);
   const [previewAlert, setPreviewAlert] = useState<AlertItem | null>(null);
   const [previewSpec, setPreviewSpec] = useState<PreviewSpec | null>(null);
   const [previewTrend, setPreviewTrend] = useState<TrendPoint[]>([]);
@@ -542,17 +622,17 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             fingerprint: 'open-critical-ar',
             source: 'open-critical',
             title: 'Outstanding Critical: AR Quality',
-            detail: `AR >30d ${arOver30.toFixed(1)}% | DSO ${dso.toFixed(1)} days remains at critical levels`,
+            detail: `AR >30d ${arOver30.toFixed(1)}% | Days Sales Outstanding ${dso.toFixed(1)} days remains at critical levels`,
             owner: 'Collections Lead',
             drillView: 'pa-critical-issues',
             updatedAt: endDate,
             explainability: {
               triggerName: 'Outstanding Critical: AR Quality',
-              formula: 'Open critical if AR >30d % or DSO remains above critical threshold',
-              threshold: `AR >30d >= ${pulsePolicy['ar_open_critical.min_over30_pct']} OR DSO >= ${pulsePolicy['ar_open_critical.min_dso_days']}`,
-              reasonNow: `AR >30d ${arOver30.toFixed(1)}%, DSO ${dso.toFixed(1)} days`,
+              formula: 'Open critical if AR >30d % or Days Sales Outstanding remains above critical threshold',
+              threshold: `AR >30d >= ${pulsePolicy['ar_open_critical.min_over30_pct']} OR Days Sales Outstanding >= ${pulsePolicy['ar_open_critical.min_dso_days']}`,
+              reasonNow: `AR >30d ${arOver30.toFixed(1)}%, Days Sales Outstanding ${dso.toFixed(1)} days`,
               policySource: `Company Pulse policy (company override + sector default fallback)`,
-              dataRefs: ['AR daily summary over30Pct', 'AR daily summary DSO'],
+              dataRefs: ['AR daily summary over30Pct', 'AR daily summary Days Sales Outstanding'],
               sourceTimestamp: endDate,
             },
           });
@@ -904,8 +984,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       items: PULSE_POLICY_DEFINITIONS.filter((def) => def.section === section),
     }));
   }, []);
+  const policyDetailDefinition = useMemo(
+    () =>
+      policyDetailKey
+        ? PULSE_POLICY_DEFINITIONS.find((def) => def.key === policyDetailKey) || null
+        : null,
+    [policyDetailKey]
+  );
   const policySettingsGridColumns =
-    'minmax(390px, 2.25fr) minmax(120px, 0.62fr) minmax(120px, 0.62fr) minmax(100px, 0.58fr) minmax(74px, 86px)';
+    'minmax(350px, 2.05fr) minmax(120px, 0.62fr) minmax(120px, 0.62fr) minmax(100px, 0.58fr) minmax(74px, 86px) minmax(72px, 82px)';
 
   const hasPolicyOverride = (key: PulsePolicyKey) => Object.prototype.hasOwnProperty.call(policyOverrides, key);
 
@@ -1170,7 +1257,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       specs.push({
         key: `${alert.id}-ar-dso`,
         metric: 'ar-dso',
-        label: 'DSO',
+        label: 'Days Sales Outstanding',
         color: '#7c3aed',
         unit: 'days',
         direction: 'higher-worse',
@@ -1725,6 +1812,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                   <div>Active Value</div>
                   <div>Override</div>
                   <div>Value</div>
+                  <div>Details</div>
                 </div>
                 {items.map((def, idx) => {
                   const overrideEnabled = hasPolicyOverride(def.key);
@@ -1789,6 +1877,23 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                               boxSizing: 'border-box',
                             }}
                           />
+                        </div>
+                        <div>
+                          <button
+                            onClick={() => setPolicyDetailKey(def.key)}
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              color: '#1d4ed8',
+                              background: '#eff6ff',
+                              border: '1px solid #bfdbfe',
+                              borderRadius: '7px',
+                              padding: '5px 8px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Details
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1960,6 +2065,85 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Transition History</div>
                 <div style={{ fontSize: '13px', color: '#1f70c1', marginTop: '4px' }}>
                   Use the <strong>History</strong> action on this alert to view the full lifecycle audit trail.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {policyDetailDefinition && (
+        <div
+          onClick={() => setPolicyDetailKey(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            zIndex: 2170,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(860px, 96vw)',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              background: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 16px 40px rgba(15, 23, 42, 0.25)',
+              padding: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+              <div>
+                <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>Policy Details</div>
+                <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px' }}>{policyDetailDefinition.label}</div>
+              </div>
+              <button
+                onClick={() => setPolicyDetailKey(null)}
+                style={{ border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: '12px', display: 'grid', gap: '10px' }}>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>What This Controls</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>
+                  {buildPolicyExplainer(policyDetailDefinition).what}
+                </div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>How Pulse Evaluates It</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>
+                  {buildPolicyExplainer(policyDetailDefinition).evaluation}
+                </div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Sensitivity Impact</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>
+                  <strong>Higher value:</strong> {buildPolicyExplainer(policyDetailDefinition).higherMeans}
+                </div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>
+                  <strong>Lower value:</strong> {buildPolicyExplainer(policyDetailDefinition).lowerMeans}
+                </div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Example</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>
+                  {buildPolicyExplainer(policyDetailDefinition).example}
+                </div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Data Notes</div>
+                <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>
+                  {buildPolicyExplainer(policyDetailDefinition).dataNotes}
                 </div>
               </div>
             </div>
