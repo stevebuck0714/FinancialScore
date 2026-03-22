@@ -42,6 +42,8 @@ type AlertItem = {
     policySource: string;
     dataRefs: string[];
     sourceTimestamp?: string;
+    readinessStatus?: ReadinessStatus;
+    readinessReason?: string;
   };
 };
 
@@ -59,6 +61,16 @@ type AssignableUser = {
   id: string;
   name: string;
   email: string;
+};
+
+type ReadinessStatus = 'ready' | 'partial' | 'missing';
+
+type ReadinessItem = {
+  key: string;
+  label: string;
+  status: ReadinessStatus;
+  reason: string;
+  lastUpdated?: string;
 };
 
 interface DailyAlertsViewProps {
@@ -179,6 +191,12 @@ function formatDateTime(value?: string | null): string {
   return t.toLocaleString();
 }
 
+function readinessColor(status: ReadinessStatus) {
+  if (status === 'ready') return { bg: '#dcfce7', fg: '#166534', border: '#86efac' };
+  if (status === 'partial') return { bg: '#fef3c7', fg: '#92400e', border: '#fde68a' };
+  return { bg: '#fee2e2', fg: '#991b1b', border: '#fecaca' };
+}
+
 export default function DailyAlertsView({ companyId, companyName, onNavigate }: DailyAlertsViewProps) {
   const [activeTab, setActiveTab] = useState<PulseTab>('alerts');
   const [loading, setLoading] = useState(true);
@@ -189,6 +207,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [policyOverrides, setPolicyOverrides] = useState<Partial<PulsePolicyValues>>({});
   const [policySaving, setPolicySaving] = useState(false);
   const [policyStatus, setPolicyStatus] = useState<string | null>(null);
+  const [readinessItems, setReadinessItems] = useState<ReadinessItem[]>([]);
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
   const [selectedOwnerByAlert, setSelectedOwnerByAlert] = useState<Record<string, string>>({});
   const [transitionLoadingId, setTransitionLoadingId] = useState<string | null>(null);
@@ -447,6 +466,57 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             ? proxyRunwayWeeks
             : null;
         const hasRunwaySignal = runwayWeeks !== null && Number.isFinite(runwayWeeks);
+        const latestDateFrom = (rows: any[]): string | undefined => {
+          if (!Array.isArray(rows) || rows.length === 0) return undefined;
+          const dates = rows
+            .map((r: any) => String(r?.snapshotDate || '').trim())
+            .filter((v: string) => v.length > 0)
+            .sort((a: string, b: string) => new Date(b).getTime() - new Date(a).getTime());
+          return dates[0];
+        };
+        const readinessSnapshot: ReadinessItem[] = [
+          {
+            key: 'ar',
+            label: 'AR snapshots',
+            status: arRecords.length >= 2 ? 'ready' : arRecords.length > 0 ? 'partial' : 'missing',
+            reason:
+              arRecords.length >= 2
+                ? 'Enough daily AR snapshots for deterioration and open-critical checks.'
+                : 'Need at least 2 daily AR snapshots for full signal coverage.',
+            lastUpdated: latestDateFrom(arRecords),
+          },
+          {
+            key: 'ap',
+            label: 'AP snapshots',
+            status: apRecords.length >= 2 ? 'ready' : apRecords.length > 0 ? 'partial' : 'missing',
+            reason:
+              apRecords.length >= 2
+                ? 'Enough daily AP snapshots for deterioration and open-critical checks.'
+                : 'Need at least 2 daily AP snapshots for full signal coverage.',
+            lastUpdated: latestDateFrom(apRecords),
+          },
+          {
+            key: 'cash',
+            label: 'Cash snapshots',
+            status: cashRecords.length >= 2 ? 'ready' : cashRecords.length > 0 ? 'partial' : 'missing',
+            reason:
+              cashRecords.length >= 2
+                ? 'Enough daily cash snapshots for day-over-day and account-level checks.'
+                : 'Need at least 2 daily cash snapshots for full cash signal coverage.',
+            lastUpdated: latestDateFrom(cashRecords),
+          },
+          {
+            key: 'runway',
+            label: 'Runway line data',
+            status: hasExplicitRunway ? 'ready' : allowProxyRunway ? 'partial' : 'missing',
+            reason: hasExplicitRunway
+              ? 'Sourced runwayWeeks is available.'
+              : allowProxyRunway
+                ? 'Sourced runwayWeeks missing; policy currently allows proxy runway fallback.'
+                : 'Sourced runwayWeeks missing and proxy fallback disabled by policy.',
+            lastUpdated: endDate,
+          },
+        ];
 
         if (
           arOver30 >= pulsePolicy['ar_open_critical.min_over30_pct'] ||
@@ -525,6 +595,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                     .filter(Boolean)
                 : ['Cash summary changePercent', 'Runway source fields missing: runwayWeeks'],
               sourceTimestamp: endDate,
+              readinessStatus: hasRunwaySignal ? 'ready' : allowProxyRunway ? 'partial' : 'missing',
+              readinessReason: hasRunwaySignal
+                ? 'Sourced runwayWeeks is available for this alert.'
+                : allowProxyRunway
+                  ? 'Sourced runwayWeeks missing; policy allows proxy fallback.'
+                  : 'Sourced runwayWeeks missing; proxy fallback disabled by policy.',
             },
           });
         }
@@ -549,6 +625,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               policySource: `cash_open_critical.allow_proxy_runway = ${asNumber(pulsePolicy['cash_open_critical.allow_proxy_runway'])}`,
               dataRefs: ['Cash summary runwayWeeks missing or invalid'],
               sourceTimestamp: endDate,
+              readinessStatus: allowProxyRunway ? 'partial' : 'missing',
+              readinessReason: allowProxyRunway
+                ? 'Sourced runway field missing; proxy runway currently policy-enabled.'
+                : 'Sourced runway field missing and proxy runway is policy-disabled.',
             },
           });
         }
@@ -706,6 +786,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           setGoalsSnapshot(goals);
           setPolicyOverrides(pulseOverrides);
           setIndustrySectorCategory(companySectorCategory);
+          setReadinessItems(readinessSnapshot);
           setAlerts(persistedAlerts);
         }
       } catch (err: any) {
@@ -773,6 +854,22 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
 
   const attentionAlerts = useMemo(() => activeAlerts.filter((a) => a.bucket === 'attention'), [activeAlerts]);
   const monitoringAlerts = useMemo(() => activeAlerts.filter((a) => a.bucket === 'monitoring'), [activeAlerts]);
+  const readinessCounts = useMemo(() => {
+    return readinessItems.reduce(
+      (acc, item) => {
+        if (item.status === 'ready') acc.ready += 1;
+        else if (item.status === 'partial') acc.partial += 1;
+        else acc.missing += 1;
+        return acc;
+      },
+      { ready: 0, partial: 0, missing: 0 }
+    );
+  }, [readinessItems]);
+  const readinessSummaryTone = useMemo(() => {
+    if (readinessCounts.missing > 0) return readinessColor('missing');
+    if (readinessCounts.partial > 0) return readinessColor('partial');
+    return readinessColor('ready');
+  }, [readinessCounts]);
   const sectorLabel = useMemo(
     () => getSectorLabel(industrySectorCategory),
     [industrySectorCategory]
@@ -1375,13 +1472,29 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
 
       {activeTab === 'alerts' && (
         <>
-          <div style={{ marginTop: '12px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ marginTop: '12px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '12px', color: '#7f1d1d', fontWeight: 700, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '999px', padding: '4px 10px' }}>
               Needs Attention: {counts.attention}
             </span>
             <span style={{ fontSize: '12px', color: '#92400e', fontWeight: 700, background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '999px', padding: '4px 10px' }}>
               Monitoring: {counts.monitoring}
             </span>
+            {readinessItems.length > 0 && (
+              <span
+                title={readinessItems.map((item) => `${item.label}: ${item.status.toUpperCase()} - ${item.reason}`).join('\n')}
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  borderRadius: '999px',
+                  padding: '4px 10px',
+                  background: readinessSummaryTone.bg,
+                  color: readinessSummaryTone.fg,
+                  border: `1px solid ${readinessSummaryTone.border}`,
+                }}
+              >
+                Data readiness: {readinessCounts.ready} ready / {readinessCounts.partial} partial / {readinessCounts.missing} missing
+              </span>
+            )}
           </div>
 
           <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))', gap: '12px' }}>
@@ -1803,6 +1916,27 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 </div>
                 <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
                   Source timestamp: {formatDateTime(explainabilityAlert.explainability?.sourceTimestamp || explainabilityAlert.updatedAt)}
+                </div>
+              </div>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Readiness Status</div>
+                <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      borderRadius: '999px',
+                      padding: '3px 8px',
+                      background: readinessColor(explainabilityAlert.explainability?.readinessStatus || 'ready').bg,
+                      color: readinessColor(explainabilityAlert.explainability?.readinessStatus || 'ready').fg,
+                      border: `1px solid ${readinessColor(explainabilityAlert.explainability?.readinessStatus || 'ready').border}`,
+                    }}
+                  >
+                    {(explainabilityAlert.explainability?.readinessStatus || 'ready').toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#1e293b' }}>
+                    {explainabilityAlert.explainability?.readinessReason || 'Required data sources available for this alert.'}
+                  </span>
                 </div>
               </div>
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
