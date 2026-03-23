@@ -5934,7 +5934,7 @@ export default function OperationsTab({
             }}
           >
             {tab === 'dashboard'
-              ? 'Ops Dashboard'
+              ? 'Overview'
               : tab === 'forecast'
                 ? 'Cash Forecast'
               : getModuleLabel(tab)}

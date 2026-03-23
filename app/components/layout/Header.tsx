@@ -209,7 +209,7 @@ export default function Header({
                   textAlign: 'center'
                 }}
               >
-                OPERATIONS HUB
+                OPERATIONAL PERFORMANCE
               </button>
               <button
                 onClick={() => canAccess('company-dashboard') && handleNavigation('dashboard')}
@@ -229,7 +229,7 @@ export default function Header({
                   opacity: canAccess('company-dashboard') ? 1 : 0.4
                 }}
               >
-                <span style={{ whiteSpace: 'normal', lineHeight: '1.1' }}>KPI'S</span>
+                <span style={{ whiteSpace: 'normal', lineHeight: '1.1' }}>FINANCIAL PERFORMANCE</span>
               </button>
             </div>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
@@ -255,7 +255,7 @@ export default function Header({
                 aria-haspopup="menu"
                 aria-expanded={showFinancialReportsMenu}
               >
-                <span>REPORTS HUB</span>
+                <span>REPORTS</span>
                 <span style={{ fontSize: '12px' }}>▾</span>
               </button>
               {showFinancialReportsMenu && (
@@ -325,7 +325,7 @@ export default function Header({
                 opacity: canAccess('dataroom') ? 1 : 0.4
               }}
             >
-              DATAROOM
+              DATA ROOM
             </button>
             </div>
           </nav>

@@ -668,9 +668,6 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     <div style={{ padding: '24px', background: '#f8fafc', minHeight: '100vh' }}>
       <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-            Operations Dashboard
-          </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ fontSize: '13px', color: '#64748b' }}>Drag cards to reorder</span>
             {saveMessage && (
