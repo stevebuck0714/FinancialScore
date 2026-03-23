@@ -5505,7 +5505,11 @@ export default function SiteAdminDashboard(props: any) {
                                                 onClick={() => {
                                                   const site = requireCompanyCsiSite(businessCompany.id);
                                                   if (!site) return;
-                                                  runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency, site);
+                                                  runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency, site, {
+                                                    mode: operationalSettings.syncMode,
+                                                    backfillMonths: operationalSettings.backfillMonths,
+                                                    lookbackDays: operationalSettings.lookbackDays,
+                                                  });
                                                 }}
                                                 disabled={inforBusy || !inforConnected}
                                                 style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}

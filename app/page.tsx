@@ -5523,6 +5523,9 @@ function FinancialScorePage() {
       let aggregatedErrors: string[] = [];
       let cursor: Record<string, unknown> | null = null;
       const maxChunks = 4000;
+      let lastCursorSignature: string | null = null;
+      let stagnantCursorCount = 0;
+      const maxStagnantCursorChunks = 25;
 
       while (chunkCount < maxChunks) {
         chunkCount += 1;
@@ -5569,6 +5572,18 @@ function FinancialScorePage() {
 
         if (data?.hasMore && data?.cursor && typeof data.cursor === 'object') {
           cursor = data.cursor as Record<string, unknown>;
+          const cursorSignature = JSON.stringify(cursor);
+          if (cursorSignature === lastCursorSignature) {
+            stagnantCursorCount += 1;
+          } else {
+            lastCursorSignature = cursorSignature;
+            stagnantCursorCount = 0;
+          }
+          if (stagnantCursorCount >= maxStagnantCursorChunks) {
+            throw new Error(
+              'Operational sync cursor stopped advancing and appears to be looping. Please retry after adjusting sync settings.'
+            );
+          }
           continue;
         }
         break;
