@@ -1730,14 +1730,20 @@ export async function syncInforM3OperationalData(
           paginationTruncated = true;
           let continuationBookmark: string | null = paginationState.bookmark;
           const isSlInvHdrs = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLINVHDRS';
-          if (
+          const shouldForceKeysetContinuation =
             isSlInvHdrs &&
-            inputBookmark &&
-            continuationBookmark &&
-            continuationBookmark === inputBookmark
-          ) {
+            (
+              Boolean(inputKeyset) ||
+              (inputBookmark && continuationBookmark && continuationBookmark === inputBookmark)
+            );
+          if (shouldForceKeysetContinuation) {
             const keysetBookmark = buildSlInvHdrsKeysetBookmarkFromRecords(rawRecords);
-            if (keysetBookmark) continuationBookmark = keysetBookmark;
+            if (keysetBookmark) {
+              continuationBookmark = keysetBookmark;
+            } else if (inputKeyset && inputBookmark) {
+              // Keep keyset mode sticky even on sparse pages.
+              continuationBookmark = inputBookmark;
+            }
           }
           continuation = {
             programOffset: absoluteProgramOffset,
