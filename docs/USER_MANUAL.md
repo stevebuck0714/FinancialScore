@@ -530,6 +530,33 @@ Inventory
 * Inventory value trend chart and distribution chart
 * Table of current inventory with value and quantity
 
+Company Pulse (Daily Operating Risk)
+
+Company Pulse is the daily operating-risk workspace inside Operations. It highlights the issues that need action now, shows what is being monitored, and provides policy controls for how signals are evaluated.
+
+What Company Pulse includes:
+
+* Alerts tab: Prioritized alerts grouped into Needs Attention and Monitoring, plus resolved items.
+* Policy Settings tab: Sector-default policy thresholds with optional company overrides.
+* Lifecycle workflow: Alerts can be acknowledged, snoozed, assigned, reopened, and marked resolved.
+* Explainability: Each alert includes a Why action showing formula, threshold used, reason triggered now, and source references.
+* Data readiness: A readiness indicator shows whether required upstream data is ready, partial, or missing.
+
+How to use Company Pulse:
+
+1. Open the Alerts tab and review Needs Attention first.
+2. Use Open to drill into the related operational view.
+3. Use lifecycle actions (Ack/Snooze/Assign/Mark Resolved) to manage ownership and progress.
+4. Use Why to understand exactly why an alert triggered before taking action.
+5. Open Policy Settings to tune thresholds, then save overrides for company-specific behavior.
+
+Policy behavior:
+
+* Sector defaults provide the starting baseline.
+* Active value is what Pulse is currently using.
+* Enabling Use override applies a company-specific value for that policy.
+* Use Details on each policy row for plain-language guidance and tuning examples.
+
 Data Refresh Cadence
 
 * COA financial data is loaded monthly.
