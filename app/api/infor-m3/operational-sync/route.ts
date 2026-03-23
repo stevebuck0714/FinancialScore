@@ -17,6 +17,21 @@ type SyncCursor = {
   businessDateIndex?: number;
 };
 
+function normalizeBookmark(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function didCursorAdvance(previous: SyncCursor, next: SyncCursor): boolean {
+  return !(
+    previous.programOffset === next.programOffset &&
+    (previous.requestOffset ?? 0) === (next.requestOffset ?? 0) &&
+    normalizeBookmark(previous.bookmark) === normalizeBookmark(next.bookmark) &&
+    (previous.businessDateIndex ?? 0) === (next.businessDateIndex ?? 0)
+  );
+}
+
 function normalizeFrequency(value: unknown): Frequency {
   if (typeof value !== 'string') return 'daily';
   const normalized = value.trim().toLowerCase();
@@ -259,6 +274,22 @@ export async function POST(request: NextRequest) {
       } else {
         await pruneCompanyOperationalData(companyId);
       }
+      if (hasMore && cursor) {
+        const previousCursor: SyncCursor = {
+          mode,
+          backfillMonths: months,
+          businessDateIndex,
+          programOffset: requestedProgramOffset,
+          programBatchSize,
+          requestOffset: requestedRequestOffset,
+          bookmark: requestedBookmark,
+        };
+        if (!didCursorAdvance(previousCursor, cursor)) {
+          throw new Error(
+            'Operational sync cursor did not advance for business-day backfill; aborting to prevent infinite loop.'
+          );
+        }
+      }
 
       return NextResponse.json({
         ok: dayResult.success,
@@ -299,6 +330,18 @@ export async function POST(request: NextRequest) {
           bookmark: result.continuation?.bookmark ?? null,
         }
       : null;
+    if (result.hasMore && cursor) {
+      const previousCursor: SyncCursor = {
+        mode,
+        programOffset: requestedProgramOffset,
+        programBatchSize,
+        requestOffset: requestedRequestOffset,
+        bookmark: requestedBookmark,
+      };
+      if (!didCursorAdvance(previousCursor, cursor)) {
+        throw new Error('Operational sync cursor did not advance; aborting to prevent infinite loop.');
+      }
+    }
     return NextResponse.json({
       ok: result.success,
       companyId,
