@@ -30,6 +30,10 @@ type SyncWindow = {
   endDate: Date;
   mode: SyncMode;
 };
+type SyncOptions = {
+  snapshotDateOverride?: Date;
+  skipPrune?: boolean;
+};
 
 type SitePolicy = 'required' | 'optional' | 'none';
 
@@ -283,10 +287,25 @@ function aggregateForCompanyRollup(
         key,
         { customerName, customerId, revenue: 0, invoiceCount: 0 },
         (acc) => {
-          acc.revenue = Number(acc.revenue || 0) + pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA']);
-          acc.invoiceCount =
-            Number(acc.invoiceCount || 0) +
-            Math.max(0, Math.round(pickNumber(record, ['invoiceCount', 'count', 'IVNO_COUNT']) || 1));
+          const explicitRevenue = pickNumber(record, [
+            'revenue',
+            'amount',
+            'salesAmount',
+            'NETA',
+            'Amount',
+            'Price',
+            'ExtPrice',
+            'DerOrderBalance',
+            'DerPaymentCheckAmount',
+          ]);
+          const quantity = pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'InvSeq']);
+          const unitPrice = pickNumber(record, ['unitPrice', 'price', 'Price', 'salesPrice', 'Upri']);
+          const inferredRevenue = explicitRevenue !== 0 ? explicitRevenue : quantity * unitPrice;
+          const explicitInvoiceCount = pickNumber(record, ['invoiceCount', 'count', 'IVNO_COUNT', 'InvSeq']);
+          const inferredInvoiceCount = explicitInvoiceCount > 0 ? Math.round(explicitInvoiceCount) : inferredRevenue !== 0 ? 1 : 0;
+
+          acc.revenue = Number(acc.revenue || 0) + inferredRevenue;
+          acc.invoiceCount = Number(acc.invoiceCount || 0) + Math.max(0, inferredInvoiceCount);
         }
       );
       continue;
@@ -817,7 +836,7 @@ function isOpenAgingRecord(
   return true;
 }
 
-async function pruneCompanyOperationalData(companyId: string): Promise<void> {
+export async function pruneCompanyOperationalData(companyId: string): Promise<void> {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 3);
 
@@ -1177,8 +1196,22 @@ async function saveCustomerSales(
   const rows = records
     .map((record) => {
       const customerName = pickString(record, CUSTOMER_NAME_KEYS) || 'Unknown Customer';
-      const revenue = pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA']);
-      const invoiceCount = Math.max(0, Math.round(pickNumber(record, ['invoiceCount', 'count', 'IVNO_COUNT'])));
+      const explicitRevenue = pickNumber(record, [
+        'revenue',
+        'amount',
+        'salesAmount',
+        'NETA',
+        'Amount',
+        'Price',
+        'ExtPrice',
+        'DerOrderBalance',
+        'DerPaymentCheckAmount',
+      ]);
+      const quantity = pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'InvSeq']);
+      const unitPrice = pickNumber(record, ['unitPrice', 'price', 'Price', 'salesPrice', 'Upri']);
+      const revenue = explicitRevenue !== 0 ? explicitRevenue : quantity * unitPrice;
+      const explicitInvoiceCount = pickNumber(record, ['invoiceCount', 'count', 'IVNO_COUNT', 'InvSeq']);
+      const invoiceCount = Math.max(0, Math.round(explicitInvoiceCount > 0 ? explicitInvoiceCount : revenue !== 0 ? 1 : 0));
       return {
         companyId,
         snapshotDate,
@@ -1266,11 +1299,12 @@ export async function syncInforM3OperationalData(
   companyId: string,
   frequency: 'daily' | 'weekly' | 'monthly' = 'daily',
   siteOverride?: string,
-  syncWindow?: SyncWindow
+  syncWindow?: SyncWindow,
+  options?: SyncOptions
 ): Promise<InforOperationalSyncResult> {
   const errors: string[] = [];
   let recordsCreated = 0;
-  const snapshotDate = new Date();
+  const snapshotDate = options?.snapshotDateOverride ? new Date(options.snapshotDateOverride) : new Date();
   snapshotDate.setHours(0, 0, 0, 0);
 
   const connection = await prisma.accountingConnection.findUnique({
@@ -1511,9 +1545,10 @@ export async function syncInforM3OperationalData(
       const sitePolicy = resolveSitePolicy(row, moduleType);
       const siteDetected = hasRecordSiteDimension(rawRecords);
       const recordsAfterSiteFilter = filterRecordsBySiteIfSupported(rawRecords, row.site);
-      // Keep full open-item populations for AR/AP aging snapshots.
+      // For daily overlap syncs, keep full open-item populations for AR/AP aging snapshots.
       // A strict rolling date window on invoice dates can hide older but still-open receivables/payables.
-      const shouldApplyDateWindow = !(moduleType === 'ar' || moduleType === 'ap') || arApFlow !== 'open';
+      const isArApOpenFlow = (moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open';
+      const shouldApplyDateWindow = !isArApOpenFlow || syncWindow?.mode !== 'daily_overlap';
       const recordsAfterDateWindow = shouldApplyDateWindow
         ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
         : recordsAfterSiteFilter;
@@ -1641,7 +1676,9 @@ export async function syncInforM3OperationalData(
     }
   }
 
-  await pruneCompanyOperationalData(companyId);
+  if (!options?.skipPrune) {
+    await pruneCompanyOperationalData(companyId);
+  }
 
   return {
     success: errors.length === 0,

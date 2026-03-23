@@ -5500,7 +5500,7 @@ function FinancialScorePage() {
     frequency: 'daily' | 'weekly' | 'monthly' = 'daily',
     site?: string,
     options?: {
-      mode?: 'daily_overlap' | 'backfill';
+      mode?: 'daily_overlap' | 'backfill' | 'business_day_backfill';
       backfillMonths?: number;
       lookbackDays?: number;
       startDate?: string;
@@ -5538,7 +5538,13 @@ function FinancialScorePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = await response.json();
+      const rawBody = await response.text();
+      let data: any = null;
+      try {
+        data = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        data = { error: rawBody || 'Operational sync failed with non-JSON response.' };
+      }
       if (!response.ok || !data?.ok) {
         const details = Array.isArray(data?.errors) && data.errors.length > 0
           ? data.errors.join('\n')

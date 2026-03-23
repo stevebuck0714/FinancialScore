@@ -945,7 +945,7 @@ export default function SiteAdminDashboard(props: any) {
       {
         frequency: 'daily' | 'weekly' | 'monthly';
         pullTime: string;
-        syncMode: 'daily_overlap' | 'backfill';
+        syncMode: 'daily_overlap' | 'backfill' | 'business_day_backfill';
         backfillMonths: number;
         lookbackDays: number;
       }
@@ -973,7 +973,7 @@ export default function SiteAdminDashboard(props: any) {
     next: Partial<{
       frequency: 'daily' | 'weekly' | 'monthly';
       pullTime: string;
-      syncMode: 'daily_overlap' | 'backfill';
+      syncMode: 'daily_overlap' | 'backfill' | 'business_day_backfill';
       backfillMonths: number;
       lookbackDays: number;
     }>
@@ -3046,11 +3046,17 @@ export default function SiteAdminDashboard(props: any) {
                                                           value={getCompanyOperationalSettings(company.id).syncMode}
                                                           onChange={(e) =>
                                                             setCompanyOperationalSettings(company.id, {
-                                                              syncMode: e.target.value === 'backfill' ? 'backfill' : 'daily_overlap',
+                                                              syncMode:
+                                                                e.target.value === 'business_day_backfill'
+                                                                  ? 'business_day_backfill'
+                                                                  : e.target.value === 'backfill'
+                                                                    ? 'backfill'
+                                                                    : 'daily_overlap',
                                                             })
                                                           }
                                                           style={{ flex: 1, width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                         >
+                                                          <option value="business_day_backfill">Business-Day Backfill (US Federal)</option>
                                                           <option value="backfill">Initial Backfill</option>
                                                           <option value="daily_overlap">Daily Overlap</option>
                                                         </select>
@@ -5372,11 +5378,17 @@ export default function SiteAdminDashboard(props: any) {
                                                   value={operationalSettings.syncMode}
                                                   onChange={(e) =>
                                                     setCompanyOperationalSettings(businessCompany.id, {
-                                                      syncMode: e.target.value === 'backfill' ? 'backfill' : 'daily_overlap',
+                                                      syncMode:
+                                                        e.target.value === 'business_day_backfill'
+                                                          ? 'business_day_backfill'
+                                                          : e.target.value === 'backfill'
+                                                            ? 'backfill'
+                                                            : 'daily_overlap',
                                                     })
                                                   }
                                                   style={{ flex: 1, width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                 >
+                                                  <option value="business_day_backfill">Business-Day Backfill (US Federal)</option>
                                                   <option value="backfill">Initial Backfill</option>
                                                   <option value="daily_overlap">Daily Overlap</option>
                                                 </select>
