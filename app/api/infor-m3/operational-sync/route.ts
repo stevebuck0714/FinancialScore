@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
     const cursor: SyncCursor | null = result.hasMore
       ? {
           mode,
-          programOffset: result.continuation?.programOffset ?? result.nextProgramOffset || 0,
+          programOffset: (result.continuation?.programOffset ?? result.nextProgramOffset) || 0,
           programBatchSize,
           requestOffset: result.continuation?.requestOffset ?? 0,
           bookmark: result.continuation?.bookmark ?? null,
