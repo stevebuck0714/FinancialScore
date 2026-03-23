@@ -687,6 +687,22 @@ function parseMaybeDate(value: string | null): Date | null {
     const parsed = new Date(Date.UTC(year, month - 1, day));
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
+  // CSI often returns compact timestamp strings like:
+  // "20170404 00:00:00.000" or "20170404 00:00:00"
+  const compactWithTime = raw.match(
+    /^(\d{4})(\d{2})(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/
+  );
+  if (compactWithTime) {
+    const year = Number(compactWithTime[1]);
+    const month = Number(compactWithTime[2]);
+    const day = Number(compactWithTime[3]);
+    const hour = Number(compactWithTime[4]);
+    const minute = Number(compactWithTime[5]);
+    const second = Number(compactWithTime[6]);
+    const millisecond = Number((compactWithTime[7] || '0').padEnd(3, '0'));
+    const parsed = new Date(Date.UTC(year, month - 1, day, hour, minute, second, millisecond));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
