@@ -11,6 +11,8 @@ type SyncCursor = {
   mode: SyncMode;
   programOffset: number;
   programBatchSize: number;
+  requestOffset?: number;
+  bookmark?: string | null;
   backfillMonths?: number;
   businessDateIndex?: number;
 };
@@ -157,6 +159,9 @@ export async function POST(request: NextRequest) {
     const syncWindow = buildSyncWindow(body, frequency);
     const programBatchSize = Math.min(normalizePositiveInt(body.programBatchSize) ?? 1, 10);
     const requestedProgramOffset = normalizeNonNegativeInt(body.programOffset) ?? 0;
+    const requestedRequestOffset = normalizeNonNegativeInt(body.requestOffset) ?? 0;
+    const requestedBookmark =
+      typeof body.bookmark === 'string' && body.bookmark.trim().length > 0 ? body.bookmark.trim() : null;
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { accountingSystem: true },
@@ -224,6 +229,8 @@ export async function POST(request: NextRequest) {
           skipPrune: true,
           programOffset: requestedProgramOffset,
           programLimit: programBatchSize,
+          requestOffset: requestedRequestOffset,
+          bookmark: requestedBookmark,
         }
       );
 
@@ -235,8 +242,10 @@ export async function POST(request: NextRequest) {
           mode,
           backfillMonths: months,
           businessDateIndex,
-          programOffset: dayResult.nextProgramOffset,
+          programOffset: dayResult.continuation?.programOffset ?? dayResult.nextProgramOffset,
           programBatchSize,
+          requestOffset: dayResult.continuation?.requestOffset ?? 0,
+          bookmark: dayResult.continuation?.bookmark ?? null,
         };
       } else if (businessDateIndex + 1 < businessDates.length) {
         hasMore = true;
@@ -278,12 +287,16 @@ export async function POST(request: NextRequest) {
     const result = await syncInforM3OperationalData(companyId, frequency, site, syncWindow || undefined, {
       programOffset: requestedProgramOffset,
       programLimit: programBatchSize,
+      requestOffset: requestedRequestOffset,
+      bookmark: requestedBookmark,
     });
     const cursor: SyncCursor | null = result.hasMore
       ? {
           mode,
-          programOffset: result.nextProgramOffset || 0,
+          programOffset: result.continuation?.programOffset ?? result.nextProgramOffset || 0,
           programBatchSize,
+          requestOffset: result.continuation?.requestOffset ?? 0,
+          bookmark: result.continuation?.bookmark ?? null,
         }
       : null;
     return NextResponse.json({

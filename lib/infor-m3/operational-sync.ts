@@ -24,6 +24,11 @@ type InforOperationalSyncResult = {
   credentialSource: 'database' | 'env' | null;
   hasMore: boolean;
   nextProgramOffset: number | null;
+  continuation: {
+    programOffset: number;
+    requestOffset: number;
+    bookmark: string | null;
+  } | null;
   totalProgramRows: number;
 };
 
@@ -38,6 +43,8 @@ type SyncOptions = {
   skipPrune?: boolean;
   programOffset?: number;
   programLimit?: number;
+  requestOffset?: number;
+  bookmark?: string | null;
 };
 
 type SitePolicy = 'required' | 'optional' | 'none';
@@ -507,7 +514,7 @@ const SLA_PTRXP_SAFE_PROPERTIES = ['VendNum', 'Name', 'InvNum', 'InvDate', 'DueD
 const SLA_PTRX_SAFE_PROPERTIES = ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
 const AP_IDO_CANDIDATES = ['SLAptrx', 'SLAptrxp', 'SLAptrxps', 'SLAptrxs', 'Aptrx', 'Aptrxp', 'Aptrxps', 'Aptrxs'];
 const SL_COITEMS_SAFE_PROPERTIES = ['CoNum', 'CoLine', 'CoRelease', 'Item', 'Stat', 'Price', 'QtyOrdered', 'QtyShipped', 'InvNum', 'Whse', 'DueDate'];
-const MAX_CSI_PAGES_PER_REQUEST = 25;
+const MAX_CSI_PAGES_PER_REQUEST = 2;
 
 function ensureCsiProperties(endpointPath: string, properties: string[]): string {
   const [path, queryString = ''] = endpointPath.split('?');
@@ -1362,6 +1369,7 @@ export async function syncInforM3OperationalData(
       credentialSource: null,
       hasMore: false,
       nextProgramOffset: null,
+      continuation: null,
       totalProgramRows,
     };
   }
@@ -1378,11 +1386,15 @@ export async function syncInforM3OperationalData(
       credentialSource: null,
       hasMore: false,
       nextProgramOffset: null,
+      continuation: null,
       totalProgramRows,
     };
   }
 
-  for (const row of programRowsToProcess) {
+  let continuation: InforOperationalSyncResult['continuation'] = null;
+  for (let rowIndex = 0; rowIndex < programRowsToProcess.length; rowIndex += 1) {
+    const row = programRowsToProcess[rowIndex];
+    const absoluteProgramOffset = programOffset + rowIndex;
     const requests: Array<{ transaction: string; endpointPath: string; headers?: Record<string, string> }> = [];
 
     if (row.endpointPath || (row.miProgram && row.miProgram.toUpperCase().startsWith('SL'))) {
@@ -1407,12 +1419,28 @@ export async function syncInforM3OperationalData(
       }
     }
 
-    for (const req of requests) {
+    const requestStartIndex =
+      absoluteProgramOffset === programOffset
+        ? Math.max(0, Math.floor(Number(options?.requestOffset || 0)))
+        : 0;
+
+    for (let reqIndex = requestStartIndex; reqIndex < requests.length; reqIndex += 1) {
+      const req = requests[reqIndex];
       const startedAt = Date.now();
       const moduleType = classifyModule(row.module);
       const requestTimeoutMs = moduleType === 'inventory' ? 120000 : 30000;
-      let effectiveEndpointPath = req.endpointPath;
-      let response = await callInforIonApi(credentials, req.endpointPath, {
+      let initialEndpointPath = req.endpointPath;
+      if (
+        absoluteProgramOffset === programOffset &&
+        reqIndex === requestStartIndex &&
+        typeof options?.bookmark === 'string' &&
+        options.bookmark.trim()
+      ) {
+        initialEndpointPath = appendBookmarkToEndpoint(req.endpointPath, options.bookmark.trim());
+      }
+
+      let effectiveEndpointPath = initialEndpointPath;
+      let response = await callInforIonApi(credentials, initialEndpointPath, {
         timeoutMs: requestTimeoutMs,
         headers: req.headers,
       });
@@ -1535,8 +1563,13 @@ export async function syncInforM3OperationalData(
           pagesFetched += 1;
           paginationState = extractPagingState(nextResponse.body);
         }
-        if (pagesFetched >= MAX_CSI_PAGES_PER_REQUEST) {
+        if (pagesFetched >= MAX_CSI_PAGES_PER_REQUEST && paginationState.moreRowsExist && paginationState.bookmark) {
           paginationTruncated = true;
+          continuation = {
+            programOffset: absoluteProgramOffset,
+            requestOffset: reqIndex,
+            bookmark: paginationState.bookmark,
+          };
         }
       }
       // AP SLAptrx* payloads can succeed but return 0 rows on one IDO variant.
@@ -1695,10 +1728,21 @@ export async function syncInforM3OperationalData(
           },
         },
       });
+
+      if (continuation) break;
     }
+    if (continuation) break;
   }
 
-  if (!options?.skipPrune && nextProgramOffset === null) {
+  if (!continuation && nextProgramOffset !== null) {
+    continuation = {
+      programOffset: nextProgramOffset,
+      requestOffset: 0,
+      bookmark: null,
+    };
+  }
+
+  if (!options?.skipPrune && !continuation) {
     await pruneCompanyOperationalData(companyId);
   }
 
@@ -1707,8 +1751,9 @@ export async function syncInforM3OperationalData(
     recordsCreated,
     errors,
     credentialSource,
-    hasMore: nextProgramOffset !== null,
-    nextProgramOffset,
+    hasMore: continuation !== null,
+    nextProgramOffset: continuation ? continuation.programOffset : null,
+    continuation,
     totalProgramRows,
   };
 }
