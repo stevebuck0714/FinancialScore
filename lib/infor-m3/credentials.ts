@@ -36,6 +36,12 @@ type InforConnectionMetadataContainer = Record<string, unknown> & {
   inforProfiles?: Record<string, InforM3ConnectionMetadata>;
 };
 
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function toMetadata(credentials: InforM3Credentials): InforM3ConnectionMetadata {
   return {
     tenantId: credentials.tenantId,
@@ -84,8 +90,12 @@ function isCompleteMetadata(metadata: Partial<InforM3ConnectionMetadata> | null 
 
 async function resolveInforSystemForCompany(companyId: string, system?: InforSystem): Promise<InforSystem> {
   if (system) return normalizeInforSystem(system);
+  const normalizedCompanyId = normalizeOptionalString(companyId);
+  if (!normalizedCompanyId) {
+    throw new Error('Company ID is required for Infor credential requests.');
+  }
   const company = await prisma.company.findUnique({
-    where: { id: companyId },
+    where: { id: normalizedCompanyId },
     select: { accountingSystem: true },
   });
   return normalizeInforSystem(company?.accountingSystem);

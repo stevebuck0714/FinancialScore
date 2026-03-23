@@ -319,8 +319,12 @@ function mergeWithCsiDefaults(programs: AccountingProgram[]): AccountingProgram[
 export const dynamic = 'force-dynamic';
 
 async function resolveInforSystem(companyId: string): Promise<InforSystem> {
+  const normalizedCompanyId = normalizeOptionalString(companyId);
+  if (!normalizedCompanyId) {
+    throw new Error('Company ID is required for accounting program requests.');
+  }
   const company = await prisma.company.findUnique({
-    where: { id: companyId },
+    where: { id: normalizedCompanyId },
     select: { accountingSystem: true },
   });
   return normalizeInforSystem(company?.accountingSystem);

@@ -190,8 +190,8 @@ function aggregateForCompanyRollup(
 
   for (const record of records) {
     if (moduleType === 'ar' && flow === 'open') {
-      const customerName = pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || 'Unknown Customer';
-      const customerId = pickString(record, ['customerId', 'customerNumber', 'CUNO', 'customerNo']) || '';
+      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || 'Unknown Customer';
+      const customerId = pickString(record, CUSTOMER_ID_KEYS) || '';
       const invoiceNo = pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO', 'voucher']) || '';
       const key = `${customerId}|${customerName}|${invoiceNo}`;
       upsert(
@@ -266,8 +266,8 @@ function aggregateForCompanyRollup(
     }
 
     if (moduleType === 'customer') {
-      const customerName = pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || 'Unknown Customer';
-      const customerId = pickString(record, ['customerId', 'CUNO', 'customerNumber']) || '';
+      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || 'Unknown Customer';
+      const customerId = pickString(record, CUSTOMER_ID_KEYS) || '';
       const key = `${customerId}|${customerName}`;
       upsert(
         key,
@@ -478,6 +478,9 @@ function pickString(record: Record<string, unknown>, keys: string[]): string | n
   }
   return null;
 }
+
+const CUSTOMER_NAME_KEYS = ['customerName', 'name', 'Name', 'CUNM', 'customer'];
+const CUSTOMER_ID_KEYS = ['customerId', 'CustNum', 'CUNO', 'customerNumber', 'customerNo'];
 
 function parseMaybeDate(value: string | null): Date | null {
   if (!value) return null;
@@ -730,8 +733,7 @@ async function saveAROpenInvoices(
 
   const rows = records
     .map((record, idx) => {
-      const customerName =
-        pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || `Unknown Customer ${idx + 1}`;
+      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || `Unknown Customer ${idx + 1}`;
       const invoiceNo =
         pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO', 'voucher']) || `UNKNOWN-${idx + 1}`;
       const amountDueHome = pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
@@ -739,7 +741,7 @@ async function saveAROpenInvoices(
         companyId,
         snapshotDate,
         frequency,
-        customerId: pickString(record, ['customerId', 'customerNumber', 'CUNO', 'customerNo']),
+        customerId: pickString(record, CUSTOMER_ID_KEYS),
         customerName,
         invoiceNo,
         invoiceDate: parseMaybeDate(pickString(record, ['invoiceDate', 'date', 'IVDT'])),
@@ -777,12 +779,11 @@ async function saveARPayments(
     .map((record, idx) => {
       const paymentDate = parseMaybeDate(pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT']));
       if (!paymentDate) return null;
-      const customerName =
-        pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || `Unknown Customer ${idx + 1}`;
+      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || `Unknown Customer ${idx + 1}`;
       return {
         companyId,
         paymentDate,
-        customerId: pickString(record, ['customerId', 'customerNumber', 'CUNO', 'customerNo']),
+        customerId: pickString(record, CUSTOMER_ID_KEYS),
         customerName,
         invoiceNo: pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO']),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
@@ -950,14 +951,14 @@ async function saveCustomerSales(
 
   const rows = records
     .map((record) => {
-      const customerName = pickString(record, ['customerName', 'name', 'CUNM', 'customer']) || 'Unknown Customer';
+      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || 'Unknown Customer';
       const revenue = pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA']);
       const invoiceCount = Math.max(0, Math.round(pickNumber(record, ['invoiceCount', 'count', 'IVNO_COUNT'])));
       return {
         companyId,
         snapshotDate,
         frequency,
-        customerId: pickString(record, ['customerId', 'CUNO', 'customerNumber']),
+        customerId: pickString(record, CUSTOMER_ID_KEYS),
         customerName,
         revenue,
         invoiceCount,
