@@ -1901,6 +1901,73 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  // Rehydrate integration/program settings when returning to Site Admin tabs.
+  // This prevents stale in-memory state from showing old values until a hard refresh.
+  React.useEffect(() => {
+    if (siteAdminTab !== 'consultants' && siteAdminTab !== 'businesses') return;
+
+    const expandedIds = new Set<string>();
+    if (siteAdminTab === 'consultants' && Array.isArray(expandedCompanyIds)) {
+      expandedCompanyIds.forEach((id) => {
+        if (id) expandedIds.add(String(id));
+      });
+    }
+    if (siteAdminTab === 'businesses' && expandedBusinessIds instanceof Set) {
+      expandedBusinessIds.forEach((id) => {
+        if (id) expandedIds.add(String(id));
+      });
+    }
+    if (expandedIds.size === 0) return;
+
+    expandedIds.forEach((companyId) => {
+      const company =
+        Array.isArray(companies) ? companies.find((entry: any) => String(entry?.id || '') === companyId) : null;
+      if (!company) return;
+      const system = String(company?.accountingSystem || '').trim().toUpperCase();
+
+      if (system === 'INFOR_M3' || system === 'INFOR_CSI') {
+        loadInforM3Credentials?.(companyId);
+        loadCompanyPrograms(companyId);
+        checkInforM3Status?.(companyId).then((statusData: any) => {
+          if (!statusData) return;
+          const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
+          const pullTime = typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+          if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
+            setCompanyOperationalSettings(companyId, {
+              frequency,
+              pullTime,
+            });
+          }
+        });
+        return;
+      }
+
+      if (system === 'QUICKBOOKS_DESKTOP') {
+        loadQbDesktopSettings(companyId);
+        return;
+      }
+      if (system === 'QUICKBOOKS') {
+        loadQboSettings(companyId);
+        return;
+      }
+      if (system === 'DYNAMICS' || system === 'DYNAMICS365') {
+        loadDynamicsSettings(companyId);
+        return;
+      }
+      if (system === 'ACUMATICA') {
+        loadAcumaticaSettings(companyId);
+        return;
+      }
+      if (system === 'SAGE_INTACCT' || system === 'SAGE') {
+        loadSageIntacctSettings(companyId);
+        return;
+      }
+      if (system === 'ODOO') {
+        loadOdooSettings(companyId);
+      }
+    });
+  }, [siteAdminTab, expandedCompanyIds, expandedBusinessIds, companies]);
+
   const parseInforCredentialsFromJson = (raw: string) => {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

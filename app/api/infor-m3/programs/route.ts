@@ -50,6 +50,17 @@ function normalizeOptionalString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeEnabledValue(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['false', '0', 'no', 'n', 'off', 'disabled'].includes(normalized)) return false;
+    if (['true', '1', 'yes', 'y', 'on', 'enabled'].includes(normalized)) return true;
+  }
+  if (typeof value === 'number') return value !== 0;
+  return true;
+}
+
 const DEFAULT_PROGRAMS: AccountingProgram[] = [
   // Infor CSI (SyteLine) IDO pull defaults for operational tabs.
   {
@@ -194,18 +205,17 @@ function sanitizePrograms(
       : [];
     const cono = normalizeLegacyProgramField(typeof row?.cono === 'string' ? row.cono : '', 'cono');
     const divi = normalizeLegacyProgramField(typeof row?.divi === 'string' ? row.divi : '', 'divi');
-    const requestedEnabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
-    const enabled = requestedEnabled;
+    const requestedEnabled = normalizeEnabledValue(row?.enabled);
+    let enabled = requestedEnabled;
     if (!module && !miProgram && !endpointPath && transactions.length === 0 && !cono && !divi) continue;
     if (!module || (!miProgram && !endpointPath)) {
       throw new Error('Each accounting program row must include module plus MI program or endpoint path.');
     }
     if (requireComplete && inforSystem === 'INFOR_CSI' && enabled) {
-      if (!mongooseConfig) {
-        throw new Error(`Mongoose Config is required for enabled CSI program row: ${module}.`);
-      }
-      if (!site) {
-        throw new Error(`Site is required for enabled CSI program row: ${module}.`);
+      // For CSI, incomplete rows are automatically disabled instead of
+      // blocking save, so the Enabled toggle behaves as operators expect.
+      if (!mongooseConfig || !site) {
+        enabled = false;
       }
     }
     const dedupeKey = `${module}::${miProgram || ''}::${endpointPath || ''}::${site || ''}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
@@ -349,9 +359,15 @@ export async function GET(request: NextRequest) {
         ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
         : {};
     const scopedPrograms = bySystem[inforSystem] ?? metadata.accountingPrograms;
-    const programs = sanitizePrograms(scopedPrograms, { requireComplete: false });
-    const csiPrograms = inforSystem === 'INFOR_CSI' ? mergeWithCsiDefaults(programs) : programs;
-    const effectivePrograms = csiPrograms.length > 0 ? csiPrograms : DEFAULT_PROGRAMS;
+    const programs = sanitizePrograms(scopedPrograms, { requireComplete: false, inforSystem });
+    // If a company has already saved programs, return exactly what is persisted.
+    // Only bootstrap defaults when no company-specific rows exist yet.
+    const effectivePrograms =
+      programs.length > 0
+        ? programs
+        : inforSystem === 'INFOR_CSI'
+          ? mergeWithCsiDefaults(DEFAULT_PROGRAMS)
+          : DEFAULT_PROGRAMS;
     const programsWithSitePolicy =
       inforSystem === 'INFOR_CSI'
         ? effectivePrograms.map((program) => ({ ...program, sitePolicy: resolveCsiSitePolicy(program) }))
