@@ -509,6 +509,17 @@ function formatCsiDateLiteral(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function formatCsiDateTimeLiteral(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hour = String(date.getUTCHours()).padStart(2, '0');
+  const minute = String(date.getUTCMinutes()).padStart(2, '0');
+  const second = String(date.getUTCSeconds()).padStart(2, '0');
+  const millisecond = String(date.getUTCMilliseconds()).padStart(3, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}.${millisecond}`;
+}
+
 function buildSlInvHdrsWindowFilter(window?: SyncWindow): string | null {
   if (!window) return null;
   const start = formatCsiDateLiteral(window.startDate);
@@ -541,6 +552,58 @@ function applyCsiSourceWindowAndSort(
   if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
   const next = params.toString();
   return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+}
+
+const SLINVHDRS_KEYSET_PREFIX = 'slinvhdrs-keyset:';
+type SlInvHdrsKeyset = {
+  invDate: string;
+  recordDate: string | null;
+};
+
+function encodeSlInvHdrsKeysetBookmark(value: SlInvHdrsKeyset): string {
+  const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+  return `${SLINVHDRS_KEYSET_PREFIX}${encoded}`;
+}
+
+function decodeSlInvHdrsKeysetBookmark(value: string | null): SlInvHdrsKeyset | null {
+  if (!value || !value.startsWith(SLINVHDRS_KEYSET_PREFIX)) return null;
+  const encoded = value.slice(SLINVHDRS_KEYSET_PREFIX.length).trim();
+  if (!encoded) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Partial<SlInvHdrsKeyset>;
+    if (!decoded || typeof decoded.invDate !== 'string' || !decoded.invDate.trim()) return null;
+    return {
+      invDate: decoded.invDate.trim(),
+      recordDate: typeof decoded.recordDate === 'string' && decoded.recordDate.trim() ? decoded.recordDate.trim() : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function applySlInvHdrsKeysetCursor(endpointPath: string, keyset: SlInvHdrsKeyset): string {
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  const existingFilter = params.get('filter');
+  const continuationCondition = keyset.recordDate
+    ? `((InvDate < '${keyset.invDate}') or (InvDate = '${keyset.invDate}' and RecordDate < '${keyset.recordDate}'))`
+    : `(InvDate < '${keyset.invDate}')`;
+  params.set('filter', existingFilter ? `(${existingFilter}) and ${continuationCondition}` : continuationCondition);
+  params.delete('bookmark');
+  const next = params.toString();
+  return next ? `${path}?${next}` : path;
+}
+
+function buildSlInvHdrsKeysetBookmarkFromRecords(records: Record<string, unknown>[]): string | null {
+  if (!records.length) return null;
+  const lastRecord = records[records.length - 1];
+  const invDate = parseMaybeDate(pickString(lastRecord, ['InvDate', 'invoiceDate', 'date']));
+  if (!invDate) return null;
+  const recordDate = parseMaybeDate(pickString(lastRecord, ['RecordDate', 'recordDate']));
+  return encodeSlInvHdrsKeysetBookmark({
+    invDate: formatCsiDateLiteral(invDate),
+    recordDate: recordDate ? formatCsiDateTimeLiteral(recordDate) : null,
+  });
 }
 
 function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
@@ -1503,13 +1566,19 @@ export async function syncInforM3OperationalData(
       const sourceWindowBaseEndpointPath = sourceWindowPathResult.endpointPath;
       const fallbackBaseEndpointPath = req.endpointPath;
       let initialEndpointPath = sourceWindowBaseEndpointPath;
+      const inputBookmark = typeof options?.bookmark === 'string' && options.bookmark.trim() ? options.bookmark.trim() : null;
+      const inputKeyset = decodeSlInvHdrsKeysetBookmark(inputBookmark);
       if (
         absoluteProgramOffset === programOffset &&
         reqIndex === requestStartIndex &&
-        typeof options?.bookmark === 'string' &&
-        options.bookmark.trim()
+        inputBookmark
       ) {
-        initialEndpointPath = appendBookmarkToEndpoint(sourceWindowBaseEndpointPath, options.bookmark.trim());
+        const isSlInvHdrs = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLINVHDRS';
+        if (isSlInvHdrs && inputKeyset) {
+          initialEndpointPath = applySlInvHdrsKeysetCursor(sourceWindowBaseEndpointPath, inputKeyset);
+        } else {
+          initialEndpointPath = appendBookmarkToEndpoint(sourceWindowBaseEndpointPath, inputBookmark);
+        }
       }
 
       let effectiveEndpointPath = initialEndpointPath;
@@ -1659,10 +1728,21 @@ export async function syncInforM3OperationalData(
         }
         if (pagesFetched >= MAX_CSI_PAGES_PER_REQUEST && paginationState.moreRowsExist && paginationState.bookmark) {
           paginationTruncated = true;
+          let continuationBookmark: string | null = paginationState.bookmark;
+          const isSlInvHdrs = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLINVHDRS';
+          if (
+            isSlInvHdrs &&
+            inputBookmark &&
+            continuationBookmark &&
+            continuationBookmark === inputBookmark
+          ) {
+            const keysetBookmark = buildSlInvHdrsKeysetBookmarkFromRecords(rawRecords);
+            if (keysetBookmark) continuationBookmark = keysetBookmark;
+          }
           continuation = {
             programOffset: absoluteProgramOffset,
             requestOffset: reqIndex,
-            bookmark: paginationState.bookmark,
+            bookmark: continuationBookmark,
           };
         }
       }
