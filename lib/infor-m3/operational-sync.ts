@@ -559,6 +559,11 @@ type SlInvHdrsKeyset = {
   invDate: string;
   recordDate: string | null;
 };
+const SLCUSTOMERS_KEYSET_PREFIX = 'slcustomers-keyset:';
+type SlCustomersKeyset = {
+  custNum: string;
+  custSeq: string;
+};
 
 function encodeSlInvHdrsKeysetBookmark(value: SlInvHdrsKeyset): string {
   const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
@@ -604,6 +609,47 @@ function buildSlInvHdrsKeysetBookmarkFromRecords(records: Record<string, unknown
     invDate: formatCsiDateLiteral(invDate),
     recordDate: recordDate ? formatCsiDateTimeLiteral(recordDate) : null,
   });
+}
+
+function encodeSlCustomersKeysetBookmark(value: SlCustomersKeyset): string {
+  const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+  return `${SLCUSTOMERS_KEYSET_PREFIX}${encoded}`;
+}
+
+function decodeSlCustomersKeysetBookmark(value: string | null): SlCustomersKeyset | null {
+  if (!value || !value.startsWith(SLCUSTOMERS_KEYSET_PREFIX)) return null;
+  const encoded = value.slice(SLCUSTOMERS_KEYSET_PREFIX.length).trim();
+  if (!encoded) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Partial<SlCustomersKeyset>;
+    if (!decoded || typeof decoded.custNum !== 'string' || !decoded.custNum.trim()) return null;
+    const custNum = decoded.custNum.trim();
+    const custSeq = typeof decoded.custSeq === 'string' && decoded.custSeq.trim() ? decoded.custSeq.trim() : '0';
+    return { custNum, custSeq };
+  } catch {
+    return null;
+  }
+}
+
+function applySlCustomersKeysetCursor(endpointPath: string, keyset: SlCustomersKeyset): string {
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  const existingFilter = params.get('filter');
+  const continuationCondition = `((CustNum > '${keyset.custNum}') or (CustNum = '${keyset.custNum}' and CustSeq > ${keyset.custSeq}))`;
+  params.set('filter', existingFilter ? `(${existingFilter}) and ${continuationCondition}` : continuationCondition);
+  if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'CustNum asc, CustSeq asc');
+  params.delete('bookmark');
+  const next = params.toString();
+  return next ? `${path}?${next}` : path;
+}
+
+function buildSlCustomersKeysetBookmarkFromRecords(records: Record<string, unknown>[]): string | null {
+  if (!records.length) return null;
+  const lastRecord = records[records.length - 1];
+  const custNum = pickString(lastRecord, ['CustNum', 'customerId', 'CUNO']);
+  if (!custNum) return null;
+  const custSeq = pickString(lastRecord, ['CustSeq', 'customerSeq']) || '0';
+  return encodeSlCustomersKeysetBookmark({ custNum: custNum.trim(), custSeq: custSeq.trim() || '0' });
 }
 
 function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
@@ -1568,14 +1614,18 @@ export async function syncInforM3OperationalData(
       let initialEndpointPath = sourceWindowBaseEndpointPath;
       const inputBookmark = typeof options?.bookmark === 'string' && options.bookmark.trim() ? options.bookmark.trim() : null;
       const inputKeyset = decodeSlInvHdrsKeysetBookmark(inputBookmark);
+      const inputCustomersKeyset = decodeSlCustomersKeysetBookmark(inputBookmark);
       if (
         absoluteProgramOffset === programOffset &&
         reqIndex === requestStartIndex &&
         inputBookmark
       ) {
         const isSlInvHdrs = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLINVHDRS';
+        const isSlCustomers = moduleType === 'customer' && String(row.miProgram || '').trim().toUpperCase() === 'SLCUSTOMERS';
         if (isSlInvHdrs && inputKeyset) {
           initialEndpointPath = applySlInvHdrsKeysetCursor(sourceWindowBaseEndpointPath, inputKeyset);
+        } else if (isSlCustomers && inputCustomersKeyset) {
+          initialEndpointPath = applySlCustomersKeysetCursor(sourceWindowBaseEndpointPath, inputCustomersKeyset);
         } else {
           initialEndpointPath = appendBookmarkToEndpoint(sourceWindowBaseEndpointPath, inputBookmark);
         }
@@ -1742,6 +1792,21 @@ export async function syncInforM3OperationalData(
               continuationBookmark = keysetBookmark;
             } else if (inputKeyset && inputBookmark) {
               // Keep keyset mode sticky even on sparse pages.
+              continuationBookmark = inputBookmark;
+            }
+          }
+          const isSlCustomers = moduleType === 'customer' && String(row.miProgram || '').trim().toUpperCase() === 'SLCUSTOMERS';
+          const shouldForceCustomersKeysetContinuation =
+            isSlCustomers &&
+            (
+              Boolean(inputCustomersKeyset) ||
+              (inputBookmark && continuationBookmark && continuationBookmark === inputBookmark)
+            );
+          if (shouldForceCustomersKeysetContinuation) {
+            const keysetBookmark = buildSlCustomersKeysetBookmarkFromRecords(rawRecords);
+            if (keysetBookmark) {
+              continuationBookmark = keysetBookmark;
+            } else if (inputCustomersKeyset && inputBookmark) {
               continuationBookmark = inputBookmark;
             }
           }
