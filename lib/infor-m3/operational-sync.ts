@@ -1134,16 +1134,16 @@ async function saveInventory(
   await prisma.inventorySnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
   const rows = records
     .map((record) => {
-      const qtyOnHand = pickNumber(record, ['qtyOnHand', 'quantity', 'QTY', 'onHand']);
-      const avgCost = pickNumber(record, ['avgCost', 'cost', 'averageCost']);
-      const assetValue = pickNumber(record, ['assetValue', 'value', 'inventoryValue']) || qtyOnHand * avgCost;
+      const qtyOnHand = pickNumber(record, ['qtyOnHand', 'quantity', 'QTY', 'onHand', 'DerQtyOnHand', 'iwvQtyOnHand', 'ITWHQtyOnHand']);
+      const avgCost = pickNumber(record, ['avgCost', 'cost', 'averageCost', 'UnitCost', 'AvgUCost', 'CurUCost', 'DerUnitCost']);
+      const assetValue = pickNumber(record, ['assetValue', 'value', 'inventoryValue', 'UbValue', 'DerExtValue']) || qtyOnHand * avgCost;
       return {
         companyId,
         snapshotDate,
         frequency,
-        itemId: pickString(record, ['itemId', 'ITNO', 'sku']),
-        itemName: pickString(record, ['itemName', 'name', 'ITDS']) || 'Unknown Item',
-        sku: pickString(record, ['sku', 'itemCode', 'ITNO']),
+        itemId: pickString(record, ['itemId', 'ITNO', 'sku', 'Item']),
+        itemName: pickString(record, ['itemName', 'name', 'ITDS', 'Description', 'Item']) || 'Unknown Item',
+        sku: pickString(record, ['sku', 'itemCode', 'ITNO', 'Item']),
         qtyOnHand,
         assetValue,
         avgCost: avgCost || null,
@@ -1246,9 +1246,11 @@ export async function syncInforM3OperationalData(
 
     for (const req of requests) {
       const startedAt = Date.now();
+      const moduleType = classifyModule(row.module);
+      const requestTimeoutMs = moduleType === 'inventory' ? 120000 : 30000;
       let effectiveEndpointPath = req.endpointPath;
       let response = await callInforIonApi(credentials, req.endpointPath, {
-        timeoutMs: 30000,
+        timeoutMs: requestTimeoutMs,
         headers: req.headers,
       });
       // Some CSI environments expose SLAptrxp/SLAptrxps with a broken projection that references
@@ -1267,7 +1269,7 @@ export async function syncInforM3OperationalData(
         const safePropertyPath = resolveSlaPtrxSafePropertyPath(req.endpointPath);
         if (safePropertyPath && safePropertyPath !== req.endpointPath) {
           const safeRetry = await callInforIonApi(credentials, safePropertyPath, {
-            timeoutMs: 30000,
+            timeoutMs: requestTimeoutMs,
             headers: req.headers,
           });
           response = safeRetry;
@@ -1281,7 +1283,7 @@ export async function syncInforM3OperationalData(
             while (fallbackWithProperties && fallbackWithProperties !== effectiveEndpointPath && attempts < 5) {
               attempts += 1;
               const legacyRetry = await callInforIonApi(credentials, fallbackWithProperties, {
-                timeoutMs: 30000,
+                timeoutMs: requestTimeoutMs,
                 headers: req.headers,
               });
               response = legacyRetry;
@@ -1310,7 +1312,7 @@ export async function syncInforM3OperationalData(
           while (currentPath && attempts < 6) {
             attempts += 1;
             const retry = await callInforIonApi(credentials, currentPath, {
-              timeoutMs: 30000,
+              timeoutMs: requestTimeoutMs,
               headers: req.headers,
             });
             response = retry;
@@ -1326,7 +1328,6 @@ export async function syncInforM3OperationalData(
           }
         }
       }
-      const moduleType = classifyModule(row.module);
       if (moduleType === 'ap' && !isTransportAndPayloadSuccess(response)) {
         const apErrorMessage = extractResponseMessage(response.body);
         if (/ido not found/i.test(apErrorMessage) && /\/load\//i.test(effectiveEndpointPath)) {
@@ -1334,7 +1335,7 @@ export async function syncInforM3OperationalData(
           for (const candidatePath of candidates) {
             if (candidatePath === effectiveEndpointPath) continue;
             const candidateResponse = await callInforIonApi(credentials, candidatePath, {
-              timeoutMs: 30000,
+              timeoutMs: requestTimeoutMs,
               headers: req.headers,
             });
             if (!isTransportAndPayloadSuccess(candidateResponse)) continue;
@@ -1357,7 +1358,7 @@ export async function syncInforM3OperationalData(
         for (const candidatePath of candidates) {
           if (candidatePath === effectiveEndpointPath) continue;
           const candidateResponse = await callInforIonApi(credentials, candidatePath, {
-            timeoutMs: 30000,
+            timeoutMs: requestTimeoutMs,
             headers: req.headers,
           });
           if (!isTransportAndPayloadSuccess(candidateResponse)) continue;
