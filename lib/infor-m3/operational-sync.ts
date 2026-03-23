@@ -47,8 +47,8 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   },
   {
     module: 'AP',
-    miProgram: 'SLAptrxps',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxps?recordCap=1000',
+    miProgram: 'SLAptrx',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrx?recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -141,14 +141,17 @@ function filterRecordsBySiteIfSupported(records: Record<string, unknown>[], site
   if (!requested) return records;
   const hasSiteField = records.some((record) => recordSiteValue(record) !== null);
   if (!hasSiteField) return records;
-  return records.filter((record) => {
+  const filtered = records.filter((record) => {
     const value = recordSiteValue(record);
     return Boolean(value && value.toLowerCase() === requested.toLowerCase());
   });
+  // Some CSI IDOs expose warehouse/location fields that don't map 1:1 to site code.
+  // Avoid dropping an otherwise valid payload when strict site filtering yields nothing.
+  return filtered.length > 0 ? filtered : records;
 }
 
 const SITE_REQUIRED_CSI_IDOS = new Set(['SLITEMLOCS', 'SLCOITEMS', 'SLINVHDRS', 'SLBANKHDRS']);
-const SITE_OPTIONAL_CSI_IDOS = new Set(['SLITEMS', 'SLARTRANS', 'SLAPTRXPS', 'SLCUSTOMERS', 'SLVENDORS']);
+const SITE_OPTIONAL_CSI_IDOS = new Set(['SLITEMS', 'SLARTRANS', 'SLAPTRX', 'SLAPTRXP', 'SLAPTRXPS', 'SLAPTRXS', 'SLCUSTOMERS', 'SLVENDORS']);
 
 function resolveSitePolicy(row: InforProgramRow, moduleType: ReturnType<typeof classifyModule>): SitePolicy {
   const ido = String(row.miProgram || '').trim().toUpperCase();
@@ -190,9 +193,9 @@ function aggregateForCompanyRollup(
 
   for (const record of records) {
     if (moduleType === 'ar' && flow === 'open') {
-      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || 'Unknown Customer';
+      const customerName = pickCustomerDisplayName(record) || 'Unknown Customer';
       const customerId = pickString(record, CUSTOMER_ID_KEYS) || '';
-      const invoiceNo = pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO', 'voucher']) || '';
+      const invoiceNo = pickString(record, AR_INVOICE_NO_KEYS) || '';
       const key = `${customerId}|${customerName}|${invoiceNo}`;
       upsert(
         key,
@@ -214,9 +217,9 @@ function aggregateForCompanyRollup(
           days90plus: 0,
         },
         (acc) => {
-          acc.amountCurrency = Number(acc.amountCurrency || 0) + pickNumber(record, ['amountCurrency', 'invoiceAmount', 'CUAM']);
-          acc.amountHome = Number(acc.amountHome || 0) + pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']);
-          acc.amountDueHome = Number(acc.amountDueHome || 0) + pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
+          acc.amountCurrency = Number(acc.amountCurrency || 0) + pickNumber(record, AR_AMOUNT_CURRENCY_KEYS);
+          acc.amountHome = Number(acc.amountHome || 0) + pickNumber(record, AR_AMOUNT_HOME_KEYS);
+          acc.amountDueHome = Number(acc.amountDueHome || 0) + pickNumber(record, AR_AMOUNT_DUE_KEYS);
           acc.current = Number(acc.current || 0) + pickNumber(record, ['current', 'bucket0']);
           acc.days1to30 = Number(acc.days1to30 || 0) + pickNumber(record, ['days1to30', 'bucket1']);
           acc.days31to60 = Number(acc.days31to60 || 0) + pickNumber(record, ['days31to60', 'bucket2']);
@@ -228,8 +231,8 @@ function aggregateForCompanyRollup(
     }
 
     if (moduleType === 'ap' && flow === 'open') {
-      const vendorName = pickString(record, ['vendorName', 'name', 'SUNM', 'vendor', 'supplier']) || 'Unknown Vendor';
-      const vendorId = pickString(record, ['vendorId', 'supplierId', 'SUNO', 'vendorNo']) || '';
+      const vendorName = pickString(record, VENDOR_NAME_KEYS) || 'Unknown Vendor';
+      const vendorId = pickString(record, VENDOR_ID_KEYS) || '';
       const billNo = pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'voucher', 'SINO']) || '';
       const key = `${vendorId}|${vendorName}|${billNo}`;
       upsert(
@@ -283,17 +286,18 @@ function aggregateForCompanyRollup(
     }
 
     if (moduleType === 'sales') {
-      const itemName = pickString(record, ['itemName', 'name', 'ITDS']) || 'Unknown Item';
-      const itemId = pickString(record, ['itemId', 'ITNO', 'sku']) || '';
-      const sku = pickString(record, ['sku', 'itemCode', 'ITNO']) || '';
+      const itemName = pickString(record, ['itemName', 'name', 'ITDS', 'Item', 'AddrName', 'DerCustNoName']) || 'Unknown Item';
+      const itemId = pickString(record, ['itemId', 'ITNO', 'sku', 'Item', 'CustNum']) || '';
+      const sku = pickString(record, ['sku', 'itemCode', 'ITNO', 'Item', 'InvNum', 'CoNum']) || '';
       const key = `${itemId}|${itemName}|${sku}`;
       upsert(
         key,
         { itemName, itemId, sku, quantity: 0, revenue: 0, cogs: 0 },
         (acc) => {
-          acc.quantity = Number(acc.quantity || 0) + pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold']);
-          acc.revenue = Number(acc.revenue || 0) + pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA']);
-          acc.cogs = Number(acc.cogs || 0) + pickNumber(record, ['cogs', 'costOfGoods', 'COGS']);
+          acc.quantity =
+            Number(acc.quantity || 0) + pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'InvSeq']);
+          acc.revenue = Number(acc.revenue || 0) + pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA', 'Amount', 'Price', 'ExtPrice']);
+          acc.cogs = Number(acc.cogs || 0) + pickNumber(record, ['cogs', 'costOfGoods', 'COGS', 'Cost', 'UnitCost']);
         }
       );
       continue;
@@ -359,14 +363,18 @@ function parsePrograms(value: unknown): InforProgramRow[] {
   for (const row of value) {
     const module = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgramRaw = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
-    const miProgram = miProgramRaw.toUpperCase() === 'SLAPTRXS' ? 'SLAptrxps' : miProgramRaw;
+    const upperMiProgram = miProgramRaw.toUpperCase();
+    const miProgram =
+      upperMiProgram === 'SLAPTRX' || upperMiProgram === 'SLAPTRXP' || upperMiProgram === 'SLAPTRXS' || upperMiProgram === 'SLAPTRXPS'
+        ? 'SLAptrx'
+        : miProgramRaw;
     const transactions = normalizeTransactions(row);
     const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
     const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
     const endpointPathRaw = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
     const endpointPath =
-      miProgramRaw.toUpperCase() === 'SLAPTRXS'
-        ? endpointPathRaw.replace(/SLAptrxs/gi, 'SLAptrxps')
+      upperMiProgram === 'SLAPTRX' || upperMiProgram === 'SLAPTRXP' || upperMiProgram === 'SLAPTRXS' || upperMiProgram === 'SLAPTRXPS'
+        ? endpointPathRaw.replace(/SLAptrxp|SLAptrxs|SLAptrxps/gi, 'SLAptrx')
         : endpointPathRaw;
     const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
     const site = typeof row?.site === 'string' ? row.site.trim() : '';
@@ -415,6 +423,85 @@ function isTransportAndPayloadSuccess(response: { ok: boolean; body: Record<stri
     return payload.Success;
   }
   return true;
+}
+
+function extractResponseMessage(body: Record<string, unknown> | string): string {
+  if (typeof body === 'string') return body;
+  if (!body || typeof body !== 'object') return '';
+  return String((body.Message as string | undefined) || (body.error as string | undefined) || '').trim();
+}
+
+function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
+  if (!/\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(endpointPath)) return null;
+  if (/\/load\/SLAptrx(?=\?|$)/i.test(endpointPath)) return null;
+  return endpointPath
+    .replace(/\/load\/SLAptrxps/gi, '/load/SLAptrx')
+    .replace(/\/load\/SLAptrxp(?=\?|$)/gi, '/load/SLAptrx');
+}
+
+const SLA_PTRXP_SAFE_PROPERTIES = ['VendNum', 'Name', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
+const SLA_PTRX_SAFE_PROPERTIES = ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
+const AP_IDO_CANDIDATES = ['SLAptrx', 'SLAptrxp', 'SLAptrxps', 'SLAptrxs', 'Aptrx', 'Aptrxp', 'Aptrxps', 'Aptrxs'];
+const SL_COITEMS_SAFE_PROPERTIES = ['CoNum', 'CoLine', 'CoRelease', 'Item', 'Stat', 'Price', 'QtyOrdered', 'QtyShipped', 'InvNum', 'Whse', 'DueDate'];
+
+function ensureCsiProperties(endpointPath: string, properties: string[]): string {
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  params.set('properties', properties.join(','));
+  if (!params.get('recordCap')) params.set('recordCap', '1000');
+  const next = params.toString();
+  return next ? `${path}?${next}` : path;
+}
+
+function resolveSlaPtrxSafePropertyPath(endpointPath: string): string | null {
+  if (!/\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(endpointPath)) return null;
+  const canonical = endpointPath
+    .replace(/\/load\/SLAptrxps/gi, '/load/SLAptrx')
+    .replace(/\/load\/SLAptrxp(?=\?|$)/gi, '/load/SLAptrx');
+  return ensureCsiProperties(canonical, SLA_PTRX_SAFE_PROPERTIES);
+}
+
+function parseMissingPropertyFromMessage(message: string): string | null {
+  const match = message.match(/Property\s+([A-Za-z0-9_]+)\s+not found/i);
+  return match?.[1] ? String(match[1]).trim() : null;
+}
+
+function removePropertyFromEndpoint(endpointPath: string, propertyName: string): string | null {
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  const current = params.get('properties');
+  if (!current) return null;
+  const entries = current
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (!entries.length) return null;
+
+  const filtered = entries.filter((entry) => entry.toLowerCase() !== propertyName.toLowerCase());
+  if (filtered.length === entries.length || filtered.length === 0) return null;
+
+  params.set('properties', filtered.join(','));
+  const next = params.toString();
+  return next ? `${path}?${next}` : path;
+}
+
+function buildApSlaPtrxCandidatePaths(endpointPath: string): string[] {
+  if (!/\/load\//i.test(endpointPath)) return [];
+  const candidates: string[] = [];
+  const baseWithoutProperties = removePropertyFromEndpoint(endpointPath, '__noop__') || endpointPath;
+  for (const ido of AP_IDO_CANDIDATES) {
+    const pathWithIdo = baseWithoutProperties.replace(/\/load\/[^/?]+/i, `/load/${ido}`);
+    const isXpsFamily = /xps$/i.test(ido);
+    const safeProperties = isXpsFamily ? SLA_PTRXP_SAFE_PROPERTIES : SLA_PTRX_SAFE_PROPERTIES;
+    candidates.push(ensureCsiProperties(pathWithIdo, safeProperties));
+    candidates.push(ensureCsiProperties(pathWithIdo, ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'Amount']));
+  }
+  return Array.from(new Set(candidates));
+}
+
+function resolveSlCoitemsSafePath(endpointPath: string): string | null {
+  if (!/\/load\/SLCoitems/i.test(endpointPath)) return null;
+  return ensureCsiProperties(endpointPath, SL_COITEMS_SAFE_PROPERTIES);
 }
 
 function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'other' {
@@ -481,6 +568,41 @@ function pickString(record: Record<string, unknown>, keys: string[]): string | n
 
 const CUSTOMER_NAME_KEYS = ['customerName', 'name', 'Name', 'CUNM', 'customer'];
 const CUSTOMER_ID_KEYS = ['customerId', 'CustNum', 'CUNO', 'customerNumber', 'customerNo'];
+const VENDOR_NAME_KEYS = ['vendorName', 'name', 'Name', 'VendName', 'SUNM', 'vendor', 'supplier'];
+const VENDOR_ID_KEYS = ['vendorId', 'VendNum', 'supplierId', 'SUNO', 'vendorNo'];
+const AR_INVOICE_NO_KEYS = ['invoiceNo', 'invoiceNumber', 'InvNum', 'IVNO', 'voucher', 'ApplyToInvNum', 'DerApplyToInvNum'];
+const AR_AMOUNT_DUE_KEYS = [
+  'amountDueHome',
+  'amountDue',
+  'openAmount',
+  'balance',
+  'Balance',
+  'Amount',
+  'DerPaymentCheckAmount',
+  'DerOrderBalance',
+  'CUAM',
+  'ACAM',
+];
+const AR_AMOUNT_HOME_KEYS = ['amountHome', 'homeAmount', 'Amount', 'ACAM', 'CUAM'];
+const AR_AMOUNT_CURRENCY_KEYS = ['amountCurrency', 'invoiceAmount', 'Amount', 'CUAM'];
+
+function parseCustomerNameFromComposite(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const splitToken = ' - ';
+  const splitIndex = trimmed.indexOf(splitToken);
+  if (splitIndex === -1) return null;
+  const namePortion = trimmed.slice(splitIndex + splitToken.length).trim();
+  return namePortion || null;
+}
+
+function pickCustomerDisplayName(record: Record<string, unknown>): string | null {
+  return (
+    parseCustomerNameFromComposite(pickString(record, ['DerCustNoName'])) ||
+    pickString(record, ['CadName', 'DerCustName', 'UbCustName']) ||
+    pickString(record, CUSTOMER_NAME_KEYS)
+  );
+}
 
 function parseMaybeDate(value: string | null): Date | null {
   if (!value) return null;
@@ -688,8 +810,8 @@ async function saveARAging(
 
   const derived = calculateAgingTotalsFromTransactions(records, {
     dueDateKeys: ['DueDate', 'dueDate', 'DUDT'],
-    balanceKeys: ['Balance', 'balance', 'openBalance', 'openAmount', 'amountDue'],
-    amountKeys: ['Amount', 'amount', 'invoiceAmount'],
+    balanceKeys: AR_AMOUNT_DUE_KEYS,
+    amountKeys: ['Amount', 'amount', 'invoiceAmount', 'DerPaymentCheckAmount', 'DerOrderBalance'],
     openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
     statusKeys: ['Status', 'status', 'STAT', 'state', 'State'],
   });
@@ -733,10 +855,9 @@ async function saveAROpenInvoices(
 
   const rows = records
     .map((record, idx) => {
-      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || `Unknown Customer ${idx + 1}`;
-      const invoiceNo =
-        pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO', 'voucher']) || `UNKNOWN-${idx + 1}`;
-      const amountDueHome = pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
+      const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
+      const invoiceNo = pickString(record, AR_INVOICE_NO_KEYS) || `UNKNOWN-${idx + 1}`;
+      const amountDueHome = pickNumber(record, AR_AMOUNT_DUE_KEYS);
       return {
         companyId,
         snapshotDate,
@@ -744,12 +865,12 @@ async function saveAROpenInvoices(
         customerId: pickString(record, CUSTOMER_ID_KEYS),
         customerName,
         invoiceNo,
-        invoiceDate: parseMaybeDate(pickString(record, ['invoiceDate', 'date', 'IVDT'])),
+        invoiceDate: parseMaybeDate(pickString(record, ['invoiceDate', 'date', 'InvDate', 'IVDT'])),
         dueDate: parseMaybeDate(pickString(record, ['dueDate', 'DUDT'])),
-        status: pickString(record, ['status', 'STAT']),
+        status: pickString(record, ['status', 'STAT', 'Type']),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
-        amountCurrency: pickNumber(record, ['amountCurrency', 'invoiceAmount', 'CUAM']) || null,
-        amountHome: pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']) || null,
+        amountCurrency: pickNumber(record, AR_AMOUNT_CURRENCY_KEYS) || null,
+        amountHome: pickNumber(record, AR_AMOUNT_HOME_KEYS) || null,
         amountDueHome,
         current: pickNumber(record, ['current', 'bucket0']) || null,
         days1to30: pickNumber(record, ['days1to30', 'bucket1']) || null,
@@ -779,16 +900,16 @@ async function saveARPayments(
     .map((record, idx) => {
       const paymentDate = parseMaybeDate(pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT']));
       if (!paymentDate) return null;
-      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || `Unknown Customer ${idx + 1}`;
+      const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
       return {
         companyId,
         paymentDate,
         customerId: pickString(record, CUSTOMER_ID_KEYS),
         customerName,
-        invoiceNo: pickString(record, ['invoiceNo', 'invoiceNumber', 'IVNO']),
+        invoiceNo: pickString(record, AR_INVOICE_NO_KEYS),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
-        paidAmountCurrency: pickNumber(record, ['paidAmountCurrency', 'CUAM']) || null,
-        paidAmountHome: pickNumber(record, ['paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM']),
+        paidAmountCurrency: pickNumber(record, ['paidAmountCurrency', ...AR_AMOUNT_CURRENCY_KEYS]) || null,
+        paidAmountHome: pickNumber(record, ['paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM', 'Amount']),
         sourcePlatform: 'INFOR_M3',
         sourceProgram: context.miProgram,
         sourceTransaction: context.transaction,
@@ -869,8 +990,7 @@ async function saveAPOpenBills(
 
   const rows = records
     .map((record, idx) => {
-      const vendorName =
-        pickString(record, ['vendorName', 'name', 'SUNM', 'vendor', 'supplier']) || `Unknown Vendor ${idx + 1}`;
+      const vendorName = pickString(record, VENDOR_NAME_KEYS) || `Unknown Vendor ${idx + 1}`;
       const billNo =
         pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'voucher', 'SINO']) || `UNKNOWN-${idx + 1}`;
       const amountDueHome = pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
@@ -878,7 +998,7 @@ async function saveAPOpenBills(
         companyId,
         snapshotDate,
         frequency,
-        vendorId: pickString(record, ['vendorId', 'supplierId', 'SUNO', 'vendorNo']),
+        vendorId: pickString(record, VENDOR_ID_KEYS),
         vendorName,
         billNo,
         billDate: parseMaybeDate(pickString(record, ['billDate', 'invoiceDate', 'date', 'IVDT'])),
@@ -916,12 +1036,11 @@ async function saveAPPayments(
     .map((record, idx) => {
       const paymentDate = parseMaybeDate(pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT']));
       if (!paymentDate) return null;
-      const vendorName =
-        pickString(record, ['vendorName', 'name', 'SUNM', 'vendor', 'supplier']) || `Unknown Vendor ${idx + 1}`;
+      const vendorName = pickString(record, VENDOR_NAME_KEYS) || `Unknown Vendor ${idx + 1}`;
       return {
         companyId,
         paymentDate,
-        vendorId: pickString(record, ['vendorId', 'supplierId', 'SUNO', 'vendorNo']),
+        vendorId: pickString(record, VENDOR_ID_KEYS),
         vendorName,
         billNo: pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'SINO']),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
@@ -981,17 +1100,17 @@ async function saveProductSales(
   await prisma.productSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
   const rows = records
     .map((record) => {
-      const quantitySold = pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold']);
-      const revenue = pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA']);
-      const cogs = pickNumber(record, ['cogs', 'costOfGoods', 'COGS']);
+      const quantitySold = pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'InvSeq']);
+      const revenue = pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA', 'Amount', 'Price', 'ExtPrice']);
+      const cogs = pickNumber(record, ['cogs', 'costOfGoods', 'COGS', 'Cost', 'UnitCost']);
       const grossMargin = revenue - cogs;
       return {
         companyId,
         snapshotDate,
         frequency,
-        itemId: pickString(record, ['itemId', 'ITNO', 'sku']),
-        itemName: pickString(record, ['itemName', 'name', 'ITDS']) || 'Unknown Item',
-        sku: pickString(record, ['sku', 'itemCode', 'ITNO']),
+        itemId: pickString(record, ['itemId', 'ITNO', 'sku', 'Item', 'CustNum']),
+        itemName: pickString(record, ['itemName', 'name', 'ITDS', 'Item', 'AddrName', 'DerCustNoName']) || 'Unknown Item',
+        sku: pickString(record, ['sku', 'itemCode', 'ITNO', 'Item', 'InvNum', 'CoNum']),
         quantitySold,
         revenue,
         cogs,
@@ -1127,12 +1246,129 @@ export async function syncInforM3OperationalData(
 
     for (const req of requests) {
       const startedAt = Date.now();
-      const response = await callInforIonApi(credentials, req.endpointPath, {
+      let effectiveEndpointPath = req.endpointPath;
+      let response = await callInforIonApi(credentials, req.endpointPath, {
         timeoutMs: 30000,
         headers: req.headers,
       });
+      // Some CSI environments expose SLAptrxp/SLAptrxps with a broken projection that references
+      // vendor_bank_id. Retry with a narrowed property list first, then fallback to SLAptrx.
+      const initialMessage = extractResponseMessage(response.body);
+      const shouldTryApAliasFallback =
+        /\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(req.endpointPath) &&
+        (
+          /invalid column name 'vendor_bank_id'/i.test(initialMessage) ||
+          /ido not found/i.test(initialMessage)
+        );
+      if (
+        !isTransportAndPayloadSuccess(response) &&
+        shouldTryApAliasFallback
+      ) {
+        const safePropertyPath = resolveSlaPtrxSafePropertyPath(req.endpointPath);
+        if (safePropertyPath && safePropertyPath !== req.endpointPath) {
+          const safeRetry = await callInforIonApi(credentials, safePropertyPath, {
+            timeoutMs: 30000,
+            headers: req.headers,
+          });
+          response = safeRetry;
+          effectiveEndpointPath = safePropertyPath;
+        }
+        if (!isTransportAndPayloadSuccess(response)) {
+          const fallbackPath = resolveSlaPtrxFallbackPath(req.endpointPath);
+          if (fallbackPath) {
+            let fallbackWithProperties = ensureCsiProperties(fallbackPath, SLA_PTRX_SAFE_PROPERTIES);
+            let attempts = 0;
+            while (fallbackWithProperties && fallbackWithProperties !== effectiveEndpointPath && attempts < 5) {
+              attempts += 1;
+              const legacyRetry = await callInforIonApi(credentials, fallbackWithProperties, {
+                timeoutMs: 30000,
+                headers: req.headers,
+              });
+              response = legacyRetry;
+              effectiveEndpointPath = fallbackWithProperties;
+              if (isTransportAndPayloadSuccess(response)) break;
+
+              const retryMessage = extractResponseMessage(response.body);
+              const missingProperty = parseMissingPropertyFromMessage(retryMessage);
+              if (!missingProperty) break;
+              const reducedPath = removePropertyFromEndpoint(fallbackWithProperties, missingProperty);
+              if (!reducedPath || reducedPath === fallbackWithProperties) break;
+              fallbackWithProperties = reducedPath;
+            }
+          }
+        }
+      }
+      if (
+        !isTransportAndPayloadSuccess(response) &&
+        /\/load\/SLCoitems/i.test(req.endpointPath) &&
+        /invalid column name 'contract_price_method'/i.test(initialMessage)
+      ) {
+        const safeCoitemsPath = resolveSlCoitemsSafePath(req.endpointPath);
+        if (safeCoitemsPath && safeCoitemsPath !== req.endpointPath) {
+          let currentPath = safeCoitemsPath;
+          let attempts = 0;
+          while (currentPath && attempts < 6) {
+            attempts += 1;
+            const retry = await callInforIonApi(credentials, currentPath, {
+              timeoutMs: 30000,
+              headers: req.headers,
+            });
+            response = retry;
+            effectiveEndpointPath = currentPath;
+            if (isTransportAndPayloadSuccess(response)) break;
+
+            const retryMessage = extractResponseMessage(response.body);
+            const missingProperty = parseMissingPropertyFromMessage(retryMessage);
+            if (!missingProperty) break;
+            const reducedPath = removePropertyFromEndpoint(currentPath, missingProperty);
+            if (!reducedPath || reducedPath === currentPath) break;
+            currentPath = reducedPath;
+          }
+        }
+      }
       const moduleType = classifyModule(row.module);
-      const rawRecords = extractRecords(response.body);
+      if (moduleType === 'ap' && !isTransportAndPayloadSuccess(response)) {
+        const apErrorMessage = extractResponseMessage(response.body);
+        if (/ido not found/i.test(apErrorMessage) && /\/load\//i.test(effectiveEndpointPath)) {
+          const candidates = buildApSlaPtrxCandidatePaths(effectiveEndpointPath);
+          for (const candidatePath of candidates) {
+            if (candidatePath === effectiveEndpointPath) continue;
+            const candidateResponse = await callInforIonApi(credentials, candidatePath, {
+              timeoutMs: 30000,
+              headers: req.headers,
+            });
+            if (!isTransportAndPayloadSuccess(candidateResponse)) continue;
+            response = candidateResponse;
+            effectiveEndpointPath = candidatePath;
+            break;
+          }
+        }
+      }
+      let rawRecords = extractRecords(response.body);
+      // AP SLAptrx* payloads can succeed but return 0 rows on one IDO variant.
+      // Probe a short list of safe sibling endpoints and keep the first non-empty result.
+      if (
+        moduleType === 'ap' &&
+        isTransportAndPayloadSuccess(response) &&
+        rawRecords.length === 0 &&
+        /\/load\/SLAptrxp|\/load\/SLAptrxps|\/load\/SLAptrx/i.test(effectiveEndpointPath)
+      ) {
+        const candidates = buildApSlaPtrxCandidatePaths(effectiveEndpointPath);
+        for (const candidatePath of candidates) {
+          if (candidatePath === effectiveEndpointPath) continue;
+          const candidateResponse = await callInforIonApi(credentials, candidatePath, {
+            timeoutMs: 30000,
+            headers: req.headers,
+          });
+          if (!isTransportAndPayloadSuccess(candidateResponse)) continue;
+          const candidateRecords = extractRecords(candidateResponse.body);
+          if (candidateRecords.length === 0) continue;
+          response = candidateResponse;
+          effectiveEndpointPath = candidatePath;
+          rawRecords = candidateRecords;
+          break;
+        }
+      }
       const sitePolicy = resolveSitePolicy(row, moduleType);
       const siteDetected = hasRecordSiteDimension(rawRecords);
       const recordsAfterSiteFilter = filterRecordsBySiteIfSupported(rawRecords, row.site);
@@ -1211,12 +1447,7 @@ export async function syncInforM3OperationalData(
           );
         }
       } else {
-        const payloadMsg =
-          typeof response.body === 'object' && response.body
-            ? ((response.body as Record<string, unknown>).Message as string | undefined) ||
-              ((response.body as Record<string, unknown>).error as string | undefined) ||
-              `HTTP ${response.status}`
-            : `HTTP ${response.status}`;
+        const payloadMsg = extractResponseMessage(response.body) || `HTTP ${response.status}`;
         errors.push(
           `${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${payloadMsg} (credentials source: ${credentialSource})`
         );
@@ -1240,7 +1471,7 @@ export async function syncInforM3OperationalData(
             cono: row.cono || null,
             divi: row.divi || null,
             mongooseConfig: row.mongooseConfig || null,
-            endpointPath: req.endpointPath,
+            endpointPath: effectiveEndpointPath,
             credentialsSource: credentialSource,
             responseStatus: response.status,
             sitePolicy,

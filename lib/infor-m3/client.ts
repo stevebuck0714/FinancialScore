@@ -48,6 +48,25 @@ function parseJsonSafely(text: string): Record<string, unknown> {
   }
 }
 
+function describeRequestError(error: unknown): { error: string; errorDescription?: string } {
+  if (error instanceof Error) {
+    if (error.name === 'AbortError') {
+      return {
+        error: 'request_aborted',
+        errorDescription: 'The operation was aborted (request timeout exceeded).',
+      };
+    }
+    return {
+      error: 'request_failed',
+      errorDescription: error.message,
+    };
+  }
+  return {
+    error: 'request_failed',
+    errorDescription: 'Unknown request error',
+  };
+}
+
 export async function requestInforM3AccessToken(
   credentials: InforM3Credentials,
   timeoutMs = 12000
@@ -65,17 +84,31 @@ export async function requestInforM3AccessToken(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const tokenResponse = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${authHeader}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: requestBody.toString(),
-    cache: 'no-store',
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
+  let tokenResponse: Response;
+  try {
+    tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${authHeader}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: requestBody.toString(),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const described = describeRequestError(error);
+    return {
+      ok: false,
+      tokenEndpoint: tokenUrl,
+      status: 0,
+      error: described.error,
+      errorDescription: described.errorDescription,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const bodyText = await tokenResponse.text();
   const parsed = parseJsonSafely(bodyText) as TokenResponse;
@@ -134,16 +167,39 @@ export async function callInforIonApi(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options?.timeoutMs ?? 12000);
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${tokenResult.accessToken}`,
-      Accept: 'application/json',
-      ...(options?.headers || {}),
-    },
-    cache: 'no-store',
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${tokenResult.accessToken}`,
+        Accept: 'application/json',
+        ...(options?.headers || {}),
+      },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const described = describeRequestError(error);
+    return {
+      ok: false,
+      status: 0,
+      url,
+      body: {
+        stage: 'api',
+        error: described.error,
+        errorDescription: described.errorDescription,
+      },
+      token: {
+        tokenEndpoint: tokenResult.tokenEndpoint,
+        tokenType: tokenResult.tokenType,
+        expiresIn: tokenResult.expiresIn,
+        scope: tokenResult.scope,
+      },
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const text = await response.text();
   const parsed = parseJsonSafely(text);

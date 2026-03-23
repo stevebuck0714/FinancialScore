@@ -20,7 +20,7 @@ type AccountingProgram = {
 type SitePolicy = 'required' | 'optional' | 'none';
 
 const SITE_REQUIRED_CSI_IDOS = new Set(['SLITEMLOCS', 'SLCOITEMS', 'SLINVHDRS', 'SLBANKHDRS']);
-const SITE_OPTIONAL_CSI_IDOS = new Set(['SLITEMS', 'SLARTRANS', 'SLAPTRXPS', 'SLCUSTOMERS', 'SLVENDORS']);
+const SITE_OPTIONAL_CSI_IDOS = new Set(['SLITEMS', 'SLARTRANS', 'SLAPTRX', 'SLAPTRXP', 'SLAPTRXPS', 'SLAPTRXS', 'SLCUSTOMERS', 'SLVENDORS']);
 
 function resolveCsiSitePolicy(program: AccountingProgram): SitePolicy {
   const ido = String(program.miProgram || '').trim().toUpperCase();
@@ -82,8 +82,8 @@ const DEFAULT_PROGRAMS: AccountingProgram[] = [
   },
   {
     module: 'AP',
-    miProgram: 'SLAptrxps',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxps?recordCap=1000',
+    miProgram: 'SLAptrx',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrx?recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     enabled: true,
@@ -274,15 +274,20 @@ function mergePreservingCsiFields(
 function normalizeCsiProgramAliases(program: AccountingProgram): AccountingProgram {
   const miProgram = String(program.miProgram || '').trim();
   const normalizedProgram = miProgram.toUpperCase();
-  if (normalizedProgram !== 'SLAPTRXS') return program;
+  if (
+    normalizedProgram !== 'SLAPTRX' &&
+    normalizedProgram !== 'SLAPTRXP' &&
+    normalizedProgram !== 'SLAPTRXS' &&
+    normalizedProgram !== 'SLAPTRXPS'
+  ) return program;
 
   const endpointPath = String(program.endpointPath || '');
   return {
     ...program,
-    miProgram: 'SLAptrxps',
+    miProgram: 'SLAptrx',
     endpointPath: endpointPath
-      ? endpointPath.replace(/SLAptrxs/gi, 'SLAptrxps')
-      : '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrxps?recordCap=1000',
+      ? endpointPath.replace(/SLAptrxp|SLAptrxs|SLAptrxps/gi, 'SLAptrx')
+      : '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrx?recordCap=1000',
   };
 }
 
