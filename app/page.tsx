@@ -5529,7 +5529,7 @@ function FinancialScorePage() {
         const payload: Record<string, unknown> = {
           companyId,
           frequency,
-          programBatchSize: 2,
+          programBatchSize: 1,
           ...(String(site || '').trim() ? { site: String(site).trim() } : {}),
         };
         if (options?.mode) payload.mode = options.mode;

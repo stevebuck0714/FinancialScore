@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
     const site = String(body.site || '').trim();
     const mode = normalizeMode(body.mode);
     const syncWindow = buildSyncWindow(body, frequency);
-    const programBatchSize = Math.min(normalizePositiveInt(body.programBatchSize) ?? 3, 25);
+    const programBatchSize = Math.min(normalizePositiveInt(body.programBatchSize) ?? 1, 10);
     const requestedProgramOffset = normalizeNonNegativeInt(body.programOffset) ?? 0;
     const company = await prisma.company.findUnique({
       where: { id: companyId },

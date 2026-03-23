@@ -507,7 +507,7 @@ const SLA_PTRXP_SAFE_PROPERTIES = ['VendNum', 'Name', 'InvNum', 'InvDate', 'DueD
 const SLA_PTRX_SAFE_PROPERTIES = ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
 const AP_IDO_CANDIDATES = ['SLAptrx', 'SLAptrxp', 'SLAptrxps', 'SLAptrxs', 'Aptrx', 'Aptrxp', 'Aptrxps', 'Aptrxs'];
 const SL_COITEMS_SAFE_PROPERTIES = ['CoNum', 'CoLine', 'CoRelease', 'Item', 'Stat', 'Price', 'QtyOrdered', 'QtyShipped', 'InvNum', 'Whse', 'DueDate'];
-const MAX_CSI_PAGES_PER_REQUEST = 200;
+const MAX_CSI_PAGES_PER_REQUEST = 25;
 
 function ensureCsiProperties(endpointPath: string, properties: string[]): string {
   const [path, queryString = ''] = endpointPath.split('?');
