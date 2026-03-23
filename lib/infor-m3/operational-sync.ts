@@ -502,6 +502,47 @@ function appendBookmarkToEndpoint(endpointPath: string, bookmark: string): strin
   return nextQuery ? `${path}?${nextQuery}` : path;
 }
 
+function formatCsiDateLiteral(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function buildSlInvHdrsWindowFilter(window?: SyncWindow): string | null {
+  if (!window) return null;
+  const start = formatCsiDateLiteral(window.startDate);
+  const end = formatCsiDateLiteral(window.endDate);
+  return `(InvDate >= '${start}' and InvDate <= '${end}')`;
+}
+
+function applyCsiSourceWindowAndSort(
+  endpointPath: string,
+  row: InforProgramRow,
+  moduleType: ReturnType<typeof classifyModule>,
+  window?: SyncWindow
+): { endpointPath: string; applied: boolean } {
+  if (!/\/IDORequestService\/ido\/load\//i.test(endpointPath)) {
+    return { endpointPath, applied: false };
+  }
+
+  // Start with SLInvHdrs, where payload scan cost is currently highest.
+  const ido = String(row.miProgram || '').trim().toUpperCase();
+  if (moduleType !== 'sales' || ido !== 'SLINVHDRS') {
+    return { endpointPath, applied: false };
+  }
+
+  const filter = buildSlInvHdrsWindowFilter(window);
+  if (!filter) return { endpointPath, applied: false };
+
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  if (!params.get('filter')) params.set('filter', filter);
+  if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
+  const next = params.toString();
+  return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+}
+
 function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
   if (!/\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(endpointPath)) return null;
   if (/\/load\/SLAptrx(?=\?|$)/i.test(endpointPath)) return null;
@@ -574,6 +615,19 @@ function buildApSlaPtrxCandidatePaths(endpointPath: string): string[] {
 function resolveSlCoitemsSafePath(endpointPath: string): string | null {
   if (!/\/load\/SLCoitems/i.test(endpointPath)) return null;
   return ensureCsiProperties(endpointPath, SL_COITEMS_SAFE_PROPERTIES);
+}
+
+function shouldRetryWithoutSourceWindowHint(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes('invalid parameter') ||
+    normalized.includes('parameter') ||
+    normalized.includes('syntax') ||
+    normalized.includes('filter') ||
+    normalized.includes('orderby') ||
+    normalized.includes('column name')
+  );
 }
 
 function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'other' {
@@ -1445,14 +1499,17 @@ export async function syncInforM3OperationalData(
       const startedAt = Date.now();
       const moduleType = classifyModule(row.module);
       const requestTimeoutMs = moduleType === 'inventory' ? 120000 : 30000;
-      let initialEndpointPath = req.endpointPath;
+      const sourceWindowPathResult = applyCsiSourceWindowAndSort(req.endpointPath, row, moduleType, syncWindow);
+      const sourceWindowBaseEndpointPath = sourceWindowPathResult.endpointPath;
+      const fallbackBaseEndpointPath = req.endpointPath;
+      let initialEndpointPath = sourceWindowBaseEndpointPath;
       if (
         absoluteProgramOffset === programOffset &&
         reqIndex === requestStartIndex &&
         typeof options?.bookmark === 'string' &&
         options.bookmark.trim()
       ) {
-        initialEndpointPath = appendBookmarkToEndpoint(req.endpointPath, options.bookmark.trim());
+        initialEndpointPath = appendBookmarkToEndpoint(sourceWindowBaseEndpointPath, options.bookmark.trim());
       }
 
       let effectiveEndpointPath = initialEndpointPath;
@@ -1460,6 +1517,27 @@ export async function syncInforM3OperationalData(
         timeoutMs: requestTimeoutMs,
         headers: req.headers,
       });
+      if (
+        !isTransportAndPayloadSuccess(response) &&
+        sourceWindowPathResult.applied &&
+        shouldRetryWithoutSourceWindowHint(extractResponseMessage(response.body))
+      ) {
+        const fallbackInitialPath =
+          absoluteProgramOffset === programOffset &&
+          reqIndex === requestStartIndex &&
+          typeof options?.bookmark === 'string' &&
+          options.bookmark.trim()
+            ? appendBookmarkToEndpoint(fallbackBaseEndpointPath, options.bookmark.trim())
+            : fallbackBaseEndpointPath;
+        const fallbackResponse = await callInforIonApi(credentials, fallbackInitialPath, {
+          timeoutMs: requestTimeoutMs,
+          headers: req.headers,
+        });
+        if (isTransportAndPayloadSuccess(fallbackResponse)) {
+          response = fallbackResponse;
+          effectiveEndpointPath = fallbackInitialPath;
+        }
+      }
       // Some CSI environments expose SLAptrxp/SLAptrxps with a broken projection that references
       // vendor_bank_id. Retry with a narrowed property list first, then fallback to SLAptrx.
       const initialMessage = extractResponseMessage(response.body);
