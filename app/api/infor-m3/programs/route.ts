@@ -46,6 +46,10 @@ function normalizeLegacyProgramField(value: string, placeholder: 'cono' | 'divi'
   return normalized;
 }
 
+function normalizeOptionalString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 const DEFAULT_PROGRAMS: AccountingProgram[] = [
   // Infor CSI (SyteLine) IDO pull defaults for operational tabs.
   {
@@ -163,8 +167,21 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
     const miProgram = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
     const transactions = normalizeTransactions(row).filter((tx) => !isLegacyTransactionPlaceholder(tx));
     const endpointPath = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
-    const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
-    const site = typeof row?.site === 'string' ? row.site.trim() : '';
+    // Support legacy aliases seen across CSI payload variants.
+    const mongooseConfig = normalizeOptionalString(
+      row?.mongooseConfig ??
+        row?.mongoose_configuration ??
+        row?.mongooseConfiguration ??
+        row?.configName ??
+        row?.configurationName ??
+        row?.config
+    );
+    const site = normalizeOptionalString(
+      row?.site ??
+        row?.siteCode ??
+        row?.facility ??
+        row?.warehouseSite
+    );
     const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
     const properties = Array.isArray(row?.properties)
       ? row.properties
@@ -201,6 +218,35 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
     });
   }
   return cleaned;
+}
+
+function buildProgramMatchKey(program: AccountingProgram): string {
+  return [
+    String(program.module || '').trim().toLowerCase(),
+    String(program.miProgram || '').trim().toLowerCase(),
+    String(program.endpointPath || '').trim().toLowerCase(),
+  ].join('::');
+}
+
+function mergePreservingCsiFields(
+  incoming: AccountingProgram[],
+  existing: AccountingProgram[]
+): AccountingProgram[] {
+  if (!incoming.length || !existing.length) return incoming;
+  const existingByKey = new Map<string, AccountingProgram>();
+  existing.forEach((program) => {
+    existingByKey.set(buildProgramMatchKey(program), program);
+  });
+
+  return incoming.map((program) => {
+    const existingProgram = existingByKey.get(buildProgramMatchKey(program));
+    if (!existingProgram) return program;
+    return {
+      ...program,
+      mongooseConfig: program.mongooseConfig ?? existingProgram.mongooseConfig,
+      site: program.site ?? existingProgram.site,
+    };
+  });
 }
 
 function normalizeCsiProgramAliases(program: AccountingProgram): AccountingProgram {
@@ -342,12 +388,21 @@ export async function POST(request: NextRequest) {
         ? (existing.connectionMetadata as Record<string, unknown>)
         : {};
 
+    const bySystem =
+      existingMetadata.accountingProgramsBySystem && typeof existingMetadata.accountingProgramsBySystem === 'object'
+        ? (existingMetadata.accountingProgramsBySystem as Record<string, unknown>)
+        : {};
+    const existingScopedPrograms = sanitizePrograms(bySystem[inforSystem] ?? existingMetadata.accountingPrograms, {
+      requireComplete: false,
+    });
+    const programsToPersist = mergePreservingCsiFields(programs, existingScopedPrograms);
+
     const mergedMetadata = {
       ...existingMetadata,
-      accountingPrograms: programs,
+      accountingPrograms: programsToPersist,
       accountingProgramsBySystem: {
-        ...((existingMetadata.accountingProgramsBySystem as Record<string, unknown>) || {}),
-        [inforSystem]: programs,
+        ...bySystem,
+        [inforSystem]: programsToPersist,
       },
       accountingProgramsUpdatedAt: new Date().toISOString(),
     };
@@ -376,7 +431,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       companyId,
       inforSystem,
-      programs,
+      programs: programsToPersist,
       message: 'Accounting programs saved for this company.',
     });
   } catch (error) {
