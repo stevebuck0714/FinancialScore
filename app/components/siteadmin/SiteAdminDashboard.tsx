@@ -940,7 +940,16 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
   const [operationalSyncSettingsByCompany, setOperationalSyncSettingsByCompany] = React.useState<
-    Record<string, { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }>
+    Record<
+      string,
+      {
+        frequency: 'daily' | 'weekly' | 'monthly';
+        pullTime: string;
+        syncMode: 'daily_overlap' | 'backfill';
+        backfillMonths: number;
+        lookbackDays: number;
+      }
+    >
   >({});
   const currentMonthKey = React.useMemo(() => {
     const now = new Date();
@@ -951,17 +960,32 @@ export default function SiteAdminDashboard(props: any) {
   >({});
 
   const getCompanyOperationalSettings = (companyId: string) =>
-    operationalSyncSettingsByCompany[companyId] || { frequency: 'daily', pullTime: '08:00' };
+    operationalSyncSettingsByCompany[companyId] || {
+      frequency: 'daily',
+      pullTime: '08:00',
+      syncMode: 'daily_overlap',
+      backfillMonths: 36,
+      lookbackDays: 30,
+    };
 
   const setCompanyOperationalSettings = (
     companyId: string,
-    next: Partial<{ frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }>
+    next: Partial<{
+      frequency: 'daily' | 'weekly' | 'monthly';
+      pullTime: string;
+      syncMode: 'daily_overlap' | 'backfill';
+      backfillMonths: number;
+      lookbackDays: number;
+    }>
   ) => {
     setOperationalSyncSettingsByCompany((prev) => ({
       ...prev,
       [companyId]: {
         frequency: next.frequency || prev[companyId]?.frequency || 'daily',
         pullTime: next.pullTime || prev[companyId]?.pullTime || '08:00',
+        syncMode: next.syncMode || prev[companyId]?.syncMode || 'daily_overlap',
+        backfillMonths: Math.max(1, Number(next.backfillMonths || prev[companyId]?.backfillMonths || 36)),
+        lookbackDays: Math.max(1, Number(next.lookbackDays || prev[companyId]?.lookbackDays || 30)),
       },
     }));
   };
@@ -2852,8 +2876,8 @@ export default function SiteAdminDashboard(props: any) {
                                             </div>
                                           </div>
 
-                                          <div style={{ display: 'grid', gridTemplateColumns: '55% 45%', gap: '8px', marginBottom: '8px' }}>
-                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                          {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) && (
+                                            <div style={{ marginBottom: '8px', padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                                 <div>
                                                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
@@ -2861,102 +2885,225 @@ export default function SiteAdminDashboard(props: any) {
                                                     {getAccountingSystemLabel(company.accountingSystem)}
                                                   </div>
                                                 </div>
-                                                {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) && (
-                                                  <div style={{ display: 'grid', gap: '8px', marginLeft: 'auto', width: 'fit-content' }}>
-                                                    <input
-                                                      id={`consultant-infor-json-file-${company.id}`}
-                                                      type="file"
-                                                      accept=".json,.txt,.ionapi"
-                                                      style={{ display: 'none' }}
-                                                      onChange={(event) =>
-                                                        handleInforCredentialsFileImport(event, company.id, company.name)
-                                                      }
-                                                    />
-                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 248px))', justifyContent: 'end', gap: '8px' }}>
-                                                      <div style={{ width: '248px', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>CONNECTION</div>
-                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center' }}>
-                                                          <button
-                                                            onClick={() => {
-                                                              const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
-                                                              fileInput?.click();
-                                                            }}
-                                                            disabled={inforBusy}
-                                                            style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                          >
-                                                            Import JSON
-                                                          </button>
-                                                          <button
-                                                            onClick={() => testInforM3Token?.(company.id)}
-                                                            disabled={inforBusy || !inforConnected}
-                                                            style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                          >
-                                                            Test Token
-                                                          </button>
-                                                          <button
-                                                            onClick={async () => {
-                                                              await saveInforM3Credentials?.(company.id, {
-                                                                frequency: getCompanyOperationalSettings(company.id).frequency,
-                                                                pullTime: getCompanyOperationalSettings(company.id).pullTime,
-                                                              });
-                                                              await saveCompanyPrograms(company.id);
-                                                            }}
-                                                            disabled={inforBusy}
-                                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                          >
-                                                            Save
-                                                          </button>
-                                                          <button
-                                                            onClick={() => connectInforM3?.(company.id)}
-                                                            disabled={inforBusy}
-                                                            style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                          >
-                                                            {inforBusy ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
-                                                          </button>
-                                                          <button
-                                                            onClick={() => disconnectInforM3?.(company.id)}
-                                                            disabled={inforBusy || !inforConnected}
-                                                            style={{ gridColumn: '1 / -1', justifySelf: 'start', padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                          >
-                                                            Disconnect
-                                                          </button>
-                                                        </div>
-                                                      </div>
-                                                      <div style={{ width: '248px', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
-                                                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
-                                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                          <button
-                                                            onClick={() => {
-                                                              const site = requireCompanyCsiSite(company.id);
-                                                              if (!site) return;
-                                                              runInforM3OperationalSync?.(company.id, getCompanyOperationalSettings(company.id).frequency, site);
-                                                            }}
-                                                            disabled={inforBusy || !inforConnected}
-                                                            style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                          >
-                                                            Run Ops Sync Now
-                                                          </button>
-                                                          <button
-                                                            onClick={() => runInforM3FinancialImport(company.id, company.name)}
-                                                            disabled={inforBusy || !inforConnected}
-                                                            style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                          >
-                                                            Run Financial Import
-                                                          </button>
-                                                          <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                                                <input
+                                                  id={`consultant-infor-json-file-${company.id}`}
+                                                  type="file"
+                                                  accept=".json,.txt,.ionapi"
+                                                  style={{ display: 'none' }}
+                                                  onChange={(event) =>
+                                                    handleInforCredentialsFileImport(event, company.id, company.name)
+                                                  }
+                                                />
+                                                <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                                                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                                                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>CONNECTION</div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center', justifyContent: 'start' }}>
+                                                      <button
+                                                        onClick={() => {
+                                                          const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
+                                                          fileInput?.click();
+                                                        }}
+                                                        disabled={inforBusy}
+                                                        style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                      >
+                                                        Import JSON
+                                                      </button>
+                                                      <button
+                                                        onClick={() => testInforM3Token?.(company.id)}
+                                                        disabled={inforBusy || !inforConnected}
+                                                        style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                      >
+                                                        Test Token
+                                                      </button>
+                                                      <button
+                                                        onClick={async () => {
+                                                          await saveInforM3Credentials?.(company.id, {
+                                                            frequency: getCompanyOperationalSettings(company.id).frequency,
+                                                            pullTime: getCompanyOperationalSettings(company.id).pullTime,
+                                                          });
+                                                          await saveCompanyPrograms(company.id);
+                                                        }}
+                                                        disabled={inforBusy}
+                                                        style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                      >
+                                                        Save
+                                                      </button>
+                                                      <button
+                                                        onClick={() => disconnectInforM3?.(company.id)}
+                                                        disabled={inforBusy || !inforConnected}
+                                                        style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                      >
+                                                        Disconnect
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                                                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center' }}>
+                                                      <button
+                                                        onClick={() => {
+                                                          const site = requireCompanyCsiSite(company.id);
+                                                          if (!site) return;
+                                                          const syncSettings = getCompanyOperationalSettings(company.id);
+                                                          runInforM3OperationalSync?.(company.id, syncSettings.frequency, site, {
+                                                            mode: syncSettings.syncMode,
+                                                            backfillMonths: syncSettings.backfillMonths,
+                                                            lookbackDays: syncSettings.lookbackDays,
+                                                          });
+                                                        }}
+                                                        disabled={inforBusy || !inforConnected}
+                                                        style={{ justifySelf: 'start', padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                      >
+                                                        Run Ops Sync Now
+                                                      </button>
+                                                      <button
+                                                        onClick={() => connectInforM3?.(company.id)}
+                                                        disabled={inforBusy}
+                                                        style={{ justifySelf: 'start', padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                      >
+                                                        {inforBusy ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
+                                                      </button>
+                                                      <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-start' }}>
+                                                        <button
+                                                          onClick={() => runInforM3FinancialImport(company.id, company.name)}
+                                                          disabled={inforBusy || !inforConnected}
+                                                          style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                        >
+                                                          Run Financial Import
+                                                        </button>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
                                                           <input
                                                             type="month"
                                                             value={getCompanyFinancialImportSettings(company.id).targetMonth}
                                                             onChange={(e) =>
                                                               setCompanyFinancialImportSettings(company.id, { targetMonth: e.target.value })
                                                             }
-                                                            style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                            style={{ width: '132px', maxWidth: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                           />
                                                         </div>
                                                       </div>
                                                     </div>
                                                   </div>
-                                                )}
+                                                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: '#f8fafc' }}>
+                                                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>OPERATIONAL DATA MODE</div>
+                                                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                                      {company.forceOperationalMockData
+                                                        ? 'Demo mode is ON. Mock data is being served.'
+                                                        : company.hasRealOperationalData
+                                                          ? `Real data mode is ON${company.realDataActivatedAt ? ` (activated ${new Date(company.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                          : 'Demo mode is active until real operational data is detected.'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                      <button
+                                                        onClick={() => saveOperationalDataMode(company.id, true)}
+                                                        disabled={savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData}
+                                                        style={{
+                                                          padding: '6px 10px',
+                                                          background: company.forceOperationalMockData ? '#0f766e' : 'white',
+                                                          color: company.forceOperationalMockData ? 'white' : '#0f766e',
+                                                          border: '1px solid #0f766e',
+                                                          borderRadius: '6px',
+                                                          fontSize: '12px',
+                                                          fontWeight: '600',
+                                                          cursor: savingOperationalDataModeCompanyId === company.id || company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                        }}
+                                                      >
+                                                        Force Demo Mode
+                                                      </button>
+                                                      <button
+                                                        onClick={() => saveOperationalDataMode(company.id, false)}
+                                                        disabled={savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData}
+                                                        style={{
+                                                          padding: '6px 10px',
+                                                          background: !company.forceOperationalMockData ? '#1d4ed8' : 'white',
+                                                          color: !company.forceOperationalMockData ? 'white' : '#1d4ed8',
+                                                          border: '1px solid #1d4ed8',
+                                                          borderRadius: '6px',
+                                                          fontSize: '12px',
+                                                          fontWeight: '600',
+                                                          cursor: savingOperationalDataModeCompanyId === company.id || !company.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                        }}
+                                                      >
+                                                        Use Real Data
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: '#f8fafc' }}>
+                                                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>SYNC WINDOW</div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
+                                                      <label
+                                                        style={{
+                                                          display: 'flex',
+                                                          alignItems: 'center',
+                                                          gap: '8px',
+                                                          fontSize: '12px',
+                                                          color: '#334155',
+                                                          gridColumn: '1 / -1',
+                                                        }}
+                                                      >
+                                                        <span style={{ fontWeight: 600, whiteSpace: 'nowrap', minWidth: '40px' }}>Mode</span>
+                                                        <select
+                                                          value={getCompanyOperationalSettings(company.id).syncMode}
+                                                          onChange={(e) =>
+                                                            setCompanyOperationalSettings(company.id, {
+                                                              syncMode: e.target.value === 'backfill' ? 'backfill' : 'daily_overlap',
+                                                            })
+                                                          }
+                                                          style={{ flex: 1, width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        >
+                                                          <option value="backfill">Initial Backfill</option>
+                                                          <option value="daily_overlap">Daily Overlap</option>
+                                                        </select>
+                                                      </label>
+                                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>Backfill Months</span>
+                                                        <input
+                                                          type="number"
+                                                          min={1}
+                                                          step={1}
+                                                          value={getCompanyOperationalSettings(company.id).backfillMonths}
+                                                          onChange={(e) =>
+                                                            setCompanyOperationalSettings(company.id, {
+                                                              backfillMonths: Number(e.target.value || 36),
+                                                            })
+                                                          }
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                        <span style={{ fontWeight: 600 }}>Overlap Days</span>
+                                                        <input
+                                                          type="number"
+                                                          min={1}
+                                                          step={1}
+                                                          value={getCompanyOperationalSettings(company.id).lookbackDays}
+                                                          onChange={(e) =>
+                                                            setCompanyOperationalSettings(company.id, {
+                                                              lookbackDays: Number(e.target.value || 30),
+                                                            })
+                                                          }
+                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                        />
+                                                      </label>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
+                                            <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                                <div>
+                                                  <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+                                                    {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) ? 'Connection Credentials' : 'Accounting Integration'}
+                                                  </h4>
+                                                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                                    {getAccountingSystemLabel(company.accountingSystem)}
+                                                  </div>
+                                                </div>
+                                                {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) && null}
                                                 {company.accountingSystem === 'QUICKBOOKS_DESKTOP' && (
                                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
                                                     <input
@@ -2969,7 +3116,6 @@ export default function SiteAdminDashboard(props: any) {
                                                       }
                                                     />
                                                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
-                                                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                                       <input
                                                         type="month"
                                                         value={getCompanyFinancialImportSettings(company.id).targetMonth}
@@ -3120,7 +3266,8 @@ export default function SiteAdminDashboard(props: any) {
                                                 )}
                                               </div>
 
-                                              <div style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', marginBottom: '10px' }}>
+                                              {!['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) && (
+                                                <div style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', marginBottom: '10px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
                                                   <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
                                                     Operational Data Mode
@@ -3168,6 +3315,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   </div>
                                                 </div>
                                               </div>
+                                              )}
                                               {['INFOR_M3', 'INFOR_CSI'].includes(String(company.accountingSystem || '').toUpperCase()) ? (
                                                 <>
                                                   <div
@@ -5054,8 +5202,8 @@ export default function SiteAdminDashboard(props: any) {
                                 })()}
 
                                 {['INFOR_M3', 'INFOR_CSI'].includes(String(businessCompany?.accountingSystem || '').toUpperCase()) ? (
-                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                  <>
+                                  <div style={{ marginBottom: '8px', padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                       <div>
                                         <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
@@ -5063,7 +5211,222 @@ export default function SiteAdminDashboard(props: any) {
                                           {getAccountingSystemLabel(businessCompany.accountingSystem)}
                                         </div>
                                       </div>
-                                      <div style={{ display: 'grid', gap: '8px', marginLeft: 'auto', width: 'fit-content' }}>
+                                      <div style={{ width: '100%' }}>
+                                        <input
+                                          id={`business-infor-json-file-${businessCompany.id}`}
+                                          type="file"
+                                          accept=".json,.txt,.ionapi"
+                                          style={{ display: 'none' }}
+                                          onChange={(event) =>
+                                            handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
+                                          }
+                                        />
+                                        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>CONNECTION</div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center', justifyContent: 'start' }}>
+                                              <button
+                                                onClick={() => {
+                                                  const fileInput = document.getElementById(`business-infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
+                                                  fileInput?.click();
+                                                }}
+                                                disabled={inforBusy}
+                                                style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Import JSON
+                                              </button>
+                                              <button
+                                                onClick={() => testInforM3Token?.(businessCompany.id)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Test Token
+                                              </button>
+                                              <button
+                                                onClick={async () => {
+                                                  await saveInforM3Credentials?.(businessCompany.id, {
+                                                    frequency: operationalSettings.frequency,
+                                                    pullTime: operationalSettings.pullTime,
+                                                  });
+                                                  await saveCompanyPrograms(businessCompany.id);
+                                                }}
+                                                disabled={inforBusy}
+                                                style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Save
+                                              </button>
+                                              <button
+                                                onClick={() => disconnectInforM3?.(businessCompany.id)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Disconnect
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center' }}>
+                                              <button
+                                                onClick={() => {
+                                                  const site = requireCompanyCsiSite(businessCompany.id);
+                                                  if (!site) return;
+                                                  runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency, site, {
+                                                    mode: operationalSettings.syncMode,
+                                                    backfillMonths: operationalSettings.backfillMonths,
+                                                    lookbackDays: operationalSettings.lookbackDays,
+                                                  });
+                                                }}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ justifySelf: 'start', padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Run Ops Sync Now
+                                              </button>
+                                              <button
+                                                onClick={() => connectInforM3?.(businessCompany.id)}
+                                                disabled={inforBusy}
+                                                style={{ justifySelf: 'start', padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                {inforBusy ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
+                                              </button>
+                                              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-start' }}>
+                                                <button
+                                                  onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
+                                                  disabled={inforBusy || !inforConnected}
+                                                  style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                >
+                                                  Run Financial Import
+                                                </button>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                                                  <input
+                                                    type="month"
+                                                    value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
+                                                    onChange={(e) =>
+                                                      setCompanyFinancialImportSettings(businessCompany.id, { targetMonth: e.target.value })
+                                                    }
+                                                    style={{ width: '132px', maxWidth: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>OPERATIONAL DATA MODE</div>
+                                            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                                              {businessCompany.forceOperationalMockData
+                                                ? 'Demo mode is ON. Mock data is being served.'
+                                                : businessCompany.hasRealOperationalData
+                                                  ? `Real data mode is ON${businessCompany.realDataActivatedAt ? ` (activated ${new Date(businessCompany.realDataActivatedAt).toLocaleString()})` : ''}.`
+                                                  : 'Demo mode is active until real operational data is detected.'}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                              <button
+                                                onClick={() => saveOperationalDataMode(businessCompany.id, true)}
+                                                disabled={savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData}
+                                                style={{
+                                                  padding: '6px 10px',
+                                                  background: businessCompany.forceOperationalMockData ? '#0f766e' : 'white',
+                                                  color: businessCompany.forceOperationalMockData ? 'white' : '#0f766e',
+                                                  border: '1px solid #0f766e',
+                                                  borderRadius: '6px',
+                                                  fontSize: '12px',
+                                                  fontWeight: '600',
+                                                  cursor: savingOperationalDataModeCompanyId === businessCompany.id || businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                }}
+                                              >
+                                                Force Demo Mode
+                                              </button>
+                                              <button
+                                                onClick={() => saveOperationalDataMode(businessCompany.id, false)}
+                                                disabled={savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData}
+                                                style={{
+                                                  padding: '6px 10px',
+                                                  background: !businessCompany.forceOperationalMockData ? '#1d4ed8' : 'white',
+                                                  color: !businessCompany.forceOperationalMockData ? 'white' : '#1d4ed8',
+                                                  border: '1px solid #1d4ed8',
+                                                  borderRadius: '6px',
+                                                  fontSize: '12px',
+                                                  fontWeight: '600',
+                                                  cursor: savingOperationalDataModeCompanyId === businessCompany.id || !businessCompany.forceOperationalMockData ? 'not-allowed' : 'pointer',
+                                                }}
+                                              >
+                                                Use Real Data
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
+                                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>SYNC WINDOW</div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
+                                              <label
+                                                style={{
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  gap: '8px',
+                                                  fontSize: '12px',
+                                                  color: '#334155',
+                                                  gridColumn: '1 / -1',
+                                                }}
+                                              >
+                                                <span style={{ fontWeight: 600, whiteSpace: 'nowrap', minWidth: '40px' }}>Mode</span>
+                                                <select
+                                                  value={operationalSettings.syncMode}
+                                                  onChange={(e) =>
+                                                    setCompanyOperationalSettings(businessCompany.id, {
+                                                      syncMode: e.target.value === 'backfill' ? 'backfill' : 'daily_overlap',
+                                                    })
+                                                  }
+                                                  style={{ flex: 1, width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                >
+                                                  <option value="backfill">Initial Backfill</option>
+                                                  <option value="daily_overlap">Daily Overlap</option>
+                                                </select>
+                                              </label>
+                                              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                <span style={{ fontWeight: 600 }}>Backfill Months</span>
+                                                <input
+                                                  type="number"
+                                                  min={1}
+                                                  step={1}
+                                                  value={operationalSettings.backfillMonths}
+                                                  onChange={(e) =>
+                                                    setCompanyOperationalSettings(businessCompany.id, {
+                                                      backfillMonths: Number(e.target.value || 36),
+                                                    })
+                                                  }
+                                                  style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                />
+                                              </label>
+                                              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                <span style={{ fontWeight: 600 }}>Overlap Days</span>
+                                                <input
+                                                  type="number"
+                                                  min={1}
+                                                  step={1}
+                                                  value={operationalSettings.lookbackDays}
+                                                  onChange={(e) =>
+                                                    setCompanyOperationalSettings(businessCompany.id, {
+                                                      lookbackDays: Number(e.target.value || 30),
+                                                    })
+                                                  }
+                                                  style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                />
+                                              </label>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
+                                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
+                                      <div>
+                                        <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Connection Credentials</h4>
+                                        <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                          {getAccountingSystemLabel(businessCompany.accountingSystem)}
+                                        </div>
+                                      </div>
+                                      <div style={{ display: 'none', gap: '8px', marginLeft: 'auto', width: 'fit-content' }}>
                                         <input
                                           id={`infor-json-file-${businessCompany.id}`}
                                           type="file"
@@ -5144,7 +5507,6 @@ export default function SiteAdminDashboard(props: any) {
                                               >
                                                 Run Financial Import
                                               </button>
-                                              <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                               <input
                                                 type="month"
                                                 value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
@@ -5159,7 +5521,7 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     </div>
 
-                                    <div style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', marginBottom: '10px' }}>
+                                    <div style={{ display: 'none', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', marginBottom: '10px' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
                                         <div style={{ fontSize: '12px', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
                                           Operational Data Mode
@@ -5443,6 +5805,7 @@ export default function SiteAdminDashboard(props: any) {
                                       {renderOperationalHubCustomizationCard(businessCompany)}
                                     </div>
                                   </div>
+                                  </>
                                 ) : businessCompany?.accountingSystem === 'QUICKBOOKS' ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
@@ -5681,7 +6044,6 @@ export default function SiteAdminDashboard(props: any) {
                                             }
                                           />
                                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', width: '100%', justifyContent: 'flex-end' }}>
-                                            <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
                                             <input
                                               type="month"
                                               value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}

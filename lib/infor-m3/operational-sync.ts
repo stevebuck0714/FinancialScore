@@ -24,6 +24,13 @@ type InforOperationalSyncResult = {
   credentialSource: 'database' | 'env' | null;
 };
 
+type SyncMode = 'daily_overlap' | 'backfill' | 'manual';
+type SyncWindow = {
+  startDate: Date;
+  endDate: Date;
+  mode: SyncMode;
+};
+
 type SitePolicy = 'required' | 'optional' | 'none';
 
 const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
@@ -431,6 +438,39 @@ function extractResponseMessage(body: Record<string, unknown> | string): string 
   return String((body.Message as string | undefined) || (body.error as string | undefined) || '').trim();
 }
 
+function asBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y';
+  }
+  if (typeof value === 'number') return value !== 0;
+  return false;
+}
+
+function extractPagingState(body: Record<string, unknown> | string): { moreRowsExist: boolean; bookmark: string | null } {
+  if (!body || typeof body !== 'object') return { moreRowsExist: false, bookmark: null };
+  const payload = body as Record<string, unknown>;
+  const bookmark =
+    typeof payload.Bookmark === 'string'
+      ? payload.Bookmark.trim()
+      : typeof payload.bookmark === 'string'
+        ? payload.bookmark.trim()
+        : '';
+  return {
+    moreRowsExist: asBoolean(payload.MoreRowsExist ?? payload.moreRowsExist),
+    bookmark: bookmark || null,
+  };
+}
+
+function appendBookmarkToEndpoint(endpointPath: string, bookmark: string): string {
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  params.set('bookmark', bookmark);
+  const nextQuery = params.toString();
+  return nextQuery ? `${path}?${nextQuery}` : path;
+}
+
 function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
   if (!/\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(endpointPath)) return null;
   if (/\/load\/SLAptrx(?=\?|$)/i.test(endpointPath)) return null;
@@ -443,6 +483,7 @@ const SLA_PTRXP_SAFE_PROPERTIES = ['VendNum', 'Name', 'InvNum', 'InvDate', 'DueD
 const SLA_PTRX_SAFE_PROPERTIES = ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
 const AP_IDO_CANDIDATES = ['SLAptrx', 'SLAptrxp', 'SLAptrxps', 'SLAptrxs', 'Aptrx', 'Aptrxp', 'Aptrxps', 'Aptrxs'];
 const SL_COITEMS_SAFE_PROPERTIES = ['CoNum', 'CoLine', 'CoRelease', 'Item', 'Stat', 'Price', 'QtyOrdered', 'QtyShipped', 'InvNum', 'Whse', 'DueDate'];
+const MAX_CSI_PAGES_PER_REQUEST = 200;
 
 function ensureCsiProperties(endpointPath: string, properties: string[]): string {
   const [path, queryString = ''] = endpointPath.split('?');
@@ -617,6 +658,44 @@ function parseMaybeDate(value: string | null): Date | null {
   }
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isWithinWindow(date: Date, window: SyncWindow): boolean {
+  return date.getTime() >= window.startDate.getTime() && date.getTime() <= window.endDate.getTime();
+}
+
+function firstRecordDate(record: Record<string, unknown>, keys: string[]): Date | null {
+  for (const key of keys) {
+    const parsed = parseMaybeDate(pickString(record, [key]));
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function filterRecordsByDateWindow(
+  records: Record<string, unknown>[],
+  moduleType: ReturnType<typeof classifyModule>,
+  window?: SyncWindow
+): Record<string, unknown>[] {
+  if (!window || records.length === 0) return records;
+  const transactionalModules = new Set<ReturnType<typeof classifyModule>>(['ar', 'ap', 'sales', 'inventory']);
+  if (!transactionalModules.has(moduleType)) return records;
+
+  const dateKeysByModule: Record<string, string[]> = {
+    ar: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
+    ap: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
+    sales: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'ShipDate', 'RecordDate', 'date'],
+    inventory: ['ItemChangeDate', 'ChangeDate', 'RecordDate', 'SSDATE', 'date'],
+  };
+  const keys = dateKeysByModule[moduleType] || [];
+  if (keys.length === 0) return records;
+
+  // Keep records lacking any parseable date to avoid dropping valid rows from sparse payloads.
+  return records.filter((record) => {
+    const date = firstRecordDate(record, keys);
+    if (!date) return true;
+    return isWithinWindow(date, window);
+  });
 }
 
 type AgingTotals = {
@@ -853,7 +932,7 @@ async function saveAROpenInvoices(
 ): Promise<number> {
   await prisma.aROpenInvoiceSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
-  const rows = records
+  const rawRows = records
     .map((record, idx) => {
       const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
       const invoiceNo = pickString(record, AR_INVOICE_NO_KEYS) || `UNKNOWN-${idx + 1}`;
@@ -886,6 +965,33 @@ async function saveAROpenInvoices(
     })
     .filter((row) => row.customerName && row.invoiceNo && Number.isFinite(row.amountDueHome));
 
+  // CSI AR payloads can contain multiple lines for the same invoice/customer.
+  // Merge them before insert to avoid unique key collisions on snapshot rows.
+  const deduped = new Map<string, (typeof rawRows)[number]>();
+  for (const row of rawRows) {
+    const key = `${row.companyId}|${row.frequency}|${row.snapshotDate.toISOString()}|${row.invoiceNo}|${row.customerName}`;
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, { ...row });
+      continue;
+    }
+
+    existing.amountCurrency = (existing.amountCurrency || 0) + (row.amountCurrency || 0);
+    existing.amountHome = (existing.amountHome || 0) + (row.amountHome || 0);
+    existing.amountDueHome = (existing.amountDueHome || 0) + (row.amountDueHome || 0);
+    existing.current = (existing.current || 0) + (row.current || 0);
+    existing.days1to30 = (existing.days1to30 || 0) + (row.days1to30 || 0);
+    existing.days31to60 = (existing.days31to60 || 0) + (row.days31to60 || 0);
+    existing.days61to90 = (existing.days61to90 || 0) + (row.days61to90 || 0);
+    existing.days90plus = (existing.days90plus || 0) + (row.days90plus || 0);
+    existing.customerId = existing.customerId || row.customerId;
+    existing.invoiceDate = existing.invoiceDate || row.invoiceDate;
+    existing.dueDate = existing.dueDate || row.dueDate;
+    existing.status = existing.status || row.status;
+    existing.currencyCode = existing.currencyCode || row.currencyCode;
+  }
+
+  const rows = Array.from(deduped.values()).filter((row) => Number.isFinite(row.amountDueHome));
   if (!rows.length) return 0;
   await prisma.aROpenInvoiceSnapshot.createMany({ data: rows });
   return rows.length;
@@ -1159,7 +1265,8 @@ async function saveInventory(
 export async function syncInforM3OperationalData(
   companyId: string,
   frequency: 'daily' | 'weekly' | 'monthly' = 'daily',
-  siteOverride?: string
+  siteOverride?: string,
+  syncWindow?: SyncWindow
 ): Promise<InforOperationalSyncResult> {
   const errors: string[] = [];
   let recordsCreated = 0;
@@ -1346,6 +1453,36 @@ export async function syncInforM3OperationalData(
         }
       }
       let rawRecords = extractRecords(response.body);
+      let pagesFetched = 1;
+      let paginationTruncated = false;
+      const isCsiLoadEndpoint = /\/IDORequestService\/ido\/load\//i.test(effectiveEndpointPath);
+      if (isCsiLoadEndpoint && isTransportAndPayloadSuccess(response)) {
+        let paginationState = extractPagingState(response.body);
+        while (
+          paginationState.moreRowsExist &&
+          paginationState.bookmark &&
+          pagesFetched < MAX_CSI_PAGES_PER_REQUEST
+        ) {
+          const nextEndpointPath = appendBookmarkToEndpoint(effectiveEndpointPath, paginationState.bookmark);
+          const nextResponse = await callInforIonApi(credentials, nextEndpointPath, {
+            timeoutMs: requestTimeoutMs,
+            headers: req.headers,
+          });
+          if (!isTransportAndPayloadSuccess(nextResponse)) {
+            paginationTruncated = true;
+            break;
+          }
+          const nextRecords = extractRecords(nextResponse.body);
+          rawRecords = rawRecords.concat(nextRecords);
+          response = nextResponse;
+          effectiveEndpointPath = nextEndpointPath;
+          pagesFetched += 1;
+          paginationState = extractPagingState(nextResponse.body);
+        }
+        if (pagesFetched >= MAX_CSI_PAGES_PER_REQUEST) {
+          paginationTruncated = true;
+        }
+      }
       // AP SLAptrx* payloads can succeed but return 0 rows on one IDO variant.
       // Probe a short list of safe sibling endpoints and keep the first non-empty result.
       if (
@@ -1370,16 +1507,22 @@ export async function syncInforM3OperationalData(
           break;
         }
       }
+      const arApFlow = moduleType === 'ar' || moduleType === 'ap' ? classifyArApFlow(moduleType, req.transaction) : null;
       const sitePolicy = resolveSitePolicy(row, moduleType);
       const siteDetected = hasRecordSiteDimension(rawRecords);
       const recordsAfterSiteFilter = filterRecordsBySiteIfSupported(rawRecords, row.site);
+      // Keep full open-item populations for AR/AP aging snapshots.
+      // A strict rolling date window on invoice dates can hide older but still-open receivables/payables.
+      const shouldApplyDateWindow = !(moduleType === 'ar' || moduleType === 'ap') || arApFlow !== 'open';
+      const recordsAfterDateWindow = shouldApplyDateWindow
+        ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
+        : recordsAfterSiteFilter;
       const requestedSite = String(row.site || siteOverride || '').trim();
-      const arApFlow = moduleType === 'ar' || moduleType === 'ap' ? classifyArApFlow(moduleType, req.transaction) : null;
       const shouldAggregateForRollup =
         !requestedSite && siteDetected && (sitePolicy === 'required' || sitePolicy === 'optional');
       const records = shouldAggregateForRollup
-        ? aggregateForCompanyRollup(recordsAfterSiteFilter, moduleType, arApFlow)
-        : recordsAfterSiteFilter;
+        ? aggregateForCompanyRollup(recordsAfterDateWindow, moduleType, arApFlow)
+        : recordsAfterDateWindow;
       const payloadOk = isTransportAndPayloadSuccess(response);
       const statusText = payloadOk ? 'success' : 'error';
 
@@ -1479,8 +1622,18 @@ export async function syncInforM3OperationalData(
             requestedSite: requestedSite || null,
             siteDetected,
             sourceRecordCount: rawRecords.length,
+            postWindowRecordCount: recordsAfterDateWindow.length,
             persistedRecordCount: records.length,
             companyRollupApplied: shouldAggregateForRollup,
+            pagesFetched,
+            paginationTruncated,
+            syncWindow: syncWindow
+              ? {
+                  mode: syncWindow.mode,
+                  startDate: syncWindow.startDate.toISOString(),
+                  endDate: syncWindow.endDate.toISOString(),
+                }
+              : null,
             response: response.body,
           },
         },

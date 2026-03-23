@@ -5498,7 +5498,14 @@ function FinancialScorePage() {
   const runInforM3OperationalSync = async (
     targetCompanyId?: string,
     frequency: 'daily' | 'weekly' | 'monthly' = 'daily',
-    site?: string
+    site?: string,
+    options?: {
+      mode?: 'daily_overlap' | 'backfill';
+      backfillMonths?: number;
+      lookbackDays?: number;
+      startDate?: string;
+      endDate?: string;
+    }
   ) => {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) return;
@@ -5511,10 +5518,25 @@ function FinancialScorePage() {
     setInforBusy(true);
     setInforError(null);
     try {
+      const payload: Record<string, unknown> = {
+        companyId,
+        frequency,
+        ...(String(site || '').trim() ? { site: String(site).trim() } : {}),
+      };
+      if (options?.mode) payload.mode = options.mode;
+      if (typeof options?.backfillMonths === 'number' && Number.isFinite(options.backfillMonths)) {
+        payload.backfillMonths = Math.max(1, Math.floor(options.backfillMonths));
+      }
+      if (typeof options?.lookbackDays === 'number' && Number.isFinite(options.lookbackDays)) {
+        payload.lookbackDays = Math.max(1, Math.floor(options.lookbackDays));
+      }
+      if (options?.startDate) payload.startDate = options.startDate;
+      if (options?.endDate) payload.endDate = options.endDate;
+
       const response = await fetch('/api/infor-m3/operational-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, frequency, ...(String(site || '').trim() ? { site: String(site).trim() } : {}) }),
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
       if (!response.ok || !data?.ok) {

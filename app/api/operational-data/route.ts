@@ -392,18 +392,39 @@ export async function GET(request: NextRequest) {
           );
         }
 
+        const derivedTotals = unpaidByCustomer.reduce(
+          (acc, row) => {
+            acc.totalAR += Number(row.totalDue || 0);
+            acc.current += Number(row.current || 0);
+            acc.days1to30 += Number(row.days1to30 || 0);
+            acc.days31to60 += Number(row.days31to60 || 0);
+            acc.days61to90 += Number(row.days61to90 || 0);
+            acc.days90plus += Number(row.days90plus || 0);
+            return acc;
+          },
+          { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+        );
+
+        const totalARForPct = Number(agingMetrics?.totalAR ?? derivedTotals.totalAR);
+        const over30Amount = Number(derivedTotals.days1to30 + derivedTotals.days31to60 + derivedTotals.days61to90 + derivedTotals.days90plus);
+        const currentPctFallback = totalARForPct > 0 ? (Number(derivedTotals.current) / totalARForPct) * 100 : 0;
+        const over30PctFallback = totalARForPct > 0 ? (over30Amount / totalARForPct) * 100 : 0;
+        const over90PctFallback = totalARForPct > 0 ? (Number(derivedTotals.days90plus) / totalARForPct) * 100 : 0;
+
         return NextResponse.json({
           records: data,
-          summary: agingMetrics
-            ? {
-                ...agingMetrics,
-                breakdown: unpaidByCustomer,
-                unpaidByCustomer,
-                unpaidInvoices,
-                paidInvoices,
-                customerInvoices,
-              }
-            : agingMetrics,
+          summary: {
+            totalAR: Number(agingMetrics?.totalAR ?? derivedTotals.totalAR),
+            currentPct: Number(agingMetrics?.currentPct ?? currentPctFallback),
+            over30Pct: Number(agingMetrics?.over30Pct ?? over30PctFallback),
+            over90Pct: Number(agingMetrics?.over90Pct ?? over90PctFallback),
+            dso: Number(agingMetrics?.dso ?? 0),
+            breakdown: unpaidByCustomer,
+            unpaidByCustomer,
+            unpaidInvoices,
+            paidInvoices,
+            customerInvoices,
+          },
         });
 
       case 'ap-aging':
