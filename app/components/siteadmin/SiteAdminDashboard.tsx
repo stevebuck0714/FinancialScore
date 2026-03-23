@@ -404,7 +404,7 @@ export default function SiteAdminDashboard(props: any) {
 
   const getOperationalHubTabCategoryOptions = (company: any): Array<{ key: string; label: string; group: string }> => {
     const sectorModules = getTopLineBucketsForSector(company?.industrySectorCategory || null).map((bucket) => String(bucket.key || '').trim());
-    const moduleSet = Array.from(new Set([...sectorModules, 'daily_financials'].filter(Boolean)));
+    const moduleSet = Array.from(new Set([...sectorModules, 'cash', 'daily_financials'].filter(Boolean)));
     return moduleSet.map((moduleKey) => ({
       key: `tab:${moduleKey}`,
       label: getModuleLabel(moduleKey) || moduleKey.replace(/_/g, ' '),

@@ -403,13 +403,14 @@ export default function OperationsTab({
   const sectorModules = getTopLineBucketsForSector(industrySectorCategory).map((bucket) => bucket.key);
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
   const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
+  const enabledDashboardModules = resolvedModules.filter((module) => isTabModuleEnabled(module));
   const availableModuleTabs = Array.from(
     new Set([
       ...(resolvedModules.length > 0 ? resolvedModules : ['customers', 'ar', 'ap', 'products', 'inventory', 'cash']),
       'daily_financials',
       'working_capital_forecast',
     ])
-  ).filter((module) => isTabModuleEnabled(module) && !['cash', 'working_capital_forecast', 'working-capital-forecast'].includes(module));
+  ).filter((module) => isTabModuleEnabled(module) && !['working_capital_forecast', 'working-capital-forecast'].includes(module));
   const availableTabs: OpTab[] = isOverviewOnly ? ['overview'] : ['dashboard', 'forecast', ...availableModuleTabs];
   const moduleTitlesByType = Object.fromEntries(
     orderedDashboardDataTypes
@@ -5950,7 +5951,7 @@ export default function OperationsTab({
           selectedCompanyId={selectedCompanyId}
           companyName={companyName}
           industrySectorCategory={industrySectorCategory}
-          activeModules={resolvedModules}
+          activeModules={enabledDashboardModules}
           moduleTitlesByType={moduleTitlesByType}
         />
       )}
