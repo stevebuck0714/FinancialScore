@@ -5518,42 +5518,75 @@ function FinancialScorePage() {
     setInforBusy(true);
     setInforError(null);
     try {
-      const payload: Record<string, unknown> = {
-        companyId,
-        frequency,
-        ...(String(site || '').trim() ? { site: String(site).trim() } : {}),
-      };
-      if (options?.mode) payload.mode = options.mode;
-      if (typeof options?.backfillMonths === 'number' && Number.isFinite(options.backfillMonths)) {
-        payload.backfillMonths = Math.max(1, Math.floor(options.backfillMonths));
-      }
-      if (typeof options?.lookbackDays === 'number' && Number.isFinite(options.lookbackDays)) {
-        payload.lookbackDays = Math.max(1, Math.floor(options.lookbackDays));
-      }
-      if (options?.startDate) payload.startDate = options.startDate;
-      if (options?.endDate) payload.endDate = options.endDate;
+      let totalRecordsCreated = 0;
+      let chunkCount = 0;
+      let aggregatedErrors: string[] = [];
+      let cursor: Record<string, unknown> | null = null;
+      const maxChunks = 4000;
 
-      const response = await fetch('/api/infor-m3/operational-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const rawBody = await response.text();
-      let data: any = null;
-      try {
-        data = rawBody ? JSON.parse(rawBody) : {};
-      } catch {
-        data = { error: rawBody || 'Operational sync failed with non-JSON response.' };
+      while (chunkCount < maxChunks) {
+        chunkCount += 1;
+        const payload: Record<string, unknown> = {
+          companyId,
+          frequency,
+          programBatchSize: 2,
+          ...(String(site || '').trim() ? { site: String(site).trim() } : {}),
+        };
+        if (options?.mode) payload.mode = options.mode;
+        if (typeof options?.backfillMonths === 'number' && Number.isFinite(options.backfillMonths)) {
+          payload.backfillMonths = Math.max(1, Math.floor(options.backfillMonths));
+        }
+        if (typeof options?.lookbackDays === 'number' && Number.isFinite(options.lookbackDays)) {
+          payload.lookbackDays = Math.max(1, Math.floor(options.lookbackDays));
+        }
+        if (options?.startDate) payload.startDate = options.startDate;
+        if (options?.endDate) payload.endDate = options.endDate;
+        if (cursor) Object.assign(payload, cursor);
+
+        const response = await fetch('/api/infor-m3/operational-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const rawBody = await response.text();
+        let data: any = null;
+        try {
+          data = rawBody ? JSON.parse(rawBody) : {};
+        } catch {
+          data = { error: rawBody || 'Operational sync failed with non-JSON response.' };
+        }
+        if (!response.ok || !data?.ok) {
+          const details = Array.isArray(data?.errors) && data.errors.length > 0
+            ? data.errors.join('\n')
+            : data?.details || data?.error || 'Operational sync failed';
+          throw new Error(details);
+        }
+
+        totalRecordsCreated += Number(data?.recordsCreated || 0);
+        if (Array.isArray(data?.errors) && data.errors.length > 0) {
+          aggregatedErrors = aggregatedErrors.concat(data.errors.map((entry: unknown) => String(entry)));
+        }
+
+        if (data?.hasMore && data?.cursor && typeof data.cursor === 'object') {
+          cursor = data.cursor as Record<string, unknown>;
+          continue;
+        }
+        break;
       }
-      if (!response.ok || !data?.ok) {
-        const details = Array.isArray(data?.errors) && data.errors.length > 0
-          ? data.errors.join('\n')
-          : data?.details || data?.error || 'Operational sync failed';
-        throw new Error(details);
+
+      if (chunkCount >= maxChunks) {
+        throw new Error('Operational sync exceeded maximum continuation chunks. Please retry.');
       }
+
       await checkInforM3Status(companyId);
       const siteSuffix = String(site || '').trim() ? ` Site: ${String(site).trim()}.` : '';
-      alert(`Infor M3 operational sync complete. Records created: ${data.recordsCreated ?? 0}.${siteSuffix}`);
+      const warningSuffix =
+        aggregatedErrors.length > 0
+          ? `\n\nCompleted with ${aggregatedErrors.length} warning(s).\n${aggregatedErrors.slice(0, 5).join('\n')}`
+          : '';
+      alert(
+        `Infor M3 operational sync complete. Records created: ${totalRecordsCreated}. Chunks processed: ${chunkCount}.${siteSuffix}${warningSuffix}`
+      );
     } catch (error: any) {
       const message = error?.message || 'Failed to run Infor M3 operational sync';
       setInforError(message);

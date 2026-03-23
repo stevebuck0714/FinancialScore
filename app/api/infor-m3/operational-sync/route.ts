@@ -7,6 +7,13 @@ import { normalizeInforSystem } from '@/lib/infor-m3/system';
 type Frequency = 'daily' | 'weekly' | 'monthly';
 type SyncMode = 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill';
 type SyncWindow = { startDate: Date; endDate: Date; mode: SyncMode } | null;
+type SyncCursor = {
+  mode: SyncMode;
+  programOffset: number;
+  programBatchSize: number;
+  backfillMonths?: number;
+  businessDateIndex?: number;
+};
 
 function normalizeFrequency(value: unknown): Frequency {
   if (typeof value !== 'string') return 'daily';
@@ -21,6 +28,15 @@ function normalizePositiveInt(value: unknown): number | null {
   if (typeof value === 'string') {
     const parsed = Number(value.trim());
     if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  }
+  return null;
+}
+
+function normalizeNonNegativeInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return Math.floor(value);
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
   }
   return null;
 }
@@ -139,6 +155,8 @@ export async function POST(request: NextRequest) {
     const site = String(body.site || '').trim();
     const mode = normalizeMode(body.mode);
     const syncWindow = buildSyncWindow(body, frequency);
+    const programBatchSize = Math.min(normalizePositiveInt(body.programBatchSize) ?? 3, 25);
+    const requestedProgramOffset = normalizeNonNegativeInt(body.programOffset) ?? 0;
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { accountingSystem: true },
@@ -160,36 +178,81 @@ export async function POST(request: NextRequest) {
       const startDate = new Date(endDate);
       startDate.setMonth(startDate.getMonth() - months);
       const businessDates = enumerateBusinessDates(startDate, endDate);
+      const businessDateIndex = Math.min(
+        normalizeNonNegativeInt(body.businessDateIndex) ?? 0,
+        Math.max(0, businessDates.length - 1)
+      );
+      const businessDate = businessDates[businessDateIndex];
 
-      let recordsCreated = 0;
-      const errors: string[] = [];
-      let credentialSource: 'database' | 'env' | null = null;
-
-      for (const businessDate of businessDates) {
-        const dayStart = new Date(businessDate);
-        dayStart.setUTCHours(0, 0, 0, 0);
-        const dayEnd = new Date(businessDate);
-        dayEnd.setUTCHours(23, 59, 59, 999);
-        const dayWindow = { startDate: dayStart, endDate: dayEnd, mode: 'manual' as const };
-
-        const dayResult = await syncInforM3OperationalData(
+      if (!businessDate) {
+        await pruneCompanyOperationalData(companyId);
+        return NextResponse.json({
+          ok: true,
           companyId,
           frequency,
           site,
-          dayWindow,
-          { snapshotDateOverride: businessDate, skipPrune: true }
-        );
-        recordsCreated += dayResult.recordsCreated;
-        credentialSource = dayResult.credentialSource;
-        if (dayResult.errors.length) {
-          errors.push(...dayResult.errors.map((message) => `[${businessDate.toISOString().slice(0, 10)}] ${message}`));
-        }
+          syncWindow: {
+            mode,
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+          },
+          businessDayBackfill: {
+            holidayCalendar: 'US_FEDERAL',
+            businessDaysProcessed: businessDates.length,
+            businessDaysTotal: businessDates.length,
+          },
+          recordsCreated: 0,
+          errors: [],
+          credentialSource: null,
+          hasMore: false,
+          cursor: null,
+        });
       }
 
-      await pruneCompanyOperationalData(companyId);
+      const dayStart = new Date(businessDate);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const dayEnd = new Date(businessDate);
+      dayEnd.setUTCHours(23, 59, 59, 999);
+      const dayWindow = { startDate: dayStart, endDate: dayEnd, mode: 'manual' as const };
+      const dayResult = await syncInforM3OperationalData(
+        companyId,
+        frequency,
+        site,
+        dayWindow,
+        {
+          snapshotDateOverride: businessDate,
+          skipPrune: true,
+          programOffset: requestedProgramOffset,
+          programLimit: programBatchSize,
+        }
+      );
+
+      let hasMore = false;
+      let cursor: SyncCursor | null = null;
+      if (dayResult.nextProgramOffset !== null) {
+        hasMore = true;
+        cursor = {
+          mode,
+          backfillMonths: months,
+          businessDateIndex,
+          programOffset: dayResult.nextProgramOffset,
+          programBatchSize,
+        };
+      } else if (businessDateIndex + 1 < businessDates.length) {
+        hasMore = true;
+        cursor = {
+          mode,
+          backfillMonths: months,
+          businessDateIndex: businessDateIndex + 1,
+          programOffset: 0,
+          programBatchSize,
+        };
+      } else {
+        await pruneCompanyOperationalData(companyId);
+      }
 
       return NextResponse.json({
-        ok: errors.length === 0,
+        ok: dayResult.success,
         companyId,
         frequency,
         site,
@@ -200,15 +263,29 @@ export async function POST(request: NextRequest) {
         },
         businessDayBackfill: {
           holidayCalendar: 'US_FEDERAL',
-          businessDaysProcessed: businessDates.length,
+          businessDaysProcessed: businessDateIndex + (dayResult.nextProgramOffset === null ? 1 : 0),
+          businessDaysTotal: businessDates.length,
+          currentBusinessDate: businessDate.toISOString().slice(0, 10),
         },
-        recordsCreated,
-        errors,
-        credentialSource,
+        recordsCreated: dayResult.recordsCreated,
+        errors: dayResult.errors.map((message) => `[${businessDate.toISOString().slice(0, 10)}] ${message}`),
+        credentialSource: dayResult.credentialSource,
+        hasMore,
+        cursor,
       });
     }
 
-    const result = await syncInforM3OperationalData(companyId, frequency, site, syncWindow || undefined);
+    const result = await syncInforM3OperationalData(companyId, frequency, site, syncWindow || undefined, {
+      programOffset: requestedProgramOffset,
+      programLimit: programBatchSize,
+    });
+    const cursor: SyncCursor | null = result.hasMore
+      ? {
+          mode,
+          programOffset: result.nextProgramOffset || 0,
+          programBatchSize,
+        }
+      : null;
     return NextResponse.json({
       ok: result.success,
       companyId,
@@ -224,6 +301,8 @@ export async function POST(request: NextRequest) {
       recordsCreated: result.recordsCreated,
       errors: result.errors,
       credentialSource: result.credentialSource,
+      hasMore: result.hasMore,
+      cursor,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

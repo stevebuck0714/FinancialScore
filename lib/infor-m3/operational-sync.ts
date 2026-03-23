@@ -22,6 +22,9 @@ type InforOperationalSyncResult = {
   recordsCreated: number;
   errors: string[];
   credentialSource: 'database' | 'env' | null;
+  hasMore: boolean;
+  nextProgramOffset: number | null;
+  totalProgramRows: number;
 };
 
 type SyncMode = 'daily_overlap' | 'backfill' | 'manual';
@@ -33,6 +36,8 @@ type SyncWindow = {
 type SyncOptions = {
   snapshotDateOverride?: Date;
   skipPrune?: boolean;
+  programOffset?: number;
+  programLimit?: number;
 };
 
 type SitePolicy = 'required' | 'optional' | 'none';
@@ -1337,6 +1342,17 @@ export async function syncInforM3OperationalData(
     (row) => row.module.trim().toLowerCase() !== 'accounts'
   );
   const programRows = parsedProgramRows.length > 0 ? parsedProgramRows : DEFAULT_CSI_PROGRAM_ROWS;
+  const totalProgramRows = programRows.length;
+  const programOffset = Math.max(0, Math.floor(Number(options?.programOffset || 0)));
+  const requestedLimit =
+    options?.programLimit && Number.isFinite(options.programLimit) && Number(options.programLimit) > 0
+      ? Math.floor(Number(options.programLimit))
+      : totalProgramRows;
+  const programRowsToProcess = programRows.slice(programOffset, programOffset + requestedLimit);
+  const nextProgramOffset =
+    programOffset + programRowsToProcess.length < totalProgramRows
+      ? programOffset + programRowsToProcess.length
+      : null;
 
   if (programRows.length === 0) {
     return {
@@ -1344,6 +1360,9 @@ export async function syncInforM3OperationalData(
       recordsCreated: 0,
       errors: [],
       credentialSource: null,
+      hasMore: false,
+      nextProgramOffset: null,
+      totalProgramRows,
     };
   }
 
@@ -1357,10 +1376,13 @@ export async function syncInforM3OperationalData(
       recordsCreated: 0,
       errors: ['Infor M3 credentials are not configured for this company (no database/env credentials resolved).'],
       credentialSource: null,
+      hasMore: false,
+      nextProgramOffset: null,
+      totalProgramRows,
     };
   }
 
-  for (const row of programRows) {
+  for (const row of programRowsToProcess) {
     const requests: Array<{ transaction: string; endpointPath: string; headers?: Record<string, string> }> = [];
 
     if (row.endpointPath || (row.miProgram && row.miProgram.toUpperCase().startsWith('SL'))) {
@@ -1676,7 +1698,7 @@ export async function syncInforM3OperationalData(
     }
   }
 
-  if (!options?.skipPrune) {
+  if (!options?.skipPrune && nextProgramOffset === null) {
     await pruneCompanyOperationalData(companyId);
   }
 
@@ -1685,5 +1707,8 @@ export async function syncInforM3OperationalData(
     recordsCreated,
     errors,
     credentialSource,
+    hasMore: nextProgramOffset !== null,
+    nextProgramOffset,
+    totalProgramRows,
   };
 }
