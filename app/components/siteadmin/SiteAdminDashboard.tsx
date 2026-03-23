@@ -1088,7 +1088,7 @@ export default function SiteAdminDashboard(props: any) {
 
   const loadCompanyPrograms = async (companyId: string) => {
     try {
-      const response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`);
+      const response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`, { cache: 'no-store' });
       const data = await response.json();
       if (!response.ok || !data?.ok || !Array.isArray(data?.programs)) return;
       setCompanyPrograms(companyId, data.programs);
@@ -1112,6 +1112,10 @@ export default function SiteAdminDashboard(props: any) {
       if (!response.ok || !data?.ok) {
         throw new Error(data?.details || data?.error || 'Failed to save accounting programs');
       }
+      if (Array.isArray(data?.programs)) {
+        setCompanyPrograms(companyId, data.programs as InforAccountingProgramRow[]);
+      }
+      await loadCompanyPrograms(companyId);
       alert('Accounting programs saved for this company.');
     } catch (error: any) {
       alert(`Failed to save accounting programs: ${error?.message || 'Unknown error'}`);
@@ -2823,12 +2827,13 @@ export default function SiteAdminDashboard(props: any) {
                                                             Test Token
                                                           </button>
                                                           <button
-                                                            onClick={() =>
-                                                              saveInforM3Credentials?.(company.id, {
+                                                            onClick={async () => {
+                                                              await saveInforM3Credentials?.(company.id, {
                                                                 frequency: getCompanyOperationalSettings(company.id).frequency,
                                                                 pullTime: getCompanyOperationalSettings(company.id).pullTime,
-                                                              })
-                                                            }
+                                                              });
+                                                              await saveCompanyPrograms(company.id);
+                                                            }}
                                                             disabled={inforBusy}
                                                             style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                                           >
@@ -5023,12 +5028,13 @@ export default function SiteAdminDashboard(props: any) {
                                                 Test Token
                                               </button>
                                               <button
-                                                onClick={() =>
-                                                  saveInforM3Credentials?.(businessCompany.id, {
+                                                onClick={async () => {
+                                                  await saveInforM3Credentials?.(businessCompany.id, {
                                                     frequency: operationalSettings.frequency,
                                                     pullTime: operationalSettings.pullTime,
-                                                  })
-                                                }
+                                                  });
+                                                  await saveCompanyPrograms(businessCompany.id);
+                                                }}
                                                 disabled={inforBusy}
                                                 style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >

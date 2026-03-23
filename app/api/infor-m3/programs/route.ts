@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { getRequestedCompanyId, requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { normalizeInforSystem, type InforSystem } from '@/lib/infor-m3/system';
 
 type AccountingProgram = {
@@ -157,8 +157,12 @@ function normalizeTransactions(row: any): string[] {
   return legacyTransaction ? [legacyTransaction] : [];
 }
 
-function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean }): AccountingProgram[] {
+function sanitizePrograms(
+  value: unknown,
+  options?: { requireComplete?: boolean; inforSystem?: InforSystem }
+): AccountingProgram[] {
   const requireComplete = Boolean(options?.requireComplete);
+  const inforSystem = options?.inforSystem;
   if (!Array.isArray(value)) return [];
   const cleaned: AccountingProgram[] = [];
   const seen = new Set<string>();
@@ -195,6 +199,14 @@ function sanitizePrograms(value: unknown, options?: { requireComplete?: boolean 
     if (!module && !miProgram && !endpointPath && transactions.length === 0 && !cono && !divi) continue;
     if (!module || (!miProgram && !endpointPath)) {
       throw new Error('Each accounting program row must include module plus MI program or endpoint path.');
+    }
+    if (requireComplete && inforSystem === 'INFOR_CSI' && enabled) {
+      if (!mongooseConfig) {
+        throw new Error(`Mongoose Config is required for enabled CSI program row: ${module}.`);
+      }
+      if (!site) {
+        throw new Error(`Site is required for enabled CSI program row: ${module}.`);
+      }
     }
     const dedupeKey = `${module}::${miProgram || ''}::${endpointPath || ''}::${site || ''}::${transactions.join('|')}::${cono || ''}::${divi || ''}`;
     if (seen.has(dedupeKey)) {
@@ -306,6 +318,13 @@ async function resolveInforSystem(companyId: string): Promise<InforSystem> {
 
 export async function GET(request: NextRequest) {
   try {
+    const requestedCompanyId = getRequestedCompanyId(request);
+    if (!requestedCompanyId) {
+      return NextResponse.json(
+        { error: 'companyId is required.' },
+        { status: 400 }
+      );
+    }
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
 
     const connection = await prisma.accountingConnection.findUnique({
@@ -338,19 +357,26 @@ export async function GET(request: NextRequest) {
         ? effectivePrograms.map((program) => ({ ...program, sitePolicy: resolveCsiSitePolicy(program) }))
         : effectivePrograms;
 
-    return NextResponse.json({
-      ok: true,
-      companyId,
-      inforSystem,
-      programs: programsWithSitePolicy,
-      siteScopedIdos:
-        inforSystem === 'INFOR_CSI'
-          ? {
-              required: Array.from(SITE_REQUIRED_CSI_IDOS.values()),
-              optional: Array.from(SITE_OPTIONAL_CSI_IDOS.values()),
-            }
-          : undefined,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        companyId,
+        inforSystem,
+        programs: programsWithSitePolicy,
+        siteScopedIdos:
+          inforSystem === 'INFOR_CSI'
+            ? {
+                required: Array.from(SITE_REQUIRED_CSI_IDOS.values()),
+                optional: Array.from(SITE_OPTIONAL_CSI_IDOS.values()),
+              }
+            : undefined,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        },
+      }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     const status = message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 500;
@@ -367,9 +393,16 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const requestedCompanyId = getRequestedCompanyId(request, body);
+    if (!requestedCompanyId) {
+      return NextResponse.json(
+        { error: 'companyId is required.' },
+        { status: 400 }
+      );
+    }
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
     const inforSystem = await resolveInforSystem(companyId);
-    const programs = sanitizePrograms(body.programs, { requireComplete: true });
+    const programs = sanitizePrograms(body.programs, { requireComplete: true, inforSystem });
 
     const existing = await prisma.accountingConnection.findUnique({
       where: {
@@ -394,6 +427,7 @@ export async function POST(request: NextRequest) {
         : {};
     const existingScopedPrograms = sanitizePrograms(bySystem[inforSystem] ?? existingMetadata.accountingPrograms, {
       requireComplete: false,
+      inforSystem,
     });
     const programsToPersist = mergePreservingCsiFields(programs, existingScopedPrograms);
 
