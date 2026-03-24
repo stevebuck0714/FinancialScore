@@ -1346,6 +1346,21 @@ function FinancialScorePage() {
     return raw;
   };
 
+  const getClassificationDisplayLabel = (value: unknown): string => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Other';
+    const compact = raw.toUpperCase();
+    if (compact === 'R') return 'Revenue';
+    if (compact === 'E') return 'Expense';
+    if (compact === 'A') return 'Asset';
+    if (compact === 'L') return 'Liability';
+    if (compact === 'O') return 'Other';
+    if (compact === 'Q') return 'Equity';
+    if (compact === 'EQUITY') return 'Equity';
+    if (compact === 'INCOME') return 'Revenue';
+    return raw;
+  };
+
   const normalizeMappingsForUi = (mappings: any[]): any[] =>
     (Array.isArray(mappings) ? mappings : []).map((m: any) => ({
       ...m,
@@ -10517,7 +10532,6 @@ function FinancialScorePage() {
             );
             const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
             const erpCaoEnabledSystems = ['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'];
-            const erpCaoFutureSystems = ['ACUMATICA', 'DYNAMICS', 'DYNAMICS365', 'SAGE_INTACCT', 'SAGE'];
             const showErpCaoLoadPanel = erpCaoEnabledSystems.includes(selectedSystemNormalized);
             const showProcessButton =
               showCsvProcessButton ||
@@ -10552,9 +10566,6 @@ function FinancialScorePage() {
                     </div>
                     <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '8px' }}>
                       Load monthly {selectedAccountingSystemLabel || 'ERP'} Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#a16207', marginBottom: '8px' }}>
-                      Future-ready connector list: {erpCaoFutureSystems.join(', ')}.
                     </div>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
@@ -10803,7 +10814,7 @@ function FinancialScorePage() {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {Object.entries(
                           aiMappings.reduce((acc: any, m) => {
-                            const type = m.qbAccountClassification || 'Other';
+                            const type = getClassificationDisplayLabel(m.qbAccountClassification);
                             acc[type] = (acc[type] || 0) + 1;
                             return acc;
                           }, {})
@@ -11334,6 +11345,27 @@ function FinancialScorePage() {
                             ...Array.from(plValues.entries()),
                             ...Array.from(bsValues.entries()),
                           ]);
+                          const latestMasterMonthRow = (() => {
+                            const rows = Array.isArray((masterData as any)?.monthlyData)
+                              ? (masterData as any).monthlyData
+                              : [];
+                            if (rows.length === 0) return null;
+                            return rows[rows.length - 1] as Record<string, unknown>;
+                          })();
+
+                          const getLatestValueByTargetField = (targetField: unknown): number | undefined => {
+                            if (!latestMasterMonthRow) return undefined;
+                            const normalizedTarget = normalizeMappingTargetField(targetField);
+                            if (!normalizedTarget || normalizedTarget === 'unmapped') return undefined;
+                            if (!(normalizedTarget in latestMasterMonthRow)) return undefined;
+                            const value = latestMasterMonthRow[normalizedTarget];
+                            if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+                            if (typeof value === 'string') {
+                              const parsed = parseAmount(value);
+                              return Number.isFinite(parsed) ? parsed : undefined;
+                            }
+                            return undefined;
+                          };
 
                           return (hasCsvData && csvTrialBalanceData
                           ? csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
@@ -11367,14 +11399,18 @@ function FinancialScorePage() {
                               const byId = mapping.qbAccountId ? mergedValues.get(`id:${String(mapping.qbAccountId).trim()}`) : undefined;
                               const byCode = mapping.qbAccountCode ? mergedValues.get(`id:${String(mapping.qbAccountCode).trim()}`) : undefined;
                               const byName = mapping.qbAccount ? mergedValues.get(`name:${String(mapping.qbAccount).toLowerCase().trim()}`) : undefined;
+                              const byTargetField = getLatestValueByTargetField(mapping.targetField);
                               const latestValue =
                                 byId !== undefined ? byId :
                                 byCode !== undefined ? byCode :
                                 byName !== undefined ? byName :
+                                byTargetField !== undefined ? byTargetField :
                                 null;
                               return (
                               <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{mapping.qbAccountClassification || mapping.sourceStatus || 'N/A'}</td>
+                                <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
+                                  {getClassificationDisplayLabel(mapping.qbAccountClassification || mapping.sourceStatus || 'N/A')}
+                                </td>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{mapping.qbAccountCode || mapping.qbAccountId || 'N/A'}</td>
                                 <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
