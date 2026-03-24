@@ -183,7 +183,15 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
-    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
+    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, {
+      companyId: requestedCompanyId,
+    });
+    if (companyId !== requestedCompanyId) {
+      return NextResponse.json(
+        { error: 'Forbidden: requested company is not authorized for this session.' },
+        { status: 403 }
+      );
+    }
 
     const connection = await prisma.accountingConnection.findUnique({
       where: {
