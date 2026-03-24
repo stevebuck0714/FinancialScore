@@ -564,6 +564,10 @@ type SlCustomersKeyset = {
   custNum: string;
   custSeq: string;
 };
+const SLARTRANS_KEYSET_PREFIX = 'slartrans-keyset:';
+type SlArtransKeyset = {
+  rowPointer: string;
+};
 
 function encodeSlInvHdrsKeysetBookmark(value: SlInvHdrsKeyset): string {
   const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
@@ -650,6 +654,44 @@ function buildSlCustomersKeysetBookmarkFromRecords(records: Record<string, unkno
   if (!custNum) return null;
   const custSeq = pickString(lastRecord, ['CustSeq', 'customerSeq']) || '0';
   return encodeSlCustomersKeysetBookmark({ custNum: custNum.trim(), custSeq: custSeq.trim() || '0' });
+}
+
+function encodeSlArtransKeysetBookmark(value: SlArtransKeyset): string {
+  const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+  return `${SLARTRANS_KEYSET_PREFIX}${encoded}`;
+}
+
+function decodeSlArtransKeysetBookmark(value: string | null): SlArtransKeyset | null {
+  if (!value || !value.startsWith(SLARTRANS_KEYSET_PREFIX)) return null;
+  const encoded = value.slice(SLARTRANS_KEYSET_PREFIX.length).trim();
+  if (!encoded) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Partial<SlArtransKeyset>;
+    if (!decoded || typeof decoded.rowPointer !== 'string' || !decoded.rowPointer.trim()) return null;
+    return { rowPointer: decoded.rowPointer.trim() };
+  } catch {
+    return null;
+  }
+}
+
+function applySlArtransKeysetCursor(endpointPath: string, keyset: SlArtransKeyset): string {
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  const existingFilter = params.get('filter');
+  const continuationCondition = `(RowPointer > '${keyset.rowPointer}')`;
+  params.set('filter', existingFilter ? `(${existingFilter}) and ${continuationCondition}` : continuationCondition);
+  if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'RowPointer asc');
+  params.delete('bookmark');
+  const next = params.toString();
+  return next ? `${path}?${next}` : path;
+}
+
+function buildSlArtransKeysetBookmarkFromRecords(records: Record<string, unknown>[]): string | null {
+  if (!records.length) return null;
+  const lastRecord = records[records.length - 1];
+  const rowPointer = pickString(lastRecord, ['RowPointer', '_ItemId']);
+  if (!rowPointer) return null;
+  return encodeSlArtransKeysetBookmark({ rowPointer: rowPointer.trim() });
 }
 
 function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
@@ -1615,6 +1657,7 @@ export async function syncInforM3OperationalData(
       const inputBookmark = typeof options?.bookmark === 'string' && options.bookmark.trim() ? options.bookmark.trim() : null;
       const inputKeyset = decodeSlInvHdrsKeysetBookmark(inputBookmark);
       const inputCustomersKeyset = decodeSlCustomersKeysetBookmark(inputBookmark);
+      const inputArtransKeyset = decodeSlArtransKeysetBookmark(inputBookmark);
       if (
         absoluteProgramOffset === programOffset &&
         reqIndex === requestStartIndex &&
@@ -1622,10 +1665,13 @@ export async function syncInforM3OperationalData(
       ) {
         const isSlInvHdrs = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLINVHDRS';
         const isSlCustomers = moduleType === 'customer' && String(row.miProgram || '').trim().toUpperCase() === 'SLCUSTOMERS';
+        const isSlArtrans = moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
         if (isSlInvHdrs && inputKeyset) {
           initialEndpointPath = applySlInvHdrsKeysetCursor(sourceWindowBaseEndpointPath, inputKeyset);
         } else if (isSlCustomers && inputCustomersKeyset) {
           initialEndpointPath = applySlCustomersKeysetCursor(sourceWindowBaseEndpointPath, inputCustomersKeyset);
+        } else if (isSlArtrans && inputArtransKeyset) {
+          initialEndpointPath = applySlArtransKeysetCursor(sourceWindowBaseEndpointPath, inputArtransKeyset);
         } else {
           initialEndpointPath = appendBookmarkToEndpoint(sourceWindowBaseEndpointPath, inputBookmark);
         }
@@ -1807,6 +1853,21 @@ export async function syncInforM3OperationalData(
             if (keysetBookmark) {
               continuationBookmark = keysetBookmark;
             } else if (inputCustomersKeyset && inputBookmark) {
+              continuationBookmark = inputBookmark;
+            }
+          }
+          const isSlArtrans = moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
+          const shouldForceArtransKeysetContinuation =
+            isSlArtrans &&
+            (
+              Boolean(inputArtransKeyset) ||
+              (inputBookmark && continuationBookmark && continuationBookmark === inputBookmark)
+            );
+          if (shouldForceArtransKeysetContinuation) {
+            const keysetBookmark = buildSlArtransKeysetBookmarkFromRecords(rawRecords);
+            if (keysetBookmark) {
+              continuationBookmark = keysetBookmark;
+            } else if (inputArtransKeyset && inputBookmark) {
               continuationBookmark = inputBookmark;
             }
           }
