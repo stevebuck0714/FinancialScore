@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requestInforM3AccessToken } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { normalizeInforSystem } from '@/lib/infor-m3/system';
+import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,8 +16,13 @@ function redact(value: string | undefined): string {
 export async function GET(request: NextRequest) {
   try {
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { accountingSystem: true },
+    });
+    const inforSystem = normalizeInforSystem(company?.accountingSystem);
 
-    const { credentials, source } = await getInforM3CredentialsWithOptionalEnvFallback(companyId);
+    const { credentials, source } = await getInforM3CredentialsWithOptionalEnvFallback(companyId, inforSystem);
     if (!credentials) {
       return NextResponse.json(
         {

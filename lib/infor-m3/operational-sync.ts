@@ -781,6 +781,16 @@ function shouldRetryWithoutSourceWindowHint(message: string): boolean {
   );
 }
 
+function shouldRetryWithoutMongooseConfig(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes('invalidcredentials') ||
+    normalized.includes('invalid credentials') ||
+    normalized.includes('error authenticating user')
+  );
+}
+
 function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'other' {
   const m = moduleName.trim().toLowerCase();
   if (m === 'cash' || m.includes('cash') || m.includes('bank')) return 'cash';
@@ -1730,6 +1740,21 @@ export async function syncInforM3OperationalData(
           effectiveEndpointPath = fallbackInitialPath;
         }
       }
+      if (
+        !isTransportAndPayloadSuccess(response) &&
+        req.headers?.['X-Infor-MongooseConfig'] &&
+        shouldRetryWithoutMongooseConfig(extractResponseMessage(response.body))
+      ) {
+        const headersWithoutMongoose = { ...(req.headers || {}) };
+        delete headersWithoutMongoose['X-Infor-MongooseConfig'];
+        const retryWithoutMongooseResponse = await callInforIonApi(credentials, effectiveEndpointPath, {
+          timeoutMs: requestTimeoutMs,
+          headers: Object.keys(headersWithoutMongoose).length > 0 ? headersWithoutMongoose : undefined,
+        });
+        if (isTransportAndPayloadSuccess(retryWithoutMongooseResponse)) {
+          response = retryWithoutMongooseResponse;
+        }
+      }
       // Some CSI environments expose SLAptrxp/SLAptrxps with a broken projection that references
       // vendor_bank_id. Retry with a narrowed property list first, then fallback to SLAptrx.
       const initialMessage = extractResponseMessage(response.body);
@@ -1825,6 +1850,7 @@ export async function syncInforM3OperationalData(
       let rawRecords = extractRecords(response.body);
       let pagesFetched = 1;
       let paginationTruncated = false;
+      let paginationBookmarkStalled = false;
       const isCsiLoadEndpoint = /\/IDORequestService\/ido\/load\//i.test(effectiveEndpointPath);
       if (isCsiLoadEndpoint && isTransportAndPayloadSuccess(response)) {
         let paginationState = extractPagingState(response.body);
@@ -1833,7 +1859,8 @@ export async function syncInforM3OperationalData(
           paginationState.bookmark &&
           pagesFetched < MAX_CSI_PAGES_PER_REQUEST
         ) {
-          const nextEndpointPath = appendBookmarkToEndpoint(effectiveEndpointPath, paginationState.bookmark);
+          const priorBookmark = paginationState.bookmark;
+          const nextEndpointPath = appendBookmarkToEndpoint(effectiveEndpointPath, priorBookmark);
           const nextResponse = await callInforIonApi(credentials, nextEndpointPath, {
             timeoutMs: requestTimeoutMs,
             headers: req.headers,
@@ -1848,6 +1875,15 @@ export async function syncInforM3OperationalData(
           effectiveEndpointPath = nextEndpointPath;
           pagesFetched += 1;
           paginationState = extractPagingState(nextResponse.body);
+          if (
+            paginationState.moreRowsExist &&
+            paginationState.bookmark &&
+            paginationState.bookmark === priorBookmark
+          ) {
+            paginationBookmarkStalled = true;
+            paginationTruncated = true;
+            break;
+          }
         }
         if (pagesFetched >= MAX_CSI_PAGES_PER_REQUEST && paginationState.moreRowsExist && paginationState.bookmark) {
           paginationTruncated = true;
@@ -1898,11 +1934,31 @@ export async function syncInforM3OperationalData(
               continuationBookmark = inputBookmark;
             }
           }
-          continuation = {
-            programOffset: absoluteProgramOffset,
-            requestOffset: reqIndex,
-            bookmark: continuationBookmark,
-          };
+          const bookmarkDidNotAdvance =
+            Boolean(inputBookmark) &&
+            Boolean(continuationBookmark) &&
+            continuationBookmark === inputBookmark;
+          if (paginationBookmarkStalled && bookmarkDidNotAdvance) {
+            // Avoid infinite cursor loops when CSI keeps returning the same bookmark.
+            if (nextProgramOffset !== null) {
+              continuation = {
+                programOffset: nextProgramOffset,
+                requestOffset: 0,
+                bookmark: null,
+              };
+            } else {
+              continuation = null;
+            }
+            errors.push(
+              `${row.module}/${row.miProgram || row.endpointPath || req.transaction}: CSI pagination bookmark did not advance; skipping continuation for this program to avoid infinite loop.`
+            );
+          } else {
+            continuation = {
+              programOffset: absoluteProgramOffset,
+              requestOffset: reqIndex,
+              bookmark: continuationBookmark,
+            };
+          }
         }
       }
       // AP SLAptrx* payloads can succeed but return 0 rows on one IDO variant.

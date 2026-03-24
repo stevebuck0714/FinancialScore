@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireCompanyAccess } from '@/lib/tenant-security';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsForCompany } from '@/lib/infor-m3/credentials';
+import { normalizeInforSystem } from '@/lib/infor-m3/system';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,9 +65,32 @@ function selectAccountsSource(
 function safeRecordCount(body: unknown): number {
   if (!body || typeof body !== 'object') return 0;
   const data = body as Record<string, unknown>;
-  if (Array.isArray(data.results)) return data.results.length;
-  if (Array.isArray(data.records)) return data.records.length;
-  if (Array.isArray(data.items)) return data.items.length;
+
+  const directArrayKeys = [
+    'results',
+    'records',
+    'items',
+    'Results',
+    'Records',
+    'Items',
+    'Item',
+    'IDOItems',
+    'Data',
+    'data',
+  ];
+  for (const key of directArrayKeys) {
+    if (Array.isArray(data[key])) return (data[key] as unknown[]).length;
+  }
+
+  const nestedKeys = ['response', 'Response', 'result', 'Result', 'data', 'Data'];
+  for (const key of nestedKeys) {
+    const nested = data[key];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const nestedCount = safeRecordCount(nested);
+      if (nestedCount > 0) return nestedCount;
+    }
+  }
+
   return 0;
 }
 
@@ -146,7 +170,12 @@ export async function POST(request: NextRequest) {
     const context = await requireCompanyAccess(companyId);
     pulledByEmail = context.email;
 
-    const credentials = await getInforM3CredentialsForCompany(companyId);
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { accountingSystem: true },
+    });
+    const inforSystem = normalizeInforSystem(company?.accountingSystem);
+    const credentials = await getInforM3CredentialsForCompany(companyId, inforSystem);
     if (!credentials) {
       return NextResponse.json(
         { error: 'Infor M3 credentials are not configured for this company.' },
@@ -191,6 +220,36 @@ export async function POST(request: NextRequest) {
 
     const statusText = result.ok ? 'success' : 'error';
     const imported = result.ok ? safeRecordCount(result.body) : 0;
+    const pulledAtIso = new Date().toISOString();
+    const payloadMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiFinancialPayload' : 'inforM3FinancialPayload';
+
+    const nextMetadata: Record<string, unknown> = {
+      ...metadata,
+    };
+    if (result.ok) {
+      const normalizedPayload: Record<string, unknown> = {
+        source: 'monthly_coa_pull',
+        pulledAt: pulledAtIso,
+        coaResponse: result.body,
+        metadata: {
+          sourceType: selectedSource.type,
+          sourceModule: selectedSource.sourceModule,
+          endpointPath,
+        },
+      };
+      const endpointLower = endpointPath.toLowerCase();
+      if (selectedSource.sourceModule === 'GL' && endpointLower.includes('/slcharts')) {
+        normalizedPayload.glResponses = [
+          {
+            module: 'GL',
+            miProgram: 'SLCHARTS',
+            response: result.body,
+            createdAt: pulledAtIso,
+          },
+        ];
+      }
+      nextMetadata[payloadMetadataKey] = normalizedPayload;
+    }
 
     await prisma.apiSyncLog.create({
       data: {
@@ -206,6 +265,8 @@ export async function POST(request: NextRequest) {
               program: selectedSource.type === 'mi' ? selectedSource.value : null,
               sourceType: selectedSource.type,
               sourceModule: selectedSource.sourceModule,
+              endpointPath,
+              response: result.body,
             }
           : {
               pulledByEmail: context.email,
@@ -218,14 +279,28 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await prisma.accountingConnection.updateMany({
+    await prisma.accountingConnection.upsert({
       where: {
-        companyId,
-        platform: 'INFOR_M3',
+        companyId_platform: {
+          companyId,
+          platform: 'INFOR_M3',
+        },
       },
-      data: {
+      update: {
+        connectionMetadata: nextMetadata as any,
         lastSyncAt: new Date(),
         status: result.ok ? 'ACTIVE' : 'ERROR',
+        errorMessage: result.ok ? null : 'Monthly COA pull failed. Check API sync log details.',
+      },
+      create: {
+        companyId,
+        platform: 'INFOR_M3',
+        status: result.ok ? 'ACTIVE' : 'ERROR',
+        platformVersion: 'ionapi-1.0',
+        autoSync: false,
+        syncFrequency: 'manual',
+        connectionMetadata: nextMetadata as any,
+        lastSyncAt: new Date(),
         errorMessage: result.ok ? null : 'Monthly COA pull failed. Check API sync log details.',
       },
     });

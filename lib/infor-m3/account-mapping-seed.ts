@@ -108,12 +108,30 @@ function inferClassification(raw: string): string | null {
   return raw;
 }
 
+function getInforCoaRoots(payload: unknown): unknown[] {
+  const root = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
+  if (!root) return [payload];
+
+  const glResponses = Array.isArray(root.glResponses) ? root.glResponses : [];
+  const chartRoots: unknown[] = [];
+  for (const entry of glResponses) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    const program = String(row.miProgram || row.program || '').trim().toUpperCase();
+    if (program === 'SLCHARTS') {
+      chartRoots.push(row.response ?? row);
+    }
+  }
+  if (chartRoots.length > 0) return chartRoots;
+  return [payload];
+}
+
 function tryExtractAccount(record: Record<string, unknown>): SourceAccount | null {
   const accountId = getCaseInsensitiveValue(record, ID_KEYS);
   const accountCode = getCaseInsensitiveValue(record, CODE_KEYS) || null;
-  const accountName =
-    getCaseInsensitiveValue(record, NAME_KEYS) ||
-    (accountCode ? `Account ${accountCode}` : '');
+  const accountName = getCaseInsensitiveValue(record, NAME_KEYS);
   const classRaw = getCaseInsensitiveValue(record, CLASS_KEYS);
   const classification = inferClassification(classRaw);
 
@@ -129,11 +147,11 @@ function tryExtractAccount(record: Record<string, unknown>): SourceAccount | nul
 }
 
 function extractAccountsFromPayload(payload: unknown): SourceAccount[] {
-  const queue: unknown[] = [payload];
+  const queue: unknown[] = getInforCoaRoots(payload);
   const extracted: SourceAccount[] = [];
   let guard = 0;
 
-  while (queue.length > 0 && guard < 100000) {
+  while (queue.length > 0 && guard < 25000) {
     guard += 1;
     const node = queue.shift();
     if (!node) continue;
@@ -172,6 +190,14 @@ function extractAccountsFromPayload(payload: unknown): SourceAccount[] {
   }
 
   return Array.from(deduped.values());
+}
+
+async function runInChunks<T>(items: T[], chunkSize: number, worker: (item: T) => Promise<void>): Promise<void> {
+  const safeChunkSize = Math.max(1, Math.floor(chunkSize));
+  for (let i = 0; i < items.length; i += safeChunkSize) {
+    const chunk = items.slice(i, i + safeChunkSize);
+    await Promise.all(chunk.map(worker));
+  }
 }
 
 export async function seedInforAccountMappings(companyId: string, payload: unknown): Promise<SeedSummary> {
@@ -215,6 +241,25 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   let unchanged = 0;
   const newAccounts: string[] = [];
   const changedAccounts: string[] = [];
+  const rowsToCreate: Array<{
+    companyId: string;
+    qbAccount: string;
+    qbAccountId: string;
+    qbAccountCode: string | null;
+    qbAccountClassification: string | null;
+    targetField: string;
+    allocationMethod: string;
+    confidence: string;
+  }> = [];
+  const rowsToUpdate: Array<{
+    id: string;
+    data: {
+      qbAccount: string;
+      qbAccountId: string;
+      qbAccountCode: string | null;
+      qbAccountClassification: string | null;
+    };
+  }> = [];
   const sourceIdSet = new Set(sourceAccounts.map((a) => a.accountId.trim().toLowerCase()));
   const sourceNameSet = new Set(sourceAccounts.map((a) => a.accountName.trim().toLowerCase()));
 
@@ -226,17 +271,15 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
     const existingRow = existingById || existingByName;
 
     if (!existingRow) {
-      await prisma.accountMapping.create({
-        data: {
-          companyId,
-          qbAccount: source.accountName,
-          qbAccountId: source.accountId,
-          qbAccountCode: source.accountCode,
-          qbAccountClassification: source.classification,
-          targetField: 'unmapped',
-          allocationMethod: 'manual',
-          confidence: 'low',
-        },
+      rowsToCreate.push({
+        companyId,
+        qbAccount: source.accountName,
+        qbAccountId: source.accountId,
+        qbAccountCode: source.accountCode,
+        qbAccountClassification: source.classification,
+        targetField: 'unmapped',
+        allocationMethod: 'manual',
+        confidence: 'low',
       });
       created += 1;
       newAccounts.push(source.accountName);
@@ -260,12 +303,24 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
       continue;
     }
 
-    await prisma.accountMapping.update({
-      where: { id: existingRow.id },
+    rowsToUpdate.push({
+      id: existingRow.id,
       data: next,
     });
     updated += 1;
     changedAccounts.push(source.accountName);
+  }
+
+  if (rowsToCreate.length > 0) {
+    await prisma.accountMapping.createMany({ data: rowsToCreate as any });
+  }
+  if (rowsToUpdate.length > 0) {
+    await runInChunks(rowsToUpdate, 25, async (row) => {
+      await prisma.accountMapping.update({
+        where: { id: row.id },
+        data: row.data,
+      });
+    });
   }
 
   const inactiveAccounts = existing

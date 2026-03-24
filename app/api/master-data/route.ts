@@ -26,10 +26,16 @@ export async function GET(request: NextRequest) {
     });
 
     if (!latestRecord || !latestRecord.monthlyData || latestRecord.monthlyData.length === 0) {
-      return NextResponse.json(
-        { error: 'Master data not found for this company' },
-        { status: 404 }
-      );
+      // For ERP COA mapping-first workflows (for example CSI), it is valid to have
+      // account mappings loaded before monthly financial snapshots exist.
+      // Return an empty successful payload so the UI can keep operating.
+      return NextResponse.json({
+        success: true,
+        monthlyData: [],
+        expenseCategories: [],
+        _source: 'database',
+        months: 0,
+      });
     }
 
     // Format monthly data to match expected structure

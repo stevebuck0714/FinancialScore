@@ -4974,12 +4974,47 @@ function FinancialScorePage() {
     setMappingSourceSummary(data.sourceSummary || null);
   };
 
+  const resolveActiveCompanyIdForErpCaoLoad = () => {
+    const stateCompanyId = String(selectedCompanyId || '').trim();
+    if (stateCompanyId) return stateCompanyId;
+
+    const userCompanyId = String(currentUser?.companyId || '').trim();
+    if (userCompanyId) return userCompanyId;
+
+    if (typeof window !== 'undefined') {
+      const storedCompanyId = String(localStorage.getItem('fs_selectedCompanyId') || '').trim();
+      if (storedCompanyId) return storedCompanyId;
+
+      const activeCompanyCookie = document.cookie
+        .split('; ')
+        .find((entry) => entry.startsWith('fs_active_company='))
+        ?.split('=')[1];
+      const cookieCompanyId = String(activeCompanyCookie || '').trim();
+      if (cookieCompanyId) return decodeURIComponent(cookieCompanyId);
+    }
+
+    const firstCompanyId = String((Array.isArray(companies) && companies[0]?.id) || '').trim();
+    return firstCompanyId || '';
+  };
+
   const loadErpCaoInDataMapping = async () => {
-    if (!selectedCompanyId) {
+    const companyIdForLoad = resolveActiveCompanyIdForErpCaoLoad();
+    console.log('[ERP COA] Load button clicked', {
+      selectedCompanyId,
+      resolvedCompanyId: companyIdForLoad,
+      throughMonth: erpCaoThroughMonth,
+      selectedAccountingSystem,
+    });
+    if (!companyIdForLoad) {
+      console.warn('[ERP COA] Blocked before POST: missing companyId');
       alert('Please select a company first.');
       return;
     }
+    if (companyIdForLoad !== selectedCompanyId) {
+      setSelectedCompanyId(companyIdForLoad);
+    }
     if (!/^\d{4}-\d{2}$/.test(erpCaoThroughMonth)) {
+      console.warn('[ERP COA] Blocked before POST: invalid throughMonth', { throughMonth: erpCaoThroughMonth });
       alert('Select a valid Through month first (YYYY-MM).');
       return;
     }
@@ -4987,31 +5022,40 @@ function FinancialScorePage() {
       !selectedAccountingSystem ||
       !['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'].includes(String(selectedAccountingSystem).toUpperCase())
     ) {
+      console.warn('[ERP COA] Blocked before POST: unsupported accounting system', { selectedAccountingSystem });
       alert('ERP COA Load is currently available for QuickBooks Desktop and Infor M3.');
       return;
     }
 
     setErpCaoLoading(true);
     try {
+      console.log('[ERP COA] Sending POST /api/erp/coa-load', {
+        companyId: companyIdForLoad,
+        throughMonth: erpCaoThroughMonth,
+      });
       const response = await fetch('/api/erp/coa-load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId: selectedCompanyId,
+          companyId: companyIdForLoad,
           throughMonth: erpCaoThroughMonth,
         }),
       });
       const result = await response.json().catch(() => ({}));
+      console.log('[ERP COA] Response received', { status: response.status, ok: response.ok, result });
       if (!response.ok || !result?.ok) {
         throw new Error(result?.details || result?.error || 'Failed to load ERP COA data');
       }
 
-      await refreshCompanyMappings(selectedCompanyId);
       setQbLastSync(new Date());
       alert(
         `ERP COA load complete. Through month: ${erpCaoThroughMonth}. ` +
           `${typeof result?.recordsImported === 'number' ? `${result.recordsImported} monthly records processed.` : ''}`
       );
+      // Refresh mappings in the background so the CTA does not look hung.
+      refreshCompanyMappings(companyIdForLoad).catch((refreshError) => {
+        console.error('[ERP COA] Background mapping refresh failed', refreshError);
+      });
     } catch (error: any) {
       alert(`ERP COA load failed: ${error?.message || 'Unknown error'}`);
     } finally {
@@ -11353,16 +11397,51 @@ function FinancialScorePage() {
                             return rows[rows.length - 1] as Record<string, unknown>;
                           })();
 
-                          const getLatestValueByTargetField = (targetField: unknown): number | undefined => {
+                          const getLatestValueByTargetField = (targetField: unknown, sourceClassification?: unknown): number | undefined => {
                             if (!latestMasterMonthRow) return undefined;
                             const normalizedTarget = normalizeMappingTargetField(targetField);
-                            if (!normalizedTarget || normalizedTarget === 'unmapped') return undefined;
-                            if (!(normalizedTarget in latestMasterMonthRow)) return undefined;
-                            const value = latestMasterMonthRow[normalizedTarget];
-                            if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
-                            if (typeof value === 'string') {
-                              const parsed = parseAmount(value);
-                              return Number.isFinite(parsed) ? parsed : undefined;
+                            const classification = String(sourceClassification || '').trim().toUpperCase();
+                            const tryGetNumeric = (key: string): number | undefined => {
+                              if (!key || !(key in latestMasterMonthRow)) return undefined;
+                              const value = latestMasterMonthRow[key];
+                              if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+                              if (typeof value === 'string') {
+                                const parsed = parseAmount(value);
+                                return Number.isFinite(parsed) ? parsed : undefined;
+                              }
+                              return undefined;
+                            };
+
+                            if (normalizedTarget && normalizedTarget !== 'unmapped') {
+                              const direct = tryGetNumeric(normalizedTarget);
+                              if (direct !== undefined) return direct;
+
+                              // Sector-specific fields roll up to core monthly fields in master data.
+                              if (normalizedTarget.startsWith('rev_')) {
+                                const revTotal = tryGetNumeric('revenue');
+                                if (revTotal !== undefined) return revTotal;
+                              }
+                              if (normalizedTarget.startsWith('cogs_')) {
+                                const cogsTotal = tryGetNumeric('cogsTotal');
+                                if (cogsTotal !== undefined) return cogsTotal;
+                              }
+                            }
+
+                            // Final source-type fallback for non-QB systems where account-level row matching is absent.
+                            if (classification === 'R' || classification === 'INCOME' || classification === 'REVENUE') {
+                              return tryGetNumeric('revenue');
+                            }
+                            if (classification === 'E' || classification === 'EXPENSE') {
+                              return tryGetNumeric('expense');
+                            }
+                            if (classification === 'A' || classification === 'ASSET') {
+                              return tryGetNumeric('totalAssets');
+                            }
+                            if (classification === 'L' || classification === 'LIABILITY') {
+                              return tryGetNumeric('totalLiab');
+                            }
+                            if (classification === 'Q' || classification === 'EQUITY') {
+                              return tryGetNumeric('totalEquity');
                             }
                             return undefined;
                           };
@@ -11399,7 +11478,7 @@ function FinancialScorePage() {
                               const byId = mapping.qbAccountId ? mergedValues.get(`id:${String(mapping.qbAccountId).trim()}`) : undefined;
                               const byCode = mapping.qbAccountCode ? mergedValues.get(`id:${String(mapping.qbAccountCode).trim()}`) : undefined;
                               const byName = mapping.qbAccount ? mergedValues.get(`name:${String(mapping.qbAccount).toLowerCase().trim()}`) : undefined;
-                              const byTargetField = getLatestValueByTargetField(mapping.targetField);
+                              const byTargetField = getLatestValueByTargetField(mapping.targetField, mapping.qbAccountClassification);
                               const latestValue =
                                 byId !== undefined ? byId :
                                 byCode !== undefined ? byCode :

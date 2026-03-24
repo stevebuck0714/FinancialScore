@@ -236,28 +236,17 @@ export default function AccountMappingTable({
   };
 
   const getGroupingClassification = (mapping: AccountMapping) => {
-    // Respect explicit user/AI target overrides for section placement.
-    // When a target field is selected, rows should render in that section,
-    // not stay locked to the source account classification.
-    const normalizedTarget = canonicalizeTargetField(mapping.targetField).trim().toLowerCase();
-    const hasSelectedTarget = normalizedTarget !== '' && normalizedTarget !== 'unmapped';
-    if (hasSelectedTarget) {
-      const targetClassification = normalizeClassification(
-        undefined,
-        mapping.qbAccount,
-        canonicalizeTargetField(mapping.targetField),
-      );
-      if (targetClassification !== 'other') return targetClassification;
-    }
-
-    // Group by source account type first so accounts stay in their native section
-    // when no target field has been selected yet.
+    // Always group by source account type first so sections reflect the native
+    // accounting classification (Revenue/COGS/Expense/Asset/Liability/Equity),
+    // even when target fields are temporarily mis-mapped.
     const sourceClassification = normalizeClassification(
       mapping.qbAccountClassification,
       mapping.qbAccount,
       undefined,
     );
     if (sourceClassification !== 'other') return sourceClassification;
+
+    // Fallback to target field classification only when source is unknown.
     return normalizeClassification(
       mapping.qbAccountClassification,
       mapping.qbAccount,

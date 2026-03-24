@@ -321,6 +321,17 @@ function mergeWithCsiDefaults(programs: AccountingProgram[]): AccountingProgram[
   return [...mergedDefaults, ...Array.from(byProgram.values()), ...passthrough];
 }
 
+function inferInforSystemFromPrograms(programs: AccountingProgram[]): InforSystem {
+  for (const program of programs) {
+    const endpointPath = String(program.endpointPath || '').toLowerCase();
+    const miProgram = String(program.miProgram || '').trim().toUpperCase();
+    if (endpointPath.includes('/csi/') || miProgram.startsWith('SL')) {
+      return 'INFOR_CSI';
+    }
+  }
+  return 'INFOR_M3';
+}
+
 export const dynamic = 'force-dynamic';
 
 async function resolveInforSystem(companyId: string): Promise<InforSystem> {
@@ -428,6 +439,8 @@ export async function POST(request: NextRequest) {
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
     const inforSystem = await resolveInforSystem(companyId);
     const programs = sanitizePrograms(body.programs, { requireComplete: true, inforSystem });
+    const inferredSystem = inferInforSystemFromPrograms(programs);
+    const targetSystem: InforSystem = inferredSystem || inforSystem;
 
     const existing = await prisma.accountingConnection.findUnique({
       where: {
@@ -450,9 +463,9 @@ export async function POST(request: NextRequest) {
       existingMetadata.accountingProgramsBySystem && typeof existingMetadata.accountingProgramsBySystem === 'object'
         ? (existingMetadata.accountingProgramsBySystem as Record<string, unknown>)
         : {};
-    const existingScopedPrograms = sanitizePrograms(bySystem[inforSystem] ?? existingMetadata.accountingPrograms, {
+    const existingScopedPrograms = sanitizePrograms(bySystem[targetSystem] ?? existingMetadata.accountingPrograms, {
       requireComplete: false,
-      inforSystem,
+      inforSystem: targetSystem,
     });
     const programsToPersist = mergePreservingCsiFields(programs, existingScopedPrograms);
 
@@ -461,7 +474,7 @@ export async function POST(request: NextRequest) {
       accountingPrograms: programsToPersist,
       accountingProgramsBySystem: {
         ...bySystem,
-        [inforSystem]: programsToPersist,
+        [targetSystem]: programsToPersist,
       },
       accountingProgramsUpdatedAt: new Date().toISOString(),
     };
@@ -486,10 +499,22 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const companyForSystem = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { accountingSystem: true },
+    });
+    const currentSystem = String(companyForSystem?.accountingSystem || '').trim().toUpperCase();
+    if (currentSystem !== targetSystem) {
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { accountingSystem: targetSystem },
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       companyId,
-      inforSystem,
+      inforSystem: targetSystem,
       programs: programsToPersist,
       message: 'Accounting programs saved for this company.',
     });
