@@ -15,6 +15,7 @@ type SyncCursor = {
   bookmark?: string | null;
   backfillMonths?: number;
   businessDateIndex?: number;
+  stagnantCursorCount?: number;
 };
 
 function normalizeBookmark(value: unknown): string | null {
@@ -30,6 +31,15 @@ function didCursorAdvance(previous: SyncCursor, next: SyncCursor): boolean {
     normalizeBookmark(previous.bookmark) === normalizeBookmark(next.bookmark) &&
     (previous.businessDateIndex ?? 0) === (next.businessDateIndex ?? 0)
   );
+}
+
+function withStagnationState(previous: SyncCursor, next: SyncCursor): SyncCursor {
+  const advanced = didCursorAdvance(previous, next);
+  const previousCount = Math.max(0, Number(previous.stagnantCursorCount || 0));
+  return {
+    ...next,
+    stagnantCursorCount: advanced ? 0 : previousCount + 1,
+  };
 }
 
 function normalizeFrequency(value: unknown): Frequency {
@@ -177,6 +187,7 @@ export async function POST(request: NextRequest) {
     const requestedRequestOffset = normalizeNonNegativeInt(body.requestOffset) ?? 0;
     const requestedBookmark =
       typeof body.bookmark === 'string' && body.bookmark.trim().length > 0 ? body.bookmark.trim() : null;
+    const requestedStagnantCursorCount = normalizeNonNegativeInt(body.stagnantCursorCount) ?? 0;
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { accountingSystem: true },
@@ -261,6 +272,7 @@ export async function POST(request: NextRequest) {
           programBatchSize,
           requestOffset: dayResult.continuation?.requestOffset ?? 0,
           bookmark: dayResult.continuation?.bookmark ?? null,
+          stagnantCursorCount: requestedStagnantCursorCount,
         };
       } else if (businessDateIndex + 1 < businessDates.length) {
         hasMore = true;
@@ -270,6 +282,7 @@ export async function POST(request: NextRequest) {
           businessDateIndex: businessDateIndex + 1,
           programOffset: 0,
           programBatchSize,
+          stagnantCursorCount: 0,
         };
       } else {
         await pruneCompanyOperationalData(companyId);
@@ -283,10 +296,12 @@ export async function POST(request: NextRequest) {
           programBatchSize,
           requestOffset: requestedRequestOffset,
           bookmark: requestedBookmark,
+          stagnantCursorCount: requestedStagnantCursorCount,
         };
-        if (!didCursorAdvance(previousCursor, cursor)) {
+        cursor = withStagnationState(previousCursor, cursor);
+        if ((cursor.stagnantCursorCount || 0) >= 5) {
           throw new Error(
-            'Operational sync cursor did not advance for business-day backfill; aborting to prevent infinite loop.'
+            'Operational sync cursor did not advance for business-day backfill after repeated attempts; aborting to prevent infinite loop.'
           );
         }
       }
@@ -328,6 +343,7 @@ export async function POST(request: NextRequest) {
           programBatchSize,
           requestOffset: result.continuation?.requestOffset ?? 0,
           bookmark: result.continuation?.bookmark ?? null,
+          stagnantCursorCount: requestedStagnantCursorCount,
         }
       : null;
     if (result.hasMore && cursor) {
@@ -337,10 +353,13 @@ export async function POST(request: NextRequest) {
         programBatchSize,
         requestOffset: requestedRequestOffset,
         bookmark: requestedBookmark,
+        stagnantCursorCount: requestedStagnantCursorCount,
       };
-      if (!didCursorAdvance(previousCursor, cursor)) {
-        throw new Error('Operational sync cursor did not advance; aborting to prevent infinite loop.');
+      const nextCursor = withStagnationState(previousCursor, cursor);
+      if ((nextCursor.stagnantCursorCount || 0) >= 5) {
+        throw new Error('Operational sync cursor did not advance after repeated attempts; aborting to prevent infinite loop.');
       }
+      (cursor as SyncCursor).stagnantCursorCount = nextCursor.stagnantCursorCount;
     }
     return NextResponse.json({
       ok: result.success,
