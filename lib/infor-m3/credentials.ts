@@ -240,34 +240,57 @@ export async function getInforM3CredentialsForCompany(
   system?: InforSystem
 ): Promise<InforM3Credentials | null> {
   const resolvedSystem = await resolveInforSystemForCompany(companyId, system);
-  const connection = await prisma.accountingConnection.findUnique({
-    where: {
-      companyId_platform: {
-        companyId,
-        platform: 'INFOR_M3',
-      },
-    },
-    select: {
-      connectionMetadata: true,
-      status: true,
-    },
-  });
+  // Performance: avoid loading entire connectionMetadata (which can contain
+  // large CSI payload snapshots). Read only credential-related paths.
+  const rows = await prisma.$queryRaw<
+    Array<{
+      status: string | null;
+      profiles: unknown;
+      legacy: unknown;
+    }>
+  >`
+    SELECT
+      status,
+      "connectionMetadata"->'inforProfiles' AS profiles,
+      jsonb_build_object(
+        'tenantId', "connectionMetadata"->>'tenantId',
+        'clientName', "connectionMetadata"->>'clientName',
+        'clientIdEncrypted', "connectionMetadata"->>'clientIdEncrypted',
+        'clientSecretEncrypted', "connectionMetadata"->>'clientSecretEncrypted',
+        'ionApiBaseUrl', "connectionMetadata"->>'ionApiBaseUrl',
+        'ssoBaseUrl', "connectionMetadata"->>'ssoBaseUrl',
+        'oauthAuthPath', "connectionMetadata"->>'oauthAuthPath',
+        'oauthTokenPath', "connectionMetadata"->>'oauthTokenPath',
+        'oauthRevokePath', "connectionMetadata"->>'oauthRevokePath',
+        'serviceAccountAccessKeyEncrypted', "connectionMetadata"->>'serviceAccountAccessKeyEncrypted',
+        'serviceAccountSecretKeyEncrypted', "connectionMetadata"->>'serviceAccountSecretKeyEncrypted'
+      ) AS legacy
+    FROM "AccountingConnection"
+    WHERE "companyId" = ${companyId}
+      AND platform = 'INFOR_M3'
+    LIMIT 1
+  `;
 
-  if (!connection || !connection.connectionMetadata || connection.status !== 'ACTIVE') {
+  const connection = rows[0];
+  if (!connection || connection.status !== 'ACTIVE') {
     return null;
   }
 
-  const metadata = connection.connectionMetadata as InforConnectionMetadataContainer;
-  const profileMetadata =
-    metadata?.inforProfiles && typeof metadata.inforProfiles === 'object'
-      ? (metadata.inforProfiles[resolvedSystem] as InforM3ConnectionMetadata | undefined)
+  const profiles =
+    connection.profiles && typeof connection.profiles === 'object' && !Array.isArray(connection.profiles)
+      ? (connection.profiles as Record<string, unknown>)
+      : {};
+  const profileMetadata = profiles[resolvedSystem] as InforM3ConnectionMetadata | undefined;
+  const legacyMetadata =
+    connection.legacy && typeof connection.legacy === 'object' && !Array.isArray(connection.legacy)
+      ? (connection.legacy as Partial<InforM3ConnectionMetadata>)
       : undefined;
 
   if (isCompleteMetadata(profileMetadata)) {
     return fromMetadata(profileMetadata);
   }
-  if (isCompleteMetadata(metadata as Partial<InforM3ConnectionMetadata>)) {
-    return fromMetadata(metadata as unknown as InforM3ConnectionMetadata);
+  if (isCompleteMetadata(legacyMetadata)) {
+    return fromMetadata(legacyMetadata);
   }
   return null;
 }

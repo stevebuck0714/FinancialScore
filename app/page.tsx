@@ -3577,6 +3577,7 @@ function FinancialScorePage() {
           ['INFOR_M3', 'INFOR_CSI'].includes(String(company?.accountingSystem || '').toUpperCase())
         ) {
           await checkInforM3Status(selectedCompanyId);
+          await loadInforM3Credentials(selectedCompanyId);
           await fetchInforLastCaoPull(selectedCompanyId);
         }
       } catch (error) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRequestedCompanyId, requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { normalizeInforSystem, type InforSystem } from '@/lib/infor-m3/system';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 type AccountingProgram = {
   module: string;
@@ -183,42 +184,33 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
-    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, {
-      companyId: requestedCompanyId,
-    });
-    if (companyId !== requestedCompanyId) {
-      return NextResponse.json(
-        { error: 'Forbidden: requested company is not authorized for this session.' },
-        { status: 403 }
-      );
-    }
+    await requireSiteAdmin();
+    const companyId = requestedCompanyId;
 
-    const connection = await prisma.accountingConnection.findUnique({
-      where: {
-        companyId_platform: {
-          companyId,
-          platform: 'INFOR_M3',
-        },
-      },
-      select: {
-        connectionMetadata: true,
-      },
-    });
-
-    const metadata =
-      connection?.connectionMetadata && typeof connection.connectionMetadata === 'object'
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+    // Performance: avoid loading the full connectionMetadata JSON blob, which can
+    // become very large for CSI payload snapshots. Fetch only the program paths.
+    const metadataRows = await prisma.$queryRaw<
+      Array<{ programsBySystem: unknown; programs: unknown }>
+    >`
+      SELECT
+        "connectionMetadata"->'accountingProgramsBySystem' AS "programsBySystem",
+        "connectionMetadata"->'accountingPrograms' AS "programs"
+      FROM "AccountingConnection"
+      WHERE "companyId" = ${companyId}
+        AND platform = 'INFOR_M3'
+      LIMIT 1
+    `;
+    const metadataRow = metadataRows[0];
     const inforSystem = await resolveInforSystem(companyId);
     const bySystem =
-      metadata.accountingProgramsBySystem && typeof metadata.accountingProgramsBySystem === 'object'
-        ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
+      metadataRow?.programsBySystem && typeof metadataRow.programsBySystem === 'object' && !Array.isArray(metadataRow.programsBySystem)
+        ? (metadataRow.programsBySystem as Record<string, unknown>)
         : {};
     const alternateSystem: InforSystem = inforSystem === 'INFOR_CSI' ? 'INFOR_M3' : 'INFOR_CSI';
     const candidateSavedProgramSets: unknown[] = [
       bySystem[inforSystem],
       bySystem[alternateSystem],
-      metadata.accountingPrograms,
+      metadataRow?.programs,
     ];
     let programs: AccountingProgram[] = [];
     for (const candidate of candidateSavedProgramSets) {
@@ -284,58 +276,59 @@ export async function POST(request: NextRequest) {
     const inferredSystem = inferInforSystemFromPrograms(programs);
     const targetSystem: InforSystem = inferredSystem || inforSystem;
 
-    const existing = await prisma.accountingConnection.findUnique({
-      where: {
-        companyId_platform: {
-          companyId,
-          platform: 'INFOR_M3',
-        },
-      },
-      select: {
-        connectionMetadata: true,
-      },
-    });
-
-    const existingMetadata =
-      existing?.connectionMetadata && typeof existing.connectionMetadata === 'object'
-        ? (existing.connectionMetadata as Record<string, unknown>)
-        : {};
-
-    const bySystem =
-      existingMetadata.accountingProgramsBySystem && typeof existingMetadata.accountingProgramsBySystem === 'object'
-        ? (existingMetadata.accountingProgramsBySystem as Record<string, unknown>)
-        : {};
     const programsToPersist = programs;
+    const serializedPrograms = JSON.stringify(programsToPersist);
+    const updatedAtIso = new Date().toISOString();
 
-    const mergedMetadata = {
-      ...existingMetadata,
-      accountingPrograms: programsToPersist,
-      accountingProgramsBySystem: {
-        ...bySystem,
-        [targetSystem]: programsToPersist,
-      },
-      accountingProgramsUpdatedAt: new Date().toISOString(),
-    };
+    // Performance: patch only accounting-program JSON paths instead of rewriting
+    // the entire connectionMetadata document (which can be very large for CSI).
+    const updatedRows = await prisma.$executeRaw`
+      UPDATE "AccountingConnection"
+      SET "connectionMetadata" = jsonb_set(
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(
+              COALESCE("connectionMetadata", '{}'::jsonb),
+              '{accountingPrograms}',
+              ${serializedPrograms}::jsonb,
+              true
+            ),
+            '{accountingProgramsBySystem,INFOR_CSI}',
+            ${serializedPrograms}::jsonb,
+            true
+          ),
+          '{accountingProgramsBySystem,INFOR_M3}',
+          ${serializedPrograms}::jsonb,
+          true
+        ),
+        '{accountingProgramsUpdatedAt}',
+        to_jsonb(${updatedAtIso}::text),
+        true
+      )
+      WHERE "companyId" = ${companyId}
+        AND platform = 'INFOR_M3'
+    `;
 
-    await prisma.accountingConnection.upsert({
-      where: {
-        companyId_platform: {
+    if (Number(updatedRows) === 0) {
+      const seedMetadata = {
+        accountingPrograms: programsToPersist,
+        accountingProgramsBySystem: {
+          INFOR_CSI: programsToPersist,
+          INFOR_M3: programsToPersist,
+        },
+        accountingProgramsUpdatedAt: updatedAtIso,
+      };
+      await prisma.accountingConnection.create({
+        data: {
           companyId,
           platform: 'INFOR_M3',
+          status: 'INACTIVE',
+          autoSync: false,
+          syncFrequency: 'manual',
+          connectionMetadata: seedMetadata as any,
         },
-      },
-      update: {
-        connectionMetadata: mergedMetadata,
-      },
-      create: {
-        companyId,
-        platform: 'INFOR_M3',
-        status: 'INACTIVE',
-        autoSync: false,
-        syncFrequency: 'manual',
-        connectionMetadata: mergedMetadata,
-      },
-    });
+      });
+    }
 
     const companyForSystem = await prisma.company.findUnique({
       where: { id: companyId },

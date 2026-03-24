@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { getRequestedCompanyId } from '@/lib/infor-m3/route-guards';
 import { getInforM3CredentialsForCompany } from '@/lib/infor-m3/credentials';
+import { requireSiteAdmin } from '@/lib/tenant-security';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request);
+    const requestedCompanyId = getRequestedCompanyId(request);
+    if (!requestedCompanyId) {
+      return NextResponse.json(
+        { error: 'companyId is required.' },
+        { status: 400 }
+      );
+    }
+    await requireSiteAdmin();
+    const companyId = requestedCompanyId;
     const credentials = await getInforM3CredentialsForCompany(companyId);
 
     return NextResponse.json({

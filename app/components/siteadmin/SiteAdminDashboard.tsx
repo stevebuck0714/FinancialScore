@@ -1108,35 +1108,48 @@ export default function SiteAdminDashboard(props: any) {
   };
 
   const loadCompanyPrograms = async (companyId: string, options?: { force?: boolean }) => {
-    const hasLoadedPrograms = Object.prototype.hasOwnProperty.call(accountingProgramsByCompany, companyId);
-    if (!options?.force && (isCompanyProgramsLoading(companyId) || hasLoadedPrograms)) {
+    const cachedPrograms = accountingProgramsByCompany[companyId];
+    const hasLoadedPrograms = Array.isArray(cachedPrograms);
+    const hasNonEmptyPrograms = hasLoadedPrograms && cachedPrograms.length > 0;
+    if (!options?.force && (isCompanyProgramsLoading(companyId) || hasNonEmptyPrograms)) {
       return;
     }
     const requestSeq = (accountingProgramLoadSeqRef.current[companyId] || 0) + 1;
     accountingProgramLoadSeqRef.current[companyId] = requestSeq;
     setLoadingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: true }));
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     try {
-      const controller = new AbortController();
-      timeoutHandle = setTimeout(() => controller.abort(), 12000);
-      const response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      const data = await response.json();
+      let response: Response | null = null;
+      let data: unknown = null;
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`, { cache: 'no-store' });
+          data = await response.json();
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (lastError) {
+        throw lastError;
+      }
+      if (!response) {
+        throw new Error('Accounting programs request returned no response.');
+      }
       if (accountingProgramLoadSeqRef.current[companyId] !== requestSeq) {
         // A newer request completed after this one started; ignore stale payload.
         return;
       }
-      if (!response.ok || !data?.ok || !Array.isArray(data?.programs)) {
+      const parsed = data as { ok?: boolean; programs?: unknown };
+      if (!response.ok || !parsed?.ok || !Array.isArray(parsed?.programs)) {
         // Keep existing edits untouched if reload fails.
         return;
       }
-      setCompanyPrograms(companyId, data.programs);
+      setCompanyPrograms(companyId, parsed.programs as InforAccountingProgramRow[]);
     } catch (error) {
       console.error('Failed to load accounting programs:', error);
     } finally {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
       if (accountingProgramLoadSeqRef.current[companyId] === requestSeq) {
         setLoadingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: false }));
       }
