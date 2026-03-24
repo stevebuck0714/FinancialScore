@@ -1062,24 +1062,21 @@ export default function SiteAdminDashboard(props: any) {
   const [accountingProgramsByCompany, setAccountingProgramsByCompany] = React.useState<
     Record<string, InforAccountingProgramRow[]>
   >({});
+  const [loadingAccountingProgramsByCompany, setLoadingAccountingProgramsByCompany] = React.useState<
+    Record<string, boolean>
+  >({});
+  const [savingAccountingProgramsByCompany, setSavingAccountingProgramsByCompany] = React.useState<
+    Record<string, boolean>
+  >({});
+  const accountingProgramLoadSeqRef = React.useRef<Record<string, number>>({});
 
-  const defaultAccountingPrograms: InforAccountingProgramRow[] = [
-    // CSI IDO-based defaults for operational tab population.
-    { module: 'Customers', miProgram: 'SLCustomers', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'AR', miProgram: 'SLArtrans', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'AP', miProgram: 'SLAptrx', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrx?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Sales', miProgram: 'SLCoitems', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Sales', miProgram: 'SLInvHdrs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLInvHdrs?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Inventory', miProgram: 'SLItems', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Inventory', miProgram: 'SLItemlocs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItemlocs?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Vendors', miProgram: 'SLVendors', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLVendors?properties=VendNum,Name&recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'Cash', miProgram: 'SLBankHdrs', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'GL', miProgram: 'SLCharts', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCharts?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-    { module: 'GL', miProgram: 'SLLedgers', endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLLedgers?recordCap=1000', mongooseConfig: 'TMSManager', site: '', transactions: ['CSI_LOAD'], cono: '', divi: '', enabled: true },
-  ];
+  const isCompanyProgramsLoading = (companyId: string): boolean =>
+    Boolean(loadingAccountingProgramsByCompany[companyId]);
+  const isCompanyProgramsSaving = (companyId: string): boolean =>
+    Boolean(savingAccountingProgramsByCompany[companyId]);
 
   const getCompanyPrograms = (companyId: string) =>
-    accountingProgramsByCompany[companyId] || defaultAccountingPrograms;
+    accountingProgramsByCompany[companyId] ?? [];
 
   const setCompanyPrograms = (companyId: string, programs: InforAccountingProgramRow[]) => {
     setAccountingProgramsByCompany((prev) => ({
@@ -1110,18 +1107,38 @@ export default function SiteAdminDashboard(props: any) {
     setCompanyPrograms(companyId, next.length > 0 ? next : [createEmptyInforAccountingProgramRow()]);
   };
 
-  const loadCompanyPrograms = async (companyId: string) => {
+  const loadCompanyPrograms = async (companyId: string, options?: { force?: boolean }) => {
+    const hasLoadedPrograms = Object.prototype.hasOwnProperty.call(accountingProgramsByCompany, companyId);
+    if (!options?.force && (isCompanyProgramsLoading(companyId) || hasLoadedPrograms)) {
+      return;
+    }
+    const requestSeq = (accountingProgramLoadSeqRef.current[companyId] || 0) + 1;
+    accountingProgramLoadSeqRef.current[companyId] = requestSeq;
+    setLoadingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: true }));
     try {
       const response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`, { cache: 'no-store' });
       const data = await response.json();
-      if (!response.ok || !data?.ok || !Array.isArray(data?.programs)) return;
+      if (accountingProgramLoadSeqRef.current[companyId] !== requestSeq) {
+        // A newer request completed after this one started; ignore stale payload.
+        return;
+      }
+      if (!response.ok || !data?.ok || !Array.isArray(data?.programs)) {
+        // Keep existing edits untouched if reload fails.
+        return;
+      }
       setCompanyPrograms(companyId, data.programs);
     } catch (error) {
       console.error('Failed to load accounting programs:', error);
+    } finally {
+      if (accountingProgramLoadSeqRef.current[companyId] === requestSeq) {
+        setLoadingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: false }));
+      }
     }
   };
 
   const saveCompanyPrograms = async (companyId: string) => {
+    if (isCompanyProgramsSaving(companyId)) return;
+    setSavingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: true }));
     try {
       const programs = getCompanyPrograms(companyId);
       const response = await fetch('/api/infor-m3/programs', {
@@ -1139,10 +1156,12 @@ export default function SiteAdminDashboard(props: any) {
       if (Array.isArray(data?.programs)) {
         setCompanyPrograms(companyId, data.programs as InforAccountingProgramRow[]);
       }
-      await loadCompanyPrograms(companyId);
+      await loadCompanyPrograms(companyId, { force: true });
       alert('Accounting programs saved for this company.');
     } catch (error: any) {
       alert(`Failed to save accounting programs: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setSavingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: false }));
     }
   };
 
@@ -4074,6 +4093,7 @@ export default function SiteAdminDashboard(props: any) {
                                                                 ? addOdooProgram(company.id)
                                                         : addCompanyProgram(company.id)
                                                     }
+                                                    disabled={isCompanyProgramsLoading(company.id) || isCompanyProgramsSaving(company.id)}
                                                     style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                   >
                                                     + Add
@@ -4094,6 +4114,7 @@ export default function SiteAdminDashboard(props: any) {
                                                                 ? saveOdooSettings(company.id)
                                                         : saveCompanyPrograms(company.id)
                                                     }
+                                                    disabled={isCompanyProgramsSaving(company.id)}
                                                     style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                                   >
                                                     Save
@@ -4378,7 +4399,19 @@ export default function SiteAdminDashboard(props: any) {
                                                       </tr>
                                                     </thead>
                                                     <tbody>
-                                                      {getCompanyPrograms(company.id).map((row, index) => (
+                                                      {isCompanyProgramsLoading(company.id) ? (
+                                                        <tr>
+                                                          <td colSpan={7} style={{ padding: '10px', color: '#64748b', fontSize: '12px' }}>
+                                                            Loading accounting programs...
+                                                          </td>
+                                                        </tr>
+                                                      ) : getCompanyPrograms(company.id).length === 0 ? (
+                                                        <tr>
+                                                          <td colSpan={7} style={{ padding: '10px', color: '#64748b', fontSize: '12px' }}>
+                                                            No saved programs yet. Click + Add to create one.
+                                                          </td>
+                                                        </tr>
+                                                      ) : getCompanyPrograms(company.id).map((row, index) => (
                                                         <tr key={`${company.id}-consultant-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                                                           <td style={{ padding: '6px' }}>
                                                             <input
@@ -5726,12 +5759,14 @@ export default function SiteAdminDashboard(props: any) {
                                         <div style={{ display: 'flex', gap: '6px' }}>
                                           <button
                                             onClick={() => addCompanyProgram(businessCompany.id)}
+                                            disabled={isCompanyProgramsLoading(businessCompany.id) || isCompanyProgramsSaving(businessCompany.id)}
                                             style={{ padding: '6px 10px', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                           >
                                             + Add
                                           </button>
                                           <button
                                             onClick={() => saveCompanyPrograms(businessCompany.id)}
+                                            disabled={isCompanyProgramsSaving(businessCompany.id)}
                                             style={{ padding: '6px 10px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                                           >
                                             Save
@@ -5755,7 +5790,19 @@ export default function SiteAdminDashboard(props: any) {
                                             </tr>
                                           </thead>
                                           <tbody>
-                                            {accountingPrograms.map((row, index) => (
+                                            {isCompanyProgramsLoading(businessCompany.id) ? (
+                                              <tr>
+                                                <td colSpan={7} style={{ padding: '10px', color: '#64748b', fontSize: '12px' }}>
+                                                  Loading accounting programs...
+                                                </td>
+                                              </tr>
+                                            ) : accountingPrograms.length === 0 ? (
+                                              <tr>
+                                                <td colSpan={7} style={{ padding: '10px', color: '#64748b', fontSize: '12px' }}>
+                                                  No saved programs yet. Click + Add to create one.
+                                                </td>
+                                              </tr>
+                                            ) : accountingPrograms.map((row, index) => (
                                               <tr key={`${businessCompany.id}-program-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                                                 <td style={{ padding: '6px' }}>
                                                   <input

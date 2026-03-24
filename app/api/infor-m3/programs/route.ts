@@ -242,35 +242,6 @@ function sanitizePrograms(
   return cleaned;
 }
 
-function buildProgramMatchKey(program: AccountingProgram): string {
-  return [
-    String(program.module || '').trim().toLowerCase(),
-    String(program.miProgram || '').trim().toLowerCase(),
-    String(program.endpointPath || '').trim().toLowerCase(),
-  ].join('::');
-}
-
-function mergePreservingCsiFields(
-  incoming: AccountingProgram[],
-  existing: AccountingProgram[]
-): AccountingProgram[] {
-  if (!incoming.length || !existing.length) return incoming;
-  const existingByKey = new Map<string, AccountingProgram>();
-  existing.forEach((program) => {
-    existingByKey.set(buildProgramMatchKey(program), program);
-  });
-
-  return incoming.map((program) => {
-    const existingProgram = existingByKey.get(buildProgramMatchKey(program));
-    if (!existingProgram) return program;
-    return {
-      ...program,
-      mongooseConfig: program.mongooseConfig ?? existingProgram.mongooseConfig,
-      site: program.site ?? existingProgram.site,
-    };
-  });
-}
-
 function normalizeCsiProgramAliases(program: AccountingProgram): AccountingProgram {
   const miProgram = String(program.miProgram || '').trim();
   const normalizedProgram = miProgram.toUpperCase();
@@ -463,11 +434,7 @@ export async function POST(request: NextRequest) {
       existingMetadata.accountingProgramsBySystem && typeof existingMetadata.accountingProgramsBySystem === 'object'
         ? (existingMetadata.accountingProgramsBySystem as Record<string, unknown>)
         : {};
-    const existingScopedPrograms = sanitizePrograms(bySystem[targetSystem] ?? existingMetadata.accountingPrograms, {
-      requireComplete: false,
-      inforSystem: targetSystem,
-    });
-    const programsToPersist = mergePreservingCsiFields(programs, existingScopedPrograms);
+    const programsToPersist = programs;
 
     const mergedMetadata = {
       ...existingMetadata,
