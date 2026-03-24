@@ -61,99 +61,6 @@ function normalizeEnabledValue(value: unknown): boolean {
   return true;
 }
 
-const DEFAULT_PROGRAMS: AccountingProgram[] = [
-  // Infor CSI (SyteLine) IDO pull defaults for operational tabs.
-  {
-    module: 'Customers',
-    miProgram: 'SLCustomers',
-    endpointPath:
-      '/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=500',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'AR',
-    miProgram: 'SLArtrans',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'AP',
-    miProgram: 'SLAptrx',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrx?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'Sales',
-    miProgram: 'SLCoitems',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'Sales',
-    miProgram: 'SLInvHdrs',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLInvHdrs?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'Inventory',
-    miProgram: 'SLItems',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItems?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'Inventory',
-    miProgram: 'SLItemlocs',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLItemlocs?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'Vendors',
-    miProgram: 'SLVendors',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLVendors?properties=VendNum,Name&recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'Cash',
-    miProgram: 'SLBankHdrs',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLBankHdrs?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'GL',
-    miProgram: 'SLCharts',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCharts?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-  {
-    module: 'GL',
-    miProgram: 'SLLedgers',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLLedgers?recordCap=1000',
-    mongooseConfig: 'TMSManager',
-    site: '',
-    enabled: true,
-  },
-];
-
 function normalizeTransactions(row: any): string[] {
   const fromArray = Array.isArray(row?.transactions)
     ? row.transactions
@@ -242,56 +149,6 @@ function sanitizePrograms(
   return cleaned;
 }
 
-function normalizeCsiProgramAliases(program: AccountingProgram): AccountingProgram {
-  const miProgram = String(program.miProgram || '').trim();
-  const normalizedProgram = miProgram.toUpperCase();
-  if (
-    normalizedProgram !== 'SLAPTRX' &&
-    normalizedProgram !== 'SLAPTRXP' &&
-    normalizedProgram !== 'SLAPTRXS' &&
-    normalizedProgram !== 'SLAPTRXPS'
-  ) return program;
-
-  const endpointPath = String(program.endpointPath || '');
-  return {
-    ...program,
-    miProgram: 'SLAptrx',
-    endpointPath: endpointPath
-      ? endpointPath.replace(/SLAptrxp|SLAptrxs|SLAptrxps/gi, 'SLAptrx')
-      : '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrx?recordCap=1000',
-  };
-}
-
-function mergeWithCsiDefaults(programs: AccountingProgram[]): AccountingProgram[] {
-  const normalizedExisting = programs.map(normalizeCsiProgramAliases);
-  const byProgram = new Map<string, AccountingProgram>();
-  const passthrough: AccountingProgram[] = [];
-
-  normalizedExisting.forEach((row) => {
-    const key = String(row.miProgram || '').trim().toUpperCase();
-    if (key) {
-      byProgram.set(key, row);
-    } else {
-      passthrough.push(row);
-    }
-  });
-
-  const mergedDefaults = DEFAULT_PROGRAMS.map((def) => {
-    const key = String(def.miProgram || '').trim().toUpperCase();
-    const existing = key ? byProgram.get(key) : null;
-    if (!existing) return def;
-    if (key) byProgram.delete(key);
-    return {
-      ...def,
-      ...existing,
-      // Keep canonical CSI program ID where aliases are known.
-      miProgram: def.miProgram || existing.miProgram,
-    };
-  });
-
-  return [...mergedDefaults, ...Array.from(byProgram.values()), ...passthrough];
-}
-
 function inferInforSystemFromPrograms(programs: AccountingProgram[]): InforSystem {
   for (const program of programs) {
     const endpointPath = String(program.endpointPath || '').toLowerCase();
@@ -349,16 +206,22 @@ export async function GET(request: NextRequest) {
       metadata.accountingProgramsBySystem && typeof metadata.accountingProgramsBySystem === 'object'
         ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
         : {};
-    const scopedPrograms = bySystem[inforSystem] ?? metadata.accountingPrograms;
-    const programs = sanitizePrograms(scopedPrograms, { requireComplete: false, inforSystem });
-    // If a company has already saved programs, return exactly what is persisted.
-    // Only bootstrap defaults when no company-specific rows exist yet.
-    const effectivePrograms =
-      programs.length > 0
-        ? programs
-        : inforSystem === 'INFOR_CSI'
-          ? mergeWithCsiDefaults(DEFAULT_PROGRAMS)
-          : DEFAULT_PROGRAMS;
+    const alternateSystem: InforSystem = inforSystem === 'INFOR_CSI' ? 'INFOR_M3' : 'INFOR_CSI';
+    const candidateSavedProgramSets: unknown[] = [
+      bySystem[inforSystem],
+      bySystem[alternateSystem],
+      metadata.accountingPrograms,
+    ];
+    let programs: AccountingProgram[] = [];
+    for (const candidate of candidateSavedProgramSets) {
+      const parsed = sanitizePrograms(candidate, { requireComplete: false, inforSystem });
+      if (parsed.length > 0) {
+        programs = parsed;
+        break;
+      }
+    }
+    // Return only company-saved programs; no default bootstrapping.
+    const effectivePrograms = programs;
     const programsWithSitePolicy =
       inforSystem === 'INFOR_CSI'
         ? effectivePrograms.map((program) => ({ ...program, sitePolicy: resolveCsiSitePolicy(program) }))

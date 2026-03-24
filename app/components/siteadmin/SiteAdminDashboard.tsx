@@ -1068,6 +1068,9 @@ export default function SiteAdminDashboard(props: any) {
   const [savingAccountingProgramsByCompany, setSavingAccountingProgramsByCompany] = React.useState<
     Record<string, boolean>
   >({});
+  const [attemptedAccountingProgramsLoadByCompany, setAttemptedAccountingProgramsLoadByCompany] = React.useState<
+    Record<string, boolean>
+  >({});
   const accountingProgramLoadSeqRef = React.useRef<Record<string, number>>({});
 
   const isCompanyProgramsLoading = (companyId: string): boolean =>
@@ -1109,14 +1112,22 @@ export default function SiteAdminDashboard(props: any) {
 
   const loadCompanyPrograms = async (companyId: string, options?: { force?: boolean }) => {
     const hasLoadedPrograms = Object.prototype.hasOwnProperty.call(accountingProgramsByCompany, companyId);
-    if (!options?.force && (isCompanyProgramsLoading(companyId) || hasLoadedPrograms)) {
+    const hasAttemptedLoad = Boolean(attemptedAccountingProgramsLoadByCompany[companyId]);
+    if (!options?.force && (isCompanyProgramsLoading(companyId) || hasLoadedPrograms || hasAttemptedLoad)) {
       return;
     }
     const requestSeq = (accountingProgramLoadSeqRef.current[companyId] || 0) + 1;
     accountingProgramLoadSeqRef.current[companyId] = requestSeq;
+    setAttemptedAccountingProgramsLoadByCompany((prev) => ({ ...prev, [companyId]: true }));
     setLoadingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: true }));
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     try {
-      const response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`, { cache: 'no-store' });
+      const controller = new AbortController();
+      timeoutHandle = setTimeout(() => controller.abort(), 12000);
+      const response = await fetch(`/api/infor-m3/programs?companyId=${companyId}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const data = await response.json();
       if (accountingProgramLoadSeqRef.current[companyId] !== requestSeq) {
         // A newer request completed after this one started; ignore stale payload.
@@ -1130,6 +1141,7 @@ export default function SiteAdminDashboard(props: any) {
     } catch (error) {
       console.error('Failed to load accounting programs:', error);
     } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       if (accountingProgramLoadSeqRef.current[companyId] === requestSeq) {
         setLoadingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: false }));
       }
