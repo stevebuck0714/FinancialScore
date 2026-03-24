@@ -9185,7 +9185,10 @@ function FinancialScorePage() {
                   </h3>
                   <div style={{ marginBottom: '12px', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
                     Infor Syteline CSI credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
-                    This action triggers a monthly Chart of Accounts pull using the <strong>Accounts</strong> MI Program configured for this company.
+                    This action triggers a monthly Chart of Accounts pull using the configured <strong>Accounts source</strong>
+                    {selectedAccountingSystem === 'INFOR_CSI'
+                      ? ' (endpoint path preferred; MI program optional).'
+                      : ' (MI program or endpoint path).'}
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <button
@@ -9205,7 +9208,9 @@ function FinancialScorePage() {
                       {inforCaoPulling ? 'Pulling COA...' : 'Pull Monthly COA Data'}
                     </button>
                     <span style={{ fontSize: '12px', color: '#64748b' }}>
-                      Requires CSI Accounts MI Program in Site Admin &gt; Businesses.
+                      {selectedAccountingSystem === 'INFOR_CSI'
+                        ? 'Requires Accounts source in Site Admin > Businesses (endpoint path preferred).'
+                        : 'Requires Accounts source in Site Admin > Businesses.'}
                     </span>
                   </div>
                   <div style={{ marginTop: '10px', fontSize: '12px', color: '#475569' }}>

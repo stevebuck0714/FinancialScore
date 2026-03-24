@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 type ProgramRow = {
   module: string;
   miProgram: string;
+  endpointPath?: string;
+  enabled?: boolean;
 };
 
 function parsePrograms(value: unknown): ProgramRow[] {
@@ -17,18 +19,46 @@ function parsePrograms(value: unknown): ProgramRow[] {
     .map((row) => ({
       module: typeof row?.module === 'string' ? row.module.trim() : '',
       miProgram: typeof row?.miProgram === 'string' ? row.miProgram.trim() : '',
+      endpointPath: typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '',
+      enabled: row?.enabled !== false,
     }))
-    .filter((row) => row.module.length > 0 && row.miProgram.length > 0);
+    .filter((row) => row.enabled && row.module.length > 0);
 }
 
-function selectAccountsProgram(programRows: ProgramRow[]): string | null {
-  const accountsRow = programRows.find((row) => row.module.toLowerCase() === 'accounts');
-  if (!accountsRow) return null;
-  const programs = accountsRow.miProgram
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  return programs[0] || null;
+function selectAccountsSource(
+  programRows: ProgramRow[]
+): { type: 'endpoint' | 'mi'; value: string; sourceModule: string } | null {
+  // Preferred for CSI: explicit Accounts endpoint path.
+  const accountsEndpoint = programRows.find(
+    (row) => row.module.toLowerCase() === 'accounts' && typeof row.endpointPath === 'string' && row.endpointPath.trim().length > 0
+  );
+  if (accountsEndpoint?.endpointPath) {
+    return { type: 'endpoint', value: accountsEndpoint.endpointPath, sourceModule: 'Accounts' };
+  }
+
+  // Legacy path: Accounts MI program.
+  const accountsMi = programRows.find((row) => row.module.toLowerCase() === 'accounts' && row.miProgram.length > 0);
+  if (accountsMi) {
+    const programs = accountsMi.miProgram
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (programs[0]) {
+      return { type: 'mi', value: programs[0], sourceModule: 'Accounts' };
+    }
+  }
+
+  // CSI fallback: use GL endpoint row that points at SLCharts.
+  const glChartsEndpoint = programRows.find((row) => {
+    if (row.module.toLowerCase() !== 'gl') return false;
+    const endpoint = String(row.endpointPath || '').toLowerCase();
+    return endpoint.includes('/slcharts');
+  });
+  if (glChartsEndpoint?.endpointPath) {
+    return { type: 'endpoint', value: glChartsEndpoint.endpointPath, sourceModule: 'GL' };
+  }
+
+  return null;
 }
 
 function safeRecordCount(body: unknown): number {
@@ -104,7 +134,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   let companyId = '';
-  let selectedProgram: string | null = null;
+  let selectedSource: { type: 'endpoint' | 'mi'; value: string; sourceModule: string } | null = null;
   let pulledByEmail: string | null = null;
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -141,19 +171,22 @@ export async function POST(request: NextRequest) {
         ? (connection.connectionMetadata as Record<string, unknown>)
         : {};
     const programs = parsePrograms(metadata.accountingPrograms);
-    selectedProgram = selectAccountsProgram(programs);
+    selectedSource = selectAccountsSource(programs);
 
-    if (!selectedProgram) {
+    if (!selectedSource) {
       return NextResponse.json(
         {
           error:
-            'Accounts MI Program is not configured. Set the Accounts row in Site Administration > Businesses > Accounting Programs.',
+            'Accounts source is not configured. Set an Accounts endpoint path (preferred for CSI), Accounts MI Program, or GL SLCharts endpoint in Site Administration > Businesses > Accounting Programs.',
         },
         { status: 400 }
       );
     }
 
-    const endpointPath = `/${credentials.tenantId}/M3/m3api-rest/execute/${selectedProgram}`;
+    const endpointPath =
+      selectedSource.type === 'endpoint'
+        ? selectedSource.value
+        : `/${credentials.tenantId}/M3/m3api-rest/execute/${selectedSource.value}`;
     const result = await callInforIonApi(credentials, endpointPath, { timeoutMs: 20000 });
 
     const statusText = result.ok ? 'success' : 'error';
@@ -168,10 +201,17 @@ export async function POST(request: NextRequest) {
         recordsImported: imported,
         errorCount: result.ok ? 0 : 1,
         errorDetails: result.ok
-          ? { pulledByEmail: context.email, program: selectedProgram }
+          ? {
+              pulledByEmail: context.email,
+              program: selectedSource.type === 'mi' ? selectedSource.value : null,
+              sourceType: selectedSource.type,
+              sourceModule: selectedSource.sourceModule,
+            }
           : {
               pulledByEmail: context.email,
-              program: selectedProgram,
+              program: selectedSource.type === 'mi' ? selectedSource.value : null,
+              sourceType: selectedSource.type,
+              sourceModule: selectedSource.sourceModule,
               endpointPath,
               response: result.body,
             },
@@ -195,7 +235,9 @@ export async function POST(request: NextRequest) {
         ok: result.ok,
         companyId,
         syncType: 'monthly_coa_pull',
-        accountsProgram: selectedProgram,
+        accountsProgram: selectedSource.type === 'mi' ? selectedSource.value : null,
+        sourceType: selectedSource.type,
+        sourceModule: selectedSource.sourceModule,
         endpointPath,
         status: result.status,
         recordsImported: imported,
@@ -217,7 +259,13 @@ export async function POST(request: NextRequest) {
             status: 'error',
             recordsImported: 0,
             errorCount: 1,
-            errorDetails: { message, program: selectedProgram, pulledByEmail },
+            errorDetails: {
+              message,
+              program: selectedSource?.type === 'mi' ? selectedSource.value : null,
+              sourceType: selectedSource?.type || null,
+              sourceModule: selectedSource?.sourceModule || null,
+              pulledByEmail,
+            },
           },
         })
         .catch(() => undefined);

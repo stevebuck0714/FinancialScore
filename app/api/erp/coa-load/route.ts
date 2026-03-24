@@ -113,6 +113,46 @@ function normalizePayload(value: unknown): Record<string, unknown> | null {
   return raw;
 }
 
+function hasMonthlyDataRows(payload: Record<string, unknown> | null): boolean {
+  if (!payload) return false;
+  const rows = payload.monthlyData;
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function recoverPayloadFromLatestOperationalGlSync(companyId: string): Promise<Record<string, unknown> | null> {
+  const logs = await prisma.apiSyncLog.findMany({
+    where: {
+      companyId,
+      platform: 'INFOR_M3',
+      syncType: 'operational_other_CSI_LOAD',
+      status: 'success',
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: { errorDetails: true, createdAt: true },
+  });
+
+  const glResponses: unknown[] = [];
+  for (const log of logs) {
+    const details =
+      log.errorDetails && typeof log.errorDetails === 'object' && !Array.isArray(log.errorDetails)
+        ? (log.errorDetails as Record<string, unknown>)
+        : null;
+    if (!details) continue;
+    const moduleName = String(details.module || '').trim().toUpperCase();
+    const program = String(details.miProgram || '').trim().toUpperCase();
+    if (moduleName !== 'GL' || !['SLCHARTS', 'SLLEDGERS'].includes(program)) continue;
+    if (details.response) glResponses.push(details.response);
+  }
+
+  if (glResponses.length === 0) return null;
+  return {
+    source: 'operational_gl_sync_fallback',
+    recoveredAt: new Date().toISOString(),
+    glResponses,
+  };
+}
+
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -184,7 +224,11 @@ export async function POST(request: NextRequest) {
         : {};
 
     const payloadFromMetadata = normalizePayload(existingMetadata[connector.payloadMetadataKey]);
-    const payload = payloadFromRequest || payloadFromMetadata;
+    const payloadFromOperationalGlSync =
+      (accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI')
+        ? await recoverPayloadFromLatestOperationalGlSync(companyId)
+        : null;
+    const payload = payloadFromRequest || payloadFromMetadata || payloadFromOperationalGlSync;
     if (!payload) {
       return NextResponse.json(
         {
@@ -267,16 +311,28 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const ingestResult = await ingestFinancialPayload({
-      companyId,
-      platform: connector.platform,
-      source: connector.source,
-      payload,
-      syncType: 'coa_load',
-      targetMonth: throughMonth,
-      mode: 'through',
-      maxMonths: 36,
-    });
+    const canIngestFinancials = hasMonthlyDataRows(payload);
+    const ingestResult = canIngestFinancials
+      ? await ingestFinancialPayload({
+          companyId,
+          platform: connector.platform,
+          source: connector.source,
+          payload,
+          syncType: 'coa_load',
+          targetMonth: throughMonth,
+          mode: 'through',
+          maxMonths: 36,
+        })
+      : {
+          ok: true as const,
+          status: 200,
+          recordsImported: 0,
+          monthsTouched: [] as string[],
+          latestMonthWarnings: [] as unknown[],
+          ingestionSkipped: true,
+          ingestionSkipReason:
+            'COA payload loaded for mapping seed, but monthlyData rows were not present for financial snapshot ingestion.',
+        };
 
     return NextResponse.json(
       {

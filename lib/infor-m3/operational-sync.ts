@@ -1258,9 +1258,31 @@ async function saveARPayments(
   records: Record<string, unknown>[],
   context: { miProgram: string; transaction: string; cono?: string; divi?: string }
 ): Promise<number> {
+  const isPaymentLikeRecord = (record: Record<string, unknown>): boolean => {
+    const typeToken = normalizeToken(record['Type']);
+    if (typeToken === 'p') return true;
+    const ref = (pickString(record, ['Ref', 'reference']) || '').trim().toUpperCase();
+    if (ref.startsWith('ARP')) return true;
+    const description = (pickString(record, ['Description', 'description']) || '').trim().toLowerCase();
+    if (description.includes('payment')) return true;
+    return false;
+  };
+
   const rows = records
     .map((record, idx) => {
-      const paymentDate = parseMaybeDate(pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT']));
+      if (!isPaymentLikeRecord(record)) return null;
+      const paymentDate = parseMaybeDate(
+        pickString(record, [
+          'paymentDate',
+          'date',
+          'PYDT',
+          'RGDT',
+          'DerReceiptDate',
+          'ReceiptDate',
+          'InvDate',
+          'RecordDate',
+        ])
+      );
       if (!paymentDate) return null;
       const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
       return {
@@ -1268,10 +1290,10 @@ async function saveARPayments(
         paymentDate,
         customerId: pickString(record, CUSTOMER_ID_KEYS),
         customerName,
-        invoiceNo: pickString(record, AR_INVOICE_NO_KEYS),
+        invoiceNo: pickString(record, ['DerApplyToInvNum', 'ApplyToInvNum', ...AR_INVOICE_NO_KEYS]),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
-        paidAmountCurrency: pickNumber(record, ['paidAmountCurrency', ...AR_AMOUNT_CURRENCY_KEYS]) || null,
-        paidAmountHome: pickNumber(record, ['paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM', 'Amount']),
+        paidAmountCurrency: pickNumber(record, ['DerPaymentCheckAmount', 'paidAmountCurrency', ...AR_AMOUNT_CURRENCY_KEYS]) || null,
+        paidAmountHome: pickNumber(record, ['DerPaymentCheckAmount', 'paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM', 'Amount']),
         sourcePlatform: 'INFOR_M3',
         sourceProgram: context.miProgram,
         sourceTransaction: context.transaction,
