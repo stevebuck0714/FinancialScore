@@ -1068,9 +1068,6 @@ export default function SiteAdminDashboard(props: any) {
   const [savingAccountingProgramsByCompany, setSavingAccountingProgramsByCompany] = React.useState<
     Record<string, boolean>
   >({});
-  const [attemptedAccountingProgramsLoadByCompany, setAttemptedAccountingProgramsLoadByCompany] = React.useState<
-    Record<string, boolean>
-  >({});
   const accountingProgramLoadSeqRef = React.useRef<Record<string, number>>({});
 
   const isCompanyProgramsLoading = (companyId: string): boolean =>
@@ -1112,13 +1109,11 @@ export default function SiteAdminDashboard(props: any) {
 
   const loadCompanyPrograms = async (companyId: string, options?: { force?: boolean }) => {
     const hasLoadedPrograms = Object.prototype.hasOwnProperty.call(accountingProgramsByCompany, companyId);
-    const hasAttemptedLoad = Boolean(attemptedAccountingProgramsLoadByCompany[companyId]);
-    if (!options?.force && (isCompanyProgramsLoading(companyId) || hasLoadedPrograms || hasAttemptedLoad)) {
+    if (!options?.force && (isCompanyProgramsLoading(companyId) || hasLoadedPrograms)) {
       return;
     }
     const requestSeq = (accountingProgramLoadSeqRef.current[companyId] || 0) + 1;
     accountingProgramLoadSeqRef.current[companyId] = requestSeq;
-    setAttemptedAccountingProgramsLoadByCompany((prev) => ({ ...prev, [companyId]: true }));
     setLoadingAccountingProgramsByCompany((prev) => ({ ...prev, [companyId]: true }));
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     try {
