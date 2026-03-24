@@ -137,9 +137,10 @@ export async function GET(request: NextRequest) {
       await activateRealOperationalData(companyId);
       hasRealOperationalData = true;
     }
-    // Explicit admin override for demos: if enabled, use mock/fallback operational responses
-    // in any environment (including production).
-    const shouldUseMockData = company.forceOperationalMockData === true;
+    // Hard guard: once a company is on real operational data, never serve mock payloads.
+    // This prevents mixed real+mock experiences if a stale demo flag remains enabled.
+    const shouldUseMockData =
+      company.forceOperationalMockData === true && hasRealOperationalData !== true;
 
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
 

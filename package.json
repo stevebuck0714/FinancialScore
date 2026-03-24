@@ -26,7 +26,8 @@
     "db:update-admin": "tsx scripts/update-admin-email.ts",
     "import:benchmarks": "tsx scripts/import-benchmarks.ts",
     "cleanup:devices": "tsx scripts/cleanup-expired-devices.ts",
-    "test:infor-security": "tsx scripts/test-infor-security.ts"
+    "test:infor-security": "tsx scripts/test-infor-security.ts",
+    "ops:chart-readiness": "tsx scripts/check-operational-chart-readiness.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

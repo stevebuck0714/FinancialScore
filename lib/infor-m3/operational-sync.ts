@@ -971,9 +971,10 @@ function calculateAgingTotalsFromTransactions(
     amountKeys: string[];
     openFlagKeys: string[];
     statusKeys: string[];
+    asOfDate?: Date;
   }
 ): AgingTotals {
-  const asOf = startOfUtcDay(new Date()).getTime();
+  const asOf = startOfUtcDay(options.asOfDate || new Date()).getTime();
   const totals: AgingTotals = {
     total: 0,
     current: 0,
@@ -1140,11 +1141,14 @@ async function saveARAging(
   );
 
   const derived = calculateAgingTotalsFromTransactions(records, {
-    dueDateKeys: ['DueDate', 'dueDate', 'DUDT'],
+    // Some CSI AR payloads omit DueDate; fall back to invoice/record dates so
+    // we still persist aging snapshots instead of dropping the day entirely.
+    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date'],
     balanceKeys: AR_AMOUNT_DUE_KEYS,
     amountKeys: ['Amount', 'amount', 'invoiceAmount', 'DerPaymentCheckAmount', 'DerOrderBalance'],
     openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
     statusKeys: ['Status', 'status', 'STAT', 'state', 'State'],
+    asOfDate: snapshotDate,
   });
 
   const totals =
@@ -1302,11 +1306,12 @@ async function saveAPAging(
   );
 
   const derived = calculateAgingTotalsFromTransactions(records, {
-    dueDateKeys: ['DueDate', 'dueDate', 'DUDT'],
+    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date'],
     balanceKeys: ['Balance', 'balance', 'openBalance', 'openAmount', 'amountDue'],
     amountKeys: ['Amount', 'amount', 'invoiceAmount'],
     openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
     statusKeys: ['Status', 'status', 'STAT', 'state', 'State'],
+    asOfDate: snapshotDate,
   });
 
   const totals =
