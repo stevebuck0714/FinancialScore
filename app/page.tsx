@@ -1346,8 +1346,24 @@ function FinancialScorePage() {
     return raw;
   };
 
-  const getClassificationDisplayLabel = (value: unknown): string => {
+  const MANUAL_CLASSIFICATION_PREFIX = 'manual:';
+
+  const stripManualClassificationPrefix = (value: unknown): string => {
     const raw = String(value || '').trim();
+    if (!raw) return '';
+    const lower = raw.toLowerCase();
+    if (!lower.startsWith(MANUAL_CLASSIFICATION_PREFIX)) return raw;
+    return raw.slice(MANUAL_CLASSIFICATION_PREFIX.length).trim();
+  };
+
+  const encodeManualClassification = (value: string): string => {
+    const normalized = stripManualClassificationPrefix(value);
+    if (!normalized) return '';
+    return `${MANUAL_CLASSIFICATION_PREFIX}${normalized}`;
+  };
+
+  const getClassificationDisplayLabel = (value: unknown): string => {
+    const raw = stripManualClassificationPrefix(value);
     if (!raw) return 'Other';
     const compact = raw.toUpperCase();
     if (compact === 'R') return 'Revenue';
@@ -1359,6 +1375,19 @@ function FinancialScorePage() {
     if (compact === 'EQUITY') return 'Equity';
     if (compact === 'INCOME') return 'Revenue';
     return raw;
+  };
+
+  const getClassificationOptionValue = (value: unknown): string => {
+    const raw = stripManualClassificationPrefix(value).trim();
+    if (!raw) return 'Other';
+    const compact = raw.toUpperCase();
+    if (compact === 'R' || compact === 'INCOME' || compact === 'REVENUE') return 'Revenue';
+    if (compact === 'C' || compact.includes('COST OF GOODS') || compact.includes('COST OF SALES') || compact === 'COGS') return 'Cost of Goods Sold';
+    if (compact === 'E' || compact === 'EXPENSE') return 'Expense';
+    if (compact === 'A' || compact === 'ASSET') return 'Asset';
+    if (compact === 'L' || compact === 'LIABILITY') return 'Liability';
+    if (compact === 'Q' || compact === 'EQUITY') return 'Equity';
+    return 'Other';
   };
 
   const normalizeMappingsForUi = (mappings: any[]): any[] =>
@@ -1404,6 +1433,7 @@ function FinancialScorePage() {
       return {
         ...row,
         targetField: priorTarget,
+        qbAccountClassification: prior?.qbAccountClassification || row?.qbAccountClassification,
         allocationMethod: prior?.allocationMethod || row?.allocationMethod || 'manual',
         lobAllocations: prior?.lobAllocations ?? row?.lobAllocations,
         confidence: prior?.confidence || row?.confidence || 'high',
@@ -11401,7 +11431,7 @@ function FinancialScorePage() {
                           const getLatestValueByTargetField = (targetField: unknown, sourceClassification?: unknown): number | undefined => {
                             if (!latestMasterMonthRow) return undefined;
                             const normalizedTarget = normalizeMappingTargetField(targetField);
-                            const classification = String(sourceClassification || '').trim().toUpperCase();
+                            const classification = stripManualClassificationPrefix(sourceClassification).trim().toUpperCase();
                             const tryGetNumeric = (key: string): number | undefined => {
                               if (!key || !(key in latestMasterMonthRow)) return undefined;
                               const value = latestMasterMonthRow[key];
@@ -11489,7 +11519,38 @@ function FinancialScorePage() {
                               return (
                               <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
-                                  {getClassificationDisplayLabel(mapping.qbAccountClassification || mapping.sourceStatus || 'N/A')}
+                                  <select
+                                    value={getClassificationOptionValue(mapping.qbAccountClassification || mapping.sourceStatus || '')}
+                                    onChange={(e) => {
+                                      const selected = e.target.value;
+                                      setAiMappings((prev) => {
+                                        const updated = [...(Array.isArray(prev) ? prev : [])];
+                                        if (!updated[idx]) return prev;
+                                        updated[idx] = {
+                                          ...updated[idx],
+                                          qbAccountClassification: encodeManualClassification(selected),
+                                        };
+                                        return updated;
+                                      });
+                                    }}
+                                    style={{
+                                      fontSize: '11px',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: '4px',
+                                      padding: '2px 4px',
+                                      background: '#fff',
+                                      color: '#334155',
+                                      minWidth: '130px',
+                                    }}
+                                  >
+                                    <option value="Revenue">Revenue</option>
+                                    <option value="Cost of Goods Sold">Cost of Goods Sold</option>
+                                    <option value="Expense">Expense</option>
+                                    <option value="Asset">Asset</option>
+                                    <option value="Liability">Liability</option>
+                                    <option value="Equity">Equity</option>
+                                    <option value="Other">Other</option>
+                                  </select>
                                 </td>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{mapping.qbAccountCode || mapping.qbAccountId || 'N/A'}</td>
                                 <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>

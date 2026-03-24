@@ -101,7 +101,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(payload, { status: qboResponse.status });
     }
 
-    if (configuredPlatform === 'INFOR_M3') {
+    if (configuredPlatform === 'INFOR_M3' || configuredPlatform === 'INFOR_CSI') {
+      const isInforCsi = configuredPlatform === 'INFOR_CSI';
       const connection = await prisma.accountingConnection.findUnique({
         where: {
           companyId_platform: {
@@ -118,16 +119,19 @@ export async function POST(request: NextRequest) {
         connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
           ? (connection.connectionMetadata as Record<string, unknown>)
           : {};
+      const payloadMetadataKey = isInforCsi ? 'inforCsiFinancialPayload' : 'inforM3FinancialPayload';
       const financialPayload =
-        metadata.inforM3FinancialPayload && typeof metadata.inforM3FinancialPayload === 'object'
-          ? (metadata.inforM3FinancialPayload as Record<string, unknown>)
+        metadata[payloadMetadataKey] && typeof metadata[payloadMetadataKey] === 'object'
+          ? (metadata[payloadMetadataKey] as Record<string, unknown>)
           : null;
 
       if (!financialPayload) {
         return NextResponse.json(
           {
             success: false,
-            error: 'No Infor M3 financial payload is available yet. Push financial payload first, then reprocess.',
+            error: isInforCsi
+              ? 'No Infor CSI financial payload is available yet. Push financial payload first, then reprocess.'
+              : 'No Infor M3 financial payload is available yet. Push financial payload first, then reprocess.',
           },
           { status: 400 },
         );
@@ -136,7 +140,7 @@ export async function POST(request: NextRequest) {
       const result = await ingestFinancialPayload({
         companyId: String(companyId),
         platform: 'INFOR_M3',
-        source: 'infor-m3',
+        source: isInforCsi ? 'infor-csi' : 'infor-m3',
         payload: financialPayload,
         syncType: 'reprocess_financial_payload',
         targetMonth: targetMonth || undefined,
@@ -147,8 +151,10 @@ export async function POST(request: NextRequest) {
         {
           success: result.ok,
           message: result.ok
-            ? 'Infor M3 reprocess completed successfully.'
-            : result.error || 'Infor M3 reprocess failed.',
+            ? (isInforCsi
+              ? 'Infor CSI reprocess completed successfully.'
+              : 'Infor M3 reprocess completed successfully.')
+            : result.error || (isInforCsi ? 'Infor CSI reprocess failed.' : 'Infor M3 reprocess failed.'),
           ...result,
         },
         { status: result.status },

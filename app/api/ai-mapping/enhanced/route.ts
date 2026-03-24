@@ -14,7 +14,9 @@ const mappingRules = [
   { keywords: ['net income', 'current year earnings', 'current earnings'], targetField: 'retainedEarnings', confidence: 'high' },
 
   // Income/Revenue Categories
-  { keywords: ['sales', 'service revenue', 'product sales', 'consulting income', 'service income', 'gross revenue', 'operating revenue', 'income', 'revenue'], targetField: 'revenue', confidence: 'high' },
+  // Intentionally avoid generic "income"/"sales" tokens because they misclassify
+  // accounts like "State Income Tax" and "Sales Commissions".
+  { keywords: ['service revenue', 'product sales', 'sales revenue', 'consulting income', 'service income', 'gross revenue', 'operating revenue', 'revenue'], targetField: 'revenue', confidence: 'high' },
 
   // Cost of Goods Sold
   { keywords: ['cogs payroll', 'cost of sales payroll', 'production payroll', 'direct labor', 'employees wages', 'employee wages', 'wages'], targetField: 'cogsPayroll', confidence: 'high' },
@@ -333,6 +335,110 @@ function confidenceToNumeric(conf: string): number {
   }
 }
 
+function resolveClassificationFromAccountType(classification: string, accountType: string): string {
+  const rawType = String(accountType || '').trim().toLowerCase();
+  const rawClassification = String(classification || '').trim();
+  if (!rawType) return rawClassification;
+
+  if (rawType.includes('cost of sales') || rawType.includes('cost of goods sold') || rawType.includes('cogs')) {
+    return 'Cost of Goods Sold';
+  }
+  if (rawType.includes('expense')) return 'Expense';
+  if (rawType.includes('asset')) return 'Asset';
+  if (rawType.includes('liabil')) return 'Liability';
+  if (rawType.includes('equity')) return 'Equity';
+  if (rawType.includes('income') || rawType.includes('revenue') || rawType.includes('sales')) return 'Income';
+  return rawClassification;
+}
+
+function classifyTargetFieldFamily(targetField: string): 'revenue' | 'cogs' | 'expense' | 'asset' | 'liability' | 'equity' | 'other' {
+  const normalized = String(targetField || '').trim().toLowerCase();
+  if (!normalized || normalized === 'unmapped') return 'other';
+  if (
+    normalized === 'revenue' ||
+    normalized === 'nonoperatingincome' ||
+    normalized.startsWith('rev_')
+  ) {
+    return 'revenue';
+  }
+  if (normalized.startsWith('cogs') || normalized.startsWith('cogs_') || normalized === 'costofgoodssold') return 'cogs';
+  if (
+    [
+      'payroll',
+      'ownerbasepay',
+      'benefits',
+      'insurance',
+      'professionalfees',
+      'subcontractors',
+      'rent',
+      'taxlicense',
+      'stateincometaxes',
+      'federalincometaxes',
+      'phonecomm',
+      'infrastructure',
+      'autotravel',
+      'salesexpense',
+      'marketing',
+      'trainingcert',
+      'mealsentertainment',
+      'interestexpense',
+      'depreciationamortization',
+      'otherexpense',
+      'expense',
+      'extraordinaryitems',
+      'nonoperatingexpense',
+    ].includes(normalized)
+  ) {
+    return 'expense';
+  }
+  if (['cash', 'ar', 'inventory', 'otherca', 'tca', 'fixedassets', 'otherassets', 'totalassets'].includes(normalized)) return 'asset';
+  if (['ap', 'othercl', 'tcl', 'ltd', 'totalliab', 'loc'].includes(normalized)) return 'liability';
+  if (
+    [
+      'ownerscapital',
+      'ownersdraw',
+      'commonstock',
+      'preferredstock',
+      'retainedearnings',
+      'additionalpaidincapital',
+      'treasurystock',
+      'totalequity',
+      'totallande',
+    ].includes(normalized)
+  ) {
+    return 'equity';
+  }
+  return 'other';
+}
+
+function shouldRejectTargetFieldForClassification(classification: string, targetField: string): boolean {
+  const normalizedClassification = String(classification || '').trim().toLowerCase();
+  const family = classifyTargetFieldFamily(targetField);
+  if (family === 'other') return false;
+
+  if (normalizedClassification.includes('cost of goods') || normalizedClassification === 'cogs') {
+    return family !== 'cogs';
+  }
+  if (normalizedClassification.includes('expense')) {
+    // Some ledgers classify COGS under Expense; allow explicit COGS targets.
+    if (family === 'cogs') return false;
+    return family !== 'expense';
+  }
+  if (normalizedClassification.includes('income') || normalizedClassification.includes('revenue') || normalizedClassification === 'r') {
+    return family !== 'revenue';
+  }
+  if (normalizedClassification.includes('asset') || normalizedClassification === 'a') {
+    return family !== 'asset';
+  }
+  if (normalizedClassification.includes('liabil') || normalizedClassification === 'l') {
+    return family !== 'liability';
+  }
+  if (normalizedClassification.includes('equity') || normalizedClassification === 'q') {
+    return family !== 'equity';
+  }
+  return false;
+}
+
 type TargetFieldCandidate = { value: string; label?: string };
 
 function normalizeTargetFieldCandidates(raw: any): TargetFieldCandidate[] {
@@ -484,9 +590,10 @@ export async function POST(request: NextRequest) {
     // Process each account
     for (const account of qbAccountsWithClass) {
       const accountName = typeof account === 'string' ? account : account.name;
-      const classification = typeof account === 'string' ? '' : (account.classification || '');
+      const sourceClassification = typeof account === 'string' ? '' : (account.classification || '');
       const accountCode = typeof account === 'string' ? '' : (account.accountCode || '');
       const accountType = typeof account === 'string' ? '' : (account.accountType || '');
+      const classification = resolveClassificationFromAccountType(sourceClassification, accountType);
       const codeSource = (accountCode && String(accountCode).trim()) ? String(accountCode).trim() : accountName;
 
       let bestMapping = null;
@@ -578,16 +685,28 @@ export async function POST(request: NextRequest) {
       }
 
       if (bestMapping && bestMapping.targetField) {
-        const sectorAwareTargetField = remapLegacyToSectorField(
+        const remappedTargetField = remapLegacyToSectorField(
           accountName,
           classification,
           bestMapping.targetField,
           targetFieldCandidates,
         );
+        const rejectForClassification = shouldRejectTargetFieldForClassification(classification, remappedTargetField);
+        if (rejectForClassification) {
+          mappings.push({
+            qbAccount: accountName,
+            qbAccountClassification: classification,
+            targetField: 'unmapped',
+            confidence: 'low',
+            reasoning: `Rejected incompatible mapping "${remappedTargetField}" for account classification "${classification || accountType || 'unknown'}"`,
+            source: 'none',
+          });
+          continue;
+        }
         mappings.push({
           qbAccount: accountName,
           qbAccountClassification: classification,
-          targetField: sectorAwareTargetField,
+          targetField: remappedTargetField,
           confidence: bestMapping.confidence,
           reasoning: bestMapping.reasoning,
           source

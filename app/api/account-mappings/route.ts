@@ -60,6 +60,16 @@ function normalize(v: unknown): string {
   return "";
 }
 
+function stripManualClassificationPrefix(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.toLowerCase().startsWith("manual:") ? raw.slice("manual:".length).trim() : raw;
+}
+
+function isManualClassification(value: unknown): boolean {
+  return String(value || "").trim().toLowerCase().startsWith("manual:");
+}
+
 function parseAccountSnapshot(value: unknown): AccountSnapshotRow[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -103,12 +113,141 @@ function isRevenueTargetField(targetField: string): boolean {
   return normalized === "revenue" || normalized === "otherrevenue" || normalized.startsWith("rev_");
 }
 
+function getTargetFieldFamily(targetField: string): "revenue" | "cogs" | "expense" | "asset" | "liability" | "equity" | "other" {
+  const normalized = String(targetField || "").trim().toLowerCase();
+  if (!normalized || normalized === "unmapped") return "other";
+  if (normalized === "revenue" || normalized.startsWith("rev_")) return "revenue";
+  if (normalized === "nonoperatingincome") return "revenue";
+  if (
+    normalized === "costofgoodssold" ||
+    normalized === "cogstotal" ||
+    normalized.startsWith("cogs_") ||
+    normalized.startsWith("cogs")
+  ) {
+    return "cogs";
+  }
+  if (
+    [
+      "payroll",
+      "ownerbasepay",
+      "ownersretirement",
+      "benefits",
+      "insurance",
+      "professionalfees",
+      "subcontractors",
+      "rent",
+      "taxlicense",
+      "stateincometaxes",
+      "federalincometaxes",
+      "phonecomm",
+      "infrastructure",
+      "autotravel",
+      "salesexpense",
+      "marketing",
+      "trainingcert",
+      "mealsentertainment",
+      "interestexpense",
+      "depreciationamortization",
+      "otherexpense",
+      "expense",
+      "operatingexpensetotal",
+      "nonoperatingexpense",
+      "extraordinaryitems",
+    ].includes(normalized)
+  ) {
+    return "expense";
+  }
+  if (["cash", "ar", "inventory", "otherca", "tca", "fixedassets", "otherassets", "totalassets"].includes(normalized)) return "asset";
+  if (["ap", "loc", "othercl", "tcl", "ltd", "totalliab"].includes(normalized)) return "liability";
+  if (
+    [
+      "ownerscapital",
+      "ownersdraw",
+      "commonstock",
+      "preferredstock",
+      "retainedearnings",
+      "additionalpaidincapital",
+      "treasurystock",
+      "totalequity",
+      "totallande",
+    ].includes(normalized)
+  ) {
+    return "equity";
+  }
+  return "other";
+}
+
+function getClassificationFamily(classification: unknown): "revenue" | "cogs" | "expense" | "asset" | "liability" | "equity" | "other" {
+  const normalized = stripManualClassificationPrefix(classification).toLowerCase();
+  if (!normalized) return "other";
+  if (normalized === "r") return "revenue";
+  if (normalized === "e") return "expense";
+  if (normalized === "a") return "asset";
+  if (normalized === "l") return "liability";
+  if (normalized === "q") return "equity";
+  if (normalized === "c") return "cogs";
+  if (normalized.includes("cost of goods") || normalized.includes("cost of sales") || normalized.includes("cogs")) return "cogs";
+  if (normalized.includes("expense")) return "expense";
+  if (normalized.includes("income") || normalized.includes("revenue") || normalized.includes("sales")) return "revenue";
+  if (normalized.includes("asset")) return "asset";
+  if (normalized.includes("liabil")) return "liability";
+  if (normalized.includes("equity")) return "equity";
+  return "other";
+}
+
+function isLikelyCogsAccount(accountName: unknown, accountCode: unknown, classification: unknown): boolean {
+  const name = String(accountName || "").toLowerCase();
+  const compactName = name.replace(/[\s_-]+/g, "");
+  const cls = stripManualClassificationPrefix(classification).toLowerCase();
+  const code = extractNormalizedAccountCode(accountCode, accountName);
+  const isCogsCode = Number.isFinite(code) && (code as number) >= 5000 && (code as number) < 6000;
+  const isCogsLabel =
+    name.includes("cost of sales") ||
+    name.includes("costs of sales") ||
+    name.includes("cost of goods sold") ||
+    name.includes("cost of goods") ||
+    name.includes("cogs") ||
+    name.includes("direct cost") ||
+    compactName.includes("costofsales") ||
+    compactName.includes("costofgoodssold") ||
+    compactName.includes("costofgoods") ||
+    compactName.includes("directcost");
+  const isCogsClassification =
+    cls.includes("cost of sales") ||
+    cls.includes("cost of goods") ||
+    cls.includes("cogs") ||
+    cls === "c";
+  return isCogsCode || isCogsLabel || isCogsClassification;
+}
+
+function isTargetFieldIncompatibleWithClassification(
+  targetField: string,
+  classification: unknown,
+  accountName?: unknown,
+  accountCode?: unknown,
+): boolean {
+  const targetFamily = getTargetFieldFamily(targetField);
+  const classificationFamily = getClassificationFamily(classification);
+  if (targetFamily === "other" || classificationFamily === "other") return false;
+  // Several accounting systems emit COGS under generic "Expense".
+  // Keep explicit COGS accounts mappable to COGS families.
+  if (
+    classificationFamily === "expense" &&
+    targetFamily === "cogs" &&
+    isLikelyCogsAccount(accountName, accountCode, classification)
+  ) {
+    return false;
+  }
+  if (classificationFamily === "expense") return targetFamily !== "expense";
+  return targetFamily !== classificationFamily;
+}
+
 function isLikelyEquityMapping(mapping: {
   qbAccount?: string | null;
   qbAccountCode?: string | null;
   qbAccountClassification?: string | null;
 }): boolean {
-  const classification = String(mapping.qbAccountClassification || "").toLowerCase();
+  const classification = stripManualClassificationPrefix(mapping.qbAccountClassification).toLowerCase();
   const accountName = String(mapping.qbAccount || "").toLowerCase();
   const code = extractNormalizedAccountCode(mapping.qbAccountCode, mapping.qbAccount);
   const isEquityCode = Number.isFinite(code) && (code as number) >= 3000 && (code as number) < 4000;
@@ -191,10 +330,23 @@ export async function GET(request: NextRequest) {
     const allowedTargetFields = getAllowedTargetFieldSet(company?.industrySectorCategory || '01');
     const sectorCategory = company?.industrySectorCategory || '01';
     const invalidMappings = mappings.filter((m: any) => {
+      const sourceMatch =
+        snapshotById.get(normalize(m.qbAccountId)) || snapshotByName.get(normalize(m.qbAccount));
+      const effectiveClassification = isManualClassification(m.qbAccountClassification)
+        ? m.qbAccountClassification
+        : (sourceMatch?.classification || m.qbAccountClassification);
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       if (!normalizedTargetField) return false;
       const invalidForSector = !allowedTargetFields.has(normalizedTargetField);
-      const semanticallyInvalid = isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField);
+      const semanticallyInvalid =
+        (isLikelyEquityMapping({ ...m, qbAccountClassification: effectiveClassification }) &&
+          isRevenueTargetField(normalizedTargetField)) ||
+        isTargetFieldIncompatibleWithClassification(
+          normalizedTargetField,
+          effectiveClassification,
+          m.qbAccount,
+          m.qbAccountCode || m.qbAccountId,
+        );
       return invalidForSector || semanticallyInvalid;
     });
     const invalidMappingIds = invalidMappings
@@ -225,8 +377,19 @@ export async function GET(request: NextRequest) {
     const sanitizedMappings = mappings.map((m: any) => {
       const sourceMatch =
         snapshotById.get(normalize(m.qbAccountId)) || snapshotByName.get(normalize(m.qbAccount));
+      const effectiveClassification = isManualClassification(m.qbAccountClassification)
+        ? m.qbAccountClassification
+        : (sourceMatch?.classification || m.qbAccountClassification);
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
-      const semanticallyInvalid = isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField);
+      const semanticallyInvalid =
+        (isLikelyEquityMapping({ ...m, qbAccountClassification: effectiveClassification }) &&
+          isRevenueTargetField(normalizedTargetField)) ||
+        isTargetFieldIncompatibleWithClassification(
+          normalizedTargetField,
+          effectiveClassification,
+          m.qbAccount,
+          m.qbAccountCode || m.qbAccountId,
+        );
       const effectiveTargetField = semanticallyInvalid ? "unmapped" : normalizedTargetField;
       const isUnmapped =
         !effectiveTargetField || effectiveTargetField === "unmapped";
@@ -247,12 +410,14 @@ export async function GET(request: NextRequest) {
       if (!effectiveTargetField || effectiveTargetField === "unmapped" || allowedTargetFields.has(effectiveTargetField)) {
         return {
           ...m,
+          qbAccountClassification: effectiveClassification,
           targetField: effectiveTargetField,
           sourceStatus,
         };
       }
       return {
         ...m,
+        qbAccountClassification: effectiveClassification,
         invalidTargetField: m.targetField,
         targetField: "",
         sourceStatus,
@@ -355,7 +520,14 @@ export async function POST(request: NextRequest) {
     );
     const sanitizedUniqueMappings = uniqueMappings.map((m: any) => {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
-      const semanticallyInvalid = isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField);
+      const semanticallyInvalid =
+        (isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField)) ||
+        isTargetFieldIncompatibleWithClassification(
+          normalizedTargetField,
+          m.qbAccountClassification,
+          m.qbAccount,
+          m.qbAccountCode || m.qbAccountId,
+        );
       const isExplicitlyMapped = normalizedTargetField && normalizedTargetField !== "unmapped";
       if ((isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) || semanticallyInvalid) {
         return {

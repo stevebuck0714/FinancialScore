@@ -192,6 +192,10 @@ function extractAccountsFromPayload(payload: unknown): SourceAccount[] {
   return Array.from(deduped.values());
 }
 
+function isManualClassification(value: unknown): boolean {
+  return String(value || '').trim().toLowerCase().startsWith('manual:');
+}
+
 async function runInChunks<T>(items: T[], chunkSize: number, worker: (item: T) => Promise<void>): Promise<void> {
   const safeChunkSize = Math.max(1, Math.floor(chunkSize));
   for (let i = 0; i < items.length; i += safeChunkSize) {
@@ -290,7 +294,9 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
       qbAccount: source.accountName,
       qbAccountId: source.accountId,
       qbAccountCode: source.accountCode,
-      qbAccountClassification: source.classification,
+      qbAccountClassification: isManualClassification(existingRow.qbAccountClassification)
+        ? existingRow.qbAccountClassification
+        : source.classification,
     };
     const changed =
       (existingRow.qbAccount || '') !== (next.qbAccount || '') ||

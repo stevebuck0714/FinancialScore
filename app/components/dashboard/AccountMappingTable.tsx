@@ -73,6 +73,11 @@ export default function AccountMappingTable({
     accountName?: string,
     targetField?: string
   ): 'revenue' | 'cogs' | 'expense' | 'nonOperating' | 'asset' | 'liability' | 'equity' | 'other' => {
+    const stripManualPrefix = (input?: string): string => {
+      const raw = String(input || '').trim();
+      if (!raw) return '';
+      return raw.toLowerCase().startsWith('manual:') ? raw.slice('manual:'.length).trim() : raw;
+    };
     const accountCodeMatch = (accountName || '').trim().toLowerCase().match(/^\s*(\d{4,})/);
     const accountCode = accountCodeMatch ? Number(accountCodeMatch[1]) : NaN;
     const isLikelyCogsCode = Number.isFinite(accountCode) && accountCode >= 5000 && accountCode < 6000;
@@ -131,11 +136,30 @@ export default function AccountMappingTable({
       ) return 'equity';
     }
 
-    const normalized = (value || '').trim().toLowerCase();
+    const normalized = stripManualPrefix(value).trim().toLowerCase();
     const normalizedAccountName = (accountName || '').trim().toLowerCase();
     const compact = normalized.replace(/[\s_-]+/g, '');
     const compactAccountName = normalizedAccountName.replace(/[\s_-]+/g, '');
+    // Support compact accounting-system codes used by some connectors.
+    if (normalized === 'r') return 'revenue';
+    if (normalized === 'e') return 'expense';
+    if (normalized === 'a') return 'asset';
+    if (normalized === 'l') return 'liability';
+    if (normalized === 'q') return 'equity';
+    if (normalized === 'c') return 'cogs';
     const isLikelyNonOperatingCode = Number.isFinite(accountCode) && accountCode >= 9000 && accountCode < 10000;
+    const isLikelyCogsLabel =
+      normalizedAccountName.includes('cost of sales') ||
+      normalizedAccountName.includes('cost of goods sold') ||
+      normalizedAccountName.includes('cost of goods') ||
+      normalizedAccountName.includes('cogs') ||
+      normalizedAccountName.includes('direct cost') ||
+      normalizedAccountName.includes('costs of sales') ||
+      compactAccountName.includes('costofsales') ||
+      compactAccountName.includes('costofgoodssold') ||
+      compactAccountName.includes('costofgoods') ||
+      compactAccountName.includes('directcost');
+    if (isLikelyCogsCode || isLikelyCogsLabel) return 'cogs';
     const isNonOperatingLabel =
       normalized.includes('non-operating') ||
       normalized.includes('non operating') ||
