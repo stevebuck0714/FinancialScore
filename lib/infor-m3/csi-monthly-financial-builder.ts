@@ -8,6 +8,26 @@ type ChartAccount = {
   accountType: AccountType;
 };
 
+export type NormalizedCsiSlLedgersRow = {
+  site: string | null;
+  transNum: string | null;
+  recordDate: Date | null;
+  transDate: Date | null;
+  acct: string | null;
+  controlYear: number | null;
+  controlPeriod: number | null;
+  debit: number;
+  credit: number;
+  signedAmount: number;
+  currencyCode: string | null;
+  reference: string | null;
+  description: string | null;
+  transactionType: string | null;
+  vendorNumber: string | null;
+  vendorName: string | null;
+  rowPointer: string | null;
+};
+
 const ACCOUNT_KEYS = [
   'Acct',
   'AcctNum',
@@ -41,9 +61,31 @@ const ACCOUNT_TYPE_KEYS = [
   'Category',
 ];
 
-const YEAR_KEYS = ['FiscalYear', 'fiscalYear', 'Year', 'year', 'FiscYear'];
-const PERIOD_KEYS = ['FiscalPeriod', 'fiscalPeriod', 'Period', 'period', 'Per', 'per'];
-const DATE_KEYS = ['PeriodEndDate', 'periodEndDate', 'Date', 'date', 'RecordDate', 'recordDate'];
+const YEAR_KEYS = ['FiscalYear', 'fiscalYear', 'Year', 'year', 'FiscYear', 'ControlYear', 'controlYear'];
+const PERIOD_KEYS = [
+  'FiscalPeriod',
+  'fiscalPeriod',
+  'Period',
+  'period',
+  'Per',
+  'per',
+  'ControlPeriod',
+  'controlPeriod',
+];
+const DATE_KEYS = [
+  'PeriodEndDate',
+  'periodEndDate',
+  'Date',
+  'date',
+  'RecordDate',
+  'recordDate',
+  'TransDate',
+  'transDate',
+  'CheckDate',
+  'checkDate',
+  'ObsDate',
+  'obsDate',
+];
 const BEGIN_BALANCE_KEYS = ['BeginBalance', 'beginBalance', 'BeginningBalance', 'OpenBal', 'openingBalance'];
 const DEBIT_KEYS = ['Debit', 'Debits', 'debit', 'debits', 'PeriodDebit', 'periodDebit', 'MtdDebit', 'mtdDebit'];
 const CREDIT_KEYS = ['Credit', 'Credits', 'credit', 'credits', 'PeriodCredit', 'periodCredit', 'MtdCredit', 'mtdCredit'];
@@ -63,6 +105,18 @@ const ENDING_BALANCE_KEYS = [
   'Amount',
   'amount',
 ];
+const DOM_DEBIT_KEYS = ['DerDomAmountDebit', 'derDomAmountDebit', 'DomAmountDebit', 'domAmountDebit'];
+const DOM_CREDIT_KEYS = ['DerDomAmountCredit', 'derDomAmountCredit', 'DomAmountCredit', 'domAmountCredit'];
+const DOM_SIGNED_AMOUNT_KEYS = ['DomAmount', 'domAmount', 'Amount', 'amount', 'ForAmount', 'forAmount'];
+
+const GL_SUMMARY_PROGRAM_HINTS = new Set([
+  'GLACCTPERIODBALANCES',
+  'SLGLACCTPERIODBALANCES',
+  'GLACCOUNTBALANCES',
+  'GLLEDGERPERIODS',
+  'SLGLLEDGERPERIODS',
+  'LEDGERBALANCES',
+]);
 
 function asRecord(value: unknown): JsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : null;
@@ -106,6 +160,23 @@ function pickNumber(record: JsonRecord, keys: string[]): number {
   return toNumber(readAny(record, keys));
 }
 
+function firstNonEmptyToken(record: JsonRecord, keys: string[]): string {
+  for (const key of keys) {
+    if (!(key in record)) continue;
+    const token = normalizeToken(record[key]);
+    if (token) return token;
+  }
+  const lowerMap = new Map<string, unknown>();
+  for (const [key, value] of Object.entries(record)) {
+    lowerMap.set(key.toLowerCase(), value);
+  }
+  for (const key of keys) {
+    const token = normalizeToken(lowerMap.get(key.toLowerCase()));
+    if (token) return token;
+  }
+  return '';
+}
+
 function parseCompactDateToken(token: string): Date | null {
   const raw = token.trim();
   if (!raw) return null;
@@ -135,11 +206,41 @@ function parseCompactDateToken(token: string): Date | null {
       return new Date(year, month - 1, 1);
     }
   }
+  // CSI commonly returns timestamps like "20260323 17:03:30.850"
+  // (or without milliseconds). Treat these as month-resolvable dates.
+  const yyyymmddWithTime = raw.match(/^(\d{4})(\d{2})(\d{2})[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/);
+  if (yyyymmddWithTime) {
+    const year = Number(yyyymmddWithTime[1]);
+    const month = Number(yyyymmddWithTime[2]);
+    const day = Number(yyyymmddWithTime[3]);
+    if (year >= 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return new Date(year, month - 1, 1);
+    }
+  }
   return null;
 }
 
+function parseCsiDateTimeToken(value: unknown): Date | null {
+  const token = normalizeToken(value);
+  if (!token) return null;
+  const compact = token.match(/^(\d{4})(\d{2})(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
+  if (compact) {
+    const year = Number(compact[1]);
+    const month = Number(compact[2]);
+    const day = Number(compact[3]);
+    const hour = Number(compact[4]);
+    const minute = Number(compact[5]);
+    const second = Number(compact[6]);
+    const ms = Number((compact[7] || '0').padEnd(3, '0'));
+    const parsed = new Date(Date.UTC(year, month - 1, day, hour, minute, second, ms));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  const parsed = new Date(token);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function parseRowMonth(record: JsonRecord): Date | null {
-  const explicitDate = normalizeToken(readAny(record, DATE_KEYS));
+  const explicitDate = firstNonEmptyToken(record, DATE_KEYS);
   if (explicitDate) {
     const compactParsed = parseCompactDateToken(explicitDate);
     if (compactParsed) return compactParsed;
@@ -149,12 +250,97 @@ function parseRowMonth(record: JsonRecord): Date | null {
     }
   }
 
-  const year = toNumber(readAny(record, YEAR_KEYS));
-  const period = toNumber(readAny(record, PERIOD_KEYS));
+  const yearToken = firstNonEmptyToken(record, YEAR_KEYS);
+  const periodToken = firstNonEmptyToken(record, PERIOD_KEYS);
+  const year = toNumber(yearToken);
+  const period = toNumber(periodToken);
   if (year > 1900 && period >= 1 && period <= 12) {
     return new Date(Math.trunc(year), Math.trunc(period) - 1, 1);
   }
+  if (periodToken) {
+    // Common CSI variant: ControlPeriod/FiscalPeriod as compact YYYYMM (or YYYYPP).
+    const compactYearMonth = periodToken.match(/^(\d{4})(\d{2})$/);
+    if (compactYearMonth) {
+      const compactYear = Number(compactYearMonth[1]);
+      const compactMonth = Number(compactYearMonth[2]);
+      if (compactYear >= 1900 && compactMonth >= 1 && compactMonth <= 12) {
+        return new Date(compactYear, compactMonth - 1, 1);
+      }
+    }
+    // Also support YYYY-MM or YYYY/MM period tokens.
+    const splitYearMonth = periodToken.match(/^(\d{4})[-/](\d{1,2})$/);
+    if (splitYearMonth) {
+      const splitYear = Number(splitYearMonth[1]);
+      const splitMonth = Number(splitYearMonth[2]);
+      if (splitYear >= 1900 && splitMonth >= 1 && splitMonth <= 12) {
+        return new Date(splitYear, splitMonth - 1, 1);
+      }
+    }
+  }
+
+  // Some CSI ledger payloads provide only generic "period"/"date"-ish fields
+  // under varying names (e.g. controlperiod, postdate). Try a tolerant scan.
+  for (const [key, value] of Object.entries(record)) {
+    const keyLower = key.toLowerCase();
+    if (!(keyLower.includes('date') || keyLower.includes('period') || keyLower.includes('fiscal'))) continue;
+    const token = normalizeToken(value);
+    if (!token) continue;
+    const compactParsed = parseCompactDateToken(token);
+    if (compactParsed) return compactParsed;
+    const parsed = new Date(token);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+    }
+  }
   return null;
+}
+
+function resolveDebitCreditAmounts(record: JsonRecord): { debit: number; credit: number } {
+  const standardDebit = pickNumber(record, DEBIT_KEYS);
+  const standardCredit = pickNumber(record, CREDIT_KEYS);
+  if (standardDebit !== 0 || standardCredit !== 0) {
+    return { debit: standardDebit, credit: standardCredit };
+  }
+
+  const domDebit = pickNumber(record, DOM_DEBIT_KEYS);
+  const domCredit = pickNumber(record, DOM_CREDIT_KEYS);
+  if (domDebit !== 0 || domCredit !== 0) {
+    return { debit: domDebit, credit: domCredit };
+  }
+
+  const signedAmount = pickNumber(record, DOM_SIGNED_AMOUNT_KEYS);
+  if (signedAmount > 0) return { debit: signedAmount, credit: 0 };
+  if (signedAmount < 0) return { debit: 0, credit: Math.abs(signedAmount) };
+  return { debit: 0, credit: 0 };
+}
+
+export function normalizeCsiSlLedgersRow(raw: JsonRecord): NormalizedCsiSlLedgersRow {
+  const { debit, credit } = resolveDebitCreditAmounts(raw);
+  const signedAmount = pickNumber(raw, DOM_SIGNED_AMOUNT_KEYS);
+  const controlYearValue = toNumber(readAny(raw, ['ControlYear', 'controlYear', 'FiscalYear', 'fiscalYear']));
+  const controlPeriodValue = toNumber(readAny(raw, ['ControlPeriod', 'controlPeriod', 'FiscalPeriod', 'fiscalPeriod']));
+  const controlYear = controlYearValue > 0 ? Math.trunc(controlYearValue) : null;
+  const controlPeriod = controlPeriodValue > 0 ? Math.trunc(controlPeriodValue) : null;
+
+  return {
+    site: pickString(raw, ['Site', 'site']) || null,
+    transNum: pickString(raw, ['TransNum', 'transNum']) || null,
+    recordDate: parseCsiDateTimeToken(readAny(raw, ['RecordDate', 'recordDate'])),
+    transDate: parseCsiDateTimeToken(readAny(raw, ['TransDate', 'transDate'])),
+    acct: pickString(raw, ACCOUNT_KEYS) || null,
+    controlYear,
+    controlPeriod,
+    debit,
+    credit,
+    signedAmount,
+    currencyCode: pickString(raw, ['CurrCode', 'currencyCode', 'currency']) || null,
+    reference: pickString(raw, ['Ref', 'reference']) || null,
+    description: pickString(raw, ['ChaDescription', 'FRDerDescription', 'Description', 'description']) || null,
+    transactionType: pickString(raw, ['DerTransType', 'TransType', 'Type']) || null,
+    vendorNumber: pickString(raw, ['VendNum', 'vendorNumber']) || null,
+    vendorName: pickString(raw, ['DerCustVendName', 'VendName', 'vendorName']) || null,
+    rowPointer: pickString(raw, ['RowPointer', '_ItemId']) || null,
+  };
 }
 
 function looksLikeFinancialRow(record: JsonRecord): boolean {
@@ -252,6 +438,10 @@ function inferRowsBySource(glResponses: unknown[]): { chartRows: JsonRecord[]; l
       continue;
     }
     if (programHint === 'SLLEDGERS') {
+      ledgerRows.push(...rows);
+      continue;
+    }
+    if (GL_SUMMARY_PROGRAM_HINTS.has(programHint)) {
       ledgerRows.push(...rows);
       continue;
     }
@@ -373,10 +563,131 @@ function addToBreakdown(target: Record<string, unknown>, key: string, amount: nu
   target[key] = prior + amount;
 }
 
+type MappingRow = {
+  qbAccount?: string | null;
+  qbAccountId?: string | null;
+  qbAccountCode?: string | null;
+  targetField?: string | null;
+};
+
+function normalizeMappingKey(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function isExpenseTargetField(targetField: string): boolean {
+  const normalized = String(targetField || '').trim().toLowerCase();
+  return new Set([
+    'payroll',
+    'ownerbasepay',
+    'ownersretirement',
+    'benefits',
+    'insurance',
+    'professionalfees',
+    'subcontractors',
+    'rent',
+    'taxlicense',
+    'stateincometaxes',
+    'federalincometaxes',
+    'phonecomm',
+    'infrastructure',
+    'autotravel',
+    'salesexpense',
+    'marketing',
+    'trainingcert',
+    'mealsentertainment',
+    'interestexpense',
+    'depreciationamortization',
+    'otherexpense',
+    'expense',
+    'operatingexpensetotal',
+    'nonoperatingexpense',
+    'nonoperatingincome',
+    'extraordinaryitems',
+  ]).has(normalized);
+}
+
+function applyMappedAmount(
+  bucket: ReturnType<typeof initMonthRow>,
+  targetField: string,
+  expenseMovement: number,
+  revenueMovement: number,
+  endingBalance: number,
+): boolean {
+  const normalized = String(targetField || '').trim();
+  if (!normalized || normalized.toLowerCase() === 'unmapped') return false;
+  const amountExpense = Math.abs(expenseMovement);
+  const amountRevenue = Math.abs(revenueMovement);
+  const amountBalance = Math.abs(endingBalance);
+  const lower = normalized.toLowerCase();
+
+  if (lower === 'revenue' || lower.startsWith('rev_')) {
+    bucket.revenue += amountRevenue;
+    addToBreakdown(bucket.revenueBreakdown as Record<string, unknown>, lower.startsWith('rev_') ? normalized : 'rev_other_revenue', amountRevenue);
+    return true;
+  }
+  if (
+    lower === 'cogstotal' ||
+    lower === 'costofgoodssold' ||
+    lower.startsWith('cogs_') ||
+    lower.startsWith('cogs')
+  ) {
+    bucket.cogsTotal += amountExpense;
+    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
+      (bucket as unknown as Record<string, number>)[lower] += amountExpense;
+    } else {
+      bucket.cogsOther += amountExpense;
+    }
+    addToBreakdown(bucket.cogsBreakdown as Record<string, unknown>, lower.startsWith('cogs_') ? normalized : 'cogs_other_cogs', amountExpense);
+    return true;
+  }
+  if (isExpenseTargetField(lower)) {
+    bucket.expense += amountExpense;
+    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
+      (bucket as unknown as Record<string, number>)[lower] += amountExpense;
+    } else {
+      bucket.otherExpense += amountExpense;
+    }
+    addToBreakdown(bucket.expenseBreakdown as Record<string, unknown>, normalized, amountExpense);
+    return true;
+  }
+  if (lower === 'cash' || lower === 'ar' || lower === 'inventory' || lower === 'otherca' || lower === 'fixedassets' || lower === 'otherassets' || lower === 'totalassets') {
+    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
+      (bucket as unknown as Record<string, number>)[lower] += amountBalance;
+    } else {
+      bucket.otherCA += amountBalance;
+    }
+    bucket.totalAssets += amountBalance;
+    return true;
+  }
+  if (lower === 'ap' || lower === 'loc' || lower === 'othercl' || lower === 'tcl' || lower === 'ltd' || lower === 'totalliab') {
+    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
+      (bucket as unknown as Record<string, number>)[lower] += amountBalance;
+    } else {
+      bucket.otherCL += amountBalance;
+    }
+    bucket.totalLiab += amountBalance;
+    return true;
+  }
+  if (lower === 'ownerscapital' || lower === 'ownersdraw' || lower === 'commonstock' || lower === 'preferredstock' || lower === 'retainedearnings' || lower === 'additionalpaidincapital' || lower === 'treasurystock' || lower === 'totalequity') {
+    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
+      (bucket as unknown as Record<string, number>)[lower] += amountBalance;
+    } else {
+      bucket.additionalPaidInCapital += amountBalance;
+    }
+    bucket.totalEquity += amountBalance;
+    return true;
+  }
+  return false;
+}
+
 export function buildCsiMonthlyDataFromGlResponses(params: {
   glResponses: unknown[];
   throughMonth: string;
   maxMonths?: number;
+  accountMappings?: MappingRow[];
 }) {
   const throughMonth = String(params.throughMonth || '').trim();
   if (!/^\d{4}-\d{2}$/.test(throughMonth)) {
@@ -389,9 +700,30 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
   const { chartRows, ledgerRows } = inferRowsBySource(params.glResponses || []);
   const chartByAccount = buildChartIndex(chartRows);
   const monthly = new Map<string, ReturnType<typeof initMonthRow>>();
+  const mappingByName = new Map<string, string>();
+  const mappingByCode = new Map<string, string>();
+  for (const row of Array.isArray(params.accountMappings) ? params.accountMappings : []) {
+    const targetField = String(row?.targetField || '').trim();
+    if (!targetField || targetField.toLowerCase() === 'unmapped') continue;
+    const byName = normalizeMappingKey(row?.qbAccount);
+    if (byName && !mappingByName.has(byName)) mappingByName.set(byName, targetField);
+    const byCode = buildAccountKey(String(row?.qbAccountCode || row?.qbAccountId || ''));
+    if (byCode && !mappingByCode.has(byCode)) mappingByCode.set(byCode, targetField);
+  }
 
   for (const row of ledgerRows) {
-    const rowMonth = parseRowMonth(row);
+    const normalizedLedger = normalizeCsiSlLedgersRow(row);
+    const parsedMonth = parseRowMonth(row);
+    const hasControlMonth =
+      normalizedLedger.controlYear !== null &&
+      normalizedLedger.controlPeriod !== null &&
+      normalizedLedger.controlPeriod >= 1 &&
+      normalizedLedger.controlPeriod <= 12;
+    const rowMonth = parsedMonth
+      ? parsedMonth
+      : hasControlMonth
+        ? new Date(normalizedLedger.controlYear!, normalizedLedger.controlPeriod! - 1, 1)
+        : null;
     if (!rowMonth) continue;
     const monthStart = new Date(rowMonth.getFullYear(), rowMonth.getMonth(), 1);
     if (monthStart < earliestDate || monthStart > throughDate) continue;
@@ -405,9 +737,12 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     const chart = accountKey ? chartByAccount.get(accountKey) : undefined;
     const accountName = chart?.accountName || pickString(row, ACCOUNT_NAME_KEYS) || rawAccount || 'unmapped_account';
     const accountType = chart?.accountType || normalizeAccountType(pickString(row, ACCOUNT_TYPE_KEYS), accountName);
+    const mappedTargetField =
+      mappingByCode.get(accountKey) ||
+      mappingByName.get(normalizeMappingKey(accountName));
 
-    const debit = pickNumber(row, DEBIT_KEYS);
-    const credit = pickNumber(row, CREDIT_KEYS);
+    const debit = normalizedLedger.debit;
+    const credit = normalizedLedger.credit;
     const begin = pickNumber(row, BEGIN_BALANCE_KEYS);
     const explicitEnding = pickNumber(row, ENDING_BALANCE_KEYS);
     const endingBalance = explicitEnding !== 0 ? explicitEnding : begin + debit - credit;
@@ -415,6 +750,13 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     const expenseMovement = debit - credit;
     const revenueMovement = credit - debit;
     const cogsMovement = debit - credit;
+
+    if (
+      mappedTargetField &&
+      applyMappedAmount(bucket, mappedTargetField, expenseMovement, revenueMovement, endingBalance)
+    ) {
+      continue;
+    }
 
     if (accountType === 'revenue') {
       const amount = revenueMovement;
@@ -470,6 +812,15 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
       else if (accountName.toLowerCase().includes('capital')) bucket.ownersCapital += amount;
       else bucket.additionalPaidInCapital += amount;
     }
+  }
+
+  // Ensure a continuous monthly time series through the requested throughMonth.
+  // This avoids dropped columns when a month has no ledger rows.
+  const cursor = new Date(earliestDate.getFullYear(), earliestDate.getMonth(), 1);
+  while (cursor <= throughDate) {
+    const key = monthKey(cursor);
+    if (!monthly.has(key)) monthly.set(key, initMonthRow(key));
+    cursor.setMonth(cursor.getMonth() + 1);
   }
 
   const monthlyData = Array.from(monthly.entries())

@@ -142,6 +142,16 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   },
   {
     module: 'GL',
+    miProgram: 'GLAcctPeriodBalances',
+    endpointPath:
+      '/APR_PRD/CSI/IDORequestService/ido/load/GLAcctPeriodBalances?properties=Acct,FiscalYear,FiscalPeriod,BegBalance,Debit,Credit,EndBalance,Site&recordCap=200',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'GL',
     miProgram: 'SLLedgers',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLLedgers?recordCap=1000',
     mongooseConfig: 'TMSManager',
@@ -494,12 +504,21 @@ function extractPagingState(body: Record<string, unknown> | string): { moreRowsE
   };
 }
 
-function appendBookmarkToEndpoint(endpointPath: string, bookmark: string): string {
+function normalizeCsiLoadPaging(endpointPath: string, mode: 'FIRST' | 'NEXT', bookmark?: string | null): string {
   const [path, queryString = ''] = endpointPath.split('?');
   const params = new URLSearchParams(queryString);
-  params.set('bookmark', bookmark);
+  params.set('loadtype', mode);
+  if (mode === 'NEXT' && bookmark && bookmark.trim()) {
+    params.set('bookmark', bookmark.trim());
+  } else {
+    params.delete('bookmark');
+  }
   const nextQuery = params.toString();
   return nextQuery ? `${path}?${nextQuery}` : path;
+}
+
+function appendBookmarkToEndpoint(endpointPath: string, bookmark: string): string {
+  return normalizeCsiLoadPaging(endpointPath, 'NEXT', bookmark);
 }
 
 function formatCsiDateLiteral(date: Date): string {
@@ -527,6 +546,19 @@ function buildSlInvHdrsWindowFilter(window?: SyncWindow): string | null {
   return `(InvDate >= '${start}' and InvDate <= '${end}')`;
 }
 
+function buildSlLedgersPeriodFilter(window?: SyncWindow, site?: string): string | null {
+  if (!window) return null;
+  const year = window.endDate.getUTCFullYear();
+  const period = window.endDate.getUTCMonth() + 1;
+  const clauses = [`ControlYear='${year}'`, `ControlPeriod='${period}'`];
+  const siteValue = String(site || '').trim();
+  if (siteValue) {
+    const safeSite = siteValue.replace(/'/g, "''");
+    clauses.unshift(`Site='${safeSite}'`);
+  }
+  return `(${clauses.join(' and ')})`;
+}
+
 function applyCsiSourceWindowAndSort(
   endpointPath: string,
   row: InforProgramRow,
@@ -537,21 +569,33 @@ function applyCsiSourceWindowAndSort(
     return { endpointPath, applied: false };
   }
 
-  // Start with SLInvHdrs, where payload scan cost is currently highest.
+  // Start with known high-volume CSI sources where narrowing by window materially
+  // reduces repeated page scans and aligns payload coverage to the requested run.
   const ido = String(row.miProgram || '').trim().toUpperCase();
-  if (moduleType !== 'sales' || ido !== 'SLINVHDRS') {
-    return { endpointPath, applied: false };
-  }
-
-  const filter = buildSlInvHdrsWindowFilter(window);
-  if (!filter) return { endpointPath, applied: false };
-
   const [path, queryString = ''] = endpointPath.split('?');
   const params = new URLSearchParams(queryString);
-  if (!params.get('filter')) params.set('filter', filter);
-  if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
-  const next = params.toString();
-  return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+  if (moduleType === 'sales' && ido === 'SLINVHDRS') {
+    const filter = buildSlInvHdrsWindowFilter(window);
+    if (!filter) return { endpointPath, applied: false };
+    if (!params.get('filter')) params.set('filter', filter);
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+  }
+
+  if (moduleType === 'gl' && ido === 'SLLEDGERS') {
+    const filter = buildSlLedgersPeriodFilter(window, row.site);
+    if (!filter) return { endpointPath, applied: false };
+    // For SLLedgers, extract by accounting period instead of RecordDate ranges.
+    // This avoids sparse month coverage and aligns to financial reporting periods.
+    params.set('filter', filter);
+    params.set('recordCap', '250');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'Site asc,TransNum asc');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+  }
+
+  return { endpointPath, applied: false };
 }
 
 const SLINVHDRS_KEYSET_PREFIX = 'slinvhdrs-keyset:';
@@ -567,6 +611,11 @@ type SlCustomersKeyset = {
 const SLARTRANS_KEYSET_PREFIX = 'slartrans-keyset:';
 type SlArtransKeyset = {
   rowPointer: string;
+};
+const SLLEDGERS_KEYSET_PREFIX = 'slledgers-keyset:';
+type SlLedgersKeyset = {
+  site: string;
+  transNum: string;
 };
 
 function encodeSlInvHdrsKeysetBookmark(value: SlInvHdrsKeyset): string {
@@ -694,6 +743,74 @@ function buildSlArtransKeysetBookmarkFromRecords(records: Record<string, unknown
   return encodeSlArtransKeysetBookmark({ rowPointer: rowPointer.trim() });
 }
 
+function encodeSlLedgersKeysetBookmark(value: SlLedgersKeyset): string {
+  const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+  return `${SLLEDGERS_KEYSET_PREFIX}${encoded}`;
+}
+
+function decodeSlLedgersKeysetBookmark(value: string | null): SlLedgersKeyset | null {
+  if (!value || !value.startsWith(SLLEDGERS_KEYSET_PREFIX)) return null;
+  const encoded = value.slice(SLLEDGERS_KEYSET_PREFIX.length).trim();
+  if (!encoded) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Partial<SlLedgersKeyset>;
+    const site = typeof decoded.site === 'string' ? decoded.site.trim() : '';
+    const transNum = typeof decoded.transNum === 'string' ? decoded.transNum.trim() : '';
+    if (!site || !transNum) return null;
+    return { site, transNum };
+  } catch {
+    return null;
+  }
+}
+
+function applySlLedgersKeysetCursor(endpointPath: string, keyset: SlLedgersKeyset): string {
+  const [path, queryString = ''] = endpointPath.split('?');
+  const params = new URLSearchParams(queryString);
+  const existingFilter = params.get('filter');
+  const safeSite = keyset.site.replace(/'/g, "''");
+  const transNumRaw = keyset.transNum.trim();
+  const safeTransNum = transNumRaw.replace(/'/g, "''");
+  const transNumExpr = /^-?\d+(\.\d+)?$/.test(transNumRaw) ? safeTransNum : `'${safeTransNum}'`;
+  const continuationCondition = `((Site > '${safeSite}') or (Site = '${safeSite}' and TransNum > ${transNumExpr}))`;
+  params.set('filter', existingFilter ? `(${existingFilter}) and ${continuationCondition}` : continuationCondition);
+  params.set('orderby', 'Site asc,TransNum asc');
+  params.delete('bookmark');
+  const next = params.toString();
+  return next ? `${path}?${next}` : path;
+}
+
+function buildSlLedgersKeysetBookmarkFromRecords(records: Record<string, unknown>[]): string | null {
+  if (!records.length) return null;
+  const lastRecord = records[records.length - 1];
+  const site = pickString(lastRecord, ['Site', 'site']);
+  const transNum = pickString(lastRecord, ['TransNum', 'transNum']);
+  if (!site || !transNum || !/^\d+$/.test(transNum.trim())) return null;
+  return encodeSlLedgersKeysetBookmark({ site: site.trim(), transNum: transNum.trim() });
+}
+
+function buildSlLedgersKeysetBookmarkFromCsiBookmark(bookmark: string | null): string | null {
+  if (!bookmark) return null;
+  const candidates = [bookmark];
+  try {
+    const decoded = decodeURIComponent(bookmark);
+    if (decoded !== bookmark) candidates.push(decoded);
+  } catch {}
+  for (const candidate of candidates) {
+    const fBlockMatch = candidate.match(/<F>([\s\S]*?)<\/F>/i) || candidate.match(/<L>([\s\S]*?)<\/L>/i);
+    const fieldBlock = fBlockMatch?.[1];
+    if (!fieldBlock) continue;
+    const values = Array.from(fieldBlock.matchAll(/<v>([\s\S]*?)<\/v>/gi))
+      .map((m) => String(m?.[1] || '').trim())
+      .filter(Boolean);
+    if (values.length < 2) continue;
+    const site = values[0];
+    const transNum = values[1];
+    if (!site || !transNum) continue;
+    return encodeSlLedgersKeysetBookmark({ site, transNum });
+  }
+  return null;
+}
+
 function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
   if (!/\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(endpointPath)) return null;
   if (/\/load\/SLAptrx(?=\?|$)/i.test(endpointPath)) return null;
@@ -707,6 +824,14 @@ const SLA_PTRX_SAFE_PROPERTIES = ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'Cu
 const AP_IDO_CANDIDATES = ['SLAptrx', 'SLAptrxp', 'SLAptrxps', 'SLAptrxs', 'Aptrx', 'Aptrxp', 'Aptrxps', 'Aptrxs'];
 const SL_COITEMS_SAFE_PROPERTIES = ['CoNum', 'CoLine', 'CoRelease', 'Item', 'Stat', 'Price', 'QtyOrdered', 'QtyShipped', 'InvNum', 'Whse', 'DueDate'];
 const MAX_CSI_PAGES_PER_REQUEST = 2;
+const OPTIONAL_CSI_GL_SUMMARY_PROGRAMS = new Set([
+  'GLACCTPERIODBALANCES',
+  'SLGLACCTPERIODBALANCES',
+  'GLACCOUNTBALANCES',
+  'GLLEDGERPERIODS',
+  'SLGLLEDGERPERIODS',
+  'LEDGERBALANCES',
+]);
 
 function ensureCsiProperties(endpointPath: string, properties: string[]): string {
   const [path, queryString = ''] = endpointPath.split('?');
@@ -791,7 +916,29 @@ function shouldRetryWithoutMongooseConfig(message: string): boolean {
   );
 }
 
-function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'other' {
+function isOptionalCsiGlSummaryIdoMissing(params: {
+  moduleType: ReturnType<typeof classifyModule>;
+  row: InforProgramRow;
+  endpointPath: string;
+  payloadMessage: string;
+}): boolean {
+  if (params.moduleType !== 'gl') return false;
+  const msg = params.payloadMessage.trim().toLowerCase();
+  if (!msg.includes('ido not found')) return false;
+  const program = String(params.row.miProgram || '').trim().toUpperCase();
+  if (program && OPTIONAL_CSI_GL_SUMMARY_PROGRAMS.has(program)) return true;
+  const endpoint = params.endpointPath.toLowerCase();
+  return (
+    endpoint.includes('/load/glacctperiodbalances') ||
+    endpoint.includes('/load/slglacctperiodbalances') ||
+    endpoint.includes('/load/glaccountbalances') ||
+    endpoint.includes('/load/glledgerperiods') ||
+    endpoint.includes('/load/slglledgerperiods') ||
+    endpoint.includes('/load/ledgerbalances')
+  );
+}
+
+function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'gl' | 'other' {
   const m = moduleName.trim().toLowerCase();
   if (m === 'cash' || m.includes('cash') || m.includes('bank')) return 'cash';
   if (m === 'ar' || m.includes('ar') || m.includes('receivable')) return 'ar';
@@ -799,11 +946,19 @@ function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' |
   if (m === 'customer' || m.includes('customer')) return 'customer';
   if (m === 'sales' || m.includes('sales') || m.includes('invoice') || m.includes('order')) return 'sales';
   if (m === 'inventory' || m.includes('inventory') || m.includes('item')) return 'inventory';
+  if (m === 'gl' || m.includes('ledger') || m.includes('general ledger')) return 'gl';
   return 'other';
 }
 
 function buildCsiEndpointPath(row: InforProgramRow): string | null {
-  if (row.endpointPath && row.endpointPath.length > 0) return row.endpointPath;
+  if (row.endpointPath && row.endpointPath.length > 0) {
+    const raw = row.endpointPath;
+    if (/\/IDORequestService\/ido\/load\//i.test(raw)) {
+      // Force explicit FIRST mode for initial calls and strip stale bookmarks.
+      return normalizeCsiLoadPaging(raw, 'FIRST');
+    }
+    return raw;
+  }
   if (!row.miProgram) return null;
   const params = new URLSearchParams();
   if (row.properties && row.properties.length > 0) {
@@ -811,7 +966,10 @@ function buildCsiEndpointPath(row: InforProgramRow): string | null {
   }
   const cap = row.recordCap && row.recordCap > 0 ? row.recordCap : 1000;
   params.set('recordCap', String(cap));
-  return `/APR_PRD/CSI/IDORequestService/ido/load/${row.miProgram}?${params.toString()}`;
+  return normalizeCsiLoadPaging(
+    `/APR_PRD/CSI/IDORequestService/ido/load/${row.miProgram}?${params.toString()}`,
+    'FIRST'
+  );
 }
 
 function asString(value: unknown): string | null {
@@ -1565,6 +1723,81 @@ async function saveInventory(
   return rows.length;
 }
 
+async function upsertDailyFinancialSnapshotFromOperationalTables(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly'
+): Promise<void> {
+  const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
+  if (!dailySnapshotDelegate) return;
+
+  const [cashAgg, inventoryAgg, productAgg, arSnapshot, apSnapshot] = await Promise.all([
+    prisma.cashSnapshot.aggregate({
+      where: { companyId, snapshotDate, frequency },
+      _sum: { cashBalance: true },
+    }),
+    prisma.inventorySnapshot.aggregate({
+      where: { companyId, snapshotDate, frequency },
+      _sum: { assetValue: true },
+    }),
+    prisma.productSalesSnapshot.aggregate({
+      where: { companyId, snapshotDate, frequency },
+      _sum: { revenue: true, cogs: true },
+    }),
+    prisma.aRAgingSnapshot.findUnique({
+      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+      select: { totalAR: true },
+    }),
+    prisma.aPAgingSnapshot.findUnique({
+      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+      select: { totalAP: true },
+    }),
+  ]);
+
+  const cash = Number(cashAgg?._sum?.cashBalance || 0);
+  const inventory = Number(inventoryAgg?._sum?.assetValue || 0);
+  const revenue = Number(productAgg?._sum?.revenue || 0);
+  const cogsTotal = Number(productAgg?._sum?.cogs || 0);
+  const ar = Number(arSnapshot?.totalAR || 0);
+  const ap = Number(apSnapshot?.totalAP || 0);
+  const tca = cash + ar + inventory;
+  const totalAssets = tca;
+  const totalLiab = ap;
+  const totalEquity = totalAssets - totalLiab;
+  const totalLAndE = totalLiab + totalEquity;
+
+  const payload = {
+    companyId,
+    snapshotDate,
+    frequency,
+    sourcePlatform: 'INFOR_M3',
+    revenue,
+    cogsTotal,
+    expense: cogsTotal,
+    cash,
+    ar,
+    inventory,
+    tca,
+    totalAssets,
+    ap,
+    totalLiab,
+    totalEquity,
+    totalLAndE,
+  };
+
+  await dailySnapshotDelegate.upsert({
+    where: {
+      companyId_snapshotDate_frequency: {
+        companyId,
+        snapshotDate,
+        frequency,
+      },
+    },
+    create: payload,
+    update: payload,
+  });
+}
+
 export async function syncInforM3OperationalData(
   companyId: string,
   frequency: 'daily' | 'weekly' | 'monthly' = 'daily',
@@ -1695,6 +1928,7 @@ export async function syncInforM3OperationalData(
       const inputKeyset = decodeSlInvHdrsKeysetBookmark(inputBookmark);
       const inputCustomersKeyset = decodeSlCustomersKeysetBookmark(inputBookmark);
       const inputArtransKeyset = decodeSlArtransKeysetBookmark(inputBookmark);
+      const inputSlLedgersKeyset = decodeSlLedgersKeysetBookmark(inputBookmark);
       if (
         absoluteProgramOffset === programOffset &&
         reqIndex === requestStartIndex &&
@@ -1703,12 +1937,15 @@ export async function syncInforM3OperationalData(
         const isSlInvHdrs = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLINVHDRS';
         const isSlCustomers = moduleType === 'customer' && String(row.miProgram || '').trim().toUpperCase() === 'SLCUSTOMERS';
         const isSlArtrans = moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
+        const isSlLedgers = moduleType === 'gl' && String(row.miProgram || '').trim().toUpperCase() === 'SLLEDGERS';
         if (isSlInvHdrs && inputKeyset) {
           initialEndpointPath = applySlInvHdrsKeysetCursor(sourceWindowBaseEndpointPath, inputKeyset);
         } else if (isSlCustomers && inputCustomersKeyset) {
           initialEndpointPath = applySlCustomersKeysetCursor(sourceWindowBaseEndpointPath, inputCustomersKeyset);
         } else if (isSlArtrans && inputArtransKeyset) {
           initialEndpointPath = applySlArtransKeysetCursor(sourceWindowBaseEndpointPath, inputArtransKeyset);
+        } else if (isSlLedgers && inputSlLedgersKeyset) {
+          initialEndpointPath = applySlLedgersKeysetCursor(sourceWindowBaseEndpointPath, inputSlLedgersKeyset);
         } else {
           initialEndpointPath = appendBookmarkToEndpoint(sourceWindowBaseEndpointPath, inputBookmark);
         }
@@ -1719,9 +1956,14 @@ export async function syncInforM3OperationalData(
         timeoutMs: requestTimeoutMs,
         headers: req.headers,
       });
+      const isWindowedSlLedgersRequest =
+        moduleType === 'gl' &&
+        String(row.miProgram || '').trim().toUpperCase() === 'SLLEDGERS' &&
+        Boolean(syncWindow);
       if (
         !isTransportAndPayloadSuccess(response) &&
         sourceWindowPathResult.applied &&
+        !isWindowedSlLedgersRequest &&
         shouldRetryWithoutSourceWindowHint(extractResponseMessage(response.body))
       ) {
         const fallbackInitialPath =
@@ -1934,6 +2176,25 @@ export async function syncInforM3OperationalData(
               continuationBookmark = inputBookmark;
             }
           }
+          const isSlLedgers = moduleType === 'gl' && String(row.miProgram || '').trim().toUpperCase() === 'SLLEDGERS';
+          const shouldForceSlLedgersKeysetContinuation =
+            isSlLedgers &&
+            (
+              paginationBookmarkStalled ||
+              Boolean(inputSlLedgersKeyset) ||
+              (inputBookmark && continuationBookmark && continuationBookmark === inputBookmark)
+            );
+          if (shouldForceSlLedgersKeysetContinuation) {
+            const keysetBookmark =
+              buildSlLedgersKeysetBookmarkFromRecords(rawRecords) ||
+              buildSlLedgersKeysetBookmarkFromCsiBookmark(continuationBookmark) ||
+              buildSlLedgersKeysetBookmarkFromCsiBookmark(inputBookmark);
+            if (keysetBookmark) {
+              continuationBookmark = keysetBookmark;
+            } else if (inputSlLedgersKeyset && inputBookmark) {
+              continuationBookmark = inputBookmark;
+            }
+          }
           const bookmarkDidNotAdvance =
             Boolean(inputBookmark) &&
             Boolean(continuationBookmark) &&
@@ -2003,10 +2264,20 @@ export async function syncInforM3OperationalData(
         ? aggregateForCompanyRollup(recordsAfterDateWindow, moduleType, arApFlow)
         : recordsAfterDateWindow;
       const payloadOk = isTransportAndPayloadSuccess(response);
-      const statusText = payloadOk ? 'success' : 'error';
+      const payloadMsg = extractResponseMessage(response.body) || `HTTP ${response.status}`;
+      const optionalProgramMissing = !payloadOk
+        ? isOptionalCsiGlSummaryIdoMissing({
+            moduleType,
+            row,
+            endpointPath: effectiveEndpointPath,
+            payloadMessage: payloadMsg,
+          })
+        : false;
+      const requestSucceeded = payloadOk || optionalProgramMissing;
+      const statusText = requestSucceeded ? 'success' : 'error';
 
       let moduleRecordsCreated = 0;
-      if (payloadOk) {
+      if (requestSucceeded) {
         try {
           switch (moduleType) {
             case 'cash':
@@ -2070,7 +2341,6 @@ export async function syncInforM3OperationalData(
           );
         }
       } else {
-        const payloadMsg = extractResponseMessage(response.body) || `HTTP ${response.status}`;
         errors.push(
           `${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${payloadMsg} (credentials source: ${credentialSource})`
         );
@@ -2113,6 +2383,8 @@ export async function syncInforM3OperationalData(
                   endDate: syncWindow.endDate.toISOString(),
                 }
               : null,
+            optionalProgramSkipped: optionalProgramMissing,
+            optionalProgramSkipReason: optionalProgramMissing ? payloadMsg : null,
             response: response.body,
           },
         },
@@ -2129,6 +2401,16 @@ export async function syncInforM3OperationalData(
       requestOffset: 0,
       bookmark: null,
     };
+  }
+
+  if (!continuation) {
+    try {
+      await upsertDailyFinancialSnapshotFromOperationalTables(companyId, snapshotDate, frequency);
+    } catch (dailyPersistError) {
+      const message =
+        dailyPersistError instanceof Error ? dailyPersistError.message : 'Failed to upsert DailyFinancialSnapshot row';
+      errors.push(`daily-financial-snapshot: ${message}`);
+    }
   }
 
   if (!options?.skipPrune && !continuation) {

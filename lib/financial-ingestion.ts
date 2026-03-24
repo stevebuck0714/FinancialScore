@@ -72,7 +72,22 @@ async function resolveUploadedByUserId(companyId: string, preferredUserId?: stri
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   });
-  return fallback?.id || null;
+  if (fallback?.id) return fallback.id;
+
+  // Multi-tenant fallback: some users are linked via UserCompanyAccess only.
+  const accessFallback = await prisma.userCompanyAccess.findFirst({
+    where: { companyId },
+    orderBy: { createdAt: 'asc' },
+    select: { userId: true },
+  });
+  if (accessFallback?.userId) return accessFallback.userId;
+
+  // Last-resort fallback for legacy data shapes.
+  const anyUser = await prisma.user.findFirst({
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  return anyUser?.id || null;
 }
 
 function parseTargetMonth(value: unknown): Date | null {

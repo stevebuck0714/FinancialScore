@@ -1441,6 +1441,56 @@ function FinancialScorePage() {
     });
   };
 
+  const saveAccountMappings = async () => {
+    try {
+      const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+      console.log('?? Save Mappings Debug:', {
+        currentCompany,
+        currentCompanyId: currentCompany?.id,
+        selectedCompanyId,
+        aiMappingsCount: aiMappings?.length,
+        aiMappingsSample: aiMappings?.slice(0, 2),
+        linesOfBusinessCount: linesOfBusiness?.length
+      });
+
+      if (!currentCompany?.id) {
+        alert(`Cannot save mappings: Company not found. Selected: ${selectedCompanyId}, Available companies: ${companies?.length || 0}`);
+        return;
+      }
+
+      if (!aiMappings || aiMappings.length === 0) {
+        alert('No mappings to save. Please generate AI mappings first.');
+        return;
+      }
+
+      setIsSavingMappings(true);
+      const response = await fetch('/api/account-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: currentCompany.id,
+          mappings: aiMappings.map((m: any) => ({
+            ...m,
+            targetField: normalizeMappingTargetField(m?.targetField),
+          })),
+          linesOfBusiness: linesOfBusiness
+        })
+      });
+
+      if (response.ok) {
+        alert('Account mappings saved successfully!');
+      } else {
+        const errorBody = await response.json().catch(() => ({}));
+        alert(`Failed to save account mappings${errorBody?.error ? `: ${errorBody.error}` : ''}${errorBody?.details ? `\n${typeof errorBody.details === 'string' ? errorBody.details : JSON.stringify(errorBody.details)}` : ''}`);
+      }
+    } catch (error) {
+      console.error('Error saving mappings:', error);
+      alert(`Failed to save account mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSavingMappings(false);
+    }
+  };
+
   // Back-compat: if something sets the legacy top-level 'payments' tab,
   // redirect it into Company Management > Payments.
   useEffect(() => {
@@ -10612,6 +10662,24 @@ function FinancialScorePage() {
               showCsvProcessButton ||
               hasSupportedApiReprocessPlatform ||
               Boolean(loadedMonthlyData && loadedMonthlyData.length > 0);
+            const latestAccountReviewMonthLabel = (() => {
+              const selectedTargetMonth = String(apiFinancialTargetMonth || '').trim();
+              if (/^\d{4}-\d{2}$/.test(selectedTargetMonth)) {
+                const [year, month] = selectedTargetMonth.split('-');
+                return `${month}/${year}`;
+              }
+              const masterRows = Array.isArray((masterData as any)?.monthlyData)
+                ? (masterData as any).monthlyData
+                : [];
+              const loadedRows = Array.isArray(loadedMonthlyData) ? loadedMonthlyData : [];
+              const rows = masterRows.length > 0 ? masterRows : loadedRows;
+              if (rows.length === 0) return null;
+              const latest = rows[rows.length - 1] as Record<string, unknown>;
+              const dateValue = latest?.month || latest?.date;
+              const parsed = dateValue ? new Date(String(dateValue)) : null;
+              if (!parsed || Number.isNaN(parsed.getTime())) return null;
+              return `${String(parsed.getMonth() + 1).padStart(2, '0')}/${parsed.getFullYear()}`;
+            })();
 
             return (
               <div
@@ -11249,54 +11317,7 @@ function FinancialScorePage() {
                           )}
                           
                           <button
-                            onClick={async () => {
-                              try {
-                                console.log('?? Save Mappings Debug:', {
-                                  currentCompany,
-                                  currentCompanyId: currentCompany?.id,
-                                  selectedCompanyId,
-                                  aiMappingsCount: aiMappings?.length,
-                                  aiMappingsSample: aiMappings?.slice(0, 2),
-                                  linesOfBusinessCount: linesOfBusiness?.length
-                                });
-
-                                if (!currentCompany?.id) {
-                                  alert(`Cannot save mappings: Company not found. Selected: ${selectedCompanyId}, Available companies: ${companies?.length || 0}`);
-                                  return;
-                                }
-
-                                if (!aiMappings || aiMappings.length === 0) {
-                                  alert('No mappings to save. Please generate AI mappings first.');
-                                  return;
-                                }
-
-                                setIsSavingMappings(true);
-                                const response = await fetch('/api/account-mappings', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    companyId: currentCompany.id,
-                                    mappings: aiMappings.map((m: any) => ({
-                                      ...m,
-                                      targetField: normalizeMappingTargetField(m?.targetField),
-                                    })),
-                                    linesOfBusiness: linesOfBusiness
-                                  })
-                                });
-
-                                if (response.ok) {
-                                  alert('Account mappings saved successfully!');
-                                } else {
-                                  const errorBody = await response.json().catch(() => ({}));
-                                  alert(`Failed to save account mappings${errorBody?.error ? `: ${errorBody.error}` : ''}${errorBody?.details ? `\n${typeof errorBody.details === 'string' ? errorBody.details : JSON.stringify(errorBody.details)}` : ''}`);
-                                }
-                              } catch (error) {
-                                console.error('Error saving mappings:', error);
-                                alert(`Failed to save account mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                              } finally {
-                                setIsSavingMappings(false);
-                              }
-                            }}
+                            onClick={saveAccountMappings}
                             disabled={isSavingMappings}
                             style={{
                               padding: '8px 16px',
@@ -11321,11 +11342,30 @@ function FinancialScorePage() {
                 {/* Account Preview Section */}
                 {(hasCsvData || aiMappings.length > 0) && (
                 <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '16px' }}>
-                    {hasCsvData && csvTrialBalanceData
-                      ? `Account Review - All ${csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)`
-                      : `Account Review - All ${aiMappings.length} mapped accounts`}
-                  </h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
+                    <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                      {hasCsvData && csvTrialBalanceData
+                        ? `Account Review - All ${csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)`
+                        : `Account Review - All ${aiMappings.length} mapped accounts`}
+                    </h2>
+                    <button
+                      onClick={saveAccountMappings}
+                      disabled={isSavingMappings}
+                      style={{
+                        padding: '8px 16px',
+                        background: isSavingMappings ? '#9ca3af' : '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: isSavingMappings ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                      }}
+                    >
+                      {isSavingMappings ? 'Saving...' : 'Save Account Review'}
+                    </button>
+                  </div>
                   <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
@@ -11333,7 +11373,9 @@ function FinancialScorePage() {
                           <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '80px' }}>Type</th>
                           <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '60px' }}>ID</th>
                           <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '200px' }}>Description</th>
-                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '100px' }}>Latest Value</th>
+                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px' }}>
+                            {latestAccountReviewMonthLabel ? `Latest Value (${latestAccountReviewMonthLabel})` : 'Latest Value'}
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -11421,9 +11463,11 @@ function FinancialScorePage() {
                             ...Array.from(bsValues.entries()),
                           ]);
                           const latestMasterMonthRow = (() => {
-                            const rows = Array.isArray((masterData as any)?.monthlyData)
+                            const masterRows = Array.isArray((masterData as any)?.monthlyData)
                               ? (masterData as any).monthlyData
                               : [];
+                            const loadedRows = Array.isArray(loadedMonthlyData) ? loadedMonthlyData : [];
+                            const rows = masterRows.length > 0 ? masterRows : loadedRows;
                             if (rows.length === 0) return null;
                             return rows[rows.length - 1] as Record<string, unknown>;
                           })();
@@ -11464,6 +11508,14 @@ function FinancialScorePage() {
                             }
                             if (classification === 'E' || classification === 'EXPENSE') {
                               return tryGetNumeric('expense');
+                            }
+                            if (
+                              classification === 'C' ||
+                              classification === 'COGS' ||
+                              classification.includes('COST OF SALES') ||
+                              classification.includes('COST OF GOODS')
+                            ) {
+                              return tryGetNumeric('cogsTotal');
                             }
                             if (classification === 'A' || classification === 'ASSET') {
                               return tryGetNumeric('totalAssets');

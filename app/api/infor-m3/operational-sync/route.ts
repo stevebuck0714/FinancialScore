@@ -18,6 +18,13 @@ type SyncCursor = {
   stagnantCursorCount?: number;
 };
 
+function isBookmarkStallWarningOnly(errors: string[] | undefined): boolean {
+  if (!Array.isArray(errors) || errors.length === 0) return false;
+  return errors.every((entry) =>
+    String(entry || '').toLowerCase().includes('pagination bookmark did not advance')
+  );
+}
+
 function normalizeBookmark(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -306,8 +313,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      const warningOnly = isBookmarkStallWarningOnly(dayResult.errors);
+
       return NextResponse.json({
-        ok: dayResult.success,
+        ok: dayResult.success || warningOnly,
         companyId,
         frequency,
         site,
@@ -324,6 +333,7 @@ export async function POST(request: NextRequest) {
         },
         recordsCreated: dayResult.recordsCreated,
         errors: dayResult.errors.map((message) => `[${businessDate.toISOString().slice(0, 10)}] ${message}`),
+        warningOnly,
         credentialSource: dayResult.credentialSource,
         hasMore,
         cursor,
@@ -361,8 +371,9 @@ export async function POST(request: NextRequest) {
       }
       (cursor as SyncCursor).stagnantCursorCount = nextCursor.stagnantCursorCount;
     }
+    const warningOnly = isBookmarkStallWarningOnly(result.errors);
     return NextResponse.json({
-      ok: result.success,
+      ok: result.success || warningOnly,
       companyId,
       frequency,
       site,
@@ -375,6 +386,7 @@ export async function POST(request: NextRequest) {
         : null,
       recordsCreated: result.recordsCreated,
       errors: result.errors,
+      warningOnly,
       credentialSource: result.credentialSource,
       hasMore: result.hasMore,
       cursor,

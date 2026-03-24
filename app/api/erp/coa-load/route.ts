@@ -19,6 +19,14 @@ type ConnectorConfig = {
   seedActiveIdsMetadataKey?: string;
 };
 
+type SlLedgersMonthlySqlRow = {
+  monthDate: Date;
+  totalDebit: number;
+  totalCredit: number;
+  netMovement: number;
+  txnRows: number;
+};
+
 const ERP_COA_CONNECTORS: Record<string, ConnectorConfig> = {
   QUICKBOOKS_DESKTOP: {
     enabled: true,
@@ -162,12 +170,37 @@ function hasProgramGlResponse(payload: Record<string, unknown> | null, program: 
   return false;
 }
 
+const CSI_GLSUMMARY_PROGRAMS = new Set([
+  'GLACCTPERIODBALANCES',
+  'SLGLACCTPERIODBALANCES',
+  'GLACCOUNTBALANCES',
+  'GLLEDGERPERIODS',
+  'SLGLLEDGERPERIODS',
+  'LEDGERBALANCES',
+]);
+
+function hasAnyLedgerGlResponse(payload: Record<string, unknown> | null): boolean {
+  if (!payload) return false;
+  const glResponses = Array.isArray(payload.glResponses) ? payload.glResponses : [];
+  for (const entry of glResponses) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    const value = String(row.miProgram || row.program || '').trim().toUpperCase();
+    if (value === 'SLLEDGERS' || CSI_GLSUMMARY_PROGRAMS.has(value)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function recoverPayloadFromLatestOperationalGlSync(companyId: string): Promise<Record<string, unknown> | null> {
   const logs = await prisma.apiSyncLog.findMany({
     where: {
       companyId,
       platform: 'INFOR_M3',
-      syncType: 'operational_other_CSI_LOAD',
+      syncType: {
+        in: ['operational_other_CSI_LOAD', 'operational_gl_CSI_LOAD'],
+      },
       status: 'success',
     },
     orderBy: { createdAt: 'desc' },
@@ -179,6 +212,7 @@ async function recoverPayloadFromLatestOperationalGlSync(companyId: string): Pro
   const glResponses: unknown[] = [];
   let hasCharts = false;
   let hasLedgers = false;
+  let hasSummary = false;
   for (const log of logs) {
     const details =
       log.errorDetails && typeof log.errorDetails === 'object' && !Array.isArray(log.errorDetails)
@@ -187,7 +221,8 @@ async function recoverPayloadFromLatestOperationalGlSync(companyId: string): Pro
     if (!details) continue;
     const moduleName = String(details.module || '').trim().toUpperCase();
     const program = String(details.miProgram || '').trim().toUpperCase();
-    if (moduleName !== 'GL' || !['SLCHARTS', 'SLLEDGERS'].includes(program)) continue;
+    if (moduleName !== 'GL') continue;
+    if (program !== 'SLCHARTS' && program !== 'SLLEDGERS' && !CSI_GLSUMMARY_PROGRAMS.has(program)) continue;
     if (details.response) {
       glResponses.push({
         module: moduleName,
@@ -197,7 +232,8 @@ async function recoverPayloadFromLatestOperationalGlSync(companyId: string): Pro
       });
       if (program === 'SLCHARTS') hasCharts = true;
       if (program === 'SLLEDGERS') hasLedgers = true;
-      if (hasCharts && hasLedgers) break;
+      if (CSI_GLSUMMARY_PROGRAMS.has(program)) hasSummary = true;
+      if (hasCharts && (hasLedgers || hasSummary)) break;
     }
   }
 
@@ -206,6 +242,109 @@ async function recoverPayloadFromLatestOperationalGlSync(companyId: string): Pro
     source: 'operational_gl_sync_fallback',
     recoveredAt: new Date().toISOString(),
     glResponses,
+  };
+}
+
+async function buildCsiMonthlyDataFromSlLedgersLogs(params: {
+  companyId: string;
+  throughMonth: string;
+  maxMonths: number;
+}): Promise<{ monthlyData: Record<string, unknown>[]; stats: { monthsBuilt: number; sourceRows: number } }> {
+  const throughDate = new Date(`${params.throughMonth}-01T00:00:00Z`);
+  if (Number.isNaN(throughDate.getTime())) return { monthlyData: [], stats: { monthsBuilt: 0, sourceRows: 0 } };
+  const earliestDate = new Date(throughDate.getUTCFullYear(), throughDate.getUTCMonth() - (params.maxMonths - 1), 1);
+
+  const rows = await prisma.$queryRaw<SlLedgersMonthlySqlRow[]>`
+    WITH logs AS (
+      SELECT l."errorDetails"->'response'->'Items' AS items
+      FROM "ApiSyncLog" l
+      WHERE l."companyId" = ${params.companyId}
+        AND l.platform = 'INFOR_M3'
+        AND l.status = 'success'
+        AND UPPER(COALESCE(l."errorDetails"->>'miProgram','')) = 'SLLEDGERS'
+        AND jsonb_typeof(l."errorDetails"->'response'->'Items') = 'array'
+    ),
+    ledger_rows AS (
+      SELECT x.value AS r
+      FROM logs
+      CROSS JOIN LATERAL jsonb_array_elements(items) x
+    ),
+    normalized AS (
+      SELECT
+        make_date(NULLIF(r->>'ControlYear','')::int, NULLIF(r->>'ControlPeriod','')::int, 1) AS month_date,
+        COALESCE(
+          NULLIF(r->>'DerDomAmountDebit','')::numeric,
+          CASE
+            WHEN COALESCE(NULLIF(r->>'DomAmount','')::numeric, 0) > 0
+              THEN COALESCE(NULLIF(r->>'DomAmount','')::numeric, 0)
+            ELSE 0
+          END
+        ) AS debit_amt,
+        COALESCE(
+          NULLIF(r->>'DerDomAmountCredit','')::numeric,
+          CASE
+            WHEN COALESCE(NULLIF(r->>'DomAmount','')::numeric, 0) < 0
+              THEN ABS(COALESCE(NULLIF(r->>'DomAmount','')::numeric, 0))
+            ELSE 0
+          END
+        ) AS credit_amt,
+        COALESCE(NULLIF(r->>'DomAmount','')::numeric, 0) AS net_amt
+      FROM ledger_rows
+      WHERE NULLIF(r->>'ControlYear','') IS NOT NULL
+        AND NULLIF(r->>'ControlPeriod','') IS NOT NULL
+    )
+    SELECT
+      month_date AS "monthDate",
+      SUM(debit_amt)::float8 AS "totalDebit",
+      SUM(credit_amt)::float8 AS "totalCredit",
+      SUM(net_amt)::float8 AS "netMovement",
+      COUNT(*)::int AS "txnRows"
+    FROM normalized
+    WHERE month_date >= ${earliestDate}
+      AND month_date <= ${throughDate}
+    GROUP BY month_date
+    ORDER BY month_date ASC
+  `;
+
+  const monthlyData = rows.map((row) => {
+    const monthDate = new Date(row.monthDate);
+    const month = `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, '0')}`;
+    const totalDebit = Number(row.totalDebit || 0);
+    const totalCredit = Number(row.totalCredit || 0);
+    const netMovement = Number(row.netMovement || 0);
+    return {
+      monthDate: monthDate.toISOString(),
+      date: monthDate.toISOString(),
+      month,
+      // Conservative fallback values to make ingestion deterministic.
+      // More granular classification should come from chart mappings.
+      revenue: Math.abs(netMovement),
+      expense: 0,
+      cogsTotal: 0,
+      totalAssets: 0,
+      totalLiab: 0,
+      totalEquity: 0,
+      totalLAndE: 0,
+      revenueBreakdown: { slledgersNetMovement: netMovement },
+      expenseBreakdown: {},
+      cogsBreakdown: {},
+      lobBreakdowns: {
+        slledgers: {
+          totalDebit,
+          totalCredit,
+          netMovement,
+          txnRows: Number(row.txnRows || 0),
+        },
+      },
+    };
+  });
+
+  return {
+    monthlyData,
+    stats: {
+      monthsBuilt: monthlyData.length,
+      sourceRows: rows.reduce((acc, row) => acc + Number(row.txnRows || 0), 0),
+    },
   };
 }
 
@@ -335,40 +474,56 @@ export async function POST(request: NextRequest) {
     let payloadFromOperationalGlSync: Record<string, unknown> | null = null;
     let payload = payloadFromRequest || payloadFromMetadata;
 
-    // CSI/M3 fallback recovery can be very expensive because it scans sync logs.
-    // Only run it when neither request nor saved connector metadata had payload.
-    if (!payload && (accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI')) {
+    const isInforCsiOrM3 = accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI';
+    const shouldAttemptOperationalGlFallback =
+      isInforCsiOrM3 &&
+      (
+        !payload ||
+        !hasMonthlyDataRows(payload)
+      );
+    // CSI/M3 fallback recovery can be expensive because it scans recent sync logs.
+    // Run it when payload is missing OR clearly incomplete for GL monthly build.
+    if (shouldAttemptOperationalGlFallback) {
       payloadFromOperationalGlSync = await recoverPayloadFromLatestOperationalGlSync(companyId);
-      payload = payloadFromOperationalGlSync;
+      if (!payload) {
+        payload = payloadFromOperationalGlSync;
+      }
     }
     console.log('[ERP COA] Payload resolved', {
-      source: payloadFromRequest ? 'request' : payloadFromMetadata ? 'connection_metadata' : payloadFromOperationalGlSync ? 'operational_gl_sync_fallback' : 'none',
+      source: payloadFromRequest
+        ? 'request'
+        : payloadFromMetadata
+          ? 'connection_metadata'
+          : payloadFromOperationalGlSync
+            ? 'operational_gl_sync_fallback'
+            : 'none',
       hasMonthlyDataRows: hasMonthlyDataRows(payload),
       elapsedMs: Date.now() - requestStartedAt,
     });
     if (
-      (accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI') &&
+      isInforCsiOrM3 &&
       payload &&
       !hasMonthlyDataRows(payload) &&
-      payloadFromOperationalGlSync &&
-      (!hasProgramGlResponse(payload, 'SLLEDGERS') ||
-        !hasProgramGlResponse(payload, 'SLCHARTS'))
+      payloadFromOperationalGlSync
     ) {
-      const metadataGlResponses = Array.isArray(payload.glResponses) ? payload.glResponses : [];
       const fallbackGlResponses = Array.isArray(payloadFromOperationalGlSync.glResponses)
         ? payloadFromOperationalGlSync.glResponses
         : [];
+      if (fallbackGlResponses.length > 0) {
       payload = {
         ...payload,
-        glResponses: [...metadataGlResponses, ...fallbackGlResponses],
+        // Replace stale metadata snapshots with the freshest operational GL payload.
+        glResponses: fallbackGlResponses,
         metadata: {
           ...(payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
             ? (payload.metadata as Record<string, unknown>)
             : {}),
           glFallbackMergedAt: new Date().toISOString(),
           glFallbackSource: 'operational_gl_sync_fallback',
+          glFallbackReplace: true,
         },
       };
+      }
     }
     if (!payload) {
       return NextResponse.json(
@@ -411,6 +566,7 @@ export async function POST(request: NextRequest) {
                 ? (payload.metadata as Record<string, unknown>)
                 : {}),
               source: 'csi_gl_rollup_from_slcharts_slledgers',
+              preferredLedgerSource: 'summary_gl_if_available_else_slledgers',
               generatedAt: new Date().toISOString(),
               throughMonth,
               buildStats: built.stats,
@@ -418,6 +574,37 @@ export async function POST(request: NextRequest) {
           };
         }
         syntheticMonthlyBuild = built.stats;
+      }
+    }
+    if (
+      payload &&
+      !hasMonthlyDataRows(payload) &&
+      (accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI')
+    ) {
+      const sqlFallback = await buildCsiMonthlyDataFromSlLedgersLogs({
+        companyId,
+        throughMonth,
+        maxMonths: 36,
+      });
+      if (sqlFallback.monthlyData.length > 0) {
+        payload = {
+          ...payload,
+          monthlyData: sqlFallback.monthlyData,
+          metadata: {
+            ...(payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+              ? (payload.metadata as Record<string, unknown>)
+              : {}),
+            source: 'csi_slledgers_sql_rollup_fallback',
+            generatedAt: new Date().toISOString(),
+            throughMonth,
+            buildStats: sqlFallback.stats,
+          },
+        };
+        syntheticMonthlyBuild = {
+          chartRows: 0,
+          ledgerRows: sqlFallback.stats.sourceRows,
+          monthsBuilt: sqlFallback.stats.monthsBuilt,
+        };
       }
     }
     timings.syntheticBuildMs = Date.now() - syntheticBuildStartedAt;
