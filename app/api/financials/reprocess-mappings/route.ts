@@ -590,11 +590,43 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      const payloadForIngest =
+        mode === 'only' && targetMonth
+          ? (() => {
+              const monthlyRows = Array.isArray(financialPayload?.monthlyData)
+                ? (financialPayload.monthlyData as Array<Record<string, unknown>>).filter(
+                    (row) => toYearMonth(row?.monthDate || row?.month || row?.date) === targetMonth
+                  )
+                : [];
+              const metadata =
+                financialPayload?.metadata &&
+                typeof financialPayload.metadata === 'object' &&
+                !Array.isArray(financialPayload.metadata)
+                  ? (financialPayload.metadata as Record<string, unknown>)
+                  : {};
+              diagnostics.ingestPayloadTrimmed = true;
+              diagnostics.ingestPayloadMonthlyRows = monthlyRows.length;
+              return {
+                monthlyData: monthlyRows,
+                metadata: {
+                  ...metadata,
+                  targetMonth,
+                  mode,
+                  source: 'reprocess_mappings_only_mode_trimmed',
+                },
+              };
+            })()
+          : financialPayload;
+
+      if (!(mode === 'only' && targetMonth)) {
+        diagnostics.ingestPayloadTrimmed = false;
+      }
+
       const result = await ingestFinancialPayload({
         companyId: String(companyId),
         platform: 'INFOR_M3',
         source: isInforCsi ? 'infor-csi' : 'infor-m3',
-        payload: financialPayload,
+        payload: payloadForIngest,
         syncType: 'reprocess_financial_payload',
         targetMonth: targetMonth || undefined,
         mode,
