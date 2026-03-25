@@ -8,6 +8,37 @@ type ChartAccount = {
   accountType: AccountType;
 };
 
+function dedupeRowsByLedgerIdentity(rows: JsonRecord[]): JsonRecord[] {
+  const deduped = new Map<string, JsonRecord>();
+  for (const row of rows) {
+    const rowPointer = normalizeToken(readAny(row, ['RowPointer', 'rowPointer'])).toLowerCase();
+    if (rowPointer) {
+      const key = `ptr:${rowPointer}`;
+      if (!deduped.has(key)) deduped.set(key, row);
+      continue;
+    }
+    const fallbackParts = [
+      pickString(row, ACCOUNT_KEYS),
+      pickString(row, ['ControlYear', 'controlYear', 'FiscalYear', 'fiscalYear']),
+      pickString(row, ['ControlPeriod', 'controlPeriod', 'FiscalPeriod', 'fiscalPeriod']),
+      pickString(row, ['TransNum', 'transNum']),
+      pickString(row, ['Voucher', 'voucher']),
+      pickString(row, ['VouchSeq', 'vouchSeq']),
+      pickString(row, ['Ref', 'reference']),
+      pickString(row, ['TransDate', 'transDate']),
+      pickString(row, ['RecordDate', 'recordDate']),
+      String(pickNumber(row, DOM_SIGNED_AMOUNT_KEYS)),
+      String(pickNumber(row, DOM_DEBIT_KEYS)),
+      String(pickNumber(row, DOM_CREDIT_KEYS)),
+    ]
+      .map((part) => normalizeToken(part).toLowerCase())
+      .join('|');
+    const key = `fb:${fallbackParts}`;
+    if (!deduped.has(key)) deduped.set(key, row);
+  }
+  return Array.from(deduped.values());
+}
+
 export type NormalizedCsiSlLedgersRow = {
   site: string | null;
   transNum: string | null;
@@ -185,7 +216,7 @@ function parseCompactDateToken(token: string): Date | null {
     const year = Number(yyyymm[1]);
     const month = Number(yyyymm[2]);
     if (year >= 1900 && month >= 1 && month <= 12) {
-      return new Date(year, month - 1, 1);
+      return new Date(Date.UTC(year, month - 1, 1));
     }
   }
   const yyyymmdd = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
@@ -194,7 +225,7 @@ function parseCompactDateToken(token: string): Date | null {
     const month = Number(yyyymmdd[2]);
     const day = Number(yyyymmdd[3]);
     if (year >= 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      return new Date(year, month - 1, 1);
+      return new Date(Date.UTC(year, month - 1, 1));
     }
   }
   const yyyymmddhhmmss = raw.match(/^(\d{4})(\d{2})(\d{2})\d{6}$/);
@@ -203,7 +234,7 @@ function parseCompactDateToken(token: string): Date | null {
     const month = Number(yyyymmddhhmmss[2]);
     const day = Number(yyyymmddhhmmss[3]);
     if (year >= 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      return new Date(year, month - 1, 1);
+      return new Date(Date.UTC(year, month - 1, 1));
     }
   }
   // CSI commonly returns timestamps like "20260323 17:03:30.850"
@@ -240,22 +271,14 @@ function parseCsiDateTimeToken(value: unknown): Date | null {
 }
 
 function parseRowMonth(record: JsonRecord): Date | null {
-  const explicitDate = firstNonEmptyToken(record, DATE_KEYS);
-  if (explicitDate) {
-    const compactParsed = parseCompactDateToken(explicitDate);
-    if (compactParsed) return compactParsed;
-    const parsed = new Date(explicitDate);
-    if (!Number.isNaN(parsed.getTime())) {
-      return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
-    }
-  }
-
+  // IMPORTANT: CSI accounting periods should drive month assignment first.
+  // RecordDate/TransDate can fall in adjacent months and cause drift.
   const yearToken = firstNonEmptyToken(record, YEAR_KEYS);
   const periodToken = firstNonEmptyToken(record, PERIOD_KEYS);
   const year = toNumber(yearToken);
   const period = toNumber(periodToken);
   if (year > 1900 && period >= 1 && period <= 12) {
-    return new Date(Math.trunc(year), Math.trunc(period) - 1, 1);
+    return new Date(Date.UTC(Math.trunc(year), Math.trunc(period) - 1, 1));
   }
   if (periodToken) {
     // Common CSI variant: ControlPeriod/FiscalPeriod as compact YYYYMM (or YYYYPP).
@@ -264,7 +287,7 @@ function parseRowMonth(record: JsonRecord): Date | null {
       const compactYear = Number(compactYearMonth[1]);
       const compactMonth = Number(compactYearMonth[2]);
       if (compactYear >= 1900 && compactMonth >= 1 && compactMonth <= 12) {
-        return new Date(compactYear, compactMonth - 1, 1);
+        return new Date(Date.UTC(compactYear, compactMonth - 1, 1));
       }
     }
     // Also support YYYY-MM or YYYY/MM period tokens.
@@ -273,8 +296,18 @@ function parseRowMonth(record: JsonRecord): Date | null {
       const splitYear = Number(splitYearMonth[1]);
       const splitMonth = Number(splitYearMonth[2]);
       if (splitYear >= 1900 && splitMonth >= 1 && splitMonth <= 12) {
-        return new Date(splitYear, splitMonth - 1, 1);
+        return new Date(Date.UTC(splitYear, splitMonth - 1, 1));
       }
+    }
+  }
+
+  const explicitDate = firstNonEmptyToken(record, DATE_KEYS);
+  if (explicitDate) {
+    const compactParsed = parseCompactDateToken(explicitDate);
+    if (compactParsed) return compactParsed;
+    const parsed = new Date(explicitDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1));
     }
   }
 
@@ -289,7 +322,7 @@ function parseRowMonth(record: JsonRecord): Date | null {
     if (compactParsed) return compactParsed;
     const parsed = new Date(token);
     if (!Number.isNaN(parsed.getTime())) {
-      return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+      return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1));
     }
   }
   return null;
@@ -373,6 +406,17 @@ function normalizeAccountType(rawType: string, accountName: string): AccountType
   return 'other';
 }
 
+function inferAccountTypeFromCode(accountKey: string): AccountType | null {
+  const code = String(accountKey || '').trim();
+  if (!/^\d{4,}$/.test(code)) return null;
+  if (code.startsWith('1')) return 'asset';
+  if (code.startsWith('3')) return 'liability';
+  if (code.startsWith('5')) return 'revenue';
+  if (code.startsWith('6')) return 'cogs';
+  if (code.startsWith('7')) return 'expense';
+  return null;
+}
+
 function buildAccountKey(rawAccount: string): string {
   const value = rawAccount.trim();
   if (!value) return '';
@@ -409,8 +453,8 @@ function extractRows(payloadLike: unknown): JsonRecord[] {
       const value = record[key];
       if (Array.isArray(value)) {
         for (const item of value) {
-          const row = asRecord(item);
-          if (row) rows.push(row);
+          // Queue child records and let the main dedupe path add rows exactly once.
+          queue.push(item);
         }
       }
     }
@@ -423,7 +467,9 @@ function extractRows(payloadLike: unknown): JsonRecord[] {
 
 function inferRowsBySource(glResponses: unknown[]): { chartRows: JsonRecord[]; ledgerRows: JsonRecord[] } {
   const chartRows: JsonRecord[] = [];
-  const ledgerRows: JsonRecord[] = [];
+  const explicitSlLedgersRows: JsonRecord[] = [];
+  const explicitSummaryLedgerRows: JsonRecord[] = [];
+  const inferredLedgerRows: JsonRecord[] = [];
 
   for (const entry of glResponses) {
     const wrapper = asRecord(entry);
@@ -438,11 +484,11 @@ function inferRowsBySource(glResponses: unknown[]): { chartRows: JsonRecord[]; l
       continue;
     }
     if (programHint === 'SLLEDGERS') {
-      ledgerRows.push(...rows);
+      explicitSlLedgersRows.push(...rows);
       continue;
     }
     if (GL_SUMMARY_PROGRAM_HINTS.has(programHint)) {
-      ledgerRows.push(...rows);
+      explicitSummaryLedgerRows.push(...rows);
       continue;
     }
 
@@ -453,13 +499,24 @@ function inferRowsBySource(glResponses: unknown[]): { chartRows: JsonRecord[]; l
         pickNumber(row, DEBIT_KEYS) !== 0 ||
         pickNumber(row, CREDIT_KEYS) !== 0;
       if (hasPeriod && hasBalanceSignal) {
-        ledgerRows.push(row);
+        inferredLedgerRows.push(row);
       } else {
         chartRows.push(row);
       }
     }
   }
-  return { chartRows, ledgerRows };
+  // Choose a single ledger source to avoid accidental double counting:
+  // 1) SLLEDGERS (most detailed), 2) summary GL programs, 3) inferred fallback.
+  const ledgerRows =
+    explicitSlLedgersRows.length > 0
+      ? explicitSlLedgersRows
+      : explicitSummaryLedgerRows.length > 0
+        ? explicitSummaryLedgerRows
+        : inferredLedgerRows;
+  return {
+    chartRows: dedupeRowsByLedgerIdentity(chartRows),
+    ledgerRows: dedupeRowsByLedgerIdentity(ledgerRows),
+  };
 }
 
 function buildChartIndex(chartRows: JsonRecord[]): Map<string, ChartAccount> {
@@ -480,7 +537,7 @@ function buildChartIndex(chartRows: JsonRecord[]): Map<string, ChartAccount> {
 }
 
 function monthKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 function endOfMonthIso(month: string): string {
@@ -694,8 +751,9 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     return { monthlyData: [] as Record<string, unknown>[], stats: { chartRows: 0, ledgerRows: 0 } };
   }
   const maxMonths = Math.max(1, Math.min(60, Math.floor(Number(params.maxMonths || 36))));
-  const throughDate = new Date(`${throughMonth}-01T00:00:00Z`);
-  const earliestDate = new Date(throughDate.getUTCFullYear(), throughDate.getUTCMonth() - (maxMonths - 1), 1);
+  const [throughYear, throughMonthNum] = throughMonth.split('-').map((x) => Number(x));
+  const earliestDateUtc = new Date(Date.UTC(throughYear, throughMonthNum - 1 - (maxMonths - 1), 1));
+  const earliestMonth = `${earliestDateUtc.getUTCFullYear()}-${String(earliestDateUtc.getUTCMonth() + 1).padStart(2, '0')}`;
 
   const { chartRows, ledgerRows } = inferRowsBySource(params.glResponses || []);
   const chartByAccount = buildChartIndex(chartRows);
@@ -722,13 +780,14 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     const rowMonth = parsedMonth
       ? parsedMonth
       : hasControlMonth
-        ? new Date(normalizedLedger.controlYear!, normalizedLedger.controlPeriod! - 1, 1)
+        ? new Date(Date.UTC(normalizedLedger.controlYear!, normalizedLedger.controlPeriod! - 1, 1))
         : null;
     if (!rowMonth) continue;
-    const monthStart = new Date(rowMonth.getFullYear(), rowMonth.getMonth(), 1);
-    if (monthStart < earliestDate || monthStart > throughDate) continue;
+    const monthStart = new Date(Date.UTC(rowMonth.getUTCFullYear(), rowMonth.getUTCMonth(), 1));
+    const rowMonthKey = monthKey(monthStart);
+    if (rowMonthKey < earliestMonth || rowMonthKey > throughMonth) continue;
 
-    const key = monthKey(monthStart);
+    const key = rowMonthKey;
     if (!monthly.has(key)) monthly.set(key, initMonthRow(key));
     const bucket = monthly.get(key)!;
 
@@ -736,7 +795,10 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     const accountKey = buildAccountKey(rawAccount);
     const chart = accountKey ? chartByAccount.get(accountKey) : undefined;
     const accountName = chart?.accountName || pickString(row, ACCOUNT_NAME_KEYS) || rawAccount || 'unmapped_account';
-    const accountType = chart?.accountType || normalizeAccountType(pickString(row, ACCOUNT_TYPE_KEYS), accountName);
+    const accountType =
+      inferAccountTypeFromCode(accountKey) ||
+      chart?.accountType ||
+      normalizeAccountType(pickString(row, ACCOUNT_TYPE_KEYS), accountName);
     const mappedTargetField =
       mappingByCode.get(accountKey) ||
       mappingByName.get(normalizeMappingKey(accountName));
@@ -816,11 +878,12 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
 
   // Ensure a continuous monthly time series through the requested throughMonth.
   // This avoids dropped columns when a month has no ledger rows.
-  const cursor = new Date(earliestDate.getFullYear(), earliestDate.getMonth(), 1);
-  while (cursor <= throughDate) {
-    const key = monthKey(cursor);
+  const cursor = new Date(Date.UTC(throughYear, throughMonthNum - 1 - (maxMonths - 1), 1));
+  while (true) {
+    const key = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`;
+    if (key > throughMonth) break;
     if (!monthly.has(key)) monthly.set(key, initMonthRow(key));
-    cursor.setMonth(cursor.getMonth() + 1);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
 
   const monthlyData = Array.from(monthly.entries())

@@ -32,10 +32,17 @@ export async function GET(request: NextRequest) {
     // Fetch records (user has validated access)
     const records = await prisma.financialRecord.findMany({
       where: { companyId },
-      include: {
+      select: {
+        id: true,
+        companyId: true,
+        uploadedByUserId: true,
+        fileName: true,
+        fileUrl: true,
+        createdAt: true,
+        updatedAt: true,
         monthlyData: {
           orderBy: { monthDate: 'asc' }
-        }
+        },
       },
       orderBy: { createdAt: 'desc' }
     });

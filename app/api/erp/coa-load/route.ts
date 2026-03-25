@@ -26,6 +26,7 @@ type SlLedgersMonthlySqlRow = {
   netMovement: number;
   txnRows: number;
 };
+const CSI_REBUILD_MAX_MONTHS = 36;
 
 const ERP_COA_CONNECTORS: Record<string, ConnectorConfig> = {
   QUICKBOOKS_DESKTOP: {
@@ -120,6 +121,96 @@ function normalizePayload(value: unknown): Record<string, unknown> | null {
     return raw.payload as Record<string, unknown>;
   }
   return raw;
+}
+
+async function loadPayloadFromConnectionMetadataPath(
+  companyId: string,
+  platform: 'QUICKBOOKS' | 'INFOR_M3' | 'SAGE_INTACCT' | 'DYNAMICS365' | 'ACUMATICA',
+  payloadMetadataKey: string,
+): Promise<Record<string, unknown> | null> {
+  const key = String(payloadMetadataKey || '').trim();
+  try {
+    let rows: Array<{ payload: unknown }> = [];
+    if (key === 'inforCsiFinancialPayload') {
+      rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+        SELECT "connectionMetadata"->'inforCsiFinancialPayload' AS payload
+        FROM "AccountingConnection"
+        WHERE "companyId" = ${companyId}
+          AND platform = CAST(${platform} AS "AccountingPlatform")
+        LIMIT 1
+      `;
+    } else if (key === 'inforM3FinancialPayload') {
+      rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+        SELECT "connectionMetadata"->'inforM3FinancialPayload' AS payload
+        FROM "AccountingConnection"
+        WHERE "companyId" = ${companyId}
+          AND platform = CAST(${platform} AS "AccountingPlatform")
+        LIMIT 1
+      `;
+    } else if (key === 'quickbooksDesktopFinancialPayload') {
+      rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+        SELECT "connectionMetadata"->'quickbooksDesktopFinancialPayload' AS payload
+        FROM "AccountingConnection"
+        WHERE "companyId" = ${companyId}
+          AND platform = CAST(${platform} AS "AccountingPlatform")
+        LIMIT 1
+      `;
+    } else if (key === 'sageIntacctFinancialPayload') {
+      rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+        SELECT "connectionMetadata"->'sageIntacctFinancialPayload' AS payload
+        FROM "AccountingConnection"
+        WHERE "companyId" = ${companyId}
+          AND platform = CAST(${platform} AS "AccountingPlatform")
+        LIMIT 1
+      `;
+    } else if (key === 'dynamicsFinancialPayload') {
+      rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+        SELECT "connectionMetadata"->'dynamicsFinancialPayload' AS payload
+        FROM "AccountingConnection"
+        WHERE "companyId" = ${companyId}
+          AND platform = CAST(${platform} AS "AccountingPlatform")
+        LIMIT 1
+      `;
+    } else if (key === 'acumaticaFinancialPayload') {
+      rows = await prisma.$queryRaw<Array<{ payload: unknown }>>`
+        SELECT "connectionMetadata"->'acumaticaFinancialPayload' AS payload
+        FROM "AccountingConnection"
+        WHERE "companyId" = ${companyId}
+          AND platform = CAST(${platform} AS "AccountingPlatform")
+        LIMIT 1
+      `;
+    } else {
+      rows = [];
+    }
+    const raw = rows[0]?.payload;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return normalizePayload(raw as Record<string, unknown>);
+    }
+  } catch (error) {
+    console.warn('[ERP COA] payload path query failed; falling back to metadata read', {
+      companyId,
+      platform,
+      key,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const row = await prisma.accountingConnection.findUnique({
+    where: {
+      companyId_platform: {
+        companyId,
+        platform,
+      },
+    },
+    select: { connectionMetadata: true },
+  });
+  const metadata =
+    row?.connectionMetadata &&
+    typeof row.connectionMetadata === 'object' &&
+    !Array.isArray(row.connectionMetadata)
+      ? (row.connectionMetadata as Record<string, unknown>)
+      : {};
+  return normalizePayload(metadata[key]);
 }
 
 function inferInforSystemFromPrograms(programs: unknown[]): 'INFOR_M3' | 'INFOR_CSI' {
@@ -458,19 +549,35 @@ export async function POST(request: NextRequest) {
       select: {
         status: true,
         platformVersion: true,
-        connectionMetadata: true,
       },
     });
-
-    const existingMetadata =
-      existingConnection?.connectionMetadata &&
-      typeof existingConnection.connectionMetadata === 'object' &&
-      !Array.isArray(existingConnection.connectionMetadata)
-        ? (existingConnection.connectionMetadata as Record<string, unknown>)
-        : {};
+    let existingMetadataCache: Record<string, unknown> | null = null;
+    async function loadExistingMetadata(): Promise<Record<string, unknown>> {
+      if (existingMetadataCache) return existingMetadataCache;
+      const row = await prisma.accountingConnection.findUnique({
+        where: {
+          companyId_platform: {
+            companyId,
+            platform: connector.platform,
+          },
+        },
+        select: { connectionMetadata: true },
+      });
+      existingMetadataCache =
+        row?.connectionMetadata &&
+        typeof row.connectionMetadata === 'object' &&
+        !Array.isArray(row.connectionMetadata)
+          ? (row.connectionMetadata as Record<string, unknown>)
+          : {};
+      return existingMetadataCache;
+    }
 
     const payloadResolveStartedAt = Date.now();
-    const payloadFromMetadata = normalizePayload(existingMetadata[connector.payloadMetadataKey]);
+    const payloadFromMetadata = await loadPayloadFromConnectionMetadataPath(
+      companyId,
+      connector.platform,
+      connector.payloadMetadataKey,
+    );
     let payloadFromOperationalGlSync: Record<string, unknown> | null = null;
     let payload = payloadFromRequest || payloadFromMetadata;
 
@@ -555,7 +662,7 @@ export async function POST(request: NextRequest) {
         const built = buildCsiMonthlyDataFromGlResponses({
           glResponses: glResponsesRaw,
           throughMonth,
-          maxMonths: 36,
+          maxMonths: CSI_REBUILD_MAX_MONTHS,
         });
         if (built.monthlyData.length > 0) {
           payload = {
@@ -584,7 +691,7 @@ export async function POST(request: NextRequest) {
       const sqlFallback = await buildCsiMonthlyDataFromSlLedgersLogs({
         companyId,
         throughMonth,
-        maxMonths: 36,
+        maxMonths: CSI_REBUILD_MAX_MONTHS,
       });
       if (sqlFallback.monthlyData.length > 0) {
         payload = {
@@ -654,9 +761,9 @@ export async function POST(request: NextRequest) {
     );
     const canIngestFinancials = hasMonthlyDataRows(payload);
 
-    // Fast path for CSI/M3 reruns with unchanged metadata payload and unchanged mappings.
+    // Fast path for reruns with unchanged metadata payload and unchanged mappings.
     // Skip expensive metadata upsert + ingestion when this request would be a no-op.
-    if (payloadCameFromExistingMetadata && !mappingChanged && !canIngestFinancials) {
+    if (payloadCameFromExistingMetadata && !mappingChanged) {
       timings.metadataUpsertMs = 0;
       timings.ingestionMs = 0;
       timings.totalMs = Date.now() - requestStartedAt;
@@ -668,7 +775,7 @@ export async function POST(request: NextRequest) {
         latestMonthWarnings: [] as unknown[],
         ingestionSkipped: true,
         ingestionSkipReason:
-          'No-op COA rerun: payload and mappings unchanged, and monthlyData rows are not present for financial ingestion.',
+          'No-op COA rerun: payload and mappings unchanged.',
       };
       console.log('[ERP COA] Fast-path no-op return', {
         companyId,
@@ -684,7 +791,7 @@ export async function POST(request: NextRequest) {
           accountingSystem,
           throughMonth,
           mode: 'through',
-          maxMonths: 36,
+          maxMonths: CSI_REBUILD_MAX_MONTHS,
           syntheticMonthlyBuild,
           accountMappingSeed: seedSummary,
           timings,
@@ -697,6 +804,7 @@ export async function POST(request: NextRequest) {
     // Rewriting very large CSI payload JSON on every rerun can take minutes.
     // Only rewrite metadata blob when payload source changed or mapping snapshot changed.
     const shouldRewriteConnectionMetadata = payloadMetadataNeedsWrite || mappingChanged;
+    const existingMetadata = shouldRewriteConnectionMetadata ? await loadExistingMetadata() : {};
 
     const nextMetadata: Record<string, unknown> = {
       ...(shouldRewriteConnectionMetadata ? existingMetadata : {}),
@@ -797,7 +905,7 @@ export async function POST(request: NextRequest) {
           syncType: 'coa_load',
           targetMonth: throughMonth,
           mode: 'through',
-          maxMonths: 36,
+          maxMonths: CSI_REBUILD_MAX_MONTHS,
         })
       : {
           ok: true as const,
@@ -827,7 +935,7 @@ export async function POST(request: NextRequest) {
         accountingSystem,
         throughMonth,
         mode: 'through',
-        maxMonths: 36,
+        maxMonths: CSI_REBUILD_MAX_MONTHS,
         syntheticMonthlyBuild,
         accountMappingSeed: seedSummary,
         timings,

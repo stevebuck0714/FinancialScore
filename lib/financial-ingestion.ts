@@ -94,9 +94,13 @@ function parseTargetMonth(value: unknown): Date | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!/^\d{4}-\d{2}$/.test(trimmed)) return null;
-  const parsed = new Date(`${trimmed}-01T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+  const [yearToken, monthToken] = trimmed.split('-');
+  const year = Number(yearToken);
+  const month = Number(monthToken);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+  // Through-mode comparisons use `row.monthDate <= targetMonthDate`.
+  // Return end-of-target-month so rows dated at month end are included.
+  return new Date(year, month, 0, 23, 59, 59, 999);
 }
 
 function normalizeImportMode(value: unknown): FinancialImportMode {
@@ -150,7 +154,8 @@ export async function ingestFinancialPayload(params: {
   if (targetMonthDate) {
     const latestFinancialRecord = await prisma.financialRecord.findFirst({
       where: { companyId: params.companyId },
-      include: {
+      select: {
+        id: true,
         monthlyData: {
           orderBy: { monthDate: 'asc' },
         },

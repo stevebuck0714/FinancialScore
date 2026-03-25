@@ -11277,6 +11277,12 @@ function FinancialScorePage() {
                                 });
 
                                 const result = await response.json();
+                                if (result?.diagnostics) {
+                                  console.log('🧪 Reprocess diagnostics (object):', result.diagnostics);
+                                  try {
+                                    console.log('🧪 Reprocess diagnostics (json):\n' + JSON.stringify(result.diagnostics, null, 2));
+                                  } catch {}
+                                }
 
                                 if (result.success) {
                                   alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
@@ -11692,7 +11698,12 @@ function FinancialScorePage() {
 
       {/* Data Review Tab */}
       {currentView === 'admin' && adminDashboardTab === 'data-review' && selectedCompanyId && (
-        <DataReviewTab selectedCompanyId={selectedCompanyId} companyName={companyName} accountMappings={aiMappings} />
+        <DataReviewTab
+          key={`${selectedCompanyId}:${qbLastSync ? new Date(qbLastSync).toISOString() : 'initial'}`}
+          selectedCompanyId={selectedCompanyId}
+          companyName={companyName}
+          accountMappings={aiMappings}
+        />
       )}
 
       {/* Trend Analysis View */}

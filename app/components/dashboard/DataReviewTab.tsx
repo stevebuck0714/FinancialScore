@@ -16,6 +16,37 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   // Use master data store instead of receiving monthly data as prop
   const { monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
 
+  const getMonthKey = (monthValue: unknown): string | null => {
+    if (monthValue instanceof Date && !Number.isNaN(monthValue.getTime())) {
+      return `${monthValue.getUTCFullYear()}-${String(monthValue.getUTCMonth() + 1).padStart(2, "0")}`;
+    }
+    const raw = String(monthValue || "").trim();
+    if (!raw) return null;
+    const yyyymmMatch = raw.match(/^(\d{4})-(\d{2})/);
+    if (yyyymmMatch) return `${yyyymmMatch[1]}-${yyyymmMatch[2]}`;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, "0")}`;
+  };
+
+  const monthKeyToSortValue = (monthKey: string | null): number => {
+    if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return Number.MIN_SAFE_INTEGER;
+    const [year, month] = monthKey.split("-").map((x) => Number(x));
+    return year * 100 + month;
+  };
+
+  // Use master data as monthly data, but enforce stable chronological ordering.
+  const monthly = React.useMemo(() => {
+    const rows = Array.isArray(monthlyData) ? [...monthlyData] : [];
+    rows.sort((a, b) => {
+      const aKey = getMonthKey(a?.month ?? a?.date);
+      const bKey = getMonthKey(b?.month ?? b?.date);
+      return monthKeyToSortValue(aKey) - monthKeyToSortValue(bKey);
+    });
+    return rows;
+  }, [monthlyData]);
+  const displayedMonths = monthly.slice(-36);
+
   // Check if master data exists
   if (masterDataLoading) {
     return (
@@ -72,10 +103,6 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
       </div>
     );
   }
-
-  // Use master data as monthly data
-  const monthly = monthlyData;
-  const displayedMonths = monthly.slice(-36);
 
   const formatDynamicFieldLabel = (field: string): string => {
     if (field.startsWith("rev_")) {
@@ -151,16 +178,13 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   // Format month as MM-YYYY
   const formatMonth = (monthValue: any): string => {
     if (!monthValue) return '';
-    
-    const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
-    
-    // Check if date is valid
-    if (isNaN(date.getTime())) return String(monthValue);
-    
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    
-    return `${month}-${year}`;
+
+    const monthKey = getMonthKey(monthValue);
+    if (monthKey && /^\d{4}-\d{2}$/.test(monthKey)) {
+      const [year, month] = monthKey.split("-");
+      return `${month}-${year}`;
+    }
+    return String(monthValue);
   };
 
   return (

@@ -262,6 +262,55 @@ function isLikelyEquityMapping(mapping: {
   return isEquityCode || isEquityByLabel;
 }
 
+async function loadSeedSnapshotFromMetadataPath(
+  companyId: string,
+  accountingSystem: string,
+): Promise<unknown> {
+  if (accountingSystem !== "INFOR_M3" && accountingSystem !== "INFOR_CSI" && accountingSystem !== "QUICKBOOKS_DESKTOP") {
+    return null;
+  }
+  const snapshotPath =
+    accountingSystem === "INFOR_M3"
+      ? "inforM3AccountSeedSnapshot"
+      : accountingSystem === "INFOR_CSI"
+        ? "inforCsiAccountSeedSnapshot"
+        : "quickbooksDesktopAccountSeedSnapshot";
+  const platform = accountingSystem === "QUICKBOOKS_DESKTOP" ? "QUICKBOOKS" : "INFOR_M3";
+  const rows = await prisma.$queryRaw<Array<{ snapshot: unknown }>>`
+    SELECT "connectionMetadata"->${snapshotPath} AS snapshot
+    FROM "AccountingConnection"
+    WHERE "companyId" = ${companyId}
+      AND platform = CAST(${platform} AS "AccountingPlatform")
+    LIMIT 1
+  `;
+  return rows[0]?.snapshot ?? null;
+}
+
+async function loadSeedLastRunAtFromMetadataPath(
+  companyId: string,
+  accountingSystem: string,
+): Promise<string | null> {
+  if (accountingSystem !== "INFOR_M3" && accountingSystem !== "INFOR_CSI" && accountingSystem !== "QUICKBOOKS_DESKTOP") {
+    return null;
+  }
+  const runAtPath =
+    accountingSystem === "INFOR_M3"
+      ? "inforM3AccountSeedLastRunAt"
+      : accountingSystem === "INFOR_CSI"
+        ? "inforCsiAccountSeedLastRunAt"
+        : "quickbooksDesktopAccountSeedLastRunAt";
+  const platform = accountingSystem === "QUICKBOOKS_DESKTOP" ? "QUICKBOOKS" : "INFOR_M3";
+  const rows = await prisma.$queryRaw<Array<{ run_at: unknown }>>`
+    SELECT "connectionMetadata"->>${runAtPath} AS run_at
+    FROM "AccountingConnection"
+    WHERE "companyId" = ${companyId}
+      AND platform = CAST(${platform} AS "AccountingPlatform")
+    LIMIT 1
+  `;
+  const value = rows[0]?.run_at;
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 // GET - Retrieve mappings for a company
 export async function GET(request: NextRequest) {
   try {
@@ -296,34 +345,13 @@ export async function GET(request: NextRequest) {
           ? "QUICKBOOKS"
           : null;
 
-    const seededConnection = seededPlatform
-      ? await prisma.accountingConnection.findUnique({
-          where: {
-            companyId_platform: {
-              companyId,
-              platform: seededPlatform,
-            },
-          },
-          select: {
-            connectionMetadata: true,
-          },
-        })
+    const snapshotRaw = seededPlatform
+      ? await loadSeedSnapshotFromMetadataPath(companyId, accountingSystem)
       : null;
-
-    const connectionMetadata =
-      seededConnection?.connectionMetadata &&
-      typeof seededConnection.connectionMetadata === "object" &&
-      !Array.isArray(seededConnection.connectionMetadata)
-        ? (seededConnection.connectionMetadata as Record<string, unknown>)
-        : {};
-    const snapshot =
-      accountingSystem === "INFOR_M3"
-        ? parseAccountSnapshot(connectionMetadata.inforM3AccountSeedSnapshot)
-        : accountingSystem === "INFOR_CSI"
-          ? parseAccountSnapshot(connectionMetadata.inforCsiAccountSeedSnapshot)
-          : accountingSystem === "QUICKBOOKS_DESKTOP"
-          ? parseAccountSnapshot(connectionMetadata.quickbooksDesktopAccountSeedSnapshot)
-          : [];
+    const seedLastRunAt = seededPlatform
+      ? await loadSeedLastRunAtFromMetadataPath(companyId, accountingSystem)
+      : null;
+    const snapshot = parseAccountSnapshot(snapshotRaw);
     const snapshotById = new Map(snapshot.map((row) => [normalize(row.accountId), row]));
     const snapshotByName = new Map(snapshot.map((row) => [normalize(row.accountName), row]));
 
@@ -456,20 +484,7 @@ export async function GET(request: NextRequest) {
       invalidMappingsCount: 0,
       sourceSummary: {
         ...statusCounts,
-        lastSeedAt:
-          accountingSystem === "INFOR_M3"
-            ? typeof connectionMetadata.inforM3AccountSeedLastRunAt === "string"
-              ? connectionMetadata.inforM3AccountSeedLastRunAt
-              : null
-            : accountingSystem === "INFOR_CSI"
-              ? typeof connectionMetadata.inforCsiAccountSeedLastRunAt === "string"
-                ? connectionMetadata.inforCsiAccountSeedLastRunAt
-                : null
-            : accountingSystem === "QUICKBOOKS_DESKTOP"
-              ? typeof connectionMetadata.quickbooksDesktopAccountSeedLastRunAt === "string"
-                ? connectionMetadata.quickbooksDesktopAccountSeedLastRunAt
-                : null
-              : null,
+        lastSeedAt: seedLastRunAt,
       },
     });
   } catch (error: any) {

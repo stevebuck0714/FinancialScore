@@ -4,6 +4,7 @@ import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 
 export const dynamic = 'force-dynamic';
+const CSI_REBUILD_MAX_MONTHS = 36;
 
 type FinancialImportMode = 'through' | 'only';
 
@@ -17,6 +18,19 @@ function normalizeTargetMonth(value: unknown): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   return /^\d{4}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+function normalizeConfiguredPlatform(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const upper = raw.toUpperCase();
+  const compact = upper.replace(/[\s-]+/g, '_');
+  if (compact.includes('INFOR') && compact.includes('CSI')) return 'INFOR_CSI';
+  if (compact.includes('INFOR') && compact.includes('M3')) return 'INFOR_M3';
+  if (compact === 'QUICKBOOKS_DESKTOP' || compact === 'QUICKBOOKSDESKTOP') return 'QUICKBOOKS_DESKTOP';
+  if (compact === 'QUICKBOOKS_ONLINE' || compact === 'QBO') return 'QUICKBOOKS';
+  if (compact === 'CSV' || compact === 'CSVFILE') return 'CSV_FILE';
+  return compact;
 }
 
 function hasMonthlyDataRows(payload: Record<string, unknown> | null): boolean {
@@ -95,6 +109,23 @@ async function loadHistoricalCsiSlLedgersItems(
     .filter((row): row is Record<string, unknown> => !!row);
   const deduped = new Map<string, Record<string, unknown>>();
   for (const row of parsedRows) {
+    const rowPointer = String(row.RowPointer || row.rowPointer || '').trim().toLowerCase();
+    if (rowPointer) {
+      if (!deduped.has(`ptr:${rowPointer}`)) deduped.set(`ptr:${rowPointer}`, row);
+      continue;
+    }
+    // Fallback to full-row signature only when RowPointer is absent to avoid
+    // collapsing distinct ledger lines that share coarse business keys.
+    const fullSignature = JSON.stringify(row);
+    if (!deduped.has(`json:${fullSignature}`)) {
+      deduped.set(`json:${fullSignature}`, row);
+    }
+  }
+  if (deduped.size > 0) {
+    return Array.from(deduped.values());
+  }
+  // Defensive fallback (should be unreachable with non-empty parsedRows).
+  for (const row of parsedRows) {
     const keyParts = [
       String(row.RowPointer || row.rowPointer || '').trim(),
       String(row.Acct || row.account || '').trim(),
@@ -114,12 +145,189 @@ async function loadHistoricalCsiSlLedgersItems(
   return Array.from(deduped.values());
 }
 
+type MonthCoverageSummary = {
+  minMonth: string | null;
+  maxMonth: string | null;
+  distinctMonths: number;
+  totalRows: number;
+  months: string[];
+  missingMonths: string[];
+};
+
+function toYearMonth(value: unknown): string | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const yyyymm = raw.match(/^(\d{4})-(\d{2})/);
+  if (yyyymm) return `${yyyymm[1]}-${yyyymm[2]}`;
+  const compact = raw.match(/^(\d{4})(\d{2})$/);
+  if (compact) return `${compact[1]}-${compact[2]}`;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function buildMonthRange(startMonth: string, endMonth: string): string[] {
+  if (!/^\d{4}-\d{2}$/.test(startMonth) || !/^\d{4}-\d{2}$/.test(endMonth)) return [];
+  const [startYear, startMon] = startMonth.split('-').map(Number);
+  const [endYear, endMon] = endMonth.split('-').map(Number);
+  const start = new Date(Date.UTC(startYear, startMon - 1, 1));
+  const end = new Date(Date.UTC(endYear, endMon - 1, 1));
+  if (start > end) return [];
+  const months: string[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    months.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return months;
+}
+
+function extractMonthKeyFromLedgerRow(row: Record<string, unknown>): string | null {
+  const year = Number(String(row.ControlYear || row.controlYear || '').trim());
+  const period = Number(String(row.ControlPeriod || row.controlPeriod || '').trim());
+  if (Number.isFinite(year) && Number.isFinite(period) && year >= 1900 && period >= 1 && period <= 12) {
+    return `${Math.trunc(year)}-${String(Math.trunc(period)).padStart(2, '0')}`;
+  }
+  const periodToken = toYearMonth(row.ControlPeriod || row.controlPeriod || row.FiscalPeriod || row.fiscalPeriod);
+  if (periodToken) return periodToken;
+  return (
+    toYearMonth(row.RecordDate || row.recordDate) ||
+    toYearMonth(row.TransDate || row.transDate) ||
+    toYearMonth(row.Date || row.date)
+  );
+}
+
+function summarizeMonthCounts(monthCounts: Map<string, number>): MonthCoverageSummary {
+  const months = Array.from(monthCounts.keys())
+    .filter((m) => /^\d{4}-\d{2}$/.test(m))
+    .sort();
+  const totalRows = Array.from(monthCounts.values()).reduce((sum, n) => sum + Number(n || 0), 0);
+  const minMonth = months.length > 0 ? months[0] : null;
+  const maxMonth = months.length > 0 ? months[months.length - 1] : null;
+  const expected = minMonth && maxMonth ? buildMonthRange(minMonth, maxMonth) : [];
+  const missingMonths = expected.filter((m) => !monthCounts.has(m));
+  return {
+    minMonth,
+    maxMonth,
+    distinctMonths: months.length,
+    totalRows,
+    months,
+    missingMonths,
+  };
+}
+
+function summarizeLedgerCoverage(rows: Record<string, unknown>[]): MonthCoverageSummary {
+  const monthCounts = new Map<string, number>();
+  for (const row of rows) {
+    const key = extractMonthKeyFromLedgerRow(row);
+    if (!key) continue;
+    monthCounts.set(key, (monthCounts.get(key) || 0) + 1);
+  }
+  return summarizeMonthCounts(monthCounts);
+}
+
+function summarizeMonthlyRowsCoverage(rows: Array<Record<string, unknown>>): MonthCoverageSummary {
+  const monthCounts = new Map<string, number>();
+  for (const row of rows) {
+    const key = toYearMonth(row.monthDate || row.month || row.date);
+    if (!key) continue;
+    monthCounts.set(key, (monthCounts.get(key) || 0) + 1);
+  }
+  return summarizeMonthCounts(monthCounts);
+}
+
+function extractSlLedgersRowsFromGlResponses(glResponses: unknown[]): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  for (const entry of glResponses) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const wrapper = entry as Record<string, unknown>;
+    const program = String(wrapper.miProgram || wrapper.program || '').trim().toUpperCase();
+    if (program !== 'SLLEDGERS') continue;
+    const response =
+      wrapper.response && typeof wrapper.response === 'object' && !Array.isArray(wrapper.response)
+        ? (wrapper.response as Record<string, unknown>)
+        : null;
+    const items = Array.isArray(response?.Items) ? response!.Items : [];
+    for (const item of items) {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        rows.push(item as Record<string, unknown>);
+      }
+    }
+  }
+  return rows;
+}
+
+function getTargetFamily(value: unknown): 'revenue' | 'cogs' | 'expense' | 'other' {
+  const target = String(value || '').trim().toLowerCase();
+  if (!target || target === 'unmapped') return 'other';
+  if (target === 'revenue' || target.startsWith('rev_')) return 'revenue';
+  if (target === 'cogstotal' || target === 'costofgoodssold' || target.startsWith('cogs')) return 'cogs';
+  const expenseTargets = new Set([
+    'payroll', 'ownerbasepay', 'ownersretirement', 'benefits', 'insurance', 'professionalfees',
+    'subcontractors', 'rent', 'taxlicense', 'stateincometaxes', 'federalincometaxes', 'phonecomm',
+    'infrastructure', 'autotravel', 'salesexpense', 'marketing', 'trainingcert', 'mealsentertainment',
+    'interestexpense', 'depreciationamortization', 'otherexpense', 'operatingexpensetotal', 'expense',
+  ]);
+  return expenseTargets.has(target) ? 'expense' : 'other';
+}
+
+function getClassificationFamily(value: unknown): 'revenue' | 'cogs' | 'expense' | 'other' {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'other';
+  const normalized = raw.startsWith('manual:') ? raw.slice('manual:'.length).trim() : raw;
+  if (!normalized) return 'other';
+  if (normalized === 'r' || normalized === 'income' || normalized === 'revenue') return 'revenue';
+  if (
+    normalized === 'c' ||
+    normalized === 'cogs' ||
+    normalized.includes('cost of goods') ||
+    normalized.includes('cost of sales')
+  ) return 'cogs';
+  if (normalized === 'e' || normalized === 'expense') return 'expense';
+  return 'other';
+}
+
+function summarizeMappingsForDiagnostics(
+  mappings: Array<{ targetField?: string | null; qbAccountClassification?: string | null }>,
+) {
+  let unmappedCount = 0;
+  let sectorRevenueCount = 0;
+  let sectorCogsCount = 0;
+  let cogsClassCount = 0;
+  let cogsClassMappedToCogsCount = 0;
+  let cogsClassMappedElsewhereCount = 0;
+  for (const row of mappings) {
+    const target = String(row?.targetField || '').trim();
+    const targetFamily = getTargetFamily(target);
+    if (!target || target.toLowerCase() === 'unmapped') unmappedCount += 1;
+    if (target.toLowerCase().startsWith('rev_')) sectorRevenueCount += 1;
+    if (target.toLowerCase().startsWith('cogs_')) sectorCogsCount += 1;
+    const classFamily = getClassificationFamily(row?.qbAccountClassification);
+    if (classFamily === 'cogs') {
+      cogsClassCount += 1;
+      if (targetFamily === 'cogs') cogsClassMappedToCogsCount += 1;
+      else cogsClassMappedElsewhereCount += 1;
+    }
+  }
+  return {
+    totalMappings: mappings.length,
+    unmappedCount,
+    sectorRevenueCount,
+    sectorCogsCount,
+    cogsClassCount,
+    cogsClassMappedToCogsCount,
+    cogsClassMappedElsewhereCount,
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const companyId = body?.companyId;
     const targetMonth = normalizeTargetMonth(body?.targetMonth);
     const mode = normalizeFinancialImportMode(body?.mode);
+    const useHistoricalSlLedgers = body?.useHistoricalSlLedgers === true;
+    const persistRebuiltPayload = body?.persistRebuiltPayload === true;
 
     if (!companyId) {
       return NextResponse.json({ error: 'Company ID required' }, { status: 400 });
@@ -130,7 +338,8 @@ export async function POST(request: NextRequest) {
       select: { accountingSystem: true },
     });
 
-    const configuredPlatform = String(company?.accountingSystem || '').toUpperCase();
+    const configuredPlatformRaw = String(company?.accountingSystem || '');
+    const configuredPlatform = normalizeConfiguredPlatform(configuredPlatformRaw);
 
     if (!configuredPlatform) {
       return NextResponse.json(
@@ -199,29 +408,32 @@ export async function POST(request: NextRequest) {
 
     if (configuredPlatform === 'INFOR_M3' || configuredPlatform === 'INFOR_CSI') {
       const isInforCsi = configuredPlatform === 'INFOR_CSI';
-      const connection = await prisma.accountingConnection.findUnique({
-        where: {
-          companyId_platform: {
-            companyId: String(companyId),
-            platform: 'INFOR_M3',
-          },
-        },
-        select: {
-          connectionMetadata: true,
-        },
-      });
-
-      const metadata =
-        connection?.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-          ? (connection.connectionMetadata as Record<string, unknown>)
-          : {};
-      const payloadMetadataKeyPrimary = isInforCsi ? 'inforCsiFinancialPayload' : 'inforM3FinancialPayload';
-      const payloadMetadataKeyFallback = isInforCsi ? 'inforM3FinancialPayload' : 'inforCsiFinancialPayload';
-      const payloadSource =
-        metadata[payloadMetadataKeyPrimary] && typeof metadata[payloadMetadataKeyPrimary] === 'object'
-          ? (metadata[payloadMetadataKeyPrimary] as Record<string, unknown>)
-          : metadata[payloadMetadataKeyFallback] && typeof metadata[payloadMetadataKeyFallback] === 'object'
-            ? (metadata[payloadMetadataKeyFallback] as Record<string, unknown>)
+      const diagnostics: Record<string, unknown> = {
+        companyId: String(companyId),
+        configuredPlatform,
+        targetMonth: targetMonth || null,
+        mode,
+      };
+      const payloadRows = await prisma.$queryRaw<Array<{ csi: unknown; m3: unknown }>>`
+        SELECT
+          "connectionMetadata"->'inforCsiFinancialPayload' AS csi,
+          "connectionMetadata"->'inforM3FinancialPayload' AS m3
+        FROM "AccountingConnection"
+        WHERE "companyId" = ${String(companyId)}
+          AND platform = 'INFOR_M3'
+        LIMIT 1
+      `;
+      const payloadRow = payloadRows[0] || null;
+      const payloadSource = isInforCsi
+        ? payloadRow?.csi && typeof payloadRow.csi === 'object' && !Array.isArray(payloadRow.csi)
+          ? (payloadRow.csi as Record<string, unknown>)
+          : payloadRow?.m3 && typeof payloadRow.m3 === 'object' && !Array.isArray(payloadRow.m3)
+            ? (payloadRow.m3 as Record<string, unknown>)
+            : null
+        : payloadRow?.m3 && typeof payloadRow.m3 === 'object' && !Array.isArray(payloadRow.m3)
+          ? (payloadRow.m3 as Record<string, unknown>)
+          : payloadRow?.csi && typeof payloadRow.csi === 'object' && !Array.isArray(payloadRow.csi)
+            ? (payloadRow.csi as Record<string, unknown>)
             : null;
       let financialPayload =
         payloadSource && typeof payloadSource === 'object'
@@ -243,33 +455,54 @@ export async function POST(request: NextRequest) {
       const glResponsesRaw = Array.isArray(financialPayload.glResponses) ? financialPayload.glResponses : [];
       if (glResponsesRaw.length > 0) {
         const throughMonthForBuild = resolveThroughMonthForRebuild(financialPayload, targetMonth);
-        const historicalLedgers = await loadHistoricalCsiSlLedgersItems(String(companyId), throughMonthForBuild, 36);
+        diagnostics.throughMonthForBuild = throughMonthForBuild;
+        const historicalLedgers = useHistoricalSlLedgers
+          ? await loadHistoricalCsiSlLedgersItems(
+              String(companyId),
+              throughMonthForBuild,
+              CSI_REBUILD_MAX_MONTHS,
+            )
+          : [];
+        const slLedgersRowsFromPayload = extractSlLedgersRowsFromGlResponses(glResponsesRaw);
+        const sourceRowsForCoverage = historicalLedgers.length > 0 ? historicalLedgers : slLedgersRowsFromPayload;
+        diagnostics.sourceCoverage = {
+          source: historicalLedgers.length > 0 ? 'historical_slledgers_sql' : 'payload_slledgers',
+          useHistoricalSlLedgers,
+          ...summarizeLedgerCoverage(sourceRowsForCoverage),
+        };
         const glResponsesForBuild =
           historicalLedgers.length > 0
             ? (() => {
-                const replaced = glResponsesRaw.map((entry) => {
-                  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+                // Keep at most one SLLEDGERS response to avoid double-counting the same
+                // historical rows when multiple SLLEDGERS wrappers exist in metadata.
+                const nonLedgers = glResponsesRaw.filter((entry) => {
+                  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return true;
                   const row = entry as Record<string, unknown>;
                   const program = String(row.miProgram || row.program || '').trim().toUpperCase();
-                  if (program !== 'SLLEDGERS') return entry;
-                  const response =
-                    row.response && typeof row.response === 'object' && !Array.isArray(row.response)
-                      ? ({ ...(row.response as Record<string, unknown>), Items: historicalLedgers } as Record<string, unknown>)
-                      : ({ Items: historicalLedgers } as Record<string, unknown>);
-                  return {
-                    ...row,
-                    response,
-                  };
+                  return program !== 'SLLEDGERS';
                 });
-                const hasLedgers = replaced.some((entry) => {
+                const existingLedgers = glResponsesRaw.find((entry) => {
                   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
                   const row = entry as Record<string, unknown>;
                   const program = String(row.miProgram || row.program || '').trim().toUpperCase();
                   return program === 'SLLEDGERS';
                 });
-                if (hasLedgers) return replaced;
+                if (existingLedgers && typeof existingLedgers === 'object' && !Array.isArray(existingLedgers)) {
+                  const row = existingLedgers as Record<string, unknown>;
+                  const response =
+                    row.response && typeof row.response === 'object' && !Array.isArray(row.response)
+                      ? ({ ...(row.response as Record<string, unknown>), Items: historicalLedgers } as Record<string, unknown>)
+                      : ({ Items: historicalLedgers } as Record<string, unknown>);
+                  return [
+                    ...nonLedgers,
+                    {
+                      ...row,
+                      response,
+                    },
+                  ];
+                }
                 return [
-                  ...replaced,
+                  ...nonLedgers,
                   {
                     module: 'GL',
                     miProgram: 'SLLEDGERS',
@@ -285,15 +518,21 @@ export async function POST(request: NextRequest) {
             qbAccount: true,
             qbAccountId: true,
             qbAccountCode: true,
+            qbAccountClassification: true,
             targetField: true,
           },
         });
+        diagnostics.mappingCoverage = summarizeMappingsForDiagnostics(mappings);
         const built = buildCsiMonthlyDataFromGlResponses({
           glResponses: glResponsesForBuild,
           throughMonth: throughMonthForBuild,
-          maxMonths: 36,
+          maxMonths: CSI_REBUILD_MAX_MONTHS,
           accountMappings: mappings,
         });
+        diagnostics.builtCoverage = {
+          ...summarizeMonthlyRowsCoverage(built.monthlyData as Array<Record<string, unknown>>),
+          buildStats: built.stats,
+        };
         if (built.monthlyData.length > 0) {
           financialPayload = {
             ...financialPayload,
@@ -308,19 +547,37 @@ export async function POST(request: NextRequest) {
               buildStats: built.stats,
             },
           };
-          await prisma.accountingConnection.updateMany({
-            where: {
-              companyId: String(companyId),
-              platform: 'INFOR_M3',
-            },
-            data: {
-              connectionMetadata: {
-                ...metadata,
-                [payloadMetadataKeyPrimary]: financialPayload,
-              } as any,
-              lastSyncAt: new Date(),
-            },
-          });
+          if (persistRebuiltPayload) {
+            const connection = await prisma.accountingConnection.findUnique({
+              where: {
+                companyId_platform: {
+                  companyId: String(companyId),
+                  platform: 'INFOR_M3',
+                },
+              },
+              select: { connectionMetadata: true },
+            });
+            const metadata =
+              connection?.connectionMetadata &&
+              typeof connection.connectionMetadata === 'object' &&
+              !Array.isArray(connection.connectionMetadata)
+                ? (connection.connectionMetadata as Record<string, unknown>)
+                : {};
+            const payloadMetadataKeyPrimary = isInforCsi ? 'inforCsiFinancialPayload' : 'inforM3FinancialPayload';
+            await prisma.accountingConnection.updateMany({
+              where: {
+                companyId: String(companyId),
+                platform: 'INFOR_M3',
+              },
+              data: {
+                connectionMetadata: {
+                  ...metadata,
+                  [payloadMetadataKeyPrimary]: financialPayload,
+                } as any,
+                lastSyncAt: new Date(),
+              },
+            });
+          }
         }
       }
 
@@ -334,6 +591,35 @@ export async function POST(request: NextRequest) {
         mode,
       });
 
+      if (result.ok && typeof result.financialRecordId === 'string' && result.financialRecordId) {
+        const persistedRows = await prisma.monthlyFinancial.findMany({
+          where: { financialRecordId: result.financialRecordId },
+          select: { monthDate: true, revenue: true, cogsTotal: true, expense: true },
+          orderBy: { monthDate: 'asc' },
+        });
+        const monthCounts = new Map<string, number>();
+        for (const row of persistedRows) {
+          const key = toYearMonth(row.monthDate);
+          if (!key) continue;
+          monthCounts.set(key, (monthCounts.get(key) || 0) + 1);
+        }
+        diagnostics.persistedCoverage = {
+          ...summarizeMonthCounts(monthCounts),
+          rowsWritten: persistedRows.length,
+          latestMonthTotals: persistedRows.length > 0
+            ? (() => {
+                const latest = persistedRows[persistedRows.length - 1];
+                return {
+                  month: toYearMonth(latest.monthDate),
+                  revenue: Number(latest.revenue || 0),
+                  cogsTotal: Number(latest.cogsTotal || 0),
+                  expense: Number(latest.expense || 0),
+                };
+              })()
+            : null,
+        };
+      }
+
       return NextResponse.json(
         {
           success: result.ok,
@@ -342,6 +628,7 @@ export async function POST(request: NextRequest) {
               ? 'Infor CSI reprocess completed successfully.'
               : 'Infor M3 reprocess completed successfully.')
             : result.error || (isInforCsi ? 'Infor CSI reprocess failed.' : 'Infor M3 reprocess failed.'),
+          diagnostics,
           ...result,
         },
         { status: result.status },
@@ -461,6 +748,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: `Reprocess mappings adapter not yet implemented for ${configuredPlatform}.`,
+        configuredPlatform,
+        configuredPlatformRaw,
       },
       { status: 501 },
     );

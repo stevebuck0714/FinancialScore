@@ -70,8 +70,13 @@ export class MasterDataStore {
     try {
       // Always fetch fresh data - no caching for financial data
       console.log(`🎯 Fetching fresh master data for company: ${companyId}`);
-
-      const response = await fetch(`/api/master-data?companyId=${companyId}`);
+      const controller = new AbortController();
+      const timeoutMs = 20000;
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(`/api/master-data?companyId=${companyId}&_ts=${Date.now()}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -96,6 +101,13 @@ export class MasterDataStore {
         return {
           success: false,
           error: `Data validation error: ${error.message}`
+        };
+      }
+
+      if (error instanceof Error && error.name === 'AbortError') {
+        return {
+          success: false,
+          error: 'Master data request timed out after 20s. Please retry.'
         };
       }
 
