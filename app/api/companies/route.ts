@@ -1493,11 +1493,47 @@ export async function DELETE(request: NextRequest) {
     // SECURITY: Require authentication
     const context = await requireAuth();
     console.log("🗑️ Authenticated user:", context.email, "Role:", context.role);
-    
-    return NextResponse.json(
-      { error: "DELETE function temporarily disabled" },
-      { status: 500 },
-    );
+
+    const { searchParams } = new URL(request.url);
+    const companyId = searchParams.get("id") || searchParams.get("companyId");
+    if (!companyId) {
+      return NextResponse.json(
+        { error: "Company ID required" },
+        { status: 400 },
+      );
+    }
+
+    const hasAccess = await validateCompanyAccess(companyId);
+    if (!hasAccess) {
+      await auditForbiddenAccess("Company", companyId, "DELETE");
+      return NextResponse.json(
+        { error: "Forbidden: You do not have permission to delete this company" },
+        { status: 403 },
+      );
+    }
+
+    const existing = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true, name: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Company not found" },
+        { status: 404 },
+      );
+    }
+
+    // Soft delete to avoid destructive cascades and keep auditability.
+    const deletedName = `${existing.name} (DELETED ${new Date().toISOString()})`;
+    const company = await prisma.company.update({
+      where: { id: companyId },
+      data: { name: deletedName, consultantId: null },
+      select: { id: true, name: true },
+    });
+
+    await auditCompanyOperation("COMPANY_DELETED", companyId);
+
+    return NextResponse.json({ success: true, company }, { status: 200 });
   } catch (error: any) {
     console.error("❌ DELETE error:", error);
     return NextResponse.json(

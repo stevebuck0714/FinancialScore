@@ -548,9 +548,25 @@ function buildSlInvHdrsWindowFilter(window?: SyncWindow): string | null {
 
 function buildSlLedgersPeriodFilter(window?: SyncWindow, site?: string): string | null {
   if (!window) return null;
-  const year = window.endDate.getUTCFullYear();
-  const period = window.endDate.getUTCMonth() + 1;
-  const clauses = [`ControlYear='${year}'`, `ControlPeriod='${period}'`];
+  const startYear = window.startDate.getUTCFullYear();
+  const startPeriod = window.startDate.getUTCMonth() + 1;
+  const endYear = window.endDate.getUTCFullYear();
+  const endPeriod = window.endDate.getUTCMonth() + 1;
+  const pad = (value: number) => String(Math.max(1, Math.floor(value))).padStart(2, '0');
+  const startPeriodToken = pad(startPeriod);
+  const endPeriodToken = pad(endPeriod);
+
+  // Daily overlap keeps fetch scope tight to the current accounting period.
+  // Backfill/manual must span a period range across months/years.
+  const periodClause =
+    window.mode === 'daily_overlap'
+      ? `(ControlYear='${endYear}' and ControlPeriod='${endPeriodToken}')`
+      : `(
+          (ControlYear > '${startYear}' or (ControlYear='${startYear}' and ControlPeriod >= '${startPeriodToken}'))
+          and
+          (ControlYear < '${endYear}' or (ControlYear='${endYear}' and ControlPeriod <= '${endPeriodToken}'))
+        )`;
+  const clauses = [periodClause];
   const siteValue = String(site || '').trim();
   if (siteValue) {
     const safeSite = siteValue.replace(/'/g, "''");
@@ -823,7 +839,7 @@ const SLA_PTRXP_SAFE_PROPERTIES = ['VendNum', 'Name', 'InvNum', 'InvDate', 'DueD
 const SLA_PTRX_SAFE_PROPERTIES = ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
 const AP_IDO_CANDIDATES = ['SLAptrx', 'SLAptrxp', 'SLAptrxps', 'SLAptrxs', 'Aptrx', 'Aptrxp', 'Aptrxps', 'Aptrxs'];
 const SL_COITEMS_SAFE_PROPERTIES = ['CoNum', 'CoLine', 'CoRelease', 'Item', 'Stat', 'Price', 'QtyOrdered', 'QtyShipped', 'InvNum', 'Whse', 'DueDate'];
-const MAX_CSI_PAGES_PER_REQUEST = 2;
+const MAX_CSI_PAGES_PER_REQUEST = 20;
 const OPTIONAL_CSI_GL_SUMMARY_PROGRAMS = new Set([
   'GLACCTPERIODBALANCES',
   'SLGLACCTPERIODBALANCES',

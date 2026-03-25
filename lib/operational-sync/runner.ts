@@ -65,13 +65,43 @@ export async function runOperationalSyncForConnection(
   const frequency = normalizeFrequency(frequencyInput);
 
   if (connection.platform === 'INFOR_M3') {
-    const result = await syncInforM3OperationalData(connection.companyId, frequency);
+    const aggregatedErrors: string[] = [];
+    let aggregatedRecordsCreated = 0;
+    const maxContinuationBatches = 250;
+    let continuationBatches = 0;
+
+    let result = await syncInforM3OperationalData(connection.companyId, frequency);
+    aggregatedRecordsCreated += result.recordsCreated;
+    aggregatedErrors.push(...normalizeErrors(result.errors));
+
+    while (result.hasMore && result.continuation) {
+      continuationBatches += 1;
+      if (continuationBatches > maxContinuationBatches) {
+        aggregatedErrors.push(
+          `Infor operational sync exceeded ${maxContinuationBatches} continuation batches; stopping early to avoid runaway processing.`
+        );
+        break;
+      }
+
+      result = await syncInforM3OperationalData(connection.companyId, frequency, undefined, undefined, {
+        programOffset: result.continuation.programOffset,
+        requestOffset: result.continuation.requestOffset,
+        bookmark: result.continuation.bookmark,
+      });
+      aggregatedRecordsCreated += result.recordsCreated;
+      aggregatedErrors.push(...normalizeErrors(result.errors));
+    }
+
+    if (result.hasMore) {
+      aggregatedErrors.push('Infor operational sync ended before cursor drain completed (hasMore remained true).');
+    }
+
     await pruneCompanyOperationalData(connection.companyId);
     return {
-      success: result.success,
-      recordsCreated: result.recordsCreated,
+      success: aggregatedErrors.length === 0 && !result.hasMore,
+      recordsCreated: aggregatedRecordsCreated,
       moduleCounts: result.moduleCounts,
-      errors: normalizeErrors(result.errors),
+      errors: Array.from(new Set(aggregatedErrors)),
     };
   }
 

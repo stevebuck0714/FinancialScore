@@ -2,6 +2,8 @@ import prisma from '@/lib/prisma';
 import type { AccountingPlatform } from '@prisma/client';
 import { sendSyncFailureNotification } from '@/lib/email';
 
+const DEFAULT_SYNC_ALERT_RECIPIENT = 'support@corelytics.com';
+
 type NotifySyncFailureParams = {
   companyId: string;
   platform: AccountingPlatform;
@@ -65,7 +67,16 @@ export async function notifyAdminsOfSyncFailure(params: NotifySyncFailureParams)
       }),
     ]);
 
-    const recipients = admins.map((a) => (a.email || '').trim().toLowerCase()).filter(Boolean);
+    const recipients = Array.from(
+      new Set(
+        [
+          DEFAULT_SYNC_ALERT_RECIPIENT,
+          ...admins.map((a) => (a.email || '').trim().toLowerCase()).filter(Boolean),
+        ]
+          .map((email) => email.trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
     const actionUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || undefined;
     const result = await sendSyncFailureNotification({
       recipients,
