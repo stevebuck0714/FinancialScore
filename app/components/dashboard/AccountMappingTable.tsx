@@ -331,9 +331,17 @@ export default function AccountMappingTable({
   };
 
   const getClassId = (mapping: AccountMapping): string => {
-    const explicit = String(mapping.qbAccountCode || mapping.qbAccountId || '').trim();
+    const rawMapping = mapping as any;
+    const explicit = String(
+      mapping.qbAccountCode ||
+        mapping.qbAccountId ||
+        rawMapping.accountCode ||
+        rawMapping.accountId ||
+        rawMapping.acctId ||
+        ''
+    ).trim();
     if (explicit) return explicit;
-    const match = String(mapping.qbAccount || '').match(/^\s*(\d{4,})/);
+    const match = String(mapping.qbAccount || '').match(/(\d{4,})/);
     return match?.[1] || '';
   };
 

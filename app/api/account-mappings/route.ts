@@ -354,12 +354,39 @@ export async function GET(request: NextRequest) {
     const snapshot = parseAccountSnapshot(snapshotRaw);
     const snapshotById = new Map(snapshot.map((row) => [normalize(row.accountId), row]));
     const snapshotByName = new Map(snapshot.map((row) => [normalize(row.accountName), row]));
+    const snapshotByComparableName = new Map(
+      snapshot.map((row) => [normalizeForCompare(row.accountName), row]),
+    );
+    const snapshotByNormalizedCode = new Map<number, AccountSnapshotRow>();
+    for (const row of snapshot) {
+      const normalizedCode = extractNormalizedAccountCode(row.accountCode, row.accountId, row.accountName);
+      if (normalizedCode !== null && !snapshotByNormalizedCode.has(normalizedCode)) {
+        snapshotByNormalizedCode.set(normalizedCode, row);
+      }
+    }
+    const findSourceMatch = (mapping: any): AccountSnapshotRow | undefined => {
+      const byId = snapshotById.get(normalize(mapping?.qbAccountId));
+      if (byId) return byId;
+      const byName = snapshotByName.get(normalize(mapping?.qbAccount));
+      if (byName) return byName;
+      const byComparableName = snapshotByComparableName.get(normalizeForCompare(String(mapping?.qbAccount || "")));
+      if (byComparableName) return byComparableName;
+      const normalizedCode = extractNormalizedAccountCode(
+        mapping?.qbAccountCode,
+        mapping?.qbAccountId,
+        mapping?.qbAccount,
+      );
+      if (normalizedCode !== null) {
+        const byCode = snapshotByNormalizedCode.get(normalizedCode);
+        if (byCode) return byCode;
+      }
+      return undefined;
+    };
 
     const allowedTargetFields = getAllowedTargetFieldSet(company?.industrySectorCategory || '01');
     const sectorCategory = company?.industrySectorCategory || '01';
     const invalidMappings = mappings.filter((m: any) => {
-      const sourceMatch =
-        snapshotById.get(normalize(m.qbAccountId)) || snapshotByName.get(normalize(m.qbAccount));
+      const sourceMatch = findSourceMatch(m);
       const effectiveClassification = isManualClassification(m.qbAccountClassification)
         ? m.qbAccountClassification
         : (sourceMatch?.classification || m.qbAccountClassification);
@@ -403,8 +430,7 @@ export async function GET(request: NextRequest) {
       unmapped: 0,
     };
     const sanitizedMappings = mappings.map((m: any) => {
-      const sourceMatch =
-        snapshotById.get(normalize(m.qbAccountId)) || snapshotByName.get(normalize(m.qbAccount));
+      const sourceMatch = findSourceMatch(m);
       const effectiveClassification = isManualClassification(m.qbAccountClassification)
         ? m.qbAccountClassification
         : (sourceMatch?.classification || m.qbAccountClassification);
@@ -438,6 +464,8 @@ export async function GET(request: NextRequest) {
       if (!effectiveTargetField || effectiveTargetField === "unmapped" || allowedTargetFields.has(effectiveTargetField)) {
         return {
           ...m,
+          qbAccountId: m.qbAccountId || sourceMatch?.accountId || null,
+          qbAccountCode: m.qbAccountCode || sourceMatch?.accountCode || sourceMatch?.accountId || null,
           qbAccountClassification: effectiveClassification,
           targetField: effectiveTargetField,
           sourceStatus,
@@ -445,6 +473,8 @@ export async function GET(request: NextRequest) {
       }
       return {
         ...m,
+        qbAccountId: m.qbAccountId || sourceMatch?.accountId || null,
+        qbAccountCode: m.qbAccountCode || sourceMatch?.accountCode || sourceMatch?.accountId || null,
         qbAccountClassification: effectiveClassification,
         invalidTargetField: m.targetField,
         targetField: "",

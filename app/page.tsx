@@ -58,6 +58,7 @@ import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 import type { SdeExecutiveFinancialSummary, SdeExecutiveSummary, SdeRecommendation } from '@/lib/sde-recommendations';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
+const LOBManager = dynamic(() => import('./components/dashboard/LOBManager'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
 const RatiosTab = dynamic(() => import('./components/RatiosTab'), { ssr: false });
 const CashFlowTab = dynamic(() => import('./components/CashFlowTab'), { ssr: false });
@@ -1391,10 +1392,18 @@ function FinancialScorePage() {
   };
 
   const normalizeMappingsForUi = (mappings: any[]): any[] =>
-    (Array.isArray(mappings) ? mappings : []).map((m: any) => ({
-      ...m,
-      targetField: normalizeMappingTargetField(m?.targetField),
-    }));
+    (Array.isArray(mappings) ? mappings : []).map((m: any) => {
+      const normalizedId = String(m?.qbAccountId || m?.accountId || m?.acctId || '').trim();
+      const normalizedCode = String(
+        m?.qbAccountCode || m?.accountCode || m?.acctCode || m?.accountNumber || normalizedId || ''
+      ).trim();
+      return {
+        ...m,
+        qbAccountId: normalizedId || m?.qbAccountId,
+        qbAccountCode: normalizedCode || m?.qbAccountCode,
+        targetField: normalizeMappingTargetField(m?.targetField),
+      };
+    });
 
   const normalizeAccountCodeForMatch = (value: unknown): string => {
     const raw = String(value || '').trim();
@@ -1413,6 +1422,8 @@ function FinancialScorePage() {
       normalizeAccountCodeForMatch(mapping?.qbAccountCode) ||
       normalizeAccountCodeForMatch(mapping?.qbAccountId);
     if (code) return `code:${code}`;
+    const name = String(mapping?.qbAccount || '').trim().toLowerCase();
+    if (name) return `name:${name}`;
     return '';
   };
 
@@ -1427,11 +1438,24 @@ function FinancialScorePage() {
     return generatedNormalized.map((row: any) => {
       const key = getMappingMatchKey(row);
       const prior = key ? existingByKey.get(key) : null;
+      const mergedIdentity = {
+        qbAccountId: String(row?.qbAccountId || prior?.qbAccountId || '').trim() || undefined,
+        qbAccountCode: String(row?.qbAccountCode || prior?.qbAccountCode || '').trim() || undefined,
+      };
       const priorTarget = normalizeMappingTargetField(prior?.targetField);
       const hasPriorExplicitMapping = !!priorTarget && priorTarget !== 'unmapped';
-      if (!hasPriorExplicitMapping) return row;
+      if (!hasPriorExplicitMapping) {
+        return {
+          ...row,
+          ...mergedIdentity,
+          qbAccountClassification: prior?.qbAccountClassification || row?.qbAccountClassification,
+          allocationMethod: prior?.allocationMethod || row?.allocationMethod || 'manual',
+          lobAllocations: prior?.lobAllocations ?? row?.lobAllocations,
+        };
+      }
       return {
         ...row,
+        ...mergedIdentity,
         targetField: priorTarget,
         qbAccountClassification: prior?.qbAccountClassification || row?.qbAccountClassification,
         allocationMethod: prior?.allocationMethod || row?.allocationMethod || 'manual',
@@ -11077,6 +11101,14 @@ function FinancialScorePage() {
                       </div>
                     )}
 
+                    <div style={{ marginBottom: '12px' }}>
+                      <LOBManager
+                        lobs={linesOfBusiness}
+                        onChange={(lobData) => setLinesOfBusiness(lobData)}
+                        maxLOBs={5}
+                      />
+                    </div>
+
                     <AccountMappingTable
                       mappings={aiMappings}
                       linesOfBusiness={linesOfBusiness}
@@ -11314,55 +11346,148 @@ function FinancialScorePage() {
                               setIsProcessingMonthlyData(true);
                               try {
                                 console.log('?? Reprocessing API data with mappings...');
+                                const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
+                                const requestedMode =
+                                  selectedSystemNormalized === 'QUICKBOOKS' ? 'through' : apiFinancialImportMode;
+                                const useSafeInforThroughRunner =
+                                  (selectedSystemNormalized === 'INFOR_M3' || selectedSystemNormalized === 'INFOR_CSI') &&
+                                  requestedMode === 'through';
 
-                                const response = await fetch('/api/financials/reprocess-mappings', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    companyId: selectedCompanyId,
-                                    targetMonth: apiFinancialTargetMonth,
-                                    mode: String(selectedAccountingSystem || '').toUpperCase() === 'QUICKBOOKS' ? 'through' : apiFinancialImportMode,
-                                  })
-                                });
-
-                                const raw = await response.text();
-                                const contentType = response.headers.get('content-type') || '';
-                                const vercelRequestId = response.headers.get('x-vercel-id') || '';
-                                let result: any = null;
-                                try {
-                                  result = raw ? JSON.parse(raw) : {};
-                                } catch {
-                                  result = null;
-                                }
-                                if (!result || typeof result !== 'object') {
-                                  const snippet = String(raw || '').slice(0, 180);
-                                  throw new Error(
-                                    `Reprocess endpoint returned non-JSON (status ${response.status}). ` +
-                                      `Request ID: ${vercelRequestId || 'n/a'}. ` +
-                                      `Content-Type: ${contentType || 'n/a'}. ` +
-                                      `Response starts with: ${snippet}`
-                                  );
-                                }
-                                if (result?.diagnostics) {
-                                  console.log('🧪 Reprocess diagnostics (object):', result.diagnostics);
+                                const parseJsonResponse = async (response: Response) => {
+                                  const raw = await response.text();
+                                  const contentType = response.headers.get('content-type') || '';
+                                  const vercelRequestId = response.headers.get('x-vercel-id') || '';
+                                  let result: any = null;
                                   try {
-                                    console.log('🧪 Reprocess diagnostics (json):\n' + JSON.stringify(result.diagnostics, null, 2));
-                                  } catch {}
-                                }
+                                    result = raw ? JSON.parse(raw) : {};
+                                  } catch {
+                                    result = null;
+                                  }
+                                  if (!result || typeof result !== 'object') {
+                                    const snippet = String(raw || '').slice(0, 180);
+                                    throw new Error(
+                                      `Reprocess endpoint returned non-JSON (status ${response.status}). ` +
+                                        `Request ID: ${vercelRequestId || 'n/a'}. ` +
+                                        `Content-Type: ${contentType || 'n/a'}. ` +
+                                        `Response starts with: ${snippet}`
+                                    );
+                                  }
+                                  return { result, vercelRequestId, raw };
+                                };
 
-                                if (response.ok && result.success) {
-                                  alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
-                                  // Switch to Data Review tab
-                                  setAdminDashboardTab('data-review');
-                                  // Trigger data reload by updating qbLastSync (this triggers the useEffect)
-                                  setQbLastSync(new Date());
+                                if (useSafeInforThroughRunner) {
+                                  const toYearMonth = (value: unknown): string | null => {
+                                    const raw = String(value || '').trim();
+                                    if (!raw) return null;
+                                    const match = raw.match(/^(\d{4})-(\d{2})/);
+                                    if (match) return `${match[1]}-${match[2]}`;
+                                    const parsed = new Date(raw);
+                                    if (Number.isNaN(parsed.getTime())) return null;
+                                    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+                                  };
+                                  const buildMonthRange = (startYm: string, endYm: string): string[] => {
+                                    const out: string[] = [];
+                                    const start = new Date(`${startYm}-01T00:00:00Z`);
+                                    const end = new Date(`${endYm}-01T00:00:00Z`);
+                                    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return out;
+                                    const cursor = new Date(start);
+                                    while (cursor <= end) {
+                                      out.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
+                                      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+                                    }
+                                    return out;
+                                  };
+                                  const discoveredMonths = Array.isArray(loadedMonthlyData)
+                                    ? loadedMonthlyData
+                                        .map((row: any) => toYearMonth(row?.monthDate || row?.month || row?.date))
+                                        .filter((m): m is string => !!m)
+                                        .sort()
+                                    : [];
+                                  const startMonth = discoveredMonths[0] || apiFinancialTargetMonth;
+                                  const months = buildMonthRange(startMonth, apiFinancialTargetMonth);
+                                  const skipped: string[] = [];
+                                  const failed: Array<{ month: string; status: number; requestId: string; error: string }> = [];
+                                  let processedCount = 0;
+
+                                  for (const targetMonth of months) {
+                                    const response = await fetch('/api/financials/reprocess-mappings', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        companyId: selectedCompanyId,
+                                        targetMonth,
+                                        mode: 'only',
+                                      }),
+                                    });
+                                    const { result, vercelRequestId } = await parseJsonResponse(response);
+                                    const missingMonth =
+                                      response.status === 400 &&
+                                      String(result?.error || '').includes('No valid monthlyData rows found for targetMonth');
+                                    if (missingMonth) {
+                                      skipped.push(targetMonth);
+                                      continue;
+                                    }
+                                    if (!response.ok || !result?.success) {
+                                      failed.push({
+                                        month: targetMonth,
+                                        status: response.status,
+                                        requestId: vercelRequestId || 'n/a',
+                                        error: String(result?.error || result?.message || 'Unknown error'),
+                                      });
+                                      break;
+                                    }
+                                    processedCount += 1;
+                                    await new Promise((resolve) => setTimeout(resolve, 1200));
+                                  }
+
+                                  if (failed.length > 0) {
+                                    const firstFailure = failed[0];
+                                    alert(
+                                      `Failed to reprocess ${firstFailure.month} (status ${firstFailure.status}). ${firstFailure.error}\n` +
+                                        `Request ID: ${firstFailure.requestId}`
+                                    );
+                                  } else {
+                                    alert(
+                                      `Reprocess completed successfully for ${processedCount} month(s).` +
+                                        (skipped.length ? `\nSkipped missing month(s): ${skipped.join(', ')}` : '') +
+                                        `\n\nSwitching to Data Review tab to show your detailed financial data!`
+                                    );
+                                    setAdminDashboardTab('data-review');
+                                    setQbLastSync(new Date());
+                                  }
                                 } else {
-                                  const details = result?.details ? `\nDetails: ${result.details}` : '';
-                                  alert(
-                                    `Failed to reprocess (status ${response.status}). ${result.error || result.message || 'Unknown error.'}` +
-                                      details +
-                                      (vercelRequestId ? `\nRequest ID: ${vercelRequestId}` : '')
-                                  );
+                                  const response = await fetch('/api/financials/reprocess-mappings', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      companyId: selectedCompanyId,
+                                      targetMonth: apiFinancialTargetMonth,
+                                      mode: requestedMode,
+                                    })
+                                  });
+
+                                  const { result, vercelRequestId } = await parseJsonResponse(response);
+                                  if (result?.diagnostics) {
+                                    console.log('🧪 Reprocess diagnostics (object):', result.diagnostics);
+                                    try {
+                                      console.log('🧪 Reprocess diagnostics (json):\n' + JSON.stringify(result.diagnostics, null, 2));
+                                    } catch {}
+                                  }
+
+                                  if (response.ok && result.success) {
+                                    alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
+                                    // Switch to Data Review tab
+                                    setAdminDashboardTab('data-review');
+                                    // Trigger data reload by updating qbLastSync (this triggers the useEffect)
+                                    setQbLastSync(new Date());
+                                  } else {
+                                    const details = result?.details ? `\nDetails: ${result.details}` : '';
+                                    alert(
+                                      `Failed to reprocess (status ${response.status}). ${result.error || result.message || 'Unknown error.'}` +
+                                        details +
+                                        (vercelRequestId ? `\nRequest ID: ${vercelRequestId}` : '')
+                                    );
+                                  }
                                 }
                               } catch (error: any) {
                                 console.error('Reprocess error:', error);
@@ -11681,7 +11806,17 @@ function FinancialScorePage() {
                                     <option value="Other">Other</option>
                                   </select>
                                 </td>
-                                <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{mapping.qbAccountCode || mapping.qbAccountId || 'N/A'}</td>
+                                <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>
+                                  {String(
+                                    mapping.qbAccountCode ||
+                                    mapping.qbAccountId ||
+                                    mapping.accountCode ||
+                                    mapping.accountId ||
+                                    mapping.acctId ||
+                                    ''
+                                  ).trim() ||
+                                    (String(mapping.qbAccount || '').match(/(\d{4,})/)?.[1] || 'N/A')}
+                                </td>
                                 <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
                                   {latestValue == null
