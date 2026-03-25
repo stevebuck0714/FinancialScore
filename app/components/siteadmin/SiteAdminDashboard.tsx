@@ -107,7 +107,7 @@ export default function SiteAdminDashboard(props: any) {
     addConsultant, deleteConsultant, updateConsultantInfo, getConsultantCompanies,
     setCurrentUser, setSiteAdminViewingAs, setCurrentView, setLoadedConsultantId, setCompanies, currentUser,
     setSelectedCompanyId, setCompanyToDelete, setShowDeleteConfirmation,
-    inforConnected, inforStatus, inforLastSync, inforError, inforBusy,
+    inforConnected, inforStatus, inforLastSync, inforError, inforBusy, inforBusyAction,
     inforCredentials, setInforCredentials, inforProbePath, setInforProbePath, inforProbeSummary,
     checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3, runInforM3OperationalSync,
     runPlatformOperationalSync,
@@ -2993,14 +2993,14 @@ export default function SiteAdminDashboard(props: any) {
                                                         disabled={inforBusy || !inforConnected}
                                                         style={{ justifySelf: 'start', padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                                       >
-                                                        Run Ops Sync Now
+                                                        {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
                                                       </button>
                                                       <button
                                                         onClick={() => connectInforM3?.(company.id)}
                                                         disabled={inforBusy}
                                                         style={{ justifySelf: 'start', padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                                       >
-                                                        {inforBusy ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
+                                                        {inforBusy && inforBusyAction === 'connect' ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
                                                       </button>
                                                       <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-start' }}>
                                                         <button
@@ -3115,7 +3115,7 @@ export default function SiteAdminDashboard(props: any) {
                                                               backfillMonths: Number(e.target.value || 36),
                                                             })
                                                           }
-                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                         />
                                                       </label>
                                                       <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
@@ -3130,7 +3130,7 @@ export default function SiteAdminDashboard(props: any) {
                                                               lookbackDays: Number(e.target.value || 30),
                                                             })
                                                           }
-                                                          style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                         />
                                                       </label>
                                                     </div>
@@ -5342,14 +5342,14 @@ export default function SiteAdminDashboard(props: any) {
                                                 disabled={inforBusy || !inforConnected}
                                                 style={{ justifySelf: 'start', padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                               >
-                                                Run Ops Sync Now
+                                                {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
                                               </button>
                                               <button
                                                 onClick={() => connectInforM3?.(businessCompany.id)}
                                                 disabled={inforBusy}
                                                 style={{ justifySelf: 'start', padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
-                                                {inforBusy ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
+                                                {inforBusy && inforBusyAction === 'connect' ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
                                               </button>
                                               <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-start' }}>
                                                 <button
@@ -5464,7 +5464,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       backfillMonths: Number(e.target.value || 36),
                                                     })
                                                   }
-                                                  style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                  style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                 />
                                               </label>
                                               <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
@@ -5479,7 +5479,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       lookbackDays: Number(e.target.value || 30),
                                                     })
                                                   }
-                                                  style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                  style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                 />
                                               </label>
                                             </div>
@@ -5546,7 +5546,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 disabled={inforBusy}
                                                 style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
-                                                {inforBusy ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
+                                                {inforBusy && inforBusyAction === 'connect' ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
                                               </button>
                                               <button
                                                 onClick={() => disconnectInforM3?.(businessCompany.id)}
@@ -5573,7 +5573,7 @@ export default function SiteAdminDashboard(props: any) {
                                                 disabled={inforBusy || !inforConnected}
                                                 style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                               >
-                                                Run Ops Sync Now
+                                                {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
                                               </button>
                                               <button
                                                 onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}

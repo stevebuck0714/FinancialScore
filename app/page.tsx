@@ -1999,6 +1999,10 @@ function FinancialScorePage() {
   const [inforLastSync, setInforLastSync] = useState<Date | null>(null);
   const [inforError, setInforError] = useState<string | null>(null);
   const [inforBusy, setInforBusy] = useState(false);
+  const [inforBusyAction, setInforBusyAction] = useState<
+    'connect' | 'save_credentials' | 'test_token' | 'probe' | 'disconnect' | 'operational_sync' | null
+  >(null);
+  const [inforBusyStartedAt, setInforBusyStartedAt] = useState<number | null>(null);
   const [inforCredentials, setInforCredentials] = useState({
     tenantId: '',
     clientName: '',
@@ -2014,6 +2018,26 @@ function FinancialScorePage() {
   });
   const [inforProbePath, setInforProbePath] = useState('/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
+  useEffect(() => {
+    if (inforBusy && !inforBusyStartedAt) {
+      setInforBusyStartedAt(Date.now());
+    }
+  }, [inforBusy, inforBusyStartedAt]);
+
+  useEffect(() => {
+    if (!inforBusy || !inforBusyStartedAt) return;
+    // Safety net: clear stale busy state if a request path gets interrupted
+    // and never reaches the normal finally block.
+    const intervalId = window.setInterval(() => {
+      if (Date.now() - inforBusyStartedAt > 2 * 60 * 1000) {
+        setInforBusy(false);
+        setInforBusyAction(null);
+        setInforBusyStartedAt(null);
+      }
+    }, 15000);
+    return () => window.clearInterval(intervalId);
+  }, [inforBusy, inforBusyStartedAt]);
+
   const [inforCaoPulling, setInforCaoPulling] = useState(false);
   const [inforCaoMessage, setInforCaoMessage] = useState<string | null>(null);
   const [inforLastCaoPullAt, setInforLastCaoPullAt] = useState<Date | null>(null);
@@ -5460,7 +5484,9 @@ function FinancialScorePage() {
       return;
     }
 
+    setInforBusyAction('connect');
     setInforBusy(true);
+    setInforBusyStartedAt(Date.now());
     setInforError(null);
     setInforProbeSummary(null);
     try {
@@ -5486,6 +5512,8 @@ function FinancialScorePage() {
       alert(`Failed to connect Infor M3:\n\n${message}`);
     } finally {
       setInforBusy(false);
+      setInforBusyAction(null);
+      setInforBusyStartedAt(null);
     }
   };
 
@@ -5514,7 +5542,9 @@ function FinancialScorePage() {
       return;
     }
 
+    setInforBusyAction('save_credentials');
     setInforBusy(true);
+    setInforBusyStartedAt(Date.now());
     setInforError(null);
     try {
       const response = await fetch('/api/infor-m3/save-credentials', {
@@ -5538,13 +5568,17 @@ function FinancialScorePage() {
       alert(`Failed to save Infor M3 credentials:\n\n${message}`);
     } finally {
       setInforBusy(false);
+      setInforBusyAction(null);
+      setInforBusyStartedAt(null);
     }
   };
 
   const testInforM3Token = async (targetCompanyId?: string) => {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) return;
+    setInforBusyAction('test_token');
     setInforBusy(true);
+    setInforBusyStartedAt(Date.now());
     setInforError(null);
     try {
       const response = await fetch(`/api/infor-m3/test-token?companyId=${companyId}`);
@@ -5560,6 +5594,8 @@ function FinancialScorePage() {
       alert(`Infor M3 token test failed:\n\n${message}`);
     } finally {
       setInforBusy(false);
+      setInforBusyAction(null);
+      setInforBusyStartedAt(null);
     }
   };
 
@@ -5576,7 +5612,9 @@ function FinancialScorePage() {
       alert('Site is required for CSI probe.');
       return;
     }
+    setInforBusyAction('probe');
     setInforBusy(true);
+    setInforBusyStartedAt(Date.now());
     setInforError(null);
     try {
       const siteParam = String(site || '').trim();
@@ -5599,6 +5637,8 @@ function FinancialScorePage() {
       alert(`Infor M3 probe failed:\n\n${message}`);
     } finally {
       setInforBusy(false);
+      setInforBusyAction(null);
+      setInforBusyStartedAt(null);
     }
   };
 
@@ -5609,7 +5649,9 @@ function FinancialScorePage() {
       return;
     }
 
+    setInforBusyAction('disconnect');
     setInforBusy(true);
+    setInforBusyStartedAt(Date.now());
     try {
       const response = await fetch('/api/infor-m3/disconnect', {
         method: 'POST',
@@ -5632,6 +5674,8 @@ function FinancialScorePage() {
       alert('Failed to disconnect Infor M3: ' + (error?.message || 'Unknown error'));
     } finally {
       setInforBusy(false);
+      setInforBusyAction(null);
+      setInforBusyStartedAt(null);
     }
   };
 
@@ -5655,7 +5699,9 @@ function FinancialScorePage() {
       alert('Site is required for CSI operational sync.');
       return;
     }
+    setInforBusyAction('operational_sync');
     setInforBusy(true);
+    setInforBusyStartedAt(Date.now());
     setInforError(null);
     try {
       let totalRecordsCreated = 0;
@@ -5748,6 +5794,8 @@ function FinancialScorePage() {
       alert(`Infor M3 operational sync failed:\n\n${message}`);
     } finally {
       setInforBusy(false);
+      setInforBusyAction(null);
+      setInforBusyStartedAt(null);
     }
   };
 
@@ -8440,6 +8488,7 @@ function FinancialScorePage() {
               inforLastSync={inforLastSync}
               inforError={inforError}
               inforBusy={inforBusy}
+              inforBusyAction={inforBusyAction}
               inforCredentials={inforCredentials}
               setInforCredentials={setInforCredentials}
               inforProbePath={inforProbePath}
