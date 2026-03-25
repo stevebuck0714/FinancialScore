@@ -2806,29 +2806,29 @@ export default function SiteAdminDashboard(props: any) {
                               )}
                             </div>
 
-                            <h4 style={{ fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                            <h4 style={{ fontSize: '12px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
                               Companies ({consultantCompanies.length})
                             </h4>
                             
                             {consultantCompanies.length === 0 ? (
-                              <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '16px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>
+                              <div style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>
                                 <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>No companies yet</p>
                               </div>
                             ) : (
-                              <div style={{ display: 'grid', gap: '8px' }}>
+                              <div style={{ display: 'grid', gap: '6px' }}>
                                 {consultantCompanies.map((company) => {
                                   const companyUsers = getCompanyUsers(company.id);
                                   const isCompanyExpanded = expandedCompanyIds.includes(company.id);
                                   const editing = editingPricing[company.id];
                                   
                                   return (
-                                    <div key={company.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '10px', border: '1px solid #e2e8f0' }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '8px' : '0' }}>
+                                    <div key={company.id} style={{ background: '#f8fafc', borderRadius: '6px', padding: '6px 8px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isCompanyExpanded ? '6px' : '0' }}>
                                         <div style={{ flex: 1 }}>
-                                          <h5 style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b', marginBottom: '0' }}>{company.name}</h5>
+                                          <h5 style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', margin: 0, lineHeight: '1.2' }}>{company.name}</h5>
                                         </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#667eea' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <div style={{ fontSize: '12px', fontWeight: '700', color: '#667eea' }}>
                                             {companyUsers.length} user{companyUsers.length !== 1 ? 's' : ''}
                                           </div>
                                           <button
@@ -2871,12 +2871,12 @@ export default function SiteAdminDashboard(props: any) {
                                               });
                                             }}
                                             style={{ 
-                                              padding: '6px 12px', 
+                                              padding: '4px 10px', 
                                               background: isCompanyExpanded ? '#f1f5f9' : '#667eea', 
                                               color: isCompanyExpanded ? '#475569' : 'white', 
                                               border: 'none', 
                                               borderRadius: '4px', 
-                                              fontSize: '13px', 
+                                              fontSize: '12px', 
                                               fontWeight: '600', 
                                               cursor: 'pointer' 
                                             }}
@@ -2933,7 +2933,7 @@ export default function SiteAdminDashboard(props: any) {
                                                     handleInforCredentialsFileImport(event, company.id, company.name)
                                                   }
                                                 />
-                                                <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                                                <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'minmax(0, 0.85fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 0.85fr)', gap: '8px' }}>
                                                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
                                                     <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>CONNECTION</div>
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center', justifyContent: 'start' }}>
@@ -3023,7 +3023,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </div>
                                                     </div>
                                                   </div>
-                                                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: '#f8fafc' }}>
+                                                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: '#f8fafc', gridColumn: '4', gridRow: '1' }}>
                                                     <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>OPERATIONAL DATA MODE</div>
                                                     <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
                                                       {company.forceOperationalMockData
@@ -3067,7 +3067,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </button>
                                                     </div>
                                                   </div>
-                                                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: '#f8fafc' }}>
+                                                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: '#f8fafc', gridColumn: '3', gridRow: '1' }}>
                                                     <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>SYNC WINDOW</div>
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
                                                       <label
@@ -5283,7 +5283,7 @@ export default function SiteAdminDashboard(props: any) {
                                             handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
                                           }
                                         />
-                                        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px' }}>
+                                        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'minmax(0, 0.85fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 0.85fr)', gap: '8px' }}>
                                           <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
                                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>CONNECTION</div>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center', justifyContent: 'start' }}>
@@ -5372,7 +5372,7 @@ export default function SiteAdminDashboard(props: any) {
                                               </div>
                                             </div>
                                           </div>
-                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white', gridColumn: '4', gridRow: '1' }}>
                                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>OPERATIONAL DATA MODE</div>
                                             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
                                               {businessCompany.forceOperationalMockData
@@ -5416,7 +5416,7 @@ export default function SiteAdminDashboard(props: any) {
                                               </button>
                                             </div>
                                           </div>
-                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
+                                          <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white', gridColumn: '3', gridRow: '1' }}>
                                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>SYNC WINDOW</div>
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px' }}>
                                               <label
