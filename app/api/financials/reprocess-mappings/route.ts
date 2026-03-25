@@ -453,7 +453,12 @@ export async function POST(request: NextRequest) {
       }
 
       const glResponsesRaw = Array.isArray(financialPayload.glResponses) ? financialPayload.glResponses : [];
-      if (glResponsesRaw.length > 0) {
+      const shouldSkipGlRebuildForOnlyMode =
+        mode === 'only' &&
+        !!targetMonth &&
+        hasMonthlyDataRows(financialPayload);
+      diagnostics.glRebuildSkippedForOnlyMode = shouldSkipGlRebuildForOnlyMode;
+      if (glResponsesRaw.length > 0 && !shouldSkipGlRebuildForOnlyMode) {
         // Keep "only" mode lightweight so month-targeted reprocess calls do not
         // attempt a full 36-month CSI rebuild and exceed serverless limits.
         const rebuildMaxMonths = mode === 'only' && targetMonth ? 1 : CSI_REBUILD_MAX_MONTHS;
