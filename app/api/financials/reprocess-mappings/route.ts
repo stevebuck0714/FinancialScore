@@ -454,13 +454,17 @@ export async function POST(request: NextRequest) {
 
       const glResponsesRaw = Array.isArray(financialPayload.glResponses) ? financialPayload.glResponses : [];
       if (glResponsesRaw.length > 0) {
+        // Keep "only" mode lightweight so month-targeted reprocess calls do not
+        // attempt a full 36-month CSI rebuild and exceed serverless limits.
+        const rebuildMaxMonths = mode === 'only' && targetMonth ? 1 : CSI_REBUILD_MAX_MONTHS;
         const throughMonthForBuild = resolveThroughMonthForRebuild(financialPayload, targetMonth);
         diagnostics.throughMonthForBuild = throughMonthForBuild;
+        diagnostics.rebuildMaxMonths = rebuildMaxMonths;
         const historicalLedgers = useHistoricalSlLedgers
           ? await loadHistoricalCsiSlLedgersItems(
               String(companyId),
               throughMonthForBuild,
-              CSI_REBUILD_MAX_MONTHS,
+              rebuildMaxMonths,
             )
           : [];
         const slLedgersRowsFromPayload = extractSlLedgersRowsFromGlResponses(glResponsesRaw);
@@ -526,7 +530,7 @@ export async function POST(request: NextRequest) {
         const built = buildCsiMonthlyDataFromGlResponses({
           glResponses: glResponsesForBuild,
           throughMonth: throughMonthForBuild,
-          maxMonths: CSI_REBUILD_MAX_MONTHS,
+          maxMonths: rebuildMaxMonths,
           accountMappings: mappings,
         });
         diagnostics.builtCoverage = {

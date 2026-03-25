@@ -6,6 +6,8 @@ import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 
 interface AccountMapping {
   qbAccount: string;
+  qbAccountCode?: string;
+  qbAccountId?: string;
   qbAccountClassification?: string;
   targetField: string;
   confidence?: string;
@@ -328,6 +330,13 @@ export default function AccountMappingTable({
     return option ? option.label : canonicalValue;
   };
 
+  const getClassId = (mapping: AccountMapping): string => {
+    const explicit = String(mapping.qbAccountCode || mapping.qbAccountId || '').trim();
+    if (explicit) return explicit;
+    const match = String(mapping.qbAccount || '').match(/^\s*(\d{4,})/);
+    return match?.[1] || '';
+  };
+
   const renderMappingRow = (mapping: AccountMapping, sectionKey: string) => {
     const globalIdx = mappings.indexOf(mapping);
     const lobAllocations = mapping.lobAllocations || {};
@@ -367,6 +376,9 @@ export default function AccountMappingTable({
               {mapping.sourceStatus}
             </span>
           )}
+        </td>
+        <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '12px', fontFamily: 'monospace' }}>
+          {getClassId(mapping) || 'N/A'}
         </td>
         <td style={{ padding: '8px 10px', position: 'relative' }}>
           {/* Target Field Dropdown */}
@@ -631,6 +643,7 @@ export default function AccountMappingTable({
                   <thead style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                       <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Account Name</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Class ID</th>
                       <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
                       <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
                       {activeLOBs.length > 0 && (
@@ -709,6 +722,7 @@ export default function AccountMappingTable({
                   <thead style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
                     <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                       <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Account Name</th>
+                      <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>Class ID</th>
                       <th style={{ textAlign: 'left', padding: '8px', fontWeight: '600', color: '#475569' }}>→ Target Field</th>
                       <th style={{ textAlign: 'center', padding: '8px', fontWeight: '600', color: '#475569' }}>Allocation Method</th>
                       {activeLOBs.length > 0 && (

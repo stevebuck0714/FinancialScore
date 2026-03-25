@@ -11325,7 +11325,24 @@ function FinancialScorePage() {
                                   })
                                 });
 
-                                const result = await response.json();
+                                const raw = await response.text();
+                                const contentType = response.headers.get('content-type') || '';
+                                const vercelRequestId = response.headers.get('x-vercel-id') || '';
+                                let result: any = null;
+                                try {
+                                  result = raw ? JSON.parse(raw) : {};
+                                } catch {
+                                  result = null;
+                                }
+                                if (!result || typeof result !== 'object') {
+                                  const snippet = String(raw || '').slice(0, 180);
+                                  throw new Error(
+                                    `Reprocess endpoint returned non-JSON (status ${response.status}). ` +
+                                      `Request ID: ${vercelRequestId || 'n/a'}. ` +
+                                      `Content-Type: ${contentType || 'n/a'}. ` +
+                                      `Response starts with: ${snippet}`
+                                  );
+                                }
                                 if (result?.diagnostics) {
                                   console.log('🧪 Reprocess diagnostics (object):', result.diagnostics);
                                   try {
@@ -11333,14 +11350,19 @@ function FinancialScorePage() {
                                   } catch {}
                                 }
 
-                                if (result.success) {
+                                if (response.ok && result.success) {
                                   alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
                                   // Switch to Data Review tab
                                   setAdminDashboardTab('data-review');
                                   // Trigger data reload by updating qbLastSync (this triggers the useEffect)
                                   setQbLastSync(new Date());
                                 } else {
-                                  alert(`Failed to reprocess: ${result.error}`);
+                                  const details = result?.details ? `\nDetails: ${result.details}` : '';
+                                  alert(
+                                    `Failed to reprocess (status ${response.status}). ${result.error || result.message || 'Unknown error.'}` +
+                                      details +
+                                      (vercelRequestId ? `\nRequest ID: ${vercelRequestId}` : '')
+                                  );
                                 }
                               } catch (error: any) {
                                 console.error('Reprocess error:', error);
