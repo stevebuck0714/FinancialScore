@@ -10765,48 +10765,40 @@ function FinancialScorePage() {
                   padding: '0px 16px 16px'
                 }}
               >
-                <div style={{ fontSize: '18px', color: '#334155', fontWeight: '600', marginBottom: '4px' }}>
-                  Accounting System: <span style={{ fontWeight: '700', color: '#475569' }}>{selectedAccountingSystemLabel}</span>
-                </div>
-                <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '10px' }}>
-                  {hasCsvData
-                    ? `Map Trial Balance accounts to Corelytics accounts - Source: ${selectedCompanyCsvTrialBalanceData?.fileName || 'CSV Upload'}`
-                    : `${aiMappings.length} saved account mappings loaded from database`
-                  }
-                </p>
-
                 {showErpCaoLoadPanel && (
                   <div style={{ marginBottom: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 12px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#9a3412', marginBottom: '6px' }}>
+                    <div style={{ fontSize: '15px', fontWeight: '700', color: '#9a3412', marginBottom: '6px' }}>
                       {selectedAccountingSystemLabel || 'ERP'} COA Load
                     </div>
-                    <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '8px' }}>
-                      Load monthly {selectedAccountingSystemLabel || 'ERP'} Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
-                      <input
-                        type="month"
-                        value={erpCaoThroughMonth}
-                        onChange={(e) => setErpCaoThroughMonth(e.target.value)}
-                        style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
-                      />
-                      <button
-                        onClick={loadErpCaoInDataMapping}
-                        disabled={erpCaoLoading}
-                        style={{
-                          padding: '8px 12px',
-                          background: erpCaoLoading ? '#9ca3af' : '#7c3aed',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          fontWeight: '700',
-                          cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
-                        }}
-                      >
-                        {erpCaoLoading ? 'Loading COA...' : 'Load ERP COA'}
-                      </button>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ fontSize: '12px', color: '#92400e', marginBottom: 0, flex: 1 }}>
+                        Load monthly {selectedAccountingSystemLabel || 'ERP'} Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                        <input
+                          type="month"
+                          value={erpCaoThroughMonth}
+                          onChange={(e) => setErpCaoThroughMonth(e.target.value)}
+                          style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                        />
+                        <button
+                          onClick={loadErpCaoInDataMapping}
+                          disabled={erpCaoLoading}
+                          style={{
+                            padding: '8px 12px',
+                            background: erpCaoLoading ? '#9ca3af' : '#7c3aed',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '700',
+                            cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {erpCaoLoading ? 'Loading COA...' : 'Load ERP COA'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -10836,9 +10828,6 @@ function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '10px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
-                        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                          AI-Assisted Account Mapping
-                        </h2>
                         <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
                           Use AI to automatically suggest mappings from Trial Balance accounts ({csvAccountsForMapping.length} accounts) to your standardized financial fields
                         </p>
@@ -10944,9 +10933,6 @@ function FinancialScorePage() {
                   <div style={{ background: 'white', borderRadius: '12px', padding: '10px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <div>
-                        <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                          AI-Assisted Account Mapping
-                        </h2>
                         <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
                           {aiMappings.filter(m => m.targetField === 'unmapped').length > 0
                             ? `Use AI to automatically suggest mappings for ${aiMappings.filter(m => m.targetField === 'unmapped').length} unmapped accounts to your standardized financial fields`
@@ -11026,8 +11012,8 @@ function FinancialScorePage() {
 
                     {/* Account Summary by Classification */}
                     <div style={{ marginTop: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
-                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', marginBottom: '8px' }}>Accounts by Classification:</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', flexShrink: 0 }}>Accounts by Classification:</span>
                         {Object.entries(
                           aiMappings.reduce((acc: any, m) => {
                             const type = getClassificationDisplayLabel(m.qbAccountClassification);
@@ -11055,8 +11041,24 @@ function FinancialScorePage() {
                 {/* Mapping Results Section */}
                 {showMappingSection && aiMappings.length > 0 && (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                    <div
+                      style={{
+                        marginBottom: '12px',
+                        padding: '10px 12px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#f8fafc',
+                        display: 'flex',
+                        gap: '12px',
+                        alignItems: 'center',
+                        flexWrap: 'nowrap',
+                        overflowX: 'auto',
+                        whiteSpace: 'nowrap',
+                        fontSize: '12px',
+                        color: '#334155',
+                      }}
+                    >
+                      <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0, flexShrink: 0 }}>
                         Account Mappings ({aiMappings.length} accounts)
                       </h2>
                       <button
@@ -11070,42 +11072,27 @@ function FinancialScorePage() {
                           fontSize: '12px',
                           fontWeight: '600',
                           cursor: 'pointer',
+                          flexShrink: 0,
                         }}
                       >
                         {showOnlyActionableMappings ? 'Showing New/Changed/Unmapped' : 'Showing All Accounts'}
                       </button>
+                      <span><strong>Total:</strong> {mappingSourceSummary?.total ?? aiMappings.length}</span>
+                      <span><strong>New:</strong> {mappingSourceSummary?.new ?? 0}</span>
+                      <span><strong>Changed:</strong> {mappingSourceSummary?.changed ?? 0}</span>
+                      <span><strong>Inactive:</strong> {mappingSourceSummary?.inactive ?? 0}</span>
+                      <span><strong>Unmapped:</strong> {mappingSourceSummary?.unmapped ?? 0}</span>
+                      {mappingSourceSummary?.lastSeedAt && (
+                        <span><strong>Last Seed:</strong> {new Date(mappingSourceSummary.lastSeedAt).toLocaleString()}</span>
+                      )}
                     </div>
-                    {mappingSourceSummary && (
-                      <div
-                        style={{
-                          marginBottom: '12px',
-                          padding: '10px 12px',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '8px',
-                          background: '#f8fafc',
-                          display: 'flex',
-                          gap: '12px',
-                          flexWrap: 'wrap',
-                          fontSize: '12px',
-                          color: '#334155',
-                        }}
-                      >
-                        <span><strong>Total:</strong> {mappingSourceSummary.total}</span>
-                        <span><strong>New:</strong> {mappingSourceSummary.new}</span>
-                        <span><strong>Changed:</strong> {mappingSourceSummary.changed}</span>
-                        <span><strong>Inactive:</strong> {mappingSourceSummary.inactive}</span>
-                        <span><strong>Unmapped:</strong> {mappingSourceSummary.unmapped}</span>
-                        {mappingSourceSummary.lastSeedAt && (
-                          <span><strong>Last Seed:</strong> {new Date(mappingSourceSummary.lastSeedAt).toLocaleString()}</span>
-                        )}
-                      </div>
-                    )}
 
                     <div style={{ marginBottom: '12px' }}>
                       <LOBManager
                         lobs={linesOfBusiness}
                         onChange={(lobData) => setLinesOfBusiness(lobData)}
                         maxLOBs={5}
+                        compact
                       />
                     </div>
 
