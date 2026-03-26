@@ -5192,24 +5192,46 @@ function FinancialScorePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const result = await response.json().catch(() => ({}));
-        return { response, result };
+        const raw = await response.text();
+        const contentType = response.headers.get('content-type') || '';
+        const vercelRequestId = response.headers.get('x-vercel-id') || '';
+        let result: any = null;
+        try {
+          result = raw ? JSON.parse(raw) : {};
+        } catch {
+          result = null;
+        }
+        if (!result || typeof result !== 'object') {
+          const snippet = String(raw || '').slice(0, 220);
+          throw new Error(
+            `ERP COA endpoint returned non-JSON (status ${response.status}). ` +
+              `Request ID: ${vercelRequestId || 'n/a'}. ` +
+              `Content-Type: ${contentType || 'n/a'}. ` +
+              `Response starts with: ${snippet}`
+          );
+        }
+        return { response, result, vercelRequestId };
       };
 
       let response: Response;
       let result: any;
+      let vercelRequestId = '';
       try {
-        ({ response, result } = await runCoaLoadRequest());
+        ({ response, result, vercelRequestId } = await runCoaLoadRequest());
       } catch (firstError) {
         // Network-level drops (e.g., transient gateway reset) surface as "Failed to fetch".
         // Retry once before surfacing failure to the user.
         console.warn('[ERP COA] First request failed, retrying once', firstError);
         await new Promise((resolve) => setTimeout(resolve, 1500));
-        ({ response, result } = await runCoaLoadRequest());
+        ({ response, result, vercelRequestId } = await runCoaLoadRequest());
       }
       console.log('[ERP COA] Response received', { status: response.status, ok: response.ok, result });
       if (!response.ok || !result?.ok) {
-        throw new Error(result?.details || result?.error || 'Failed to load ERP COA data');
+        const details = result?.details ? `\nDetails: ${result.details}` : '';
+        throw new Error(
+          `${result?.error || result?.message || 'Failed to load ERP COA data'}${details}` +
+            (vercelRequestId ? `\nRequest ID: ${vercelRequestId}` : '')
+        );
       }
 
       setQbLastSync(new Date());
