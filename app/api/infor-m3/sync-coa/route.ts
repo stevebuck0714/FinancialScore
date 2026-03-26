@@ -26,6 +26,23 @@ function parsePrograms(value: unknown): ProgramRow[] {
     .filter((row) => row.enabled && row.module.length > 0);
 }
 
+function resolveProgramsForSystem(
+  metadata: Record<string, unknown>,
+  inforSystem: 'INFOR_M3' | 'INFOR_CSI'
+): ProgramRow[] {
+  const bySystemRaw = metadata.accountingProgramsBySystem;
+  if (bySystemRaw && typeof bySystemRaw === 'object' && !Array.isArray(bySystemRaw)) {
+    const bySystem = bySystemRaw as Record<string, unknown>;
+    const preferred = parsePrograms(bySystem[inforSystem]);
+    if (preferred.length > 0) return preferred;
+    const fallbackM3 = parsePrograms(bySystem.INFOR_M3);
+    if (fallbackM3.length > 0) return fallbackM3;
+    const fallbackCsi = parsePrograms(bySystem.INFOR_CSI);
+    if (fallbackCsi.length > 0) return fallbackCsi;
+  }
+  return parsePrograms(metadata.accountingPrograms);
+}
+
 function selectAccountsSource(
   programRows: ProgramRow[]
 ): { type: 'endpoint' | 'mi'; value: string; sourceModule: string } | null {
@@ -199,7 +216,7 @@ export async function POST(request: NextRequest) {
       connection?.connectionMetadata && typeof connection.connectionMetadata === 'object'
         ? (connection.connectionMetadata as Record<string, unknown>)
         : {};
-    const programs = parsePrograms(metadata.accountingPrograms);
+    const programs = resolveProgramsForSystem(metadata, inforSystem);
     selectedSource = selectAccountsSource(programs);
 
     if (!selectedSource) {
