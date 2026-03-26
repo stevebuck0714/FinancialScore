@@ -44,6 +44,7 @@ interface OperationsTabProps {
 type OpTab = 'dashboard' | 'overview' | string;
 
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
   if (!percent || percent < 0.04) return null;
@@ -337,6 +338,7 @@ export default function OperationsTab({
   const [productData, setProductData] = useState<any>(null);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
+  const [selectedCashTrendAccount, setSelectedCashTrendAccount] = useState<string>('__TOTAL__');
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
@@ -349,6 +351,8 @@ export default function OperationsTab({
   const [dailyFinancialWindowStart, setDailyFinancialWindowStart] = useState(0);
   const [arSummaryPage, setArSummaryPage] = useState(1);
   const [unpaidInvoicesPage, setUnpaidInvoicesPage] = useState(1);
+  const [unpaidInvoicesSortKey, setUnpaidInvoicesSortKey] = useState<'customerName' | 'invoiceDate' | 'daysOutstanding' | 'amountDue'>('invoiceDate');
+  const [unpaidInvoicesSortDir, setUnpaidInvoicesSortDir] = useState<'asc' | 'desc'>('desc');
   const [customerInvoicePage, setCustomerInvoicePage] = useState(1);
   const [selectedInvoiceCustomer, setSelectedInvoiceCustomer] = useState('All');
   const [apSummaryPage, setApSummaryPage] = useState(1);
@@ -1870,7 +1874,13 @@ export default function OperationsTab({
                 <span style={{ fontSize: '12px', color: '#64748b' }}>Default: Top 10 + All other</span>
               </div>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '52%' }} />
+                    <col style={{ width: '110px' }} />
+                    <col style={{ width: '40px' }} />
+                    <col style={{ width: '120px' }} />
+                  </colgroup>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
                       <th onClick={() => handleSort('customer')} style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Customer</th>
@@ -2172,9 +2182,49 @@ export default function OperationsTab({
       customerName: row.customerName || row.customer,
       customerNumber: row.customerNumber || row.customerId || row.customerNo || '-',
       invoiceDate: row.invoiceDate || row.date,
-      dueDate: row.dueDate,
       amountDue: row.amountDue || row.balance || 0,
+      daysOutstanding: (() => {
+        const invoiceDate = row.invoiceDate || row.date;
+        if (!invoiceDate) return null;
+        const invoiceDt = parseDateValue(invoiceDate);
+        if (!invoiceDt) return null;
+        const now = new Date();
+        const dayMs = 24 * 60 * 60 * 1000;
+        const diff = Math.floor(
+          (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
+            Date.UTC(invoiceDt.getFullYear(), invoiceDt.getMonth(), invoiceDt.getDate())) /
+            dayMs
+        );
+        return Math.max(0, diff);
+      })(),
     }));
+    const sortedInvoices = [...invoices].sort((a, b) => {
+      const dir = unpaidInvoicesSortDir === 'asc' ? 1 : -1;
+      if (unpaidInvoicesSortKey === 'customerName') {
+        return a.customerName.localeCompare(b.customerName) * dir;
+      }
+      if (unpaidInvoicesSortKey === 'amountDue') {
+        return (Number(a.amountDue || 0) - Number(b.amountDue || 0)) * dir;
+      }
+      if (unpaidInvoicesSortKey === 'invoiceDate') {
+        const aDate = a.invoiceDate ? new Date(a.invoiceDate).getTime() : -Infinity;
+        const bDate = b.invoiceDate ? new Date(b.invoiceDate).getTime() : -Infinity;
+        return (aDate - bDate) * dir;
+      }
+      if (unpaidInvoicesSortKey === 'daysOutstanding') {
+        return (Number(a.daysOutstanding ?? -1) - Number(b.daysOutstanding ?? -1)) * dir;
+      }
+      return 0;
+    });
+    const toggleUnpaidInvoicesSort = (key: 'customerName' | 'invoiceDate' | 'daysOutstanding' | 'amountDue') => {
+      setUnpaidInvoicesPage(1);
+      if (unpaidInvoicesSortKey === key) {
+        setUnpaidInvoicesSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setUnpaidInvoicesSortKey(key);
+        setUnpaidInvoicesSortDir(key === 'amountDue' || key === 'daysOutstanding' ? 'desc' : 'asc');
+      }
+    };
     const paidByCustomer = (summary?.paidInvoices || [])
       .map((row: any) => ({
         customerName: row.customerName || row.customer,
@@ -2225,9 +2275,15 @@ export default function OperationsTab({
         ]
       : [];
 
-    // Prepare stacked area chart data
+    const formatArTrendDate = (value: string | Date) => {
+      const parsed = parseDateValue(value);
+      if (!parsed) return String(value || '');
+      return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    };
+    // Prepare AR trend data keyed by actual snapshot day so daily points do not
+    // collapse when the global frequency selector is weekly/monthly.
     const chartData = records.map((record: any) => ({
-      month: formatDate(record.snapshotDate),
+      month: formatArTrendDate(record.snapshotDate),
       Current: record.current,
       '1-30 Days': record.days1to30,
       '31-60 Days': record.days31to60,
@@ -2242,15 +2298,15 @@ export default function OperationsTab({
     const arCoverageEnd = arCoverageDates.length > 0 ? new Date(Math.max(...arCoverageDates.map((date) => date.getTime()))) : null;
     const arCoverageLabel =
       arCoverageStart && arCoverageEnd
-        ? `${arCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - ${arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} (EST)`
+        ? `${arCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })} - ${arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })} (UTC)`
         : 'N/A';
     const arAsOfLabel = arCoverageEnd
-      ? arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      ? arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
       : 'N/A';
     const arCollectionsTrend = [...records]
       .reverse()
       .map((record: any) => ({
-        period: formatDate(record.snapshotDate),
+        period: formatArTrendDate(record.snapshotDate),
         dso: Number(record.dso || 0),
         over30Pct: Number(record.over30Pct || 0),
         over90Pct: Number(record.over90Pct || 0),
@@ -2507,20 +2563,36 @@ export default function OperationsTab({
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
-                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
-                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
-                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                      <th onClick={() => toggleUnpaidInvoicesSort('customerName')} style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Customer</th>
+                      <th onClick={() => toggleUnpaidInvoicesSort('invoiceDate')} style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer', whiteSpace: 'nowrap', minWidth: '110px' }}>Date</th>
+                      <th
+                        onClick={() => toggleUnpaidInvoicesSort('daysOutstanding')}
+                        style={{
+                          textAlign: 'right',
+                          padding: '6px 6px',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          color: 'white',
+                          cursor: 'pointer',
+                          width: '40px',
+                          minWidth: '40px',
+                          maxWidth: '40px',
+                          lineHeight: 1.1,
+                        }}
+                      >
+                        Days
+                      </th>
+                      <th onClick={() => toggleUnpaidInvoicesSort('amountDue')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Amount Due</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {invoices
+                    {sortedInvoices
                       .slice((unpaidInvoicesPage - 1) * 8, unpaidInvoicesPage * 8)
                       .map((row, index) => (
                         <tr key={`${row.customerName}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.invoiceDate}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.dueDate}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' }}>{row.invoiceDate || 'Old outstanding'}</td>
+                          <td style={{ padding: '6px 4px', fontSize: '13px', color: '#64748b', textAlign: 'right', whiteSpace: 'nowrap', width: '40px', minWidth: '40px', maxWidth: '40px' }}>{row.daysOutstanding ?? '-'}</td>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
                             {formatCurrency(row.amountDue)}
                           </td>
@@ -4303,25 +4375,47 @@ export default function OperationsTab({
 
     const { records, summary } = cashData;
 
-    // Aggregate data by period for trend chart
+    const cashTrendAccountOptions = [
+      '__TOTAL__',
+      ...Array.from(
+        new Set(
+          (summary.accounts || [])
+            .map((account: any) => String(account.accountName || '').trim())
+            .filter(Boolean)
+        )
+      ),
+    ];
+    const effectiveCashTrendAccount = cashTrendAccountOptions.includes(selectedCashTrendAccount)
+      ? selectedCashTrendAccount
+      : '__TOTAL__';
+    const cashTrendSeriesLabel =
+      effectiveCashTrendAccount === '__TOTAL__' ? 'Total Cash' : effectiveCashTrendAccount;
+
+    // Aggregate data by exact snapshot date for trend chart.
     const periodTrend = records.reduce((acc: any, record: any) => {
-      const period = formatDate(record.snapshotDate);
-      if (!acc[period]) {
-        acc[period] = { period, totalCash: 0 };
+      const recordAccountName = String(record.accountName || '').trim();
+      if (effectiveCashTrendAccount !== '__TOTAL__' && recordAccountName !== effectiveCashTrendAccount) {
+        return acc;
       }
-      acc[period].totalCash += record.cashBalance;
+      const parsed = parseDateValue(record.snapshotDate);
+      if (!parsed) return acc;
+      const key = parsed.getTime();
+      if (!acc[key]) {
+        acc[key] = { key, snapshotDate: parsed, period: formatDate(record.snapshotDate), totalCash: 0 };
+      }
+      acc[key].totalCash += Number(record.cashBalance || 0);
       return acc;
     }, {});
 
-    const trendData = Object.values(periodTrend);
+    const trendData = Object.values(periodTrend).sort((a: any, b: any) => Number(a.key) - Number(b.key));
 
     // Prepare data for account breakdown chart
     const accountData = summary.accounts.map((acct: any) => ({
       name: acct.accountName,
       balance: acct.currentBalance,
     }));
-    const cashCoverageDates = records
-      .map((record: any) => parseDateValue(record.snapshotDate))
+    const cashCoverageDates = trendData
+      .map((row: any) => row.snapshotDate as Date)
       .filter((date): date is Date => Boolean(date))
       .sort((a, b) => a.getTime() - b.getTime());
     const cashCoverageStart = cashCoverageDates[0] || null;
@@ -4333,18 +4427,47 @@ export default function OperationsTab({
       cashCoverageStart && cashCoverageEnd
         ? `${cashCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - ${cashCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} (EST)`
         : 'N/A';
-    const cashTrendSorted = [...records]
-      .map((record: any) => ({
-        date: parseDateValue(record.snapshotDate),
-        snapshotDate: record.snapshotDate,
-        cashBalance: Number(record.cashBalance || 0),
-      }))
-      .filter((row) => row.date)
-      .sort((a, b) => Number(a.date?.getTime() || 0) - Number(b.date?.getTime() || 0));
-    const cash13WeekRows = cashTrendSorted.slice(-13).map((row) => ({
-      period: formatDate(row.snapshotDate),
-      totalCash: row.cashBalance,
-    }));
+    const startOfWeek = (date: Date): Date => {
+      const d = new Date(date);
+      const day = d.getDay(); // 0=Sun ... 6=Sat
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diffToMonday);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    };
+    const weeklyTotals = trendData.reduce((acc: Record<string, { weekStart: Date; weekEnd: Date; totalCash: number }>, row: any) => {
+      const snapshotDate = row.snapshotDate as Date;
+      if (!snapshotDate) return acc;
+      const weekStart = startOfWeek(snapshotDate);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const key = weekStart.toISOString().slice(0, 10);
+      acc[key] = {
+        weekStart,
+        weekEnd,
+        // Use period-end value inside each week (latest point in that week).
+        totalCash: Number(row.totalCash || 0),
+      };
+      return acc;
+    }, {});
+    const cash13WeekRows = Object.values(weeklyTotals)
+      .sort((a, b) => a.weekStart.getTime() - b.weekStart.getTime())
+      .slice(-13)
+      .map((row) => ({
+        period: row.weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        totalCash: row.totalCash,
+        weekStart: row.weekStart,
+        weekEnd: row.weekEnd,
+      }));
+    const cash13WeekCoverageStart = cash13WeekRows.length > 0 ? cash13WeekRows[0].weekStart : null;
+    const cash13WeekCoverageEnd = cash13WeekRows.length > 0 ? cash13WeekRows[cash13WeekRows.length - 1].weekEnd : null;
+    const cash13WeekAsOfLabel = cash13WeekCoverageEnd
+      ? cash13WeekCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      : 'N/A';
+    const cash13WeekCoverageLabel =
+      cash13WeekCoverageStart && cash13WeekCoverageEnd
+        ? `${cash13WeekCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - ${cash13WeekCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} (EST)`
+        : 'N/A';
     const cashBridgeRows = cash13WeekRows.map((row, index) => {
       const prior = index > 0 ? cash13WeekRows[index - 1] : null;
       const delta = prior ? row.totalCash - prior.totalCash : 0;
@@ -4411,6 +4534,30 @@ export default function OperationsTab({
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
             {frequency.charAt(0).toUpperCase() + frequency.slice(1)} Cash Balance Trend
           </h3>
+          <div className="ops-print-hide" style={{ marginTop: '-10px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <label htmlFor="cashTrendAccountSelect" style={{ fontSize: '12px', color: '#64748b' }}>
+              View:
+            </label>
+            <select
+              id="cashTrendAccountSelect"
+              value={effectiveCashTrendAccount}
+              onChange={(event) => setSelectedCashTrendAccount(event.target.value)}
+              style={{
+                border: '1px solid #cbd5e1',
+                borderRadius: '6px',
+                background: 'white',
+                color: '#334155',
+                fontSize: '12px',
+                padding: '4px 8px',
+              }}
+            >
+              {cashTrendAccountOptions.map((accountName) => (
+                <option key={accountName} value={accountName}>
+                  {accountName === '__TOTAL__' ? 'Total Cash' : accountName}
+                </option>
+              ))}
+            </select>
+          </div>
           <div style={{ marginTop: '-10px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
             As of: {cashAsOfLabel} | Coverage: {cashCoverageLabel}
           </div>
@@ -4420,11 +4567,11 @@ export default function OperationsTab({
               <XAxis dataKey="period" stroke="#64748b" style={{ fontSize: '12px' }} />
               <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
               <Tooltip 
-                formatter={(value: any) => [formatCurrency(value), 'Total Cash']}
+                formatter={(value: any) => [formatCurrency(value), cashTrendSeriesLabel]}
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="totalCash" fill="#10b981" name="Total Cash" />
+              <Bar dataKey="totalCash" fill="#10b981" name={cashTrendSeriesLabel} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -4444,7 +4591,7 @@ export default function OperationsTab({
               13-Week Cash Trend
             </h3>
             <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
-              As of: {cashAsOfLabel} | Coverage: {cashCoverageLabel}
+              As of: {cash13WeekAsOfLabel} | Coverage: {cash13WeekCoverageLabel}
             </div>
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={cash13WeekRows}>
@@ -4482,75 +4629,95 @@ export default function OperationsTab({
         </div>
         )}
 
-        {/* Account Breakdown Table */}
-        {isSectionEnabled('cashBankAccounts') && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Bank Accounts
-          </h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Account Name</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Current Balance</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Avg Balance</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Min Balance</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Max Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.accounts.map((account: any, index: number) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '600' }}>
-                      {account.accountName}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#10b981', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrency(account.currentBalance)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
-                      {formatCurrency(account.avgBalance)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
-                      {formatCurrency(account.minBalance)}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
-                      {formatCurrency(account.maxBalance)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        )}
+        {(isSectionEnabled('cashBankAccounts') || isSectionEnabled('cashDistributionByAccount')) && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isSectionEnabled('cashBankAccounts') && isSectionEnabled('cashDistributionByAccount') ? '1fr 1fr' : '1fr',
+              gap: '24px',
+              marginBottom: '24px',
+            }}
+          >
+            {/* Account Breakdown Table */}
+            {isSectionEnabled('cashBankAccounts') && (
+              <div style={{ background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
+                Bank Accounts
+              </h3>
+              <div style={{ marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
+                As of: {cashAsOfLabel} | Input Range (Current/Avg/Min/Max): {cashCoverageLabel}
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: '12px', fontWeight: '600', color: '#475569' }}>Account Name</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '12px', fontWeight: '600', color: '#475569' }}>Current Balance</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '12px', fontWeight: '600', color: '#475569' }}>Avg Balance</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '12px', fontWeight: '600', color: '#475569' }}>Min Balance</th>
+                      <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '12px', fontWeight: '600', color: '#475569' }}>Max Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.accounts.map((account: any, index: number) => (
+                      <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '7px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '600' }}>
+                          {account.accountName}
+                        </td>
+                        <td style={{ padding: '7px 10px', fontSize: '12px', color: '#10b981', textAlign: 'right', fontWeight: '600' }}>
+                          {formatCurrencyWithCents(account.currentBalance)}
+                        </td>
+                        <td style={{ padding: '7px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>
+                          {formatCurrencyWithCents(account.avgBalance)}
+                        </td>
+                        <td style={{ padding: '7px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>
+                          {formatCurrencyWithCents(account.minBalance)}
+                        </td>
+                        <td style={{ padding: '7px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>
+                          {formatCurrencyWithCents(account.maxBalance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            )}
 
-        {/* Account Distribution Chart */}
-        {isSectionEnabled('cashDistributionByAccount') && (
-          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Cash Distribution by Account
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={accountData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={(entry) => `${entry.name}: ${formatCurrency(entry.balance)}`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="balance"
-              >
-                {accountData.map((entry: any, index: number) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value: any) => formatCurrency(value)} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
+            {/* Account Distribution Chart */}
+            {isSectionEnabled('cashDistributionByAccount') && (
+              <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
+                Cash Distribution by Account
+              </h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={accountData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={false}
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="balance"
+                  >
+                    {accountData.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={CASH_DISTRIBUTION_COLORS[index % CASH_DISTRIBUTION_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                  <Legend
+                    layout="vertical"
+                    align="right"
+                    verticalAlign="middle"
+                    formatter={(value: string) => <span style={{ color: '#334155', fontSize: '12px' }}>{value}</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            )}
+          </div>
         )}
 
         {isSectionEnabled('cashCovenantMonitor') && (

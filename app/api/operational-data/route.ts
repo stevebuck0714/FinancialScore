@@ -104,6 +104,129 @@ function normalizeAccountToken(value: string | null | undefined): string {
     .replace(/^cash\s*-\s*/i, '');
 }
 
+const EXCLUDED_CASH_CONTROL_ACCOUNT_IDS = new Set(['100000', '200000']);
+
+function isExcludedCashControlAccount(
+  accountId: string | null | undefined,
+  accountNumber: string | null | undefined,
+  accountName: string | null | undefined
+): boolean {
+  const idToken = String(accountId || '').trim();
+  const numberToken = String(accountNumber || '').trim();
+  if (EXCLUDED_CASH_CONTROL_ACCOUNT_IDS.has(idToken) || EXCLUDED_CASH_CONTROL_ACCOUNT_IDS.has(numberToken)) {
+    return true;
+  }
+  const name = String(accountName || '').trim().toLowerCase();
+  return name.includes('out-of-balance error') || name.includes('payroll posting error');
+}
+
+function toNumeric(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/,/g, '').trim();
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function deriveArBucketsFromRow(
+  row: {
+    dueDate?: Date | null;
+    invoiceDate?: Date | null;
+    amountDueHome?: number | null;
+    current?: number | null;
+    days1to30?: number | null;
+    days31to60?: number | null;
+    days61to90?: number | null;
+    days90plus?: number | null;
+  },
+  asOfDate: Date
+): {
+  totalAR: number;
+  current: number;
+  days1to30: number;
+  days31to60: number;
+  days61to90: number;
+  days90plus: number;
+} {
+  const current = Number(row.current || 0);
+  const days1to30 = Number(row.days1to30 || 0);
+  const days31to60 = Number(row.days31to60 || 0);
+  const days61to90 = Number(row.days61to90 || 0);
+  const days90plus = Number(row.days90plus || 0);
+  const explicitTotal = current + days1to30 + days31to60 + days61to90 + days90plus;
+  const openAmount = Number(row.amountDueHome || 0);
+  if (explicitTotal > 0 || openAmount <= 0) {
+    return {
+      totalAR: explicitTotal > 0 ? explicitTotal : openAmount,
+      current,
+      days1to30,
+      days31to60,
+      days61to90,
+      days90plus,
+    };
+  }
+  const dueDateRaw = row.dueDate ? new Date(row.dueDate) : null;
+  const invoiceDateRaw = row.invoiceDate ? new Date(row.invoiceDate) : null;
+  const fallbackDueFromInvoice =
+    invoiceDateRaw && !Number.isNaN(invoiceDateRaw.getTime())
+      ? new Date(startOfUtcDay(invoiceDateRaw).getTime() + 30 * 24 * 60 * 60 * 1000)
+      : null;
+  const effectiveDueDate =
+    dueDateRaw && !Number.isNaN(dueDateRaw.getTime()) ? dueDateRaw : fallbackDueFromInvoice;
+  if (!effectiveDueDate) {
+    return {
+      totalAR: openAmount,
+      current: 0,
+      days1to30: 0,
+      days31to60: 0,
+      days61to90: 0,
+      days90plus: openAmount,
+    };
+  }
+  const dayMs = 24 * 60 * 60 * 1000;
+  const overdueDays = Math.floor((startOfUtcDay(asOfDate).getTime() - startOfUtcDay(effectiveDueDate).getTime()) / dayMs);
+  if (overdueDays <= 0) {
+    return { totalAR: openAmount, current: openAmount, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+  }
+  if (overdueDays <= 30) {
+    return { totalAR: openAmount, current: 0, days1to30: openAmount, days31to60: 0, days61to90: 0, days90plus: 0 };
+  }
+  if (overdueDays <= 60) {
+    return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: openAmount, days61to90: 0, days90plus: 0 };
+  }
+  if (overdueDays <= 90) {
+    return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: 0, days61to90: openAmount, days90plus: 0 };
+  }
+  return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: openAmount };
+}
+
+function hasAnyArBucketValues(records: any[]): boolean {
+  return records.some((row: any) => {
+    const bucketTotal =
+      Number(row.current || 0) +
+      Number(row.days1to30 || 0) +
+      Number(row.days31to60 || 0) +
+      Number(row.days61to90 || 0) +
+      Number(row.days90plus || 0);
+    return bucketTotal > 0;
+  });
+}
+
+function isClosedArStatus(status: string | null | undefined): boolean {
+  const token = String(status || '').trim().toLowerCase();
+  if (!token) return false;
+  return (
+    token.includes('closed') ||
+    token.includes('paid') ||
+    token.includes('void') ||
+    token.includes('cancel') ||
+    token.includes('settled') ||
+    token.includes('history')
+  );
+}
+
 async function getAssetCashMappingTokens(companyId: string): Promise<Set<string>> {
   const mappings = await prisma.accountMapping.findMany({
     where: {
@@ -119,6 +242,11 @@ async function getAssetCashMappingTokens(companyId: string): Promise<Set<string>
   });
   const tokens = new Set<string>();
   for (const mapping of mappings) {
+    if (
+      isExcludedCashControlAccount(mapping.qbAccountId, mapping.qbAccountCode, mapping.qbAccount)
+    ) {
+      continue;
+    }
     for (const rawToken of [mapping.qbAccount, mapping.qbAccountId, mapping.qbAccountCode]) {
       const token = normalizeAccountToken(rawToken);
       if (token) tokens.add(token);
@@ -162,6 +290,7 @@ function buildDailyCashSeriesFromMovements(
     if (!movementByDateAccount.has(dayKey)) movementByDateAccount.set(dayKey, new Map<string, number>());
     const perAccount = movementByDateAccount.get(dayKey)!;
     const accountName = String(row.sourceAccountName || '').trim();
+    if (isExcludedCashControlAccount(row.sourceAccountId, null, accountName)) continue;
     const accountKey = accountKeyFromParts(row.sourceAccountId, null, accountName);
     if (!accountKey) continue;
     if (accountName && !accountDisplayNames.has(accountKey)) accountDisplayNames.set(accountKey, accountName);
@@ -174,6 +303,7 @@ function buildDailyCashSeriesFromMovements(
     const accountName = String(row.accountName || '').trim();
     if (!accountName) continue;
     if (/^cash account \d+$/i.test(accountName)) continue;
+    if (isExcludedCashControlAccount(row.accountId, row.accountNumber, accountName)) continue;
     const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, accountName);
     if (!accountKey) continue;
     accountUniverse.add(accountKey);
@@ -184,6 +314,7 @@ function buildDailyCashSeriesFromMovements(
     const accountName = String(row.sourceAccountName || '').trim();
     if (!accountName) continue;
     if (/^cash account \d+$/i.test(accountName)) continue;
+    if (isExcludedCashControlAccount(row.sourceAccountId, null, accountName)) continue;
     const accountKey = accountKeyFromParts(row.sourceAccountId, null, accountName);
     if (!accountKey) continue;
     accountUniverse.add(accountKey);
@@ -340,7 +471,7 @@ function aggregateCashSeriesByFrequency(
  * 
  * Query parameters:
  * - companyId: string (required)
- * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'daily-financials'
+ * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'daily-financials' | 'cash-flow-map'
  * - startDate: ISO date string (optional) - defaults to 90 days ago
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
@@ -474,30 +605,34 @@ export async function GET(request: NextRequest) {
 
       case 'ar-aging':
         // Get AR aging data
+        let arFrequencyForQuery: 'daily' | 'weekly' | 'monthly' = frequency;
         data = await prisma.aRAgingSnapshot.findMany({
           where: {
             companyId,
-            frequency,
+            frequency: arFrequencyForQuery,
             snapshotDate: dateFilter,
           },
           orderBy: { snapshotDate: 'desc' },
           take: limit,
         });
-
-        // Calculate aging trends
-        const latestAR = data[0];
-        const agingMetrics = latestAR
-          ? {
-              totalAR: latestAR.totalAR,
-              currentPct: (latestAR.current / latestAR.totalAR) * 100,
-              over30Pct:
-                ((latestAR.days1to30 + latestAR.days31to60 + latestAR.days61to90 + latestAR.days90plus) /
-                  latestAR.totalAR) *
-                100,
-              over90Pct: (latestAR.days90plus / latestAR.totalAR) * 100,
-              dso: calculateDSO(data), // Days Sales Outstanding estimate
-            }
-          : null;
+        // Many CSI tenants only persist dense AR aging snapshots at daily grain.
+        // If the requested rollup yields <=1 point, fall back to daily so trend
+        // charts still render a useful time series.
+        if (data.length <= 1 && frequency !== 'daily') {
+          const dailyData = await prisma.aRAgingSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: 'daily',
+              snapshotDate: dateFilter,
+            },
+            orderBy: { snapshotDate: 'desc' },
+            take: Math.max(limit * 4, 200),
+          });
+          if (dailyData.length > data.length) {
+            data = dailyData;
+            arFrequencyForQuery = 'daily';
+          }
+        }
 
         let unpaidByCustomer: Array<{
           customerName: string;
@@ -532,28 +667,94 @@ export async function GET(request: NextRequest) {
           last12Months: number;
         }> = [];
 
-        const latestOpenSnapshotDate = await prisma.aROpenInvoiceSnapshot.findFirst({
+        const openRowsForRange = await prisma.aROpenInvoiceSnapshot.findMany({
           where: {
             companyId,
-            frequency,
+            frequency: arFrequencyForQuery,
             snapshotDate: dateFilter,
           },
-          select: { snapshotDate: true },
-          orderBy: { snapshotDate: 'desc' },
+          select: {
+            snapshotDate: true,
+            customerName: true,
+            customerId: true,
+            invoiceNo: true,
+            invoiceDate: true,
+            dueDate: true,
+            amountDueHome: true,
+            amountHome: true,
+            amountCurrency: true,
+            currencyCode: true,
+            current: true,
+            days1to30: true,
+            days31to60: true,
+            days61to90: true,
+            days90plus: true,
+          },
+          orderBy: [{ snapshotDate: 'desc' }, { amountDueHome: 'desc' }],
+          take: Math.max(limit * 250, 20000),
         });
+        const latestOpenSnapshotDate = openRowsForRange[0]?.snapshotDate
+          ? startOfUtcDay(new Date(openRowsForRange[0].snapshotDate))
+          : null;
 
-        if (latestOpenSnapshotDate?.snapshotDate) {
-          const openRows = await prisma.aROpenInvoiceSnapshot.findMany({
-            where: {
+        if (openRowsForRange.length > 0) {
+          const bySnapshotDay = new Map<
+            string,
+            { totalAR: number; current: number; days1to30: number; days31to60: number; days61to90: number; days90plus: number }
+          >();
+          for (const row of openRowsForRange as any[]) {
+            const dayKey = dateKeyUtc(new Date(row.snapshotDate));
+            const asOf = parseIsoDayKey(dayKey);
+            const buckets = deriveArBucketsFromRow(row, asOf);
+            if (!bySnapshotDay.has(dayKey)) {
+              bySnapshotDay.set(dayKey, {
+                totalAR: 0,
+                current: 0,
+                days1to30: 0,
+                days31to60: 0,
+                days61to90: 0,
+                days90plus: 0,
+              });
+            }
+            const acc = bySnapshotDay.get(dayKey)!;
+            acc.totalAR += buckets.totalAR;
+            acc.current += buckets.current;
+            acc.days1to30 += buckets.days1to30;
+            acc.days31to60 += buckets.days31to60;
+            acc.days61to90 += buckets.days61to90;
+            acc.days90plus += buckets.days90plus;
+          }
+          const derivedSeries = Array.from(bySnapshotDay.entries())
+            .map(([dayKey, totals]) => ({
               companyId,
-              frequency,
-              snapshotDate: latestOpenSnapshotDate.snapshotDate,
-            },
-            orderBy: [{ amountDueHome: 'desc' }],
-            take: Math.max(limit, 500),
+              snapshotDate: parseIsoDayKey(dayKey),
+              frequency: arFrequencyForQuery,
+              totalAR: totals.totalAR,
+              current: totals.current,
+              days1to30: totals.days1to30,
+              days31to60: totals.days31to60,
+              days61to90: totals.days61to90,
+              days90plus: totals.days90plus,
+            }))
+            .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
+            .slice(0, Math.max(limit * 4, 200));
+          if (derivedSeries.length > data.length || !hasAnyArBucketValues(data)) {
+            data = derivedSeries as any;
+          }
+
+          const openRows = latestOpenSnapshotDate
+            ? (openRowsForRange as any[]).filter(
+                (row: any) => dateKeyUtc(new Date(row.snapshotDate)) === dateKeyUtc(latestOpenSnapshotDate)
+              )
+            : [];
+          const openRowsEligible = openRows.filter((row: any) => {
+            const amountDue = Number(row.amountDueHome || 0);
+            if (!Number.isFinite(amountDue) || amountDue <= 0) return false;
+            if (isClosedArStatus(row.status)) return false;
+            return true;
           });
 
-          const customerAging = openRows.reduce((acc: Record<string, any>, row: any) => {
+          const customerAging = openRowsEligible.reduce((acc: Record<string, any>, row: any) => {
             const name = row.customerName || 'Unknown Customer';
             if (!acc[name]) {
               acc[name] = {
@@ -566,21 +767,13 @@ export async function GET(request: NextRequest) {
                 totalDue: 0,
               };
             }
-            const bucketCurrent = Number(row.current || 0);
-            const bucket1to30 = Number(row.days1to30 || 0);
-            const bucket31to60 = Number(row.days31to60 || 0);
-            const bucket61to90 = Number(row.days61to90 || 0);
-            const bucket90plus = Number(row.days90plus || 0);
-            const openAmount = Number(row.amountDueHome || 0);
-            acc[name].current += bucketCurrent;
-            acc[name].days1to30 += bucket1to30;
-            acc[name].days31to60 += bucket31to60;
-            acc[name].days61to90 += bucket61to90;
-            acc[name].days90plus += bucket90plus;
-            acc[name].totalDue +=
-              bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus > 0
-                ? bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus
-                : openAmount;
+            const buckets = deriveArBucketsFromRow(row, latestOpenSnapshotDate || new Date());
+            acc[name].current += buckets.current;
+            acc[name].days1to30 += buckets.days1to30;
+            acc[name].days31to60 += buckets.days31to60;
+            acc[name].days61to90 += buckets.days61to90;
+            acc[name].days90plus += buckets.days90plus;
+            acc[name].totalDue += buckets.totalAR;
             return acc;
           }, {});
 
@@ -588,8 +781,17 @@ export async function GET(request: NextRequest) {
             .sort((a: any, b: any) => b.totalDue - a.totalDue)
             .slice(0, 25) as any[];
 
-          unpaidInvoices = openRows
-            .filter((row: any) => Number(row.amountDueHome || 0) > 0)
+          const openRowsWithBalance = openRowsEligible;
+          unpaidInvoices = openRowsWithBalance
+            .sort((a: any, b: any) => {
+              const aDue = a.dueDate ? new Date(a.dueDate).getTime() : -Infinity;
+              const bDue = b.dueDate ? new Date(b.dueDate).getTime() : -Infinity;
+              if (aDue !== bDue) return bDue - aDue;
+              const aInv = a.invoiceDate ? new Date(a.invoiceDate).getTime() : -Infinity;
+              const bInv = b.invoiceDate ? new Date(b.invoiceDate).getTime() : -Infinity;
+              if (aInv !== bInv) return bInv - aInv;
+              return Number(b.amountDueHome || 0) - Number(a.amountDueHome || 0);
+            })
             .slice(0, 250)
             .map((row: any) => ({
               customerName: row.customerName || 'Unknown Customer',
@@ -599,7 +801,7 @@ export async function GET(request: NextRequest) {
               amountDue: Number(row.amountDueHome || 0),
             }));
 
-          customerInvoices = openRows.slice(0, 500).map((row: any) => ({
+          customerInvoices = openRowsEligible.slice(0, 500).map((row: any) => ({
             customerName: row.customerName || 'Unknown Customer',
             invoiceNo: row.invoiceNo || '-',
             date: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
@@ -662,6 +864,24 @@ export async function GET(request: NextRequest) {
             })
           );
         }
+
+        const latestAR = data[0];
+        const agingMetrics = latestAR
+          ? {
+              totalAR: Number(latestAR.totalAR || 0),
+              currentPct:
+                Number(latestAR.totalAR || 0) > 0 ? (Number(latestAR.current || 0) / Number(latestAR.totalAR || 0)) * 100 : 0,
+              over30Pct:
+                Number(latestAR.totalAR || 0) > 0
+                  ? ((Number(latestAR.days1to30 || 0) + Number(latestAR.days31to60 || 0) + Number(latestAR.days61to90 || 0) + Number(latestAR.days90plus || 0)) /
+                      Number(latestAR.totalAR || 0)) *
+                    100
+                  : 0,
+              over90Pct:
+                Number(latestAR.totalAR || 0) > 0 ? (Number(latestAR.days90plus || 0) / Number(latestAR.totalAR || 0)) * 100 : 0,
+              dso: calculateDSO(data), // Days Sales Outstanding estimate
+            }
+          : null;
 
         const derivedTotals = unpaidByCustomer.reduce(
           (acc, row) => {
@@ -1008,7 +1228,64 @@ export async function GET(request: NextRequest) {
       case 'cash':
         // Canonical cash series comes from GL-derived cash movements.
         data = [];
+        const observedCashHistory = await prisma.cashSnapshot.findMany({
+          where: {
+            companyId,
+            frequency: 'daily',
+            snapshotDate: dateFilter,
+          },
+          orderBy: [{ snapshotDate: 'asc' }, { createdAt: 'desc' }],
+          select: {
+            snapshotDate: true,
+            accountName: true,
+            accountId: true,
+            accountNumber: true,
+            cashBalance: true,
+          },
+          take: Math.max(limit * 200, 20000),
+        });
+        let observedDaily: Array<{
+          snapshotDate: Date;
+          accountName: string;
+          cashBalance: number;
+          accountId: string | null;
+          accountNumber: string | null;
+        }> = [];
+        if (observedCashHistory.length > 0) {
+          const seenByDateAccount = new Set<string>();
+          for (const row of observedCashHistory) {
+            const accountName = String(row.accountName || '').trim();
+            if (!accountName || /^cash account \d+$/i.test(accountName)) continue;
+            if (isExcludedCashControlAccount(row.accountId, row.accountNumber, accountName)) continue;
+            const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, accountName);
+            if (!accountKey) continue;
+            const dayKey = dateKeyUtc(new Date(row.snapshotDate));
+            const dedupeKey = `${dayKey}|${accountKey}`;
+            // Query ordering keeps newest created row first for each day/account.
+            if (seenByDateAccount.has(dedupeKey)) continue;
+            seenByDateAccount.add(dedupeKey);
+            observedDaily.push({
+              snapshotDate: parseIsoDayKey(dayKey),
+              accountName,
+              cashBalance: Number(row.cashBalance || 0),
+              accountId: row.accountId ? String(row.accountId) : null,
+              accountNumber: row.accountNumber ? String(row.accountNumber) : null,
+            });
+          }
+          observedDaily = observedDaily.sort((a, b) => {
+            const dt = a.snapshotDate.getTime() - b.snapshotDate.getTime();
+            if (dt !== 0) return dt;
+            return a.accountName.localeCompare(b.accountName);
+          });
+        }
         const cashMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+        let syntheticDaily: Array<{
+          snapshotDate: Date;
+          accountName: string;
+          cashBalance: number;
+          accountId: string | null;
+          accountNumber: string | null;
+        }> = [];
         if (cashMappedLineDelegate) {
           const movementRows = await cashMappedLineDelegate.findMany({
             where: {
@@ -1044,17 +1321,114 @@ export async function GET(request: NextRequest) {
               take: 10000,
             });
             if (anchorHistory.length > 0) {
-              const latestByAccount = new Map<string, (typeof anchorHistory)[number]>();
+              // Build anchors from one consistent snapshot day. Mixing account rows
+              // across different days can distort reconstructed balances.
+              const anchorsByDay = new Map<string, Map<string, (typeof anchorHistory)[number]>>();
               for (const row of anchorHistory) {
+                const accountName = String(row.accountName || '').trim();
+                if (!accountName || /^cash account \d+$/i.test(accountName)) continue;
                 const key = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
-                if (!key || latestByAccount.has(key)) continue;
-                latestByAccount.set(key, row);
+                if (!key) continue;
+                const dayKey = dateKeyUtc(new Date(row.snapshotDate));
+                if (!anchorsByDay.has(dayKey)) anchorsByDay.set(dayKey, new Map<string, (typeof anchorHistory)[number]>());
+                const perDay = anchorsByDay.get(dayKey)!;
+                // anchorHistory is ordered snapshotDate desc, createdAt desc.
+                if (!perDay.has(key)) perDay.set(key, row);
               }
-              const anchorRows = Array.from(latestByAccount.values());
-              const syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
-              data = aggregateCashSeriesByFrequency(syntheticDaily, frequency) as any;
+              const latestAnchorDay = Array.from(anchorsByDay.keys()).sort((a, b) => b.localeCompare(a))[0];
+              if (latestAnchorDay) {
+                const anchorRows = Array.from(anchorsByDay.get(latestAnchorDay)!.values());
+                syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
+              }
             }
           }
+        }
+        if (observedDaily.length > 0 || syntheticDaily.length > 0) {
+          const uniqueBalanceCount = (
+            rows: Array<{
+              snapshotDate: Date;
+              accountName: string;
+              cashBalance: number;
+              accountId: string | null;
+              accountNumber: string | null;
+            }>
+          ): number => {
+            const values = new Set<string>();
+            for (const row of rows) values.add(Number(row.cashBalance || 0).toFixed(4));
+            return values.size;
+          };
+
+          const observedByAccount = new Map<string, typeof observedDaily>();
+          for (const row of observedDaily) {
+            const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
+            if (!accountKey) continue;
+            if (!observedByAccount.has(accountKey)) observedByAccount.set(accountKey, []);
+            observedByAccount.get(accountKey)!.push(row);
+          }
+          const syntheticByAccount = new Map<string, typeof syntheticDaily>();
+          for (const row of syntheticDaily) {
+            const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
+            if (!accountKey) continue;
+            if (!syntheticByAccount.has(accountKey)) syntheticByAccount.set(accountKey, []);
+            syntheticByAccount.get(accountKey)!.push(row);
+          }
+
+          const allAccountKeys = new Set<string>([
+            ...Array.from(observedByAccount.keys()),
+            ...Array.from(syntheticByAccount.keys()),
+          ]);
+          const chosenRows: typeof observedDaily = [];
+
+          for (const accountKey of allAccountKeys) {
+            const observedRows = observedByAccount.get(accountKey) || [];
+            const syntheticRows = syntheticByAccount.get(accountKey) || [];
+
+            let selectedRows = observedRows;
+            if (observedRows.length === 0) {
+              selectedRows = syntheticRows;
+            } else if (syntheticRows.length > 0) {
+              const observedVariation = uniqueBalanceCount(observedRows);
+              const syntheticVariation = uniqueBalanceCount(syntheticRows);
+              const observedLooksFlat = observedVariation <= 1;
+              if (observedLooksFlat && syntheticVariation > observedVariation) {
+                selectedRows = syntheticRows;
+              }
+            }
+
+            const identityRow = observedRows[0] || syntheticRows[0];
+            for (const row of selectedRows) {
+              chosenRows.push({
+                snapshotDate: row.snapshotDate,
+                accountName: identityRow?.accountName || row.accountName,
+                cashBalance: row.cashBalance,
+                accountId: identityRow?.accountId || row.accountId,
+                accountNumber: identityRow?.accountNumber || row.accountNumber,
+              });
+            }
+          }
+
+          const dedupedByDateAccount = new Map<
+            string,
+            {
+              snapshotDate: Date;
+              accountName: string;
+              cashBalance: number;
+              accountId: string | null;
+              accountNumber: string | null;
+            }
+          >();
+          for (const row of chosenRows) {
+            const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
+            if (!accountKey) continue;
+            const dayKey = dateKeyUtc(new Date(row.snapshotDate));
+            dedupedByDateAccount.set(`${dayKey}|${accountKey}`, row);
+          }
+          const mergedDaily = Array.from(dedupedByDateAccount.values()).sort((a, b) => {
+            const dt = a.snapshotDate.getTime() - b.snapshotDate.getTime();
+            if (dt !== 0) return dt;
+            return a.accountName.localeCompare(b.accountName);
+          });
+          data = aggregateCashSeriesByFrequency(mergedDaily, frequency) as any;
         }
         const assetCashTokens = await getAssetCashMappingTokens(companyId);
         if (assetCashTokens.size > 0) {
@@ -1209,6 +1583,120 @@ export async function GET(request: NextRequest) {
             mappedLineCount: mappedLines.length,
           },
         });
+
+      case 'cash-flow-map':
+        {
+          const cashMappings = await prisma.accountMapping.findMany({
+            where: {
+              companyId,
+              targetField: 'cash',
+              qbAccountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
+            },
+            select: {
+              qbAccount: true,
+              qbAccountId: true,
+              qbAccountCode: true,
+            },
+          });
+          const cashAccountTokens = new Set<string>();
+          for (const row of cashMappings) {
+            if (isExcludedCashControlAccount(row.qbAccountId, row.qbAccountCode, row.qbAccount)) continue;
+            for (const token of [row.qbAccountId, row.qbAccountCode, row.qbAccount]) {
+              const normalized = normalizeAccountToken(token);
+              if (normalized) cashAccountTokens.add(normalized);
+            }
+          }
+
+          const glLogs = await prisma.apiSyncLog.findMany({
+            where: {
+              companyId,
+              platform: 'INFOR_M3',
+              status: 'success',
+              syncType: { startsWith: 'operational_gl_' },
+              createdAt: { gte: startDate, lte: endDate },
+            },
+            orderBy: [{ createdAt: 'desc' }],
+            take: 50,
+          });
+
+          type GlLine = {
+            acct: string;
+            accountName: string;
+            amount: number;
+            transDate: Date;
+            transNum: string;
+            site: string;
+          };
+          const glLines: GlLine[] = [];
+          for (const log of glLogs) {
+            const detail = (log.errorDetails || {}) as Record<string, unknown>;
+            const response = (detail.response || {}) as Record<string, unknown>;
+            const items = Array.isArray(response.Items) ? (response.Items as Array<Record<string, unknown>>) : [];
+            for (const item of items) {
+              const acct = String(item.Acct || item.accountId || '').trim();
+              if (!acct) continue;
+              const transNum = String(item.TransNum || item.transNum || '').trim();
+              if (!transNum) continue;
+              const transDateRaw = String(item.TransDate || item.transDate || item.RecordDate || '').trim();
+              const transDate = transDateRaw ? new Date(transDateRaw.replace(' ', 'T') + (transDateRaw.includes('T') ? '' : 'Z')) : null;
+              if (!transDate || Number.isNaN(transDate.getTime())) continue;
+              if (transDate < startDate || transDate > endDate) continue;
+              const amount = toNumeric(item.DomAmount ?? item.ForAmount ?? item.Amount ?? item.amount);
+              if (!Number.isFinite(amount) || amount === 0) continue;
+              glLines.push({
+                acct,
+                accountName: String(item.ChaDescription || item.ChtDescription || item.Name || acct).trim(),
+                amount,
+                transDate,
+                transNum,
+                site: String(item.Site || item.site || '').trim(),
+              });
+            }
+          }
+
+          const byJournal = new Map<string, GlLine[]>();
+          for (const line of glLines) {
+            const key = `${line.site}|${line.transNum}|${dateKeyUtc(line.transDate)}`;
+            if (!byJournal.has(key)) byJournal.set(key, []);
+            byJournal.get(key)!.push(line);
+          }
+
+          const flowByPair = new Map<string, { fromAccount: string; toAccount: string; netAmount: number; journalCount: number }>();
+          for (const lines of byJournal.values()) {
+            const cashLines = lines.filter((line) => cashAccountTokens.has(normalizeAccountToken(line.acct)) || cashAccountTokens.has(normalizeAccountToken(line.accountName)));
+            const nonCashLines = lines.filter((line) => !cashAccountTokens.has(normalizeAccountToken(line.acct)) && !cashAccountTokens.has(normalizeAccountToken(line.accountName)));
+            if (!cashLines.length || !nonCashLines.length) continue;
+            const nonCashTotalAbs = nonCashLines.reduce((sum, line) => sum + Math.abs(line.amount), 0);
+            if (nonCashTotalAbs <= 0) continue;
+            for (const cashLine of cashLines) {
+              const cashAbs = Math.abs(cashLine.amount);
+              if (cashAbs === 0) continue;
+              for (const nonCashLine of nonCashLines) {
+                const weight = Math.abs(nonCashLine.amount) / nonCashTotalAbs;
+                const attributed = cashAbs * weight;
+                const fromAccount = cashLine.amount < 0 ? cashLine.acct : nonCashLine.acct;
+                const toAccount = cashLine.amount < 0 ? nonCashLine.acct : cashLine.acct;
+                const pairKey = `${fromAccount}->${toAccount}`;
+                if (!flowByPair.has(pairKey)) {
+                  flowByPair.set(pairKey, { fromAccount, toAccount, netAmount: 0, journalCount: 0 });
+                }
+                const entry = flowByPair.get(pairKey)!;
+                entry.netAmount += attributed;
+                entry.journalCount += 1;
+              }
+            }
+          }
+
+          const flows = Array.from(flowByPair.values()).sort((a, b) => Math.abs(b.netAmount) - Math.abs(a.netAmount)).slice(0, Math.max(limit, 50));
+          return NextResponse.json({
+            records: flows,
+            summary: {
+              journalsAnalyzed: byJournal.size,
+              glLinesAnalyzed: glLines.length,
+              cashAccountsTracked: Array.from(cashAccountTokens.values()).sort(),
+            },
+          });
+        }
 
       default:
         // Get all data types summary

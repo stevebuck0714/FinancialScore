@@ -40,6 +40,7 @@ type SyncWindow = {
 };
 type SyncOptions = {
   snapshotDateOverride?: Date;
+  preserveCashSnapshot?: boolean;
   skipPrune?: boolean;
   programOffset?: number;
   programLimit?: number;
@@ -133,8 +134,18 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   },
   {
     module: 'GL',
-    miProgram: 'SLCharts',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCharts?recordCap=1000',
+    miProgram: 'SLChartAccts',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLChartAccts?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'GL',
+    miProgram: 'SLGLTRANS',
+    endpointPath:
+      '/APR_PRD/CSI/IDORequestService/ido/load/SLGLTRANS?properties=Acct,TransDate,DomAmount,ForAmount,Amount,DrCr,RecordDate,Site,TransNum,Ref,Description&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -632,7 +643,7 @@ function applyCsiSourceWindowAndSort(
     // For SLLedgers, extract by accounting period instead of RecordDate ranges.
     // This avoids sparse month coverage and aligns to financial reporting periods.
     params.set('filter', filter);
-    params.set('recordCap', '250');
+    params.set('recordCap', '1000');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'Site asc,TransNum asc');
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true };
@@ -879,6 +890,31 @@ function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
 const SLA_PTRXP_SAFE_PROPERTIES = ['VendNum', 'Name', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
 const SLA_PTRX_SAFE_PROPERTIES = ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
 const AP_IDO_CANDIDATES = ['SLAptrx', 'SLAptrxp', 'SLAptrxps', 'SLAptrxs', 'Aptrx', 'Aptrxp', 'Aptrxps', 'Aptrxs'];
+const GL_TRANSACTION_SAFE_PROPERTIES = [
+  'Acct',
+  'TransDate',
+  'DomAmount',
+  'ForAmount',
+  'Amount',
+  'DrCr',
+  'RecordDate',
+  'Site',
+  'TransNum',
+  'Ref',
+  'Description',
+];
+const GL_TRANSACTION_IDO_CANDIDATES = [
+  'SLGlTrans',
+  'SLGLTran',
+  'SLGLDist',
+  'SLJournalTrans',
+  'SLTrans',
+  'GLTran',
+  'GLDist',
+  'JournalTrans',
+  'GlTrans',
+  'SLLedgers',
+];
 const SL_COITEMS_SAFE_PROPERTIES = ['CoNum', 'CoLine', 'CoRelease', 'Item', 'Stat', 'Price', 'QtyOrdered', 'QtyShipped', 'InvNum', 'Whse', 'DueDate'];
 const MAX_CSI_PAGES_PER_REQUEST = 20;
 const OPTIONAL_CSI_GL_SUMMARY_PROGRAMS = new Set([
@@ -941,6 +977,25 @@ function buildApSlaPtrxCandidatePaths(endpointPath: string): string[] {
     const safeProperties = isXpsFamily ? SLA_PTRXP_SAFE_PROPERTIES : SLA_PTRX_SAFE_PROPERTIES;
     candidates.push(ensureCsiProperties(pathWithIdo, safeProperties));
     candidates.push(ensureCsiProperties(pathWithIdo, ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'Amount']));
+  }
+  return Array.from(new Set(candidates));
+}
+
+function buildGlTransactionCandidatePaths(endpointPath: string): string[] {
+  if (!/\/load\//i.test(endpointPath)) return [];
+  const candidates: string[] = [];
+  const [path, queryString = ''] = endpointPath.split('?');
+  const originalParams = new URLSearchParams(queryString);
+  for (const ido of GL_TRANSACTION_IDO_CANDIDATES) {
+    const candidatePath = path.replace(/\/load\/[^/?]+/i, `/load/${ido}`);
+    const params = new URLSearchParams(originalParams.toString());
+    params.set('properties', GL_TRANSACTION_SAFE_PROPERTIES.join(','));
+    if (!params.get('recordCap')) params.set('recordCap', '1000');
+    if (!params.get('orderby') && !params.get('orderBy')) {
+      params.set('orderby', 'TransDate desc, RecordDate desc');
+    }
+    const nextQuery = params.toString();
+    candidates.push(nextQuery ? `${candidatePath}?${nextQuery}` : candidatePath);
   }
   return Array.from(new Set(candidates));
 }
@@ -2307,6 +2362,32 @@ export async function syncInforM3OperationalData(
           }
         }
       }
+      if (moduleType === 'gl' && !isTransportAndPayloadSuccess(response)) {
+        const glErrorMessage = extractResponseMessage(response.body);
+        if (
+          /\/load\//i.test(effectiveEndpointPath) &&
+          (
+            /ido not found/i.test(glErrorMessage) ||
+            /property .* not found/i.test(glErrorMessage) ||
+            /invalid column name/i.test(glErrorMessage)
+          )
+        ) {
+          const candidates = buildGlTransactionCandidatePaths(effectiveEndpointPath);
+          for (const candidatePath of candidates) {
+            if (candidatePath === effectiveEndpointPath) continue;
+            const candidateResponse = await callInforIonApi(credentials, candidatePath, {
+              timeoutMs: requestTimeoutMs,
+              headers: req.headers,
+            });
+            if (!isTransportAndPayloadSuccess(candidateResponse)) continue;
+            const candidateRecords = extractRecords(candidateResponse.body);
+            if (candidateRecords.length === 0) continue;
+            response = candidateResponse;
+            effectiveEndpointPath = candidatePath;
+            break;
+          }
+        }
+      }
       let rawRecords = extractRecords(response.body);
       let pagesFetched = 1;
       let paginationTruncated = false;
@@ -2503,7 +2584,8 @@ export async function syncInforM3OperationalData(
                 const isHistoricalDailySlice =
                   frequency === 'daily' &&
                   Boolean(options?.snapshotDateOverride);
-                if (isHistoricalDailySlice) {
+                const shouldPreserveSliceCashSnapshot = Boolean(options?.preserveCashSnapshot);
+                if (isHistoricalDailySlice && !shouldPreserveSliceCashSnapshot) {
                   // SLBankHdrs is snapshot-oriented in this tenant and cannot be
                   // reliably filtered by day. During business-day backfill we
                   // remove per-day cash snapshots to avoid persisting duplicated
@@ -2513,6 +2595,9 @@ export async function syncInforM3OperationalData(
                   });
                   moduleRecordsCreated = 0;
                 } else {
+                  await prisma.cashSnapshot.deleteMany({
+                    where: { companyId, frequency, snapshotDate },
+                  });
                   moduleRecordsCreated = await saveCash(companyId, snapshotDate, frequency, records);
                 }
               }
