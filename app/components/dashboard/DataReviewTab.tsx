@@ -35,17 +35,21 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
     return year * 100 + month;
   };
 
-  // Use master data as monthly data, but enforce stable chronological ordering.
-  const monthly = React.useMemo(() => {
+  // Use master data as monthly data, enforce stable chronological ordering, then
+  // display only the latest 36 months with newest month first.
+  const { monthly, totalMonths } = React.useMemo(() => {
     const rows = Array.isArray(monthlyData) ? [...monthlyData] : [];
     rows.sort((a, b) => {
       const aKey = getMonthKey(a?.month ?? a?.date);
       const bKey = getMonthKey(b?.month ?? b?.date);
       return monthKeyToSortValue(aKey) - monthKeyToSortValue(bKey);
     });
-    return rows;
+    return {
+      monthly: rows.slice(-36).reverse(),
+      totalMonths: rows.length,
+    };
   }, [monthlyData]);
-  const displayedMonths = monthly.slice(-36);
+  const displayedMonths = monthly;
 
   // Check if master data exists
   if (masterDataLoading) {
@@ -262,8 +266,8 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
           >
             <strong>✅ Financial data loaded</strong>
             <p style={{ marginTop: "8px", marginBottom: 0 }}>
-              Total months: {monthly.length} | Displaying: Last{" "}
-              {Math.min(36, monthly.length)} months
+              Total months: {totalMonths} | Displaying: Last{" "}
+              {Math.min(36, totalMonths)} months
             </p>
           </div>
 
