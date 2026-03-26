@@ -5148,6 +5148,8 @@ function FinancialScorePage() {
 
   const loadErpCaoInDataMapping = async () => {
     const companyIdForLoad = resolveActiveCompanyIdForErpCaoLoad();
+    const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
+    const isInforAccountsOnlyLoad = selectedSystemNormalized === 'INFOR_M3' || selectedSystemNormalized === 'INFOR_CSI';
     console.log('[ERP COA] Load button clicked', {
       selectedCompanyId,
       resolvedCompanyId: companyIdForLoad,
@@ -5162,7 +5164,7 @@ function FinancialScorePage() {
     if (companyIdForLoad !== selectedCompanyId) {
       setSelectedCompanyId(companyIdForLoad);
     }
-    if (!/^\d{4}-\d{2}$/.test(erpCaoThroughMonth)) {
+    if (!isInforAccountsOnlyLoad && !/^\d{4}-\d{2}$/.test(erpCaoThroughMonth)) {
       console.warn('[ERP COA] Blocked before POST: invalid throughMonth', { throughMonth: erpCaoThroughMonth });
       alert('Select a valid Through month first (YYYY-MM).');
       return;
@@ -5178,19 +5180,23 @@ function FinancialScorePage() {
 
     setErpCaoLoading(true);
     try {
+      const requestUrl = isInforAccountsOnlyLoad ? '/api/infor-m3/sync-coa' : '/api/erp/coa-load';
+      const requestPayload = isInforAccountsOnlyLoad
+        ? { companyId: companyIdForLoad }
+        : {
+            companyId: companyIdForLoad,
+            throughMonth: erpCaoThroughMonth,
+          };
       console.log('[ERP COA] Sending POST /api/erp/coa-load', {
+        requestUrl,
         companyId: companyIdForLoad,
         throughMonth: erpCaoThroughMonth,
       });
-      const payload = {
-        companyId: companyIdForLoad,
-        throughMonth: erpCaoThroughMonth,
-      };
       const runCoaLoadRequest = async () => {
-        const response = await fetch('/api/erp/coa-load', {
+        const response = await fetch(requestUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(requestPayload),
         });
         const raw = await response.text();
         const contentType = response.headers.get('content-type') || '';
@@ -5235,9 +5241,10 @@ function FinancialScorePage() {
       }
 
       setQbLastSync(new Date());
+      const importedLabel = isInforAccountsOnlyLoad ? 'accounts imported' : 'monthly records processed';
       alert(
-        `ERP COA load complete. Through month: ${erpCaoThroughMonth}. ` +
-          `${typeof result?.recordsImported === 'number' ? `${result.recordsImported} monthly records processed.` : ''}`
+        `${isInforAccountsOnlyLoad ? 'ERP COA account load complete.' : `ERP COA load complete. Through month: ${erpCaoThroughMonth}. `}` +
+          `${typeof result?.recordsImported === 'number' ? `${result.recordsImported} ${importedLabel}.` : ''}`
       );
       // Refresh mappings in the background so the CTA does not look hung.
       refreshCompanyMappings(companyIdForLoad).catch((refreshError) => {
@@ -10831,6 +10838,29 @@ function FinancialScorePage() {
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ fontSize: '12px', color: '#92400e', marginBottom: 0, flex: 1 }}>
                         Load monthly {selectedAccountingSystemLabel || 'ERP'} Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
+                        <div style={{ marginTop: '6px', color: '#7c2d12', fontSize: '11px' }}>
+                          This is account/code refresh. After mapping updates, use <strong>Apply Mappings to Data</strong> below (no COA reload needed).
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (typeof document === 'undefined') return;
+                              document.getElementById('apply-mappings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }}
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              border: '1px solid #fdba74',
+                              background: '#fff',
+                              color: '#9a3412',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Jump to Apply Mappings
+                          </button>
+                        </div>
                       </div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
                         <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
@@ -10854,7 +10884,7 @@ function FinancialScorePage() {
                             cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
                           }}
                         >
-                          {erpCaoLoading ? 'Loading COA...' : 'Load ERP COA'}
+                          {erpCaoLoading ? 'Loading COA (Accounts)...' : 'Load ERP COA (Accounts)'}
                         </button>
                       </div>
                     </div>
@@ -11168,7 +11198,7 @@ function FinancialScorePage() {
                     />
 
                     {/* Save Mappings Section */}
-                    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
+                    <div id="apply-mappings-section" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px solid #e2e8f0' }}>
                       {!hasCsvDataForSelectedCompany && loadedMonthlyData && loadedMonthlyData.length > 0 && (
                         <div style={{ marginBottom: '16px', padding: '12px 16px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #93c5fd' }}>
                           <div style={{ display: 'flex', alignItems: 'start', gap: '8px' }}>
