@@ -625,7 +625,7 @@ export async function GET(request: NextRequest) {
       case 'ar-aging':
         // Get AR aging data
         let arFrequencyForQuery: 'daily' | 'weekly' | 'monthly' = frequency;
-        data = await prisma.aRAgingSnapshot.findMany({
+        let arAgingRows = await prisma.aRAgingSnapshot.findMany({
           where: {
             companyId,
             frequency: arFrequencyForQuery,
@@ -634,6 +634,38 @@ export async function GET(request: NextRequest) {
           orderBy: { snapshotDate: 'desc' },
           take: limit,
         });
+        // AR trend should prefer a usable time series. If the requested frequency/date
+        // collapses to <=1 point, fall back to daily snapshots, then latest daily history.
+        if (arAgingRows.length <= 1) {
+          const dailyRowsInWindow = await prisma.aRAgingSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: 'daily',
+              snapshotDate: dateFilter,
+            },
+            orderBy: { snapshotDate: 'desc' },
+            take: limit,
+          });
+          if (dailyRowsInWindow.length > arAgingRows.length) {
+            arAgingRows = dailyRowsInWindow;
+            arFrequencyForQuery = 'daily';
+          }
+        }
+        if (arAgingRows.length <= 1) {
+          const latestDailyRows = await prisma.aRAgingSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: 'daily',
+            },
+            orderBy: { snapshotDate: 'desc' },
+            take: Math.max(limit, 90),
+          });
+          if (latestDailyRows.length > arAgingRows.length) {
+            arAgingRows = latestDailyRows;
+            arFrequencyForQuery = 'daily';
+          }
+        }
+        data = arAgingRows;
 
         let unpaidByCustomer: Array<{
           customerId: string;
@@ -714,6 +746,48 @@ export async function GET(request: NextRequest) {
           if (isClosedArStatus(row.status)) return false;
           return isInvoiceLikeArOpenRow(row);
         });
+        const arTrendBySnapshotDay = new Map<
+          string,
+          {
+            snapshotDate: Date;
+            totalAR: number;
+            current: number;
+            days1to30: number;
+            days31to60: number;
+            days61to90: number;
+            days90plus: number;
+          }
+        >();
+        for (const row of openRowsInvoiceLike as any[]) {
+          const snapshotDay = startOfUtcDay(new Date(row.snapshotDate));
+          const dayKey = dateKeyUtc(snapshotDay);
+          if (!arTrendBySnapshotDay.has(dayKey)) {
+            arTrendBySnapshotDay.set(dayKey, {
+              snapshotDate: snapshotDay,
+              totalAR: 0,
+              current: 0,
+              days1to30: 0,
+              days31to60: 0,
+              days61to90: 0,
+              days90plus: 0,
+            });
+          }
+          const acc = arTrendBySnapshotDay.get(dayKey)!;
+          const buckets = deriveArBucketsFromRow(row, snapshotDay);
+          if (buckets.totalAR <= 0) continue;
+          acc.totalAR += buckets.totalAR;
+          acc.current += buckets.current;
+          acc.days1to30 += buckets.days1to30;
+          acc.days31to60 += buckets.days31to60;
+          acc.days61to90 += buckets.days61to90;
+          acc.days90plus += buckets.days90plus;
+        }
+        const arTrendFromOpenRows = Array.from(arTrendBySnapshotDay.values())
+          .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
+          .slice(0, Math.max(limit, 90));
+        if (arTrendFromOpenRows.length > 1 || data.length <= 1) {
+          data = arTrendFromOpenRows;
+        }
 
         if (openRowsInvoiceLike.length > 0) {
           const openRows = latestOpenSnapshotDate

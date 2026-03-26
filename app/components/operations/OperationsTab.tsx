@@ -2346,12 +2346,12 @@ export default function OperationsTab({
     // collapse when the global frequency selector is weekly/monthly.
     const chartData = records.map((record: any) => ({
       month: formatArTrendDate(record.snapshotDate),
-      Current: record.current,
-      '1-30 Days': record.days1to30,
-      '31-60 Days': record.days31to60,
-      '61-90 Days': record.days61to90,
-      '90+ Days': record.days90plus,
-      total: record.totalAR
+      'Open AR Current': Number(record.current || 0),
+      'Open AR 1-30': Number(record.days1to30 || 0),
+      'Open AR 31-60': Number(record.days31to60 || 0),
+      'Open AR 61-90': Number(record.days61to90 || 0),
+      'Open AR 90+': Number(record.days90plus || 0),
+      total: Number(record.totalAR || 0),
     }));
     const arCollectionsTrend = [...records]
       .reverse()
@@ -2439,11 +2439,11 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
-              <Bar dataKey="1-30 Days" stackId="a" fill={AR_TREND_COLORS[1]} />
-              <Bar dataKey="31-60 Days" stackId="a" fill={AR_TREND_COLORS[2]} />
-              <Bar dataKey="61-90 Days" stackId="a" fill={AR_TREND_COLORS[3]} />
-              <Bar dataKey="90+ Days" stackId="a" fill={AR_TREND_COLORS[4]} />
+              <Bar dataKey="Open AR Current" stackId="a" fill={AR_TREND_COLORS[0]} />
+              <Bar dataKey="Open AR 1-30" stackId="a" fill={AR_TREND_COLORS[1]} />
+              <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
+              <Bar dataKey="Open AR 61-90" stackId="a" fill={AR_TREND_COLORS[3]} />
+              <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[4]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
