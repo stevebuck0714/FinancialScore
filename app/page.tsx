@@ -11501,12 +11501,28 @@ function FinancialScorePage() {
                                     }
                                     return out;
                                   };
-                                  const discoveredMonths = Array.isArray(loadedMonthlyData)
-                                    ? loadedMonthlyData
-                                        .map((row: any) => toYearMonth(row?.monthDate || row?.month || row?.date))
-                                        .filter((m): m is string => !!m)
-                                        .sort()
-                                    : [];
+                                  const extractMonths = (rows: any[]): string[] => {
+                                    const monthSet = new Set<string>();
+                                    for (const row of rows || []) {
+                                      const month = toYearMonth(row?.monthDate || row?.month || row?.date);
+                                      if (month) monthSet.add(month);
+                                    }
+                                    return Array.from(monthSet).sort();
+                                  };
+
+                                  let discoveredMonths = extractMonths(Array.isArray(loadedMonthlyData) ? loadedMonthlyData : []);
+                                  if (discoveredMonths.length === 0 && selectedCompanyId) {
+                                    try {
+                                      const financialsResponse = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
+                                      const financialsJson = await financialsResponse.json().catch(() => ({}));
+                                      const persistedRows = Array.isArray(financialsJson?.records?.[0]?.monthlyData)
+                                        ? financialsJson.records[0].monthlyData
+                                        : [];
+                                      discoveredMonths = extractMonths(persistedRows);
+                                    } catch (loadMonthsError) {
+                                      console.warn('Unable to load persisted month range for through reprocess', loadMonthsError);
+                                    }
+                                  }
                                   const startMonth = discoveredMonths[0] || apiFinancialTargetMonth;
                                   const months = buildMonthRange(startMonth, apiFinancialTargetMonth);
                                   const skipped: string[] = [];
