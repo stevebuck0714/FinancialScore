@@ -10837,56 +10837,82 @@ function FinancialScorePage() {
                     <div style={{ fontSize: '15px', fontWeight: '700', color: '#9a3412', marginBottom: '6px' }}>
                       {selectedAccountingSystemLabel || 'ERP'} COA Load
                     </div>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ fontSize: '12px', color: '#92400e', marginBottom: 0, flex: 1 }}>
-                        Load monthly {selectedAccountingSystemLabel || 'ERP'} Accounts/COA data and process up to 36 months through the selected month for mapping and financial reporting.
-                        <div style={{ marginTop: '6px', color: '#7c2d12', fontSize: '11px' }}>
-                          This is account/code refresh. After mapping updates, use <strong>Apply Mappings to Data</strong> below (no COA reload needed).
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (typeof document === 'undefined') return;
-                              document.getElementById('apply-mappings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            }}
-                            style={{
-                              marginLeft: '8px',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              border: '1px solid #fdba74',
-                              background: '#fff',
-                              color: '#9a3412',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Jump to Apply Mappings
-                          </button>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ border: '1px solid #fed7aa', borderRadius: '6px', background: 'white', padding: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', marginBottom: '4px' }}>1) Initial Setup</div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                          Run when COA/accounts changed.
                         </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
-                        <input
-                          type="month"
-                          value={erpCaoThroughMonth}
-                          onChange={(e) => setErpCaoThroughMonth(e.target.value)}
-                          style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
-                        />
                         <button
                           onClick={loadErpCaoInDataMapping}
                           disabled={erpCaoLoading}
                           style={{
-                            padding: '8px 12px',
-                            background: erpCaoLoading ? '#9ca3af' : '#7c3aed',
+                            width: '100%',
+                            padding: '6px 8px',
+                            background: erpCaoLoading ? '#9ca3af' : '#2563eb',
                             color: 'white',
                             border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '12px',
-                            fontWeight: '700',
+                            borderRadius: '5px',
+                            fontSize: '11px',
+                            fontWeight: 700,
                             cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
                           }}
                         >
-                          {erpCaoLoading ? 'Loading COA (Accounts)...' : 'Load ERP COA (Accounts)'}
+                          {erpCaoLoading ? 'Loading COA...' : 'Refresh Accounts'}
+                        </button>
+                      </div>
+
+                      <div style={{ border: '1px solid #fed7aa', borderRadius: '6px', background: 'white', padding: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f766e', marginBottom: '4px' }}>2) Mapping Changes</div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                          Save edits after target field updates.
+                        </div>
+                        <button
+                          onClick={() => saveMappingsButtonRef.current?.click()}
+                          disabled={isSavingMappings || aiMappings.length === 0}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            background: isSavingMappings || aiMappings.length === 0 ? '#9ca3af' : '#10b981',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: isSavingMappings || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {isSavingMappings ? 'Saving...' : 'Save Mappings'}
+                        </button>
+                      </div>
+
+                      <div style={{ border: '1px solid #fed7aa', borderRadius: '6px', background: 'white', padding: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', marginBottom: '4px' }}>3) Monthly Update</div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                          Apply mappings to refresh reporting data.
+                        </div>
+                        <button
+                          onClick={() => applyMappingsButtonRef.current?.click()}
+                          disabled={isProcessingMonthlyData || aiMappings.length === 0}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            background: isProcessingMonthlyData || aiMappings.length === 0 ? '#9ca3af' : '#7c3aed',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {isProcessingMonthlyData ? 'Applying...' : 'Apply Mappings'}
                         </button>
                       </div>
                     </div>
@@ -11131,91 +11157,6 @@ function FinancialScorePage() {
                 {/* Mapping Results Section */}
                 {showMappingSection && aiMappings.length > 0 && (
                   <div style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', marginBottom: '16px' }}>
-                    <div
-                      style={{
-                        marginBottom: '12px',
-                        padding: '10px',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '8px',
-                        background: '#f8fafc',
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                        gap: '8px',
-                      }}
-                    >
-                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', padding: '8px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', marginBottom: '4px' }}>1) Initial Setup</div>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
-                          Run when COA/accounts changed.
-                        </div>
-                        <button
-                          onClick={loadErpCaoInDataMapping}
-                          disabled={erpCaoLoading}
-                          style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            background: erpCaoLoading ? '#9ca3af' : '#2563eb',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {erpCaoLoading ? 'Loading COA...' : 'Refresh Accounts'}
-                        </button>
-                      </div>
-
-                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', padding: '8px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f766e', marginBottom: '4px' }}>2) Mapping Changes</div>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
-                          Save edits after target field updates.
-                        </div>
-                        <button
-                          onClick={() => saveMappingsButtonRef.current?.click()}
-                          disabled={isSavingMappings || aiMappings.length === 0}
-                          style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            background: isSavingMappings || aiMappings.length === 0 ? '#9ca3af' : '#10b981',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: isSavingMappings || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {isSavingMappings ? 'Saving...' : 'Save Mappings'}
-                        </button>
-                      </div>
-
-                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', padding: '8px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', marginBottom: '4px' }}>3) Monthly Update</div>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
-                          Apply mappings to refresh reporting data.
-                        </div>
-                        <button
-                          onClick={() => applyMappingsButtonRef.current?.click()}
-                          disabled={isProcessingMonthlyData || aiMappings.length === 0}
-                          style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            background: isProcessingMonthlyData || aiMappings.length === 0 ? '#9ca3af' : '#7c3aed',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {isProcessingMonthlyData ? 'Applying...' : 'Apply Mappings'}
-                        </button>
-                      </div>
-                    </div>
-
                     <div
                       style={{
                         marginBottom: '12px',
