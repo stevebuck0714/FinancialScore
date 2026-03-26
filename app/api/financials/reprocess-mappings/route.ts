@@ -236,6 +236,33 @@ function summarizeMonthlyRowsCoverage(rows: Array<Record<string, unknown>>): Mon
   return summarizeMonthCounts(monthCounts);
 }
 
+function hasDetailedSectorBreakdownsForMonth(
+  payload: Record<string, unknown> | null,
+  targetMonth: string | null,
+): boolean {
+  if (!payload || !targetMonth) return false;
+  const rows = Array.isArray(payload.monthlyData) ? (payload.monthlyData as Array<Record<string, unknown>>) : [];
+  const row = rows.find((entry) => toYearMonth(entry.monthDate || entry.month || entry.date) === targetMonth);
+  if (!row) return false;
+
+  const revenueBreakdown =
+    row.revenueBreakdown && typeof row.revenueBreakdown === 'object' && !Array.isArray(row.revenueBreakdown)
+      ? (row.revenueBreakdown as Record<string, unknown>)
+      : {};
+  const cogsBreakdown =
+    row.cogsBreakdown && typeof row.cogsBreakdown === 'object' && !Array.isArray(row.cogsBreakdown)
+      ? (row.cogsBreakdown as Record<string, unknown>)
+      : {};
+
+  const hasDetailedRevenue = Object.entries(revenueBreakdown).some(
+    ([key, value]) => key.startsWith('rev_') && key !== 'rev_other_revenue' && Number(value || 0) !== 0,
+  );
+  const hasDetailedCogs = Object.entries(cogsBreakdown).some(
+    ([key, value]) => key.startsWith('cogs_') && key !== 'cogs_other_cogs' && Number(value || 0) !== 0,
+  );
+  return hasDetailedRevenue || hasDetailedCogs;
+}
+
 function extractSlLedgersRowsFromGlResponses(glResponses: unknown[]): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
   for (const entry of glResponses) {
@@ -326,7 +353,7 @@ export async function POST(request: NextRequest) {
     const companyId = body?.companyId;
     const targetMonth = normalizeTargetMonth(body?.targetMonth);
     const mode = normalizeFinancialImportMode(body?.mode);
-    const useHistoricalSlLedgers = body?.useHistoricalSlLedgers === true;
+    const useHistoricalSlLedgersRequested = body?.useHistoricalSlLedgers === true;
     const persistRebuiltPayload = body?.persistRebuiltPayload === true;
 
     if (!companyId) {
@@ -408,11 +435,16 @@ export async function POST(request: NextRequest) {
 
     if (configuredPlatform === 'INFOR_M3' || configuredPlatform === 'INFOR_CSI') {
       const isInforCsi = configuredPlatform === 'INFOR_CSI';
+      const useHistoricalSlLedgers =
+        useHistoricalSlLedgersRequested ||
+        (mode === 'only' && !!targetMonth);
       const diagnostics: Record<string, unknown> = {
         companyId: String(companyId),
         configuredPlatform,
         targetMonth: targetMonth || null,
         mode,
+        useHistoricalSlLedgersRequested,
+        useHistoricalSlLedgersEffective: useHistoricalSlLedgers,
       };
       const payloadRows = await prisma.$queryRaw<Array<{ csi: unknown; m3: unknown }>>`
         SELECT
@@ -452,12 +484,31 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const mappings = await prisma.accountMapping.findMany({
+        where: { companyId: String(companyId) },
+        select: {
+          qbAccount: true,
+          qbAccountId: true,
+          qbAccountCode: true,
+          qbAccountClassification: true,
+          targetField: true,
+        },
+      });
+      const hasSectorAwareMappings = mappings.some((row) => {
+        const target = String(row?.targetField || '').trim().toLowerCase();
+        return target.startsWith('rev_') || target.startsWith('cogs_');
+      });
+
       const glResponsesRaw = Array.isArray(financialPayload.glResponses) ? financialPayload.glResponses : [];
+      const hasDetailedBreakdownForTargetMonth = hasDetailedSectorBreakdownsForMonth(financialPayload, targetMonth);
       const shouldSkipGlRebuildForOnlyMode =
         mode === 'only' &&
         !!targetMonth &&
-        hasMonthlyDataRows(financialPayload);
+        hasMonthlyDataRows(financialPayload) &&
+        (!hasSectorAwareMappings || hasDetailedBreakdownForTargetMonth);
       diagnostics.glRebuildSkippedForOnlyMode = shouldSkipGlRebuildForOnlyMode;
+      diagnostics.hasSectorAwareMappings = hasSectorAwareMappings;
+      diagnostics.hasDetailedBreakdownForTargetMonth = hasDetailedBreakdownForTargetMonth;
       if (glResponsesRaw.length > 0 && !shouldSkipGlRebuildForOnlyMode) {
         // Keep "only" mode lightweight so month-targeted reprocess calls do not
         // attempt a full 36-month CSI rebuild and exceed serverless limits.
@@ -521,16 +572,6 @@ export async function POST(request: NextRequest) {
                 ];
               })()
             : glResponsesRaw;
-        const mappings = await prisma.accountMapping.findMany({
-          where: { companyId: String(companyId) },
-          select: {
-            qbAccount: true,
-            qbAccountId: true,
-            qbAccountCode: true,
-            qbAccountClassification: true,
-            targetField: true,
-          },
-        });
         diagnostics.mappingCoverage = summarizeMappingsForDiagnostics(mappings);
         const built = buildCsiMonthlyDataFromGlResponses({
           glResponses: glResponsesForBuild,

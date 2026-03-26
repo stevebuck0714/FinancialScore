@@ -11521,6 +11521,7 @@ function FinancialScorePage() {
                                         companyId: selectedCompanyId,
                                         targetMonth,
                                         mode: 'only',
+                                        useHistoricalSlLedgers: true,
                                       }),
                                     });
                                     const { result, vercelRequestId } = await parseJsonResponse(response);
@@ -11567,6 +11568,9 @@ function FinancialScorePage() {
                                       companyId: selectedCompanyId,
                                       targetMonth: apiFinancialTargetMonth,
                                       mode: requestedMode,
+                                      useHistoricalSlLedgers:
+                                        selectedSystemNormalized === 'INFOR_M3' ||
+                                        selectedSystemNormalized === 'INFOR_CSI',
                                     })
                                   });
 

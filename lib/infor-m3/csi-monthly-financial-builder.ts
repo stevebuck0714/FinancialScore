@@ -424,6 +424,29 @@ function buildAccountKey(rawAccount: string): string {
   return numeric ? numeric[1] : value.toLowerCase();
 }
 
+function extractAccountCodeCandidates(...values: unknown[]): string[] {
+  const candidates = new Set<string>();
+  const addCandidate = (value: unknown) => {
+    const raw = String(value || '').trim();
+    if (!raw) return;
+    const key = buildAccountKey(raw);
+    if (key) candidates.add(key);
+    const digitMatches = raw.match(/\d{3,}/g) || [];
+    for (const token of digitMatches) {
+      const normalized = String(Number(token));
+      if (normalized && normalized !== 'NaN') candidates.add(normalized);
+      candidates.add(token);
+      if (token.length === 4) candidates.add(`${token}0`);
+      if (token.length >= 5) {
+        candidates.add(token.slice(0, 4));
+        if (token.endsWith('0')) candidates.add(token.slice(0, -1));
+      }
+    }
+  };
+  for (const value of values) addCandidate(value);
+  return Array.from(candidates).filter(Boolean);
+}
+
 function extractRows(payloadLike: unknown): JsonRecord[] {
   const queue: unknown[] = [payloadLike];
   const rows: JsonRecord[] = [];
@@ -765,8 +788,14 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     if (!targetField || targetField.toLowerCase() === 'unmapped') continue;
     const byName = normalizeMappingKey(row?.qbAccount);
     if (byName && !mappingByName.has(byName)) mappingByName.set(byName, targetField);
-    const byCode = buildAccountKey(String(row?.qbAccountCode || row?.qbAccountId || ''));
-    if (byCode && !mappingByCode.has(byCode)) mappingByCode.set(byCode, targetField);
+    const byCodeCandidates = extractAccountCodeCandidates(
+      row?.qbAccountCode,
+      row?.qbAccountId,
+      row?.qbAccount,
+    );
+    for (const candidate of byCodeCandidates) {
+      if (!mappingByCode.has(candidate)) mappingByCode.set(candidate, targetField);
+    }
   }
 
   for (const row of ledgerRows) {
@@ -799,9 +828,22 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
       inferAccountTypeFromCode(accountKey) ||
       chart?.accountType ||
       normalizeAccountType(pickString(row, ACCOUNT_TYPE_KEYS), accountName);
-    const mappedTargetField =
-      mappingByCode.get(accountKey) ||
-      mappingByName.get(normalizeMappingKey(accountName));
+    const mappedTargetField = (() => {
+      const codeCandidates = extractAccountCodeCandidates(
+        accountKey,
+        rawAccount,
+        normalizedLedger.acct,
+        accountName,
+      );
+      for (const candidate of codeCandidates) {
+        const mapped = mappingByCode.get(candidate);
+        if (mapped) return mapped;
+      }
+      return (
+        mappingByName.get(normalizeMappingKey(accountName)) ||
+        mappingByName.get(normalizeMappingKey(rawAccount))
+      );
+    })();
 
     const debit = normalizedLedger.debit;
     const credit = normalizedLedger.credit;
