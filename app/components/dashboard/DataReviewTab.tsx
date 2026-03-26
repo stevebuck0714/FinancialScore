@@ -153,10 +153,28 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
         month?.expenseBreakdown?.nonOpertingExpense,
     );
 
+  const getDynamicFieldValue = (month: any, field: string): number => {
+    const direct = Number(month?.[field] || 0);
+    if (direct !== 0) return direct;
+    if (field.startsWith("rev_")) return Number(month?.revenueBreakdown?.[field] || 0);
+    if (field.startsWith("cogs_")) return Number(month?.cogsBreakdown?.[field] || 0);
+    return 0;
+  };
+
+  const getDynamicFieldsForPrefix = (month: any, prefix: "rev_" | "cogs_"): string[] => {
+    const directKeys = Object.keys(month || {}).filter((key) => key.startsWith(prefix));
+    const breakdown =
+      prefix === "rev_"
+        ? (month?.revenueBreakdown && typeof month.revenueBreakdown === "object" ? month.revenueBreakdown : {})
+        : (month?.cogsBreakdown && typeof month.cogsBreakdown === "object" ? month.cogsBreakdown : {});
+    const breakdownKeys = Object.keys(breakdown || {}).filter((key) => key.startsWith(prefix));
+    return Array.from(new Set([...directKeys, ...breakdownKeys]));
+  };
+
   const sectorRevenueFields = Array.from(
     new Set(
       displayedMonths.flatMap((m: any) =>
-        Object.keys(m).filter((key) => key.startsWith("rev_") && Number(m[key] || 0) !== 0),
+        getDynamicFieldsForPrefix(m, "rev_").filter((key) => getDynamicFieldValue(m, key) !== 0),
       ),
     ),
   ).sort((a, b) => formatDynamicFieldLabel(a).localeCompare(formatDynamicFieldLabel(b)));
@@ -167,8 +185,8 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
   const sectorCogsFields = Array.from(
     new Set(
       displayedMonths.flatMap((m: any) =>
-        Object.keys(m).filter(
-          (key) => key.startsWith("cogs_") && key !== "cogs_total" && Number(m[key] || 0) !== 0,
+        getDynamicFieldsForPrefix(m, "cogs_").filter(
+          (key) => key !== "cogs_total" && getDynamicFieldValue(m, key) !== 0,
         ),
       ),
     ),
@@ -379,7 +397,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           }}
                         >
                           $
-                          {(m[field] || 0).toLocaleString("en-US", {
+                          {getDynamicFieldValue(m, field).toLocaleString("en-US", {
                             minimumFractionDigits: 0,
                             maximumFractionDigits: 0,
                           })}
@@ -435,7 +453,7 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
                           }}
                         >
                           $
-                          {(m[field] || 0).toLocaleString("en-US", {
+                          {getDynamicFieldValue(m, field).toLocaleString("en-US", {
                             minimumFractionDigits: 0,
                             maximumFractionDigits: 0,
                           })}
