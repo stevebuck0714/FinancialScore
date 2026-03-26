@@ -5795,11 +5795,18 @@ function FinancialScorePage() {
     setInforBusyStartedAt(Date.now());
     setInforError(null);
     try {
+      const sleep = async (ms: number) => {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+      };
+      const isRateLimitMessage = (value: unknown) =>
+        /too many requests|rate limit|429/i.test(String(value || ''));
+
       let totalRecordsCreated = 0;
       let chunkCount = 0;
       let aggregatedErrors: string[] = [];
       let cursor: Record<string, unknown> | null = null;
       const maxChunks = 4000;
+      const maxChunkRetries = 5;
       let lastCursorSignature: string | null = null;
       let stagnantCursorCount = 0;
       const maxStagnantCursorChunks = 25;
@@ -5823,23 +5830,45 @@ function FinancialScorePage() {
         if (options?.endDate) payload.endDate = options.endDate;
         if (cursor) Object.assign(payload, cursor);
 
-        const response = await fetch('/api/infor-m3/operational-sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const rawBody = await response.text();
         let data: any = null;
-        try {
-          data = rawBody ? JSON.parse(rawBody) : {};
-        } catch {
-          data = { error: rawBody || 'Operational sync failed with non-JSON response.' };
-        }
-        if (!response.ok || !data?.ok) {
+        let chunkSucceeded = false;
+        let lastDetails = 'Operational sync failed';
+        for (let attempt = 0; attempt < maxChunkRetries; attempt += 1) {
+          const response = await fetch('/api/infor-m3/operational-sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const rawBody = await response.text();
+          try {
+            data = rawBody ? JSON.parse(rawBody) : {};
+          } catch {
+            data = { error: rawBody || 'Operational sync failed with non-JSON response.' };
+          }
+
           const details = Array.isArray(data?.errors) && data.errors.length > 0
             ? data.errors.join('\n')
             : data?.details || data?.error || 'Operational sync failed';
-          throw new Error(details);
+          lastDetails = details;
+          const rateLimited =
+            response.status === 429 ||
+            isRateLimitMessage(details) ||
+            isRateLimitMessage(data?.error) ||
+            isRateLimitMessage(data?.details);
+          if ((!response.ok || !data?.ok) && rateLimited && attempt < maxChunkRetries - 1) {
+            const backoffMs = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
+            await sleep(backoffMs);
+            continue;
+          }
+          if (!response.ok || !data?.ok) {
+            throw new Error(details);
+          }
+          chunkSucceeded = true;
+          break;
+        }
+
+        if (!chunkSucceeded) {
+          throw new Error(lastDetails);
         }
 
         totalRecordsCreated += Number(data?.recordsCreated || 0);
@@ -5861,6 +5890,8 @@ function FinancialScorePage() {
               'Operational sync cursor stopped advancing and appears to be looping. Please retry after adjusting sync settings.'
             );
           }
+          // Light pacing between continuation chunks reduces upstream rate-limit pressure.
+          await sleep(200);
           continue;
         }
         break;

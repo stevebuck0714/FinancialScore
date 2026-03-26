@@ -216,8 +216,10 @@ export async function POST(request: NextRequest) {
       const startDate = new Date(endDate);
       startDate.setMonth(startDate.getMonth() - months);
       const businessDates = enumerateBusinessDates(startDate, endDate);
+      const defaultBusinessDateIndex = Math.max(0, businessDates.length - 1);
+      const requestedBusinessDateIndex = normalizeNonNegativeInt(body.businessDateIndex);
       const businessDateIndex = Math.min(
-        normalizeNonNegativeInt(body.businessDateIndex) ?? 0,
+        requestedBusinessDateIndex ?? defaultBusinessDateIndex,
         Math.max(0, businessDates.length - 1)
       );
       const businessDate = businessDates[businessDateIndex];
@@ -281,12 +283,12 @@ export async function POST(request: NextRequest) {
           bookmark: dayResult.continuation?.bookmark ?? null,
           stagnantCursorCount: requestedStagnantCursorCount,
         };
-      } else if (businessDateIndex + 1 < businessDates.length) {
+      } else if (businessDateIndex > 0) {
         hasMore = true;
         cursor = {
           mode,
           backfillMonths: months,
-          businessDateIndex: businessDateIndex + 1,
+          businessDateIndex: businessDateIndex - 1,
           programOffset: 0,
           programBatchSize,
           stagnantCursorCount: 0,
@@ -327,7 +329,7 @@ export async function POST(request: NextRequest) {
         },
         businessDayBackfill: {
           holidayCalendar: 'US_FEDERAL',
-          businessDaysProcessed: businessDateIndex + (dayResult.nextProgramOffset === null ? 1 : 0),
+          businessDaysProcessed: businessDates.length - businessDateIndex + (dayResult.nextProgramOffset === null ? 0 : -1),
           businessDaysTotal: businessDates.length,
           currentBusinessDate: businessDate.toISOString().slice(0, 10),
         },

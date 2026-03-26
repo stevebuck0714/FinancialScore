@@ -34,6 +34,16 @@ type InforTokenMeta = {
   scope?: string;
 };
 
+type CachedToken = {
+  accessToken: string;
+  tokenType?: string;
+  expiresIn?: number;
+  scope?: string;
+  expiresAtMs: number;
+};
+
+const tokenCache = new Map<string, CachedToken>();
+
 function joinUrl(base: string, path: string): string {
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
   const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
@@ -67,10 +77,72 @@ function describeRequestError(error: unknown): { error: string; errorDescription
   };
 }
 
+function buildTokenCacheKey(credentials: InforM3Credentials): string {
+  return [
+    credentials.ssoBaseUrl,
+    credentials.oauthTokenPath || 'token.oauth2',
+    credentials.ionApiBaseUrl,
+    credentials.clientId,
+    credentials.serviceAccountAccessKey,
+  ]
+    .map((v) => String(v || '').trim())
+    .join('|');
+}
+
+function getCachedAccessToken(credentials: InforM3Credentials): CachedToken | null {
+  const key = buildTokenCacheKey(credentials);
+  const cached = tokenCache.get(key);
+  if (!cached) return null;
+  // Refresh a bit early to avoid edge-of-expiry request failures.
+  if (Date.now() >= cached.expiresAtMs - 60_000) {
+    tokenCache.delete(key);
+    return null;
+  }
+  return cached;
+}
+
+function setCachedAccessToken(credentials: InforM3Credentials, token: TokenResponse): void {
+  if (!token.access_token) return;
+  const key = buildTokenCacheKey(credentials);
+  const expiresInSec = Number(token.expires_in || 3600);
+  tokenCache.set(key, {
+    accessToken: token.access_token,
+    tokenType: token.token_type,
+    expiresIn: token.expires_in,
+    scope: token.scope,
+    expiresAtMs: Date.now() + Math.max(60, expiresInSec) * 1000,
+  });
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(retryAfterHeader: string | null): number | null {
+  if (!retryAfterHeader) return null;
+  const asNumber = Number(retryAfterHeader);
+  if (Number.isFinite(asNumber) && asNumber >= 0) return asNumber * 1000;
+  const asDate = new Date(retryAfterHeader);
+  if (Number.isNaN(asDate.getTime())) return null;
+  return Math.max(0, asDate.getTime() - Date.now());
+}
+
 export async function requestInforM3AccessToken(
   credentials: InforM3Credentials,
   timeoutMs = 12000
 ): Promise<InforTokenResult> {
+  const cached = getCachedAccessToken(credentials);
+  if (cached) {
+    return {
+      ok: true,
+      tokenEndpoint: joinUrl(credentials.ssoBaseUrl, credentials.oauthTokenPath || 'token.oauth2'),
+      accessToken: cached.accessToken,
+      tokenType: cached.tokenType,
+      expiresIn: cached.expiresIn,
+      scope: cached.scope,
+    };
+  }
+
   const tokenUrl = joinUrl(credentials.ssoBaseUrl, credentials.oauthTokenPath || 'token.oauth2');
   const clientId = credentials.clientId;
   const clientSecret = credentials.clientSecret;
@@ -84,36 +156,58 @@ export async function requestInforM3AccessToken(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  let tokenResponse: Response;
-  try {
-    tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${authHeader}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
-      body: requestBody.toString(),
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-  } catch (error) {
-    const described = describeRequestError(error);
-    return {
-      ok: false,
-      tokenEndpoint: tokenUrl,
-      status: 0,
-      error: described.error,
-      errorDescription: described.errorDescription,
-    };
-  } finally {
+  const maxAttempts = 4;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let tokenResponse: Response;
+    try {
+      tokenResponse = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${authHeader}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: requestBody.toString(),
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      clearTimeout(timeout);
+      const described = describeRequestError(error);
+      return {
+        ok: false,
+        tokenEndpoint: tokenUrl,
+        status: 0,
+        error: described.error,
+        errorDescription: described.errorDescription,
+      };
+    }
+
+    const bodyText = await tokenResponse.text();
+    const parsed = parseJsonSafely(bodyText) as TokenResponse;
+
+    if (tokenResponse.ok && parsed.access_token) {
+      clearTimeout(timeout);
+      setCachedAccessToken(credentials, parsed);
+      return {
+        ok: true,
+        tokenEndpoint: tokenUrl,
+        accessToken: parsed.access_token,
+        tokenType: parsed.token_type,
+        expiresIn: parsed.expires_in,
+        scope: parsed.scope,
+      };
+    }
+
+    if (tokenResponse.status === 429 && attempt < maxAttempts - 1) {
+      const retryAfterMs = parseRetryAfterMs(tokenResponse.headers.get('retry-after'));
+      const jitterMs = Math.floor(Math.random() * 200);
+      const backoffMs = retryAfterMs ?? (500 * Math.pow(2, attempt) + jitterMs);
+      await sleep(backoffMs);
+      continue;
+    }
+
     clearTimeout(timeout);
-  }
-
-  const bodyText = await tokenResponse.text();
-  const parsed = parseJsonSafely(bodyText) as TokenResponse;
-
-  if (!tokenResponse.ok || !parsed.access_token) {
     return {
       ok: false,
       tokenEndpoint: tokenUrl,
@@ -124,13 +218,13 @@ export async function requestInforM3AccessToken(
     };
   }
 
+  clearTimeout(timeout);
   return {
-    ok: true,
+    ok: false,
     tokenEndpoint: tokenUrl,
-    accessToken: parsed.access_token,
-    tokenType: parsed.token_type,
-    expiresIn: parsed.expires_in,
-    scope: parsed.scope,
+    status: 429,
+    error: 'rate_limited',
+    errorDescription: 'Token request exceeded retry attempts due to rate limiting.',
   };
 }
 
@@ -167,29 +261,58 @@ export async function callInforIonApi(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options?.timeoutMs ?? 12000);
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${tokenResult.accessToken}`,
-        Accept: 'application/json',
-        ...(options?.headers || {}),
-      },
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-  } catch (error) {
-    const described = describeRequestError(error);
+  const maxAttempts = 4;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${tokenResult.accessToken}`,
+          Accept: 'application/json',
+          ...(options?.headers || {}),
+        },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      clearTimeout(timeout);
+      const described = describeRequestError(error);
+      return {
+        ok: false,
+        status: 0,
+        url,
+        body: {
+          stage: 'api',
+          error: described.error,
+          errorDescription: described.errorDescription,
+        },
+        token: {
+          tokenEndpoint: tokenResult.tokenEndpoint,
+          tokenType: tokenResult.tokenType,
+          expiresIn: tokenResult.expiresIn,
+          scope: tokenResult.scope,
+        },
+      };
+    }
+
+    const text = await response.text();
+    const parsed = parseJsonSafely(text);
+
+    if (response.status === 429 && attempt < maxAttempts - 1) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+      const jitterMs = Math.floor(Math.random() * 200);
+      const backoffMs = retryAfterMs ?? (500 * Math.pow(2, attempt) + jitterMs);
+      await sleep(backoffMs);
+      continue;
+    }
+
+    clearTimeout(timeout);
     return {
-      ok: false,
-      status: 0,
+      ok: response.ok,
+      status: response.status,
       url,
-      body: {
-        stage: 'api',
-        error: described.error,
-        errorDescription: described.errorDescription,
-      },
+      body: parsed,
       token: {
         tokenEndpoint: tokenResult.tokenEndpoint,
         tokenType: tokenResult.tokenType,
@@ -197,18 +320,18 @@ export async function callInforIonApi(
         scope: tokenResult.scope,
       },
     };
-  } finally {
-    clearTimeout(timeout);
   }
 
-  const text = await response.text();
-  const parsed = parseJsonSafely(text);
-
+  clearTimeout(timeout);
   return {
-    ok: response.ok,
-    status: response.status,
+    ok: false,
+    status: 429,
     url,
-    body: parsed,
+    body: {
+      stage: 'api',
+      error: 'rate_limited',
+      errorDescription: 'ION API request exceeded retry attempts due to rate limiting.',
+    },
     token: {
       tokenEndpoint: tokenResult.tokenEndpoint,
       tokenType: tokenResult.tokenType,

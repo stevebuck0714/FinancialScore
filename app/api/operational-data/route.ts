@@ -65,6 +65,161 @@ function addMonths(date: Date, months: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + months, 1);
 }
 
+function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function dateKeyUtc(date: Date): string {
+  return startOfUtcDay(date).toISOString().slice(0, 10);
+}
+
+function parseIsoDayKey(dayKey: string): Date {
+  return new Date(`${dayKey}T00:00:00.000Z`);
+}
+
+function normalizeAccountNameForKey(name: string): string {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^cash\s*-\s*/i, '');
+}
+
+function accountKeyFromParts(
+  accountId: string | null | undefined,
+  accountNumber: string | null | undefined,
+  accountName: string | null | undefined
+): string {
+  const idToken = String(accountId || '').trim().toLowerCase();
+  if (idToken) return `id:${idToken}`;
+  const numberToken = String(accountNumber || '').trim().toLowerCase();
+  if (numberToken) return `num:${numberToken}`;
+  const nameToken = normalizeAccountNameForKey(String(accountName || ''));
+  return nameToken ? `name:${nameToken}` : '';
+}
+
+function buildDailyCashSeriesFromMovements(
+  anchorRows: Array<{
+    snapshotDate: Date;
+    accountName: string;
+    cashBalance: number;
+    accountId?: string | null;
+    accountNumber?: string | null;
+  }>,
+  movementRows: Array<{
+    snapshotDate: Date;
+    sourceAccountName: string;
+    sourceAccountId?: string | null;
+    amount: number;
+  }>,
+  rangeStart: Date,
+  rangeEnd: Date
+): Array<{ snapshotDate: Date; accountName: string; cashBalance: number }> {
+  if (!anchorRows.length) return [];
+  const anchorDate = startOfUtcDay(anchorRows[0].snapshotDate);
+  const start = startOfUtcDay(rangeStart);
+  const end = startOfUtcDay(rangeEnd);
+
+  const movementByDateAccount = new Map<string, Map<string, number>>();
+  const accountDisplayNames = new Map<string, string>();
+  for (const row of movementRows) {
+    const dayKey = dateKeyUtc(row.snapshotDate);
+    if (!movementByDateAccount.has(dayKey)) movementByDateAccount.set(dayKey, new Map<string, number>());
+    const perAccount = movementByDateAccount.get(dayKey)!;
+    const accountName = String(row.sourceAccountName || '').trim();
+    const accountKey = accountKeyFromParts(row.sourceAccountId, null, accountName);
+    if (!accountKey) continue;
+    if (accountName && !accountDisplayNames.has(accountKey)) accountDisplayNames.set(accountKey, accountName);
+    perAccount.set(accountKey, Number(perAccount.get(accountKey) || 0) + Number(row.amount || 0));
+  }
+
+  const accountUniverse = new Set<string>();
+  const anchorBalances = new Map<string, number>();
+  for (const row of anchorRows) {
+    const accountName = String(row.accountName || '').trim();
+    if (!accountName) continue;
+    if (/^cash account \d+$/i.test(accountName)) continue;
+    const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, accountName);
+    if (!accountKey) continue;
+    accountUniverse.add(accountKey);
+    anchorBalances.set(accountKey, Number(row.cashBalance || 0));
+    if (!accountDisplayNames.has(accountKey)) accountDisplayNames.set(accountKey, accountName);
+  }
+  for (const row of movementRows) {
+    const accountName = String(row.sourceAccountName || '').trim();
+    if (!accountName) continue;
+    if (/^cash account \d+$/i.test(accountName)) continue;
+    const accountKey = accountKeyFromParts(row.sourceAccountId, null, accountName);
+    if (!accountKey) continue;
+    accountUniverse.add(accountKey);
+    if (!anchorBalances.has(accountKey)) anchorBalances.set(accountKey, 0);
+    if (!accountDisplayNames.has(accountKey)) accountDisplayNames.set(accountKey, accountName);
+  }
+
+  if (accountUniverse.size === 0) return [];
+
+  const balancesByDate = new Map<string, Map<string, number>>();
+  const anchorKey = dateKeyUtc(anchorDate);
+  balancesByDate.set(anchorKey, new Map(anchorBalances));
+
+  // Backfill prior dates from anchor using movement deltas.
+  for (
+    let cursor = new Date(anchorDate.getTime() - 24 * 60 * 60 * 1000);
+    cursor.getTime() >= start.getTime();
+    cursor = new Date(cursor.getTime() - 24 * 60 * 60 * 1000)
+  ) {
+    const dayKey = dateKeyUtc(cursor);
+    const nextKey = dateKeyUtc(new Date(cursor.getTime() + 24 * 60 * 60 * 1000));
+    const nextBalances = balancesByDate.get(nextKey) || new Map<string, number>();
+    const movementOnNext = movementByDateAccount.get(nextKey) || new Map<string, number>();
+    const reconstructed = new Map<string, number>();
+    for (const accountKey of accountUniverse) {
+      const nextValue = Number(nextBalances.get(accountKey) || 0);
+      const deltaOnNext = Number(movementOnNext.get(accountKey) || 0);
+      reconstructed.set(accountKey, nextValue - deltaOnNext);
+    }
+    balancesByDate.set(dayKey, reconstructed);
+  }
+
+  // Roll forward dates after anchor.
+  for (
+    let cursor = new Date(anchorDate.getTime() + 24 * 60 * 60 * 1000);
+    cursor.getTime() <= end.getTime();
+    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
+  ) {
+    const dayKey = dateKeyUtc(cursor);
+    const prevKey = dateKeyUtc(new Date(cursor.getTime() - 24 * 60 * 60 * 1000));
+    const prevBalances = balancesByDate.get(prevKey) || new Map<string, number>();
+    const movementOnDay = movementByDateAccount.get(dayKey) || new Map<string, number>();
+    const rolled = new Map<string, number>();
+    for (const accountKey of accountUniverse) {
+      const prevValue = Number(prevBalances.get(accountKey) || 0);
+      const delta = Number(movementOnDay.get(accountKey) || 0);
+      rolled.set(accountKey, prevValue + delta);
+    }
+    balancesByDate.set(dayKey, rolled);
+  }
+
+  const rows: Array<{ snapshotDate: Date; accountName: string; cashBalance: number }> = [];
+  for (
+    let cursor = new Date(start);
+    cursor.getTime() <= end.getTime();
+    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
+  ) {
+    const dayKey = dateKeyUtc(cursor);
+    const balances = balancesByDate.get(dayKey);
+    if (!balances) continue;
+    for (const accountKey of accountUniverse) {
+      const accountName = accountDisplayNames.get(accountKey) || accountKey;
+      rows.push({
+        snapshotDate: parseIsoDayKey(dayKey),
+        accountName,
+        cashBalance: Number(balances.get(accountKey) || 0),
+      });
+    }
+  }
+  return rows;
+}
+
 /**
  * GET /api/operational-data
  * 
@@ -746,6 +901,59 @@ export async function GET(request: NextRequest) {
           orderBy: { snapshotDate: 'desc' },
           take: limit,
         });
+
+        if (frequency === 'daily') {
+          const dailyMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+          if (dailyMappedLineDelegate) {
+            const movementRows = await dailyMappedLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency,
+                targetField: { in: ['cash_movement', 'balance_movement:cash', 'balance_movement:otherCA'] },
+                snapshotDate: dateFilter,
+              },
+              select: {
+                snapshotDate: true,
+                sourceAccountName: true,
+                sourceAccountId: true,
+                amount: true,
+              },
+              orderBy: [{ snapshotDate: 'asc' }],
+              take: Math.max(limit * 50, 5000),
+            });
+            if (movementRows.length > 0) {
+              const anchorHistory = await prisma.cashSnapshot.findMany({
+                where: {
+                  companyId,
+                  frequency,
+                  snapshotDate: { lte: endDate },
+                },
+                orderBy: [{ snapshotDate: 'desc' }, { createdAt: 'desc' }],
+                select: {
+                  snapshotDate: true,
+                  accountName: true,
+                  accountId: true,
+                  accountNumber: true,
+                  cashBalance: true,
+                },
+                take: 10000,
+              });
+              if (anchorHistory.length > 0) {
+                const latestByAccount = new Map<string, (typeof anchorHistory)[number]>();
+                for (const row of anchorHistory) {
+                  const key = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
+                  if (!key || latestByAccount.has(key)) continue;
+                  latestByAccount.set(key, row);
+                }
+                const anchorRows = Array.from(latestByAccount.values());
+                const syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
+                if (syntheticDaily.length > 0) {
+                  data = syntheticDaily as any;
+                }
+              }
+            }
+          }
+        }
 
         console.log(`💰 Cash API - frequency: ${frequency}, records returned: ${data.length}`);
 

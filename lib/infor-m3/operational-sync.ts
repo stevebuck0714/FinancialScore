@@ -373,15 +373,26 @@ function aggregateForCompanyRollup(
 
     if (moduleType === 'cash') {
       const accountName =
-        pickString(record, ['accountName', 'bankAccount', 'name', 'ACNM', 'bankName']) || 'Cash Account';
-      const accountId = pickString(record, ['accountId', 'accountNumber', 'ACID', 'bankId']) || '';
-      const accountNumber = pickString(record, ['accountNumber', 'ACNO']) || '';
+        pickString(record, [
+          'accountName',
+          'bankAccount',
+          'name',
+          'Name',
+          'ACNM',
+          'bankName',
+          'ChtDescription',
+          'ChaDescription',
+        ]) || 'Cash Account';
+      const accountId = pickString(record, ['accountId', 'accountNumber', 'ACID', 'bankId', 'Acct']) || '';
+      const accountNumber = pickString(record, ['accountNumber', 'ACNO', 'Acct']) || '';
       const key = `${accountId}|${accountName}|${accountNumber}`;
       upsert(
         key,
         { accountName, accountId, accountNumber, balance: 0 },
         (acc) => {
-          acc.balance = Number(acc.balance || 0) + pickNumber(record, ['balance', 'cashBalance', 'amount', 'BALA', 'BAL']);
+          acc.balance =
+            Number(acc.balance || 0) +
+            pickNumber(record, ['balance', 'cashBalance', 'amount', 'BALA', 'BAL', 'DomBalance', 'ForBalance']);
         }
       );
       continue;
@@ -566,7 +577,23 @@ function buildSlLedgersPeriodFilter(window?: SyncWindow, site?: string): string 
           and
           (ControlYear < '${endYear}' or (ControlYear='${endYear}' and ControlPeriod <= '${endPeriodToken}'))
         )`;
-  const clauses = [periodClause];
+  const startDate = formatCsiDateLiteral(window.startDate);
+  const endDate = formatCsiDateLiteral(window.endDate);
+  const transDateClause = `(TransDate >= '${startDate}' and TransDate <= '${endDate}')`;
+  const clauses = [periodClause, transDateClause];
+  const siteValue = String(site || '').trim();
+  if (siteValue) {
+    const safeSite = siteValue.replace(/'/g, "''");
+    clauses.unshift(`Site='${safeSite}'`);
+  }
+  return `(${clauses.join(' and ')})`;
+}
+
+function buildSlGlTransWindowFilter(window?: SyncWindow, site?: string): string | null {
+  if (!window) return null;
+  const start = formatCsiDateLiteral(window.startDate);
+  const end = formatCsiDateLiteral(window.endDate);
+  const clauses = [`(TransDate >= '${start}' and TransDate <= '${end}')`];
   const siteValue = String(site || '').trim();
   if (siteValue) {
     const safeSite = siteValue.replace(/'/g, "''");
@@ -607,6 +634,16 @@ function applyCsiSourceWindowAndSort(
     params.set('filter', filter);
     params.set('recordCap', '250');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'Site asc,TransNum asc');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+  }
+
+  if (moduleType === 'gl' && ido === 'SLGLTRANS') {
+    const filter = buildSlGlTransWindowFilter(window, row.site);
+    if (!filter) return { endpointPath, applied: false };
+    params.set('filter', filter);
+    params.set('recordCap', '500');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'TransDate desc, RecordDate desc');
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true };
   }
@@ -1282,17 +1319,26 @@ async function saveCash(
   const rows = records
     .map((record, idx) => {
       const accountName =
-        pickString(record, ['accountName', 'bankAccount', 'name', 'ACNM', 'bankName']) ||
+        pickString(record, [
+          'accountName',
+          'bankAccount',
+          'name',
+          'Name',
+          'ACNM',
+          'bankName',
+          'ChtDescription',
+          'ChaDescription',
+        ]) ||
         `Cash Account ${idx + 1}`;
-      const accountId = pickString(record, ['accountId', 'accountNumber', 'ACID', 'bankId']);
-      const balance = pickNumber(record, ['balance', 'cashBalance', 'amount', 'BALA', 'BAL']);
+      const accountId = pickString(record, ['accountId', 'accountNumber', 'ACID', 'bankId', 'Acct']);
+      const balance = pickNumber(record, ['balance', 'cashBalance', 'amount', 'BALA', 'BAL', 'DomBalance', 'ForBalance']);
       return {
         companyId,
         snapshotDate,
         frequency,
         accountId,
         accountName,
-        accountNumber: pickString(record, ['accountNumber', 'ACNO']),
+        accountNumber: pickString(record, ['accountNumber', 'ACNO', 'Acct']),
         cashBalance: balance,
         changeAmount: null as number | null,
         changePercent: null as number | null,
@@ -1303,6 +1349,126 @@ async function saveCash(
   if (rows.length === 0) return 0;
   await prisma.cashSnapshot.createMany({ data: rows });
   return rows.length;
+}
+
+async function saveBalanceMovementsFromGl(
+  companyId: string,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  records: Record<string, unknown>[]
+): Promise<number> {
+  const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+  if (!mappedLineDelegate || records.length === 0) return 0;
+
+  const accountMappings = await prisma.accountMapping.findMany({
+    where: {
+      companyId,
+      qbAccountClassification: { in: ['A', 'Asset', 'ASSET', 'asset', 'L', 'Liability', 'LIABILITY', 'liability'] },
+    },
+    select: {
+      qbAccount: true,
+      qbAccountId: true,
+      qbAccountCode: true,
+      targetField: true,
+    },
+  });
+
+  if (accountMappings.length === 0) return 0;
+
+  const tokenToTargetFields = new Map<string, Set<string>>();
+  for (const mapping of accountMappings) {
+    const targetField = String(mapping.targetField || '').trim();
+    if (!targetField) continue;
+    const tokens = [mapping.qbAccount, mapping.qbAccountId, mapping.qbAccountCode]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+    for (const token of tokens) {
+      if (!tokenToTargetFields.has(token)) tokenToTargetFields.set(token, new Set<string>());
+      tokenToTargetFields.get(token)!.add(targetField);
+    }
+  }
+
+  const movementByKey = new Map<
+    string,
+    { snapshotDate: Date; sourceAccountName: string; sourceAccountId: string | null; amount: number; targetField: string }
+  >();
+
+  for (const record of records) {
+    const accountId =
+      pickString(record, ['Acct', 'accountId', 'accountNumber', 'ACID']) ||
+      pickString(record, ['ChaAccount', 'GLAccount']) ||
+      null;
+    const accountName =
+      pickString(record, ['ChaDescription', 'ChtDescription', 'accountName', 'name', 'Name']) ||
+      (accountId ? `Account ${accountId}` : null);
+    const matchingTokens = [accountId, accountName]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+    const matchedTargetFields = new Set<string>();
+    for (const token of matchingTokens) {
+      const fields = tokenToTargetFields.get(token);
+      if (!fields) continue;
+      for (const field of fields) matchedTargetFields.add(field);
+    }
+    if (matchedTargetFields.size === 0) continue;
+
+    const transDate = parseMaybeDate(
+      pickString(record, ['TransDate', 'transDate', 'CheckDate', 'FRDerDate', 'RecordDate', 'date'])
+    );
+    if (!transDate) continue;
+    const snapshotDate = startOfUtcDay(transDate);
+    const amount = pickNumber(record, ['DomAmount', 'ForAmount', 'amount', 'Amount', 'DerSumDomAmount']);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+
+    const sourceAccountName = String(accountName || accountId || 'Cash Account');
+    const sourceAccountId = accountId ? String(accountId) : null;
+    for (const mappedTargetField of matchedTargetFields) {
+      const targetField = `balance_movement:${mappedTargetField}`;
+      const key = `${snapshotDate.toISOString()}|${targetField}|${sourceAccountName}`;
+      if (!movementByKey.has(key)) {
+        movementByKey.set(key, { snapshotDate, sourceAccountName, sourceAccountId, amount: 0, targetField });
+      }
+      const acc = movementByKey.get(key)!;
+      acc.amount += amount;
+      if (!acc.sourceAccountId && sourceAccountId) acc.sourceAccountId = sourceAccountId;
+    }
+  }
+
+  const movementRows = Array.from(movementByKey.values());
+  if (movementRows.length === 0) return 0;
+
+  const affectedDateAndTargets = Array.from(
+    new Set(movementRows.map((row) => `${row.snapshotDate.toISOString()}|${row.targetField}`))
+  );
+  await Promise.all(
+    affectedDateAndTargets.map((token) => {
+      const [dateIso, targetField] = token.split('|');
+      return mappedLineDelegate.deleteMany({
+        where: {
+          companyId,
+          frequency,
+          targetField,
+          snapshotDate: new Date(dateIso),
+        },
+      });
+    })
+  );
+
+  await mappedLineDelegate.createMany({
+    data: movementRows.map((row) => ({
+      companyId,
+      snapshotDate: row.snapshotDate,
+      frequency,
+      sourceAccountName: row.sourceAccountName,
+      sourceAccountId: row.sourceAccountId,
+      sourceAccountType: 'gl_balance_account',
+      targetField: row.targetField,
+      amount: row.amount,
+      sourcePlatform: 'INFOR_M3',
+    })),
+    skipDuplicates: true,
+  });
+
+  return movementRows.length;
 }
 
 async function saveARAging(
@@ -2298,6 +2464,16 @@ export async function syncInforM3OperationalData(
           switch (moduleType) {
             case 'cash':
               moduleRecordsCreated = await saveCash(companyId, snapshotDate, frequency, records);
+              break;
+            case 'gl':
+              {
+                const glProgram = String(row.miProgram || '').trim().toUpperCase();
+                if (glProgram === 'SLLEDGERS' || glProgram === 'SLGLTRANS') {
+                moduleRecordsCreated = await saveBalanceMovementsFromGl(companyId, frequency, records);
+                } else {
+                  moduleRecordsCreated = records.length;
+                }
+              }
               break;
             case 'ar':
               {
