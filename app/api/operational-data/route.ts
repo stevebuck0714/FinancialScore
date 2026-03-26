@@ -97,6 +97,36 @@ function accountKeyFromParts(
   return nameToken ? `name:${nameToken}` : '';
 }
 
+function normalizeAccountToken(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^cash\s*-\s*/i, '');
+}
+
+async function getAssetCashMappingTokens(companyId: string): Promise<Set<string>> {
+  const mappings = await prisma.accountMapping.findMany({
+    where: {
+      companyId,
+      targetField: { in: ['cash', 'otherCA'] },
+      qbAccountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
+    },
+    select: {
+      qbAccount: true,
+      qbAccountId: true,
+      qbAccountCode: true,
+    },
+  });
+  const tokens = new Set<string>();
+  for (const mapping of mappings) {
+    for (const rawToken of [mapping.qbAccount, mapping.qbAccountId, mapping.qbAccountCode]) {
+      const token = normalizeAccountToken(rawToken);
+      if (token) tokens.add(token);
+    }
+  }
+  return tokens;
+}
+
 function buildDailyCashSeriesFromMovements(
   anchorRows: Array<{
     snapshotDate: Date;
@@ -953,6 +983,18 @@ export async function GET(request: NextRequest) {
               }
             }
           }
+        }
+        const assetCashTokens = await getAssetCashMappingTokens(companyId);
+        if (assetCashTokens.size > 0) {
+          data = data.map((record) => {
+            const balance = Number(record.cashBalance || 0);
+            if (!Number.isFinite(balance) || balance >= 0) return record;
+            const matchesAssetMappedAccount = [record.accountId, record.accountNumber, record.accountName]
+              .map((value) => normalizeAccountToken(String(value || '')))
+              .some((token) => token && assetCashTokens.has(token));
+            if (!matchesAssetMappedAccount) return record;
+            return { ...record, cashBalance: Math.abs(balance) };
+          });
         }
 
         console.log(`💰 Cash API - frequency: ${frequency}, records returned: ${data.length}`);

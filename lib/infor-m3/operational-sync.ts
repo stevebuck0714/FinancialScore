@@ -1315,6 +1315,31 @@ async function saveCash(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
+  const assetCashMappings = await prisma.accountMapping.findMany({
+    where: {
+      companyId,
+      targetField: { in: ['cash', 'otherCA'] },
+      qbAccountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
+    },
+    select: {
+      qbAccount: true,
+      qbAccountId: true,
+      qbAccountCode: true,
+    },
+  });
+  const normalizeToken = (value: string | null | undefined): string =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^cash\s*-\s*/i, '');
+  const assetCashTokens = new Set<string>();
+  for (const mapping of assetCashMappings) {
+    for (const rawToken of [mapping.qbAccount, mapping.qbAccountId, mapping.qbAccountCode]) {
+      const token = normalizeToken(rawToken);
+      if (token) assetCashTokens.add(token);
+    }
+  }
+
   await prisma.cashSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
   const rows = records
     .map((record, idx) => {
@@ -1331,15 +1356,22 @@ async function saveCash(
         ]) ||
         `Cash Account ${idx + 1}`;
       const accountId = pickString(record, ['accountId', 'accountNumber', 'ACID', 'bankId', 'Acct']);
+      const accountNumber = pickString(record, ['accountNumber', 'ACNO', 'Acct']);
       const balance = pickNumber(record, ['balance', 'cashBalance', 'amount', 'BALA', 'BAL', 'DomBalance', 'ForBalance']);
+      const shouldNormalizeSign =
+        Number.isFinite(balance) &&
+        balance < 0 &&
+        [accountId, accountNumber, accountName]
+          .map((value) => normalizeToken(value))
+          .some((token) => token && assetCashTokens.has(token));
       return {
         companyId,
         snapshotDate,
         frequency,
         accountId,
         accountName,
-        accountNumber: pickString(record, ['accountNumber', 'ACNO', 'Acct']),
-        cashBalance: balance,
+        accountNumber,
+        cashBalance: shouldNormalizeSign ? Math.abs(balance) : balance,
         changeAmount: null as number | null,
         changePercent: null as number | null,
       };

@@ -5813,16 +5813,23 @@ function FinancialScorePage() {
 
       while (chunkCount < maxChunks) {
         chunkCount += 1;
+        const isDailyCsiSync = isCsiCompany && frequency === 'daily';
+        const requestedMode = options?.mode;
+        const resolvedMode = requestedMode || (isDailyCsiSync ? 'business_day_backfill' : undefined);
+        const resolvedBackfillMonths =
+          typeof options?.backfillMonths === 'number' && Number.isFinite(options.backfillMonths)
+            ? Math.max(1, Math.floor(options.backfillMonths))
+            : isDailyCsiSync
+              ? 36
+              : undefined;
         const payload: Record<string, unknown> = {
           companyId,
           frequency,
           programBatchSize: 1,
           ...(String(site || '').trim() ? { site: String(site).trim() } : {}),
         };
-        if (options?.mode) payload.mode = options.mode;
-        if (typeof options?.backfillMonths === 'number' && Number.isFinite(options.backfillMonths)) {
-          payload.backfillMonths = Math.max(1, Math.floor(options.backfillMonths));
-        }
+        if (resolvedMode) payload.mode = resolvedMode;
+        if (typeof resolvedBackfillMonths === 'number') payload.backfillMonths = resolvedBackfillMonths;
         if (typeof options?.lookbackDays === 'number' && Number.isFinite(options.lookbackDays)) {
           payload.lookbackDays = Math.max(1, Math.floor(options.lookbackDays));
         }
