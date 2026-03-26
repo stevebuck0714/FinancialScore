@@ -266,6 +266,75 @@ function buildDailyCashSeriesFromMovements(
   return rows;
 }
 
+function startOfUtcWeek(date: Date): Date {
+  const dayStart = startOfUtcDay(date);
+  const day = dayStart.getUTCDay(); // 0=Sun, 1=Mon, ...
+  const offset = day === 0 ? -6 : 1 - day; // Monday as week start
+  return new Date(dayStart.getTime() + offset * 24 * 60 * 60 * 1000);
+}
+
+function aggregateCashSeriesByFrequency(
+  rows: Array<{
+    snapshotDate: Date;
+    accountName: string;
+    cashBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }>,
+  frequency: 'daily' | 'weekly' | 'monthly'
+): Array<{
+  snapshotDate: Date;
+  accountName: string;
+  cashBalance: number;
+  accountId: string | null;
+  accountNumber: string | null;
+}> {
+  if (frequency === 'daily') return rows;
+  const bucketByKey = new Map<
+    string,
+    Map<
+      string,
+      {
+        snapshotDate: Date;
+        accountName: string;
+        cashBalance: number;
+        accountId: string | null;
+        accountNumber: string | null;
+      }
+    >
+  >();
+
+  for (const row of rows) {
+    const rowDate = startOfUtcDay(new Date(row.snapshotDate));
+    const bucketDate = frequency === 'weekly' ? startOfUtcWeek(rowDate) : startOfMonth(rowDate);
+    const bucketKey = dateKeyUtc(bucketDate);
+    if (!bucketByKey.has(bucketKey)) bucketByKey.set(bucketKey, new Map());
+    const perAccount = bucketByKey.get(bucketKey)!;
+    const accountKey =
+      accountKeyFromParts(row.accountId, row.accountNumber, row.accountName) ||
+      `name:${normalizeAccountNameForKey(row.accountName)}`;
+    const existing = perAccount.get(accountKey);
+    if (!existing || new Date(row.snapshotDate).getTime() >= new Date(existing.snapshotDate).getTime()) {
+      perAccount.set(accountKey, row);
+    }
+  }
+
+  const aggregated: Array<{
+    snapshotDate: Date;
+    accountName: string;
+    cashBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }> = [];
+  const sortedBucketKeys = Array.from(bucketByKey.keys()).sort((a, b) => a.localeCompare(b));
+  for (const bucketKey of sortedBucketKeys) {
+    const perAccount = bucketByKey.get(bucketKey)!;
+    const rowsInBucket = Array.from(perAccount.values()).sort((a, b) => a.accountName.localeCompare(b.accountName));
+    aggregated.push(...rowsInBucket);
+  }
+  return aggregated;
+}
+
 /**
  * GET /api/operational-data
  * 
@@ -937,68 +1006,55 @@ export async function GET(request: NextRequest) {
         });
 
       case 'cash':
-        if (frequency === 'daily') {
-          // Canonical daily cash comes from GL-derived balance movements only.
-          data = [];
-          const dailyMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
-          if (dailyMappedLineDelegate) {
-            const movementRows = await dailyMappedLineDelegate.findMany({
-              where: {
-                companyId,
-                frequency,
-                targetField: 'balance_movement:cash',
-                snapshotDate: dateFilter,
-              },
-              select: {
-                snapshotDate: true,
-                sourceAccountName: true,
-                sourceAccountId: true,
-                amount: true,
-              },
-              orderBy: [{ snapshotDate: 'asc' }],
-              take: Math.max(limit * 50, 5000),
-            });
-            if (movementRows.length > 0) {
-              const anchorHistory = await prisma.cashSnapshot.findMany({
-                where: {
-                  companyId,
-                  frequency,
-                  snapshotDate: { lte: endDate },
-                },
-                orderBy: [{ snapshotDate: 'desc' }, { createdAt: 'desc' }],
-                select: {
-                  snapshotDate: true,
-                  accountName: true,
-                  accountId: true,
-                  accountNumber: true,
-                  cashBalance: true,
-                },
-                take: 10000,
-              });
-              if (anchorHistory.length > 0) {
-                const latestByAccount = new Map<string, (typeof anchorHistory)[number]>();
-                for (const row of anchorHistory) {
-                  const key = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
-                  if (!key || latestByAccount.has(key)) continue;
-                  latestByAccount.set(key, row);
-                }
-                const anchorRows = Array.from(latestByAccount.values());
-                const syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
-                data = syntheticDaily as any;
-              }
-            }
-          }
-        } else {
-          // Weekly/monthly cash still reads persisted snapshots.
-          data = await prisma.cashSnapshot.findMany({
+        // Canonical cash series comes from GL-derived cash movements.
+        data = [];
+        const cashMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+        if (cashMappedLineDelegate) {
+          const movementRows = await cashMappedLineDelegate.findMany({
             where: {
               companyId,
-              frequency,
+              frequency: 'daily',
+              targetField: 'balance_movement:cash',
               snapshotDate: dateFilter,
             },
-            orderBy: { snapshotDate: 'desc' },
-            take: limit,
+            select: {
+              snapshotDate: true,
+              sourceAccountName: true,
+              sourceAccountId: true,
+              amount: true,
+            },
+            orderBy: [{ snapshotDate: 'asc' }],
+            take: Math.max(limit * 50, 5000),
           });
+          if (movementRows.length > 0) {
+            const anchorHistory = await prisma.cashSnapshot.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: { lte: endDate },
+              },
+              orderBy: [{ snapshotDate: 'desc' }, { createdAt: 'desc' }],
+              select: {
+                snapshotDate: true,
+                accountName: true,
+                accountId: true,
+                accountNumber: true,
+                cashBalance: true,
+              },
+              take: 10000,
+            });
+            if (anchorHistory.length > 0) {
+              const latestByAccount = new Map<string, (typeof anchorHistory)[number]>();
+              for (const row of anchorHistory) {
+                const key = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
+                if (!key || latestByAccount.has(key)) continue;
+                latestByAccount.set(key, row);
+              }
+              const anchorRows = Array.from(latestByAccount.values());
+              const syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
+              data = aggregateCashSeriesByFrequency(syntheticDaily, frequency) as any;
+            }
+          }
         }
         const assetCashTokens = await getAssetCashMappingTokens(companyId);
         if (assetCashTokens.size > 0) {
