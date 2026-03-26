@@ -897,8 +897,10 @@ export async function POST(request: NextRequest) {
     });
 
     const ingestionStartedAt = Date.now();
-    const ingestResult = canIngestFinancials
-      ? await ingestFinancialPayload({
+    let ingestResult: any;
+    if (canIngestFinancials) {
+      try {
+        ingestResult = await ingestFinancialPayload({
           companyId,
           platform: connector.platform,
           source: connector.source,
@@ -907,17 +909,45 @@ export async function POST(request: NextRequest) {
           targetMonth: throughMonth,
           mode: 'through',
           maxMonths: CSI_REBUILD_MAX_MONTHS,
-        })
-      : {
+        });
+      } catch (ingestError) {
+        const ingestMessage = ingestError instanceof Error ? ingestError.message : String(ingestError);
+        console.error('[ERP COA] Financial ingestion failed after successful seed', { ingestMessage });
+        ingestResult = {
           ok: true as const,
           status: 200,
           recordsImported: 0,
           monthsTouched: [] as string[],
           latestMonthWarnings: [] as unknown[],
           ingestionSkipped: true,
+          partialSuccess: true,
           ingestionSkipReason:
-            'COA payload loaded for mapping seed, but monthlyData rows were not present for financial snapshot ingestion.',
+            'Account mappings refreshed, but monthly financial ingestion failed. Reprocess monthly data separately if needed.',
+          ingestionError: ingestMessage,
         };
+      }
+    } else {
+      ingestResult = {
+        ok: true as const,
+        status: 200,
+        recordsImported: 0,
+        monthsTouched: [] as string[],
+        latestMonthWarnings: [] as unknown[],
+        ingestionSkipped: true,
+        ingestionSkipReason:
+          'COA payload loaded for mapping seed, but monthlyData rows were not present for financial snapshot ingestion.',
+      };
+    }
+    if (!ingestResult?.ok && seedSummary) {
+      ingestResult = {
+        ...ingestResult,
+        ok: true,
+        status: 200,
+        partialSuccess: true,
+        ingestionSkipReason:
+          'Account mappings refreshed, but monthly financial ingestion reported errors. Reprocess monthly data separately if needed.',
+      };
+    }
     timings.ingestionMs = Date.now() - ingestionStartedAt;
     timings.totalMs = Date.now() - requestStartedAt;
     console.log('[ERP COA] Financial ingestion complete', {
