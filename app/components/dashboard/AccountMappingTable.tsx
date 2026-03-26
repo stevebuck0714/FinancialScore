@@ -332,17 +332,25 @@ export default function AccountMappingTable({
 
   const getClassId = (mapping: AccountMapping): string => {
     const rawMapping = mapping as any;
-    const explicit = String(
-      mapping.qbAccountCode ||
-        mapping.qbAccountId ||
-        rawMapping.accountCode ||
-        rawMapping.accountId ||
-        rawMapping.acctId ||
-        ''
-    ).trim();
-    if (explicit) return explicit;
-    const match = String(mapping.qbAccount || '').match(/(\d{4,})/);
-    return match?.[1] || '';
+    const extractNumericCode = (...values: unknown[]): string => {
+      for (const value of values) {
+        const raw = String(value || '').trim();
+        if (!raw) continue;
+        const directMatch = raw.match(/\b(\d{4,})\b/);
+        if (directMatch?.[1]) return directMatch[1];
+        const digitsOnly = raw.replace(/\D/g, '');
+        if (digitsOnly.length >= 4) return digitsOnly;
+      }
+      return '';
+    };
+    return extractNumericCode(
+      mapping.qbAccountCode,
+      mapping.qbAccountId,
+      rawMapping.accountCode,
+      rawMapping.accountId,
+      rawMapping.acctId,
+      mapping.qbAccount,
+    );
   };
 
   const renderMappingRow = (mapping: AccountMapping, sectionKey: string) => {

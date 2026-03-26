@@ -76,13 +76,32 @@ function parseAccountSnapshot(value: unknown): AccountSnapshotRow[] {
     .map((row) => {
       if (!row || typeof row !== "object") return null;
       const record = row as Record<string, unknown>;
-      const accountId = typeof record.accountId === "string" ? record.accountId.trim() : "";
-      const accountName = typeof record.accountName === "string" ? record.accountName.trim() : "";
+      const accountId =
+        typeof record.accountId === "string" ? record.accountId.trim()
+          : typeof record.accountCode === "string" ? record.accountCode.trim()
+          : typeof record.acct === "string" ? record.acct.trim()
+          : typeof record.Acct === "string" ? record.Acct.trim()
+          : typeof record.account === "string" ? record.account.trim()
+          : typeof record.Account === "string" ? record.Account.trim()
+          : "";
+      const accountName =
+        typeof record.accountName === "string" ? record.accountName.trim()
+          : typeof record.description === "string" ? record.description.trim()
+          : typeof record.Description === "string" ? record.Description.trim()
+          : typeof record.ChaDescription === "string" ? record.ChaDescription.trim()
+          : typeof record.FRDerDescription === "string" ? record.FRDerDescription.trim()
+          : "";
       if (!accountId || !accountName) return null;
       return {
         accountId,
         accountName,
-        accountCode: typeof record.accountCode === "string" ? record.accountCode.trim() : null,
+        accountCode:
+          typeof record.accountCode === "string" ? record.accountCode.trim()
+            : typeof record.acct === "string" ? record.acct.trim()
+            : typeof record.Acct === "string" ? record.Acct.trim()
+            : typeof record.account === "string" ? record.account.trim()
+            : typeof record.Account === "string" ? record.Account.trim()
+            : null,
         classification:
           typeof record.classification === "string" ? record.classification.trim() : null,
       } as AccountSnapshotRow;

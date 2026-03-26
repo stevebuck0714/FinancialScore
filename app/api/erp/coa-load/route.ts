@@ -6,6 +6,9 @@ import { seedQuickBooksDesktopAccountMappings } from '@/lib/quickbooks-desktop/a
 import { seedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-financial-builder';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
+
 type ConnectorConfig = {
   enabled: boolean;
   platform: 'QUICKBOOKS' | 'INFOR_M3' | 'SAGE_INTACCT' | 'DYNAMICS365' | 'ACUMATICA';
@@ -438,8 +441,6 @@ async function buildCsiMonthlyDataFromSlLedgersLogs(params: {
     },
   };
 }
-
-export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {

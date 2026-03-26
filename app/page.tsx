@@ -1417,6 +1417,26 @@ function FinancialScorePage() {
     return String(numeric);
   };
 
+  const getDisplayAccountCode = (mapping: any): string => {
+    const values = [
+      mapping?.qbAccountCode,
+      mapping?.qbAccountId,
+      mapping?.accountCode,
+      mapping?.accountId,
+      mapping?.acctId,
+      mapping?.qbAccount,
+    ];
+    for (const value of values) {
+      const raw = String(value || '').trim();
+      if (!raw) continue;
+      const directMatch = raw.match(/\b(\d{4,})\b/);
+      if (directMatch?.[1]) return directMatch[1];
+      const digitsOnly = raw.replace(/\D/g, '');
+      if (digitsOnly.length >= 4) return digitsOnly;
+    }
+    return 'N/A';
+  };
+
   const getMappingMatchKey = (mapping: any): string => {
     const code =
       normalizeAccountCodeForMatch(mapping?.qbAccountCode) ||
@@ -5162,15 +5182,31 @@ function FinancialScorePage() {
         companyId: companyIdForLoad,
         throughMonth: erpCaoThroughMonth,
       });
-      const response = await fetch('/api/erp/coa-load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: companyIdForLoad,
-          throughMonth: erpCaoThroughMonth,
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
+      const payload = {
+        companyId: companyIdForLoad,
+        throughMonth: erpCaoThroughMonth,
+      };
+      const runCoaLoadRequest = async () => {
+        const response = await fetch('/api/erp/coa-load', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        return { response, result };
+      };
+
+      let response: Response;
+      let result: any;
+      try {
+        ({ response, result } = await runCoaLoadRequest());
+      } catch (firstError) {
+        // Network-level drops (e.g., transient gateway reset) surface as "Failed to fetch".
+        // Retry once before surfacing failure to the user.
+        console.warn('[ERP COA] First request failed, retrying once', firstError);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        ({ response, result } = await runCoaLoadRequest());
+      }
       console.log('[ERP COA] Response received', { status: response.status, ok: response.ok, result });
       if (!response.ok || !result?.ok) {
         throw new Error(result?.details || result?.error || 'Failed to load ERP COA data');
@@ -11794,15 +11830,7 @@ function FinancialScorePage() {
                                   </select>
                                 </td>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>
-                                  {String(
-                                    mapping.qbAccountCode ||
-                                    mapping.qbAccountId ||
-                                    mapping.accountCode ||
-                                    mapping.accountId ||
-                                    mapping.acctId ||
-                                    ''
-                                  ).trim() ||
-                                    (String(mapping.qbAccount || '').match(/(\d{4,})/)?.[1] || 'N/A')}
+                                  {getDisplayAccountCode(mapping)}
                                 </td>
                                 <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
