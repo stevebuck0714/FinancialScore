@@ -22,6 +22,22 @@ type SitePolicy = 'required' | 'optional' | 'none';
 
 const SITE_REQUIRED_CSI_IDOS = new Set(['SLITEMLOCS', 'SLCOITEMS', 'SLINVHDRS', 'SLBANKHDRS']);
 const SITE_OPTIONAL_CSI_IDOS = new Set(['SLITEMS', 'SLARTRANS', 'SLAPTRX', 'SLAPTRXP', 'SLAPTRXPS', 'SLAPTRXS', 'SLCUSTOMERS', 'SLVENDORS']);
+const SL_COITEMS_SAFE_PROPERTIES = [
+  'CoNum',
+  'CoLine',
+  'CoRelease',
+  'Item',
+  'Stat',
+  'Price',
+  'QtyOrdered',
+  'QtyShipped',
+  'QtyInvoiced',
+  'Amount',
+  'ExtPrice',
+  'InvNum',
+  'Whse',
+  'DueDate',
+];
 
 function resolveCsiSitePolicy(program: AccountingProgram): SitePolicy {
   const ido = String(program.miProgram || '').trim().toUpperCase();
@@ -49,6 +65,21 @@ function normalizeLegacyProgramField(value: string, placeholder: 'cono' | 'divi'
 
 function normalizeOptionalString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function enforceSlCoitemsSafeEndpoint(endpointPath: string, miProgram: string): string {
+  const path = String(endpointPath || '').trim();
+  if (!path) return path;
+  const isSlCoitemsProgram = String(miProgram || '').trim().toUpperCase() === 'SLCOITEMS';
+  const isSlCoitemsPath = /\/ido\/load\/slcoitems/i.test(path);
+  if (!isSlCoitemsProgram && !isSlCoitemsPath) return path;
+
+  const [base, queryString = ''] = path.split('?');
+  const params = new URLSearchParams(queryString);
+  params.set('properties', SL_COITEMS_SAFE_PROPERTIES.join(','));
+  if (!params.get('recordCap')) params.set('recordCap', '1000');
+  const next = params.toString();
+  return next ? `${base}?${next}` : base;
 }
 
 function normalizeEnabledValue(value: unknown): boolean {
@@ -89,7 +120,7 @@ function sanitizePrograms(
     const module = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgram = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
     const transactions = normalizeTransactions(row).filter((tx) => !isLegacyTransactionPlaceholder(tx));
-    const endpointPath = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
+    let endpointPath = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
     // Support legacy aliases seen across CSI payload variants.
     const mongooseConfig = normalizeOptionalString(
       row?.mongooseConfig ??
@@ -119,6 +150,7 @@ function sanitizePrograms(
     if (!module || (!miProgram && !endpointPath)) {
       throw new Error('Each accounting program row must include module plus MI program or endpoint path.');
     }
+    endpointPath = enforceSlCoitemsSafeEndpoint(endpointPath, miProgram);
     if (requireComplete && inforSystem === 'INFOR_CSI' && enabled) {
       // For CSI, incomplete rows are automatically disabled instead of
       // blocking save, so the Enabled toggle behaves as operators expect.

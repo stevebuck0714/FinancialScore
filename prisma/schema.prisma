@@ -988,6 +988,97 @@ model ARPaymentFact {
   @@index([companyId, invoiceNo])
 }
 
+model ARInvoiceDetail {
+  id               String   @id @default(cuid())
+  companyId        String
+  asOfDate         DateTime
+  snapshotFrequency String  @default("daily")
+  customerId       String?
+  customerName     String
+  invoiceId        String
+  invoiceDate      DateTime?
+  dueDate          DateTime?
+  invoiceAmount    Float
+  amountPaid       Float
+  remainingBalance Float
+  daysOutstanding  Int?
+  agingBucket      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([companyId, asOfDate(sort: Desc)])
+  @@index([companyId, customerId, asOfDate(sort: Desc)])
+  @@index([companyId, invoiceId])
+  @@unique([companyId, asOfDate, snapshotFrequency, invoiceId, customerName])
+}
+
+model CustomerContractStatus {
+  id                    String   @id @default(cuid())
+  companyId             String
+  asOfDate              DateTime
+  customerId            String?
+  customerName          String
+  contractId            String
+  contractValue         Float
+  earnedToDate          Float
+  invoicedToDate        Float
+  remainingValue        Float
+  accruedRevenueUnbilled Float   @default(0)
+  arOutstanding         Float    @default(0)
+  cashCollectedToDate   Float    @default(0)
+  lastPaymentDate       DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([companyId, asOfDate(sort: Desc)])
+  @@index([companyId, customerId, asOfDate(sort: Desc)])
+  @@unique([companyId, asOfDate, customerName, contractId])
+}
+
+model CustomerCashFlow {
+  id          String   @id @default(cuid())
+  companyId   String
+  customerId  String?
+  customerName String
+  date        DateTime
+  cashInflow  Float
+  source      String
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, date(sort: Desc)])
+  @@index([companyId, customerId, date(sort: Desc)])
+}
+
+model CustomerOrderLineSnapshot {
+  id               String   @id @default(cuid())
+  companyId        String
+  snapshotDate     DateTime
+  frequency        String   @default("daily")
+  customerId       String?
+  customerName     String
+  orderId          String
+  lineId           String
+  qtyOrdered       Float
+  qtyInvoiced      Float
+  unitPrice        Float
+  contractValue    Float
+  invoicedAmount   Float
+  remainingAmount  Float
+  unbilledAccrual  Float    @default(0)
+  sourcePlatform   String?  @default("INFOR_M3")
+  sourceProgram    String?
+  sourceTransaction String?
+  cono             String?
+  divi             String?
+  createdAt        DateTime @default(now())
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, customerId, snapshotDate(sort: Desc)])
+  @@index([companyId, orderId])
+  @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
+}
+
 model APOpenBillSnapshot {
   id                String   @id @default(cuid())
   companyId         String

@@ -132,9 +132,9 @@ function toNumeric(value: unknown): number {
 
 function deriveArBucketsFromRow(
   row: {
+    amountDueHome?: number | null;
     dueDate?: Date | null;
     invoiceDate?: Date | null;
-    amountDueHome?: number | null;
     current?: number | null;
     days1to30?: number | null;
     days31to60?: number | null;
@@ -167,6 +167,8 @@ function deriveArBucketsFromRow(
       days90plus,
     };
   }
+
+  // Fallback aging for CSI tenants that provide open AR amount without bucket splits.
   const dueDateRaw = row.dueDate ? new Date(row.dueDate) : null;
   const invoiceDateRaw = row.invoiceDate ? new Date(row.invoiceDate) : null;
   const fallbackDueFromInvoice =
@@ -199,19 +201,14 @@ function deriveArBucketsFromRow(
   if (overdueDays <= 90) {
     return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: 0, days61to90: openAmount, days90plus: 0 };
   }
-  return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: openAmount };
-}
-
-function hasAnyArBucketValues(records: any[]): boolean {
-  return records.some((row: any) => {
-    const bucketTotal =
-      Number(row.current || 0) +
-      Number(row.days1to30 || 0) +
-      Number(row.days31to60 || 0) +
-      Number(row.days61to90 || 0) +
-      Number(row.days90plus || 0);
-    return bucketTotal > 0;
-  });
+  return {
+    totalAR: openAmount,
+    current: 0,
+    days1to30: 0,
+    days31to60: 0,
+    days61to90: 0,
+    days90plus: openAmount,
+  };
 }
 
 function isClosedArStatus(status: string | null | undefined): boolean {
@@ -225,6 +222,28 @@ function isClosedArStatus(status: string | null | undefined): boolean {
     token.includes('settled') ||
     token.includes('history')
   );
+}
+
+function isInvoiceLikeArOpenRow(row: { status?: string | null; invoiceNo?: string | null }): boolean {
+  const statusToken = String(row.status || '').trim().toUpperCase();
+  const invoiceNo = String(row.invoiceNo || '').trim().toUpperCase();
+  if (invoiceNo.startsWith('CR')) return false;
+  if (statusToken === 'C' || statusToken === 'P') return false;
+  if (
+    statusToken.includes('CREDIT') ||
+    statusToken.includes('PAYMENT') ||
+    statusToken.includes('CASH') ||
+    statusToken.includes('RECEIPT')
+  ) {
+    return false;
+  }
+  // CSI common open AR document type tokens:
+  // I = invoice, D = debit memo.
+  if (statusToken === 'I' || statusToken === 'D') return true;
+  if (statusToken.includes('INVOICE') || statusToken.includes('DEBIT')) return true;
+  // If status is missing/unknown but invoice number exists and is not a credit memo,
+  // keep it so we don't drop legitimate invoice-like documents.
+  return Boolean(invoiceNo);
 }
 
 async function getAssetCashMappingTokens(companyId: string): Promise<Set<string>> {
@@ -615,26 +634,9 @@ export async function GET(request: NextRequest) {
           orderBy: { snapshotDate: 'desc' },
           take: limit,
         });
-        // Many CSI tenants only persist dense AR aging snapshots at daily grain.
-        // If the requested rollup yields <=1 point, fall back to daily so trend
-        // charts still render a useful time series.
-        if (data.length <= 1 && frequency !== 'daily') {
-          const dailyData = await prisma.aRAgingSnapshot.findMany({
-            where: {
-              companyId,
-              frequency: 'daily',
-              snapshotDate: dateFilter,
-            },
-            orderBy: { snapshotDate: 'desc' },
-            take: Math.max(limit * 4, 200),
-          });
-          if (dailyData.length > data.length) {
-            data = dailyData;
-            arFrequencyForQuery = 'daily';
-          }
-        }
 
         let unpaidByCustomer: Array<{
+          customerId: string;
           customerName: string;
           current: number;
           days1to30: number;
@@ -642,6 +644,12 @@ export async function GET(request: NextRequest) {
           days61to90: number;
           days90plus: number;
           totalDue: number;
+          contractValueTotal?: number;
+          remainingToInvoice?: number;
+          accruedRevenueUnbilled?: number;
+          invoicedRevenue?: number;
+          cashCollectedToDate?: number;
+          lastPaymentDate?: string | null;
         }> = [];
         let unpaidInvoices: Array<{
           customerName: string;
@@ -665,6 +673,8 @@ export async function GET(request: NextRequest) {
           currentMonth: number;
           lastMonth: number;
           last12Months: number;
+          cashCollectedToDate: number;
+          lastPaymentDate: string | null;
         }> = [];
 
         const openRowsForRange = await prisma.aROpenInvoiceSnapshot.findMany({
@@ -678,6 +688,7 @@ export async function GET(request: NextRequest) {
             customerName: true,
             customerId: true,
             invoiceNo: true,
+            status: true,
             invoiceDate: true,
             dueDate: true,
             amountDueHome: true,
@@ -697,67 +708,26 @@ export async function GET(request: NextRequest) {
           ? startOfUtcDay(new Date(openRowsForRange[0].snapshotDate))
           : null;
 
-        if (openRowsForRange.length > 0) {
-          const bySnapshotDay = new Map<
-            string,
-            { totalAR: number; current: number; days1to30: number; days31to60: number; days61to90: number; days90plus: number }
-          >();
-          for (const row of openRowsForRange as any[]) {
-            const dayKey = dateKeyUtc(new Date(row.snapshotDate));
-            const asOf = parseIsoDayKey(dayKey);
-            const buckets = deriveArBucketsFromRow(row, asOf);
-            if (!bySnapshotDay.has(dayKey)) {
-              bySnapshotDay.set(dayKey, {
-                totalAR: 0,
-                current: 0,
-                days1to30: 0,
-                days31to60: 0,
-                days61to90: 0,
-                days90plus: 0,
-              });
-            }
-            const acc = bySnapshotDay.get(dayKey)!;
-            acc.totalAR += buckets.totalAR;
-            acc.current += buckets.current;
-            acc.days1to30 += buckets.days1to30;
-            acc.days31to60 += buckets.days31to60;
-            acc.days61to90 += buckets.days61to90;
-            acc.days90plus += buckets.days90plus;
-          }
-          const derivedSeries = Array.from(bySnapshotDay.entries())
-            .map(([dayKey, totals]) => ({
-              companyId,
-              snapshotDate: parseIsoDayKey(dayKey),
-              frequency: arFrequencyForQuery,
-              totalAR: totals.totalAR,
-              current: totals.current,
-              days1to30: totals.days1to30,
-              days31to60: totals.days31to60,
-              days61to90: totals.days61to90,
-              days90plus: totals.days90plus,
-            }))
-            .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
-            .slice(0, Math.max(limit * 4, 200));
-          if (derivedSeries.length > data.length || !hasAnyArBucketValues(data)) {
-            data = derivedSeries as any;
-          }
+        const openRowsInvoiceLike = (openRowsForRange as any[]).filter((row: any) => {
+          const amountDue = Number(row.amountDueHome || 0);
+          if (!Number.isFinite(amountDue) || amountDue <= 0) return false;
+          if (isClosedArStatus(row.status)) return false;
+          return isInvoiceLikeArOpenRow(row);
+        });
 
+        if (openRowsInvoiceLike.length > 0) {
           const openRows = latestOpenSnapshotDate
-            ? (openRowsForRange as any[]).filter(
+            ? (openRowsInvoiceLike as any[]).filter(
                 (row: any) => dateKeyUtc(new Date(row.snapshotDate)) === dateKeyUtc(latestOpenSnapshotDate)
               )
             : [];
-          const openRowsEligible = openRows.filter((row: any) => {
-            const amountDue = Number(row.amountDueHome || 0);
-            if (!Number.isFinite(amountDue) || amountDue <= 0) return false;
-            if (isClosedArStatus(row.status)) return false;
-            return true;
-          });
+          const openRowsEligible = openRows;
 
           const customerAging = openRowsEligible.reduce((acc: Record<string, any>, row: any) => {
             const name = row.customerName || 'Unknown Customer';
             if (!acc[name]) {
               acc[name] = {
+                customerId: row.customerId || '-',
                 customerName: name,
                 current: 0,
                 days1to30: 0,
@@ -767,7 +737,9 @@ export async function GET(request: NextRequest) {
                 totalDue: 0,
               };
             }
-            const buckets = deriveArBucketsFromRow(row, latestOpenSnapshotDate || new Date());
+            if (!acc[name].customerId && row.customerId) acc[name].customerId = row.customerId;
+            const buckets = deriveArBucketsFromRow(row, latestOpenSnapshotDate || endDate);
+            if (buckets.totalAR <= 0) return acc;
             acc[name].current += buckets.current;
             acc[name].days1to30 += buckets.days1to30;
             acc[name].days31to60 += buckets.days31to60;
@@ -820,12 +792,11 @@ export async function GET(request: NextRequest) {
           where: {
             companyId,
             paymentDate: {
-              gte: trailing12Start,
               lte: endDate,
             },
           },
           orderBy: [{ paymentDate: 'desc' }],
-          take: Math.max(limit * 5, 2000),
+          take: Math.max(limit * 20, 50000),
         });
 
         if (paymentRows.length) {
@@ -837,6 +808,8 @@ export async function GET(request: NextRequest) {
                 currentMonth: 0,
                 lastMonth: 0,
                 last12Months: 0,
+                cashCollectedToDate: 0,
+                lastPaymentDate: null as string | null,
               };
             }
             const dt = new Date(row.paymentDate);
@@ -844,11 +817,209 @@ export async function GET(request: NextRequest) {
             if (dt >= monthStart && dt <= endDate) acc[name].currentMonth += amount;
             if (dt >= lastMonthStart && dt < monthStart) acc[name].lastMonth += amount;
             if (dt >= trailing12Start && dt <= endDate) acc[name].last12Months += amount;
+            if (dt <= endDate) acc[name].cashCollectedToDate += amount;
+            if (!acc[name].lastPaymentDate || dt.getTime() > new Date(acc[name].lastPaymentDate).getTime()) {
+              acc[name].lastPaymentDate = dt.toISOString().split('T')[0];
+            }
             return acc;
           }, {});
           paidInvoices = Object.values(grouped)
             .sort((a: any, b: any) => b.last12Months - a.last12Months)
             .slice(0, 25) as any[];
+        }
+
+        const contractStatusDelegate = (prisma as any).customerContractStatus;
+        const contractStatusByCustomer = new Map<
+          string,
+          {
+            customerId: string;
+            customerName: string;
+            contractValueTotal: number;
+            remainingToInvoice: number;
+            accruedRevenueUnbilled: number;
+            invoicedRevenue: number;
+            cashCollectedToDate: number;
+            lastPaymentDate: string | null;
+          }
+        >();
+        if (contractStatusDelegate?.findMany) {
+          const asOfReference = latestOpenSnapshotDate || endDate;
+          const asOfStart = startOfUtcDay(asOfReference);
+          const asOfEnd = new Date(asOfStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+          let contractRows = await contractStatusDelegate.findMany({
+            where: {
+              companyId,
+              asOfDate: {
+                gte: asOfStart,
+                lte: asOfEnd,
+              },
+            },
+            orderBy: [{ contractValue: 'desc' }],
+            take: 5000,
+          });
+          if (!contractRows.length) {
+            contractRows = await contractStatusDelegate.findMany({
+              where: {
+                companyId,
+                asOfDate: { lte: asOfEnd },
+              },
+              orderBy: [{ asOfDate: 'desc' }],
+              take: 5000,
+            });
+          }
+          for (const row of contractRows as any[]) {
+            const name = row.customerName || 'Unknown Customer';
+            if (!contractStatusByCustomer.has(name)) {
+              contractStatusByCustomer.set(name, {
+                customerId: row.customerId || '-',
+                customerName: name,
+                contractValueTotal: 0,
+                remainingToInvoice: 0,
+                accruedRevenueUnbilled: 0,
+                invoicedRevenue: 0,
+                cashCollectedToDate: 0,
+                lastPaymentDate: null,
+              });
+            }
+            const acc = contractStatusByCustomer.get(name)!;
+            acc.contractValueTotal += Number(row.contractValue || 0);
+            acc.remainingToInvoice += Number(row.remainingValue || 0);
+            acc.accruedRevenueUnbilled += Number(row.accruedRevenueUnbilled || 0);
+            acc.invoicedRevenue += Number(row.invoicedToDate || 0);
+            acc.cashCollectedToDate += Number(row.cashCollectedToDate || 0);
+            if (!acc.lastPaymentDate && row.lastPaymentDate) {
+              acc.lastPaymentDate = new Date(row.lastPaymentDate).toISOString().split('T')[0];
+            }
+            if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
+          }
+        }
+
+        const paidByCustomerName = new Map(
+          paidInvoices.map((row) => [row.customerName, row])
+        );
+        const normalizeText = (value: unknown): string =>
+          String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+        const orderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+        const orderContractByCustomerName = new Map<
+          string,
+          {
+            customerId: string;
+            customerName: string;
+            contractValueTotal: number;
+            invoicedRevenue: number;
+            remainingToInvoice: number;
+            accruedRevenueUnbilled: number;
+          }
+        >();
+        if (orderLineDelegate?.findMany) {
+          const latestOrderSnapshot = await orderLineDelegate.findFirst({
+            where: {
+              companyId,
+              frequency: arFrequencyForQuery,
+              snapshotDate: { lte: endDate },
+            },
+            orderBy: [{ snapshotDate: 'desc' }],
+            select: { snapshotDate: true },
+          });
+          if (latestOrderSnapshot?.snapshotDate) {
+            const orderRows = await orderLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency: arFrequencyForQuery,
+                snapshotDate: latestOrderSnapshot.snapshotDate,
+              },
+              select: {
+                customerId: true,
+                customerName: true,
+                contractValue: true,
+                invoicedAmount: true,
+                remainingAmount: true,
+                unbilledAccrual: true,
+              },
+              take: 100000,
+            });
+            for (const row of orderRows as any[]) {
+              const name = row.customerName || 'Unknown Customer';
+              if (!orderContractByCustomerName.has(name)) {
+                orderContractByCustomerName.set(name, {
+                  customerId: row.customerId || '-',
+                  customerName: name,
+                  contractValueTotal: 0,
+                  invoicedRevenue: 0,
+                  remainingToInvoice: 0,
+                  accruedRevenueUnbilled: 0,
+                });
+              }
+              const acc = orderContractByCustomerName.get(name)!;
+              acc.contractValueTotal += Number(row.contractValue || 0);
+              acc.invoicedRevenue += Number(row.invoicedAmount || 0);
+              acc.remainingToInvoice += Number(row.remainingAmount || 0);
+              acc.accruedRevenueUnbilled += Number(row.unbilledAccrual || 0);
+              if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
+            }
+          }
+        }
+        const orderContractByCustomerId = new Map(
+          Array.from(orderContractByCustomerName.values())
+            .filter((row) => String(row.customerId || '').trim().length > 0 && row.customerId !== '-')
+            .map((row) => [normalizeText(row.customerId), row])
+        );
+        const orderContractByNormalizedName = new Map(
+          Array.from(orderContractByCustomerName.values()).map((row) => [normalizeText(row.customerName), row])
+        );
+
+        unpaidByCustomer = unpaidByCustomer.map((row) => {
+          const contract = contractStatusByCustomer.get(row.customerName);
+          const orderContract =
+            orderContractByCustomerId.get(normalizeText(row.customerId)) ||
+            orderContractByCustomerName.get(row.customerName) ||
+            orderContractByNormalizedName.get(normalizeText(row.customerName));
+          const paid = paidByCustomerName.get(row.customerName);
+          const cashCollected = Number(contract?.cashCollectedToDate ?? paid?.cashCollectedToDate ?? 0);
+          const invoicedRevenue = Number(orderContract?.invoicedRevenue ?? contract?.invoicedRevenue ?? row.totalDue + cashCollected);
+          const contractValueTotal = Number(
+            orderContract?.contractValueTotal ??
+              contract?.contractValueTotal ??
+              0
+          );
+          const remainingToInvoice = Number(
+            orderContract?.remainingToInvoice ??
+              contract?.remainingToInvoice ??
+              (contractValueTotal > 0 ? Math.max(contractValueTotal - invoicedRevenue, 0) : 0)
+          );
+          return {
+            ...row,
+            contractValueTotal,
+            remainingToInvoice,
+            accruedRevenueUnbilled: Number(orderContract?.accruedRevenueUnbilled ?? contract?.accruedRevenueUnbilled ?? 0),
+            invoicedRevenue,
+            cashCollectedToDate: cashCollected,
+            lastPaymentDate: contract?.lastPaymentDate || paid?.lastPaymentDate || null,
+          };
+        });
+        if (unpaidByCustomer.length === 0 && contractStatusByCustomer.size > 0) {
+          unpaidByCustomer = Array.from(contractStatusByCustomer.values())
+            .map((row) => ({
+              customerId: row.customerId || '-',
+              customerName: row.customerName,
+              current: 0,
+              days1to30: 0,
+              days31to60: 0,
+              days61to90: 0,
+              days90plus: 0,
+              totalDue: Number(row.invoicedRevenue || 0),
+              contractValueTotal: Number(row.contractValueTotal || 0),
+              remainingToInvoice: Number(row.remainingToInvoice || 0),
+              accruedRevenueUnbilled: Number(row.accruedRevenueUnbilled || 0),
+              invoicedRevenue: Number(row.invoicedRevenue || 0),
+              cashCollectedToDate: Number(row.cashCollectedToDate || 0),
+              lastPaymentDate: row.lastPaymentDate || null,
+            }))
+            .sort((a, b) => Number(b.totalDue || 0) - Number(a.totalDue || 0))
+            .slice(0, 25);
         }
 
         if (!data.length && shouldUseMockData) {

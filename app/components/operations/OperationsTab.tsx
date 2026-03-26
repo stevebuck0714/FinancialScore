@@ -350,6 +350,7 @@ export default function OperationsTab({
   ]);
   const [dailyFinancialWindowStart, setDailyFinancialWindowStart] = useState(0);
   const [arSummaryPage, setArSummaryPage] = useState(1);
+  const [arAgingPage, setArAgingPage] = useState(1);
   const [unpaidInvoicesPage, setUnpaidInvoicesPage] = useState(1);
   const [unpaidInvoicesSortKey, setUnpaidInvoicesSortKey] = useState<'customerName' | 'invoiceDate' | 'daysOutstanding' | 'amountDue'>('invoiceDate');
   const [unpaidInvoicesSortDir, setUnpaidInvoicesSortDir] = useState<'asc' | 'desc'>('desc');
@@ -2165,6 +2166,7 @@ export default function OperationsTab({
     const arDso = Number(summary?.dso ?? 0);
     const latestRecord = records[0];
     const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || []).map((row: any) => ({
+      customerId: row.customerId || row.customerNumber || '-',
       customerName: row.customerName || row.name,
       current: row.current || 0,
       days1to30: row.days1to30 || 0,
@@ -2172,6 +2174,12 @@ export default function OperationsTab({
       days61to90: row.days61to90 || 0,
       days90plus: row.days90plus || 0,
       totalDue: row.totalDue || row.total || (row.current || 0) + (row.days1to30 || 0) + (row.days31to60 || 0) + (row.days61to90 || 0) + (row.days90plus || 0),
+      contractValueTotal: row.contractValueTotal || 0,
+      remainingToInvoice: row.remainingToInvoice || 0,
+      accruedRevenueUnbilled: row.accruedRevenueUnbilled || 0,
+      invoicedRevenue: row.invoicedRevenue || 0,
+      cashCollectedToDate: row.cashCollectedToDate || 0,
+      lastPaymentDate: row.lastPaymentDate || null,
     }));
     const unpaidByCustomer = arCustomers
       .map((row) => ({ customerName: row.customerName, totalDue: row.totalDue }))
@@ -2225,16 +2233,18 @@ export default function OperationsTab({
         setUnpaidInvoicesSortDir(key === 'amountDue' || key === 'daysOutstanding' ? 'desc' : 'asc');
       }
     };
-    const paidByCustomer = (summary?.paidInvoices || [])
+    const paidByCustomerAll = (summary?.paidInvoices || [])
       .map((row: any) => ({
         customerName: row.customerName || row.customer,
         currentMonth: row.currentMonth || 0,
         lastMonth: row.lastMonth || 0,
         last12Months: row.last12Months || 0,
+        cashCollectedToDate: row.cashCollectedToDate || row.last12Months || 0,
+        lastPaymentDate: row.lastPaymentDate || null,
       }))
-      .sort((a: any, b: any) => b.last12Months - a.last12Months)
-      .slice(0, 10);
-    const paidTotal = paidByCustomer.reduce((sum: number, item: any) => sum + item.last12Months, 0);
+      .sort((a: any, b: any) => b.last12Months - a.last12Months);
+    const paidByCustomer = paidByCustomerAll.slice(0, 10);
+    const paidTotal = paidByCustomerAll.reduce((sum: number, item: any) => sum + item.last12Months, 0);
     const customerInvoiceRows = (summary?.customerInvoices || []).map((row: any) => ({
       customerName: row.customerName || row.customer,
       invoiceNo: row.invoiceNo || row.invoiceNumber,
@@ -2245,6 +2255,58 @@ export default function OperationsTab({
       amountHome: row.amountHome || row.amountHomeCurrency || 0,
       amountDueHome: row.amountDueHome || row.amountDue || 0,
     }));
+    const arCoverageDates = records
+      .map((record: any) => parseDateValue(record.snapshotDate))
+      .filter((date): date is Date => Boolean(date));
+    const arCoverageStart = arCoverageDates.length > 0 ? new Date(Math.min(...arCoverageDates.map((date) => date.getTime()))) : null;
+    const arCoverageEnd = arCoverageDates.length > 0 ? new Date(Math.max(...arCoverageDates.map((date) => date.getTime()))) : null;
+    const arCoverageLabel =
+      arCoverageStart && arCoverageEnd
+        ? `${arCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })} - ${arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })} (UTC)`
+        : 'N/A';
+    const arAsOfLabel = arCoverageEnd
+      ? arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+      : 'N/A';
+    const paidByCustomerMap = new Map(paidByCustomerAll.map((row: any) => [row.customerName, row]));
+    const contractAndCashFlowRows = arCustomers
+      .map((row: any) => {
+        const paid = paidByCustomerMap.get(row.customerName);
+        const contractValueTotal = Number(row.contractValueTotal || 0);
+        const remainingToInvoice = Number(row.remainingToInvoice || 0);
+        const accruedRevenueUnbilled = Number(row.accruedRevenueUnbilled || 0);
+        const invoicedRevenue = Number(row.invoicedRevenue || row.totalDue || 0);
+        const arOutstanding = Number(row.totalDue || 0);
+        const cashCollectedToDate = Number(row.cashCollectedToDate || paid?.cashCollectedToDate || 0);
+        const totalBilledRevenue = invoicedRevenue;
+        const totalExposure = arOutstanding + remainingToInvoice;
+        const billingProgressPct = contractValueTotal > 0 ? (invoicedRevenue / contractValueTotal) * 100 : 0;
+        const collectionRatio = invoicedRevenue > 0 ? cashCollectedToDate / invoicedRevenue : 0;
+        return {
+          customerId: row.customerId || '-',
+          customerName: row.customerName,
+          contractValueTotal,
+          remainingToInvoice,
+          accruedRevenueUnbilled,
+          invoicedRevenue,
+          arOutstanding,
+          arCurrent: Number(row.current || 0),
+          ar31to60: Number(row.days31to60 || 0),
+          ar61to90: Number(row.days61to90 || 0),
+          ar90plus: Number(row.days90plus || 0),
+          cashCollectedToDate,
+          lastPaymentDate: row.lastPaymentDate || paid?.lastPaymentDate || '-',
+          totalBilledRevenue,
+          totalExposure,
+          billingProgressPct,
+          collectionRatio,
+        };
+      })
+      .sort((a, b) => b.totalExposure - a.totalExposure);
+    const arAgingRows = [...contractAndCashFlowRows].sort(
+      (a, b) =>
+        b.arOutstanding - a.arOutstanding ||
+        b.ar90plus + b.ar61to90 + b.ar31to60 - (a.ar90plus + a.ar61to90 + a.ar31to60)
+    );
     const customerOptions = Array.from(new Set(customerInvoiceRows.map((row) => row.customerName))).sort();
     const filteredCustomerInvoices =
       selectedInvoiceCustomer === 'All'
@@ -2291,18 +2353,6 @@ export default function OperationsTab({
       '90+ Days': record.days90plus,
       total: record.totalAR
     }));
-    const arCoverageDates = records
-      .map((record: any) => parseDateValue(record.snapshotDate))
-      .filter((date): date is Date => Boolean(date));
-    const arCoverageStart = arCoverageDates.length > 0 ? new Date(Math.min(...arCoverageDates.map((date) => date.getTime()))) : null;
-    const arCoverageEnd = arCoverageDates.length > 0 ? new Date(Math.max(...arCoverageDates.map((date) => date.getTime()))) : null;
-    const arCoverageLabel =
-      arCoverageStart && arCoverageEnd
-        ? `${arCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })} - ${arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })} (UTC)`
-        : 'N/A';
-    const arAsOfLabel = arCoverageEnd
-      ? arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
-      : 'N/A';
     const arCollectionsTrend = [...records]
       .reverse()
       .map((record: any) => ({
@@ -2460,51 +2510,48 @@ export default function OperationsTab({
           )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '11fr 9fr', gap: '24px' }}>
-          {/* AR Summary Table */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
+          {/* Customer Contract and Cash Flow Summary */}
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-              AR Summary Table
+              Customer Contract and Cash Flow Summary
             </h3>
-            {arCustomers.length > 0 ? (
+            {contractAndCashFlowRows.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cust ID</th>
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>1-30</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>91+</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Contract Total</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Remaining to Invoice</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Invoiced</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Open AR</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cash Collected</th>
+                      <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Last Payment</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Total Billed</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Total Exposure</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Billing %</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Collection Ratio</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {arCustomers
-                      .sort((a, b) => b.totalDue - a.totalDue)
+                    {contractAndCashFlowRows
                       .slice((arSummaryPage - 1) * 8, arSummaryPage * 8)
                       .map((row) => (
-                        <tr key={row.customerName} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <tr key={`${row.customerId}-${row.customerName}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500' }}>{row.customerId}</td>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right' }}>
-                            {formatCurrency(row.current)}
-                          </td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f59e0b', textAlign: 'right' }}>
-                            {formatCurrency(row.days1to30)}
-                          </td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f97316', textAlign: 'right' }}>
-                            {formatCurrency(row.days31to60)}
-                          </td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#ef4444', textAlign: 'right' }}>
-                            {formatCurrency(row.days61to90)}
-                          </td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#991b1b', textAlign: 'right' }}>
-                            {formatCurrency(row.days90plus)}
-                          </td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
-                            {formatCurrency(row.totalDue)}
-                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{formatCurrency(row.contractValueTotal)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{formatCurrency(row.remainingToInvoice)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.invoicedRevenue)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>{formatCurrency(row.arOutstanding)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.cashCollectedToDate)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b' }}>{row.lastPaymentDate}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.totalBilledRevenue)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>{formatCurrency(row.totalExposure)}</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{row.billingProgressPct.toFixed(1)}%</td>
+                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#64748b', textAlign: 'right' }}>{row.collectionRatio.toFixed(2)}</td>
                         </tr>
                       ))}
                   </tbody>
@@ -2515,11 +2562,11 @@ export default function OperationsTab({
                 No AR summary available for this period.
               </div>
             )}
-            {arCustomers.length > 0 && (
+            {contractAndCashFlowRows.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
                 <span>
-                  {Math.min((arSummaryPage - 1) * 8 + 1, arCustomers.length)}-
-                  {Math.min(arSummaryPage * 8, arCustomers.length)} of {arCustomers.length}
+                  {Math.min((arSummaryPage - 1) * 8 + 1, contractAndCashFlowRows.length)}-
+                  {Math.min(arSummaryPage * 8, contractAndCashFlowRows.length)} of {contractAndCashFlowRows.length}
                 </span>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -2536,14 +2583,14 @@ export default function OperationsTab({
                     Prev
                   </button>
                   <button
-                    onClick={() => setArSummaryPage((page) => Math.min(Math.ceil(arCustomers.length / 8), page + 1))}
-                    disabled={arSummaryPage >= Math.ceil(arCustomers.length / 8)}
+                    onClick={() => setArSummaryPage((page) => Math.min(Math.ceil(contractAndCashFlowRows.length / 8), page + 1))}
+                    disabled={arSummaryPage >= Math.ceil(contractAndCashFlowRows.length / 8)}
                     style={{
                       padding: '4px 8px',
                       borderRadius: '6px',
                       border: '1px solid #e2e8f0',
-                      background: arSummaryPage >= Math.ceil(arCustomers.length / 8) ? '#f1f5f9' : 'white',
-                      cursor: arSummaryPage >= Math.ceil(arCustomers.length / 8) ? 'not-allowed' : 'pointer'
+                      background: arSummaryPage >= Math.ceil(contractAndCashFlowRows.length / 8) ? '#f1f5f9' : 'white',
+                      cursor: arSummaryPage >= Math.ceil(contractAndCashFlowRows.length / 8) ? 'not-allowed' : 'pointer'
                     }}
                   >
                     Next
@@ -2643,6 +2690,85 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+        </div>
+
+        {/* AR Aging Detail */}
+        <div style={{ marginTop: '24px', background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+            AR Aging Detail
+          </h3>
+          {arAgingRows.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Cust ID</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Open AR</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>90+</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {arAgingRows
+                    .slice((arAgingPage - 1) * 8, arAgingPage * 8)
+                    .map((row) => (
+                      <tr key={`aging-${row.customerId}-${row.customerName}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', fontWeight: '500' }}>{row.customerId}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>{formatCurrency(row.arOutstanding)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(row.arCurrent)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#f97316', textAlign: 'right' }}>{formatCurrency(row.ar31to60)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>{formatCurrency(row.ar61to90)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar90plus)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+              No AR aging detail available for this period.
+            </div>
+          )}
+          {arAgingRows.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
+              <span>
+                {Math.min((arAgingPage - 1) * 8 + 1, arAgingRows.length)}-
+                {Math.min(arAgingPage * 8, arAgingRows.length)} of {arAgingRows.length}
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setArAgingPage((page) => Math.max(1, page - 1))}
+                  disabled={arAgingPage === 1}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: '1px solid #e2e8f0',
+                    background: arAgingPage === 1 ? '#f1f5f9' : 'white',
+                    cursor: arAgingPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Prev
+                </button>
+                <button
+                  onClick={() => setArAgingPage((page) => Math.min(Math.ceil(arAgingRows.length / 8), page + 1))}
+                  disabled={arAgingPage >= Math.ceil(arAgingRows.length / 8)}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: '1px solid #e2e8f0',
+                    background: arAgingPage >= Math.ceil(arAgingRows.length / 8) ? '#f1f5f9' : 'white',
+                    cursor: arAgingPage >= Math.ceil(arAgingRows.length / 8) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '11fr 9fr', gap: '24px', marginTop: '24px' }}>

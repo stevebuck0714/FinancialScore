@@ -254,6 +254,7 @@ export async function POST(request: NextRequest) {
       const dayEnd = new Date(businessDate);
       dayEnd.setUTCHours(23, 59, 59, 999);
       const dayWindow = { startDate: dayStart, endDate: dayEnd, mode: 'manual' as const };
+      const shouldPreserveCashSnapshotForSlice = businessDateIndex === defaultBusinessDateIndex;
       const dayResult = await syncInforM3OperationalData(
         companyId,
         frequency,
@@ -261,6 +262,7 @@ export async function POST(request: NextRequest) {
         dayWindow,
         {
           snapshotDateOverride: businessDate,
+          preserveCashSnapshot: shouldPreserveCashSnapshotForSlice,
           skipPrune: true,
           programOffset: requestedProgramOffset,
           programLimit: programBatchSize,
