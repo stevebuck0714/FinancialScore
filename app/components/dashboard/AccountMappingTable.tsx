@@ -73,16 +73,24 @@ export default function AccountMappingTable({
   const normalizeClassification = (
     value?: string,
     accountName?: string,
-    targetField?: string
+    targetField?: string,
+    accountCodeRaw?: string
   ): 'revenue' | 'cogs' | 'expense' | 'nonOperating' | 'asset' | 'liability' | 'equity' | 'other' => {
     const stripManualPrefix = (input?: string): string => {
       const raw = String(input || '').trim();
       if (!raw) return '';
       return raw.toLowerCase().startsWith('manual:') ? raw.slice('manual:'.length).trim() : raw;
     };
-    const accountCodeMatch = (accountName || '').trim().toLowerCase().match(/^\s*(\d{4,})/);
+    const accountCodeSource = `${String(accountCodeRaw || '').trim()} ${String(accountName || '').trim()}`;
+    const accountCodeMatch = accountCodeSource.match(/(\d{4,})/);
     const accountCode = accountCodeMatch ? Number(accountCodeMatch[1]) : NaN;
-    const isLikelyCogsCode = Number.isFinite(accountCode) && accountCode >= 5000 && accountCode < 6000;
+    const normalizedAccountCode =
+      Number.isFinite(accountCode) && accountCode >= 10000
+        ? (accountCode % 10 === 0 ? Math.floor(accountCode / 10) : Number(String(accountCode).slice(0, 4)))
+        : accountCode;
+    const codeCandidates = [accountCode, normalizedAccountCode].filter((n) => Number.isFinite(n)) as number[];
+    const isLikelyCogsCode = codeCandidates.some((n) => n >= 5000 && n < 6000);
+    const isLikelyEquityCode = codeCandidates.some((n) => n >= 3000 && n < 4000);
     const normalizedTarget = (targetField || '').trim().toLowerCase();
     if (normalizedTarget && normalizedTarget !== 'unmapped') {
       if (normalizedTarget === 'nonoperatingincome' || normalizedTarget === 'nonoperatingexpense') return 'nonOperating';
@@ -149,7 +157,8 @@ export default function AccountMappingTable({
     if (normalized === 'l') return 'liability';
     if (normalized === 'q') return 'equity';
     if (normalized === 'c') return 'cogs';
-    const isLikelyNonOperatingCode = Number.isFinite(accountCode) && accountCode >= 9000 && accountCode < 10000;
+    const isLikelyNonOperatingCode = codeCandidates.some((n) => n >= 9000 && n < 10000);
+    if (isLikelyEquityCode) return 'equity';
     const isLikelyCogsLabel =
       normalizedAccountName.includes('cost of sales') ||
       normalizedAccountName.includes('cost of goods sold') ||
@@ -269,6 +278,7 @@ export default function AccountMappingTable({
       mapping.qbAccountClassification,
       mapping.qbAccount,
       undefined,
+      String(mapping.qbAccountCode || mapping.qbAccountId || ''),
     );
     if (sourceClassification !== 'other') return sourceClassification;
 
@@ -277,6 +287,7 @@ export default function AccountMappingTable({
       mapping.qbAccountClassification,
       mapping.qbAccount,
       mapping.targetField,
+      String(mapping.qbAccountCode || mapping.qbAccountId || ''),
     );
   };
 
