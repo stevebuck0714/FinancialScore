@@ -60,12 +60,6 @@ function calculateAggregatedValues(monthly: any[], period: string) {
   const aggregated = {
     revenue: 0,
     cogs: 0,
-    cogsPayroll: 0,
-    cogsOwnerPay: 0,
-    cogsContractors: 0,
-    cogsMaterials: 0,
-    cogsCommissions: 0,
-    cogsOther: 0,
     payroll: 0,
     benefits: 0,
     insurance: 0,
@@ -98,12 +92,6 @@ function calculateAggregatedValues(monthly: any[], period: string) {
   for (const month of filteredMonthly) {
     aggregated.revenue += Number(month.revenue) || 0;
     aggregated.cogs += Number(month.cogsTotal) || 0;
-    aggregated.cogsPayroll += Number(month.cogsPayroll) || 0;
-    aggregated.cogsOwnerPay += Number(month.cogsOwnerPay) || 0;
-    aggregated.cogsContractors += Number(month.cogsContractors) || 0;
-    aggregated.cogsMaterials += Number(month.cogsMaterials) || 0;
-    aggregated.cogsCommissions += Number(month.cogsCommissions) || 0;
-    aggregated.cogsOther += Number(month.cogsOther) || 0;
     aggregated.payroll += Number(month.payroll) || 0;
     aggregated.benefits += Number(month.benefits) || 0;
     aggregated.insurance += Number(month.insurance) || 0;
@@ -123,14 +111,6 @@ function calculateAggregatedValues(monthly: any[], period: string) {
     aggregated.nonOperatingExpense += Number(month.nonOperatingExpense) || 0;
     aggregated.extraordinaryItems += Number(month.extraordinaryItems) || 0;
 
-    // Legacy detail fields
-    addDetail(aggregated.cogsDetails, 'cogsPayroll', Number(month.cogsPayroll) || 0);
-    addDetail(aggregated.cogsDetails, 'cogsOwnerPay', Number(month.cogsOwnerPay) || 0);
-    addDetail(aggregated.cogsDetails, 'cogsContractors', Number(month.cogsContractors) || 0);
-    addDetail(aggregated.cogsDetails, 'cogsMaterials', Number(month.cogsMaterials) || 0);
-    addDetail(aggregated.cogsDetails, 'cogsCommissions', Number(month.cogsCommissions) || 0);
-    addDetail(aggregated.cogsDetails, 'cogsOther', Number(month.cogsOther) || 0);
-
     // Sector detail fields from flat monthly shape
     const hasFlatRevenueFields = Object.keys(month).some((key) => key.startsWith('rev_'));
     const hasFlatCogsFields = Object.keys(month).some((key) => key.startsWith('cogs_') && key !== 'cogs_total');
@@ -139,7 +119,7 @@ function calculateAggregatedValues(monthly: any[], period: string) {
       if (key.startsWith('rev_')) {
         addDetail(aggregated.revenueDetails, key, value);
       }
-      if (key.startsWith('cogs_')) {
+      if (key.startsWith('cogs_') && key !== 'cogs_total') {
         addDetail(aggregated.cogsDetails, key, value);
       }
     });
@@ -178,10 +158,7 @@ function calculateAggregatedValues(monthly: any[], period: string) {
   // Calculate derived values
   if (!aggregated.cogs || aggregated.cogs === 0) {
     const detailCogs = Object.values(aggregated.cogsDetails).reduce((sum, v) => sum + (Number(v) || 0), 0);
-    aggregated.cogs = detailCogs > 0
-      ? detailCogs
-      : aggregated.cogsPayroll + aggregated.cogsOwnerPay + aggregated.cogsContractors +
-        aggregated.cogsMaterials + aggregated.cogsCommissions + aggregated.cogsOther;
+    aggregated.cogs = detailCogs;
   }
   
   aggregated.totalOpex = aggregated.payroll + aggregated.benefits + aggregated.insurance +

@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+const toNumber = (value: unknown): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const collectPrefixedValues = (
+  month: Record<string, unknown>,
+  breakdown: Record<string, unknown>,
+  prefix: 'rev_' | 'cogs_',
+): Record<string, number> => {
+  const collected: Record<string, number> = {};
+
+  Object.entries(breakdown || {}).forEach(([key, value]) => {
+    if (!key.startsWith(prefix)) return;
+    if (prefix === 'cogs_' && key === 'cogs_total') return;
+    collected[key] = toNumber(value);
+  });
+
+  Object.entries(month || {}).forEach(([key, value]) => {
+    if (!key.startsWith(prefix)) return;
+    if (prefix === 'cogs_' && key === 'cogs_total') return;
+    collected[key] = toNumber(value);
+  });
+
+  return collected;
+};
+
 // GET - Load Master data for a company from database
 export async function GET(request: NextRequest) {
   try {
@@ -84,18 +111,25 @@ export async function GET(request: NextRequest) {
         0,
       ) || nonOperatingExpenseFromBreakdown;
 
+      const revenueFields = collectPrefixedValues(month, revenueBreakdown as Record<string, unknown>, 'rev_');
+      const cogsFields = collectPrefixedValues(month, cogsBreakdown as Record<string, unknown>, 'cogs_');
+      const hasSectorRevenue = Object.keys(revenueFields).length > 0;
+      const hasSectorCogs = Object.keys(cogsFields).length > 0;
+      const sectorRevenueTotal = Object.values(revenueFields).reduce((sum, value) => sum + toNumber(value), 0);
+      const sectorCogsTotal = Object.values(cogsFields).reduce((sum, value) => sum + toNumber(value), 0);
+
       return {
       date: month.monthDate,
       month: month.monthDate,
-      revenue: month.revenue || 0,
+      revenue: hasSectorRevenue ? sectorRevenueTotal : toNumber(month.revenue),
       expense: month.expense || 0,
-      cogsPayroll: month.cogsPayroll || 0,
-      cogsOwnerPay: month.cogsOwnerPay || 0,
-      cogsContractors: month.cogsContractors || 0,
-      cogsMaterials: month.cogsMaterials || 0,
-      cogsCommissions: month.cogsCommissions || 0,
-      cogsOther: month.cogsOther || 0,
-      cogsTotal: month.cogsTotal || 0,
+      cogsPayroll: hasSectorCogs ? 0 : month.cogsPayroll || 0,
+      cogsOwnerPay: hasSectorCogs ? 0 : month.cogsOwnerPay || 0,
+      cogsContractors: hasSectorCogs ? 0 : month.cogsContractors || 0,
+      cogsMaterials: hasSectorCogs ? 0 : month.cogsMaterials || 0,
+      cogsCommissions: hasSectorCogs ? 0 : month.cogsCommissions || 0,
+      cogsOther: hasSectorCogs ? 0 : month.cogsOther || 0,
+      cogsTotal: hasSectorCogs ? sectorCogsTotal : toNumber(month.cogsTotal),
       payroll: month.payroll || 0,
       ownerBasePay: month.ownerBasePay || 0,
       benefits: month.benefits || 0,

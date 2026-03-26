@@ -183,9 +183,6 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
     ),
   ).sort((a, b) => formatDynamicFieldLabel(a).localeCompare(formatDynamicFieldLabel(b)));
 
-  const legacyCogsFields = ["cogsPayroll", "cogsOwnerPay", "cogsContractors", "cogsMaterials", "cogsCommissions", "cogsOther"].filter(
-    hasNonZeroValue,
-  );
   const sectorCogsFields = Array.from(
     new Set(
       displayedMonths.flatMap((m: any) =>
@@ -195,7 +192,8 @@ export default function DataReviewTab({ selectedCompanyId, companyName, accountM
       ),
     ),
   ).sort((a, b) => formatDynamicFieldLabel(a).localeCompare(formatDynamicFieldLabel(b)));
-  const cogsDetailFields = [...legacyCogsFields, ...sectorCogsFields];
+  // Revenue/COGS detail rows are always sector-aware dynamic mappings.
+  const cogsDetailFields = sectorCogsFields;
 
   // Format month as MM-YYYY
   const formatMonth = (monthValue: any): string => {

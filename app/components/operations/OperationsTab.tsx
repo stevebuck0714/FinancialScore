@@ -4744,12 +4744,10 @@ export default function OperationsTab({
     const revenueDetailFields = Object.keys(lineIndex)
       .filter((field) => field.startsWith('rev_') && mappedFieldHasAnyValue(field))
       .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-    const legacyCogsFields = ['cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 'cogsMaterials', 'cogsCommissions', 'cogsOther']
-      .filter((field) => mappedFieldHasAnyValue(field));
     const dynamicCogsFields = Object.keys(lineIndex)
       .filter((field) => field.startsWith('cogs_') && field !== 'cogs_total' && mappedFieldHasAnyValue(field))
       .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-    const cogsDetailFields = [...legacyCogsFields, ...dynamicCogsFields];
+    const cogsDetailFields = dynamicCogsFields;
     const operatingExpenseFields = [
       'payroll', 'ownerBasePay', 'ownersRetirement', 'benefits', 'insurance', 'professionalFees',
       'subcontractors', 'rent', 'utilities', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
@@ -4834,11 +4832,6 @@ export default function OperationsTab({
         valuesByDate: lineIndex[field],
       })),
       { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
-      ...legacyCogsFields.map((field) => ({
-        label: `  ${getFieldDisplayName(field)}`,
-        styleType: 'normal' as const,
-        valuesByDate: lineIndex[field],
-      })),
       ...dynamicCogsFields.map((field) => ({
         label: `  ${getFieldDisplayName(field)}`,
         styleType: 'normal' as const,

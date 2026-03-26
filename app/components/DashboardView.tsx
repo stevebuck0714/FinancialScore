@@ -1268,9 +1268,9 @@ export default function DashboardView({
                   return <LineChart key={widget} title="Total Equity" data={monthly.map(m => ({ month: m.month, value: m.totalEquity || 0 }))} color="#10b981" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
                 }
                 
-                // Handle old Item Trends from dropdown (legacy field names - kept for backwards compatibility)
-                const itemTrendFields = ['revenue', 'expense', 'cogsTotal', 'cogsPayroll', 'cogsOwnerPay', 'cogsContractors', 
-                  'cogsMaterials', 'cogsCommissions', 'cogsOther', 'salesExpense', 'rent', 'utilities', 'equipment', 
+                // Handle old Item Trends from dropdown.
+                // Keep COGS at total-only level to avoid legacy component fields.
+                const itemTrendFields = ['revenue', 'expense', 'cogsTotal', 'salesExpense', 'rent', 'utilities', 'equipment', 
                   'travel', 'professionalFees', 'insurance', 'marketing', 'payroll', 'ownerBasePay', 'ownersRetirement', 
                   'subcontractors', 'interestExpense', 'depreciationAmortization', 'operatingExpenseTotal', 'nonOperatingIncome', 
                   'nonOperatingExpense', 'extraordinaryItems', 'netProfit', 'totalAssets', 'cash', 'ar', 'inventory', 'otherCA', 'tca', 'fixedAssets', 

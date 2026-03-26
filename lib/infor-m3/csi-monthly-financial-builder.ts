@@ -717,8 +717,6 @@ function applyMappedAmount(
     bucket.cogsTotal += amountExpense;
     if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
       (bucket as unknown as Record<string, number>)[lower] += amountExpense;
-    } else {
-      bucket.cogsOther += amountExpense;
     }
     addToBreakdown(bucket.cogsBreakdown as Record<string, unknown>, lower.startsWith('cogs_') ? normalized : 'cogs_other_cogs', amountExpense);
     return true;
@@ -869,7 +867,6 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     } else if (accountType === 'cogs') {
       const amount = cogsMovement;
       bucket.cogsTotal += amount;
-      bucket.cogsOther += amount;
       addToBreakdown(bucket.cogsBreakdown as Record<string, unknown>, 'cogs_other_cogs', amount);
     } else if (accountType === 'expense' || accountType === 'other') {
       const amount = expenseMovement;

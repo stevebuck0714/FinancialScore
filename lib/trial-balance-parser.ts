@@ -791,11 +791,11 @@ export function processTrialBalanceToMonthly(
     }
     
     // Calculate totals
-    // COGS total (only add cogsTotal if it wasn't directly mapped)
+    // Keep sector cogs_* as authoritative when they are present.
     const cogsFromComponents = monthlyRecord.cogsPayroll + monthlyRecord.cogsOwnerPay +
       monthlyRecord.cogsContractors + monthlyRecord.cogsMaterials +
       monthlyRecord.cogsCommissions + monthlyRecord.cogsOther;
-    if (cogsFromComponents > 0) {
+    if (Object.keys(sectorCogsBreakdown).length === 0 && cogsFromComponents > 0) {
       monthlyRecord.cogsTotal = cogsFromComponents;
     }
     
@@ -956,6 +956,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       totalEquity: 0,
       totalLAndE: 0,
     };
+    let hasSectorCogsMapping = false;
 
     for (const account of parsedData.accounts) {
       let mapping = mappingLookup[account.description];
@@ -981,6 +982,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
         dailyRecord.revenue += value;
       } else if (targetField.startsWith('cogs_')) {
         dailyRecord.cogsTotal += value;
+        hasSectorCogsMapping = true;
       }
 
       mappedLines.push({
@@ -997,7 +999,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
     const cogsFromComponents = dailyRecord.cogsPayroll + dailyRecord.cogsOwnerPay +
       dailyRecord.cogsContractors + dailyRecord.cogsMaterials +
       dailyRecord.cogsCommissions + dailyRecord.cogsOther;
-    if (cogsFromComponents > 0) dailyRecord.cogsTotal = cogsFromComponents;
+    if (!hasSectorCogsMapping && cogsFromComponents > 0) dailyRecord.cogsTotal = cogsFromComponents;
 
     dailyRecord.tca = dailyRecord.cash + dailyRecord.ar + dailyRecord.inventory + dailyRecord.otherCA;
     dailyRecord.totalAssets = dailyRecord.tca + dailyRecord.fixedAssets + dailyRecord.otherAssets;
