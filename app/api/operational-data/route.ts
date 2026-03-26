@@ -143,7 +143,13 @@ function buildDailyCashSeriesFromMovements(
   }>,
   rangeStart: Date,
   rangeEnd: Date
-): Array<{ snapshotDate: Date; accountName: string; cashBalance: number }> {
+): Array<{
+  snapshotDate: Date;
+  accountName: string;
+  cashBalance: number;
+  accountId: string | null;
+  accountNumber: string | null;
+}> {
   if (!anchorRows.length) return [];
   const anchorDate = startOfUtcDay(anchorRows[0].snapshotDate);
   const start = startOfUtcDay(rangeStart);
@@ -229,7 +235,13 @@ function buildDailyCashSeriesFromMovements(
     balancesByDate.set(dayKey, rolled);
   }
 
-  const rows: Array<{ snapshotDate: Date; accountName: string; cashBalance: number }> = [];
+  const rows: Array<{
+    snapshotDate: Date;
+    accountName: string;
+    cashBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }> = [];
   for (
     let cursor = new Date(start);
     cursor.getTime() <= end.getTime();
@@ -240,10 +252,14 @@ function buildDailyCashSeriesFromMovements(
     if (!balances) continue;
     for (const accountKey of accountUniverse) {
       const accountName = accountDisplayNames.get(accountKey) || accountKey;
+      const accountId = accountKey.startsWith('id:') ? accountKey.slice(3) : null;
+      const accountNumber = accountKey.startsWith('num:') ? accountKey.slice(4) : null;
       rows.push({
         snapshotDate: parseIsoDayKey(dayKey),
         accountName,
         cashBalance: Number(balances.get(accountKey) || 0),
+        accountId,
+        accountNumber,
       });
     }
   }
@@ -921,25 +937,16 @@ export async function GET(request: NextRequest) {
         });
 
       case 'cash':
-        // Get cash data
-        data = await prisma.cashSnapshot.findMany({
-          where: {
-            companyId,
-            frequency,
-            snapshotDate: dateFilter,
-          },
-          orderBy: { snapshotDate: 'desc' },
-          take: limit,
-        });
-
         if (frequency === 'daily') {
+          // Canonical daily cash comes from GL-derived balance movements only.
+          data = [];
           const dailyMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
           if (dailyMappedLineDelegate) {
             const movementRows = await dailyMappedLineDelegate.findMany({
               where: {
                 companyId,
                 frequency,
-                targetField: { in: ['cash_movement', 'balance_movement:cash', 'balance_movement:otherCA'] },
+                targetField: 'balance_movement:cash',
                 snapshotDate: dateFilter,
               },
               select: {
@@ -977,12 +984,21 @@ export async function GET(request: NextRequest) {
                 }
                 const anchorRows = Array.from(latestByAccount.values());
                 const syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
-                if (syntheticDaily.length > 0) {
-                  data = syntheticDaily as any;
-                }
+                data = syntheticDaily as any;
               }
             }
           }
+        } else {
+          // Weekly/monthly cash still reads persisted snapshots.
+          data = await prisma.cashSnapshot.findMany({
+            where: {
+              companyId,
+              frequency,
+              snapshotDate: dateFilter,
+            },
+            orderBy: { snapshotDate: 'desc' },
+            take: limit,
+          });
         }
         const assetCashTokens = await getAssetCashMappingTokens(companyId);
         if (assetCashTokens.size > 0) {

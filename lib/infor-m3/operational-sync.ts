@@ -638,6 +638,10 @@ function applyCsiSourceWindowAndSort(
     return { endpointPath: next ? `${path}?${next}` : path, applied: true };
   }
 
+  // SLBankHdrs in this CSI tenant rejects filter expressions with
+  // IllegalFilterException (including Site/RecordDate predicates).
+  // Keep the request unfiltered and rely on downstream logic/sources.
+
   if (moduleType === 'gl' && ido === 'SLGLTRANS') {
     const filter = buildSlGlTransWindowFilter(window, row.site);
     if (!filter) return { endpointPath, applied: false };
@@ -2495,7 +2499,23 @@ export async function syncInforM3OperationalData(
         try {
           switch (moduleType) {
             case 'cash':
-              moduleRecordsCreated = await saveCash(companyId, snapshotDate, frequency, records);
+              {
+                const isHistoricalDailySlice =
+                  frequency === 'daily' &&
+                  Boolean(options?.snapshotDateOverride);
+                if (isHistoricalDailySlice) {
+                  // SLBankHdrs is snapshot-oriented in this tenant and cannot be
+                  // reliably filtered by day. During business-day backfill we
+                  // remove per-day cash snapshots to avoid persisting duplicated
+                  // "current snapshot" values across historical dates.
+                  await prisma.cashSnapshot.deleteMany({
+                    where: { companyId, frequency, snapshotDate },
+                  });
+                  moduleRecordsCreated = 0;
+                } else {
+                  moduleRecordsCreated = await saveCash(companyId, snapshotDate, frequency, records);
+                }
+              }
               break;
             case 'gl':
               {
