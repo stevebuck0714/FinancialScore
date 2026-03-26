@@ -23,7 +23,7 @@ function parsePrograms(value: unknown): ProgramRow[] {
       endpointPath: typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '',
       enabled: row?.enabled !== false,
     }))
-    .filter((row) => row.enabled && row.module.length > 0);
+    .filter((row) => row.enabled && (row.module.length > 0 || row.miProgram.length > 0 || (row.endpointPath || '').length > 0));
 }
 
 function resolveProgramsForSystem(
@@ -47,15 +47,20 @@ function selectAccountsSource(
   programRows: ProgramRow[]
 ): { type: 'endpoint' | 'mi'; value: string; sourceModule: string } | null {
   // Preferred for CSI: explicit Accounts endpoint path.
-  const accountsEndpoint = programRows.find(
-    (row) => row.module.toLowerCase() === 'accounts' && typeof row.endpointPath === 'string' && row.endpointPath.trim().length > 0
-  );
+  const accountsEndpoint = programRows.find((row) => {
+    const module = String(row.module || '').toLowerCase();
+    const endpoint = String(row.endpointPath || '').trim();
+    return endpoint.length > 0 && (module === 'accounts' || module.includes('account'));
+  });
   if (accountsEndpoint?.endpointPath) {
     return { type: 'endpoint', value: accountsEndpoint.endpointPath, sourceModule: 'Accounts' };
   }
 
   // Legacy path: Accounts MI program.
-  const accountsMi = programRows.find((row) => row.module.toLowerCase() === 'accounts' && row.miProgram.length > 0);
+  const accountsMi = programRows.find((row) => {
+    const module = String(row.module || '').toLowerCase();
+    return row.miProgram.length > 0 && (module === 'accounts' || module.includes('account'));
+  });
   if (accountsMi) {
     const programs = accountsMi.miProgram
       .split(',')
@@ -68,12 +73,22 @@ function selectAccountsSource(
 
   // CSI fallback: use GL endpoint row that points at SLCharts.
   const glChartsEndpoint = programRows.find((row) => {
-    if (row.module.toLowerCase() !== 'gl') return false;
+    const module = String(row.module || '').toLowerCase();
     const endpoint = String(row.endpointPath || '').toLowerCase();
-    return endpoint.includes('/slcharts');
+    if (endpoint.includes('/slcharts')) return true;
+    if (module === 'gl' && endpoint.length > 0) return false;
+    return false;
   });
   if (glChartsEndpoint?.endpointPath) {
     return { type: 'endpoint', value: glChartsEndpoint.endpointPath, sourceModule: 'GL' };
+  }
+
+  // Last-resort fallback: if any configured endpoint clearly points to SLCharts, use it.
+  const anySlChartsEndpoint = programRows.find((row) =>
+    String(row.endpointPath || '').toLowerCase().includes('/slcharts')
+  );
+  if (anySlChartsEndpoint?.endpointPath) {
+    return { type: 'endpoint', value: anySlChartsEndpoint.endpointPath, sourceModule: anySlChartsEndpoint.module || 'GL' };
   }
 
   return null;

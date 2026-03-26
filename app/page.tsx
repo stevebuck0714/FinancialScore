@@ -2133,6 +2133,8 @@ function FinancialScorePage() {
     return `${year}-${String(month).padStart(2, '0')}`;
   });
   const [apiFinancialImportMode, setApiFinancialImportMode] = useState<'through' | 'only'>('through');
+  const saveMappingsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const applyMappingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const [erpCaoThroughMonth, setErpCaoThroughMonth] = useState<string>(() => {
     const now = new Date();
     const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
@@ -11132,6 +11134,91 @@ function FinancialScorePage() {
                     <div
                       style={{
                         marginBottom: '12px',
+                        padding: '10px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        background: '#f8fafc',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', padding: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', marginBottom: '4px' }}>1) Initial Setup</div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                          Run when COA/accounts changed.
+                        </div>
+                        <button
+                          onClick={loadErpCaoInDataMapping}
+                          disabled={erpCaoLoading}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            background: erpCaoLoading ? '#9ca3af' : '#2563eb',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: erpCaoLoading ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {erpCaoLoading ? 'Loading COA...' : 'Refresh Accounts'}
+                        </button>
+                      </div>
+
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', padding: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#0f766e', marginBottom: '4px' }}>2) Mapping Changes</div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                          Save edits after target field updates.
+                        </div>
+                        <button
+                          onClick={() => saveMappingsButtonRef.current?.click()}
+                          disabled={isSavingMappings || aiMappings.length === 0}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            background: isSavingMappings || aiMappings.length === 0 ? '#9ca3af' : '#10b981',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: isSavingMappings || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {isSavingMappings ? 'Saving...' : 'Save Mappings'}
+                        </button>
+                      </div>
+
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', padding: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', marginBottom: '4px' }}>3) Monthly Update</div>
+                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                          Apply mappings to refresh reporting data.
+                        </div>
+                        <button
+                          onClick={() => applyMappingsButtonRef.current?.click()}
+                          disabled={isProcessingMonthlyData || aiMappings.length === 0}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            background: isProcessingMonthlyData || aiMappings.length === 0 ? '#9ca3af' : '#7c3aed',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: isProcessingMonthlyData || aiMappings.length === 0 ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {isProcessingMonthlyData ? 'Applying...' : 'Apply Mappings'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        marginBottom: '12px',
                         padding: '10px 12px',
                         border: '1px solid #cbd5e1',
                         borderRadius: '8px',
@@ -11287,6 +11374,7 @@ function FinancialScorePage() {
                             </div>
                           )}
                           <button
+                            ref={applyMappingsButtonRef}
                             onClick={async () => {
                               if (!aiMappings || aiMappings.length === 0) {
                                 alert('Please save account mappings first!');
@@ -11594,6 +11682,7 @@ function FinancialScorePage() {
                           )}
                           
                           <button
+                            ref={saveMappingsButtonRef}
                             onClick={saveAccountMappings}
                             disabled={isSavingMappings}
                             style={{
