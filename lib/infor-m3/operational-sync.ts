@@ -1727,6 +1727,8 @@ async function saveAROpenInvoices(
       dueDate: Date | null;
       status: string | null;
       currencyCode: string | null;
+      invoiceBaseHome: number;
+      invoiceBaseCurrency: number;
       remainingHome: number;
       remainingCurrency: number;
     }
@@ -1762,9 +1764,14 @@ async function saveAROpenInvoices(
     const rawInvoiceDate = parseMaybeDate(
       pickString(record, ['InvDate', 'invoiceDate', 'IssueDate', 'RecordDate', 'date', 'IVDT'])
     );
-    // Applied rows mapped off DR documents should age with the target invoice.
-    const invoiceDate = shouldMapToAppliedInvoice ? null : rawInvoiceDate;
-    const dueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT']));
+    const rawDueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT']));
+    // Anchor aging to the true invoice row; mapped adjustments (DR/apply-to and reductions)
+    // must not bring their own document dates into the invoice bucket.
+    const isInvoiceAnchorRow = !reductionMovement && !shouldMapToAppliedInvoice;
+    const invoiceDate = isInvoiceAnchorRow ? rawInvoiceDate : null;
+    const dueDate = isInvoiceAnchorRow ? rawDueDate : null;
+    const baseHome = isInvoiceAnchorRow && movementHome > 0 ? movementHome : 0;
+    const baseCurrency = isInvoiceAnchorRow && movementCurrency > 0 ? movementCurrency : 0;
 
     const existing = invoiceAccumulator.get(groupKey);
     if (!existing) {
@@ -1779,12 +1786,16 @@ async function saveAROpenInvoices(
         dueDate,
         status: pickString(record, ['status', 'STAT', 'Type']),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CurrCode', 'CUCD']),
+        invoiceBaseHome: baseHome,
+        invoiceBaseCurrency: baseCurrency,
         remainingHome: movementHome,
         remainingCurrency: movementCurrency,
       });
       continue;
     }
 
+    existing.invoiceBaseHome += baseHome;
+    existing.invoiceBaseCurrency += baseCurrency;
     existing.remainingHome += movementHome;
     existing.remainingCurrency += movementCurrency;
     existing.customerId = existing.customerId || customerId;
@@ -1799,6 +1810,8 @@ async function saveAROpenInvoices(
       const remainingHome = Number(entry.remainingHome || 0);
       if (!Number.isFinite(remainingHome) || remainingHome === 0) return null;
       const remainingCurrency = Number(entry.remainingCurrency || 0);
+      const invoiceBaseHome = Number(entry.invoiceBaseHome || 0);
+      const invoiceBaseCurrency = Number(entry.invoiceBaseCurrency || 0);
       return {
         id: randomUUID(),
         companyId: entry.companyId,
@@ -1811,8 +1824,8 @@ async function saveAROpenInvoices(
         dueDate: entry.dueDate,
         status: entry.status || 'OPEN_NET',
         currencyCode: entry.currencyCode,
-        amountCurrency: Number.isFinite(remainingCurrency) ? remainingCurrency : null,
-        amountHome: Number.isFinite(remainingHome) && remainingHome > 0 ? remainingHome : null,
+        amountCurrency: Number.isFinite(invoiceBaseCurrency) && invoiceBaseCurrency > 0 ? invoiceBaseCurrency : null,
+        amountHome: Number.isFinite(invoiceBaseHome) && invoiceBaseHome > 0 ? invoiceBaseHome : null,
         amountDueHome: remainingHome,
         current: null,
         days1to30: null,
