@@ -798,7 +798,7 @@ export default function OperationsTab({
       const latest = arRecords[0];
       const previous = arRecords[1];
       const prevOver30 = previous
-        ? ((Number(previous.days1to30 || 0) + Number(previous.days31to60 || 0) + Number(previous.days61to90 || 0) + Number(previous.days90plus || 0)) / Math.max(Number(previous.totalAR || 1), 1)) * 100
+        ? ((Number(previous.days31to60 || 0) + Number(previous.days61to90 || 0) + Number(previous.days90plus || 0)) / Math.max(Number(previous.totalAR || 1), 1)) * 100
         : currentOver30;
       const delta = currentOver30 - prevOver30;
       const severity: CardSeverity = delta >= 15 ? 'critical' : delta >= 8 ? 'warning' : 'normal';
@@ -2329,7 +2329,7 @@ export default function OperationsTab({
     );
     const unpaidSummaryRows = summary
       ? [
-          { label: 'Total AR', value: formatCurrency(summary.totalAR || 0) },
+          { label: 'Total Open AR', value: formatCurrency((summary.totalOpenAR ?? summary.totalAR) || 0) },
           { label: 'Current %', value: `${summary.currentPct?.toFixed(1) || '0.0'}%` },
           { label: 'Over 30 %', value: `${summary.over30Pct?.toFixed(1) || '0.0'}%` },
           { label: 'Over 90 %', value: `${summary.over90Pct?.toFixed(1) || '0.0'}%` },
@@ -2342,25 +2342,89 @@ export default function OperationsTab({
       if (!parsed) return String(value || '');
       return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     };
-    // Prepare AR trend data keyed by actual snapshot day so daily points do not
-    // collapse when the global frequency selector is weekly/monthly.
-    const chartData = records.map((record: any) => ({
-      month: formatArTrendDate(record.snapshotDate),
-      'Open AR Current': Number(record.current || 0),
-      'Open AR 1-30': Number(record.days1to30 || 0),
-      'Open AR 31-60': Number(record.days31to60 || 0),
-      'Open AR 61-90': Number(record.days61to90 || 0),
-      'Open AR 90+': Number(record.days90plus || 0),
-      total: Number(record.totalAR || 0),
+    const toUtcDay = (value: string | Date) => {
+      const parsed = parseDateValue(value);
+      if (!parsed) return null;
+      return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+    };
+    const selectedStartUtc = toUtcDay(startDate) || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() - 90));
+    const selectedEndUtc = toUtcDay(endDate) || new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+    const toIsoDay = (d: Date) => d.toISOString().split('T')[0];
+    const weekStartUtc = (d: Date) => {
+      const day = d.getUTCDay(); // 0=Sun
+      const offset = day === 0 ? -6 : 1 - day; // Monday-start week
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + offset));
+    };
+    const periodKey = (d: Date) => {
+      if (frequency === 'monthly') return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      if (frequency === 'weekly') return toIsoDay(weekStartUtc(d));
+      return toIsoDay(d);
+    };
+    const periodAnchor = (d: Date) => {
+      if (frequency === 'monthly') return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+      if (frequency === 'weekly') return weekStartUtc(d);
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    };
+    const periodRecordsAsc = [...records]
+      .map((record: any) => ({ record, day: toUtcDay(record.snapshotDate) }))
+      .filter((entry: any) => Boolean(entry.day))
+      .sort((a: any, b: any) => a.day.getTime() - b.day.getTime());
+    const firstObservedDay = periodRecordsAsc.length > 0 ? periodRecordsAsc[0].day : null;
+    const trendStartUtc = firstObservedDay || selectedStartUtc;
+    const latestRecordByPeriod = new Map<string, { anchor: Date; record: any }>();
+    for (const entry of periodRecordsAsc as any[]) {
+      const key = periodKey(entry.day);
+      latestRecordByPeriod.set(key, { anchor: periodAnchor(entry.day), record: entry.record });
+    }
+    const requestedPeriods: Array<{ key: string; anchor: Date }> = [];
+    if (frequency === 'monthly') {
+      for (
+        let cursor = new Date(Date.UTC(trendStartUtc.getUTCFullYear(), trendStartUtc.getUTCMonth(), 1));
+        cursor <= selectedEndUtc;
+        cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))
+      ) {
+        requestedPeriods.push({ key: periodKey(cursor), anchor: periodAnchor(cursor) });
+      }
+    } else if (frequency === 'weekly') {
+      for (
+        let cursor = periodAnchor(trendStartUtc);
+        cursor <= selectedEndUtc;
+        cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 7))
+      ) {
+        requestedPeriods.push({ key: periodKey(cursor), anchor: periodAnchor(cursor) });
+      }
+    } else {
+      for (
+        let cursor = trendStartUtc;
+        cursor <= selectedEndUtc;
+        cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 1))
+      ) {
+        requestedPeriods.push({ key: periodKey(cursor), anchor: periodAnchor(cursor) });
+      }
+    }
+    const chartData = requestedPeriods
+      .map((period) => {
+      const point = latestRecordByPeriod.get(period.key);
+      const record = point?.record || null;
+      return {
+        periodKey: toIsoDay(period.anchor),
+        month: formatArTrendDate(period.anchor),
+        'Open AR Current': Number(record?.current || 0),
+        'Open AR 1-30': Number(record?.days1to30 || 0),
+        'Open AR 31-60': Number(record?.days31to60 || 0),
+        'Open AR 61-90': Number(record?.days61to90 || 0),
+        'Open AR 90+': Number(record?.days90plus || 0),
+        total: Number(record?.totalAR || 0),
+        hasData: Boolean(record),
+      };
+      })
+      .filter((row: any) => row.hasData);
+    const arCollectionsTrend = chartData.map((row: any) => ({
+      period: row.month,
+      dso: 0,
+      over30Pct: row.total > 0 ? ((row['Open AR 31-60'] + row['Open AR 61-90'] + row['Open AR 90+']) / row.total) * 100 : 0,
+      over90Pct: row.total > 0 ? (row['Open AR 90+'] / row.total) * 100 : 0,
     }));
-    const arCollectionsTrend = [...records]
-      .reverse()
-      .map((record: any) => ({
-        period: formatArTrendDate(record.snapshotDate),
-        dso: Number(record.dso || 0),
-        over30Pct: Number(record.over30Pct || 0),
-        over90Pct: Number(record.over90Pct || 0),
-      }));
     const arCollectionsRiskQueue = arCustomers
       .map((row) => {
         const overdue = Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
@@ -2388,9 +2452,9 @@ export default function OperationsTab({
         {summary && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total AR</div>
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total Open AR</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
-                {formatCurrency(summary.totalAR)}
+                {formatCurrency((summary.totalOpenAR ?? summary.totalAR) || 0)}
               </div>
             </div>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -2432,7 +2496,14 @@ export default function OperationsTab({
           <ResponsiveContainer width="100%" height={350}>
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <XAxis
+                dataKey="periodKey"
+                tickFormatter={(value) => formatArTrendDate(value)}
+                interval={0}
+                minTickGap={0}
+                stroke="#64748b"
+                style={{ fontSize: '12px' }}
+              />
               <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
               <Tooltip 
                 formatter={(value: any) => formatCurrency(value)}

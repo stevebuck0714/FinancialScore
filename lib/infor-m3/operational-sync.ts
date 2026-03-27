@@ -1,7 +1,9 @@
 import prisma from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
+import { randomUUID } from 'node:crypto';
 
 type InforProgramRow = {
   module: string;
@@ -1157,6 +1159,11 @@ const AR_AMOUNT_DUE_KEYS = [
 ];
 const AR_AMOUNT_HOME_KEYS = ['amountHome', 'homeAmount', 'Amount', 'ACAM', 'CUAM'];
 const AR_AMOUNT_CURRENCY_KEYS = ['amountCurrency', 'invoiceAmount', 'Amount', 'CUAM'];
+const AR_APPLY_TO_INVOICE_KEYS = ['DerApplyToInvNum', 'ApplyToInvNum', 'ApplyToInv', 'applyToInvoiceNo'];
+const AR_CHARGE_AMOUNT_HOME_KEYS = ['Amount', 'amountHome', 'homeAmount', 'ACAM', 'CUAM', 'amountDueHome', 'amountDue', 'openAmount', 'balance', 'Balance'];
+const AR_REDUCTION_AMOUNT_HOME_KEYS = ['DerPaymentCheckAmount', 'paidAmountHome', 'paidAmount', 'PYAM', 'ACAM', 'CUAM', 'Amount'];
+const AR_CHARGE_AMOUNT_CURRENCY_KEYS = ['Amount', 'amountCurrency', 'invoiceAmount', 'CUAM'];
+const AR_REDUCTION_AMOUNT_CURRENCY_KEYS = ['DerPaymentCheckAmount', 'paidAmount', 'amountCurrency', 'PYAM', 'CUAM', 'Amount'];
 
 function parseCustomerNameFromComposite(value: string | null): string | null {
   if (!value) return null;
@@ -1672,80 +1679,200 @@ async function saveAROpenInvoices(
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[],
-  context: { miProgram: string; transaction: string; cono?: string; divi?: string }
+  context: { miProgram: string; transaction: string; cono?: string; divi?: string; resetSnapshot?: boolean }
 ): Promise<number> {
-  const rawRows = records
-    .map((record, idx) => {
-      const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
-      const invoiceNo = pickString(record, AR_INVOICE_NO_KEYS) || `UNKNOWN-${idx + 1}`;
-      const amountDueHome = pickNumber(record, AR_AMOUNT_DUE_KEYS);
-      return {
+  const normalizeInvoiceNo = (value: string | null): string => String(value || '').trim();
+  const isReductionMovement = (record: Record<string, unknown>): boolean => {
+    const typeToken = normalizeToken(record['Type']) || '';
+    const drCrToken = normalizeToken(record['DrCr']) || '';
+    const ref = (pickString(record, ['Ref', 'reference']) || '').trim().toLowerCase();
+    const description = (pickString(record, ['Description', 'description']) || '').trim().toLowerCase();
+    const text = `${typeToken} ${drCrToken} ${ref} ${description}`;
+    return (
+      typeToken === 'p' ||
+      typeToken === 'pay' ||
+      typeToken === 'pmt' ||
+      typeToken === 'payment' ||
+      typeToken === 'c' ||
+      typeToken === 'cr' ||
+      typeToken === 'credit' ||
+      typeToken === 'cm' ||
+      drCrToken === 'c' ||
+      drCrToken === 'cr' ||
+      drCrToken === 'credit' ||
+      text.includes('payment') ||
+      text.includes('receipt') ||
+      text.includes('cash') ||
+      text.includes('credit')
+    );
+  };
+  const signedAmount = (record: Record<string, unknown>, raw: number): number => {
+    if (!Number.isFinite(raw) || raw === 0) return 0;
+    // Keep native sign when source already sends signed movements.
+    if (raw < 0) return raw;
+    const isReduction = isReductionMovement(record);
+    return isReduction ? -Math.abs(raw) : Math.abs(raw);
+  };
+
+  const invoiceAccumulator = new Map<
+    string,
+    {
+      companyId: string;
+      snapshotDate: Date;
+      frequency: 'daily' | 'weekly' | 'monthly';
+      customerId: string | null;
+      customerName: string;
+      invoiceNo: string;
+      invoiceDate: Date | null;
+      dueDate: Date | null;
+      status: string | null;
+      currencyCode: string | null;
+      remainingHome: number;
+      remainingCurrency: number;
+    }
+  >();
+
+  for (let idx = 0; idx < records.length; idx += 1) {
+    const record = records[idx];
+    const reductionMovement = isReductionMovement(record);
+    const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
+    const customerId =
+      pickString(record, CUSTOMER_ID_KEYS) ||
+      parseCustomerIdFromComposite(pickString(record, ['DerCustNoName', 'customerComposite']));
+    const applyToInvoiceNo = normalizeInvoiceNo(pickString(record, AR_APPLY_TO_INVOICE_KEYS));
+    const nativeInvoiceNo = normalizeInvoiceNo(pickString(record, ['InvNum', 'DerInvNum', ...AR_INVOICE_NO_KEYS]));
+    const nativeUpper = nativeInvoiceNo.toUpperCase();
+    const shouldMapToAppliedInvoice = Boolean(applyToInvoiceNo) && (reductionMovement || nativeUpper.startsWith('DR'));
+    const invoiceNo = shouldMapToAppliedInvoice ? applyToInvoiceNo : nativeInvoiceNo || applyToInvoiceNo;
+    if (!invoiceNo) continue;
+    const rawAmountHome = pickNumber(
+      record,
+      reductionMovement ? AR_REDUCTION_AMOUNT_HOME_KEYS : AR_CHARGE_AMOUNT_HOME_KEYS
+    );
+    const rawAmountCurrency = pickNumber(
+      record,
+      reductionMovement ? AR_REDUCTION_AMOUNT_CURRENCY_KEYS : AR_CHARGE_AMOUNT_CURRENCY_KEYS
+    );
+    const movementHome = signedAmount(record, rawAmountHome);
+    const movementCurrency = signedAmount(record, rawAmountCurrency);
+    if (!Number.isFinite(movementHome) || movementHome === 0) continue;
+
+    const customerKey = String(customerId || customerName).trim().toLowerCase();
+    const groupKey = `${companyId}|${frequency}|${snapshotDate.toISOString()}|${customerKey}|${invoiceNo}`;
+    const rawInvoiceDate = parseMaybeDate(
+      pickString(record, ['InvDate', 'invoiceDate', 'IssueDate', 'RecordDate', 'date', 'IVDT'])
+    );
+    // Applied rows mapped off DR documents should age with the target invoice.
+    const invoiceDate = shouldMapToAppliedInvoice ? null : rawInvoiceDate;
+    const dueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT']));
+
+    const existing = invoiceAccumulator.get(groupKey);
+    if (!existing) {
+      invoiceAccumulator.set(groupKey, {
         companyId,
         snapshotDate,
         frequency,
-        customerId: pickString(record, CUSTOMER_ID_KEYS),
+        customerId,
         customerName,
         invoiceNo,
-        invoiceDate: parseMaybeDate(pickString(record, ['invoiceDate', 'date', 'InvDate', 'IVDT'])),
-        dueDate: parseMaybeDate(pickString(record, ['dueDate', 'DUDT'])),
+        invoiceDate,
+        dueDate,
         status: pickString(record, ['status', 'STAT', 'Type']),
-        currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
-        amountCurrency: pickNumber(record, AR_AMOUNT_CURRENCY_KEYS) || null,
-        amountHome: pickNumber(record, AR_AMOUNT_HOME_KEYS) || null,
-        amountDueHome,
-        current: pickNumber(record, ['current', 'bucket0']) || null,
-        days1to30: pickNumber(record, ['days1to30', 'bucket1']) || null,
-        days31to60: pickNumber(record, ['days31to60', 'bucket2']) || null,
-        days61to90: pickNumber(record, ['days61to90', 'bucket3']) || null,
-        days90plus: pickNumber(record, ['days90plus', 'bucket4']) || null,
-        sourcePlatform: 'INFOR_M3',
+        currencyCode: pickString(record, ['currencyCode', 'currency', 'CurrCode', 'CUCD']),
+        remainingHome: movementHome,
+        remainingCurrency: movementCurrency,
+      });
+      continue;
+    }
+
+    existing.remainingHome += movementHome;
+    existing.remainingCurrency += movementCurrency;
+    existing.customerId = existing.customerId || customerId;
+    existing.invoiceDate = existing.invoiceDate || invoiceDate;
+    existing.dueDate = existing.dueDate || dueDate;
+    existing.status = existing.status || pickString(record, ['status', 'STAT', 'Type']);
+    existing.currencyCode = existing.currencyCode || pickString(record, ['currencyCode', 'currency', 'CurrCode', 'CUCD']);
+  }
+
+  const movementRows = Array.from(invoiceAccumulator.values())
+    .map((entry) => {
+      const remainingHome = Number(entry.remainingHome || 0);
+      if (!Number.isFinite(remainingHome) || remainingHome === 0) return null;
+      const remainingCurrency = Number(entry.remainingCurrency || 0);
+      return {
+        id: randomUUID(),
+        companyId: entry.companyId,
+        snapshotDate: entry.snapshotDate,
+        frequency: entry.frequency,
+        customerId: entry.customerId,
+        customerName: entry.customerName,
+        invoiceNo: entry.invoiceNo,
+        invoiceDate: entry.invoiceDate,
+        dueDate: entry.dueDate,
+        status: entry.status || 'OPEN_NET',
+        currencyCode: entry.currencyCode,
+        amountCurrency: Number.isFinite(remainingCurrency) ? remainingCurrency : null,
+        amountHome: Number.isFinite(remainingHome) && remainingHome > 0 ? remainingHome : null,
+        amountDueHome: remainingHome,
+        current: null,
+        days1to30: null,
+        days31to60: null,
+        days61to90: null,
+        days90plus: null,
+        sourcePlatform: 'INFOR_M3' as const,
         sourceProgram: context.miProgram,
         sourceTransaction: context.transaction,
         cono: context.cono || null,
         divi: context.divi || null,
       };
     })
-    .filter((row) => row.customerName && row.invoiceNo && Number.isFinite(row.amountDueHome));
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
 
-  // CSI AR payloads can contain multiple lines for the same invoice/customer.
-  // Merge them before insert to avoid unique key collisions on snapshot rows.
-  const deduped = new Map<string, (typeof rawRows)[number]>();
-  for (const row of rawRows) {
-    const key = `${row.companyId}|${row.frequency}|${row.snapshotDate.toISOString()}|${row.invoiceNo}|${row.customerName}`;
-    const existing = deduped.get(key);
-    if (!existing) {
-      deduped.set(key, { ...row });
-      continue;
-    }
-
-    existing.amountCurrency = (existing.amountCurrency || 0) + (row.amountCurrency || 0);
-    existing.amountHome = (existing.amountHome || 0) + (row.amountHome || 0);
-    existing.amountDueHome = (existing.amountDueHome || 0) + (row.amountDueHome || 0);
-    existing.current = (existing.current || 0) + (row.current || 0);
-    existing.days1to30 = (existing.days1to30 || 0) + (row.days1to30 || 0);
-    existing.days31to60 = (existing.days31to60 || 0) + (row.days31to60 || 0);
-    existing.days61to90 = (existing.days61to90 || 0) + (row.days61to90 || 0);
-    existing.days90plus = (existing.days90plus || 0) + (row.days90plus || 0);
-    existing.customerId = existing.customerId || row.customerId;
-    existing.invoiceDate = existing.invoiceDate || row.invoiceDate;
-    existing.dueDate = existing.dueDate || row.dueDate;
-    existing.status = existing.status || row.status;
-    existing.currencyCode = existing.currencyCode || row.currencyCode;
+  const snapshotLockKey = `ar_open_invoice_snapshot|${companyId}|${frequency}|${snapshotDate.toISOString()}`;
+  if (context.resetSnapshot) {
+    await retryOnDeadlock('aROpenInvoiceSnapshot.reset', () =>
+      prisma.$transaction(async (tx) => {
+        // Serialize reset for the same snapshot slice to avoid cross-run deadlocks.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${snapshotLockKey}))`;
+        await tx.aROpenInvoiceSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
+      }, { maxWait: 10000, timeout: 30000 })
+    );
   }
 
-  const rows = Array.from(deduped.values()).filter((row) => Number.isFinite(row.amountDueHome));
-  const snapshotLockKey = `ar_open_invoice_snapshot|${companyId}|${frequency}|${snapshotDate.toISOString()}`;
-  await retryOnDeadlock('aROpenInvoiceSnapshot.refresh', () =>
-    prisma.$transaction(async (tx) => {
-      // Serialize refreshes for the same snapshot slice to avoid cross-run deadlocks.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${snapshotLockKey}))`;
-      await tx.aROpenInvoiceSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
-      if (rows.length) {
-        await tx.aROpenInvoiceSnapshot.createMany({ data: rows });
-      }
-    }, { maxWait: 10000, timeout: 30000 })
-  );
-  return rows.length || 0;
+  const batchSize = 500;
+  for (let i = 0; i < movementRows.length; i += batchSize) {
+    const chunk = movementRows.slice(i, i + batchSize);
+    const values = chunk.map((row) => Prisma.sql`(
+      ${row.id}, ${row.companyId}, ${row.snapshotDate}, ${row.frequency}, ${row.customerId}, ${row.customerName}, ${row.invoiceNo},
+      ${row.invoiceDate}, ${row.dueDate}, ${row.status}, ${row.currencyCode},
+      ${row.amountCurrency}, ${row.amountHome}, ${row.amountDueHome}, NULL, NULL, NULL, NULL, NULL,
+      ${row.sourcePlatform}, ${row.sourceProgram}, ${row.sourceTransaction}, ${row.cono}, ${row.divi}
+    )`);
+    await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "AROpenInvoiceSnapshot" (
+        "id","companyId","snapshotDate","frequency","customerId","customerName","invoiceNo","invoiceDate","dueDate","status","currencyCode",
+        "amountCurrency","amountHome","amountDueHome","current","days1to30","days31to60","days61to90","days90plus",
+        "sourcePlatform","sourceProgram","sourceTransaction","cono","divi"
+      )
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("companyId","frequency","snapshotDate","invoiceNo","customerName")
+      DO UPDATE SET
+        "customerId" = COALESCE(EXCLUDED."customerId", "AROpenInvoiceSnapshot"."customerId"),
+        "invoiceDate" = COALESCE("AROpenInvoiceSnapshot"."invoiceDate", EXCLUDED."invoiceDate"),
+        "dueDate" = COALESCE("AROpenInvoiceSnapshot"."dueDate", EXCLUDED."dueDate"),
+        "status" = COALESCE(EXCLUDED."status", "AROpenInvoiceSnapshot"."status"),
+        "currencyCode" = COALESCE(EXCLUDED."currencyCode", "AROpenInvoiceSnapshot"."currencyCode"),
+        "amountCurrency" = COALESCE("AROpenInvoiceSnapshot"."amountCurrency", 0) + COALESCE(EXCLUDED."amountCurrency", 0),
+        "amountHome" = COALESCE("AROpenInvoiceSnapshot"."amountHome", 0) + COALESCE(EXCLUDED."amountHome", 0),
+        "amountDueHome" = COALESCE("AROpenInvoiceSnapshot"."amountDueHome", 0) + COALESCE(EXCLUDED."amountDueHome", 0),
+        "sourcePlatform" = EXCLUDED."sourcePlatform",
+        "sourceProgram" = EXCLUDED."sourceProgram",
+        "sourceTransaction" = EXCLUDED."sourceTransaction",
+        "cono" = COALESCE(EXCLUDED."cono", "AROpenInvoiceSnapshot"."cono"),
+        "divi" = COALESCE(EXCLUDED."divi", "AROpenInvoiceSnapshot"."divi")
+    `);
+  }
+  return movementRows.length || 0;
 }
 
 async function saveARPayments(
@@ -3210,12 +3337,15 @@ export async function syncInforM3OperationalData(
       const recordsAfterSiteFilter = filterRecordsBySiteIfSupported(rawRecords, row.site);
       // For daily overlap syncs, keep full open-item populations for AR/AP aging snapshots.
       // A strict rolling date window on invoice dates can hide older but still-open receivables/payables.
-      const isArApOpenFlow = (moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open';
+      const isArOpenSnapshotProgram =
+        moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
+      const isArApOpenFlow =
+        ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
       // Contract/backlog math from SLCoitems also requires full line populations; clipping
       // to overlap windows can zero out Contract Total for customers with older open orders.
       const isOrderLineProgram = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLCOITEMS';
       const shouldApplyDateWindow =
-        (!isArApOpenFlow && !isOrderLineProgram) || syncWindow?.mode !== 'daily_overlap';
+        !isArApOpenFlow && !(isOrderLineProgram && syncWindow?.mode === 'daily_overlap');
       const recordsAfterDateWindow = shouldApplyDateWindow
         ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
         : recordsAfterSiteFilter;
@@ -3301,6 +3431,7 @@ export async function syncInforM3OperationalData(
                   transaction: req.transaction,
                   cono: row.cono,
                   divi: row.divi,
+                  resetSnapshot: !options?.bookmark,
                 };
                 if (arApFlow === 'payments') {
                   moduleRecordsCreated = await saveARPayments(companyId, records, context);
@@ -3454,6 +3585,17 @@ export async function syncInforM3OperationalData(
   }
 
   if (!continuation) {
+    // Finalize open-item snapshot after all continuation pages are applied.
+    // During continuation accumulation we may temporarily carry zero/negative
+    // balances; keep only true open invoices at completion.
+    await prisma.aROpenInvoiceSnapshot.deleteMany({
+      where: {
+        companyId,
+        frequency,
+        snapshotDate,
+        amountDueHome: { lte: 0 },
+      },
+    });
     try {
       await upsertDailyFinancialSnapshotFromOperationalTables(companyId, snapshotDate, frequency);
     } catch (dailyPersistError) {

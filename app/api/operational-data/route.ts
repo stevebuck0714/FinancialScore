@@ -150,55 +150,50 @@ function deriveArBucketsFromRow(
   days61to90: number;
   days90plus: number;
 } {
-  const current = Number(row.current || 0);
-  const days1to30 = Number(row.days1to30 || 0);
-  const days31to60 = Number(row.days31to60 || 0);
-  const days61to90 = Number(row.days61to90 || 0);
-  const days90plus = Number(row.days90plus || 0);
-  const explicitTotal = current + days1to30 + days31to60 + days61to90 + days90plus;
   const openAmount = Number(row.amountDueHome || 0);
-  if (explicitTotal > 0 || openAmount <= 0) {
+  if (openAmount <= 0) {
     return {
-      totalAR: explicitTotal > 0 ? explicitTotal : openAmount,
-      current,
-      days1to30,
-      days31to60,
-      days61to90,
-      days90plus,
-    };
-  }
-
-  // Fallback aging for CSI tenants that provide open AR amount without bucket splits.
-  const dueDateRaw = row.dueDate ? new Date(row.dueDate) : null;
-  const invoiceDateRaw = row.invoiceDate ? new Date(row.invoiceDate) : null;
-  const fallbackDueFromInvoice =
-    invoiceDateRaw && !Number.isNaN(invoiceDateRaw.getTime())
-      ? new Date(startOfUtcDay(invoiceDateRaw).getTime() + 30 * 24 * 60 * 60 * 1000)
-      : null;
-  const effectiveDueDate =
-    dueDateRaw && !Number.isNaN(dueDateRaw.getTime()) ? dueDateRaw : fallbackDueFromInvoice;
-  if (!effectiveDueDate) {
-    return {
-      totalAR: openAmount,
+      totalAR: 0,
       current: 0,
       days1to30: 0,
       days31to60: 0,
       days61to90: 0,
-      days90plus: openAmount,
+      days90plus: 0,
+    };
+  }
+
+  // Age by due date first, then invoice date.
+  // Current: 0-30, 1-30: 31-60, 31-60: 61-90, 61-90: 91-120, 90+: 121+.
+  const dueDateRaw = row.dueDate ? new Date(row.dueDate) : null;
+  const invoiceDateRaw = row.invoiceDate ? new Date(row.invoiceDate) : null;
+  const agingAnchor =
+    dueDateRaw && !Number.isNaN(dueDateRaw.getTime())
+      ? dueDateRaw
+      : invoiceDateRaw && !Number.isNaN(invoiceDateRaw.getTime())
+        ? invoiceDateRaw
+        : null;
+  if (!agingAnchor) {
+    return {
+      totalAR: openAmount,
+      current: openAmount,
+      days1to30: 0,
+      days31to60: 0,
+      days61to90: 0,
+      days90plus: 0,
     };
   }
   const dayMs = 24 * 60 * 60 * 1000;
-  const overdueDays = Math.floor((startOfUtcDay(asOfDate).getTime() - startOfUtcDay(effectiveDueDate).getTime()) / dayMs);
-  if (overdueDays <= 0) {
+  const invoiceAgeDays = Math.floor((startOfUtcDay(asOfDate).getTime() - startOfUtcDay(agingAnchor).getTime()) / dayMs);
+  if (invoiceAgeDays <= 30) {
     return { totalAR: openAmount, current: openAmount, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
   }
-  if (overdueDays <= 30) {
+  if (invoiceAgeDays <= 60) {
     return { totalAR: openAmount, current: 0, days1to30: openAmount, days31to60: 0, days61to90: 0, days90plus: 0 };
   }
-  if (overdueDays <= 60) {
+  if (invoiceAgeDays <= 90) {
     return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: openAmount, days61to90: 0, days90plus: 0 };
   }
-  if (overdueDays <= 90) {
+  if (invoiceAgeDays <= 120) {
     return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: 0, days61to90: openAmount, days90plus: 0 };
   }
   return {
@@ -625,47 +620,7 @@ export async function GET(request: NextRequest) {
       case 'ar-aging':
         // Get AR aging data
         let arFrequencyForQuery: 'daily' | 'weekly' | 'monthly' = frequency;
-        let arAgingRows = await prisma.aRAgingSnapshot.findMany({
-          where: {
-            companyId,
-            frequency: arFrequencyForQuery,
-            snapshotDate: dateFilter,
-          },
-          orderBy: { snapshotDate: 'desc' },
-          take: limit,
-        });
-        // AR trend should prefer a usable time series. If the requested frequency/date
-        // collapses to <=1 point, fall back to daily snapshots, then latest daily history.
-        if (arAgingRows.length <= 1) {
-          const dailyRowsInWindow = await prisma.aRAgingSnapshot.findMany({
-            where: {
-              companyId,
-              frequency: 'daily',
-              snapshotDate: dateFilter,
-            },
-            orderBy: { snapshotDate: 'desc' },
-            take: limit,
-          });
-          if (dailyRowsInWindow.length > arAgingRows.length) {
-            arAgingRows = dailyRowsInWindow;
-            arFrequencyForQuery = 'daily';
-          }
-        }
-        if (arAgingRows.length <= 1) {
-          const latestDailyRows = await prisma.aRAgingSnapshot.findMany({
-            where: {
-              companyId,
-              frequency: 'daily',
-            },
-            orderBy: { snapshotDate: 'desc' },
-            take: Math.max(limit, 90),
-          });
-          if (latestDailyRows.length > arAgingRows.length) {
-            arAgingRows = latestDailyRows;
-            arFrequencyForQuery = 'daily';
-          }
-        }
-        data = arAgingRows;
+        data = [];
 
         let unpaidByCustomer: Array<{
           customerId: string;
@@ -708,47 +663,71 @@ export async function GET(request: NextRequest) {
           cashCollectedToDate: number;
           lastPaymentDate: string | null;
         }> = [];
+        let latestOpenTotals = {
+          totalAR: 0,
+          current: 0,
+          days1to30: 0,
+          days31to60: 0,
+          days61to90: 0,
+          days90plus: 0,
+          dsoWeightedDaysNumerator: 0,
+          dsoWeightedDaysDenominator: 0,
+        };
 
-        const openRowsForRange = await prisma.aROpenInvoiceSnapshot.findMany({
+        const latestOpenSnapshot = await prisma.aROpenInvoiceSnapshot.findFirst({
           where: {
             companyId,
-            frequency: arFrequencyForQuery,
-            snapshotDate: dateFilter,
+            frequency: 'daily',
+            snapshotDate: { lte: endDate },
           },
-          select: {
-            snapshotDate: true,
-            customerName: true,
-            customerId: true,
-            invoiceNo: true,
-            status: true,
-            invoiceDate: true,
-            dueDate: true,
-            amountDueHome: true,
-            amountHome: true,
-            amountCurrency: true,
-            currencyCode: true,
-            current: true,
-            days1to30: true,
-            days31to60: true,
-            days61to90: true,
-            days90plus: true,
-          },
-          orderBy: [{ snapshotDate: 'desc' }, { amountDueHome: 'desc' }],
-          take: Math.max(limit * 250, 20000),
+          select: { snapshotDate: true },
+          orderBy: [{ snapshotDate: 'desc' }],
         });
-        const latestOpenSnapshotDate = openRowsForRange[0]?.snapshotDate
-          ? startOfUtcDay(new Date(openRowsForRange[0].snapshotDate))
+        const latestOpenSnapshotDate = latestOpenSnapshot?.snapshotDate
+          ? startOfUtcDay(new Date(latestOpenSnapshot.snapshotDate))
           : null;
+        const latestOpenRows = latestOpenSnapshotDate
+          ? await prisma.aROpenInvoiceSnapshot.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: {
+                  gte: latestOpenSnapshotDate,
+                  lte: new Date(latestOpenSnapshotDate.getTime() + 24 * 60 * 60 * 1000 - 1),
+                },
+              },
+              select: {
+                snapshotDate: true,
+                customerName: true,
+                customerId: true,
+                invoiceNo: true,
+                status: true,
+                invoiceDate: true,
+                dueDate: true,
+                amountDueHome: true,
+                amountHome: true,
+                amountCurrency: true,
+                currencyCode: true,
+                current: true,
+                days1to30: true,
+                days31to60: true,
+                days61to90: true,
+                days90plus: true,
+              },
+              orderBy: [{ amountDueHome: 'desc' }],
+            })
+          : [];
 
-        const openRowsInvoiceLike = (openRowsForRange as any[]).filter((row: any) => {
+        const openRowsInvoiceLike = (latestOpenRows as any[]).filter((row: any) => {
           const amountDue = Number(row.amountDueHome || 0);
           if (!Number.isFinite(amountDue) || amountDue <= 0) return false;
           if (isClosedArStatus(row.status)) return false;
+          const invoiceDate = row.invoiceDate ? new Date(row.invoiceDate) : null;
+          if (!invoiceDate || Number.isNaN(invoiceDate.getTime())) return false;
           return isInvoiceLikeArOpenRow(row);
         });
-        const arTrendBySnapshotDay = new Map<
-          string,
-          {
+        const arTrendFromOpenRows = await prisma.$queryRaw<
+          Array<{
             snapshotDate: Date;
             totalAR: number;
             current: number;
@@ -756,46 +735,102 @@ export async function GET(request: NextRequest) {
             days31to60: number;
             days61to90: number;
             days90plus: number;
-          }
-        >();
-        for (const row of openRowsInvoiceLike as any[]) {
-          const snapshotDay = startOfUtcDay(new Date(row.snapshotDate));
-          const dayKey = dateKeyUtc(snapshotDay);
-          if (!arTrendBySnapshotDay.has(dayKey)) {
-            arTrendBySnapshotDay.set(dayKey, {
-              snapshotDate: snapshotDay,
-              totalAR: 0,
-              current: 0,
-              days1to30: 0,
-              days31to60: 0,
-              days61to90: 0,
-              days90plus: 0,
-            });
-          }
-          const acc = arTrendBySnapshotDay.get(dayKey)!;
-          const buckets = deriveArBucketsFromRow(row, snapshotDay);
-          if (buckets.totalAR <= 0) continue;
-          acc.totalAR += buckets.totalAR;
-          acc.current += buckets.current;
-          acc.days1to30 += buckets.days1to30;
-          acc.days31to60 += buckets.days31to60;
-          acc.days61to90 += buckets.days61to90;
-          acc.days90plus += buckets.days90plus;
-        }
-        const arTrendFromOpenRows = Array.from(arTrendBySnapshotDay.values())
-          .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
-          .slice(0, Math.max(limit, 90));
-        if (arTrendFromOpenRows.length > 1 || data.length <= 1) {
-          data = arTrendFromOpenRows;
-        }
+            currentPct: number;
+            days1to30Pct: number;
+            days31to60Pct: number;
+            days61to90Pct: number;
+            days90plusPct: number;
+            over30Pct: number;
+            over90Pct: number;
+          }>
+        >`
+          WITH base AS (
+            SELECT
+              date_trunc('day', "snapshotDate") AS day,
+              COALESCE("amountDueHome", 0)::double precision AS amount_due,
+              CASE
+                WHEN COALESCE("dueDate", "invoiceDate") IS NULL THEN NULL
+                ELSE GREATEST(FLOOR(EXTRACT(EPOCH FROM (date_trunc('day', "snapshotDate") - date_trunc('day', COALESCE("dueDate", "invoiceDate")))) / 86400), 0)
+              END AS invoice_age_days
+            FROM "AROpenInvoiceSnapshot"
+            WHERE "companyId" = ${companyId}
+              AND "frequency" = 'daily'
+              AND "snapshotDate" >= ${startDate}
+              AND "snapshotDate" <= ${endDate}
+              AND COALESCE("amountDueHome", 0) > 0
+              AND COALESCE("dueDate", "invoiceDate") IS NOT NULL
+              AND ("invoiceNo" IS NULL OR UPPER("invoiceNo") NOT LIKE 'CR%')
+              AND (
+                "status" IS NULL OR (
+                  UPPER("status") <> 'C' AND
+                  UPPER("status") <> 'P' AND
+                  LOWER("status") NOT LIKE '%credit%' AND
+                  LOWER("status") NOT LIKE '%payment%' AND
+                  LOWER("status") NOT LIKE '%cash%' AND
+                  LOWER("status") NOT LIKE '%receipt%' AND
+                  LOWER("status") NOT LIKE '%closed%' AND
+                  LOWER("status") NOT LIKE '%paid%' AND
+                  LOWER("status") NOT LIKE '%void%' AND
+                  LOWER("status") NOT LIKE '%cancel%' AND
+                  LOWER("status") NOT LIKE '%settled%' AND
+                  LOWER("status") NOT LIKE '%history%'
+                )
+              )
+          ),
+          bucketed AS (
+            SELECT
+              day AS "snapshotDate",
+              SUM(amount_due)::double precision AS "totalAR",
+              SUM(CASE WHEN invoice_age_days <= 30 THEN amount_due ELSE 0 END)::double precision AS "current",
+              SUM(CASE WHEN invoice_age_days > 30 AND invoice_age_days <= 60 THEN amount_due ELSE 0 END)::double precision AS "days1to30",
+              SUM(CASE WHEN invoice_age_days > 60 AND invoice_age_days <= 90 THEN amount_due ELSE 0 END)::double precision AS "days31to60",
+              SUM(CASE WHEN invoice_age_days > 90 AND invoice_age_days <= 120 THEN amount_due ELSE 0 END)::double precision AS "days61to90",
+              SUM(CASE WHEN invoice_age_days > 120 THEN amount_due ELSE 0 END)::double precision AS "days90plus"
+            FROM base
+            GROUP BY day
+          )
+          SELECT
+            b."snapshotDate",
+            b."totalAR",
+            b."current",
+            b."days1to30",
+            b."days31to60",
+            b."days61to90",
+            b."days90plus",
+            CASE WHEN b."totalAR" > 0 THEN (b."current" / b."totalAR") * 100 ELSE 0 END::double precision AS "currentPct",
+            CASE WHEN b."totalAR" > 0 THEN (b."days1to30" / b."totalAR") * 100 ELSE 0 END::double precision AS "days1to30Pct",
+            CASE WHEN b."totalAR" > 0 THEN (b."days31to60" / b."totalAR") * 100 ELSE 0 END::double precision AS "days31to60Pct",
+            CASE WHEN b."totalAR" > 0 THEN (b."days61to90" / b."totalAR") * 100 ELSE 0 END::double precision AS "days61to90Pct",
+            CASE WHEN b."totalAR" > 0 THEN (b."days90plus" / b."totalAR") * 100 ELSE 0 END::double precision AS "days90plusPct",
+            CASE WHEN b."totalAR" > 0 THEN ((b."days31to60" + b."days61to90" + b."days90plus") / b."totalAR") * 100 ELSE 0 END::double precision AS "over30Pct",
+            CASE WHEN b."totalAR" > 0 THEN (b."days90plus" / b."totalAR") * 100 ELSE 0 END::double precision AS "over90Pct"
+          FROM bucketed b
+          ORDER BY b."snapshotDate" DESC
+          LIMIT ${Math.max(limit, 365)}
+        `;
+        data = arTrendFromOpenRows;
 
         if (openRowsInvoiceLike.length > 0) {
-          const openRows = latestOpenSnapshotDate
-            ? (openRowsInvoiceLike as any[]).filter(
-                (row: any) => dateKeyUtc(new Date(row.snapshotDate)) === dateKeyUtc(latestOpenSnapshotDate)
-              )
-            : [];
-          const openRowsEligible = openRows;
+          const openRowsEligible = openRowsInvoiceLike;
+          for (const row of openRowsEligible as any[]) {
+            const buckets = deriveArBucketsFromRow(row, latestOpenSnapshotDate || endDate);
+            if (buckets.totalAR <= 0) continue;
+            latestOpenTotals.totalAR += buckets.totalAR;
+            latestOpenTotals.current += buckets.current;
+            latestOpenTotals.days1to30 += buckets.days1to30;
+            latestOpenTotals.days31to60 += buckets.days31to60;
+            latestOpenTotals.days61to90 += buckets.days61to90;
+            latestOpenTotals.days90plus += buckets.days90plus;
+            const invoiceDate = row.invoiceDate ? new Date(row.invoiceDate) : null;
+            if (invoiceDate && !Number.isNaN(invoiceDate.getTime())) {
+              const ageDays = Math.max(
+                0,
+                Math.floor((startOfUtcDay(latestOpenSnapshotDate || endDate).getTime() - startOfUtcDay(invoiceDate).getTime()) / (24 * 60 * 60 * 1000))
+              );
+              latestOpenTotals.dsoWeightedDaysNumerator += buckets.totalAR * ageDays;
+              latestOpenTotals.dsoWeightedDaysDenominator += buckets.totalAR;
+            }
+          }
 
           const customerAging = openRowsEligible.reduce((acc: Record<string, any>, row: any) => {
             const name = row.customerName || 'Unknown Customer';
@@ -1110,24 +1145,6 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        const latestAR = data[0];
-        const agingMetrics = latestAR
-          ? {
-              totalAR: Number(latestAR.totalAR || 0),
-              currentPct:
-                Number(latestAR.totalAR || 0) > 0 ? (Number(latestAR.current || 0) / Number(latestAR.totalAR || 0)) * 100 : 0,
-              over30Pct:
-                Number(latestAR.totalAR || 0) > 0
-                  ? ((Number(latestAR.days1to30 || 0) + Number(latestAR.days31to60 || 0) + Number(latestAR.days61to90 || 0) + Number(latestAR.days90plus || 0)) /
-                      Number(latestAR.totalAR || 0)) *
-                    100
-                  : 0,
-              over90Pct:
-                Number(latestAR.totalAR || 0) > 0 ? (Number(latestAR.days90plus || 0) / Number(latestAR.totalAR || 0)) * 100 : 0,
-              dso: calculateDSO(data), // Days Sales Outstanding estimate
-            }
-          : null;
-
         const derivedTotals = unpaidByCustomer.reduce(
           (acc, row) => {
             acc.totalAR += Number(row.totalDue || 0);
@@ -1140,21 +1157,38 @@ export async function GET(request: NextRequest) {
           },
           { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
         );
-
-        const totalARForPct = Number(agingMetrics?.totalAR ?? derivedTotals.totalAR);
-        const over30Amount = Number(derivedTotals.days1to30 + derivedTotals.days31to60 + derivedTotals.days61to90 + derivedTotals.days90plus);
-        const currentPctFallback = totalARForPct > 0 ? (Number(derivedTotals.current) / totalARForPct) * 100 : 0;
-        const over30PctFallback = totalARForPct > 0 ? (over30Amount / totalARForPct) * 100 : 0;
-        const over90PctFallback = totalARForPct > 0 ? (Number(derivedTotals.days90plus) / totalARForPct) * 100 : 0;
+        const summaryTotals =
+          latestOpenTotals.totalAR > 0
+            ? latestOpenTotals
+            : {
+                totalAR: Number(derivedTotals.totalAR || 0),
+                current: Number(derivedTotals.current || 0),
+                days1to30: Number(derivedTotals.days1to30 || 0),
+                days31to60: Number(derivedTotals.days31to60 || 0),
+                days61to90: Number(derivedTotals.days61to90 || 0),
+                days90plus: Number(derivedTotals.days90plus || 0),
+                dsoWeightedDaysNumerator: 0,
+                dsoWeightedDaysDenominator: 0,
+              };
+        const totalARForPct = Number(summaryTotals.totalAR || 0);
+        const over30Amount = Number(summaryTotals.days31to60 + summaryTotals.days61to90 + summaryTotals.days90plus);
+        const currentPct = totalARForPct > 0 ? (Number(summaryTotals.current) / totalARForPct) * 100 : 0;
+        const over30Pct = totalARForPct > 0 ? (over30Amount / totalARForPct) * 100 : 0;
+        const over90Pct = totalARForPct > 0 ? (Number(summaryTotals.days90plus) / totalARForPct) * 100 : 0;
+        const dso =
+          summaryTotals.dsoWeightedDaysDenominator > 0
+            ? summaryTotals.dsoWeightedDaysNumerator / summaryTotals.dsoWeightedDaysDenominator
+            : calculateDSO(data);
 
         return NextResponse.json({
           records: data,
           summary: {
-            totalAR: Number(agingMetrics?.totalAR ?? derivedTotals.totalAR),
-            currentPct: Number(agingMetrics?.currentPct ?? currentPctFallback),
-            over30Pct: Number(agingMetrics?.over30Pct ?? over30PctFallback),
-            over90Pct: Number(agingMetrics?.over90Pct ?? over90PctFallback),
-            dso: Number(agingMetrics?.dso ?? 0),
+            totalAR: Number(summaryTotals.totalAR || 0),
+            totalOpenAR: Number(summaryTotals.totalAR || 0),
+            currentPct: Number(currentPct),
+            over30Pct: Number(over30Pct),
+            over90Pct: Number(over90Pct),
+            dso: Number(dso || 0),
             breakdown: unpaidByCustomer,
             unpaidByCustomer,
             unpaidInvoices,
