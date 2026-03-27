@@ -615,6 +615,19 @@ function buildSlGlTransWindowFilter(window?: SyncWindow, site?: string): string 
   return `(${clauses.join(' and ')})`;
 }
 
+function buildSlArtransWindowFilter(window?: SyncWindow, site?: string): string | null {
+  if (!window) return null;
+  const start = formatCsiDateLiteral(window.startDate);
+  const end = formatCsiDateLiteral(window.endDate);
+  const clauses = [`(InvDate >= '${start}' and InvDate <= '${end}')`];
+  const siteValue = String(site || '').trim();
+  if (siteValue) {
+    const safeSite = siteValue.replace(/'/g, "''");
+    clauses.unshift(`Site='${safeSite}'`);
+  }
+  return `(${clauses.join(' and ')})`;
+}
+
 function applyCsiSourceWindowAndSort(
   endpointPath: string,
   row: InforProgramRow,
@@ -661,6 +674,21 @@ function applyCsiSourceWindowAndSort(
     params.set('filter', filter);
     params.set('recordCap', '500');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'TransDate desc, RecordDate desc');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+  }
+
+  if (moduleType === 'ar' && ido === 'SLARTRANS') {
+    // Keep daily-overlap unbounded so open-item populations include older still-open invoices.
+    // Backfill/manual runs must be windowed to rebuild each requested day slice correctly.
+    if (!window || window.mode === 'daily_overlap') {
+      return { endpointPath, applied: false };
+    }
+    const filter = buildSlArtransWindowFilter(window, row.site);
+    if (!filter) return { endpointPath, applied: false };
+    params.set('filter', filter);
+    params.set('recordCap', '1000');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true };
   }
@@ -1681,6 +1709,8 @@ async function saveAROpenInvoices(
   records: Record<string, unknown>[],
   context: { miProgram: string; transaction: string; cono?: string; divi?: string; resetSnapshot?: boolean }
 ): Promise<number> {
+  const snapshotDayStart = startOfUtcDay(snapshotDate);
+  const snapshotDayEnd = new Date(snapshotDayStart.getTime() + 24 * 60 * 60 * 1000);
   const normalizeInvoiceNo = (value: string | null): string => String(value || '').trim();
   const isReductionMovement = (record: Record<string, unknown>): boolean => {
     const typeToken = normalizeToken(record['Type']) || '';
@@ -1760,7 +1790,7 @@ async function saveAROpenInvoices(
     if (!Number.isFinite(movementHome) || movementHome === 0) continue;
 
     const customerKey = String(customerId || customerName).trim().toLowerCase();
-    const groupKey = `${companyId}|${frequency}|${snapshotDate.toISOString()}|${customerKey}|${invoiceNo}`;
+    const groupKey = `${companyId}|${frequency}|${snapshotDayStart.toISOString()}|${customerKey}|${invoiceNo}`;
     const rawInvoiceDate = parseMaybeDate(
       pickString(record, ['InvDate', 'invoiceDate', 'IssueDate', 'RecordDate', 'date', 'IVDT'])
     );
@@ -1777,7 +1807,7 @@ async function saveAROpenInvoices(
     if (!existing) {
       invoiceAccumulator.set(groupKey, {
         companyId,
-        snapshotDate,
+        snapshotDate: snapshotDayStart,
         frequency,
         customerId,
         customerName,
@@ -1841,13 +1871,19 @@ async function saveAROpenInvoices(
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
 
-  const snapshotLockKey = `ar_open_invoice_snapshot|${companyId}|${frequency}|${snapshotDate.toISOString()}`;
+  const snapshotLockKey = `ar_open_invoice_snapshot|${companyId}|${frequency}|${snapshotDayStart.toISOString()}`;
   if (context.resetSnapshot) {
     await retryOnDeadlock('aROpenInvoiceSnapshot.reset', () =>
       prisma.$transaction(async (tx) => {
         // Serialize reset for the same snapshot slice to avoid cross-run deadlocks.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${snapshotLockKey}))`;
-        await tx.aROpenInvoiceSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
+        await tx.aROpenInvoiceSnapshot.deleteMany({
+          where: {
+            companyId,
+            frequency,
+            snapshotDate: { gte: snapshotDayStart, lt: snapshotDayEnd },
+          },
+        });
       }, { maxWait: 10000, timeout: 30000 })
     );
   }
@@ -2800,8 +2836,9 @@ export async function syncInforM3OperationalData(
 ): Promise<InforOperationalSyncResult> {
   const errors: string[] = [];
   let recordsCreated = 0;
-  const snapshotDate = options?.snapshotDateOverride ? new Date(options.snapshotDateOverride) : new Date();
-  snapshotDate.setHours(0, 0, 0, 0);
+  // Normalize to a UTC calendar day key so repeated runs do not create
+  // mixed local-time snapshot variants (e.g. 00:00 and 07:00).
+  const snapshotDate = startOfUtcDay(options?.snapshotDateOverride ? new Date(options.snapshotDateOverride) : new Date());
 
   const connection = await prisma.accountingConnection.findUnique({
     where: {
@@ -3348,17 +3385,19 @@ export async function syncInforM3OperationalData(
       const sitePolicy = resolveSitePolicy(row, moduleType);
       const siteDetected = hasRecordSiteDimension(rawRecords);
       const recordsAfterSiteFilter = filterRecordsBySiteIfSupported(rawRecords, row.site);
-      // For daily overlap syncs, keep full open-item populations for AR/AP aging snapshots.
-      // A strict rolling date window on invoice dates can hide older but still-open receivables/payables.
+      // For daily-overlap syncs only, keep full open-item populations for AR/AP
+      // snapshots. Backfill/manual modes must honor the date window so each day
+      // is rebuilt from that day slice instead of replaying one global snapshot.
       const isArOpenSnapshotProgram =
         moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
       const isArApOpenFlow =
         ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
+      const keepFullArApPopulation = isArApOpenFlow && syncWindow?.mode === 'daily_overlap';
       // Contract/backlog math from SLCoitems also requires full line populations; clipping
       // to overlap windows can zero out Contract Total for customers with older open orders.
       const isOrderLineProgram = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLCOITEMS';
       const shouldApplyDateWindow =
-        !isArApOpenFlow && !(isOrderLineProgram && syncWindow?.mode === 'daily_overlap');
+        !keepFullArApPopulation && !(isOrderLineProgram && syncWindow?.mode === 'daily_overlap');
       const recordsAfterDateWindow = shouldApplyDateWindow
         ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
         : recordsAfterSiteFilter;
@@ -3601,11 +3640,13 @@ export async function syncInforM3OperationalData(
     // Finalize open-item snapshot after all continuation pages are applied.
     // During continuation accumulation we may temporarily carry zero/negative
     // balances; keep only true open invoices at completion.
+    const snapshotDayStart = startOfUtcDay(snapshotDate);
+    const snapshotDayEnd = new Date(snapshotDayStart.getTime() + 24 * 60 * 60 * 1000);
     await prisma.aROpenInvoiceSnapshot.deleteMany({
       where: {
         companyId,
         frequency,
-        snapshotDate,
+        snapshotDate: { gte: snapshotDayStart, lt: snapshotDayEnd },
         amountDueHome: { lte: 0 },
       },
     });

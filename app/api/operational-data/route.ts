@@ -69,6 +69,26 @@ function startOfUtcDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
+function endOfUtcDay(date: Date): Date {
+  const start = startOfUtcDay(date);
+  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+}
+
+function parseDateParamBoundary(value: string | null, boundary: 'start' | 'end', fallback: Date): Date {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  // Treat date-only params as full UTC day boundaries so same-day snapshots
+  // (commonly persisted with non-midnight times) are not excluded.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const day = parseIsoDayKey(trimmed);
+    return boundary === 'start' ? day : endOfUtcDay(day);
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return parsed;
+}
+
 function dateKeyUtc(date: Date): string {
   return startOfUtcDay(date).toISOString().slice(0, 10);
 }
@@ -529,8 +549,8 @@ export async function GET(request: NextRequest) {
     const defaultStartDate = new Date();
     defaultStartDate.setDate(defaultStartDate.getDate() - 90);
 
-    const startDate = startDateParam ? new Date(startDateParam) : defaultStartDate;
-    const endDate = endDateParam ? new Date(endDateParam) : defaultEndDate;
+    const startDate = parseDateParamBoundary(startDateParam, 'start', defaultStartDate);
+    const endDate = parseDateParamBoundary(endDateParam, 'end', defaultEndDate);
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: {
