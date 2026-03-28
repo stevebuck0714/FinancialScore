@@ -2277,17 +2277,31 @@ export default function OperationsTab({
       amountHome: row.amountHome || row.amountHomeCurrency || 0,
       amountDueHome: row.amountDueHome || row.amountDue || 0,
     }));
-    const arCoverageDates = records
-      .map((record: any) => parseDateValue(record.snapshotDate))
-      .filter((date): date is Date => Boolean(date));
-    const arCoverageStart = arCoverageDates.length > 0 ? new Date(Math.min(...arCoverageDates.map((date) => date.getTime()))) : null;
-    const arCoverageEnd = arCoverageDates.length > 0 ? new Date(Math.max(...arCoverageDates.map((date) => date.getTime()))) : null;
+    const parseInputUtcDay = (raw: string | null | undefined): Date | null => {
+      const value = String(raw || '').trim();
+      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) return null;
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+      return new Date(Date.UTC(year, month - 1, day));
+    };
+    const formatUtcDayLabel = (
+      raw: Date | null | undefined,
+      options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
+    ): string => {
+      if (!raw) return 'N/A';
+      return raw.toLocaleDateString('en-US', { ...options, timeZone: 'UTC' });
+    };
+    const arCoverageStart = parseInputUtcDay(startDate);
+    const arCoverageEnd = parseInputUtcDay(endDate);
     const arCoverageLabel =
       arCoverageStart && arCoverageEnd
-        ? `${formatDateUtcMinus4(arCoverageStart)} - ${formatDateUtcMinus4(arCoverageEnd)} (UTC-4)`
+        ? `${formatUtcDayLabel(arCoverageStart)} - ${formatUtcDayLabel(arCoverageEnd)}`
         : 'N/A';
     const arAsOfLabel = arCoverageEnd
-      ? formatDateUtcMinus4(arCoverageEnd)
+      ? formatUtcDayLabel(arCoverageEnd)
       : 'N/A';
     const paidByCustomerMap = new Map(paidByCustomerAll.map((row: any) => [row.customerName, row]));
     const contractAndCashFlowRows = arCustomers

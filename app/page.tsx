@@ -2119,6 +2119,19 @@ function FinancialScorePage() {
         const apiLastChunkAt =
           typeof data.lastChunkAt === 'string' && data.lastChunkAt.trim().length > 0 ? data.lastChunkAt : null;
         const apiRecentlyActive = data.recentlyActive === true;
+        const lastChunkTimeMs = apiLastChunkAt
+          ? new Date(apiLastChunkAt).getTime()
+          : (currentStatus.lastChunkAt ? new Date(currentStatus.lastChunkAt).getTime() : NaN);
+        const idleForMs = Number.isFinite(lastChunkTimeMs) ? Date.now() - lastChunkTimeMs : 0;
+        // Fallback: if UI busy state gets stuck but no new chunks arrive for a sustained
+        // period, mark the run complete so status does not remain "Running" indefinitely.
+        const idleCompletionThresholdMs = 4 * 60 * 1000;
+        const shouldForceCompleteForIdle = !apiRecentlyActive && idleForMs >= idleCompletionThresholdMs;
+        if (shouldForceCompleteForIdle && inforBusy) {
+          setInforBusy(false);
+          setInforBusyAction(null);
+          setInforBusyStartedAt(null);
+        }
         setInforOperationalSyncStatus((prev) => {
           if (!prev) return prev;
           if (prev.companyId !== currentStatus.companyId || prev.syncRunId !== currentStatus.syncRunId) return prev;
@@ -2127,7 +2140,7 @@ function FinancialScorePage() {
           let nextState = prev.state;
           if (isFailedStatus) {
             nextState = 'failed';
-          } else if (!inforBusy && !apiRecentlyActive && prev.state === 'running') {
+          } else if ((!inforBusy && !apiRecentlyActive && prev.state === 'running') || (prev.state === 'running' && shouldForceCompleteForIdle)) {
             nextState = 'done';
           }
           return {
@@ -5579,8 +5592,16 @@ function FinancialScorePage() {
 
   // Infor M3 Functions
   const checkInforM3Status = async (companyId: string) => {
+    let timeoutId: number | null = null;
     try {
-      const response = await fetch(`/api/infor-m3/status?companyId=${companyId}`);
+      const controller = new AbortController();
+      const timeoutMs = 15000;
+      timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(`/api/infor-m3/status?companyId=${companyId}`, {
+        signal: controller.signal,
+      });
+      window.clearTimeout(timeoutId);
+      timeoutId = null;
       const data = await response.json();
 
       if (data.connected) {
@@ -5599,6 +5620,10 @@ function FinancialScorePage() {
       console.error('Failed to check Infor M3 status:', error);
       setInforError('Failed to check Infor M3 connection status');
       return null;
+    } finally {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
     }
   };
 
