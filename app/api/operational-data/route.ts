@@ -1202,7 +1202,17 @@ export async function GET(request: NextRequest) {
             })
           : [];
 
+        const latestOpenPositiveRows = (latestOpenRows as any[]).filter((row: any) => Number(row.amountDueHome || 0) > 0).length;
+        const latestOpenNegativeRows = (latestOpenRows as any[]).filter((row: any) => Number(row.amountDueHome || 0) < 0).length;
+        const latestOpenPositiveWithDueRows = (latestOpenRows as any[]).filter(
+          (row: any) => Number(row.amountDueHome || 0) > 0 && row.dueDate
+        ).length;
+        const latestSnapshotLooksAnomalous =
+          latestOpenPositiveRows >= 200 &&
+          (latestOpenPositiveWithDueRows === 0 || latestOpenNegativeRows >= latestOpenPositiveRows);
+
         const openRowsInvoiceLike = (latestOpenRows as any[]).filter((row: any) => {
+          if (latestSnapshotLooksAnomalous) return false;
           const amountDue = Number(row.amountDueHome || 0);
           if (!Number.isFinite(amountDue) || amountDue <= 0) return false;
           if (isClosedArStatus(row.status)) return false;
@@ -1259,31 +1269,54 @@ export async function GET(request: NextRequest) {
               AND NULLIF(TRIM(COALESCE(s."invoiceNo", '')), '') IS NOT NULL
               AND UPPER(COALESCE(s."invoiceNo", '')) NOT LIKE 'CR%'
           ),
-          invoice_net AS (
+          day_quality AS (
             SELECT
               day,
-              customer_key,
-              invoice_no_norm,
-              SUM(amount_due)::double precision AS net_amount_due,
-              MAX(invoice_day) AS invoice_day,
-              MAX(due_day) AS due_day,
-              MAX(source_platform) AS source_platform,
-              MAX(source_program) AS source_program,
-              BOOL_OR(
-                status_token = 'C' OR
-                status_text LIKE '%credit%' OR
-                status_text LIKE '%payment%' OR
-                status_text LIKE '%cash%' OR
-                status_text LIKE '%receipt%' OR
-                status_text LIKE '%closed%' OR
-                status_text LIKE '%paid%' OR
-                status_text LIKE '%void%' OR
-                status_text LIKE '%cancel%' OR
-                status_text LIKE '%settled%' OR
-                status_text LIKE '%history%'
-              ) AS has_bad_status
+              COUNT(*) FILTER (WHERE amount_due > 0)::integer AS positive_rows,
+              COUNT(*) FILTER (WHERE amount_due < 0)::integer AS negative_rows,
+              COUNT(*) FILTER (WHERE amount_due > 0 AND due_day IS NOT NULL)::integer AS positive_rows_with_due
             FROM raw_rows
-            GROUP BY day, customer_key, invoice_no_norm
+            GROUP BY day
+          ),
+          valid_days AS (
+            SELECT dq.day
+            FROM day_quality dq
+            WHERE NOT (
+              -- Reject large slices where "open" rows have no due dates (historical dump pattern).
+              (dq.positive_rows >= 200 AND dq.positive_rows_with_due = 0)
+              OR
+              -- Reject large mixed-sign slices that look like transaction history, not open snapshots.
+              (dq.positive_rows >= 200 AND dq.negative_rows >= dq.positive_rows)
+            )
+          ),
+          invoice_net AS (
+            SELECT
+              rr.day AS day,
+              rr.customer_key,
+              rr.invoice_no_norm,
+              SUM(rr.amount_due)::double precision AS net_amount_due,
+              MAX(rr.invoice_day) AS invoice_day,
+              MAX(rr.due_day) AS due_day,
+              MAX(rr.source_platform) AS source_platform,
+              MAX(rr.source_program) AS source_program,
+              BOOL_OR(
+                rr.status_token = 'C' OR
+                rr.status_token = 'P' OR
+                rr.status_text LIKE '%credit%' OR
+                rr.status_text LIKE '%payment%' OR
+                rr.status_text LIKE '%cash%' OR
+                rr.status_text LIKE '%receipt%' OR
+                rr.status_text LIKE '%closed%' OR
+                rr.status_text LIKE '%paid%' OR
+                rr.status_text LIKE '%void%' OR
+                rr.status_text LIKE '%cancel%' OR
+                rr.status_text LIKE '%settled%' OR
+                rr.status_text LIKE '%history%'
+              ) AS has_bad_status
+            FROM raw_rows rr
+            INNER JOIN valid_days vd
+              ON vd.day = rr.day
+            GROUP BY rr.day, rr.customer_key, rr.invoice_no_norm
           ),
           base AS (
             SELECT
@@ -1300,6 +1333,7 @@ export async function GET(request: NextRequest) {
               END AS invoice_age_days
             FROM invoice_net
             WHERE net_amount_due > 0
+              AND NOT has_bad_status
               AND COALESCE(due_day, invoice_day) IS NOT NULL
           ),
           bucketed AS (

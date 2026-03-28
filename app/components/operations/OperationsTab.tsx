@@ -2452,8 +2452,9 @@ export default function OperationsTab({
       .map((record: any) => ({ record, day: toUtcDay(record.snapshotDate) }))
       .filter((entry: any) => Boolean(entry.day))
       .sort((a: any, b: any) => a.day.getTime() - b.day.getTime());
-    const firstObservedDay = periodRecordsAsc.length > 0 ? periodRecordsAsc[0].day : null;
-    const trendStartUtc = firstObservedDay || selectedStartUtc;
+    // AR trend must honor the user-selected From/To window exactly.
+    // Do not shift the start based on first observed data day.
+    const trendStartUtc = selectedStartUtc;
     const latestRecordByPeriod = new Map<string, { anchor: Date; record: any }>();
     for (const entry of periodRecordsAsc as any[]) {
       const key = periodKey(entry.day);
@@ -2500,8 +2501,7 @@ export default function OperationsTab({
         total: Number(record?.totalAR || 0),
         hasData: Boolean(record),
       };
-      })
-      .filter((row: any) => row.hasData);
+      });
     const arCollectionsTrend = chartData.map((row: any) => ({
       period: row.month,
       dso: 0,
@@ -2580,8 +2580,7 @@ export default function OperationsTab({
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis
-                dataKey="periodKey"
-                tickFormatter={(value) => formatArTrendDate(value)}
+                dataKey="month"
                 interval={0}
                 minTickGap={0}
                 stroke="#64748b"
