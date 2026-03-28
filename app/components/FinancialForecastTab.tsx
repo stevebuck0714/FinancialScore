@@ -394,6 +394,15 @@ export default function FinancialForecastTab({
     [monthActuals, actualMonthColumnCount],
   );
   const displayedActualMonths = useMemo(() => {
+    const emptyActualColumn = {
+      key: 'placeholder',
+      label: '-',
+      revenue: 0,
+      revenueDetails: {} as Record<string, number>,
+      cogsDetails: {} as Record<string, number>,
+      opexDetails: {} as Record<string, number>,
+      incomeTaxes: 0,
+    };
     const cols: Array<{
       key: string;
       label: string;
@@ -405,17 +414,22 @@ export default function FinancialForecastTab({
     }> = [...actualMonths];
     while (cols.length < actualMonthColumnCount) {
       cols.unshift({
+        ...emptyActualColumn,
         key: `placeholder-${cols.length}`,
-        label: '-',
-        revenue: 0,
-        revenueDetails: {},
-        cogsDetails: {},
-        opexDetails: {},
-        incomeTaxes: 0,
       });
     }
-    return cols;
-  }, [actualMonths, actualMonthColumnCount]);
+    if (!isAccrualWeeklyMode) return cols;
+    return cols.map((col) => {
+      const year = Number((col as any)?.year);
+      const month = Number((col as any)?.month);
+      if (!Number.isFinite(year) || !Number.isFinite(month)) return col;
+      const shifted = shiftMonth(year, month, 1);
+      return {
+        ...col,
+        label: getMonthLabel(shifted.year, shifted.month),
+      };
+    });
+  }, [actualMonths, actualMonthColumnCount, isAccrualWeeklyMode]);
   const latestActualMonth = useMemo(() => monthActuals[monthActuals.length - 1] || null, [monthActuals]);
 
   const monthlyForecastPeriods = useMemo<MonthMeta[]>(() => {
@@ -423,9 +437,9 @@ export default function FinancialForecastTab({
     const startMonth = latestActualMonth?.month ?? new Date().getMonth();
     const results: MonthMeta[] = [];
     if (isAccrualWeeklyMode) {
-      const fridayAnchor = getFridayOfCurrentWeek(new Date());
+      const forecastAnchor = getFridayOfCurrentWeek(new Date());
       for (let i = 0; i < 13; i++) {
-        const weekDate = new Date(fridayAnchor);
+        const weekDate = new Date(forecastAnchor);
         weekDate.setDate(weekDate.getDate() + i * 7);
         results.push({
           key: `W${i + 1}-${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, '0')}-${String(weekDate.getDate()).padStart(2, '0')}`,
@@ -830,7 +844,14 @@ export default function FinancialForecastTab({
     setAccrualRevenueAmountByRow((prev) => {
       const current = Array.isArray(prev[rowKey]) ? [...prev[rowKey]] : Array.from({ length: monthlyForecastCount }, () => NaN);
       while (current.length < monthlyForecastCount) current.push(NaN);
-      current[targetMonthlyIndex] = Math.max(0, Number(targetAmount) || 0);
+      const safeAmount = Math.max(0, Number(targetAmount) || 0);
+      if (isAccrualWeeklyMode) {
+        for (let i = targetMonthlyIndex; i < monthlyForecastCount; i += 1) {
+          current[i] = safeAmount;
+        }
+      } else {
+        current[targetMonthlyIndex] = safeAmount;
+      }
       return { ...prev, [rowKey]: current };
     });
     setRevenueGrowthByRow((prev) => {
@@ -851,7 +872,14 @@ export default function FinancialForecastTab({
         monthlyAmounts.push(Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0);
         carry = Number.isFinite(nextVal) ? Math.max(0, nextVal) : 0;
       }
-      monthlyAmounts[targetMonthlyIndex] = Math.max(0, Number(targetAmount) || 0);
+      const safeAmount = Math.max(0, Number(targetAmount) || 0);
+      if (isAccrualWeeklyMode) {
+        for (let i = targetMonthlyIndex; i < monthlyForecastCount; i += 1) {
+          monthlyAmounts[i] = safeAmount;
+        }
+      } else {
+        monthlyAmounts[targetMonthlyIndex] = safeAmount;
+      }
 
       let prevAmount = Number(latestActualMonth?.revenueDetails?.[rowKey]) || 0;
       for (let i = 0; i < monthlyForecastCount; i += 1) {
@@ -2016,11 +2044,7 @@ export default function FinancialForecastTab({
                                 if (!/^-?\d*\.?\d*$/.test(raw)) return;
                                 if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
                                 const parsed = Number((Number(raw) || 0).toFixed(2));
-                                if (isAccrualWeeklyMode) {
-                                  updateSinglePeriod(setRevenueGrowthByRow, rowKey, idx, parsed);
-                                } else {
-                                  updateRevenueMonthlyAndDerived(rowKey, idx, parsed);
-                                }
+                                updateRevenueMonthlyAndDerived(rowKey, idx, parsed);
                               }}
                               style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                             />%
@@ -2144,11 +2168,7 @@ export default function FinancialForecastTab({
                           value={Number((Number(cogsGrowthByRow[rowKey]?.[idx]) || 0).toFixed(2))}
                           onChange={(e) => {
                             const parsed = Number((Number(e.target.value) || 0).toFixed(2));
-                            if (isAccrualWeeklyMode) {
-                              updateSinglePeriod(setCogsGrowthByRow, rowKey, idx, parsed);
-                            } else {
-                              updateForwardFill(setCogsGrowthByRow, rowKey, idx, parsed);
-                            }
+                            updateForwardFill(setCogsGrowthByRow, rowKey, idx, parsed);
                           }}
                           style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                         />%
@@ -2276,11 +2296,7 @@ export default function FinancialForecastTab({
                               value={formatCurrencyIntegerInput(deriveOpexAmounts(key)[idx] || 0)}
                               onChange={(e) => {
                                 const parsed = parseCurrencyIntegerInput(e.target.value);
-                                if (isAccrualWeeklyMode) {
-                                  updateSinglePeriod(setOpexAmountByRow, key, idx, parsed);
-                                } else {
-                                  updateForwardFill(setOpexAmountByRow, key, idx, parsed);
-                                }
+                                updateForwardFill(setOpexAmountByRow, key, idx, parsed);
                               }}
                               style={{ width: '72px', textAlign: 'right', padding: '4px' }}
                             />
@@ -2436,11 +2452,7 @@ export default function FinancialForecastTab({
                             value={formatCurrencyIntegerInput(opexAmountByRow[INCOME_TAX_PCT_KEY]?.[idx] || 0)}
                             onChange={(e) => {
                               const parsed = parseCurrencyIntegerInput(e.target.value);
-                              if (isAccrualWeeklyMode) {
-                                updateSinglePeriod(setOpexAmountByRow, INCOME_TAX_PCT_KEY, idx, parsed);
-                              } else {
-                                updateForwardFill(setOpexAmountByRow, INCOME_TAX_PCT_KEY, idx, parsed);
-                              }
+                              updateForwardFill(setOpexAmountByRow, INCOME_TAX_PCT_KEY, idx, parsed);
                             }}
                             style={{ width: '72px', textAlign: 'right', padding: '4px' }}
                           />
