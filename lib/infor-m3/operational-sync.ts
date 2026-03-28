@@ -44,6 +44,8 @@ type SyncOptions = {
   snapshotDateOverride?: Date;
   preserveCashSnapshot?: boolean;
   skipPrune?: boolean;
+  syncRunId?: string;
+  salesOnly?: boolean;
   programOffset?: number;
   programLimit?: number;
   requestOffset?: number;
@@ -75,6 +77,24 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     module: 'AP',
     miProgram: 'SLAptrx',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLAptrx?recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Sales',
+    miProgram: 'SLCos',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCos?properties=CoNum,CustNum,DerCustNoName,Stat,OrderDate,DueDate&recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'Sales',
+    miProgram: 'SLCohdrs',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCohdrs?properties=CoNum,CustNum,DerCustNoName,Stat,OrderDate,DueDate&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -643,6 +663,17 @@ function applyCsiSourceWindowAndSort(
   const ido = String(row.miProgram || '').trim().toUpperCase();
   const [path, queryString = ''] = endpointPath.split('?');
   const params = new URLSearchParams(queryString);
+  if (moduleType === 'sales' && ido === 'SLCOITEMS') {
+    // SLCoitems must page deterministically across the full order-line universe.
+    // Do not rely on implicit backend ordering.
+    if (!params.get('orderby') && !params.get('orderBy')) {
+      // Prefer newest order-number band first so overlap with SLCos can be validated quickly.
+      params.set('orderby', 'CoNum desc, CoLine desc, CoRelease desc');
+    }
+    if (!params.get('recordCap')) params.set('recordCap', '1000');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+  }
   if (moduleType === 'sales' && ido === 'SLINVHDRS') {
     const filter = buildSlInvHdrsWindowFilter(window);
     if (!filter) return { endpointPath, applied: false };
@@ -949,13 +980,13 @@ const SL_COITEMS_SAFE_PROPERTIES = [
   'CoNum',
   'CoLine',
   'CoRelease',
+  'OrderDate',
   'Item',
   'Stat',
   'Price',
   'QtyOrdered',
   'QtyShipped',
   'QtyInvoiced',
-  'Amount',
   'ExtPrice',
   'InvNum',
   'Whse',
@@ -1048,6 +1079,14 @@ function buildGlTransactionCandidatePaths(endpointPath: string): string[] {
 function resolveSlCoitemsSafePath(endpointPath: string): string | null {
   if (!/\/load\/SLCoitems/i.test(endpointPath)) return null;
   return ensureCsiProperties(endpointPath, SL_COITEMS_SAFE_PROPERTIES);
+}
+
+function resolveCsiProgramId(row: InforProgramRow, endpointPath?: string): string {
+  const configured = String(row.miProgram || '').trim();
+  if (configured) return configured.toUpperCase();
+  const sourcePath = String(endpointPath || row.endpointPath || '').trim();
+  const match = sourcePath.match(/\/ido\/load\/([^/?]+)/i);
+  return String(match?.[1] || '').trim().toUpperCase();
 }
 
 function shouldRetryWithoutSourceWindowHint(message: string): boolean {
@@ -1188,9 +1227,20 @@ const AR_AMOUNT_DUE_KEYS = [
 const AR_AMOUNT_HOME_KEYS = ['amountHome', 'homeAmount', 'Amount', 'ACAM', 'CUAM'];
 const AR_AMOUNT_CURRENCY_KEYS = ['amountCurrency', 'invoiceAmount', 'Amount', 'CUAM'];
 const AR_APPLY_TO_INVOICE_KEYS = ['DerApplyToInvNum', 'ApplyToInvNum', 'ApplyToInv', 'applyToInvoiceNo'];
-const AR_CHARGE_AMOUNT_HOME_KEYS = ['Amount', 'amountHome', 'homeAmount', 'ACAM', 'CUAM', 'amountDueHome', 'amountDue', 'openAmount', 'balance', 'Balance'];
+const AR_CHARGE_AMOUNT_HOME_KEYS = [
+  'amountDueHome',
+  'amountDue',
+  'openAmount',
+  'balance',
+  'Balance',
+  'ACAM',
+  'CUAM',
+  'amountHome',
+  'homeAmount',
+  'Amount',
+];
 const AR_REDUCTION_AMOUNT_HOME_KEYS = ['DerPaymentCheckAmount', 'paidAmountHome', 'paidAmount', 'PYAM', 'ACAM', 'CUAM', 'Amount'];
-const AR_CHARGE_AMOUNT_CURRENCY_KEYS = ['Amount', 'amountCurrency', 'invoiceAmount', 'CUAM'];
+const AR_CHARGE_AMOUNT_CURRENCY_KEYS = ['amountCurrency', 'invoiceAmount', 'CUAM', 'Amount'];
 const AR_REDUCTION_AMOUNT_CURRENCY_KEYS = ['DerPaymentCheckAmount', 'paidAmount', 'amountCurrency', 'PYAM', 'CUAM', 'Amount'];
 
 function parseCustomerNameFromComposite(value: string | null): string | null {
@@ -1211,6 +1261,13 @@ function parseCustomerIdFromComposite(value: string | null): string | null {
   if (splitIndex === -1) return null;
   const idPortion = trimmed.slice(0, splitIndex).trim();
   return idPortion || null;
+}
+
+function normalizeOrderJoinKey(value: string | null | undefined): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const noPadding = raw.replace(/^0+/, '');
+  return noPadding || '0';
 }
 
 function pickCustomerDisplayName(record: Record<string, unknown>): string | null {
@@ -1298,7 +1355,7 @@ function filterRecordsByDateWindow(
   const dateKeysByModule: Record<string, string[]> = {
     ar: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
     ap: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
-    sales: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'ShipDate', 'RecordDate', 'date'],
+    sales: ['OrderDate', 'orderDate', 'InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'ShipDate', 'RecordDate', 'date'],
     inventory: ['ItemChangeDate', 'ChangeDate', 'RecordDate', 'SSDATE', 'date'],
   };
   const keys = dateKeysByModule[moduleType] || [];
@@ -1307,7 +1364,9 @@ function filterRecordsByDateWindow(
   // Keep records lacking any parseable date to avoid dropping valid rows from sparse payloads.
   return records.filter((record) => {
     const date = firstRecordDate(record, keys);
-    if (!date) return true;
+    // For sales windows (bookings/order slices), missing dates break period attribution.
+    // Exclude undated rows so backfill/manual windows cannot replay full snapshot payloads.
+    if (!date) return moduleType === 'sales' ? false : true;
     return isWithinWindow(date, window);
   });
 }
@@ -1711,7 +1770,11 @@ async function saveAROpenInvoices(
 ): Promise<number> {
   const snapshotDayStart = startOfUtcDay(snapshotDate);
   const snapshotDayEnd = new Date(snapshotDayStart.getTime() + 24 * 60 * 60 * 1000);
-  const normalizeInvoiceNo = (value: string | null): string => String(value || '').trim();
+  const normalizeInvoiceNo = (value: string | null): string =>
+    String(value || '')
+      .trim()
+      .replace(/\s+/g, '')
+      .toUpperCase();
   const isReductionMovement = (record: Record<string, unknown>): boolean => {
     const typeToken = normalizeToken(record['Type']) || '';
     const drCrToken = normalizeToken(record['DrCr']) || '';
@@ -1785,6 +1848,11 @@ async function saveAROpenInvoices(
       record,
       reductionMovement ? AR_REDUCTION_AMOUNT_CURRENCY_KEYS : AR_CHARGE_AMOUNT_CURRENCY_KEYS
     );
+    const movementDate =
+      parseMaybeDate(pickString(record, ['RecordDate', 'recordDate', 'date', 'InvDate', 'invoiceDate', 'IVDT', 'RGDT', 'PYDT'])) ||
+      null;
+    // Build snapshot balances as-of the snapshot day.
+    if (movementDate && movementDate.getTime() >= snapshotDayEnd.getTime()) continue;
     const movementHome = signedAmount(record, rawAmountHome);
     const movementCurrency = signedAmount(record, rawAmountCurrency);
     if (!Number.isFinite(movementHome) || movementHome === 0) continue;
@@ -2028,6 +2096,25 @@ async function saveARPayments(
   return finalRows.length;
 }
 
+let customerOrderLineOrderDateColumnCache: boolean | null = null;
+async function customerOrderLineSupportsOrderDateColumn(): Promise<boolean> {
+  if (customerOrderLineOrderDateColumnCache !== null) return customerOrderLineOrderDateColumnCache;
+  try {
+    const result = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.columns
+         WHERE table_name = 'CustomerOrderLineSnapshot'
+           AND column_name = 'orderDate'
+       ) AS exists`
+    );
+    customerOrderLineOrderDateColumnCache = Boolean(result?.[0]?.exists);
+  } catch {
+    customerOrderLineOrderDateColumnCache = false;
+  }
+  return customerOrderLineOrderDateColumnCache;
+}
+
 async function saveCustomerOrderLines(
   companyId: string,
   snapshotDate: Date,
@@ -2039,7 +2126,7 @@ async function saveCustomerOrderLines(
     cono?: string;
     divi?: string;
     resetSnapshot?: boolean;
-    orderCustomerLookup?: Map<string, { customerId: string | null; customerName: string }>;
+    orderCustomerLookup?: Map<string, { customerId: string | null; customerName: string; orderDate: Date | null }>;
   }
 ): Promise<{
   persisted: number;
@@ -2098,6 +2185,7 @@ async function saveCustomerOrderLines(
     customerName: string;
     orderId: string;
     lineId: string;
+    orderDate: Date | null;
     qtyOrdered: number;
     qtyInvoiced: number;
     unitPrice: number;
@@ -2117,7 +2205,7 @@ async function saveCustomerOrderLines(
       const customerComposite = pickString(record, ['DerCustNoName', 'customerComposite', 'CustNumName']);
       const orderIdRaw =
         pickString(record, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum', 'contractId', 'projectId']) || `ORDER-${idx + 1}`;
-      const orderId = String(orderIdRaw || '').trim();
+      const orderId = normalizeOrderJoinKey(String(orderIdRaw || ''));
       if (!orderId) {
         skip('missing_order_number');
         continue;
@@ -2138,6 +2226,7 @@ async function saveCustomerOrderLines(
         orderLookup?.customerId ||
         pickString(record, ['CustNum', 'custNum', 'CoCustNum', 'CustNo', ...CUSTOMER_ID_KEYS]) ||
         parseCustomerIdFromComposite(customerComposite);
+      const orderDate = orderLookup?.orderDate || firstRecordDate(record, ['OrderDate', 'orderDate']);
       const coLine = pickString(record, ['CoLine', 'COLINE', 'lineNo', 'lineNum', 'line', 'Seq']) || '1';
       const coRelease = pickString(record, ['CoRelease', 'CORELEASE', 'release', 'releaseNo']) || '0';
       const lineId = `${String(coLine).trim()}-${String(coRelease).trim()}`;
@@ -2171,6 +2260,7 @@ async function saveCustomerOrderLines(
         customerName,
         orderId,
         lineId,
+        orderDate: orderDate || null,
         qtyOrdered,
         qtyInvoiced: Math.max(qtyInvoiced, 0),
         unitPrice,
@@ -2220,11 +2310,19 @@ async function saveCustomerOrderLines(
     acc.remainingAmount = Number(acc.remainingAmount || 0) + Number(row.remainingAmount || 0);
     acc.unbilledAccrual = Number(acc.unbilledAccrual || 0) + Number(row.unbilledAccrual || 0);
     if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
+    if (!acc.orderDate && row.orderDate) acc.orderDate = row.orderDate;
   }
   const finalRows = Array.from(deduped.values());
   debug.rowsAfterDedupe = finalRows.length;
   debug.rowsAttemptedPersist = finalRows.length;
-  const batch = await delegate.createMany({ data: finalRows, skipDuplicates: true });
+  const supportsOrderDateColumn = await customerOrderLineSupportsOrderDateColumn();
+  // NOTE: avoid per-row updateMany loops here. On large SLCoitems pulls this causes
+  // long-running chunks and apparent sync stalls. New rows are inserted with orderDate
+  // via createMany below; null-date historical backfill should be handled separately.
+  const dataToPersist = supportsOrderDateColumn
+    ? finalRows
+    : finalRows.map(({ orderDate: _orderDate, ...rest }) => rest);
+  const batch = await delegate.createMany({ data: dataToPersist, skipDuplicates: true });
   debug.rowsPersisted = Number(batch?.count || 0);
   return { persisted: debug.rowsPersisted || finalRows.length, debug };
 }
@@ -2834,8 +2932,10 @@ export async function syncInforM3OperationalData(
   syncWindow?: SyncWindow,
   options?: SyncOptions
 ): Promise<InforOperationalSyncResult> {
+  const debugSync = process.env.SYNC_DEBUG === '1';
   const errors: string[] = [];
   let recordsCreated = 0;
+  const syncRunId = String(options?.syncRunId || '').trim() || randomUUID();
   // Normalize to a UTC calendar day key so repeated runs do not create
   // mixed local-time snapshot variants (e.g. 00:00 and 07:00).
   const snapshotDate = startOfUtcDay(options?.snapshotDateOverride ? new Date(options.snapshotDateOverride) : new Date());
@@ -2869,7 +2969,12 @@ export async function syncInforM3OperationalData(
   const parsedProgramRows = parsePrograms(programsBySystem[inforSystem] ?? metadata.accountingPrograms).filter(
     (row) => row.module.trim().toLowerCase() !== 'accounts'
   );
-  const programRows = parsedProgramRows.length > 0 ? parsedProgramRows : DEFAULT_CSI_PROGRAM_ROWS;
+  const baseProgramRows = parsedProgramRows.length > 0 ? parsedProgramRows : DEFAULT_CSI_PROGRAM_ROWS;
+  const salesOnly = options?.salesOnly === true;
+  const SALES_ONLY_PROGRAM_IDS = new Set(['SLCOHDRS', 'SLCOS', 'SLCOITEMS']);
+  const programRows = salesOnly
+    ? baseProgramRows.filter((row) => SALES_ONLY_PROGRAM_IDS.has(resolveCsiProgramId(row, row.endpointPath)))
+    : baseProgramRows;
   const totalProgramRows = programRows.length;
   const programOffset = Math.max(0, Math.floor(Number(options?.programOffset || 0)));
   const requestedLimit =
@@ -2913,10 +3018,9 @@ export async function syncInforM3OperationalData(
   }
 
   let continuation: InforOperationalSyncResult['continuation'] = null;
-  const orderCustomerLookup = new Map<string, { customerId: string | null; customerName: string }>();
+  const orderCustomerLookup = new Map<string, { customerId: string | null; customerName: string; orderDate: Date | null }>();
   let attemptedSlCosLookupHydration = false;
   const hydrateOrderLookupFromSlCos = async (): Promise<{ loaded: number; message?: string }> => {
-    if (orderCustomerLookup.size > 0) return { loaded: 0, message: 'lookup_already_populated' };
     if (attemptedSlCosLookupHydration) return { loaded: 0, message: 'lookup_hydration_already_attempted' };
     attemptedSlCosLookupHydration = true;
 
@@ -2974,14 +3078,15 @@ export async function syncInforM3OperationalData(
     }
 
     for (const rec of records) {
-      const orderId = String(pickString(rec, ['CoNum', 'coNum', 'orderNo', 'orderNumber']) || '').trim();
+      const orderId = normalizeOrderJoinKey(pickString(rec, ['CoNum', 'coNum', 'orderNo', 'orderNumber']));
       if (!orderId) continue;
       const customerId = pickString(rec, ['CustNum', 'custNum', 'CoCustNum', 'CustNo', ...CUSTOMER_ID_KEYS]) || null;
       const customerName =
         parseCustomerNameFromComposite(pickString(rec, ['DerCustNoName'])) ||
         pickString(rec, ['CustName', 'DerCustName', 'Name', ...CUSTOMER_NAME_KEYS]) ||
         (customerId ? `Customer ${customerId}` : 'Unknown Customer');
-      orderCustomerLookup.set(orderId, { customerId, customerName });
+      const orderDate = firstRecordDate(rec, ['OrderDate', 'orderDate']);
+      orderCustomerLookup.set(orderId, { customerId, customerName, orderDate: orderDate || null });
     }
     return { loaded: orderCustomerLookup.size, message: 'ok' };
   };
@@ -3021,8 +3126,28 @@ export async function syncInforM3OperationalData(
       const req = requests[reqIndex];
       const startedAt = Date.now();
       const moduleType = classifyModule(row.module);
+      const programId = resolveCsiProgramId(row, req.endpointPath);
+      const isSlCoitemsProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
       const requestTimeoutMs = moduleType === 'inventory' ? 120000 : 30000;
+      // Keep SLCoitems chunk duration bounded so each sync call returns promptly
+      // with a continuation cursor instead of appearing "stuck" on one huge page pull.
+      const maxPagesPerRequest = isSlCoitemsProgram ? 8 : MAX_CSI_PAGES_PER_REQUEST;
       const sourceWindowPathResult = applyCsiSourceWindowAndSort(req.endpointPath, row, moduleType, syncWindow);
+      if (debugSync) {
+        console.log(
+          JSON.stringify({
+            event: 'sync_request_start',
+            syncRunId,
+            moduleType,
+            programId,
+            absoluteProgramOffset,
+            reqIndex,
+            requestStartIndex,
+            hasInputBookmark: Boolean(options?.bookmark),
+            endpointPath: req.endpointPath,
+          })
+        );
+      }
       const sourceWindowBaseEndpointPath = sourceWindowPathResult.endpointPath;
       const fallbackBaseEndpointPath = req.endpointPath;
       let initialEndpointPath = sourceWindowBaseEndpointPath;
@@ -3036,12 +3161,17 @@ export async function syncInforM3OperationalData(
         reqIndex === requestStartIndex &&
         inputBookmark
       ) {
-        const isSlInvHdrs = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLINVHDRS';
-        const isSlCustomers = moduleType === 'customer' && String(row.miProgram || '').trim().toUpperCase() === 'SLCUSTOMERS';
-        const isSlArtrans = moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
-        const isSlLedgers = moduleType === 'gl' && String(row.miProgram || '').trim().toUpperCase() === 'SLLEDGERS';
+        const isSlInvHdrs = moduleType === 'sales' && programId === 'SLINVHDRS';
+        const isSlCoitems = moduleType === 'sales' && programId === 'SLCOITEMS';
+        const isSlCustomers = moduleType === 'customer' && programId === 'SLCUSTOMERS';
+        const isSlArtrans = moduleType === 'ar' && programId === 'SLARTRANS';
+        const isSlLedgers = moduleType === 'gl' && programId === 'SLLEDGERS';
         if (isSlInvHdrs && inputKeyset) {
           initialEndpointPath = applySlInvHdrsKeysetCursor(sourceWindowBaseEndpointPath, inputKeyset);
+        } else if (isSlCoitems) {
+          // For active continuation within the same run, we must honor the returned bookmark
+          // or we will restart at FIRST and repeatedly import the same page band.
+          initialEndpointPath = appendBookmarkToEndpoint(sourceWindowBaseEndpointPath, inputBookmark);
         } else if (isSlCustomers && inputCustomersKeyset) {
           initialEndpointPath = applySlCustomersKeysetCursor(sourceWindowBaseEndpointPath, inputCustomersKeyset);
         } else if (isSlArtrans && inputArtransKeyset) {
@@ -3059,6 +3189,20 @@ export async function syncInforM3OperationalData(
         timeoutMs: requestTimeoutMs,
         headers: req.headers,
       });
+      if (debugSync) {
+        console.log(
+          JSON.stringify({
+            event: 'sync_request_first_response',
+            syncRunId,
+            moduleType,
+            programId,
+            absoluteProgramOffset,
+            reqIndex,
+            responseStatus: response.status,
+            elapsedMs: Date.now() - startedAt,
+          })
+        );
+      }
       const isWindowedSlLedgersRequest =
         moduleType === 'gl' &&
         String(row.miProgram || '').trim().toUpperCase() === 'SLLEDGERS' &&
@@ -3234,7 +3378,7 @@ export async function syncInforM3OperationalData(
         while (
           paginationState.moreRowsExist &&
           paginationState.bookmark &&
-          pagesFetched < MAX_CSI_PAGES_PER_REQUEST
+          pagesFetched < maxPagesPerRequest
         ) {
           const priorBookmark = paginationState.bookmark;
           const nextEndpointPath = appendBookmarkToEndpoint(effectiveEndpointPath, priorBookmark);
@@ -3262,7 +3406,23 @@ export async function syncInforM3OperationalData(
             break;
           }
         }
-        if (pagesFetched >= MAX_CSI_PAGES_PER_REQUEST && paginationState.moreRowsExist && paginationState.bookmark) {
+        if (debugSync) {
+          console.log(
+            JSON.stringify({
+              event: 'sync_request_paging_complete',
+              syncRunId,
+              moduleType,
+              programId,
+              absoluteProgramOffset,
+              reqIndex,
+              pagesFetched,
+              paginationTruncated,
+              rawRecordCount: rawRecords.length,
+              elapsedMs: Date.now() - startedAt,
+            })
+          );
+        }
+        if (pagesFetched >= maxPagesPerRequest && paginationState.moreRowsExist && paginationState.bookmark) {
           paginationTruncated = true;
           let continuationBookmark: string | null = paginationState.bookmark;
           const isSlInvHdrs = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLINVHDRS';
@@ -3395,9 +3555,9 @@ export async function syncInforM3OperationalData(
       const keepFullArApPopulation = isArApOpenFlow && syncWindow?.mode === 'daily_overlap';
       // Contract/backlog math from SLCoitems also requires full line populations; clipping
       // to overlap windows can zero out Contract Total for customers with older open orders.
-      const isOrderLineProgram = moduleType === 'sales' && String(row.miProgram || '').trim().toUpperCase() === 'SLCOITEMS';
+      const isOrderLineProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
       const shouldApplyDateWindow =
-        !keepFullArApPopulation && !(isOrderLineProgram && syncWindow?.mode === 'daily_overlap');
+        !keepFullArApPopulation && !isOrderLineProgram;
       const recordsAfterDateWindow = shouldApplyDateWindow
         ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
         : recordsAfterSiteFilter;
@@ -3424,12 +3584,12 @@ export async function syncInforM3OperationalData(
       let modulePersistDebug: Record<string, unknown> | null = null;
       if (requestSucceeded) {
         try {
-          const salesProgramId = String(row.miProgram || '').trim().toUpperCase();
-          if (moduleType === 'sales' && salesProgramId === 'SLCOS') {
-            for (const rec of recordsAfterDateWindow) {
+          const salesProgramId = programId;
+          if (moduleType === 'sales' && (salesProgramId === 'SLCOS' || salesProgramId === 'SLCOHDRS')) {
+            for (const rec of recordsAfterSiteFilter) {
               const coNumRaw = pickString(rec, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum']);
               if (!coNumRaw) continue;
-              const coNum = String(coNumRaw).trim();
+              const coNum = normalizeOrderJoinKey(coNumRaw);
               if (!coNum) continue;
               const composite = pickString(rec, ['DerCustNoName', 'customerComposite', 'CustNumName']);
               const customerId =
@@ -3439,7 +3599,8 @@ export async function syncInforM3OperationalData(
                 pickCustomerDisplayName(rec) ||
                 pickString(rec, ['BillToName', 'CustName', 'DerCustName', ...CUSTOMER_NAME_KEYS]) ||
                 'Unknown Customer';
-              orderCustomerLookup.set(coNum, { customerId: customerId || null, customerName });
+              const orderDate = firstRecordDate(rec, ['OrderDate', 'orderDate']);
+              orderCustomerLookup.set(coNum, { customerId: customerId || null, customerName, orderDate: orderDate || null });
             }
           }
           switch (moduleType) {
@@ -3524,16 +3685,51 @@ export async function syncInforM3OperationalData(
             case 'sales':
               {
                 const context = {
-                  miProgram: row.miProgram || row.module,
+                  miProgram: programId || row.miProgram || row.module,
                   transaction: req.transaction,
                   cono: row.cono,
                   divi: row.divi,
                 };
+                if (debugSync) {
+                  console.log(
+                    JSON.stringify({
+                      event: 'sync_sales_persist_start',
+                      syncRunId,
+                      salesProgram: salesProgramId,
+                      recordsCount: records.length,
+                      recordsAfterDateWindowCount: recordsAfterDateWindow.length,
+                      elapsedMs: Date.now() - startedAt,
+                    })
+                  );
+                }
                 const salesRowsCreated = await saveProductSales(companyId, snapshotDate, frequency, records);
-                const salesProgram = String(row.miProgram || '').trim().toUpperCase();
+                if (debugSync) {
+                  console.log(
+                    JSON.stringify({
+                      event: 'sync_sales_productsales_done',
+                      syncRunId,
+                      salesProgram: salesProgramId,
+                      salesRowsCreated,
+                      elapsedMs: Date.now() - startedAt,
+                    })
+                  );
+                }
+                const salesProgram = salesProgramId;
                 let slcosHydrationResult: { loaded: number; message?: string } | null = null;
-                if (salesProgram === 'SLCOITEMS' && orderCustomerLookup.size === 0) {
+                if (salesProgram === 'SLCOITEMS') {
                   slcosHydrationResult = await hydrateOrderLookupFromSlCos();
+                  if (debugSync) {
+                    console.log(
+                      JSON.stringify({
+                        event: 'sync_sales_slcos_hydration_done',
+                        syncRunId,
+                        salesProgram,
+                        slcosHydrationResult,
+                        orderCustomerLookupSize: orderCustomerLookup.size,
+                        elapsedMs: Date.now() - startedAt,
+                      })
+                    );
+                  }
                 }
                 const contractPersistResult =
                   salesProgram === 'SLCOITEMS'
@@ -3543,6 +3739,17 @@ export async function syncInforM3OperationalData(
                         orderCustomerLookup,
                       })
                     : { persisted: 0, debug: null as any };
+                if (debugSync) {
+                  console.log(
+                    JSON.stringify({
+                      event: 'sync_sales_customerorderlines_done',
+                      syncRunId,
+                      salesProgram,
+                      contractPersisted: Number(contractPersistResult?.persisted || 0),
+                      elapsedMs: Date.now() - startedAt,
+                    })
+                  );
+                }
                 const contractRowsCreated = Number(contractPersistResult?.persisted || 0);
                 if (salesProgram === 'SLCOITEMS') {
                   modulePersistDebug = {
@@ -3566,6 +3773,20 @@ export async function syncInforM3OperationalData(
               moduleRecordsCreated = records.length;
               break;
           }
+          if (debugSync) {
+            console.log(
+              JSON.stringify({
+                event: 'sync_request_persist_complete',
+                syncRunId,
+                moduleType,
+                programId,
+                absoluteProgramOffset,
+                reqIndex,
+                moduleRecordsCreated,
+                elapsedMs: Date.now() - startedAt,
+              })
+            );
+          }
         } catch (persistError) {
           const message = persistError instanceof Error ? persistError.message : 'Failed to persist records';
           errors.push(
@@ -3580,48 +3801,72 @@ export async function syncInforM3OperationalData(
 
       recordsCreated += moduleRecordsCreated;
 
-      await prisma.apiSyncLog.create({
-        data: {
-          companyId,
-          platform: 'INFOR_M3',
-          syncType: `operational_${moduleType}_${req.transaction}`,
-          status: statusText,
-          recordsImported: moduleRecordsCreated,
-          errorCount: statusText === 'success' ? 0 : 1,
-          duration: Date.now() - startedAt,
-          errorDetails: {
-            module: row.module,
-            miProgram: row.miProgram || null,
-            transaction: req.transaction,
-            cono: row.cono || null,
-            divi: row.divi || null,
-            mongooseConfig: row.mongooseConfig || null,
-            endpointPath: effectiveEndpointPath,
-            credentialsSource: credentialSource,
-            responseStatus: response.status,
-            sitePolicy,
-            requestedSite: requestedSite || null,
-            siteDetected,
-            sourceRecordCount: rawRecords.length,
-            postWindowRecordCount: recordsAfterDateWindow.length,
-            persistedRecordCount: records.length,
-            companyRollupApplied: shouldAggregateForRollup,
-            pagesFetched,
-            paginationTruncated,
-            syncWindow: syncWindow
-              ? {
-                  mode: syncWindow.mode,
-                  startDate: syncWindow.startDate.toISOString(),
-                  endDate: syncWindow.endDate.toISOString(),
-                }
-              : null,
-            optionalProgramSkipped: optionalProgramMissing,
-            optionalProgramSkipReason: optionalProgramMissing ? payloadMsg : null,
-            persistDebug: modulePersistDebug,
-            response: response.body,
+      try {
+        await prisma.apiSyncLog.create({
+          data: {
+            companyId,
+            platform: 'INFOR_M3',
+            syncType: `operational_${moduleType}_${req.transaction}`,
+            status: statusText,
+            recordsImported: moduleRecordsCreated,
+            errorCount: statusText === 'success' ? 0 : 1,
+            duration: Date.now() - startedAt,
+            errorDetails: ({
+              syncRunId,
+              module: row.module,
+              miProgram: row.miProgram || null,
+              resolvedProgramId: programId || null,
+              absoluteProgramOffset,
+              requestIndex: reqIndex,
+              transaction: req.transaction,
+              cono: row.cono || null,
+              divi: row.divi || null,
+              mongooseConfig: row.mongooseConfig || null,
+              endpointPath: effectiveEndpointPath,
+              credentialsSource: credentialSource,
+              responseStatus: response.status,
+              sitePolicy,
+              requestedSite: requestedSite || null,
+              siteDetected,
+              sourceRecordCount: rawRecords.length,
+              postWindowRecordCount: recordsAfterDateWindow.length,
+              persistedRecordCount: records.length,
+              companyRollupApplied: shouldAggregateForRollup,
+              pagesFetched,
+              paginationTruncated,
+              syncWindow: syncWindow
+                ? {
+                    mode: syncWindow.mode,
+                    startDate: syncWindow.startDate.toISOString(),
+                    endDate: syncWindow.endDate.toISOString(),
+                  }
+                : null,
+              optionalProgramSkipped: optionalProgramMissing,
+              optionalProgramSkipReason: optionalProgramMissing ? payloadMsg : null,
+              persistDebug: modulePersistDebug,
+              response: response.body,
+            } as unknown as Prisma.InputJsonValue),
           },
-        },
-      });
+        });
+      } catch (logWriteError) {
+        // Keep the operational sync moving even if telemetry logging fails.
+        const logWriteMessage =
+          logWriteError instanceof Error ? logWriteError.message : 'Failed to write ApiSyncLog';
+        errors.push(`apiSyncLog_write: ${logWriteMessage}`);
+        if (debugSync) {
+          console.warn(
+            JSON.stringify({
+              event: 'sync_log_write_failed',
+              syncRunId,
+              moduleType,
+              programId,
+              absoluteProgramOffset,
+              reqIndex,
+              message: logWriteMessage,
+            })
+          );
+        }
+      }
 
       if (continuation) break;
     }

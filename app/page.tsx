@@ -91,6 +91,19 @@ const formatDollar = (value: number): string => {
   return '$' + Math.round(Math.abs(value)).toLocaleString('en-US');
 };
 
+type InforOperationalSyncStatus = {
+  companyId: string;
+  syncRunId: string;
+  state: 'running' | 'done' | 'failed';
+  chunkCount: number;
+  recordsCreated: number;
+  warningCount: number;
+  lastChunkAt: string | null;
+  lastStatusText: string | null;
+  message: string | null;
+  recentlyActive: boolean;
+};
+
 type RevenueAnalysisQualifiers = {
   revenueNature: 'short_term_projects' | 'long_term_contracts' | 'mixed';
   contractSizeProfile: 'few_large' | 'mixed' | 'many_small';
@@ -2062,6 +2075,7 @@ function FinancialScorePage() {
   });
   const [inforProbePath, setInforProbePath] = useState('/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
+  const [inforOperationalSyncStatus, setInforOperationalSyncStatus] = useState<InforOperationalSyncStatus | null>(null);
   useEffect(() => {
     if (inforBusy && !inforBusyStartedAt) {
       setInforBusyStartedAt(Date.now());
@@ -2081,6 +2095,65 @@ function FinancialScorePage() {
     }, 15000);
     return () => window.clearInterval(intervalId);
   }, [inforBusy, inforBusyStartedAt]);
+
+  useEffect(() => {
+    const currentStatus = inforOperationalSyncStatus;
+    if (!currentStatus?.companyId || !currentStatus?.syncRunId) return;
+    const shouldPoll = inforBusy || currentStatus.state === 'running' || currentStatus.recentlyActive;
+    if (!shouldPoll) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `/api/infor-m3/operational-sync-status?companyId=${encodeURIComponent(currentStatus.companyId)}&syncRunId=${encodeURIComponent(currentStatus.syncRunId)}`
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.ok || cancelled) return;
+        const apiChunkCount = Number(data.chunkCount || 0);
+        const apiRecordsCreated = Number(data.recordsCreated || 0);
+        const apiWarningCount = Number(data.warningCount || 0);
+        const apiLastStatusText =
+          typeof data.lastStatusText === 'string' && data.lastStatusText.trim().length > 0
+            ? data.lastStatusText.trim()
+            : null;
+        const apiLastChunkAt =
+          typeof data.lastChunkAt === 'string' && data.lastChunkAt.trim().length > 0 ? data.lastChunkAt : null;
+        const apiRecentlyActive = data.recentlyActive === true;
+        setInforOperationalSyncStatus((prev) => {
+          if (!prev) return prev;
+          if (prev.companyId !== currentStatus.companyId || prev.syncRunId !== currentStatus.syncRunId) return prev;
+          const normalizedStatus = String(apiLastStatusText || '').toLowerCase();
+          const isFailedStatus = normalizedStatus === 'error' || normalizedStatus === 'failed' || normalizedStatus === 'failure';
+          let nextState = prev.state;
+          if (isFailedStatus) {
+            nextState = 'failed';
+          } else if (!inforBusy && !apiRecentlyActive && prev.state === 'running') {
+            nextState = 'done';
+          }
+          return {
+            ...prev,
+            state: nextState,
+            chunkCount: Math.max(prev.chunkCount, apiChunkCount),
+            recordsCreated: Math.max(prev.recordsCreated, apiRecordsCreated),
+            warningCount: Math.max(prev.warningCount, apiWarningCount),
+            lastChunkAt: apiLastChunkAt || prev.lastChunkAt,
+            lastStatusText: apiLastStatusText || prev.lastStatusText,
+            recentlyActive: apiRecentlyActive,
+          };
+        });
+      } catch {
+        // Keep prior status visible if polling fails.
+      }
+    };
+    void poll();
+    const intervalId = window.setInterval(() => {
+      void poll();
+    }, 10000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [inforBusy, inforOperationalSyncStatus]);
 
   const [inforCaoPulling, setInforCaoPulling] = useState(false);
   const [inforCaoMessage, setInforCaoMessage] = useState<string | null>(null);
@@ -5780,6 +5853,7 @@ function FinancialScorePage() {
       lookbackDays?: number;
       startDate?: string;
       endDate?: string;
+      salesOnly?: boolean;
     }
   ) => {
     const companyId = targetCompanyId || selectedCompanyId;
@@ -5794,6 +5868,18 @@ function FinancialScorePage() {
     setInforBusy(true);
     setInforBusyStartedAt(Date.now());
     setInforError(null);
+    setInforOperationalSyncStatus({
+      companyId,
+      syncRunId: '',
+      state: 'running',
+      chunkCount: 0,
+      recordsCreated: 0,
+      warningCount: 0,
+      lastChunkAt: new Date().toISOString(),
+      lastStatusText: null,
+      message: null,
+      recentlyActive: true,
+    });
     try {
       const sleep = async (ms: number) => {
         await new Promise((resolve) => setTimeout(resolve, ms));
@@ -5805,11 +5891,13 @@ function FinancialScorePage() {
       let chunkCount = 0;
       let aggregatedErrors: string[] = [];
       let cursor: Record<string, unknown> | null = null;
+      let syncRunId = '';
       const maxChunks = 4000;
       const maxChunkRetries = 5;
       let lastCursorSignature: string | null = null;
       let stagnantCursorCount = 0;
       const maxStagnantCursorChunks = 25;
+      const chunkRequestTimeoutMs = 180000;
 
       while (chunkCount < maxChunks) {
         chunkCount += 1;
@@ -5828,8 +5916,13 @@ function FinancialScorePage() {
           programBatchSize: 1,
           ...(String(site || '').trim() ? { site: String(site).trim() } : {}),
         };
+        if (syncRunId) payload.syncRunId = syncRunId;
         if (resolvedMode) payload.mode = resolvedMode;
         if (typeof resolvedBackfillMonths === 'number') payload.backfillMonths = resolvedBackfillMonths;
+        if (options?.salesOnly === true) {
+          payload.salesOnly = true;
+          payload.scope = 'sales';
+        }
         if (typeof options?.lookbackDays === 'number' && Number.isFinite(options.lookbackDays)) {
           payload.lookbackDays = Math.max(1, Math.floor(options.lookbackDays));
         }
@@ -5841,11 +5934,32 @@ function FinancialScorePage() {
         let chunkSucceeded = false;
         let lastDetails = 'Operational sync failed';
         for (let attempt = 0; attempt < maxChunkRetries; attempt += 1) {
-          const response = await fetch('/api/infor-m3/operational-sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
+          let response: Response;
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), chunkRequestTimeoutMs);
+            response = await fetch('/api/infor-m3/operational-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              signal: controller.signal,
+            });
+            clearTimeout(timeout);
+          } catch (networkError: any) {
+            const networkMessage =
+              String(networkError?.name || '').trim() === 'AbortError'
+                ? `Operational sync chunk timed out after ${Math.floor(chunkRequestTimeoutMs / 1000)}s`
+                : String(networkError?.message || '').trim() || 'Failed to fetch';
+            lastDetails = networkMessage;
+            // Network-level drops can happen mid-backfill; retry chunk before failing run.
+            if (attempt < maxChunkRetries - 1) {
+              const backoffMs = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
+              await sleep(backoffMs);
+              continue;
+            }
+            throw new Error(networkMessage);
+          }
+
           const rawBody = await response.text();
           try {
             data = rawBody ? JSON.parse(rawBody) : {};
@@ -5870,6 +5984,19 @@ function FinancialScorePage() {
           if (!response.ok || !data?.ok) {
             throw new Error(details);
           }
+          if (typeof data?.syncRunId === 'string' && data.syncRunId.trim()) {
+            syncRunId = data.syncRunId.trim();
+          }
+          if (syncRunId) {
+            setInforOperationalSyncStatus((prev) =>
+              prev && prev.companyId === companyId
+                ? {
+                    ...prev,
+                    syncRunId,
+                  }
+                : prev
+            );
+          }
           chunkSucceeded = true;
           break;
         }
@@ -5882,9 +6009,29 @@ function FinancialScorePage() {
         if (Array.isArray(data?.errors) && data.errors.length > 0) {
           aggregatedErrors = aggregatedErrors.concat(data.errors.map((entry: unknown) => String(entry)));
         }
+        setInforOperationalSyncStatus((prev) => {
+          if (!prev || prev.companyId !== companyId) return prev;
+          return {
+            ...prev,
+            syncRunId: syncRunId || prev.syncRunId,
+            state: 'running',
+            chunkCount,
+            recordsCreated: totalRecordsCreated,
+            warningCount: aggregatedErrors.length,
+            lastChunkAt: new Date().toISOString(),
+            recentlyActive: true,
+          };
+        });
+
+        if (data?.hasMore && (!data?.cursor || typeof data.cursor !== 'object')) {
+          throw new Error('Operational sync returned hasMore=true without a continuation cursor.');
+        }
 
         if (data?.hasMore && data?.cursor && typeof data.cursor === 'object') {
           cursor = data.cursor as Record<string, unknown>;
+          if (typeof (cursor as any).syncRunId === 'string' && String((cursor as any).syncRunId).trim()) {
+            syncRunId = String((cursor as any).syncRunId).trim();
+          }
           const cursorSignature = JSON.stringify(cursor);
           if (cursorSignature === lastCursorSignature) {
             stagnantCursorCount += 1;
@@ -5917,9 +6064,37 @@ function FinancialScorePage() {
       alert(
         `Infor M3 operational sync complete. Records created: ${totalRecordsCreated}. Chunks processed: ${chunkCount}.${siteSuffix}${warningSuffix}`
       );
+      setInforOperationalSyncStatus((prev) =>
+        prev && prev.companyId === companyId
+          ? {
+              ...prev,
+              syncRunId: syncRunId || prev.syncRunId,
+              state: 'done',
+              chunkCount,
+              recordsCreated: totalRecordsCreated,
+              warningCount: aggregatedErrors.length,
+              lastChunkAt: new Date().toISOString(),
+              lastStatusText: aggregatedErrors.length > 0 ? 'warning' : 'success',
+              message: aggregatedErrors.length > 0 ? `Completed with ${aggregatedErrors.length} warning(s).` : null,
+              recentlyActive: false,
+            }
+          : prev
+      );
     } catch (error: any) {
       const message = error?.message || 'Failed to run Infor M3 operational sync';
       setInforError(message);
+      setInforOperationalSyncStatus((prev) =>
+        prev && prev.companyId === companyId
+          ? {
+              ...prev,
+              state: 'failed',
+              message,
+              lastStatusText: 'failed',
+              lastChunkAt: new Date().toISOString(),
+              recentlyActive: false,
+            }
+          : prev
+      );
       alert(`Infor M3 operational sync failed:\n\n${message}`);
     } finally {
       setInforBusy(false);
@@ -8623,6 +8798,7 @@ function FinancialScorePage() {
               inforProbePath={inforProbePath}
               setInforProbePath={setInforProbePath}
               inforProbeSummary={inforProbeSummary}
+              inforOperationalSyncStatus={inforOperationalSyncStatus}
               checkInforM3Status={checkInforM3Status}
               loadInforM3Credentials={loadInforM3Credentials}
               saveInforM3Credentials={saveInforM3Credentials}

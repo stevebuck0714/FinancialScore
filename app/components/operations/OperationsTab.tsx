@@ -362,6 +362,9 @@ export default function OperationsTab({
   const [selectedVendorBill, setSelectedVendorBill] = useState('All');
   const [demandSortKey, setDemandSortKey] = useState<'customer' | 'bookingsMtd' | 'bookingsQtd' | 'bookingsYtd' | 'backlogTotal' | 'backlog60' | 'shareBacklog' | 'trend'>('backlogTotal');
   const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
+  const [customerDateRangeSaveStatus, setCustomerDateRangeSaveStatus] = useState<string | null>(null);
+  const [customerRevenuePeriodMode, setCustomerRevenuePeriodMode] = useState<'year' | 'quarter' | 'month'>('month');
+  const [customerRevenuePeriodKey, setCustomerRevenuePeriodKey] = useState<string>('all');
   const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
   const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
@@ -380,6 +383,7 @@ export default function OperationsTab({
     const value = operationalHubSections[sectionKey];
     return value === undefined ? true : value !== false;
   };
+  const isCustomersTab = mapModuleToDataType(activeTab) === 'customers' || activeTab === 'customers';
   const isTabModuleEnabled = (moduleKey: string): boolean => {
     const normalized = String(moduleKey || '').trim();
     if (!normalized) return true;
@@ -579,6 +583,28 @@ export default function OperationsTab({
       setDailyFinancialWindowStart(maxStart);
     }
   }, [dailyFinancialData, dailyFinancialWindowStart]);
+
+  useEffect(() => {
+    setCustomerRevenuePeriodKey('all');
+  }, [startDate, endDate, frequency, customerData]);
+
+  useEffect(() => {
+    if (!isCustomersTab || !selectedCompanyId) return;
+    try {
+      const storageKey = `ops:customers:date-range:${selectedCompanyId}`;
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { startDate?: string; endDate?: string };
+      if (typeof parsed?.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate)) {
+        setStartDate(parsed.startDate);
+      }
+      if (typeof parsed?.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.endDate)) {
+        setEndDate(parsed.endDate);
+      }
+    } catch {
+      // Ignore invalid saved range payloads
+    }
+  }, [isCustomersTab, selectedCompanyId]);
 
   useEffect(() => {
     if (activeTab !== 'overview') return;
@@ -1214,6 +1240,15 @@ export default function OperationsTab({
     const parsed = new Date(raw);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
+  const formatDateUtcMinus4 = (
+    raw: string | Date | null | undefined,
+    options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
+  ): string => {
+    const parsed = raw instanceof Date ? raw : parseDateValue(raw ?? null);
+    if (!parsed) return 'N/A';
+    const shifted = new Date(parsed.getTime() - 4 * 60 * 60 * 1000);
+    return shifted.toLocaleDateString('en-US', { ...options, timeZone: 'UTC' });
+  };
 
   const renderFilters = () => {
     if (
@@ -1237,29 +1272,30 @@ export default function OperationsTab({
         alignItems: 'center',
         flexWrap: 'wrap'
       }}>
-        {/* Frequency Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
-            Frequency:
-          </label>
-          <select
-            value={frequency}
-            onChange={(e) => setFrequency(e.target.value as any)}
-            style={{
-              padding: '6px 10px',
-              border: '1px solid #e2e8f0',
-              borderRadius: '6px',
-              fontSize: '13px',
-              color: '#1e293b',
-              cursor: 'pointer',
-              background: 'white'
-            }}
-          >
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
-        </div>
+        {!isCustomersTab && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
+              Frequency:
+            </label>
+            <select
+              value={frequency}
+              onChange={(e) => setFrequency(e.target.value as any)}
+              style={{
+                padding: '6px 10px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: '#1e293b',
+                cursor: 'pointer',
+                background: 'white'
+              }}
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+        )}
 
         {/* Date Range */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1298,9 +1334,47 @@ export default function OperationsTab({
           />
         </div>
 
-        {/* Quick Date Range Buttons */}
-        <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-          {frequency === 'daily' && (
+        <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', alignItems: 'center' }}>
+          {isCustomersTab ? (
+            <>
+              {customerDateRangeSaveStatus && (
+                <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 600 }}>
+                  {customerDateRangeSaveStatus}
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  try {
+                    const storageKey = `ops:customers:date-range:${selectedCompanyId}`;
+                    window.localStorage.setItem(
+                      storageKey,
+                      JSON.stringify({
+                        startDate,
+                        endDate,
+                        savedAt: new Date().toISOString(),
+                      })
+                    );
+                    setCustomerDateRangeSaveStatus('Saved');
+                  } catch {
+                    setCustomerDateRangeSaveStatus('Save failed');
+                  }
+                  window.setTimeout(() => setCustomerDateRangeSaveStatus(null), 2500);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: '#2563eb',
+                  border: '1px solid #1d4ed8',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                Save
+              </button>
+            </>
+          ) : frequency === 'daily' && (
             <>
               <button
                 onClick={() => {
@@ -1346,7 +1420,7 @@ export default function OperationsTab({
               </button>
             </>
           )}
-          {frequency === 'weekly' && (
+          {!isCustomersTab && frequency === 'weekly' && (
             <>
               <button
                 onClick={() => {
@@ -1392,7 +1466,7 @@ export default function OperationsTab({
               </button>
             </>
           )}
-          {frequency === 'monthly' && (
+          {!isCustomersTab && frequency === 'monthly' && (
             <>
               <button
                 onClick={() => {
@@ -1580,14 +1654,20 @@ export default function OperationsTab({
     if (!customerData) return null;
 
     const { records, summary } = customerData;
-    const summaryTopCustomers = Array.isArray(summary?.topCustomers) ? summary.topCustomers : [];
-    const rankedCustomers = summaryTopCustomers
-      .map((customer: any) => ({
-        name: customer?.name || 'Unknown Customer',
-        totalRevenue: Number(customer?.totalRevenue || 0),
-        totalInvoices: Number(customer?.totalInvoices || 0),
-      }))
-      .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
+    const customerTotalsFromRecords = records.reduce((acc: Record<string, { name: string; totalRevenue: number; totalInvoices: number }>, record: any) => {
+      const name = String(record?.customerName || 'Unknown Customer');
+      if (!acc[name]) {
+        acc[name] = {
+          name,
+          totalRevenue: 0,
+          totalInvoices: 0,
+        };
+      }
+      acc[name].totalRevenue += Number(record?.revenue || 0);
+      acc[name].totalInvoices += Number(record?.invoiceCount || 0);
+      return acc;
+    }, {});
+    const rankedCustomers = Object.values(customerTotalsFromRecords).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
 
     // Aggregate data by period for trend chart
     const periodTrend = records.reduce((acc: any, record: any) => {
@@ -1612,8 +1692,15 @@ export default function OperationsTab({
       : 'N/A';
     const customerCoverageLabel =
       customerCoverageStart && customerCoverageEnd
-        ? `${customerCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - ${customerCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} (EST)`
+        ? `${formatDateUtcMinus4(customerCoverageStart)} - ${formatDateUtcMinus4(customerCoverageEnd)} (UTC-4)`
         : 'N/A';
+    const selectedStartDate = parseDateValue(startDate);
+    const selectedEndDate = parseDateValue(endDate);
+    const selectedDateRangeLabel =
+      selectedStartDate && selectedEndDate
+        ? `${formatDateUtcMinus4(selectedStartDate)} - ${formatDateUtcMinus4(selectedEndDate)} (UTC-4)`
+        : customerCoverageLabel;
+    const kpiDateRangeLabel = `Date range: ${selectedDateRangeLabel}`;
     const totalRevenueAll = rankedCustomers.reduce((sum: number, customer: any) => sum + Number(customer.totalRevenue || 0), 0);
     const top1Revenue = rankedCustomers.slice(0, 1).reduce((sum: number, customer: any) => sum + Number(customer.totalRevenue || 0), 0);
     const top5Revenue = rankedCustomers.slice(0, 5).reduce((sum: number, customer: any) => sum + Number(customer.totalRevenue || 0), 0);
@@ -1622,6 +1709,62 @@ export default function OperationsTab({
     const top5Share = totalRevenueAll > 0 ? (top5Revenue / totalRevenueAll) * 100 : 0;
     const top10Share = totalRevenueAll > 0 ? (top10Revenue / totalRevenueAll) * 100 : 0;
     const concentrationStatus = top5Share > 65 ? 'Investigate' : top5Share > 50 ? 'Warning' : 'Acceptable';
+    const customerPeriodRecords = records
+      .map((record: any) => {
+        const parsed = parseDateValue(record.snapshotDate);
+        if (!parsed) return null;
+        const utcDate = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+        const yearKey = String(utcDate.getUTCFullYear());
+        const quarterKey = `${yearKey}-Q${Math.floor(utcDate.getUTCMonth() / 3) + 1}`;
+        const monthKey = `${yearKey}-${String(utcDate.getUTCMonth() + 1).padStart(2, '0')}`;
+        return { record, utcDate, yearKey, quarterKey, monthKey };
+      })
+      .filter((row: any): row is NonNullable<typeof row> => Boolean(row));
+    const periodAccessor =
+      customerRevenuePeriodMode === 'year'
+        ? 'yearKey'
+        : customerRevenuePeriodMode === 'quarter'
+          ? 'quarterKey'
+          : 'monthKey';
+    const periodSet = new Set<string>();
+    for (const row of customerPeriodRecords) {
+      periodSet.add(String((row as any)[periodAccessor]));
+    }
+    const periodOptions = Array.from(periodSet).sort((a, b) => String(b).localeCompare(String(a)));
+    const effectivePeriodKey =
+      customerRevenuePeriodKey !== 'all' && periodOptions.includes(customerRevenuePeriodKey)
+        ? customerRevenuePeriodKey
+        : periodOptions[0] || 'all';
+    const filteredRecordsForTopCustomers =
+      effectivePeriodKey === 'all'
+        ? records
+        : customerPeriodRecords
+            .filter((row: any) => String((row as any)[periodAccessor]) === effectivePeriodKey)
+            .map((row: any) => row.record);
+    const tableCustomerTotals = filteredRecordsForTopCustomers.reduce((acc: Record<string, { name: string; totalRevenue: number; totalInvoices: number }>, record: any) => {
+      const name = String(record?.customerName || 'Unknown Customer');
+      if (!acc[name]) {
+        acc[name] = { name, totalRevenue: 0, totalInvoices: 0 };
+      }
+      acc[name].totalRevenue += Number(record?.revenue || 0);
+      acc[name].totalInvoices += Number(record?.invoiceCount || 0);
+      return acc;
+    }, {});
+    const rankedCustomersForTable = Object.values(tableCustomerTotals).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
+    const selectedPeriodLabel =
+      customerRevenuePeriodMode === 'year'
+        ? effectivePeriodKey
+        : customerRevenuePeriodMode === 'quarter'
+          ? effectivePeriodKey
+          : effectivePeriodKey === 'all'
+            ? 'All Months'
+            : (() => {
+                const [y, m] = String(effectivePeriodKey).split('-');
+                const monthDate = new Date(Date.UTC(Number(y), Math.max(0, Number(m) - 1), 1));
+                return Number.isNaN(monthDate.getTime())
+                  ? String(effectivePeriodKey)
+                  : monthDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+              })();
     const retentionProxyRows = rankedCustomers.slice(0, 8).map((customer: any, index: number) => {
       const baselineFactor = 0.88 + (index % 5) * 0.03;
       const priorRevenue = Number(customer.totalRevenue || 0) * baselineFactor;
@@ -1646,148 +1789,36 @@ export default function OperationsTab({
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
           Customer Sales Analytics
         </h2>
-        <div style={{ marginTop: '-8px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
-          As of: {customerAsOfLabel} | Coverage: {customerCoverageLabel}
-        </div>
-
-        {/* KPI Cards */}
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Customers</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
-              {rankedCustomers.length}
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Revenue</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
-              {formatCurrency(rankedCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0))}
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Invoices</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
-              {rankedCustomers.reduce((sum: number, c: any) => sum + c.totalInvoices, 0)}
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Top 5 Concentration</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: concentrationStatus === 'Investigate' ? '#dc2626' : concentrationStatus === 'Warning' ? '#d97706' : '#16a34a' }}>
-              {top5Share.toFixed(1)}%
-            </div>
-          </div>
-        </div>
 
         {(() => {
-          const topTenRaw = rankedCustomers.slice(0, 10);
-          const allOtherRaw = rankedCustomers.slice(10);
-          const topTen = topTenRaw.map((customer) => {
-            const bookingsYtd = customer.totalRevenue;
-            const bookingsQtd = Math.round(bookingsYtd * 0.34);
-            const bookingsMtd = Math.round(bookingsQtd * 0.45);
-            const backlogTotal = Math.round(bookingsYtd * 0.58);
-            const backlog30 = Math.round(backlogTotal * 0.32);
-            const backlog60 = Math.round(backlogTotal * 0.38);
-            const backlog90 = Math.max(0, backlogTotal - backlog30 - backlog60);
-            const trend = Math.round((bookingsMtd - bookingsQtd / 3) / 1000);
-            return {
-              customerName: customer.name,
-              bookingsMtd,
-              bookingsQtd,
-              bookingsYtd,
-              backlogTotal,
-              backlog30,
-              backlog60,
-              backlog90,
-              trend,
-            };
-          });
-
-          const allOtherRevenue = allOtherRaw.reduce((sum, customer) => sum + customer.totalRevenue, 0);
-          const allOtherRow =
-            allOtherRevenue > 0
-              ? {
-                  customerName: 'All other',
-                  bookingsYtd: allOtherRevenue,
-                  bookingsQtd: Math.round(allOtherRevenue * 0.34),
-                  bookingsMtd: Math.round(allOtherRevenue * 0.15),
-                  backlogTotal: Math.round(allOtherRevenue * 0.58),
-                  backlog30: Math.round(allOtherRevenue * 0.19),
-                  backlog60: Math.round(allOtherRevenue * 0.22),
-                  backlog90: Math.round(allOtherRevenue * 0.17),
-                  trend: Math.round((allOtherRevenue * 0.01) / 1000),
-                }
-              : null;
-
-          const demandRows = allOtherRow ? [...topTen, allOtherRow] : topTen;
-          const totalBookingsMtd = demandRows.reduce((sum, row) => sum + row.bookingsMtd, 0);
-          const totalBookingsQtd = demandRows.reduce((sum, row) => sum + row.bookingsQtd, 0);
-          const totalBookingsYtd = demandRows.reduce((sum, row) => sum + row.bookingsYtd, 0);
-          const backlogTotalAll = demandRows.reduce((sum, row) => sum + row.backlogTotal, 0);
-          const due30Total = demandRows.reduce((sum, row) => sum + row.backlog30, 0);
-          const due60Total = demandRows.reduce((sum, row) => sum + row.backlog60, 0);
-          const due90Total = demandRows.reduce((sum, row) => sum + row.backlog90, 0);
-          const top5Backlog = demandRows.slice(0, 5).reduce((sum, row) => sum + row.backlogTotal, 0);
-          const top5BacklogPct = backlogTotalAll > 0 ? (top5Backlog / backlogTotalAll) * 100 : 0;
-          const monthlyTrend = demandRows.reduce((sum, row) => sum + row.trend, 0);
-
-          const sortedRows = [...demandRows].sort((a, b) => {
-            const dir = demandSortDir === 'asc' ? 1 : -1;
-            switch (demandSortKey) {
-              case 'customer':
-                return a.customerName.localeCompare(b.customerName) * dir;
-              case 'bookingsMtd':
-                return (a.bookingsMtd - b.bookingsMtd) * dir;
-              case 'bookingsQtd':
-                return (a.bookingsQtd - b.bookingsQtd) * dir;
-              case 'bookingsYtd':
-                return (a.bookingsYtd - b.bookingsYtd) * dir;
-              case 'backlog60':
-                return (a.backlog60 - b.backlog60) * dir;
-              case 'shareBacklog':
-                return ((a.backlogTotal / Math.max(1, backlogTotalAll)) - (b.backlogTotal / Math.max(1, backlogTotalAll))) * dir;
-              case 'trend':
-                return (a.trend - b.trend) * dir;
-              case 'backlogTotal':
-              default:
-                return (a.backlogTotal - b.backlogTotal) * dir;
-            }
-          });
-
-          const handleSort = (key: typeof demandSortKey) => {
-            if (demandSortKey === key) {
-              setDemandSortDir(demandSortDir === 'asc' ? 'desc' : 'asc');
-            } else {
-              setDemandSortKey(key);
-              setDemandSortDir('desc');
-            }
-          };
-
+          const topTenRaw = rankedCustomersForTable.slice(0, 10);
           const tableCustomers = topTenRaw.map((customer) => ({
             ...customer,
             totalInvoices: Math.max(1, Math.round(customer.totalInvoices || customer.totalRevenue / 10000)),
           }));
           const chartCustomers = tableCustomers;
           const chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
-          const atRiskRows = topTen
-            .map((row) => {
-              const backlogTotal = Math.max(1, Number(row.backlogTotal || 0));
-              const backlog90 = Number(row.backlog90 || 0);
-              const backlog90Pct = (backlog90 / backlogTotal) * 100;
-              const trendK = Number(row.trend || 0);
-              const riskScore = Math.max(0, -trendK) * 1000 + backlog90 * 1.2 + Number(row.backlog60 || 0) * 0.35;
-              return {
-                customerName: row.customerName,
-                bookingsYtd: Number(row.bookingsYtd || 0),
-                backlogTotal: Number(row.backlogTotal || 0),
-                backlog90,
-                backlog90Pct,
-                trendK,
-                riskScore,
-              };
-            })
-            .sort((a, b) => b.riskScore - a.riskScore)
+          const bookingsSummary = summary?.bookings || {};
+          const bookingsTotals = {
+            mtd: Number(bookingsSummary?.totals?.mtd || 0),
+            qtd: Number(bookingsSummary?.totals?.qtd || 0),
+            ytd: Number(bookingsSummary?.totals?.ytd || 0),
+          };
+          const bookingsTop5 = {
+            mtd: Number(bookingsSummary?.top5?.mtd || 0),
+            qtd: Number(bookingsSummary?.top5?.qtd || 0),
+            ytd: Number(bookingsSummary?.top5?.ytd || 0),
+          };
+          const bookingsTopRows = (Array.isArray(bookingsSummary?.topCustomers) ? bookingsSummary.topCustomers : [])
+            .map((row: any) => ({
+              customerName: String(row?.customerName || 'Unknown Customer'),
+              mtd: Number(row?.mtd || 0),
+              qtd: Number(row?.qtd || 0),
+              ytd: Number(row?.ytd || 0),
+            }))
+            .sort((a: any, b: any) => b.ytd - a.ytd)
             .slice(0, 10);
+          const atRiskRows: any[] = [];
 
           const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent }: any) => {
             const radius = outerRadius + 16;
@@ -1809,129 +1840,120 @@ export default function OperationsTab({
 
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings</div>
-            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>MTD</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(totalBookingsMtd)}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(280px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings</div>
+                  <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>MTD</span>
+                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTotals.mtd)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>QTD</span>
+                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTotals.qtd)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>YTD</span>
+                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTotals.ytd)}</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings Top 5 Customers</div>
+                  <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>MTD</span>
+                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTop5.mtd)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>QTD</span>
+                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTop5.qtd)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>YTD</span>
+                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTop5.ytd)}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>QTD</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(totalBookingsQtd)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>YTD</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(totalBookingsYtd)}</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog $</div>
-            <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Total</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(backlogTotalAll)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Due 30</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(due30Total)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Due 60</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(due60Total)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Due 90</span>
-                <span style={{ fontWeight: 700 }}>{formatCurrency(due90Total)}</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Backlog concentration</div>
-            <div style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>
-              Top 5 customers = {top5BacklogPct.toFixed(1)}%
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings trend (3-month slope)</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '20px', fontWeight: 700, color: '#1e293b' }}>
-                {monthlyTrend >= 0 ? '+' : '-'}${Math.abs(monthlyTrend)}k/mo
-              </span>
-              <span style={{ color: monthlyTrend >= 0 ? '#16a34a' : '#ef4444', fontWeight: 700 }}>
-                {monthlyTrend >= 0 ? '↑' : '↓'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-            <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                  Top Customers Driving Demand
+              <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0, marginBottom: '10px' }}>
+                  Top Customers by Bookings
                 </h3>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>Default: Top 10 + All other</span>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                  <colgroup>
-                    <col style={{ width: '52%' }} />
-                    <col style={{ width: '110px' }} />
-                    <col style={{ width: '40px' }} />
-                    <col style={{ width: '120px' }} />
-                  </colgroup>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
-                      <th onClick={() => handleSort('customer')} style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Customer</th>
-                      <th onClick={() => handleSort('bookingsMtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings MTD</th>
-                      <th onClick={() => handleSort('bookingsQtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings QTD</th>
-                      <th onClick={() => handleSort('bookingsYtd')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings YTD</th>
-                      <th onClick={() => handleSort('backlogTotal')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Backlog total</th>
-                      <th onClick={() => handleSort('backlog60')} style={{ textAlign: 'center', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Backlog due 30/60/90</th>
-                      <th onClick={() => handleSort('shareBacklog')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Share of backlog %</th>
-                      <th onClick={() => handleSort('trend')} style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white', cursor: 'pointer' }}>Bookings trend</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedRows.map((row) => {
-                      const backlogTotal = Math.max(1, row.backlogTotal);
-                      const backlog30Pct = (row.backlog30 / backlogTotal) * 100;
-                      const backlog60Pct = (row.backlog60 / backlogTotal) * 100;
-                      const backlog90Pct = 100 - backlog30Pct - backlog60Pct;
-                      const sharePct = backlogTotalAll ? (row.backlogTotal / backlogTotalAll) * 100 : 0;
-                      return (
-                        <tr key={row.customerName} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsMtd)}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsQtd)}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsYtd)}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(row.backlogTotal)}</td>
-                          <td style={{ padding: '6px 10px' }}>
-                            <div style={{ display: 'flex', height: '8px', width: '100%', borderRadius: '4px', overflow: 'hidden', background: '#e2e8f0' }}>
-                              <div style={{ width: `${backlog30Pct}%`, background: AR_TREND_COLORS[0] }} title={`30: ${formatCurrency(row.backlog30)}`} />
-                              <div style={{ width: `${backlog60Pct}%`, background: AR_TREND_COLORS[1] }} title={`60: ${formatCurrency(row.backlog60)}`} />
-                              <div style={{ width: `${backlog90Pct}%`, background: AR_TREND_COLORS[2] }} title={`90: ${formatCurrency(row.backlog90)}`} />
-                            </div>
-                          </td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{sharePct.toFixed(1)}%</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: row.trend >= 0 ? '#16a34a' : '#ef4444', textAlign: 'right', fontWeight: 600 }}>
-                            {row.trend >= 0 ? '+' : '-'}${Math.abs(row.trend)}k/mo
-                          </td>
+                {bookingsTopRows.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>No bookings found in selected window.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Rank</th>
+                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Customer</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>MTD</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>QTD</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>YTD</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody>
+                        {bookingsTopRows.map((row: any, index: number) => (
+                          <tr key={`${row.customerName}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b' }}>#{index + 1}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: 600 }}>{row.customerName}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.mtd)}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.qtd)}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(row.ytd)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
               {/* Top Customers Table */}
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
-                  Top Customers by Revenue
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                    Top Customers by Revenue
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <select
+                      value={customerRevenuePeriodMode}
+                      onChange={(e) => {
+                        const mode = e.target.value as 'year' | 'quarter' | 'month';
+                        setCustomerRevenuePeriodMode(mode);
+                        setCustomerRevenuePeriodKey('all');
+                      }}
+                      style={{ padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', color: '#334155', background: 'white' }}
+                    >
+                      <option value="year">Year</option>
+                      <option value="quarter">Quarter</option>
+                      <option value="month">Month</option>
+                    </select>
+                    <select
+                      value={effectivePeriodKey}
+                      onChange={(e) => setCustomerRevenuePeriodKey(e.target.value)}
+                      style={{ padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', color: '#334155', background: 'white' }}
+                    >
+                      {periodOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {customerRevenuePeriodMode === 'month'
+                            ? (() => {
+                                const [y, m] = String(option).split('-');
+                                const d = new Date(Date.UTC(Number(y), Math.max(0, Number(m) - 1), 1));
+                                return Number.isNaN(d.getTime())
+                                  ? option
+                                  : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+                              })()
+                            : option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
+                  Selected period: {selectedPeriodLabel}
+                </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -2100,7 +2122,7 @@ export default function OperationsTab({
               </div>
               )}
 
-              {isSectionEnabled('customersAtRiskQueue') && (
+              {false && isSectionEnabled('customersAtRiskQueue') && (
                 <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                   At-Risk Accounts Queue
@@ -2262,10 +2284,10 @@ export default function OperationsTab({
     const arCoverageEnd = arCoverageDates.length > 0 ? new Date(Math.max(...arCoverageDates.map((date) => date.getTime()))) : null;
     const arCoverageLabel =
       arCoverageStart && arCoverageEnd
-        ? `${arCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })} - ${arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })} (UTC)`
+        ? `${formatDateUtcMinus4(arCoverageStart)} - ${formatDateUtcMinus4(arCoverageEnd)} (UTC-4)`
         : 'N/A';
     const arAsOfLabel = arCoverageEnd
-      ? arCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+      ? formatDateUtcMinus4(arCoverageEnd)
       : 'N/A';
     const paidByCustomerMap = new Map(paidByCustomerAll.map((row: any) => [row.customerName, row]));
     const contractAndCashFlowRows = arCustomers
@@ -2340,7 +2362,7 @@ export default function OperationsTab({
     const formatArTrendDate = (value: string | Date) => {
       const parsed = parseDateValue(value);
       if (!parsed) return String(value || '');
-      return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+      return formatDateUtcMinus4(parsed, { month: 'short', day: 'numeric' });
     };
     const toUtcDay = (value: string | Date) => {
       const parsed = parseDateValue(value);
@@ -2409,11 +2431,11 @@ export default function OperationsTab({
       return {
         periodKey: toIsoDay(period.anchor),
         month: formatArTrendDate(period.anchor),
-        'Open AR Current': Number(record?.current || 0),
-        'Open AR 1-30': Number(record?.days1to30 || 0),
-        'Open AR 31-60': Number(record?.days31to60 || 0),
-        'Open AR 61-90': Number(record?.days61to90 || 0),
-        'Open AR 90+': Number(record?.days90plus || 0),
+        'Open AR 0-30': Number(record?.current || 0),
+        'Open AR 31-60': Number(record?.days1to30 || 0),
+        'Open AR 61-90': Number(record?.days31to60 || 0),
+        'Open AR 91-120': Number(record?.days61to90 || 0),
+        'Open AR 121+': Number(record?.days90plus || 0),
         total: Number(record?.totalAR || 0),
         hasData: Boolean(record),
       };
@@ -2422,8 +2444,8 @@ export default function OperationsTab({
     const arCollectionsTrend = chartData.map((row: any) => ({
       period: row.month,
       dso: 0,
-      over30Pct: row.total > 0 ? ((row['Open AR 31-60'] + row['Open AR 61-90'] + row['Open AR 90+']) / row.total) * 100 : 0,
-      over90Pct: row.total > 0 ? (row['Open AR 90+'] / row.total) * 100 : 0,
+      over30Pct: row.total > 0 ? ((row['Open AR 61-90'] + row['Open AR 91-120'] + row['Open AR 121+']) / row.total) * 100 : 0,
+      over90Pct: row.total > 0 ? (row['Open AR 121+'] / row.total) * 100 : 0,
     }));
     const arCollectionsRiskQueue = arCustomers
       .map((row) => {
@@ -2510,11 +2532,11 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="Open AR Current" stackId="a" fill={AR_TREND_COLORS[0]} />
-              <Bar dataKey="Open AR 1-30" stackId="a" fill={AR_TREND_COLORS[1]} />
+              <Bar dataKey="Open AR 0-30" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="Open AR 61-90" stackId="a" fill={AR_TREND_COLORS[3]} />
-              <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[4]} />
+              <Bar dataKey="Open AR 91-120" stackId="a" fill={AR_TREND_COLORS[1]} />
+              <Bar dataKey="Open AR 121+" stackId="a" fill={AR_TREND_COLORS[4]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -3220,7 +3242,7 @@ export default function OperationsTab({
     const apCoverageEnd = apCoverageDates.length > 0 ? new Date(Math.max(...apCoverageDates.map((date) => date.getTime()))) : null;
     const apCoverageLabel =
       apCoverageStart && apCoverageEnd
-        ? `${apCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - ${apCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} (EST)`
+        ? `${formatDateUtcMinus4(apCoverageStart)} - ${formatDateUtcMinus4(apCoverageEnd)} (UTC-4)`
         : 'N/A';
     const apAsOfDate = apCoverageEnd || parseDateValue(latestRecord?.snapshotDate) || new Date();
     const apAsOfLabel = apAsOfDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -4019,7 +4041,7 @@ export default function OperationsTab({
     const asOfDateLabel = formatCoverageDate(coverageEndWeek);
     const coverageLabel =
       coverageStartWeek && coverageEndWeek
-        ? `${formatCoverageDate(coverageStartWeek)} - ${formatCoverageDate(coverageEndWeek)} (EST)`
+        ? `${formatCoverageDate(coverageStartWeek)} - ${formatCoverageDate(coverageEndWeek)} (UTC-4)`
         : 'N/A';
     const renderCoverageMeta = () => (
       <div style={{ marginTop: '4px', marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
@@ -4622,7 +4644,7 @@ export default function OperationsTab({
       : 'N/A';
     const cashCoverageLabel =
       cashCoverageStart && cashCoverageEnd
-        ? `${cashCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - ${cashCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} (EST)`
+        ? `${formatDateUtcMinus4(cashCoverageStart)} - ${formatDateUtcMinus4(cashCoverageEnd)} (UTC-4)`
         : 'N/A';
     const startOfWeek = (date: Date): Date => {
       const d = new Date(date);
@@ -4663,7 +4685,7 @@ export default function OperationsTab({
       : 'N/A';
     const cash13WeekCoverageLabel =
       cash13WeekCoverageStart && cash13WeekCoverageEnd
-        ? `${cash13WeekCoverageStart.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - ${cash13WeekCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} (EST)`
+        ? `${formatDateUtcMinus4(cash13WeekCoverageStart)} - ${formatDateUtcMinus4(cash13WeekCoverageEnd)} (UTC-4)`
         : 'N/A';
     const cashBridgeRows = cash13WeekRows.map((row, index) => {
       const prior = index > 0 ? cash13WeekRows[index - 1] : null;

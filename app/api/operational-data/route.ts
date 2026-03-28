@@ -65,8 +65,24 @@ function addMonths(date: Date, months: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + months, 1);
 }
 
+const BUSINESS_TZ_OFFSET_HOURS = -4;
+const BUSINESS_TZ_OFFSET_MS = BUSINESS_TZ_OFFSET_HOURS * 60 * 60 * 1000;
+const BUSINESS_TZ_START_HOUR_UTC = -BUSINESS_TZ_OFFSET_HOURS;
+
 function startOfUtcDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  // Normalize to business-day boundaries in UTC-4 (fixed offset).
+  const shifted = new Date(date.getTime() + BUSINESS_TZ_OFFSET_MS);
+  return new Date(
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+      BUSINESS_TZ_START_HOUR_UTC,
+      0,
+      0,
+      0
+    )
+  );
 }
 
 function endOfUtcDay(date: Date): Date {
@@ -78,8 +94,8 @@ function parseDateParamBoundary(value: string | null, boundary: 'start' | 'end',
   if (!value) return fallback;
   const trimmed = value.trim();
   if (!trimmed) return fallback;
-  // Treat date-only params as full UTC day boundaries so same-day snapshots
-  // (commonly persisted with non-midnight times) are not excluded.
+  // Treat date-only params as full UTC-4 business-day boundaries so same-day
+  // snapshots (commonly persisted with non-midnight UTC timestamps) are not excluded.
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
     const day = parseIsoDayKey(trimmed);
     return boundary === 'start' ? day : endOfUtcDay(day);
@@ -94,7 +110,69 @@ function dateKeyUtc(date: Date): string {
 }
 
 function parseIsoDayKey(dayKey: string): Date {
-  return new Date(`${dayKey}T00:00:00.000Z`);
+  const [yearRaw, monthRaw, dayRaw] = dayKey.split('-');
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return new Date(`${dayKey}T00:00:00.000Z`);
+  }
+  // UTC-4 midnight is 04:00 UTC.
+  return new Date(Date.UTC(year, month - 1, day, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+}
+
+function shiftToBusinessTz(date: Date): Date {
+  return new Date(date.getTime() + BUSINESS_TZ_OFFSET_MS);
+}
+
+function startOfBusinessMonth(date: Date): Date {
+  const shifted = shiftToBusinessTz(date);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+}
+
+function startOfBusinessQuarter(date: Date): Date {
+  const shifted = shiftToBusinessTz(date);
+  const quarterStartMonth = Math.floor(shifted.getUTCMonth() / 3) * 3;
+  return new Date(Date.UTC(shifted.getUTCFullYear(), quarterStartMonth, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+}
+
+function startOfBusinessYear(date: Date): Date {
+  const shifted = shiftToBusinessTz(date);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), 0, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+}
+
+function businessMonthKey(date: Date): string {
+  const shifted = shiftToBusinessTz(date);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthStartFromBusinessMonthKey(key: string): Date {
+  const [yearRaw, monthRaw] = String(key || '').split('-');
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return startOfBusinessMonth(new Date());
+  }
+  return new Date(Date.UTC(year, month - 1, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+}
+
+let customerOrderLineOrderDateColumnCache: boolean | null = null;
+async function customerOrderLineHasOrderDateColumn(): Promise<boolean> {
+  if (customerOrderLineOrderDateColumnCache !== null) return customerOrderLineOrderDateColumnCache;
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.columns
+         WHERE table_name = 'CustomerOrderLineSnapshot'
+           AND column_name = 'orderDate'
+       ) AS exists`
+    );
+    customerOrderLineOrderDateColumnCache = Boolean(rows?.[0]?.exists);
+  } catch {
+    customerOrderLineOrderDateColumnCache = false;
+  }
+  return customerOrderLineOrderDateColumnCache;
 }
 
 function normalizeAccountNameForKey(name: string): string {
@@ -589,19 +667,380 @@ export async function GET(request: NextRequest) {
 
     switch (type) {
       case 'customers':
-        // Get customer sales data
+        // Get customer sales data for the full requested date window.
+        // Do not cap with `take` here; KPI totals and coverage must reflect the
+        // selected From/To range, not only the newest N customer rows.
         data = await prisma.customerSalesSnapshot.findMany({
           where: {
             companyId,
             frequency,
             snapshotDate: dateFilter,
           },
-          orderBy: { snapshotDate: 'desc' },
-          take: limit,
+          orderBy: [{ snapshotDate: 'asc' }, { customerName: 'asc' }],
+        });
+
+        const hasNonZeroCustomerSales = data.some(
+          (record) => Number(record.revenue || 0) !== 0 || Number(record.invoiceCount || 0) !== 0
+        );
+
+        // Fallback for tenants where CustomerSalesSnapshot rows exist but revenue/invoice
+        // are not populated yet: derive customer revenue from order-line snapshots.
+        if (!hasNonZeroCustomerSales) {
+          const orderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+          if (orderLineDelegate?.findMany) {
+            const orderRows = await orderLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency,
+                snapshotDate: { lte: endDate },
+              },
+              select: {
+                snapshotDate: true,
+                customerId: true,
+                customerName: true,
+                orderId: true,
+                lineId: true,
+                invoicedAmount: true,
+              },
+              orderBy: [{ snapshotDate: 'asc' }],
+              take: 250000,
+            });
+
+            const lineState = new Map<
+              string,
+              {
+                customerId: string | null;
+                customerName: string;
+                orderId: string;
+                startBaseline: number;
+                endValue: number;
+                hasInRangeSnapshot: boolean;
+              }
+            >();
+
+            for (const row of orderRows as any[]) {
+              const snapshotDate = new Date(row.snapshotDate);
+              if (Number.isNaN(snapshotDate.getTime())) continue;
+              const customerName = String(row.customerName || 'Unknown Customer');
+              const customerId = row.customerId ? String(row.customerId) : null;
+              const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
+              const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
+              const key = `${customerId || customerName.toLowerCase()}|${orderId}|${lineId}`;
+              if (!lineState.has(key)) {
+                lineState.set(key, {
+                  customerId,
+                  customerName,
+                  orderId,
+                  startBaseline: 0,
+                  endValue: 0,
+                  hasInRangeSnapshot: false,
+                });
+              }
+              const state = lineState.get(key)!;
+              const amount = Number(row.invoicedAmount || 0);
+              if (snapshotDate < startDate) {
+                state.startBaseline = amount;
+              } else if (snapshotDate <= endDate) {
+                state.endValue = amount;
+                state.hasInRangeSnapshot = true;
+              }
+            }
+
+            const customerAgg = new Map<
+              string,
+              {
+                customerId: string | null;
+                customerName: string;
+                revenue: number;
+                orderIds: Set<string>;
+              }
+            >();
+
+            for (const state of lineState.values()) {
+              if (!state.hasInRangeSnapshot) continue;
+              const delta = Math.max(state.endValue - state.startBaseline, 0);
+              if (delta <= 0) continue;
+              const customerKey = `${state.customerId || ''}|${state.customerName.toLowerCase()}`;
+              if (!customerAgg.has(customerKey)) {
+                customerAgg.set(customerKey, {
+                  customerId: state.customerId,
+                  customerName: state.customerName,
+                  revenue: 0,
+                  orderIds: new Set<string>(),
+                });
+              }
+              const acc = customerAgg.get(customerKey)!;
+              acc.revenue += delta;
+              acc.orderIds.add(state.orderId);
+            }
+
+            data = Array.from(customerAgg.values())
+              .map((row) => ({
+                companyId,
+                snapshotDate: endDate,
+                frequency,
+                customerId: row.customerId,
+                customerName: row.customerName,
+                revenue: row.revenue,
+                invoiceCount: row.orderIds.size,
+                avgInvoiceSize: row.orderIds.size > 0 ? row.revenue / row.orderIds.size : null,
+              }))
+              .sort((a, b) => Number(b.revenue || 0) - Number(a.revenue || 0)) as any[];
+          }
+        }
+
+        // Build real bookings from order headers/lines using orderDate periods.
+        // Formula intent: SUM(QtyOrdered * Price) grouped by SLCohdrs.OrderDate period.
+        const bookingsByCustomer = new Map<
+          string,
+          {
+            customerId: string | null;
+            customerName: string;
+            mtd: number;
+            qtd: number;
+            ytd: number;
+          }
+        >();
+        const bookingsByMonth = new Map<string, number>();
+        const bookingsOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+        if (bookingsOrderLineDelegate?.findMany) {
+          const hasOrderDateColumn = await customerOrderLineHasOrderDateColumn();
+          const mtdStart = startOfBusinessMonth(endDate);
+          const qtdStart = startOfBusinessQuarter(endDate);
+          const ytdStart = startOfBusinessYear(endDate);
+          if (hasOrderDateColumn) {
+            const orderRows = await bookingsOrderLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency,
+                snapshotDate: { lte: endDate },
+                orderDate: { lte: endDate },
+              },
+              select: {
+                snapshotDate: true,
+                orderDate: true,
+                customerId: true,
+                customerName: true,
+                orderId: true,
+                lineId: true,
+                contractValue: true,
+              },
+              orderBy: [{ snapshotDate: 'desc' }],
+              take: 300000,
+            });
+
+            const latestLineAsOfEnd = new Map<
+              string,
+              {
+                orderDate: Date;
+                customerId: string | null;
+                customerName: string;
+                contractValue: number;
+              }
+            >();
+
+            for (const row of orderRows as any[]) {
+              const snapshot = new Date(row.snapshotDate);
+              const orderDate = row.orderDate ? new Date(row.orderDate) : null;
+              if (Number.isNaN(snapshot.getTime()) || !orderDate || Number.isNaN(orderDate.getTime())) continue;
+              const customerName = String(row.customerName || 'Unknown Customer');
+              const customerId = row.customerId ? String(row.customerId) : null;
+              const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
+              const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
+              const lineKey = `${customerId || customerName.toLowerCase()}|${orderId}|${lineId}`;
+              if (latestLineAsOfEnd.has(lineKey)) continue;
+              latestLineAsOfEnd.set(lineKey, {
+                orderDate,
+                customerId,
+                customerName,
+                contractValue: Math.max(Number(row.contractValue || 0), 0),
+              });
+            }
+
+            for (const line of latestLineAsOfEnd.values()) {
+              const bookingValue = Number(line.contractValue || 0);
+              if (bookingValue <= 0) continue;
+              const orderDate = new Date(line.orderDate);
+              if (orderDate > endDate) continue;
+              const key = `${line.customerId || ''}|${line.customerName.toLowerCase()}`;
+              if (!bookingsByCustomer.has(key)) {
+                bookingsByCustomer.set(key, {
+                  customerId: line.customerId,
+                  customerName: line.customerName,
+                  mtd: 0,
+                  qtd: 0,
+                  ytd: 0,
+                });
+              }
+              const acc = bookingsByCustomer.get(key)!;
+              if (orderDate >= mtdStart) acc.mtd += bookingValue;
+              if (orderDate >= qtdStart) acc.qtd += bookingValue;
+              if (orderDate >= ytdStart) acc.ytd += bookingValue;
+              if (orderDate >= startDate && orderDate <= endDate) {
+                const monthKey = businessMonthKey(orderDate);
+                bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + bookingValue);
+              }
+            }
+          } else {
+            // Backward-compatible fallback until orderDate column is migrated/backfilled.
+            const orderRows = await bookingsOrderLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency,
+                snapshotDate: { lte: endDate },
+              },
+              select: {
+                snapshotDate: true,
+                customerId: true,
+                customerName: true,
+                orderId: true,
+                lineId: true,
+                contractValue: true,
+              },
+              orderBy: [{ snapshotDate: 'asc' }],
+              take: 250000,
+            });
+
+            const lineState = new Map<
+              string,
+              {
+                customerId: string | null;
+                customerName: string;
+                lastValue: number;
+                hasBaseline: boolean;
+                endValue: number;
+                beforeMtd: number;
+                beforeQtd: number;
+                beforeYtd: number;
+                hasEndValue: boolean;
+              }
+            >();
+
+            for (const row of orderRows as any[]) {
+              const snapshot = new Date(row.snapshotDate);
+              if (Number.isNaN(snapshot.getTime())) continue;
+              const customerName = String(row.customerName || 'Unknown Customer');
+              const customerId = row.customerId ? String(row.customerId) : null;
+              const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
+              const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
+              const lineKey = `${customerId || customerName.toLowerCase()}|${orderId}|${lineId}`;
+              if (!lineState.has(lineKey)) {
+                lineState.set(lineKey, {
+                  customerId,
+                  customerName,
+                  lastValue: 0,
+                  hasBaseline: false,
+                  endValue: 0,
+                  beforeMtd: 0,
+                  beforeQtd: 0,
+                  beforeYtd: 0,
+                  hasEndValue: false,
+                });
+              }
+              const state = lineState.get(lineKey)!;
+              const value = Number(row.contractValue || 0);
+              if (!state.hasBaseline) {
+                state.lastValue = value;
+                state.hasBaseline = true;
+              } else {
+                const delta = value - state.lastValue;
+                if (delta > 0 && snapshot >= startDate && snapshot <= endDate) {
+                  const monthKey = businessMonthKey(snapshot);
+                  bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + delta);
+                }
+                state.lastValue = value;
+              }
+              if (snapshot < mtdStart) state.beforeMtd = value;
+              if (snapshot < qtdStart) state.beforeQtd = value;
+              if (snapshot < ytdStart) state.beforeYtd = value;
+              if (snapshot <= endDate) {
+                state.endValue = value;
+                state.hasEndValue = true;
+              }
+            }
+
+            for (const state of lineState.values()) {
+              if (!state.hasEndValue) continue;
+              const mtd = Math.max(state.endValue - state.beforeMtd, 0);
+              const qtd = Math.max(state.endValue - state.beforeQtd, 0);
+              const ytd = Math.max(state.endValue - state.beforeYtd, 0);
+              if (mtd === 0 && qtd === 0 && ytd === 0) continue;
+              const key = `${state.customerId || ''}|${state.customerName.toLowerCase()}`;
+              if (!bookingsByCustomer.has(key)) {
+                bookingsByCustomer.set(key, {
+                  customerId: state.customerId,
+                  customerName: state.customerName,
+                  mtd: 0,
+                  qtd: 0,
+                  ytd: 0,
+                });
+              }
+              const acc = bookingsByCustomer.get(key)!;
+              acc.mtd += mtd;
+              acc.qtd += qtd;
+              acc.ytd += ytd;
+            }
+          }
+        }
+
+        const bookingsCustomers = Array.from(bookingsByCustomer.values()).sort((a, b) => b.ytd - a.ytd);
+        const bookingsTop5 = bookingsCustomers.slice(0, 5).reduce(
+          (acc, row) => {
+            acc.mtd += row.mtd;
+            acc.qtd += row.qtd;
+            acc.ytd += row.ytd;
+            return acc;
+          },
+          { mtd: 0, qtd: 0, ytd: 0 }
+        );
+        const bookingsTotals = bookingsCustomers.reduce(
+          (acc, row) => {
+            acc.mtd += row.mtd;
+            acc.qtd += row.qtd;
+            acc.ytd += row.ytd;
+            return acc;
+          },
+          { mtd: 0, qtd: 0, ytd: 0 }
+        );
+
+        const revenueByMonth = new Map<string, number>();
+        for (const row of data as any[]) {
+          const snapshot = new Date(row.snapshotDate);
+          if (Number.isNaN(snapshot.getTime())) continue;
+          const monthKey = businessMonthKey(snapshot);
+          revenueByMonth.set(monthKey, Number(revenueByMonth.get(monthKey) || 0) + Number(row.revenue || 0));
+        }
+        const monthKeys = Array.from(new Set([...Array.from(bookingsByMonth.keys()), ...Array.from(revenueByMonth.keys())])).sort();
+        const bookingsMonthly = monthKeys.map((period, idx) => {
+          const bookings = Number(bookingsByMonth.get(period) || 0);
+          const prevBookings = idx > 0 ? Number(bookingsByMonth.get(monthKeys[idx - 1]) || 0) : 0;
+          const growthPct = prevBookings > 0 ? ((bookings - prevBookings) / prevBookings) * 100 : null;
+          return {
+            period,
+            periodStart: monthStartFromBusinessMonthKey(period).toISOString(),
+            bookings,
+            growthPct,
+          };
+        });
+        const bookingsVsRevenueBridge = monthKeys.map((period) => ({
+          period,
+          periodStart: monthStartFromBusinessMonthKey(period).toISOString(),
+          bookings: Number(bookingsByMonth.get(period) || 0),
+          revenue: Number(revenueByMonth.get(period) || 0),
+          delta: Number(bookingsByMonth.get(period) || 0) - Number(revenueByMonth.get(period) || 0),
+        }));
+        let rollingBacklog = 0;
+        const backlogSeries = bookingsVsRevenueBridge.map((row) => {
+          rollingBacklog = rollingBacklog + Number(row.bookings || 0) - Number(row.revenue || 0);
+          return {
+            period: row.period,
+            periodStart: row.periodStart,
+            backlog: rollingBacklog,
+          };
         });
 
         // Calculate top customers
-        const customerTotals = data.reduce((acc, record) => {
+        const customerTotals = data.reduce((acc, record: any) => {
           if (!acc[record.customerName]) {
             acc[record.customerName] = {
               name: record.customerName,
@@ -634,6 +1073,14 @@ export async function GET(request: NextRequest) {
             topCustomers: Object.values(customerTotals)
               .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
               .slice(0, 10),
+            bookings: {
+              totals: bookingsTotals,
+              top5: bookingsTop5,
+              topCustomers: bookingsCustomers.slice(0, 10),
+              monthly: bookingsMonthly,
+              bridge: bookingsVsRevenueBridge,
+              backlogSeries,
+            },
           },
         });
 
@@ -764,48 +1211,110 @@ export async function GET(request: NextRequest) {
             over90Pct: number;
           }>
         >`
-          WITH base AS (
+          WITH canonical_snapshots AS (
             SELECT
               date_trunc('day', "snapshotDate") AS day,
-              COALESCE("amountDueHome", 0)::double precision AS amount_due,
-              CASE
-                WHEN COALESCE("dueDate", "invoiceDate") IS NULL THEN NULL
-                ELSE GREATEST(FLOOR(EXTRACT(EPOCH FROM (date_trunc('day', "snapshotDate") - date_trunc('day', COALESCE("dueDate", "invoiceDate")))) / 86400), 0)
-              END AS invoice_age_days
+              MAX("snapshotDate") AS snapshot_ts
             FROM "AROpenInvoiceSnapshot"
             WHERE "companyId" = ${companyId}
               AND "frequency" = 'daily'
               AND "snapshotDate" >= ${startDate}
               AND "snapshotDate" <= ${endDate}
-              AND COALESCE("amountDueHome", 0) > 0
-              AND COALESCE("dueDate", "invoiceDate") IS NOT NULL
-              AND ("invoiceNo" IS NULL OR UPPER("invoiceNo") NOT LIKE 'CR%')
-              AND (
-                "status" IS NULL OR (
-                  UPPER("status") <> 'C' AND
-                  UPPER("status") <> 'P' AND
-                  LOWER("status") NOT LIKE '%credit%' AND
-                  LOWER("status") NOT LIKE '%payment%' AND
-                  LOWER("status") NOT LIKE '%cash%' AND
-                  LOWER("status") NOT LIKE '%receipt%' AND
-                  LOWER("status") NOT LIKE '%closed%' AND
-                  LOWER("status") NOT LIKE '%paid%' AND
-                  LOWER("status") NOT LIKE '%void%' AND
-                  LOWER("status") NOT LIKE '%cancel%' AND
-                  LOWER("status") NOT LIKE '%settled%' AND
-                  LOWER("status") NOT LIKE '%history%'
+            GROUP BY date_trunc('day', "snapshotDate")
+          ),
+          raw_rows AS (
+            SELECT
+              cs.day AS day,
+              COALESCE(s."customerId", s."customerName") AS customer_key,
+              NULLIF(TRIM(COALESCE(s."invoiceNo", '')), '') AS invoice_no_norm,
+              COALESCE(s."amountDueHome", 0)::double precision AS amount_due,
+              date_trunc('day', s."invoiceDate") AS invoice_day,
+              date_trunc('day', s."dueDate") AS due_day,
+              UPPER(TRIM(COALESCE(s."status", ''))) AS status_token,
+              LOWER(COALESCE(s."status", '')) AS status_text
+            FROM "AROpenInvoiceSnapshot" s
+            INNER JOIN canonical_snapshots cs
+              ON s."snapshotDate" = cs.snapshot_ts
+            WHERE s."companyId" = ${companyId}
+              AND s."frequency" = 'daily'
+              AND NULLIF(TRIM(COALESCE(s."invoiceNo", '')), '') IS NOT NULL
+              AND UPPER(COALESCE(s."invoiceNo", '')) NOT LIKE 'CR%'
+          ),
+          invoice_net AS (
+            SELECT
+              day,
+              customer_key,
+              invoice_no_norm,
+              SUM(amount_due)::double precision AS net_amount_due,
+              MAX(invoice_day) AS invoice_day,
+              MAX(due_day) AS due_day,
+              BOOL_OR(
+                status_token = 'C' OR
+                status_text LIKE '%credit%' OR
+                status_text LIKE '%payment%' OR
+                status_text LIKE '%cash%' OR
+                status_text LIKE '%receipt%' OR
+                status_text LIKE '%closed%' OR
+                status_text LIKE '%paid%' OR
+                status_text LIKE '%void%' OR
+                status_text LIKE '%cancel%' OR
+                status_text LIKE '%settled%' OR
+                status_text LIKE '%history%'
+              ) AS has_bad_status
+            FROM raw_rows
+            GROUP BY day, customer_key, invoice_no_norm
+          ),
+          base AS (
+            SELECT
+              day,
+              net_amount_due AS amount_due,
+              CASE
+                WHEN invoice_day IS NULL THEN NULL
+                ELSE GREATEST(
+                  FLOOR(
+                    EXTRACT(EPOCH FROM (day - invoice_day)) / 86400
+                  ),
+                  0
                 )
-              )
+              END AS invoice_age_days
+            FROM invoice_net
+            WHERE net_amount_due > 0
+              AND invoice_day IS NOT NULL
           ),
           bucketed AS (
             SELECT
               day AS "snapshotDate",
               SUM(amount_due)::double precision AS "totalAR",
-              SUM(CASE WHEN invoice_age_days <= 30 THEN amount_due ELSE 0 END)::double precision AS "current",
-              SUM(CASE WHEN invoice_age_days > 30 AND invoice_age_days <= 60 THEN amount_due ELSE 0 END)::double precision AS "days1to30",
-              SUM(CASE WHEN invoice_age_days > 60 AND invoice_age_days <= 90 THEN amount_due ELSE 0 END)::double precision AS "days31to60",
-              SUM(CASE WHEN invoice_age_days > 90 AND invoice_age_days <= 120 THEN amount_due ELSE 0 END)::double precision AS "days61to90",
-              SUM(CASE WHEN invoice_age_days > 120 THEN amount_due ELSE 0 END)::double precision AS "days90plus"
+              SUM(
+                CASE
+                  WHEN invoice_age_days <= 30 THEN amount_due
+                  ELSE 0
+                END
+              )::double precision AS "current",
+              SUM(
+                CASE
+                  WHEN invoice_age_days > 30 AND invoice_age_days <= 60 THEN amount_due
+                  ELSE 0
+                END
+              )::double precision AS "days1to30",
+              SUM(
+                CASE
+                  WHEN invoice_age_days > 60 AND invoice_age_days <= 90 THEN amount_due
+                  ELSE 0
+                END
+              )::double precision AS "days31to60",
+              SUM(
+                CASE
+                  WHEN invoice_age_days > 90 AND invoice_age_days <= 120 THEN amount_due
+                  ELSE 0
+                END
+              )::double precision AS "days61to90",
+              SUM(
+                CASE
+                  WHEN invoice_age_days > 120 THEN amount_due
+                  ELSE 0
+                END
+              )::double precision AS "days90plus"
             FROM base
             GROUP BY day
           )
@@ -1031,7 +1540,7 @@ export async function GET(request: NextRequest) {
             .trim()
             .toLowerCase()
             .replace(/\s+/g, ' ');
-        const orderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+        const arOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
         const orderContractByCustomerName = new Map<
           string,
           {
@@ -1043,8 +1552,8 @@ export async function GET(request: NextRequest) {
             accruedRevenueUnbilled: number;
           }
         >();
-        if (orderLineDelegate?.findMany) {
-          const latestOrderSnapshot = await orderLineDelegate.findFirst({
+        if (arOrderLineDelegate?.findMany) {
+          const latestOrderSnapshot = await arOrderLineDelegate.findFirst({
             where: {
               companyId,
               frequency: arFrequencyForQuery,
@@ -1054,7 +1563,7 @@ export async function GET(request: NextRequest) {
             select: { snapshotDate: true },
           });
           if (latestOrderSnapshot?.snapshotDate) {
-            const orderRows = await orderLineDelegate.findMany({
+            const orderRows = await arOrderLineDelegate.findMany({
               where: {
                 companyId,
                 frequency: arFrequencyForQuery,

@@ -1058,6 +1058,7 @@ model CustomerOrderLineSnapshot {
   customerName     String
   orderId          String
   lineId           String
+  orderDate        DateTime?
   qtyOrdered       Float
   qtyInvoiced      Float
   unitPrice        Float
@@ -1075,6 +1076,7 @@ model CustomerOrderLineSnapshot {
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, customerId, snapshotDate(sort: Desc)])
+  @@index([companyId, orderDate])
   @@index([companyId, orderId])
   @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
 }

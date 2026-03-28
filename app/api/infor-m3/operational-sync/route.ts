@@ -3,12 +3,15 @@ import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-gua
 import { pruneCompanyOperationalData, syncInforM3OperationalData } from '@/lib/infor-m3/operational-sync';
 import prisma from '@/lib/prisma';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
+import { randomUUID } from 'node:crypto';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 type SyncMode = 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill';
 type SyncWindow = { startDate: Date; endDate: Date; mode: SyncMode } | null;
 type SyncCursor = {
   mode: SyncMode;
+  syncRunId: string;
+  salesOnly?: boolean;
   programOffset: number;
   programBatchSize: number;
   requestOffset?: number;
@@ -47,6 +50,21 @@ function withStagnationState(previous: SyncCursor, next: SyncCursor): SyncCursor
     ...next,
     stagnantCursorCount: advanced ? 0 : previousCount + 1,
   };
+}
+
+function isCursorUnchangedFromRequest(params: {
+  requestedProgramOffset: number;
+  requestedRequestOffset: number;
+  requestedBookmark: string | null;
+  nextCursor: SyncCursor | null;
+}): boolean {
+  const { requestedProgramOffset, requestedRequestOffset, requestedBookmark, nextCursor } = params;
+  if (!nextCursor) return false;
+  return (
+    nextCursor.programOffset === requestedProgramOffset &&
+    (nextCursor.requestOffset ?? 0) === requestedRequestOffset &&
+    normalizeBookmark(nextCursor.bookmark) === normalizeBookmark(requestedBookmark)
+  );
 }
 
 function normalizeFrequency(value: unknown): Frequency {
@@ -195,6 +213,16 @@ export async function POST(request: NextRequest) {
     const requestedBookmark =
       typeof body.bookmark === 'string' && body.bookmark.trim().length > 0 ? body.bookmark.trim() : null;
     const requestedStagnantCursorCount = normalizeNonNegativeInt(body.stagnantCursorCount) ?? 0;
+    const requestedSyncRunId =
+      typeof body.syncRunId === 'string' && body.syncRunId.trim().length > 0 ? body.syncRunId.trim() : null;
+    const salesOnly = body.salesOnly === true || String(body.scope || '').trim().toLowerCase() === 'sales';
+    const hasContinuationCursor = requestedProgramOffset > 0 || requestedRequestOffset > 0 || Boolean(requestedBookmark);
+    const resetContinuationForMissingRunId = hasContinuationCursor && !requestedSyncRunId;
+    const effectiveSyncRunId = requestedSyncRunId || randomUUID();
+    const effectiveProgramOffset = resetContinuationForMissingRunId ? 0 : requestedProgramOffset;
+    const effectiveRequestOffset = resetContinuationForMissingRunId ? 0 : requestedRequestOffset;
+    const effectiveBookmark = resetContinuationForMissingRunId ? null : requestedBookmark;
+    const effectiveStagnantCursorCount = resetContinuationForMissingRunId ? 0 : requestedStagnantCursorCount;
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { accountingSystem: true },
@@ -264,10 +292,12 @@ export async function POST(request: NextRequest) {
           snapshotDateOverride: businessDate,
           preserveCashSnapshot: shouldPreserveCashSnapshotForSlice,
           skipPrune: true,
-          programOffset: requestedProgramOffset,
+          programOffset: effectiveProgramOffset,
           programLimit: programBatchSize,
-          requestOffset: requestedRequestOffset,
-          bookmark: requestedBookmark,
+          requestOffset: effectiveRequestOffset,
+          bookmark: effectiveBookmark,
+          syncRunId: effectiveSyncRunId,
+          salesOnly,
         }
       );
 
@@ -277,18 +307,22 @@ export async function POST(request: NextRequest) {
         hasMore = true;
         cursor = {
           mode,
+          syncRunId: effectiveSyncRunId,
+          salesOnly: salesOnly || undefined,
           backfillMonths: months,
           businessDateIndex,
           programOffset: dayResult.continuation?.programOffset ?? dayResult.nextProgramOffset,
           programBatchSize,
           requestOffset: dayResult.continuation?.requestOffset ?? 0,
           bookmark: dayResult.continuation?.bookmark ?? null,
-          stagnantCursorCount: requestedStagnantCursorCount,
+          stagnantCursorCount: effectiveStagnantCursorCount,
         };
       } else if (businessDateIndex > 0) {
         hasMore = true;
         cursor = {
           mode,
+          syncRunId: effectiveSyncRunId,
+          salesOnly: salesOnly || undefined,
           backfillMonths: months,
           businessDateIndex: businessDateIndex - 1,
           programOffset: 0,
@@ -299,21 +333,45 @@ export async function POST(request: NextRequest) {
         await pruneCompanyOperationalData(companyId);
       }
       if (hasMore && cursor) {
+        if (
+          isCursorUnchangedFromRequest({
+            requestedProgramOffset: effectiveProgramOffset,
+            requestedRequestOffset: effectiveRequestOffset,
+            requestedBookmark: effectiveBookmark,
+            nextCursor: cursor,
+          })
+        ) {
+          cursor = {
+            ...cursor,
+            programOffset: effectiveProgramOffset + Math.max(1, programBatchSize || 1),
+            requestOffset: 0,
+            bookmark: null,
+            stagnantCursorCount: 0,
+          };
+        }
         const previousCursor: SyncCursor = {
           mode,
+          syncRunId: effectiveSyncRunId,
+          salesOnly: salesOnly || undefined,
           backfillMonths: months,
           businessDateIndex,
-          programOffset: requestedProgramOffset,
+          programOffset: effectiveProgramOffset,
           programBatchSize,
-          requestOffset: requestedRequestOffset,
-          bookmark: requestedBookmark,
-          stagnantCursorCount: requestedStagnantCursorCount,
+          requestOffset: effectiveRequestOffset,
+          bookmark: effectiveBookmark,
+          stagnantCursorCount: effectiveStagnantCursorCount,
         };
         cursor = withStagnationState(previousCursor, cursor);
-        if ((cursor.stagnantCursorCount || 0) >= 5) {
-          throw new Error(
-            'Operational sync cursor did not advance for business-day backfill after repeated attempts; aborting to prevent infinite loop.'
-          );
+        if ((cursor.stagnantCursorCount || 0) >= 1) {
+          // Recovery path: when cursor does not advance, immediately skip the stuck
+          // request/program slice so the run can move on to subsequent programs.
+          cursor = {
+            ...cursor,
+            programOffset: previousCursor.programOffset + Math.max(1, previousCursor.programBatchSize || 1),
+            requestOffset: 0,
+            bookmark: null,
+            stagnantCursorCount: 0,
+          };
         }
       }
 
@@ -339,41 +397,67 @@ export async function POST(request: NextRequest) {
         errors: dayResult.errors.map((message) => `[${businessDate.toISOString().slice(0, 10)}] ${message}`),
         warningOnly,
         credentialSource: dayResult.credentialSource,
+        syncRunId: effectiveSyncRunId,
         hasMore,
         cursor,
       });
     }
 
     const result = await syncInforM3OperationalData(companyId, frequency, site, syncWindow || undefined, {
-      programOffset: requestedProgramOffset,
+      programOffset: effectiveProgramOffset,
       programLimit: programBatchSize,
-      requestOffset: requestedRequestOffset,
-      bookmark: requestedBookmark,
+      requestOffset: effectiveRequestOffset,
+      bookmark: effectiveBookmark,
+      syncRunId: effectiveSyncRunId,
+      salesOnly,
     });
     const cursor: SyncCursor | null = result.hasMore
       ? {
           mode,
+          syncRunId: effectiveSyncRunId,
+          salesOnly: salesOnly || undefined,
           programOffset: (result.continuation?.programOffset ?? result.nextProgramOffset) || 0,
           programBatchSize,
           requestOffset: result.continuation?.requestOffset ?? 0,
           bookmark: result.continuation?.bookmark ?? null,
-          stagnantCursorCount: requestedStagnantCursorCount,
+          stagnantCursorCount: effectiveStagnantCursorCount,
         }
       : null;
     if (result.hasMore && cursor) {
+      if (
+        isCursorUnchangedFromRequest({
+          requestedProgramOffset: effectiveProgramOffset,
+          requestedRequestOffset: effectiveRequestOffset,
+          requestedBookmark: effectiveBookmark,
+          nextCursor: cursor,
+        })
+      ) {
+        (cursor as SyncCursor).programOffset = effectiveProgramOffset + Math.max(1, programBatchSize || 1);
+        (cursor as SyncCursor).requestOffset = 0;
+        (cursor as SyncCursor).bookmark = null;
+        (cursor as SyncCursor).stagnantCursorCount = 0;
+      }
       const previousCursor: SyncCursor = {
         mode,
-        programOffset: requestedProgramOffset,
+        syncRunId: effectiveSyncRunId,
+        salesOnly: salesOnly || undefined,
+        programOffset: effectiveProgramOffset,
         programBatchSize,
-        requestOffset: requestedRequestOffset,
-        bookmark: requestedBookmark,
-        stagnantCursorCount: requestedStagnantCursorCount,
+        requestOffset: effectiveRequestOffset,
+        bookmark: effectiveBookmark,
+        stagnantCursorCount: effectiveStagnantCursorCount,
       };
       const nextCursor = withStagnationState(previousCursor, cursor);
-      if ((nextCursor.stagnantCursorCount || 0) >= 5) {
-        throw new Error('Operational sync cursor did not advance after repeated attempts; aborting to prevent infinite loop.');
+      if ((nextCursor.stagnantCursorCount || 0) >= 1) {
+        // Recovery path: when cursor does not advance, immediately skip the stuck
+        // request/program slice so the run can move on to subsequent programs.
+        (cursor as SyncCursor).programOffset = previousCursor.programOffset + Math.max(1, previousCursor.programBatchSize || 1);
+        (cursor as SyncCursor).requestOffset = 0;
+        (cursor as SyncCursor).bookmark = null;
+        (cursor as SyncCursor).stagnantCursorCount = 0;
+      } else {
+        (cursor as SyncCursor).stagnantCursorCount = nextCursor.stagnantCursorCount;
       }
-      (cursor as SyncCursor).stagnantCursorCount = nextCursor.stagnantCursorCount;
     }
     const warningOnly = isBookmarkStallWarningOnly(result.errors);
     return NextResponse.json({
@@ -392,6 +476,7 @@ export async function POST(request: NextRequest) {
       errors: result.errors,
       warningOnly,
       credentialSource: result.credentialSource,
+      syncRunId: effectiveSyncRunId,
       hasMore: result.hasMore,
       cursor,
     });

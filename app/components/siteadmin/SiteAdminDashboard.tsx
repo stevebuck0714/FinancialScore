@@ -109,6 +109,7 @@ export default function SiteAdminDashboard(props: any) {
     setSelectedCompanyId, setCompanyToDelete, setShowDeleteConfirmation,
     inforConnected, inforStatus, inforLastSync, inforError, inforBusy, inforBusyAction,
     inforCredentials, setInforCredentials, inforProbePath, setInforProbePath, inforProbeSummary,
+    inforOperationalSyncStatus,
     checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3, runInforM3OperationalSync,
     runPlatformOperationalSync,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
@@ -152,6 +153,36 @@ export default function SiteAdminDashboard(props: any) {
     if (normalized === 'SAGE') return 'Sage';
     if (normalized === 'ODOO') return 'Odoo';
     return String(value);
+  };
+
+  const renderInforSyncStatusPanel = (companyId: string) => {
+    const status = inforOperationalSyncStatus;
+    if (!status || status.companyId !== companyId) return null;
+    const stateColors =
+      status.state === 'running'
+        ? { text: '#0f766e', border: '#99f6e4', bg: '#f0fdfa' }
+        : status.state === 'failed'
+          ? { text: '#b91c1c', border: '#fecaca', bg: '#fef2f2' }
+          : { text: '#166534', border: '#bbf7d0', bg: '#f0fdf4' };
+    const stateLabel = status.state === 'running' ? 'Running' : status.state === 'failed' ? 'Failed' : 'Done';
+    return (
+      <div style={{ gridColumn: '1 / -1', border: `1px solid ${stateColors.border}`, borderRadius: '6px', padding: '8px', background: stateColors.bg }}>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: stateColors.text, marginBottom: '4px' }}>
+          Sync Status: {stateLabel}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', fontSize: '11px', color: '#334155' }}>
+          <div><strong>Run ID:</strong> {status.syncRunId || 'Pending...'}</div>
+          <div><strong>Chunks:</strong> {Number(status.chunkCount || 0).toLocaleString('en-US')}</div>
+          <div><strong>Records:</strong> {Number(status.recordsCreated || 0).toLocaleString('en-US')}</div>
+          <div><strong>Last Chunk:</strong> {status.lastChunkAt ? new Date(status.lastChunkAt).toLocaleTimeString() : '-'}</div>
+        </div>
+        {status.message && (
+          <div style={{ fontSize: '11px', color: stateColors.text, marginTop: '4px' }}>
+            {status.message}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const [editingBusinessInfoByCompany, setEditingBusinessInfoByCompany] = React.useState<
@@ -2978,6 +3009,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   </div>
                                                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
                                                     <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
+                                                    {renderInforSyncStatusPanel(company.id)}
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center' }}>
                                                       <button
                                                         onClick={() => {
@@ -3095,44 +3127,56 @@ export default function SiteAdminDashboard(props: any) {
                                                           }
                                                           style={{ flex: 1, width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                         >
-                                                          <option value="business_day_backfill">Daily Snapshot Backfill (Business Days, US Federal)</option>
-                                                          <option value="backfill">Window Backfill (Transactions Only)</option>
-                                                          <option value="daily_overlap">Daily Overlap</option>
+                                                          <option value="daily_overlap">Daily Auto Sync (Recommended)</option>
+                                                          <option value="business_day_backfill">Historical Daily Backfill (Business Days)</option>
+                                                          <option value="backfill">Window Refresh (Advanced)</option>
                                                         </select>
                                                       </label>
                                                       <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#64748b', lineHeight: 1.35 }}>
-                                                        Daily Snapshot Backfill creates historical per-day snapshots. Window Backfill pulls by date range but can refresh the same snapshot date.
+                                                        {getCompanyOperationalSettings(company.id).syncMode === 'daily_overlap'
+                                                          ? 'Use for normal daily updates. Applies a rolling overlap window to catch late updates.'
+                                                          : getCompanyOperationalSettings(company.id).syncMode === 'business_day_backfill'
+                                                            ? 'Use to rebuild historical daily snapshots day-by-day (most reliable for history fixes).'
+                                                            : 'Advanced: refreshes a broad transaction window, but may not replay each day discretely.'}
                                                       </div>
-                                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                        <span style={{ fontWeight: 600 }}>Backfill Months</span>
-                                                        <input
-                                                          type="number"
-                                                          min={1}
-                                                          step={1}
-                                                          value={getCompanyOperationalSettings(company.id).backfillMonths}
-                                                          onChange={(e) =>
-                                                            setCompanyOperationalSettings(company.id, {
-                                                              backfillMonths: Number(e.target.value || 36),
-                                                            })
-                                                          }
-                                                          style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                        />
-                                                      </label>
-                                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                        <span style={{ fontWeight: 600 }}>Overlap Days</span>
-                                                        <input
-                                                          type="number"
-                                                          min={1}
-                                                          step={1}
-                                                          value={getCompanyOperationalSettings(company.id).lookbackDays}
-                                                          onChange={(e) =>
-                                                            setCompanyOperationalSettings(company.id, {
-                                                              lookbackDays: Number(e.target.value || 30),
-                                                            })
-                                                          }
-                                                          style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                        />
-                                                      </label>
+                                                      {(getCompanyOperationalSettings(company.id).syncMode === 'business_day_backfill' ||
+                                                        getCompanyOperationalSettings(company.id).syncMode === 'backfill') && (
+                                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                          <span style={{ fontWeight: 600 }}>Backfill Months</span>
+                                                          <input
+                                                            type="number"
+                                                            min={1}
+                                                            step={1}
+                                                            value={getCompanyOperationalSettings(company.id).backfillMonths}
+                                                            onChange={(e) =>
+                                                              setCompanyOperationalSettings(company.id, {
+                                                                backfillMonths: Number(e.target.value || 36),
+                                                              })
+                                                            }
+                                                            style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          />
+                                                        </label>
+                                                      )}
+                                                      {getCompanyOperationalSettings(company.id).syncMode === 'daily_overlap' && (
+                                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                          <span style={{ fontWeight: 600 }}>Overlap Days</span>
+                                                          <input
+                                                            type="number"
+                                                            min={1}
+                                                            step={1}
+                                                            value={getCompanyOperationalSettings(company.id).lookbackDays}
+                                                            onChange={(e) =>
+                                                              setCompanyOperationalSettings(company.id, {
+                                                                lookbackDays: Number(e.target.value || 30),
+                                                              })
+                                                            }
+                                                            style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                          />
+                                                        </label>
+                                                      )}
+                                                      <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#94a3b8' }}>
+                                                        Most teams use two modes: Historical Daily Backfill (once) + Daily Auto Sync (ongoing).
+                                                      </div>
                                                     </div>
                                                   </div>
                                                 </div>
@@ -5328,6 +5372,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </div>
                                           <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
                                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
+                                            {renderInforSyncStatusPanel(businessCompany.id)}
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center' }}>
                                               <button
                                                 onClick={() => {
@@ -5444,44 +5489,55 @@ export default function SiteAdminDashboard(props: any) {
                                                   }
                                                   style={{ flex: 1, width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                 >
-                                                  <option value="business_day_backfill">Daily Snapshot Backfill (Business Days, US Federal)</option>
-                                                  <option value="backfill">Window Backfill (Transactions Only)</option>
-                                                  <option value="daily_overlap">Daily Overlap</option>
+                                                  <option value="daily_overlap">Daily Auto Sync (Recommended)</option>
+                                                  <option value="business_day_backfill">Historical Daily Backfill (Business Days)</option>
+                                                  <option value="backfill">Window Refresh (Advanced)</option>
                                                 </select>
                                               </label>
                                               <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#64748b', lineHeight: 1.35 }}>
-                                                Daily Snapshot Backfill creates historical per-day snapshots. Window Backfill pulls by date range but can refresh the same snapshot date.
+                                                {operationalSettings.syncMode === 'daily_overlap'
+                                                  ? 'Use for normal daily updates. Applies a rolling overlap window to catch late updates.'
+                                                  : operationalSettings.syncMode === 'business_day_backfill'
+                                                    ? 'Use to rebuild historical daily snapshots day-by-day (most reliable for history fixes).'
+                                                    : 'Advanced: refreshes a broad transaction window, but may not replay each day discretely.'}
                                               </div>
-                                              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                <span style={{ fontWeight: 600 }}>Backfill Months</span>
-                                                <input
-                                                  type="number"
-                                                  min={1}
-                                                  step={1}
-                                                  value={operationalSettings.backfillMonths}
-                                                  onChange={(e) =>
-                                                    setCompanyOperationalSettings(businessCompany.id, {
-                                                      backfillMonths: Number(e.target.value || 36),
-                                                    })
-                                                  }
-                                                  style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                />
-                                              </label>
-                                              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                <span style={{ fontWeight: 600 }}>Overlap Days</span>
-                                                <input
-                                                  type="number"
-                                                  min={1}
-                                                  step={1}
-                                                  value={operationalSettings.lookbackDays}
-                                                  onChange={(e) =>
-                                                    setCompanyOperationalSettings(businessCompany.id, {
-                                                      lookbackDays: Number(e.target.value || 30),
-                                                    })
-                                                  }
-                                                  style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                />
-                                              </label>
+                                              {(operationalSettings.syncMode === 'business_day_backfill' || operationalSettings.syncMode === 'backfill') && (
+                                                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                  <span style={{ fontWeight: 600 }}>Backfill Months</span>
+                                                  <input
+                                                    type="number"
+                                                    min={1}
+                                                    step={1}
+                                                    value={operationalSettings.backfillMonths}
+                                                    onChange={(e) =>
+                                                      setCompanyOperationalSettings(businessCompany.id, {
+                                                        backfillMonths: Number(e.target.value || 36),
+                                                      })
+                                                    }
+                                                    style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </label>
+                                              )}
+                                              {operationalSettings.syncMode === 'daily_overlap' && (
+                                                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                  <span style={{ fontWeight: 600 }}>Overlap Days</span>
+                                                  <input
+                                                    type="number"
+                                                    min={1}
+                                                    step={1}
+                                                    value={operationalSettings.lookbackDays}
+                                                    onChange={(e) =>
+                                                      setCompanyOperationalSettings(businessCompany.id, {
+                                                        lookbackDays: Number(e.target.value || 30),
+                                                      })
+                                                    }
+                                                    style={{ width: '50%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                  />
+                                                </label>
+                                              )}
+                                              <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#94a3b8' }}>
+                                                Most teams use two modes: Historical Daily Backfill (once) + Daily Auto Sync (ongoing).
+                                              </div>
                                             </div>
                                           </div>
                                         </div>
@@ -5559,6 +5615,7 @@ export default function SiteAdminDashboard(props: any) {
                                           </div>
                                           <div style={{ width: '248px', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
                                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>SYNC ACTIONS</div>
+                                            {renderInforSyncStatusPanel(businessCompany.id)}
                                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                               <button
                                                 onClick={() => {
