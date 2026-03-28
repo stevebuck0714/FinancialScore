@@ -233,6 +233,8 @@ function deriveArBucketsFromRow(
     amountDueHome?: number | null;
     dueDate?: Date | null;
     invoiceDate?: Date | null;
+    sourcePlatform?: string | null;
+    sourceProgram?: string | null;
     current?: number | null;
     days1to30?: number | null;
     days31to60?: number | null;
@@ -847,7 +849,10 @@ export async function GET(request: NextRequest) {
               const customerId = row.customerId ? String(row.customerId) : null;
               const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
               const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
-              const lineKey = `${customerId || customerName.toLowerCase()}|${orderId}|${lineId}`;
+              // Deduplicate by physical order line identity only.
+              // Customer fields can vary across snapshots (null/late enrichment/name format changes),
+              // and including them in the key can double-count the same line.
+              const lineKey = `${orderId}|${lineId}`;
               if (latestLineAsOfEnd.has(lineKey)) continue;
               latestLineAsOfEnd.set(lineKey, {
                 orderDate,
@@ -923,7 +928,8 @@ export async function GET(request: NextRequest) {
               const customerId = row.customerId ? String(row.customerId) : null;
               const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
               const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
-              const lineKey = `${customerId || customerName.toLowerCase()}|${orderId}|${lineId}`;
+              // Keep line identity stable across snapshots regardless of customer-field drift.
+              const lineKey = `${orderId}|${lineId}`;
               if (!lineState.has(lineKey)) {
                 lineState.set(lineKey, {
                   customerId,
@@ -938,6 +944,15 @@ export async function GET(request: NextRequest) {
                 });
               }
               const state = lineState.get(lineKey)!;
+              // Prefer populated customer identity as rows become enriched over time.
+              if (!state.customerId && customerId) state.customerId = customerId;
+              if (
+                (!state.customerName || state.customerName === 'Unknown Customer') &&
+                customerName &&
+                customerName !== 'Unknown Customer'
+              ) {
+                state.customerName = customerName;
+              }
               const value = Number(row.contractValue || 0);
               if (!state.hasBaseline) {
                 state.lastValue = value;
@@ -1171,6 +1186,8 @@ export async function GET(request: NextRequest) {
                 status: true,
                 invoiceDate: true,
                 dueDate: true,
+                sourcePlatform: true,
+                sourceProgram: true,
                 amountDueHome: true,
                 amountHome: true,
                 amountCurrency: true,
@@ -1230,6 +1247,8 @@ export async function GET(request: NextRequest) {
               COALESCE(s."amountDueHome", 0)::double precision AS amount_due,
               date_trunc('day', s."invoiceDate") AS invoice_day,
               date_trunc('day', s."dueDate") AS due_day,
+              LOWER(COALESCE(s."sourcePlatform", '')) AS source_platform,
+              LOWER(COALESCE(s."sourceProgram", '')) AS source_program,
               UPPER(TRIM(COALESCE(s."status", ''))) AS status_token,
               LOWER(COALESCE(s."status", '')) AS status_text
             FROM "AROpenInvoiceSnapshot" s
@@ -1248,6 +1267,8 @@ export async function GET(request: NextRequest) {
               SUM(amount_due)::double precision AS net_amount_due,
               MAX(invoice_day) AS invoice_day,
               MAX(due_day) AS due_day,
+              MAX(source_platform) AS source_platform,
+              MAX(source_program) AS source_program,
               BOOL_OR(
                 status_token = 'C' OR
                 status_text LIKE '%credit%' OR
@@ -1269,17 +1290,17 @@ export async function GET(request: NextRequest) {
               day,
               net_amount_due AS amount_due,
               CASE
-                WHEN invoice_day IS NULL THEN NULL
+                WHEN COALESCE(due_day, invoice_day) IS NULL THEN NULL
                 ELSE GREATEST(
                   FLOOR(
-                    EXTRACT(EPOCH FROM (day - invoice_day)) / 86400
+                    EXTRACT(EPOCH FROM (day - COALESCE(due_day, invoice_day))) / 86400
                   ),
                   0
                 )
               END AS invoice_age_days
             FROM invoice_net
             WHERE net_amount_due > 0
-              AND invoice_day IS NOT NULL
+              AND COALESCE(due_day, invoice_day) IS NOT NULL
           ),
           bucketed AS (
             SELECT
@@ -2152,6 +2173,26 @@ export async function GET(request: NextRequest) {
           }
         }
         if (observedDaily.length > 0 || syntheticDaily.length > 0) {
+          const dayMs = 24 * 60 * 60 * 1000;
+          const expectedWindowDays = Math.max(
+            1,
+            Math.floor((startOfUtcDay(endDate).getTime() - startOfUtcDay(startDate).getTime()) / dayMs) + 1
+          );
+          const uniqueDayCount = (
+            rows: Array<{
+              snapshotDate: Date;
+              accountName: string;
+              cashBalance: number;
+              accountId: string | null;
+              accountNumber: string | null;
+            }>
+          ): number => {
+            const seen = new Set<string>();
+            for (const row of rows) {
+              seen.add(dateKeyUtc(new Date(row.snapshotDate)));
+            }
+            return seen.size;
+          };
           const uniqueBalanceCount = (
             rows: Array<{
               snapshotDate: Date;
@@ -2198,7 +2239,13 @@ export async function GET(request: NextRequest) {
               const observedVariation = uniqueBalanceCount(observedRows);
               const syntheticVariation = uniqueBalanceCount(syntheticRows);
               const observedLooksFlat = observedVariation <= 1;
-              if (observedLooksFlat && syntheticVariation > observedVariation) {
+              const observedDays = uniqueDayCount(observedRows);
+              const syntheticDays = uniqueDayCount(syntheticRows);
+              const observedCoverageRatio = observedDays / expectedWindowDays;
+              // Some CSI accounts only appear in sparse spot snapshots (e.g. a few days)
+              // while synthetic series can provide full-period continuity from anchors.
+              const observedLooksSparse = observedCoverageRatio < 0.5 && syntheticDays > observedDays;
+              if ((observedLooksFlat && syntheticVariation > observedVariation) || observedLooksSparse) {
                 selectedRows = syntheticRows;
               }
             }

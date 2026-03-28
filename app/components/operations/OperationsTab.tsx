@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TrendingUp, Users, Package, DollarSign, Warehouse, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   LineChart,
@@ -402,6 +402,7 @@ export default function OperationsTab({
   const [endDate, setEndDate] = useState<string>(() => {
     return new Date().toISOString().split('T')[0];
   });
+  const hasHydratedDateRangeRef = useRef(false);
 
   const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'daily-financials'];
   const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules)
@@ -589,12 +590,69 @@ export default function OperationsTab({
   }, [startDate, endDate, frequency, customerData]);
 
   useEffect(() => {
+    if (!selectedCompanyId) return;
+    hasHydratedDateRangeRef.current = false;
+    try {
+      const storageKey = `ops:date-range:${selectedCompanyId}`;
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        hasHydratedDateRangeRef.current = true;
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        frequency?: 'daily' | 'weekly' | 'monthly';
+        startDate?: string;
+        endDate?: string;
+      };
+      if (parsed.frequency === 'daily' || parsed.frequency === 'weekly' || parsed.frequency === 'monthly') {
+        setFrequency(parsed.frequency);
+      }
+      if (typeof parsed.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate)) {
+        setStartDate(parsed.startDate);
+      }
+      if (typeof parsed.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.endDate)) {
+        setEndDate(parsed.endDate);
+      }
+    } catch {
+      // Ignore invalid persisted payload
+    } finally {
+      hasHydratedDateRangeRef.current = true;
+    }
+  }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || !hasHydratedDateRangeRef.current) return;
+    try {
+      const storageKey = `ops:date-range:${selectedCompanyId}`;
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          frequency,
+          startDate,
+          endDate,
+          savedAt: new Date().toISOString(),
+        })
+      );
+    } catch {
+      // Ignore storage failures
+    }
+  }, [selectedCompanyId, frequency, startDate, endDate]);
+
+  useEffect(() => {
     if (!isCustomersTab || !selectedCompanyId) return;
     try {
-      const storageKey = `ops:customers:date-range:${selectedCompanyId}`;
-      const raw = window.localStorage.getItem(storageKey);
+      const unifiedStorageKey = `ops:date-range:${selectedCompanyId}`;
+      const legacyStorageKey = `ops:customers:date-range:${selectedCompanyId}`;
+      const raw = window.localStorage.getItem(unifiedStorageKey) || window.localStorage.getItem(legacyStorageKey);
       if (!raw) return;
-      const parsed = JSON.parse(raw) as { startDate?: string; endDate?: string };
+      const parsed = JSON.parse(raw) as {
+        frequency?: 'daily' | 'weekly' | 'monthly';
+        startDate?: string;
+        endDate?: string;
+      };
+      if (parsed.frequency === 'daily' || parsed.frequency === 'weekly' || parsed.frequency === 'monthly') {
+        setFrequency(parsed.frequency);
+      }
       if (typeof parsed?.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate)) {
         setStartDate(parsed.startDate);
       }
@@ -643,23 +701,6 @@ export default function OperationsTab({
       cancelled = true;
     };
   }, [activeTab, arData, apData, cashData, inventoryData, customerData, productData, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
-
-  // Auto-adjust date range when frequency changes
-  useEffect(() => {
-    const end = new Date();
-    const start = new Date();
-    
-    if (frequency === 'daily') {
-      start.setDate(start.getDate() - 90);
-    } else if (frequency === 'weekly') {
-      start.setDate(start.getDate() - (16 * 7)); // 16 weeks
-    } else {
-      start.setMonth(start.getMonth() - 12); // 12 months
-    }
-    
-    setStartDate(start.toISOString().split('T')[0]);
-    setEndDate(end.toISOString().split('T')[0]);
-  }, [frequency]);
 
   const loadSummary = async () => {
     setLoading(true);
@@ -1345,15 +1386,19 @@ export default function OperationsTab({
               <button
                 onClick={() => {
                   try {
-                    const storageKey = `ops:customers:date-range:${selectedCompanyId}`;
+                    const unifiedStorageKey = `ops:date-range:${selectedCompanyId}`;
+                    const legacyStorageKey = `ops:customers:date-range:${selectedCompanyId}`;
+                    const payload = JSON.stringify({
+                      frequency,
+                      startDate,
+                      endDate,
+                      savedAt: new Date().toISOString(),
+                    });
                     window.localStorage.setItem(
-                      storageKey,
-                      JSON.stringify({
-                        startDate,
-                        endDate,
-                        savedAt: new Date().toISOString(),
-                      })
+                      unifiedStorageKey,
+                      payload
                     );
+                    window.localStorage.setItem(legacyStorageKey, payload);
                     setCustomerDateRangeSaveStatus('Saved');
                   } catch {
                     setCustomerDateRangeSaveStatus('Save failed');
@@ -2376,7 +2421,9 @@ export default function OperationsTab({
     const formatArTrendDate = (value: string | Date) => {
       const parsed = parseDateValue(value);
       if (!parsed) return String(value || '');
-      return formatDateUtcMinus4(parsed, { month: 'short', day: 'numeric' });
+      // AR trend period keys are canonical UTC day anchors; render labels in UTC
+      // so bars map to the exact requested day without -1 day timezone drift.
+      return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     };
     const toUtcDay = (value: string | Date) => {
       const parsed = parseDateValue(value);
