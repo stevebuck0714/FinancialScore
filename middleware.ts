@@ -4,6 +4,7 @@ import { getToken } from 'next-auth/jwt'
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const LAST_ACTIVITY_COOKIE = 'fs_last_activity'
+const DISABLE_IDLE_TIMEOUT = process.env.DISABLE_INACTIVITY_TIMEOUT === '1'
 const AUTH_COOKIE_NAMES = [
   'next-auth.session-token',
   '__Secure-next-auth.session-token',
@@ -173,7 +174,11 @@ export async function middleware(request: NextRequest) {
   const lastActivityRaw = request.cookies.get(LAST_ACTIVITY_COOKIE)?.value
   const lastActivityMs = lastActivityRaw ? Number.parseInt(lastActivityRaw, 10) : NaN
   const hasValidLastActivity = Number.isFinite(lastActivityMs)
-  const isIdleExpired = Boolean(token) && hasValidLastActivity && Date.now() - lastActivityMs > IDLE_TIMEOUT_MS
+  const isIdleExpired =
+    !DISABLE_IDLE_TIMEOUT &&
+    Boolean(token) &&
+    hasValidLastActivity &&
+    Date.now() - lastActivityMs > IDLE_TIMEOUT_MS
 
   if (isIdleExpired) {
     if (pathname.startsWith('/api')) {
@@ -242,13 +247,15 @@ export async function middleware(request: NextRequest) {
         headers: requestHeaders,
       },
     })
-    applyIdleActivityCookie(response)
+    if (!DISABLE_IDLE_TIMEOUT) {
+      applyIdleActivityCookie(response)
+    }
     return response
   }
   
   // Add security headers to all responses
   const response = NextResponse.next()
-  if (token) {
+  if (token && !DISABLE_IDLE_TIMEOUT) {
     applyIdleActivityCookie(response)
   }
   

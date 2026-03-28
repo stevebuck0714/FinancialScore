@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 
 const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
 const THROTTLE_INTERVAL = 30 * 1000; // Only reset timer once per 30 seconds
+const DISABLE_INACTIVITY_TIMEOUT = process.env.NEXT_PUBLIC_DISABLE_INACTIVITY_TIMEOUT === '1';
 
 interface InactivityLogoutProps {
   isLoggedIn: boolean;
@@ -12,6 +13,10 @@ interface InactivityLogoutProps {
 }
 
 export default function InactivityLogout({ isLoggedIn, userEmail, onLogout }: InactivityLogoutProps) {
+  if (DISABLE_INACTIVITY_TIMEOUT) {
+    return null;
+  }
+
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
   const onLogoutRef = useRef(onLogout);

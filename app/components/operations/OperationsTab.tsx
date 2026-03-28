@@ -371,6 +371,7 @@ export default function OperationsTab({
   const [priceCostSearchTerm, setPriceCostSearchTerm] = useState('');
   const [inventorySearchTerm, setInventorySearchTerm] = useState('');
   const [hideZeroQtyInventory, setHideZeroQtyInventory] = useState(false);
+  const [inventoryTableExpanded, setInventoryTableExpanded] = useState(true);
   const [inventorySortKey, setInventorySortKey] = useState<
     'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'qtyOnHand' | 'avgCost' | 'assetValue'
   >('assetValue');
@@ -4736,9 +4737,26 @@ export default function OperationsTab({
         {isSectionEnabled('inventoryCurrentTable') && (
           <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-              Inventory (As of {inventoryAsOfDateLabel})
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setInventoryTableExpanded((prev) => !prev)}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  background: '#fff',
+                  color: '#334155',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                }}
+              >
+                {inventoryTableExpanded ? 'Collapse' : 'Expand'}
+              </button>
+              <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                Inventory (As of {inventoryAsOfDateLabel})
+              </h3>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569' }}>
                 <input
@@ -4770,33 +4788,35 @@ export default function OperationsTab({
                   <th onClick={() => handleInventorySort('assetValue')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Asset Value{inventorySortLabel('assetValue')}</th>
                 </tr>
               </thead>
-              <tbody>
-                {sortedInventoryRecords.map((item: any, index: number) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{item.itemName}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{item.sku}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.warehouse || '').trim() || 'N/A'}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.bin || '').trim() || 'N/A'}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.lot || '').trim() || 'N/A'}</td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#2563eb', textAlign: 'right', fontWeight: '600' }}>
-                      {item.qtyOnHand.toLocaleString()}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
-                      {formatUnitCost(Number(item.avgCost || 0))}
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrency(item.assetValue)}
-                    </td>
-                  </tr>
-                ))}
-                {sortedInventoryRecords.length === 0 && (
-                  <tr>
-                    <td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
-                      No inventory rows match your search.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
+              {inventoryTableExpanded && (
+                <tbody>
+                  {sortedInventoryRecords.map((item: any, index: number) => (
+                    <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{item.itemName}</td>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{item.sku}</td>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.warehouse || '').trim() || 'N/A'}</td>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.bin || '').trim() || 'N/A'}</td>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.lot || '').trim() || 'N/A'}</td>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#2563eb', textAlign: 'right', fontWeight: '600' }}>
+                        {item.qtyOnHand.toLocaleString()}
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
+                        {formatUnitCost(Number(item.avgCost || 0))}
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
+                        {formatCurrency(item.assetValue)}
+                      </td>
+                    </tr>
+                  ))}
+                  {sortedInventoryRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                        No inventory rows match your search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              )}
             </table>
           </div>
         </div>
