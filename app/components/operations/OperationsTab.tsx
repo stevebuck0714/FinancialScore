@@ -369,6 +369,12 @@ export default function OperationsTab({
   const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
   const [priceCostSearchTerm, setPriceCostSearchTerm] = useState('');
+  const [inventorySearchTerm, setInventorySearchTerm] = useState('');
+  const [hideZeroQtyInventory, setHideZeroQtyInventory] = useState(false);
+  const [inventorySortKey, setInventorySortKey] = useState<
+    'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'qtyOnHand' | 'avgCost' | 'assetValue'
+  >('assetValue');
+  const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const operationalHubSections =
@@ -393,14 +399,16 @@ export default function OperationsTab({
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const defaultOpsEndDate = new Date();
+  defaultOpsEndDate.setDate(defaultOpsEndDate.getDate() - 1);
   const [startDate, setStartDate] = useState<string>(() => {
-    const date = new Date();
+    const date = new Date(defaultOpsEndDate);
     // Default to last 90 days for daily view
     date.setDate(date.getDate() - 90);
     return date.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
+    return defaultOpsEndDate.toISOString().split('T')[0];
   });
   const hasHydratedDateRangeRef = useRef(false);
 
@@ -1255,6 +1263,16 @@ export default function OperationsTab({
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
+  };
+  const formatUnitCost = (value: number) => {
+    const abs = Math.abs(Number(value || 0));
+    const decimals = abs >= 100 ? 0 : abs >= 1 ? 2 : abs > 0 ? 4 : 2;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(Number(value || 0));
   };
   const formatForeignCurrency = (value: number, currency: string) => {
     return new Intl.NumberFormat('en-US', {
@@ -2371,9 +2389,10 @@ export default function OperationsTab({
           invoicedRevenue,
           arOutstanding,
           arCurrent: Number(row.current || 0),
-          ar31to60: Number(row.days31to60 || 0),
-          ar61to90: Number(row.days61to90 || 0),
-          ar90plus: Number(row.days90plus || 0),
+          ar31to60: Number(row.days1to30 || 0),
+          ar61to90: Number(row.days31to60 || 0),
+          ar91to120: Number(row.days61to90 || 0),
+          ar121plus: Number(row.days90plus || 0),
           cashCollectedToDate,
           lastPaymentDate: row.lastPaymentDate || paid?.lastPaymentDate || '-',
           totalBilledRevenue,
@@ -2386,7 +2405,7 @@ export default function OperationsTab({
     const arAgingRows = [...contractAndCashFlowRows].sort(
       (a, b) =>
         b.arOutstanding - a.arOutstanding ||
-        b.ar90plus + b.ar61to90 + b.ar31to60 - (a.ar90plus + a.ar61to90 + a.ar31to60)
+        b.ar121plus + b.ar91to120 + b.ar61to90 + b.ar31to60 - (a.ar121plus + a.ar91to120 + a.ar61to90 + a.ar31to60)
     );
     const customerOptions = Array.from(new Set(customerInvoiceRows.map((row) => row.customerName))).sort();
     const filteredCustomerInvoices =
@@ -2486,32 +2505,41 @@ export default function OperationsTab({
         requestedPeriods.push({ key: periodKey(cursor), anchor: periodAnchor(cursor) });
       }
     }
-    const chartData = requestedPeriods
-      .map((period) => {
+    const chartData = requestedPeriods.map((period) => {
       const point = latestRecordByPeriod.get(period.key);
       const record = point?.record || null;
       return {
         periodKey: toIsoDay(period.anchor),
         month: formatArTrendDate(period.anchor),
-        'Open AR 0-30': Number(record?.current || 0),
-        'Open AR 31-60': Number(record?.days1to30 || 0),
-        'Open AR 61-90': Number(record?.days31to60 || 0),
-        'Open AR 91-120': Number(record?.days61to90 || 0),
-        'Open AR 121+': Number(record?.days90plus || 0),
-        total: Number(record?.totalAR || 0),
+        'Open AR 0-30': record ? Number(record.current || 0) : null,
+        'Open AR 31-60': record ? Number(record.days1to30 || 0) : null,
+        'Open AR 61-90': record ? Number(record.days31to60 || 0) : null,
+        'Open AR 91-120': record ? Number(record.days61to90 || 0) : null,
+        'Open AR 121+': record ? Number(record.days90plus || 0) : null,
+        total: record ? Number(record.totalAR || 0) : 0,
         hasData: Boolean(record),
       };
-      });
+    });
+    const arXAxisInterval =
+      frequency === 'daily'
+        ? Math.max(Math.ceil(chartData.length / 16) - 1, 0)
+        : frequency === 'weekly'
+          ? Math.max(Math.ceil(chartData.length / 20) - 1, 0)
+          : 0;
     const arCollectionsTrend = chartData.map((row: any) => ({
       period: row.month,
       dso: 0,
-      over30Pct: row.total > 0 ? ((row['Open AR 61-90'] + row['Open AR 91-120'] + row['Open AR 121+']) / row.total) * 100 : 0,
-      over90Pct: row.total > 0 ? (row['Open AR 121+'] / row.total) * 100 : 0,
+      over30Pct:
+        row.total > 0
+          ? ((row['Open AR 31-60'] + row['Open AR 61-90'] + row['Open AR 91-120'] + row['Open AR 121+']) / row.total) * 100
+          : 0,
+      over90Pct: row.total > 0 ? ((row['Open AR 91-120'] + row['Open AR 121+']) / row.total) * 100 : 0,
     }));
     const arCollectionsRiskQueue = arCustomers
       .map((row) => {
-        const overdue = Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
-        const over90 = Number(row.days90plus || 0);
+        const overdue =
+          Number(row.days1to30 || 0) + Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
+        const over90 = Number(row.days61to90 || 0) + Number(row.days90plus || 0);
         const riskScore = overdue + over90 * 0.5;
         return {
           customerName: row.customerName,
@@ -2571,7 +2599,7 @@ export default function OperationsTab({
         {/* AR Aging Trend Chart */}
         <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            AR Aging Trend
+            Open AR Aging Trend
           </h3>
           <div style={{ marginTop: '-10px', marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
             As of: {arAsOfLabel} | Coverage: {arCoverageLabel}
@@ -2581,8 +2609,8 @@ export default function OperationsTab({
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis
                 dataKey="month"
-                interval={0}
-                minTickGap={0}
+                interval={arXAxisInterval}
+                minTickGap={24}
                 stroke="#64748b"
                 style={{ fontSize: '12px' }}
               />
@@ -2861,7 +2889,8 @@ export default function OperationsTab({
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
-                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>90+</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>91-120</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>121+</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2875,7 +2904,8 @@ export default function OperationsTab({
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(row.arCurrent)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#f97316', textAlign: 'right' }}>{formatCurrency(row.ar31to60)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>{formatCurrency(row.ar61to90)}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar90plus)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar91to120)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#7f1d1d', textAlign: 'right' }}>{formatCurrency(row.ar121plus)}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -4503,24 +4533,152 @@ export default function OperationsTab({
 
     if (!inventoryData) return null;
 
-    const { records, summary } = inventoryData;
+    const { records, summary, trend, agingReport } = inventoryData;
 
-    // Get latest snapshot data
-    const latestSnapshot = Math.max(...records.map((r: any) => new Date(r.snapshotDate).getTime()));
-    const latestRecords = records.filter((r: any) => new Date(r.snapshotDate).getTime() === latestSnapshot);
-
-    // Aggregate inventory value over time
-    const periodValue: any = {};
-    records.forEach((record: any) => {
-      const period = formatDate(record.snapshotDate);
-      if (!periodValue[period]) {
-        periodValue[period] = { month: period, value: 0, quantity: 0 };
+    // Inventory API already returns latest snapshot rows (aggregated to unique SKU),
+    // but keep a UI-side guard against accidental duplicate SKU variants.
+    const latestRecords = (() => {
+      const base = Array.isArray(records) ? records : [];
+      const bySku = new Map<string, any>();
+      for (const row of base) {
+        const key =
+          String(row?.sku || row?.itemId || row?.itemName || '')
+            .trim()
+            .replace(/\s+/g, '')
+            .toUpperCase();
+        if (!key) continue;
+        if (!bySku.has(key)) {
+          bySku.set(key, {
+            ...row,
+            qtyOnHand: Number(row?.qtyOnHand || 0),
+            assetValue: Number(row?.assetValue || 0),
+          });
+          continue;
+        }
+        const acc = bySku.get(key);
+        acc.qtyOnHand = Number(acc.qtyOnHand || 0) + Number(row?.qtyOnHand || 0);
+        acc.assetValue = Number(acc.assetValue || 0) + Number(row?.assetValue || 0);
+        acc.avgCost = Number(acc.qtyOnHand || 0) > 0 ? Number(acc.assetValue || 0) / Number(acc.qtyOnHand || 0) : 0;
       }
-      periodValue[period].value += record.assetValue;
-      periodValue[period].quantity += record.qtyOnHand;
+      return Array.from(bySku.values());
+    })();
+    const uniqueSkuCount = new Set(
+      latestRecords.map((item: any) => String(item.sku || item.itemId || item.itemName || '').trim()).filter(Boolean)
+    ).size;
+    const inventoryAsOfDateLabel = (() => {
+      const raw = String(endDate || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return 'N/A';
+      const [y, m, d] = raw.split('-').map((n) => Number(n));
+      const utc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+      return utc.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+    })();
+    const inventorySearch = String(inventorySearchTerm || '').trim().toLowerCase();
+    const filteredInventoryRecords = latestRecords.filter((item: any) => {
+      if (hideZeroQtyInventory && Number(item?.qtyOnHand || 0) === 0) return false;
+      if (!inventorySearch) return true;
+      const itemName = String(item.itemName || '').toLowerCase();
+      const sku = String(item.sku || '').toLowerCase();
+      return itemName.includes(inventorySearch) || sku.includes(inventorySearch);
     });
+    const sortedInventoryRecords = [...filteredInventoryRecords].sort((a: any, b: any) => {
+      const dir = inventorySortDir === 'asc' ? 1 : -1;
+      if (inventorySortKey === 'qtyOnHand' || inventorySortKey === 'avgCost' || inventorySortKey === 'assetValue') {
+        const aValue = Number(a?.[inventorySortKey] || 0);
+        const bValue = Number(b?.[inventorySortKey] || 0);
+        return (aValue - bValue) * dir;
+      }
+      const aText = String(a?.[inventorySortKey] || '').toLowerCase();
+      const bText = String(b?.[inventorySortKey] || '').toLowerCase();
+      return aText.localeCompare(bText) * dir;
+    });
+    const handleInventorySort = (
+      key: 'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'qtyOnHand' | 'avgCost' | 'assetValue'
+    ) => {
+      if (inventorySortKey === key) {
+        setInventorySortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setInventorySortKey(key);
+      setInventorySortDir(key === 'itemName' || key === 'sku' || key === 'warehouse' || key === 'bin' || key === 'lot' ? 'asc' : 'desc');
+    };
+    const inventorySortLabel = (key: string) =>
+      inventorySortKey === key ? (inventorySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const inventoryAgingRows = Array.isArray(agingReport) ? agingReport.slice(0, 100) : [];
+    const top10InventoryByValue = [...latestRecords]
+      .sort((a: any, b: any) => Number(b?.assetValue || 0) - Number(a?.assetValue || 0))
+      .slice(0, 10);
 
-    const trendData = Object.values(periodValue);
+    const toIsoDay = (d: Date) =>
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    const formatInventoryDay = (d: Date) =>
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const formatInventoryMonth = (d: Date) =>
+      d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const weekStartUtc = (date: Date): Date => {
+      const day = date.getUTCDay(); // 0=Sun ... 6=Sat
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + diffToMonday));
+    };
+
+    const trendRows = Array.isArray(trend) ? trend : [];
+    const trendRowsSorted = trendRows
+      .map((point: any) => {
+        const parsed = parseDateValue(point.snapshotDate);
+        if (!parsed) return null;
+        const utcDay = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+        return { utcDay, dateKey: toIsoDay(utcDay), value: Number(point.assetValue || 0) };
+      })
+      .filter((row: any): row is { utcDay: Date; dateKey: string; value: number } => Boolean(row))
+      .sort((a: any, b: any) => a.utcDay.getTime() - b.utcDay.getTime());
+    const periodEndRows =
+      frequency === 'daily'
+        ? trendRowsSorted
+        : frequency === 'weekly'
+          ? (() => {
+              const byWeek = new Map<string, { utcDay: Date; dateKey: string; label: string; value: number }>();
+              for (const row of trendRowsSorted) {
+                const start = weekStartUtc(row.utcDay);
+                const key = toIsoDay(start);
+                const prior = byWeek.get(key);
+                if (!prior || row.utcDay.getTime() >= prior.utcDay.getTime()) {
+                  byWeek.set(key, {
+                    utcDay: row.utcDay,
+                    dateKey: row.dateKey,
+                    label: formatInventoryDay(row.utcDay),
+                    value: row.value,
+                  });
+                }
+              }
+              return Array.from(byWeek.values()).sort((a, b) => a.utcDay.getTime() - b.utcDay.getTime());
+            })()
+          : (() => {
+              const byMonth = new Map<string, { utcDay: Date; dateKey: string; label: string; value: number }>();
+              for (const row of trendRowsSorted) {
+                const key = `${row.utcDay.getUTCFullYear()}-${String(row.utcDay.getUTCMonth() + 1).padStart(2, '0')}`;
+                const prior = byMonth.get(key);
+                if (!prior || row.utcDay.getTime() >= prior.utcDay.getTime()) {
+                  byMonth.set(key, {
+                    utcDay: row.utcDay,
+                    dateKey: row.dateKey,
+                    label: formatInventoryMonth(row.utcDay),
+                    value: row.value,
+                  });
+                }
+              }
+              return Array.from(byMonth.values()).sort((a, b) => a.utcDay.getTime() - b.utcDay.getTime());
+            })();
+    const trendData: Array<{ dateKey: string; label: string; value: number }> = periodEndRows.map((row: any) => ({
+      dateKey: row.dateKey,
+      label: row.label || formatInventoryDay(row.utcDay),
+      value: row.value,
+    }));
+    const trendLabelByKey = new Map<string, string>(trendData.map((row) => [row.dateKey, row.label]));
+    const inventoryXAxisInterval =
+      frequency === 'daily'
+        ? Math.max(Math.ceil(trendData.length / 16) - 1, 0)
+        : frequency === 'weekly'
+          ? Math.max(Math.ceil(trendData.length / 20) - 1, 0)
+          : 0;
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
@@ -4533,19 +4691,13 @@ export default function OperationsTab({
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Items</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
-              {summary.itemCount}
+              {uniqueSkuCount}
             </div>
           </div>
           <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Value</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
               {formatCurrency(summary.totalValue)}
-            </div>
-          </div>
-          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Units</div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#2563eb' }}>
-              {latestRecords.reduce((sum: number, item: any) => sum + item.qtyOnHand, 0).toLocaleString()}
             </div>
           </div>
         </div>
@@ -4559,13 +4711,18 @@ export default function OperationsTab({
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="month" stroke="#64748b" style={{ fontSize: '12px' }} />
+              <XAxis
+                dataKey="dateKey"
+                tickFormatter={(value) => trendLabelByKey.get(String(value)) || String(value)}
+                interval={inventoryXAxisInterval}
+                minTickGap={24}
+                stroke="#64748b"
+                style={{ fontSize: '12px' }}
+              />
               <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-              <Tooltip 
-                formatter={(value: any, name: string) => [
-                  name === 'value' ? formatCurrency(value) : value.toLocaleString(),
-                  name === 'value' ? 'Value' : 'Quantity'
-                ]}
+              <Tooltip
+                labelFormatter={(value: any) => trendLabelByKey.get(String(value)) || String(value)}
+                formatter={(value: any) => formatCurrency(Number(value || 0))}
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
@@ -4578,36 +4735,67 @@ export default function OperationsTab({
         {/* Current Inventory Table */}
         {isSectionEnabled('inventoryCurrentTable') && (
           <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Current Inventory (Latest Month)
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+              Inventory (As of {inventoryAsOfDateLabel})
+            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                <input
+                  type="checkbox"
+                  checked={hideZeroQtyInventory}
+                  onChange={(event) => setHideZeroQtyInventory(event.target.checked)}
+                />
+                Hide zero qty SKUs
+              </label>
+              <input
+                value={inventorySearchTerm}
+                onChange={(event) => setInventorySearchTerm(event.target.value)}
+                placeholder="Search item name or SKU"
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '240px' }}
+              />
+            </div>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Item Name</th>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>SKU</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Qty on Hand</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Avg Cost</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Asset Value</th>
+                  <th onClick={() => handleInventorySort('itemName')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Item Name{inventorySortLabel('itemName')}</th>
+                  <th onClick={() => handleInventorySort('sku')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>SKU{inventorySortLabel('sku')}</th>
+                  <th onClick={() => handleInventorySort('warehouse')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Warehouse{inventorySortLabel('warehouse')}</th>
+                  <th onClick={() => handleInventorySort('bin')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Bin{inventorySortLabel('bin')}</th>
+                  <th onClick={() => handleInventorySort('lot')} style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Lot{inventorySortLabel('lot')}</th>
+                  <th onClick={() => handleInventorySort('qtyOnHand')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Qty on Hand{inventorySortLabel('qtyOnHand')}</th>
+                  <th onClick={() => handleInventorySort('avgCost')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Avg Cost{inventorySortLabel('avgCost')}</th>
+                  <th onClick={() => handleInventorySort('assetValue')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Asset Value{inventorySortLabel('assetValue')}</th>
                 </tr>
               </thead>
               <tbody>
-                {latestRecords.map((item: any, index: number) => (
+                {sortedInventoryRecords.map((item: any, index: number) => (
                   <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '12px', fontSize: '14px', color: '#1e293b', fontWeight: '500' }}>{item.itemName}</td>
                     <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{item.sku}</td>
+                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.warehouse || '').trim() || 'N/A'}</td>
+                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.bin || '').trim() || 'N/A'}</td>
+                    <td style={{ padding: '12px', fontSize: '14px', color: '#64748b' }}>{String(item.lot || '').trim() || 'N/A'}</td>
                     <td style={{ padding: '12px', fontSize: '14px', color: '#2563eb', textAlign: 'right', fontWeight: '600' }}>
                       {item.qtyOnHand.toLocaleString()}
                     </td>
                     <td style={{ padding: '12px', fontSize: '14px', color: '#64748b', textAlign: 'right' }}>
-                      {formatCurrency(item.avgCost)}
+                      {formatUnitCost(Number(item.avgCost || 0))}
                     </td>
                     <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
                       {formatCurrency(item.assetValue)}
                     </td>
                   </tr>
                 ))}
+                {sortedInventoryRecords.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                      No inventory rows match your search.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -4618,12 +4806,12 @@ export default function OperationsTab({
         {isSectionEnabled('inventoryDistribution') && (
           <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '20px' }}>
-            Inventory Value Distribution
+            Top 10 SKUs by Inventory Asset Value
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
-                data={latestRecords}
+                data={top10InventoryByValue}
                 cx="50%"
                 cy="50%"
                 labelLine={false}
@@ -4632,7 +4820,7 @@ export default function OperationsTab({
                 fill="#8884d8"
                 dataKey="assetValue"
               >
-                {latestRecords.map((entry: any, index: number) => (
+                {top10InventoryByValue.map((entry: any, index: number) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
@@ -4640,6 +4828,80 @@ export default function OperationsTab({
             </PieChart>
           </ResponsiveContainer>
         </div>
+        )}
+
+        {isSectionEnabled('inventoryAgingObsolescenceV1') && (
+          <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
+              Inventory Aging & Obsolescence (V1 Proxy)
+            </h3>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px' }}>
+              Sales-driven proxy using outbound activity from latest available order-line snapshot (top 100 exposure rows).
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Item Name</th>
+                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>SKU</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Qty on Hand</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Asset Value</th>
+                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Last Sale Date</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Days Since Last Sale</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Shipped Qty (30d)</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Shipped Qty (60d)</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Shipped Qty (90d)</th>
+                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Risk Tier</th>
+                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Est. Obsolescence Exposure</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inventoryAgingRows.map((row: any, index: number) => {
+                    const riskColor =
+                      row.riskTier === 'High' ? '#b91c1c' : row.riskTier === 'Medium' ? '#b45309' : '#166534';
+                    return (
+                      <tr key={`${row.sku || row.itemName || 'row'}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#1e293b', fontWeight: 500 }}>{row.itemName}</td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#64748b' }}>{row.sku || 'N/A'}</td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#2563eb', textAlign: 'right', fontWeight: 600 }}>
+                          {Number(row.qtyOnHand || 0).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: 600 }}>
+                          {formatCurrency(Number(row.assetValue || 0))}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569' }}>
+                          {row.lastSaleDate ? formatDateUtcMinus4(row.lastSaleDate) : 'N/A'}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
+                          {row.daysSinceLastSale == null ? 'N/A' : Number(row.daysSinceLastSale).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
+                          {Number(row.shippedQty30 || 0).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
+                          {Number(row.shippedQty60 || 0).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
+                          {Number(row.shippedQty90 || 0).toLocaleString()}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: riskColor, fontWeight: 600 }}>{row.riskTier || 'Low'}</td>
+                        <td style={{ padding: '10px', fontSize: '13px', color: '#7c3aed', textAlign: 'right', fontWeight: 600 }}>
+                          {formatCurrency(Number(row.estimatedObsolescenceExposure || 0))}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {inventoryAgingRows.length === 0 && (
+                    <tr>
+                      <td colSpan={11} style={{ padding: '14px', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
+                        No aging proxy rows available for the selected range yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
     );

@@ -648,6 +648,18 @@ function buildSlArtransWindowFilter(window?: SyncWindow, site?: string): string 
   return `(${clauses.join(' and ')})`;
 }
 
+function buildSlArtransAsOfFilter(window?: SyncWindow, site?: string): string | null {
+  if (!window) return null;
+  const end = formatCsiDateLiteral(window.endDate);
+  const clauses = [`(RecordDate <= '${end}')`];
+  const siteValue = String(site || '').trim();
+  if (siteValue) {
+    const safeSite = siteValue.replace(/'/g, "''");
+    clauses.unshift(`Site='${safeSite}'`);
+  }
+  return `(${clauses.join(' and ')})`;
+}
+
 function applyCsiSourceWindowAndSort(
   endpointPath: string,
   row: InforProgramRow,
@@ -710,16 +722,14 @@ function applyCsiSourceWindowAndSort(
   }
 
   if (moduleType === 'ar' && ido === 'SLARTRANS') {
-    // Keep daily-overlap unbounded so open-item populations include older still-open invoices.
-    // Backfill/manual runs must be windowed to rebuild each requested day slice correctly.
-    if (!window || window.mode === 'daily_overlap') {
-      return { endpointPath, applied: false };
+    // SLArtrans snapshots need prior-period transactions to preserve historical open-item carryover.
+    // For non-overlap runs, apply an as-of RecordDate cap (<= endDate) rather than a same-day InvDate slice.
+    if (window && window.mode !== 'daily_overlap') {
+      const asOfFilter = buildSlArtransAsOfFilter(window, row.site);
+      if (asOfFilter) params.set('filter', asOfFilter);
     }
-    const filter = buildSlArtransWindowFilter(window, row.site);
-    if (!filter) return { endpointPath, applied: false };
-    params.set('filter', filter);
     params.set('recordCap', '1000');
-    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'RecordDate desc, InvDate desc');
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true };
   }
@@ -1366,7 +1376,12 @@ function filterRecordsByDateWindow(
     const date = firstRecordDate(record, keys);
     // For sales windows (bookings/order slices), missing dates break period attribution.
     // Exclude undated rows so backfill/manual windows cannot replay full snapshot payloads.
-    if (!date) return moduleType === 'sales' ? false : true;
+    if (!date) {
+      if ((moduleType === 'ar' || moduleType === 'ap') && window.mode !== 'daily_overlap') {
+        return false;
+      }
+      return moduleType === 'sales' ? false : true;
+    }
     return isWithinWindow(date, window);
   });
 }
@@ -1806,6 +1821,14 @@ async function saveAROpenInvoices(
     const isReduction = isReductionMovement(record);
     return isReduction ? -Math.abs(raw) : Math.abs(raw);
   };
+  const deriveArStatus = (record: Record<string, unknown>): string | null => {
+    const activeToken = normalizeToken(record['Active']) || normalizeToken(record['active']) || '';
+    if (activeToken) {
+      if (['1', 'true', 'y', 'yes', 'open', 'active'].includes(activeToken)) return 'OPEN';
+      if (['0', 'false', 'n', 'no', 'closed', 'inactive'].includes(activeToken)) return 'CLOSED';
+    }
+    return pickString(record, ['status', 'STAT', 'Type']) || null;
+  };
 
   const invoiceAccumulator = new Map<
     string,
@@ -1882,7 +1905,7 @@ async function saveAROpenInvoices(
         invoiceNo,
         invoiceDate,
         dueDate,
-        status: pickString(record, ['status', 'STAT', 'Type']),
+        status: deriveArStatus(record),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CurrCode', 'CUCD']),
         invoiceBaseHome: baseHome,
         invoiceBaseCurrency: baseCurrency,
@@ -1899,7 +1922,7 @@ async function saveAROpenInvoices(
     existing.customerId = existing.customerId || customerId;
     existing.invoiceDate = existing.invoiceDate || invoiceDate;
     existing.dueDate = existing.dueDate || dueDate;
-    existing.status = existing.status || pickString(record, ['status', 'STAT', 'Type']);
+    existing.status = existing.status || deriveArStatus(record);
     existing.currencyCode = existing.currencyCode || pickString(record, ['currencyCode', 'currency', 'CurrCode', 'CUCD']);
   }
 
@@ -2186,6 +2209,9 @@ async function saveCustomerOrderLines(
     orderId: string;
     lineId: string;
     orderDate: Date | null;
+    itemId: string | null;
+    itemName: string | null;
+    sku: string | null;
     qtyOrdered: number;
     qtyInvoiced: number;
     unitPrice: number;
@@ -2236,6 +2262,9 @@ async function saveCustomerOrderLines(
       }
       debug.rowsWithLineNumber += 1;
       if (customerId) debug.rowsWithCustomerId += 1;
+      const itemId = pickString(record, ['itemId', 'ITNO', 'Item', 'itemCode', 'sku']) || null;
+      const itemName = pickString(record, ['itemName', 'ITDS', 'Description', 'name']) || null;
+      const sku = pickString(record, ['sku', 'itemCode', 'ITNO', 'Item']) || null;
       const qtyOrdered = pickNumber(record, ['QtyOrdered', 'qtyOrdered', 'orderedQty', 'QtyOrder', 'OrderQty', 'qty', 'QTY']);
       const qtyInvoiced = pickNumber(record, ['QtyInvoiced', 'qtyInvoiced', 'invoicedQty']);
       const qtyShipped = pickNumber(record, ['QtyShipped', 'qtyShipped', 'shippedQty']);
@@ -2261,6 +2290,9 @@ async function saveCustomerOrderLines(
         orderId,
         lineId,
         orderDate: orderDate || null,
+        itemId,
+        itemName,
+        sku,
         qtyOrdered,
         qtyInvoiced: Math.max(qtyInvoiced, 0),
         unitPrice,
@@ -2311,6 +2343,9 @@ async function saveCustomerOrderLines(
     acc.unbilledAccrual = Number(acc.unbilledAccrual || 0) + Number(row.unbilledAccrual || 0);
     if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
     if (!acc.orderDate && row.orderDate) acc.orderDate = row.orderDate;
+    if (!acc.itemId && row.itemId) acc.itemId = row.itemId;
+    if (!acc.itemName && row.itemName) acc.itemName = row.itemName;
+    if (!acc.sku && row.sku) acc.sku = row.sku;
   }
   const finalRows = Array.from(deduped.values());
   debug.rowsAfterDedupe = finalRows.length;
@@ -2838,6 +2873,9 @@ async function saveInventory(
         itemId: pickString(record, ['itemId', 'ITNO', 'sku', 'Item']),
         itemName: pickString(record, ['itemName', 'name', 'ITDS', 'Description', 'Item']) || 'Unknown Item',
         sku: pickString(record, ['sku', 'itemCode', 'ITNO', 'Item']),
+        warehouse: pickString(record, ['warehouse', 'Warehouse', 'WHLO', 'Whse', 'ITWHWhse', 'MfgWhse', 'SupplyWhse']),
+        bin: pickString(record, ['bin', 'Bin', 'BANO', 'UbLocation', 'BflushLoc']),
+        lot: pickString(record, ['lot', 'Lot', 'LOT', 'UbLotNumber', 'LotNum']),
         qtyOnHand,
         assetValue,
         avgCost: avgCost || null,
@@ -2858,14 +2896,21 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
   const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
   if (!dailySnapshotDelegate) return;
 
-  const [cashAgg, inventoryAgg, productAgg, arSnapshot, apSnapshot] = await Promise.all([
+  const [cashAgg, inventoryRows, productAgg, arSnapshot, apSnapshot] = await Promise.all([
     prisma.cashSnapshot.aggregate({
       where: { companyId, snapshotDate, frequency },
       _sum: { cashBalance: true },
     }),
-    prisma.inventorySnapshot.aggregate({
+    prisma.inventorySnapshot.findMany({
       where: { companyId, snapshotDate, frequency },
-      _sum: { assetValue: true },
+      select: {
+        itemId: true,
+        itemName: true,
+        sku: true,
+        qtyOnHand: true,
+        assetValue: true,
+        avgCost: true,
+      },
     }),
     prisma.productSalesSnapshot.aggregate({
       where: { companyId, snapshotDate, frequency },
@@ -2881,8 +2926,45 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     }),
   ]);
 
+  // Keep daily inventory snapshot aligned with inventory table logic:
+  // remove exact duplicate rows, then aggregate to unique SKU before summing value.
+  const dedupeInventoryRowsExact = (rows: Array<{
+    itemId: string | null;
+    itemName: string;
+    sku: string | null;
+    qtyOnHand: number;
+    assetValue: number;
+    avgCost: number | null;
+  }>) => {
+    const seen = new Set<string>();
+    const deduped: typeof rows = [];
+    for (const row of rows) {
+      const signature = [
+        String(row.sku || '').trim(),
+        String(row.itemId || '').trim(),
+        String(row.itemName || '').trim(),
+        Number(row.qtyOnHand || 0).toFixed(6),
+        Number(row.assetValue || 0).toFixed(6),
+        Number(row.avgCost || 0).toFixed(6),
+      ].join('|');
+      if (seen.has(signature)) continue;
+      seen.add(signature);
+      deduped.push(row);
+    }
+    return deduped;
+  };
+  const dedupedInventoryRows = dedupeInventoryRowsExact(inventoryRows as any);
+  const inventoryBySku = new Map<string, number>();
+  for (const row of dedupedInventoryRows) {
+    const skuKey =
+      String((row as any).sku || '').trim() ||
+      String((row as any).itemId || '').trim() ||
+      String((row as any).itemName || '').trim();
+    inventoryBySku.set(skuKey, Number(inventoryBySku.get(skuKey) || 0) + Number((row as any).assetValue || 0));
+  }
+
   const cash = Number(cashAgg?._sum?.cashBalance || 0);
-  const inventory = Number(inventoryAgg?._sum?.assetValue || 0);
+  const inventory = Array.from(inventoryBySku.values()).reduce((sum, value) => sum + Number(value || 0), 0);
   const revenue = Number(productAgg?._sum?.revenue || 0);
   const cogsTotal = Number(productAgg?._sum?.cogs || 0);
   const ar = Number(arSnapshot?.totalAR || 0);
@@ -3128,7 +3210,8 @@ export async function syncInforM3OperationalData(
       const moduleType = classifyModule(row.module);
       const programId = resolveCsiProgramId(row, req.endpointPath);
       const isSlCoitemsProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
-      const requestTimeoutMs = moduleType === 'inventory' ? 120000 : 30000;
+      const isArBackfillWindow = moduleType === 'ar' && syncWindow?.mode === 'backfill';
+      const requestTimeoutMs = moduleType === 'inventory' || isArBackfillWindow ? 120000 : 30000;
       // Keep SLCoitems chunk duration bounded so each sync call returns promptly
       // with a continuation cursor instead of appearing "stuck" on one huge page pull.
       const maxPagesPerRequest = isSlCoitemsProgram ? 8 : MAX_CSI_PAGES_PER_REQUEST;
@@ -3552,7 +3635,7 @@ export async function syncInforM3OperationalData(
         moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
       const isArApOpenFlow =
         ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
-      const keepFullArApPopulation = isArApOpenFlow && syncWindow?.mode === 'daily_overlap';
+      const keepFullArApPopulation = isArOpenSnapshotProgram || (isArApOpenFlow && syncWindow?.mode === 'daily_overlap');
       // Contract/backlog math from SLCoitems also requires full line populations; clipping
       // to overlap windows can zero out Contract Total for customers with older open orders.
       const isOrderLineProgram = moduleType === 'sales' && programId === 'SLCOITEMS';

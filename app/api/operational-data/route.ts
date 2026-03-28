@@ -626,7 +626,8 @@ export async function GET(request: NextRequest) {
 
     // Default date range: last 90 days
     const defaultEndDate = new Date();
-    const defaultStartDate = new Date();
+    defaultEndDate.setDate(defaultEndDate.getDate() - 1);
+    const defaultStartDate = new Date(defaultEndDate);
     defaultStartDate.setDate(defaultStartDate.getDate() - 90);
 
     const startDate = parseDateParamBoundary(startDateParam, 'start', defaultStartDate);
@@ -1207,9 +1208,9 @@ export async function GET(request: NextRequest) {
         const latestOpenPositiveWithDueRows = (latestOpenRows as any[]).filter(
           (row: any) => Number(row.amountDueHome || 0) > 0 && row.dueDate
         ).length;
-        const latestSnapshotLooksAnomalous =
-          latestOpenPositiveRows >= 200 &&
-          (latestOpenPositiveWithDueRows === 0 || latestOpenNegativeRows >= latestOpenPositiveRows);
+        // Treat latest snapshot as anomalous only when it has no positive open rows.
+        // Strict mixed-sign/day-shape gates were dropping legitimate historical AR days.
+        const latestSnapshotLooksAnomalous = latestOpenPositiveRows === 0;
 
         const openRowsInvoiceLike = (latestOpenRows as any[]).filter((row: any) => {
           if (latestSnapshotLooksAnomalous) return false;
@@ -1281,13 +1282,7 @@ export async function GET(request: NextRequest) {
           valid_days AS (
             SELECT dq.day
             FROM day_quality dq
-            WHERE NOT (
-              -- Reject large slices where "open" rows have no due dates (historical dump pattern).
-              (dq.positive_rows >= 200 AND dq.positive_rows_with_due = 0)
-              OR
-              -- Reject large mixed-sign slices that look like transaction history, not open snapshots.
-              (dq.positive_rows >= 200 AND dq.negative_rows >= dq.positive_rows)
-            )
+            WHERE dq.positive_rows > 0
           ),
           invoice_net AS (
             SELECT
@@ -1703,7 +1698,9 @@ export async function GET(request: NextRequest) {
               days31to60: 0,
               days61to90: 0,
               days90plus: 0,
-              totalDue: Number(row.invoicedRevenue || 0),
+              // Do not treat billed/invoiced revenue as open AR.
+              // If we have no valid open-AR rows for the snapshot, keep open AR at zero.
+              totalDue: 0,
               contractValueTotal: Number(row.contractValueTotal || 0),
               remainingToInvoice: Number(row.remainingToInvoice || 0),
               accruedRevenueUnbilled: Number(row.accruedRevenueUnbilled || 0),
@@ -1755,10 +1752,17 @@ export async function GET(request: NextRequest) {
                 dsoWeightedDaysDenominator: 0,
               };
         const totalARForPct = Number(summaryTotals.totalAR || 0);
-        const over30Amount = Number(summaryTotals.days31to60 + summaryTotals.days61to90 + summaryTotals.days90plus);
+        // Bucket naming is historical:
+        // current=0-30, days1to30=31-60, days31to60=61-90, days61to90=91-120, days90plus=121+
+        const over30Amount = Number(
+          summaryTotals.days1to30 + summaryTotals.days31to60 + summaryTotals.days61to90 + summaryTotals.days90plus
+        );
         const currentPct = totalARForPct > 0 ? (Number(summaryTotals.current) / totalARForPct) * 100 : 0;
         const over30Pct = totalARForPct > 0 ? (over30Amount / totalARForPct) * 100 : 0;
-        const over90Pct = totalARForPct > 0 ? (Number(summaryTotals.days90plus) / totalARForPct) * 100 : 0;
+        const over90Pct =
+          totalARForPct > 0
+            ? (Number(summaryTotals.days61to90 + summaryTotals.days90plus) / totalARForPct) * 100
+            : 0;
         const dso =
           summaryTotals.dsoWeightedDaysDenominator > 0
             ? summaryTotals.dsoWeightedDaysNumerator / summaryTotals.dsoWeightedDaysDenominator
@@ -2044,47 +2048,467 @@ export async function GET(request: NextRequest) {
         });
 
       case 'inventory':
-        // Get inventory data
-        data = await prisma.inventorySnapshot.findMany({
-          where: {
-            companyId,
-            frequency,
-            snapshotDate: dateFilter,
-          },
-          orderBy: { snapshotDate: 'desc' },
-          take: limit,
-        });
-
-        // Calculate inventory metrics
-        const latestInventory = data.filter(
-          (record) =>
-            record.snapshotDate.getTime() === Math.max(...data.map((r) => r.snapshotDate.getTime()))
+        // Inventory snapshot dates are stored as UTC calendar days; apply exact
+        // day boundaries from user input to avoid UTC-4 spillover into next day.
+        const parseInventoryUtcDay = (value: string | null, fallback: Date): Date => {
+          const raw = String(value || '').trim();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            const [y, m, d] = raw.split('-').map((n) => Number(n));
+            return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+          }
+          const base = Number.isNaN(fallback.getTime()) ? new Date() : fallback;
+          return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), 0, 0, 0, 0));
+        };
+        const inventoryStartUtcDay = parseInventoryUtcDay(startDateParam, startDate);
+        const inventoryEndUtcDay = parseInventoryUtcDay(endDateParam, endDate);
+        const inventoryEndExclusive = new Date(
+          Date.UTC(
+            inventoryEndUtcDay.getUTCFullYear(),
+            inventoryEndUtcDay.getUTCMonth(),
+            inventoryEndUtcDay.getUTCDate() + 1,
+            0,
+            0,
+            0,
+            0
+          )
         );
-
-        const inventoryMetrics = {
-          totalValue: latestInventory.reduce((sum, item) => sum + item.assetValue, 0),
-          itemCount: latestInventory.length,
-          topItems: latestInventory
-            .sort((a, b) => b.assetValue - a.assetValue)
-            .slice(0, 10),
+        const inventoryDateFilter = {
+          gte: inventoryStartUtcDay,
+          lt: inventoryEndExclusive,
         };
 
-        if (!data.length && shouldUseMockData) {
-          return NextResponse.json(
-            buildOperationalMockResponse({
-              type: 'inventory',
+        // Inventory table should always use the full latest snapshot,
+        // not a row-limited slice of mixed days.
+        let latestInventoryDate = await prisma.inventorySnapshot.findFirst({
+          where: {
+            companyId,
+            frequency: 'daily',
+            snapshotDate: inventoryDateFilter,
+          },
+          orderBy: { snapshotDate: 'desc' },
+          select: { snapshotDate: true },
+        });
+        if (!latestInventoryDate) {
+          latestInventoryDate = await prisma.inventorySnapshot.findFirst({
+            where: {
               companyId,
-              sectorCategory,
               frequency,
-              startDate,
-              endDate,
-              limit,
+              snapshotDate: inventoryDateFilter,
+            },
+            orderBy: { snapshotDate: 'desc' },
+            select: { snapshotDate: true },
+          });
+        }
+
+        const latestInventory = latestInventoryDate
+          ? await prisma.inventorySnapshot.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: latestInventoryDate.snapshotDate,
+              },
+              orderBy: [{ assetValue: 'desc' }, { itemName: 'asc' }],
             })
-          );
+          : [];
+        const latestInventoryEffective =
+          latestInventory.length > 0
+            ? latestInventory
+            : latestInventoryDate
+              ? await prisma.inventorySnapshot.findMany({
+                  where: {
+                    companyId,
+                    frequency,
+                    snapshotDate: latestInventoryDate.snapshotDate,
+                  },
+                  orderBy: [{ assetValue: 'desc' }, { itemName: 'asc' }],
+                })
+              : [];
+
+        const normalizeInventoryText = (value: unknown): string => String(value ?? '').trim();
+        const canonicalInventoryKey = (value: unknown): string =>
+          normalizeInventoryText(value).replace(/\s+/g, '').toUpperCase();
+        const inventoryNumSig = (value: unknown): string => Number(value || 0).toFixed(6);
+        const dedupeInventoryRowsExact = (rows: any[]): any[] => {
+          const seen = new Set<string>();
+          const deduped: any[] = [];
+          for (const row of rows) {
+            const signature = [
+              normalizeInventoryText(row.sku),
+              normalizeInventoryText(row.itemId),
+              normalizeInventoryText(row.itemName),
+              normalizeInventoryText((row as any).warehouse),
+              normalizeInventoryText((row as any).bin),
+              normalizeInventoryText((row as any).lot),
+              inventoryNumSig(row.qtyOnHand),
+              inventoryNumSig(row.assetValue),
+              inventoryNumSig(row.avgCost),
+            ].join('|');
+            if (seen.has(signature)) continue;
+            seen.add(signature);
+            deduped.push(row);
+          }
+          return deduped;
+        };
+        const aggregateInventoryBySku = (rows: any[]): any[] => {
+          const deduped = dedupeInventoryRowsExact(rows);
+          const grouped = new Map<
+            string,
+            {
+              itemId: string | null;
+              itemName: string;
+              sku: string | null;
+              qtyOnHand: number;
+              assetValue: number;
+              warehouseSet: Set<string>;
+              binSet: Set<string>;
+              lotSet: Set<string>;
+            }
+          >();
+          for (const row of deduped) {
+            const sku = normalizeInventoryText(row.sku) || null;
+            const itemId = normalizeInventoryText(row.itemId) || null;
+            const itemName = normalizeInventoryText(row.itemName) || 'Unknown Item';
+            const key = canonicalInventoryKey(sku) || canonicalInventoryKey(itemId) || canonicalInventoryKey(itemName);
+            if (!grouped.has(key)) {
+              grouped.set(key, {
+                itemId,
+                itemName,
+                sku,
+                qtyOnHand: 0,
+                assetValue: 0,
+                warehouseSet: new Set<string>(),
+                binSet: new Set<string>(),
+                lotSet: new Set<string>(),
+              });
+            }
+            const acc = grouped.get(key)!;
+            if (!acc.sku && sku) acc.sku = sku;
+            if (!acc.itemId && itemId) acc.itemId = itemId;
+            if ((!acc.itemName || acc.itemName === 'Unknown Item') && itemName) acc.itemName = itemName;
+            acc.qtyOnHand += Number(row.qtyOnHand || 0);
+            acc.assetValue += Number(row.assetValue || 0);
+            const warehouse = normalizeInventoryText((row as any).warehouse);
+            const bin = normalizeInventoryText((row as any).bin);
+            const lot = normalizeInventoryText((row as any).lot);
+            if (warehouse) acc.warehouseSet.add(warehouse);
+            if (bin) acc.binSet.add(bin);
+            if (lot) acc.lotSet.add(lot);
+          }
+          return Array.from(grouped.values()).map((row) => ({
+            itemId: row.itemId,
+            itemName: row.itemName,
+            sku: row.sku,
+            qtyOnHand: row.qtyOnHand,
+            assetValue: row.assetValue,
+            avgCost: row.qtyOnHand > 0 ? row.assetValue / row.qtyOnHand : 0,
+            warehouse:
+              row.warehouseSet.size === 0
+                ? null
+                : row.warehouseSet.size === 1
+                  ? Array.from(row.warehouseSet)[0]
+                  : 'Multiple',
+            bin:
+              row.binSet.size === 0
+                ? null
+                : row.binSet.size === 1
+                  ? Array.from(row.binSet)[0]
+                  : 'Multiple',
+            lot:
+              row.lotSet.size === 0
+                ? null
+                : row.lotSet.size === 1
+                  ? Array.from(row.lotSet)[0]
+                  : 'Multiple',
+          }));
+        };
+        const sumDayInventoryAssetValue = (rows: any[]): number =>
+          aggregateInventoryBySku(rows).reduce((sum, row) => sum + Number(row.assetValue || 0), 0);
+
+        const latestInventoryBySku = aggregateInventoryBySku(latestInventoryEffective).sort(
+          (a, b) => Number(b.assetValue || 0) - Number(a.assetValue || 0)
+        );
+        const toIsoDay = (d: Date) =>
+          `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        const dailyInventorySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
+        const storedDailyInventoryRows = dailyInventorySnapshotDelegate
+          ? await dailyInventorySnapshotDelegate.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: inventoryDateFilter,
+              },
+              select: {
+                snapshotDate: true,
+                inventory: true,
+              },
+              orderBy: { snapshotDate: 'asc' },
+            })
+          : [];
+
+        let inventoryTrendRowsRaw = await prisma.inventorySnapshot.findMany({
+          where: {
+            companyId,
+            frequency: 'daily',
+            snapshotDate: inventoryDateFilter,
+          },
+          orderBy: [{ snapshotDate: 'asc' }, { createdAt: 'desc' }],
+        });
+        // Fallback for companies that only have non-daily inventory snapshots.
+        if (!inventoryTrendRowsRaw.length) {
+          inventoryTrendRowsRaw = await prisma.inventorySnapshot.findMany({
+            where: {
+              companyId,
+              frequency,
+              snapshotDate: inventoryDateFilter,
+            },
+            orderBy: [{ snapshotDate: 'asc' }, { createdAt: 'desc' }],
+          });
+        }
+
+        // Build a dense day-by-day inventory value series across the selected range.
+        // For days without a fresh snapshot, carry forward the latest known inventory value.
+        let baselineValue = 0;
+        if (storedDailyInventoryRows.length > 0 && dailyInventorySnapshotDelegate) {
+          const priorStored = await dailyInventorySnapshotDelegate.findFirst({
+            where: {
+              companyId,
+              frequency: 'daily',
+              snapshotDate: { lt: inventoryStartUtcDay },
+            },
+            select: { inventory: true },
+            orderBy: { snapshotDate: 'desc' },
+          });
+          baselineValue = Number(priorStored?.inventory || 0);
+        } else {
+          const latestDailyBeforeStart = await prisma.inventorySnapshot.findFirst({
+            where: {
+              companyId,
+              frequency: 'daily',
+              snapshotDate: { lt: inventoryStartUtcDay },
+            },
+            orderBy: { snapshotDate: 'desc' },
+            select: { snapshotDate: true },
+          });
+          if (latestDailyBeforeStart?.snapshotDate) {
+            const baselineRows = await prisma.inventorySnapshot.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: latestDailyBeforeStart.snapshotDate,
+              },
+              orderBy: [{ createdAt: 'desc' }],
+            });
+            baselineValue = sumDayInventoryAssetValue(baselineRows);
+          } else {
+            const latestBeforeStart = await prisma.inventorySnapshot.findFirst({
+              where: {
+                companyId,
+                frequency,
+                snapshotDate: { lt: inventoryStartUtcDay },
+              },
+              orderBy: { snapshotDate: 'desc' },
+              select: { snapshotDate: true },
+            });
+            if (latestBeforeStart?.snapshotDate) {
+              const baselineRows = await prisma.inventorySnapshot.findMany({
+                where: {
+                  companyId,
+                  frequency,
+                  snapshotDate: latestBeforeStart.snapshotDate,
+                },
+                orderBy: [{ createdAt: 'desc' }],
+              });
+              baselineValue = sumDayInventoryAssetValue(baselineRows);
+            }
+          }
+        }
+
+        const startUtcDay = new Date(inventoryStartUtcDay);
+        const endUtcDay = new Date(inventoryEndUtcDay);
+        const trendValueByDay = new Map<string, number>();
+        if (storedDailyInventoryRows.length > 0) {
+          for (const row of storedDailyInventoryRows) {
+            const d = new Date(Date.UTC(row.snapshotDate.getUTCFullYear(), row.snapshotDate.getUTCMonth(), row.snapshotDate.getUTCDate()));
+            trendValueByDay.set(toIsoDay(d), Number(row.inventory || 0));
+          }
+        } else {
+          const trendRowsByDay = new Map<string, any[]>();
+          for (const row of inventoryTrendRowsRaw) {
+            const d = new Date(Date.UTC(row.snapshotDate.getUTCFullYear(), row.snapshotDate.getUTCMonth(), row.snapshotDate.getUTCDate()));
+            const key = toIsoDay(d);
+            if (!trendRowsByDay.has(key)) trendRowsByDay.set(key, []);
+            trendRowsByDay.get(key)!.push(row);
+          }
+          for (const [dayKey, dayRows] of trendRowsByDay.entries()) {
+            trendValueByDay.set(dayKey, sumDayInventoryAssetValue(dayRows));
+          }
+        }
+        const inventoryTrendDaily: Array<{ snapshotDate: Date; assetValue: number; qtyOnHand: number }> = [];
+        let carryAssetValue = baselineValue;
+        for (
+          let cursor = new Date(startUtcDay);
+          cursor.getTime() <= endUtcDay.getTime();
+          cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 1))
+        ) {
+          const iso = toIsoDay(cursor);
+          if (trendValueByDay.has(iso)) {
+            carryAssetValue = Number(trendValueByDay.get(iso) || 0);
+          }
+          inventoryTrendDaily.push({
+            snapshotDate: new Date(cursor),
+            assetValue: carryAssetValue,
+            qtyOnHand: 0,
+          });
+        }
+
+        // V1 proxy model for aging/obsolescence using currently available data:
+        // inventory exposure + latest SLCoitems-derived order-line recency and quantities.
+        const inventoryOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+        const canonicalMovementKey = (value: unknown): string =>
+          String(value || '')
+            .trim()
+            .replace(/[^A-Za-z0-9]/g, '')
+            .toUpperCase();
+        const daysBetweenUtc = (from: Date, to: Date): number =>
+          Math.floor((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000));
+        const start30Utc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate() - 29));
+        const start60Utc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate() - 59));
+        const start90Utc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate() - 89));
+        const asOfUtc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate()));
+        let agingReport: any[] = [];
+        if (inventoryOrderLineDelegate) {
+          const latestOrderLineSnapshot = await inventoryOrderLineDelegate.findFirst({
+            where: {
+              companyId,
+              frequency: 'daily',
+              snapshotDate: { lt: inventoryEndExclusive },
+            },
+            orderBy: { snapshotDate: 'desc' },
+            select: { snapshotDate: true },
+          });
+          if (latestOrderLineSnapshot?.snapshotDate) {
+            const orderLines = await inventoryOrderLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: latestOrderLineSnapshot.snapshotDate,
+              },
+              select: {
+                itemId: true,
+                itemName: true,
+                orderDate: true,
+                snapshotDate: true,
+                qtyInvoiced: true,
+              },
+            });
+            const movementBySku = new Map<
+              string,
+              {
+                lastOrderDate: Date | null;
+                shippedQty30: number;
+                shippedQty60: number;
+                shippedQty90: number;
+              }
+            >();
+            for (const line of orderLines) {
+              const keyAliases = Array.from(
+                new Set([
+                  canonicalMovementKey(line.itemId),
+                  canonicalMovementKey(line.itemName),
+                ].filter(Boolean))
+              );
+              if (!keyAliases.length) continue;
+              for (const alias of keyAliases) {
+                if (!movementBySku.has(alias)) {
+                  movementBySku.set(alias, {
+                    lastOrderDate: null,
+                    shippedQty30: 0,
+                    shippedQty60: 0,
+                    shippedQty90: 0,
+                  });
+                }
+              }
+              const qty = Math.max(0, Number(line.qtyInvoiced || 0));
+              const eventDateRaw = line.orderDate ? new Date(line.orderDate) : line.snapshotDate ? new Date(line.snapshotDate) : null;
+              if (eventDateRaw) {
+                const eventUtc = new Date(
+                  Date.UTC(eventDateRaw.getUTCFullYear(), eventDateRaw.getUTCMonth(), eventDateRaw.getUTCDate())
+                );
+                for (const alias of keyAliases) {
+                  const acc = movementBySku.get(alias)!;
+                  if (!acc.lastOrderDate || eventUtc.getTime() > acc.lastOrderDate.getTime()) acc.lastOrderDate = eventUtc;
+                  if (eventUtc.getTime() >= start90Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty90 += qty;
+                  if (eventUtc.getTime() >= start60Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty60 += qty;
+                  if (eventUtc.getTime() >= start30Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty30 += qty;
+                }
+              }
+            }
+            agingReport = latestInventoryBySku.map((inv) => {
+              const lookupAliases = Array.from(
+                new Set([
+                  canonicalMovementKey(inv.sku),
+                  canonicalMovementKey(inv.itemId),
+                  canonicalMovementKey(inv.itemName),
+                ].filter(Boolean))
+              );
+              const movement =
+                lookupAliases.map((key) => movementBySku.get(key)).find((m) => Boolean(m)) || null;
+              const lastOrderDate = movement?.lastOrderDate || null;
+              const daysSinceLastSale = lastOrderDate ? Math.max(0, daysBetweenUtc(lastOrderDate, asOfUtc)) : null;
+              const qtyOnHand = Number(inv.qtyOnHand || 0);
+              const assetValue = Number(inv.assetValue || 0);
+              let riskTier: 'Low' | 'Medium' | 'High' = 'Low';
+              if (qtyOnHand > 0 && assetValue > 0) {
+                if (daysSinceLastSale == null || daysSinceLastSale > 180) riskTier = 'High';
+                else if (daysSinceLastSale > 90) riskTier = 'Medium';
+              }
+              const exposureFactor = riskTier === 'High' ? 1 : riskTier === 'Medium' ? 0.5 : 0.1;
+              return {
+                itemName: inv.itemName,
+                sku: inv.sku,
+                warehouse: inv.warehouse,
+                qtyOnHand,
+                assetValue,
+                lastSaleDate: lastOrderDate ? lastOrderDate.toISOString() : null,
+                daysSinceLastSale,
+                shippedQty30: Number(movement?.shippedQty30 || 0),
+                shippedQty60: Number(movement?.shippedQty60 || 0),
+                shippedQty90: Number(movement?.shippedQty90 || 0),
+                riskTier,
+                estimatedObsolescenceExposure: assetValue * exposureFactor,
+              };
+            });
+            agingReport = agingReport.sort(
+              (a, b) =>
+                Number(b.estimatedObsolescenceExposure || 0) - Number(a.estimatedObsolescenceExposure || 0)
+            );
+          }
+        }
+
+        const inventoryMetrics = {
+          totalValue: latestInventoryBySku.reduce((sum, item) => sum + Number(item.assetValue || 0), 0),
+          itemCount: latestInventoryBySku.length,
+          topItems: latestInventoryBySku.slice(0, 10),
+        };
+
+        // Real-data only for inventory: do not return mock payloads.
+        // If no inventory snapshots exist yet, return an empty real response.
+        if (!latestInventoryBySku.length) {
+          return NextResponse.json({
+            records: [],
+            trend: [],
+            summary: {
+              totalValue: 0,
+              itemCount: 0,
+              topItems: [],
+            },
+          });
         }
 
         return NextResponse.json({
-          records: data,
+          records: latestInventoryBySku,
+          trend: inventoryTrendDaily,
+          agingReport,
           summary: inventoryMetrics,
         });
 

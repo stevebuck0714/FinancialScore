@@ -1059,6 +1059,9 @@ model CustomerOrderLineSnapshot {
   orderId          String
   lineId           String
   orderDate        DateTime?
+  itemId           String?
+  itemName         String?
+  sku              String?
   qtyOrdered       Float
   qtyInvoiced      Float
   unitPrice        Float
@@ -1078,6 +1081,8 @@ model CustomerOrderLineSnapshot {
   @@index([companyId, customerId, snapshotDate(sort: Desc)])
   @@index([companyId, orderDate])
   @@index([companyId, orderId])
+  @@index([companyId, itemId])
+  @@index([companyId, sku])
   @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
 }
 
@@ -1185,6 +1190,9 @@ model InventorySnapshot {
   itemId       String?  // QuickBooks item ID
   itemName     String
   sku          String?
+  warehouse    String?
+  bin          String?
+  lot          String?
   qtyOnHand    Float
   assetValue   Float
   avgCost      Float?
