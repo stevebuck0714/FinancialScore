@@ -8,6 +8,8 @@ import { runOperationalSyncForCompany } from '@/lib/operational-sync/runner';
 const MAX_TASKS_PER_TICK = 10;
 const LEASE_SECONDS = 120;
 const DEFAULT_MAX_ATTEMPTS = 6;
+const MAX_LEASE_ROUNDS_PER_TICK = 12;
+const TICK_TIME_BUDGET_MS = 55_000;
 
 type QueueRunRecord = {
   id: string;
@@ -625,54 +627,68 @@ async function processTask(
 }
 
 export async function processQueueTick(requestUrl: string, workerSecret: string): Promise<Record<string, unknown>> {
-  const promotedRuns = await promoteQueuedRunsForIdleCompanies();
-  const leased = await leasePendingTasks(MAX_TASKS_PER_TICK);
+  const tickStartedAt = Date.now();
+  let promotedRuns = 0;
+  let leasedTasks = 0;
+  let leaseRounds = 0;
   const results: Array<Record<string, unknown>> = [];
-  for (const task of leased) {
-    try {
-      const result = await processTask(requestUrl, task, workerSecret);
-      results.push(result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown queue task error';
-      const now = new Date();
-      await db().$transaction(async (tx: any) => {
-        await tx.inforSyncTask.update({
-          where: { id: task.id },
-          data: {
-            status: 'failed',
-            attemptCount: Math.max(0, Number(task.attemptCount || 0)) + 1,
-            finishedAt: now,
-            updatedAt: now,
-            lastError: message,
-            leaseOwner: null,
-            leaseExpiresAt: null,
-          },
+  while (
+    leaseRounds < MAX_LEASE_ROUNDS_PER_TICK &&
+    Date.now() - tickStartedAt < TICK_TIME_BUDGET_MS
+  ) {
+    leaseRounds += 1;
+    promotedRuns += await promoteQueuedRunsForIdleCompanies();
+    const leased = await leasePendingTasks(MAX_TASKS_PER_TICK);
+    if (leased.length === 0) break;
+    leasedTasks += leased.length;
+    for (const task of leased) {
+      try {
+        const result = await processTask(requestUrl, task, workerSecret);
+        results.push(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown queue task error';
+        const now = new Date();
+        await db().$transaction(async (tx: any) => {
+          await tx.inforSyncTask.update({
+            where: { id: task.id },
+            data: {
+              status: 'failed',
+              attemptCount: Math.max(0, Number(task.attemptCount || 0)) + 1,
+              finishedAt: now,
+              updatedAt: now,
+              lastError: message,
+              leaseOwner: null,
+              leaseExpiresAt: null,
+            },
+          });
+          await tx.inforSyncRun.update({
+            where: { id: task.runId },
+            data: {
+              status: 'failed',
+              updatedAt: now,
+              finishedAt: now,
+              lastError: message,
+              message: 'Background queue worker failed on task execution.',
+            },
+          });
         });
-        await tx.inforSyncRun.update({
-          where: { id: task.runId },
-          data: {
-            status: 'failed',
-            updatedAt: now,
-            finishedAt: now,
-            lastError: message,
-            message: 'Background queue worker failed on task execution.',
-          },
-        });
-      });
-      await notifyQueueRunFailure(
-        task.companyId,
-        (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
-        'Infor async queue worker task execution failed',
-        String(message).slice(0, 500)
-      );
-      results.push({ runId: task.runId, taskId: task.id, status: 'failed', details: message });
+        await notifyQueueRunFailure(
+          task.companyId,
+          (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
+          'Infor async queue worker task execution failed',
+          String(message).slice(0, 500)
+        );
+        results.push({ runId: task.runId, taskId: task.id, status: 'failed', details: message });
+      }
     }
   }
   return {
     ok: true,
     queueEnabled: true,
     promotedRuns,
-    leasedTasks: leased.length,
+    leasedTasks,
+    leaseRounds,
+    elapsedMs: Date.now() - tickStartedAt,
     results,
   };
 }
