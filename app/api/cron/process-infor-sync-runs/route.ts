@@ -18,7 +18,21 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function recoverCursorAfterRepeatedChunkFailure(run: InforOperationalAsyncRun): InforOperationalAsyncRun['cursor'] {
   const cursor = asRecord(run.cursor);
-  if (Object.keys(cursor).length === 0) return null;
+  if (Object.keys(cursor).length === 0) {
+    // If the run failed before receiving any continuation cursor, seed one that
+    // skips the first program slice so the backfill can still progress.
+    return {
+      mode: run.mode || 'business_day_backfill',
+      syncRunId: run.syncRunId,
+      salesOnly: run.salesOnly ? true : undefined,
+      backfillMonths: typeof run.backfillMonths === 'number' ? Math.max(1, Math.floor(run.backfillMonths)) : 36,
+      programOffset: 1,
+      programBatchSize: 1,
+      requestOffset: 0,
+      bookmark: null,
+      stagnantCursorCount: 0,
+    };
+  }
   const programOffset = Math.max(0, Math.floor(Number(cursor.programOffset || 0)));
   const programBatchSize = Math.max(1, Math.floor(Number(cursor.programBatchSize || 1)));
   return {
