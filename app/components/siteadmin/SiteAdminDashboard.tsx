@@ -3013,17 +3013,21 @@ export default function SiteAdminDashboard(props: any) {
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center' }}>
                                                       <button
                                                         onClick={() => {
+                                                          if (!runInforM3OperationalSync) {
+                                                            alert('Operational sync handler is unavailable. Refresh and try again.');
+                                                            return;
+                                                          }
                                                           const site = requireCompanyCsiSite(company.id);
                                                           if (!site) return;
                                                           const syncSettings = getCompanyOperationalSettings(company.id);
-                                                          runInforM3OperationalSync?.(company.id, syncSettings.frequency, site, {
+                                                          runInforM3OperationalSync(company.id, syncSettings.frequency, site, {
                                                             mode: syncSettings.syncMode,
                                                             backfillMonths: syncSettings.backfillMonths,
                                                             lookbackDays: syncSettings.lookbackDays,
                                                           });
                                                         }}
-                                                        disabled={inforBusy || !inforConnected}
-                                                        style={{ justifySelf: 'start', padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                        disabled={inforBusy}
+                                                        style={{ justifySelf: 'start', padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                                       >
                                                         {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
                                                       </button>
@@ -5376,16 +5380,20 @@ export default function SiteAdminDashboard(props: any) {
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center' }}>
                                               <button
                                                 onClick={() => {
+                                                  if (!runInforM3OperationalSync) {
+                                                    alert('Operational sync handler is unavailable. Refresh and try again.');
+                                                    return;
+                                                  }
                                                   const site = requireCompanyCsiSite(businessCompany.id);
                                                   if (!site) return;
-                                                  runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency, site, {
+                                                  runInforM3OperationalSync(businessCompany.id, operationalSettings.frequency, site, {
                                                     mode: operationalSettings.syncMode,
                                                     backfillMonths: operationalSettings.backfillMonths,
                                                     lookbackDays: operationalSettings.lookbackDays,
                                                   });
                                                 }}
-                                                disabled={inforBusy || !inforConnected}
-                                                style={{ justifySelf: 'start', padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                disabled={inforBusy}
+                                                style={{ justifySelf: 'start', padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
                                                 {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
                                               </button>
@@ -5619,16 +5627,20 @@ export default function SiteAdminDashboard(props: any) {
                                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                               <button
                                                 onClick={() => {
+                                                  if (!runInforM3OperationalSync) {
+                                                    alert('Operational sync handler is unavailable. Refresh and try again.');
+                                                    return;
+                                                  }
                                                   const site = requireCompanyCsiSite(businessCompany.id);
                                                   if (!site) return;
-                                                  runInforM3OperationalSync?.(businessCompany.id, operationalSettings.frequency, site, {
+                                                  runInforM3OperationalSync(businessCompany.id, operationalSettings.frequency, site, {
                                                     mode: operationalSettings.syncMode,
                                                     backfillMonths: operationalSettings.backfillMonths,
                                                     lookbackDays: operationalSettings.lookbackDays,
                                                   });
                                                 }}
-                                                disabled={inforBusy || !inforConnected}
-                                                style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                disabled={inforBusy}
+                                                style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
                                                 {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
                                               </button>
