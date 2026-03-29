@@ -2149,10 +2149,23 @@ function FinancialScorePage() {
           if (prev.companyId !== currentStatus.companyId || prev.syncRunId !== currentStatus.syncRunId) return prev;
           const normalizedStatus = String(apiLastStatusText || '').toLowerCase();
           const isFailedStatus = normalizedStatus === 'error' || normalizedStatus === 'failed' || normalizedStatus === 'failure';
+          const normalizedRunMessage = String(apiRunMessage || '').toLowerCase();
+          const hasProblemMessage =
+            normalizedRunMessage.includes('failed') ||
+            normalizedRunMessage.includes('error') ||
+            normalizedRunMessage.includes('skipped stuck chunk');
+          const hasProblemSignal =
+            Boolean(apiRunLastError) ||
+            apiWarningCount > 0 ||
+            hasProblemMessage;
           let nextState = prev.state;
-          if (isFailedStatus) {
+          if (isFailedStatus || hasProblemSignal) {
             nextState = 'failed';
-          } else if ((!inforBusy && !apiRecentlyActive && prev.state === 'running') || (prev.state === 'running' && shouldForceCompleteForIdle)) {
+          } else if (
+            ((!inforBusy && !apiRecentlyActive && prev.state === 'running') ||
+              (prev.state === 'running' && shouldForceCompleteForIdle)) &&
+            !hasProblemSignal
+          ) {
             nextState = 'done';
           }
           return {
@@ -5723,7 +5736,7 @@ function FinancialScorePage() {
 
   const saveInforM3Credentials = async (
     targetCompanyId?: string,
-    schedule?: { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string }
+    schedule?: { frequency: 'daily' | 'weekly' | 'monthly'; pullTime: string; autoSyncWindowDays?: number }
   ) => {
     const companyId = targetCompanyId || selectedCompanyId;
     if (!companyId) {
@@ -5757,7 +5770,15 @@ function FinancialScorePage() {
         body: JSON.stringify({
           companyId,
           ...inforCredentials,
-          ...(schedule ? { frequency: schedule.frequency, pullTime: schedule.pullTime } : {}),
+          ...(schedule
+            ? {
+                frequency: schedule.frequency,
+                pullTime: schedule.pullTime,
+                ...(typeof schedule.autoSyncWindowDays === 'number' && Number.isFinite(schedule.autoSyncWindowDays)
+                  ? { autoSyncWindowDays: Math.max(1, Math.floor(schedule.autoSyncWindowDays)) }
+                  : {}),
+              }
+            : {}),
         }),
       });
       const data = await response.json();

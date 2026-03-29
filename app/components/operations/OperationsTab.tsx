@@ -5443,7 +5443,57 @@ export default function OperationsTab({
 
     const records = Array.isArray(dailyFinancialData.records) ? dailyFinancialData.records : [];
     const summary = dailyFinancialData.summary || {};
-    const sortedRecords = [...records].sort(
+    const sortedRecordsRaw = [...records].sort(
+      (a: any, b: any) => new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime()
+    );
+    const toDayKey = (value: unknown): string => {
+      const parsed = new Date(String(value || ''));
+      if (Number.isNaN(parsed.getTime())) return '';
+      return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(parsed.getUTCDate()).padStart(2, '0')}`;
+    };
+    const toDisplayDate = (value: unknown): string => {
+      const parsed = new Date(String(value || ''));
+      if (Number.isNaN(parsed.getTime())) return '';
+      return parsed.toLocaleDateString('en-US', { timeZone: 'UTC' });
+    };
+    const rangeStartKey = /^\d{4}-\d{2}-\d{2}$/.test(String(startDate || '')) ? String(startDate) : null;
+    const rangeEndKey = /^\d{4}-\d{2}-\d{2}$/.test(String(endDate || '')) ? String(endDate) : null;
+    const hasNonZero = (value: unknown): boolean => Number(value || 0) !== 0;
+    const rowCompletenessScore = (row: any): number => {
+      const fields = [
+        'revenue',
+        'cogsTotal',
+        'expense',
+        'cash',
+        'ar',
+        'inventory',
+        'ap',
+        'totalAssets',
+        'totalLiab',
+        'totalEquity',
+        'totalLAndE',
+      ];
+      return fields.reduce((score, field) => score + (hasNonZero(row?.[field]) ? 1 : 0), 0);
+    };
+    const choosePreferredDaySnapshot = (existing: any, candidate: any): any => {
+      const existingScore = rowCompletenessScore(existing);
+      const candidateScore = rowCompletenessScore(candidate);
+      if (candidateScore > existingScore) return candidate;
+      if (candidateScore < existingScore) return existing;
+      const existingUpdatedAt = new Date(existing?.updatedAt || existing?.createdAt || existing?.snapshotDate || 0).getTime();
+      const candidateUpdatedAt = new Date(candidate?.updatedAt || candidate?.createdAt || candidate?.snapshotDate || 0).getTime();
+      return candidateUpdatedAt >= existingUpdatedAt ? candidate : existing;
+    };
+    const dedupedByDay = new Map<string, any>();
+    sortedRecordsRaw.forEach((row: any) => {
+      const dayKey = toDayKey(row?.snapshotDate);
+      if (!dayKey) return;
+      if (rangeStartKey && dayKey < rangeStartKey) return;
+      if (rangeEndKey && dayKey > rangeEndKey) return;
+      const existing = dedupedByDay.get(dayKey);
+      dedupedByDay.set(dayKey, existing ? choosePreferredDaySnapshot(existing, row) : row);
+    });
+    const sortedRecords = Array.from(dedupedByDay.values()).sort(
       (a: any, b: any) => new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime()
     );
     const maxStart = Math.max(0, sortedRecords.length - 30);
@@ -5452,7 +5502,7 @@ export default function OperationsTab({
     const trendRows = [...sortedRecords]
       .reverse()
       .map((row: any) => ({
-        date: new Date(row.snapshotDate).toLocaleDateString(),
+        date: toDisplayDate(row.snapshotDate),
         revenue: Number(row.revenue || 0),
         expense: Number(row.expense || 0),
         cogs: Number(row.cogsTotal || 0),
@@ -5501,21 +5551,163 @@ export default function OperationsTab({
     const marginPctMax = marginPctValues.length > 0 ? Math.max(...marginPctValues) : 50;
     const marginPctDomain: [number, number] = [Math.floor((Math.min(0, marginPctMin) - 5) / 5) * 5, Math.ceil((Math.max(0, marginPctMax) + 5) / 5) * 5];
 
+    const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
+    const lineIndex: Record<string, Record<string, number>> = {};
+    const normalizeTargetField = (field: string): string =>
+      String(field || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^balance_movement:/, '')
+        .replace(/[^a-z0-9]/g, '');
+    const normalizedLineIndex: Record<string, Record<string, number>> = {};
+    const incomeActivityByDayKey: Record<string, number> = {};
+    mappedLines.forEach((line: any) => {
+      const targetField = String(line.targetField || '').trim();
+      if (!targetField) return;
+      const dateKey = toDayKey(line.snapshotDate);
+      if (!dateKey) return;
+      const amount = Number(line.amount || 0);
+      lineIndex[targetField] ||= {};
+      lineIndex[targetField][dateKey] =
+        Number(lineIndex[targetField][dateKey] || 0) + amount;
+      const normalizedTarget = normalizeTargetField(targetField);
+      if (!normalizedTarget) return;
+      normalizedLineIndex[normalizedTarget] ||= {};
+      normalizedLineIndex[normalizedTarget][dateKey] =
+        Number(normalizedLineIndex[normalizedTarget][dateKey] || 0) + amount;
+      if (
+        normalizedTarget.startsWith('rev') ||
+        normalizedTarget.startsWith('cogs') ||
+        normalizedTarget.includes('income') ||
+        normalizedTarget.includes('expense') ||
+        normalizedTarget.includes('payroll') ||
+        normalizedTarget.includes('rent') ||
+        normalizedTarget.includes('utilities')
+      ) {
+        incomeActivityByDayKey[dateKey] = Number(incomeActivityByDayKey[dateKey] || 0) + Math.abs(amount);
+      }
+    });
+
+    const mappedAliasesByField: Record<string, string[]> = {
+      revenue: ['revenue', 'totalrevenue', 'sales'],
+      cogsTotal: ['cogstotal', 'cogs', 'costofgoodssold'],
+      expense: ['expense', 'expenses', 'totalexpense', 'operatingexpense'],
+      cash: ['cash', 'cashbalance', 'endingcash'],
+      ar: ['ar', 'accountsreceivable', 'tradear', 'netar'],
+      inventory: ['inventory', 'stock', 'inv', 'inventoryasset'],
+      otherCA: ['otherca', 'othercurrentassets'],
+      tca: ['tca', 'totalcurrentassets'],
+      fixedAssets: ['fixedassets', 'propertyplantandequipment', 'ppe'],
+      otherAssets: ['otherassets'],
+      totalAssets: ['totalassets'],
+      ap: ['ap', 'accountspayable', 'tradeap'],
+      loc: ['loc', 'lineofcredit'],
+      otherCL: ['othercl', 'othercurrentliabilities'],
+      tcl: ['tcl', 'totalcurrentliabilities'],
+      ltd: ['ltd', 'longtermdebt'],
+      totalLiab: ['totalliab', 'totalliabilities'],
+      ownersCapital: ['ownerscapital', 'ownercapital'],
+      ownersDraw: ['ownersdraw', 'ownerdraw'],
+      commonStock: ['commonstock'],
+      preferredStock: ['preferredstock'],
+      retainedEarnings: ['retainedearnings'],
+      additionalPaidInCapital: ['additionalpaidincapital', 'apic'],
+      treasuryStock: ['treasurystock'],
+      totalEquity: ['totalequity'],
+      totalLAndE: ['totallande', 'totalliabilitiesandequity'],
+      nonOperatingIncome: ['nonoperatingincome', 'otherincome'],
+      nonOperatingExpense: ['nonoperatingexpense', 'otherexpense_nonoperating'],
+      extraordinaryItems: ['extraordinaryitems'],
+      stateIncomeTaxes: ['stateincometaxes'],
+      federalIncomeTaxes: ['federalincometaxes'],
+      interestExpense: ['interestexpense'],
+      depreciationAmortization: ['depreciationamortization', 'depreciation', 'amortization'],
+      payroll: ['payroll'],
+      ownerBasePay: ['ownerbasepay', 'ownersbasepay'],
+      ownersRetirement: ['ownersretirement', 'ownerretirement'],
+      benefits: ['benefits'],
+      insurance: ['insurance'],
+      professionalFees: ['professionalfees', 'professionalfee'],
+      subcontractors: ['subcontractors', 'subcontractor'],
+      rent: ['rent'],
+      utilities: ['utilities', 'utility'],
+      taxLicense: ['taxlicense', 'taxeslicenses'],
+      phoneComm: ['phonecomm', 'telephone', 'communications'],
+      infrastructure: ['infrastructure', 'softwarelicenses', 'itexpense'],
+      autoTravel: ['autotravel', 'auto', 'travel'],
+      salesExpense: ['salesexpense', 'sellingexpense'],
+      marketing: ['marketing'],
+      trainingCert: ['trainingcert', 'training', 'certifications'],
+      mealsEntertainment: ['mealsentertainment', 'meals', 'entertainment'],
+      otherExpense: ['otherexpense', 'miscexpense'],
+    };
+    const getMappedAliasValue = (canonicalField: string, dateKey: string): number => {
+      const aliases = mappedAliasesByField[canonicalField] || [];
+      return aliases.reduce((sum, alias) => sum + Number(normalizedLineIndex[alias]?.[dateKey] || 0), 0);
+    };
+    const getSnapshotOrMappedValue = (row: any, canonicalField: string, dateKey: string): number => {
+      const snapshotValue = Number(row?.[canonicalField] || 0);
+      if (snapshotValue !== 0) return snapshotValue;
+      return getMappedAliasValue(canonicalField, dateKey);
+    };
+
     const statementDays = statementWindow.map((row: any) => {
-      const revenue = Number(row.revenue || 0);
-      const cogsTotal = Number(row.cogsTotal || 0);
+      const dateKey = toDayKey(row.snapshotDate);
+      const dateLabel = toDisplayDate(row.snapshotDate);
+      const revenue = getSnapshotOrMappedValue(row, 'revenue', dateKey);
+      const cogsTotal = getSnapshotOrMappedValue(row, 'cogsTotal', dateKey);
       const grossProfit = revenue - cogsTotal;
-      const opex = Number(row.expense || 0);
+      const opex = getSnapshotOrMappedValue(row, 'expense', dateKey);
       const operatingIncome = grossProfit - opex;
-      const interestExpense = Number(row.interestExpense || 0);
-      const nonOperatingIncome = Number(row.nonOperatingIncome || 0);
-      const extraordinaryItems = Number(row.extraordinaryItems || 0);
-      const incomeBeforeTax = operatingIncome - interestExpense + nonOperatingIncome + extraordinaryItems;
-      const stateIncomeTaxes = Number(row.stateIncomeTaxes || 0);
-      const federalIncomeTaxes = Number(row.federalIncomeTaxes || 0);
+      const interestExpense = getSnapshotOrMappedValue(row, 'interestExpense', dateKey);
+      const nonOperatingIncome = getSnapshotOrMappedValue(row, 'nonOperatingIncome', dateKey);
+      const nonOperatingExpense = getSnapshotOrMappedValue(row, 'nonOperatingExpense', dateKey);
+      const extraordinaryItems = getSnapshotOrMappedValue(row, 'extraordinaryItems', dateKey);
+      const incomeBeforeTax = operatingIncome + nonOperatingIncome - nonOperatingExpense + extraordinaryItems;
+      const stateIncomeTaxes = getSnapshotOrMappedValue(row, 'stateIncomeTaxes', dateKey);
+      const federalIncomeTaxes = getSnapshotOrMappedValue(row, 'federalIncomeTaxes', dateKey);
       const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
+
+      const cash = getSnapshotOrMappedValue(row, 'cash', dateKey);
+      const ar = getSnapshotOrMappedValue(row, 'ar', dateKey);
+      const inventory = getSnapshotOrMappedValue(row, 'inventory', dateKey);
+      const otherCA = getSnapshotOrMappedValue(row, 'otherCA', dateKey);
+      const tcaRaw = getSnapshotOrMappedValue(row, 'tca', dateKey);
+      const tca = tcaRaw !== 0 ? tcaRaw : cash + ar + inventory + otherCA;
+      const fixedAssets = getSnapshotOrMappedValue(row, 'fixedAssets', dateKey);
+      const otherAssets = getSnapshotOrMappedValue(row, 'otherAssets', dateKey);
+      const totalAssetsRaw = getSnapshotOrMappedValue(row, 'totalAssets', dateKey);
+      const totalAssets = totalAssetsRaw !== 0 ? totalAssetsRaw : tca + fixedAssets + otherAssets;
+      const ap = getSnapshotOrMappedValue(row, 'ap', dateKey);
+      const loc = getSnapshotOrMappedValue(row, 'loc', dateKey);
+      const otherCL = getSnapshotOrMappedValue(row, 'otherCL', dateKey);
+      const tclRaw = getSnapshotOrMappedValue(row, 'tcl', dateKey);
+      const tcl = tclRaw !== 0 ? tclRaw : ap + loc + otherCL;
+      const ltd = getSnapshotOrMappedValue(row, 'ltd', dateKey);
+      const totalLiabRaw = getSnapshotOrMappedValue(row, 'totalLiab', dateKey);
+      const totalLiab = totalLiabRaw !== 0 ? totalLiabRaw : tcl + ltd;
+      const ownersCapital = getSnapshotOrMappedValue(row, 'ownersCapital', dateKey);
+      const ownersDraw = getSnapshotOrMappedValue(row, 'ownersDraw', dateKey);
+      const commonStock = getSnapshotOrMappedValue(row, 'commonStock', dateKey);
+      const preferredStock = getSnapshotOrMappedValue(row, 'preferredStock', dateKey);
+      const retainedEarnings = getSnapshotOrMappedValue(row, 'retainedEarnings', dateKey);
+      const additionalPaidInCapital = getSnapshotOrMappedValue(row, 'additionalPaidInCapital', dateKey);
+      const treasuryStock = getSnapshotOrMappedValue(row, 'treasuryStock', dateKey);
+      const totalEquityRaw = getSnapshotOrMappedValue(row, 'totalEquity', dateKey);
+      const totalEquity = totalEquityRaw !== 0
+        ? totalEquityRaw
+        : ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
+      const totalLAndERaw = getSnapshotOrMappedValue(row, 'totalLAndE', dateKey);
+      const totalLAndE = totalLAndERaw !== 0 ? totalLAndERaw : totalLiab + totalEquity;
+      const weekday = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
+      const isBusinessDay = weekday !== 0 && weekday !== 6;
+      const hasIncomeActivity = Number(incomeActivityByDayKey[dateKey] || 0) > 0 || revenue !== 0 || cogsTotal !== 0 || opex !== 0;
+
       return {
-        dateLabel: new Date(row.snapshotDate).toLocaleDateString(),
+        dateKey,
+        dateLabel,
+        isBusinessDay,
+        hasIncomeActivity,
         revenue,
         cogsTotal,
         grossProfit,
@@ -5523,32 +5715,37 @@ export default function OperationsTab({
         operatingIncome,
         interestExpense,
         nonOperatingIncome,
+        nonOperatingExpense,
         extraordinaryItems,
         incomeBeforeTax,
         stateIncomeTaxes,
         federalIncomeTaxes,
         netIncome,
-        cash: Number(row.cash || 0),
-        ar: Number(row.ar || 0),
-        inventory: Number(row.inventory || 0),
-        otherCA: Number(row.otherCA || 0),
-        tca: Number(row.tca || 0),
-        fixedAssets: Number(row.fixedAssets || 0),
-        otherAssets: Number(row.otherAssets || 0),
-        totalAssets: Number(row.totalAssets || 0),
-        ap: Number(row.ap || 0),
-        loc: Number(row.loc || 0),
-        otherCL: Number(row.otherCL || 0),
-        tcl: Number(row.tcl || 0),
-        ltd: Number(row.ltd || 0),
-        totalLiab: Number(row.totalLiab || 0),
-        ownersCapital: Number(row.ownersCapital || 0),
-        ownersDraw: Number(row.ownersDraw || 0),
-        retainedEarnings: Number(row.retainedEarnings || 0),
-        totalEquity: Number(row.totalEquity || 0),
-        totalLAndE: Number(row.totalLAndE || 0),
+        cash,
+        ar,
+        inventory,
+        otherCA,
+        tca,
+        fixedAssets,
+        otherAssets,
+        totalAssets,
+        ap,
+        loc,
+        otherCL,
+        tcl,
+        ltd,
+        totalLiab,
+        ownersCapital,
+        ownersDraw,
+        commonStock,
+        preferredStock,
+        retainedEarnings,
+        additionalPaidInCapital,
+        treasuryStock,
+        totalEquity,
+        totalLAndE,
       };
-    });
+    }).filter((day: any) => day.isBusinessDay || day.hasIncomeActivity);
 
     type StatementRowDef = {
       key?: keyof (typeof statementDays)[number];
@@ -5557,17 +5754,6 @@ export default function OperationsTab({
       valuesByDate?: Record<string, number>;
       suppressValues?: boolean;
     };
-
-    const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
-    const lineIndex: Record<string, Record<string, number>> = {};
-    mappedLines.forEach((line: any) => {
-      const targetField = String(line.targetField || '').trim();
-      if (!targetField) return;
-      const dateLabel = new Date(line.snapshotDate).toLocaleDateString();
-      lineIndex[targetField] ||= {};
-      lineIndex[targetField][dateLabel] =
-        Number(lineIndex[targetField][dateLabel] || 0) + Number(line.amount || 0);
-    });
 
     const mappedFieldHasAnyValue = (field: string): boolean =>
       Object.values(lineIndex[field] || {}).some((value) => Number(value || 0) !== 0);
@@ -5584,75 +5770,88 @@ export default function OperationsTab({
       'subcontractors', 'rent', 'utilities', 'taxLicense', 'phoneComm', 'infrastructure', 'autoTravel',
       'salesExpense', 'marketing', 'trainingCert', 'mealsEntertainment', 'interestExpense',
       'depreciationAmortization', 'otherExpense',
-    ].filter((field) => mappedFieldHasAnyValue(field));
+    ];
 
-    const dateLabels = statementDays.map((day) => day.dateLabel);
-    const getMappedValue = (field: string, dateLabel: string): number =>
-      Number(lineIndex[field]?.[dateLabel] || 0);
-    const sumFieldsForDate = (fields: string[], dateLabel: string): number =>
-      fields.reduce((sum, field) => sum + getMappedValue(field, dateLabel), 0);
-    const buildSeriesFromDateLabels = (calculator: (dateLabel: string) => number): Record<string, number> =>
-      dateLabels.reduce<Record<string, number>>((acc, dateLabel) => {
-        acc[dateLabel] = calculator(dateLabel);
+    const statementDayByKey = statementDays.reduce<Record<string, (typeof statementDays)[number]>>((acc, day) => {
+      acc[day.dateKey] = day;
+      return acc;
+    }, {});
+    const dateKeys = statementDays.map((day) => day.dateKey);
+    const getMappedValue = (field: string, dateKey: string): number =>
+      Number(lineIndex[field]?.[dateKey] || 0);
+    const sumFieldsForDate = (fields: string[], dateKey: string): number =>
+      fields.reduce((sum, field) => sum + getMappedValue(field, dateKey), 0);
+    const buildSeriesFromDateKeys = (calculator: (dateKey: string) => number): Record<string, number> =>
+      dateKeys.reduce<Record<string, number>>((acc, dateKey) => {
+        acc[dateKey] = calculator(dateKey);
         return acc;
       }, {});
 
-    const revenueByDate = buildSeriesFromDateLabels((dateLabel) =>
+    const revenueByDate = buildSeriesFromDateKeys((dateKey) =>
       revenueDetailFields.length > 0
-        ? sumFieldsForDate(revenueDetailFields, dateLabel)
-        : getMappedValue('revenue', dateLabel)
+        ? sumFieldsForDate(revenueDetailFields, dateKey)
+        : Number(statementDayByKey[dateKey]?.revenue || 0)
     );
-    const cogsTotalByDate = buildSeriesFromDateLabels((dateLabel) =>
+    const cogsTotalByDate = buildSeriesFromDateKeys((dateKey) =>
       cogsDetailFields.length > 0
-        ? sumFieldsForDate(cogsDetailFields, dateLabel)
-        : getMappedValue('cogsTotal', dateLabel)
+        ? sumFieldsForDate(cogsDetailFields, dateKey)
+        : Number(statementDayByKey[dateKey]?.cogsTotal || 0)
     );
-    const totalOperatingExpensesByDate = buildSeriesFromDateLabels((dateLabel) =>
+    const expenseFieldByDate = (field: string, dateKey: string): number => {
+      const mappedRaw = getMappedValue(field, dateKey);
+      if (mappedRaw !== 0) return mappedRaw;
+      const aliasMapped = getMappedAliasValue(field, dateKey);
+      if (aliasMapped !== 0) return aliasMapped;
+      return Number((statementDayByKey[dateKey] as any)?.[field] || 0);
+    };
+    const totalOperatingExpensesByDate = buildSeriesFromDateKeys((dateKey) =>
       operatingExpenseFields.length > 0
-        ? sumFieldsForDate(operatingExpenseFields, dateLabel)
-        : getMappedValue('expense', dateLabel)
+        ? operatingExpenseFields.reduce((sum, field) => sum + expenseFieldByDate(field, dateKey), 0)
+        : Number(statementDayByKey[dateKey]?.expense || 0)
     );
-    const grossProfitByDate = buildSeriesFromDateLabels(
-      (dateLabel) => Number(revenueByDate[dateLabel] || 0) - Number(cogsTotalByDate[dateLabel] || 0)
+    const grossProfitByDate = buildSeriesFromDateKeys(
+      (dateKey) => Number(revenueByDate[dateKey] || 0) - Number(cogsTotalByDate[dateKey] || 0)
     );
-    const operatingIncomeByDate = buildSeriesFromDateLabels(
-      (dateLabel) => Number(grossProfitByDate[dateLabel] || 0) - Number(totalOperatingExpensesByDate[dateLabel] || 0)
+    const operatingIncomeByDate = buildSeriesFromDateKeys(
+      (dateKey) => Number(grossProfitByDate[dateKey] || 0) - Number(totalOperatingExpensesByDate[dateKey] || 0)
     );
-    const nonOperatingIncomeByDate = buildSeriesFromDateLabels((dateLabel) => {
-      const mapped = getMappedValue('nonOperatingIncome', dateLabel);
+    const nonOperatingIncomeByDate = buildSeriesFromDateKeys((dateKey) => {
+      const mapped = getMappedValue('nonOperatingIncome', dateKey);
       if (mapped !== 0) return mapped;
-      const day = statementDays.find((d) => d.dateLabel === dateLabel);
-      return Number(day?.nonOperatingIncome || 0);
+      return Number(statementDayByKey[dateKey]?.nonOperatingIncome || 0);
     });
-    const extraordinaryItemsByDate = buildSeriesFromDateLabels((dateLabel) => {
-      const mapped = getMappedValue('extraordinaryItems', dateLabel);
+    const nonOperatingExpenseByDate = buildSeriesFromDateKeys((dateKey) => {
+      const mapped = getMappedValue('nonOperatingExpense', dateKey);
       if (mapped !== 0) return mapped;
-      const day = statementDays.find((d) => d.dateLabel === dateLabel);
-      return Number(day?.extraordinaryItems || 0);
+      return Number(statementDayByKey[dateKey]?.nonOperatingExpense || 0);
     });
-    const stateIncomeTaxesByDate = buildSeriesFromDateLabels((dateLabel) => {
-      const mapped = getMappedValue('stateIncomeTaxes', dateLabel);
+    const extraordinaryItemsByDate = buildSeriesFromDateKeys((dateKey) => {
+      const mapped = getMappedValue('extraordinaryItems', dateKey);
       if (mapped !== 0) return mapped;
-      const day = statementDays.find((d) => d.dateLabel === dateLabel);
-      return Number(day?.stateIncomeTaxes || 0);
+      return Number(statementDayByKey[dateKey]?.extraordinaryItems || 0);
     });
-    const federalIncomeTaxesByDate = buildSeriesFromDateLabels((dateLabel) => {
-      const mapped = getMappedValue('federalIncomeTaxes', dateLabel);
+    const stateIncomeTaxesByDate = buildSeriesFromDateKeys((dateKey) => {
+      const mapped = getMappedValue('stateIncomeTaxes', dateKey);
       if (mapped !== 0) return mapped;
-      const day = statementDays.find((d) => d.dateLabel === dateLabel);
-      return Number(day?.federalIncomeTaxes || 0);
+      return Number(statementDayByKey[dateKey]?.stateIncomeTaxes || 0);
     });
-    const incomeBeforeTaxByDate = buildSeriesFromDateLabels(
-      (dateLabel) =>
-        Number(operatingIncomeByDate[dateLabel] || 0) +
-        Number(nonOperatingIncomeByDate[dateLabel] || 0) +
-        Number(extraordinaryItemsByDate[dateLabel] || 0)
+    const federalIncomeTaxesByDate = buildSeriesFromDateKeys((dateKey) => {
+      const mapped = getMappedValue('federalIncomeTaxes', dateKey);
+      if (mapped !== 0) return mapped;
+      return Number(statementDayByKey[dateKey]?.federalIncomeTaxes || 0);
+    });
+    const incomeBeforeTaxByDate = buildSeriesFromDateKeys(
+      (dateKey) =>
+        Number(operatingIncomeByDate[dateKey] || 0) +
+        Number(nonOperatingIncomeByDate[dateKey] || 0) -
+        Number(nonOperatingExpenseByDate[dateKey] || 0) +
+        Number(extraordinaryItemsByDate[dateKey] || 0)
     );
-    const netIncomeByDate = buildSeriesFromDateLabels(
-      (dateLabel) =>
-        Number(incomeBeforeTaxByDate[dateLabel] || 0) -
-        Number(stateIncomeTaxesByDate[dateLabel] || 0) -
-        Number(federalIncomeTaxesByDate[dateLabel] || 0)
+    const netIncomeByDate = buildSeriesFromDateKeys(
+      (dateKey) =>
+        Number(incomeBeforeTaxByDate[dateKey] || 0) -
+        Number(stateIncomeTaxesByDate[dateKey] || 0) -
+        Number(federalIncomeTaxesByDate[dateKey] || 0)
     );
 
     const incomeRowDefs: StatementRowDef[] = [
@@ -5660,13 +5859,13 @@ export default function OperationsTab({
       ...revenueDetailFields.map((field) => ({
         label: `  ${getFieldDisplayName(field)}`,
         styleType: 'normal' as const,
-        valuesByDate: lineIndex[field],
+        valuesByDate: lineIndex[field] || {},
       })),
       { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
       ...dynamicCogsFields.map((field) => ({
         label: `  ${getFieldDisplayName(field)}`,
         styleType: 'normal' as const,
-        valuesByDate: lineIndex[field],
+        valuesByDate: lineIndex[field] || {},
       })),
       { label: 'Total COGS', styleType: 'subtotal', valuesByDate: cogsTotalByDate },
       { label: 'GROSS PROFIT', styleType: 'subtotal', valuesByDate: grossProfitByDate },
@@ -5674,12 +5873,13 @@ export default function OperationsTab({
       ...operatingExpenseFields.map((field) => ({
         label: `  ${getFieldDisplayName(field)}`,
         styleType: 'normal' as const,
-        valuesByDate: lineIndex[field],
+        valuesByDate: buildSeriesFromDateKeys((dateKey) => expenseFieldByDate(field, dateKey)),
       })),
       { label: 'Total Operating Expenses', styleType: 'subtotal', valuesByDate: totalOperatingExpensesByDate },
       { label: 'Operating Income', styleType: 'subtotal', valuesByDate: operatingIncomeByDate },
       { label: 'Other Income/(Expense)', styleType: 'section', suppressValues: true },
       { label: getFieldDisplayName('nonOperatingIncome'), styleType: 'normal', valuesByDate: nonOperatingIncomeByDate },
+      { label: getFieldDisplayName('nonOperatingExpense'), styleType: 'normal', valuesByDate: nonOperatingExpenseByDate },
       { label: getFieldDisplayName('extraordinaryItems'), styleType: 'normal', valuesByDate: extraordinaryItemsByDate },
       { label: getFieldDisplayName('incomeBeforeTax'), styleType: 'subtotal', valuesByDate: incomeBeforeTaxByDate },
       { label: 'Income Taxes', styleType: 'section', suppressValues: true },
@@ -5710,7 +5910,11 @@ export default function OperationsTab({
       { label: 'Equity', styleType: 'section', suppressValues: true },
       { key: 'ownersCapital', label: `  ${getFieldDisplayName('ownersCapital')}`, styleType: 'normal' },
       { key: 'ownersDraw', label: `  ${getFieldDisplayName('ownersDraw')}`, styleType: 'normal' },
+      { key: 'commonStock', label: `  ${getFieldDisplayName('commonStock')}`, styleType: 'normal' },
+      { key: 'preferredStock', label: `  ${getFieldDisplayName('preferredStock')}`, styleType: 'normal' },
       { key: 'retainedEarnings', label: `  ${getFieldDisplayName('retainedEarnings')}`, styleType: 'normal' },
+      { key: 'additionalPaidInCapital', label: `  ${getFieldDisplayName('additionalPaidInCapital')}`, styleType: 'normal' },
+      { key: 'treasuryStock', label: `  ${getFieldDisplayName('treasuryStock')}`, styleType: 'normal' },
       { key: 'totalEquity', label: getFieldDisplayName('totalEquity'), styleType: 'subtotal' },
       { key: 'totalLAndE', label: getFieldDisplayName('totalLiabilitiesAndEquity'), styleType: 'total' },
     ];
@@ -5735,7 +5939,7 @@ export default function OperationsTab({
       const changeInventory = index + 1 < sortedRecords.length ? Number(row.inventory || 0) - Number(sortedRecords[windowStart + index + 1]?.inventory || 0) : 0;
       const operatingProxy = netIncome + depreciation - changeAR + changeAP - changeInventory;
       return {
-        date: new Date(row.snapshotDate).toLocaleDateString(),
+        date: toDisplayDate(row.snapshotDate),
         netIncome,
         depreciation,
         changeAR,
@@ -5964,7 +6168,7 @@ export default function OperationsTab({
                             ? ''
                             : formatCurrency(Number(
                                 rowDef.valuesByDate
-                                  ? rowDef.valuesByDate[day.dateLabel] || 0
+                                  ? rowDef.valuesByDate[day.dateKey] || 0
                                   : (rowDef.key ? day[rowDef.key as keyof typeof day] : 0) || 0
                               ))}
                         </td>
@@ -6012,7 +6216,7 @@ export default function OperationsTab({
                             ? ''
                             : formatCurrency(Number(
                                 rowDef.valuesByDate
-                                  ? rowDef.valuesByDate[day.dateLabel] || 0
+                                  ? rowDef.valuesByDate[day.dateKey] || 0
                                   : (rowDef.key ? day[rowDef.key as keyof typeof day] : 0) || 0
                               ))}
                         </td>

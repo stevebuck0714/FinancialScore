@@ -3007,7 +3007,9 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     sourcePlatform: 'INFOR_M3',
     revenue,
     cogsTotal,
-    expense: cogsTotal,
+    // Operating expense is not available from this aggregate-only fallback path.
+    // Do not mirror COGS into expense; that double-counts costs in statements.
+    expense: 0,
     cash,
     ar,
     inventory,
@@ -3073,9 +3075,35 @@ export async function syncInforM3OperationalData(
       ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
       : {};
 
-  const parsedProgramRows = parsePrograms(programsBySystem[inforSystem] ?? metadata.accountingPrograms).filter(
+  const configuredSystemProgramsRaw = programsBySystem[inforSystem];
+  const configuredSystemPrograms =
+    Array.isArray(configuredSystemProgramsRaw) && configuredSystemProgramsRaw.length > 0
+      ? configuredSystemProgramsRaw
+      : null;
+  const configuredGlobalPrograms =
+    Array.isArray(metadata.accountingPrograms) && metadata.accountingPrograms.length > 0
+      ? metadata.accountingPrograms
+      : null;
+  const hasAnyConfiguredProgramSet = Boolean(configuredSystemPrograms || configuredGlobalPrograms);
+
+  const parsedProgramRows = parsePrograms(configuredSystemPrograms ?? configuredGlobalPrograms).filter(
     (row) => row.module.trim().toLowerCase() !== 'accounts'
   );
+  if (hasAnyConfiguredProgramSet && parsedProgramRows.length === 0) {
+    return {
+      success: false,
+      recordsCreated: 0,
+      errors: [
+        `Configured accounting programs could not be resolved for ${inforSystem}. ` +
+          'Sync aborted to avoid fallback to default program rows. Save valid accounting programs for this company and retry.',
+      ],
+      credentialSource: null,
+      hasMore: false,
+      nextProgramOffset: null,
+      continuation: null,
+      totalProgramRows: 0,
+    };
+  }
   const baseProgramRows = parsedProgramRows.length > 0 ? parsedProgramRows : DEFAULT_CSI_PROGRAM_ROWS;
   const salesOnly = options?.salesOnly === true;
   const SALES_ONLY_PROGRAM_IDS = new Set(['SLCOHDRS', 'SLCOS', 'SLCOITEMS']);

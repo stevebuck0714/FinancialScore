@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
         syncFrequency: string | null;
         updatedAt: Date | null;
         autoSyncTime: string | null;
+        autoSyncWindowDays: string | null;
       }>
     >`
       SELECT
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
         "autoSync",
         "syncFrequency",
         "updatedAt",
-        "connectionMetadata"->>'operationalPullTime' AS "autoSyncTime"
+        "connectionMetadata"->>'operationalPullTime' AS "autoSyncTime",
+        "connectionMetadata"->>'operationalAutoSyncWindowDays' AS "autoSyncWindowDays"
       FROM "AccountingConnection"
       WHERE "companyId" = ${companyId}
         AND platform = 'INFOR_M3'

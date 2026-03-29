@@ -7,9 +7,18 @@ const dotenv = require('dotenv');
 
 // Load environment variables - .env.local takes precedence for development
 // IMPORTANT: Use override=true so a blank host env var doesn't mask .env.local
-dotenv.config({ path: '.env.local', override: true });
+const envLocal = dotenv.config({ path: '.env.local', override: true });
 // Fallback to .env for any missing vars, but DO NOT override .env.local
 dotenv.config({ path: '.env', override: false });
+
+// Hard pin database vars from .env.local in local/dev runtime.
+// This prevents .env or inherited shell vars from accidentally switching DB targets.
+if (envLocal?.parsed?.DATABASE_URL) {
+  process.env.DATABASE_URL = envLocal.parsed.DATABASE_URL;
+}
+if (envLocal?.parsed?.DIRECT_URL) {
+  process.env.DIRECT_URL = envLocal.parsed.DIRECT_URL;
+}
 
 // Debug (safe): show whether keys are present (no secrets)
 let serpApiFileLen = 0;

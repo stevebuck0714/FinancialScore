@@ -1002,6 +1002,7 @@ export default function SiteAdminDashboard(props: any) {
         syncMode: 'daily_overlap' | 'backfill' | 'business_day_backfill';
         backfillMonths: number;
         lookbackDays: number;
+        autoSyncWindowDays: number;
       }
     >
   >({});
@@ -1020,6 +1021,7 @@ export default function SiteAdminDashboard(props: any) {
       syncMode: 'business_day_backfill',
       backfillMonths: 36,
       lookbackDays: 30,
+      autoSyncWindowDays: 3,
     };
 
   const setCompanyOperationalSettings = (
@@ -1030,6 +1032,7 @@ export default function SiteAdminDashboard(props: any) {
       syncMode: 'daily_overlap' | 'backfill' | 'business_day_backfill';
       backfillMonths: number;
       lookbackDays: number;
+      autoSyncWindowDays: number;
     }>
   ) => {
     setOperationalSyncSettingsByCompany((prev) => ({
@@ -1040,6 +1043,7 @@ export default function SiteAdminDashboard(props: any) {
         syncMode: next.syncMode || prev[companyId]?.syncMode || 'business_day_backfill',
         backfillMonths: Math.max(1, Number(next.backfillMonths || prev[companyId]?.backfillMonths || 36)),
         lookbackDays: Math.max(1, Number(next.lookbackDays || prev[companyId]?.lookbackDays || 30)),
+        autoSyncWindowDays: Math.max(1, Number(next.autoSyncWindowDays || prev[companyId]?.autoSyncWindowDays || 3)),
       },
     }));
   };
@@ -2049,10 +2053,15 @@ export default function SiteAdminDashboard(props: any) {
           if (!statusData) return;
           const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
           const pullTime = typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+          const autoSyncWindowDays = Math.max(
+            1,
+            Number.parseInt(String(statusData.autoSyncWindowDays || ''), 10) || 3
+          );
           if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
             setCompanyOperationalSettings(companyId, {
               frequency,
               pullTime,
+              autoSyncWindowDays,
             });
           }
         });
@@ -3013,6 +3022,8 @@ export default function SiteAdminDashboard(props: any) {
                                                           await saveInforM3Credentials?.(company.id, {
                                                             frequency: getCompanyOperationalSettings(company.id).frequency,
                                                             pullTime: getCompanyOperationalSettings(company.id).pullTime,
+                                                            autoSyncWindowDays:
+                                                              getCompanyOperationalSettings(company.id).autoSyncWindowDays,
                                                           });
                                                           await saveCompanyPrograms(company.id);
                                                         }}
@@ -3201,9 +3212,6 @@ export default function SiteAdminDashboard(props: any) {
                                                           />
                                                         </label>
                                                       )}
-                                                      <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#94a3b8' }}>
-                                                        Most teams use two modes: Historical Daily Backfill (once) + Daily Auto Sync (ongoing).
-                                                      </div>
                                                     </div>
                                                   </div>
                                                 </div>
@@ -3532,6 +3540,24 @@ export default function SiteAdminDashboard(props: any) {
                                                           );
                                                         })}
                                                       </select>
+                                                    </label>
+                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
+                                                      <span style={{ fontWeight: 600 }}>Auto Sync Window Days</span>
+                                                      <input
+                                                        type="number"
+                                                        min={1}
+                                                        step={1}
+                                                        value={getCompanyOperationalSettings(company.id).autoSyncWindowDays}
+                                                        onChange={(e) =>
+                                                          setCompanyOperationalSettings(company.id, {
+                                                            autoSyncWindowDays: Number(e.target.value || 3),
+                                                          })
+                                                        }
+                                                        style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
+                                                      <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                                        Nightly auto-sync window length (inclusive, ending on prior UTC day).
+                                                      </span>
                                                     </label>
                                                   </div>
 
@@ -5075,10 +5101,15 @@ export default function SiteAdminDashboard(props: any) {
                                             const frequency = String(statusData.syncFrequency || 'daily').toLowerCase();
                                             const pullTime =
                                               typeof statusData.autoSyncTime === 'string' ? statusData.autoSyncTime : '08:00';
+                                            const autoSyncWindowDays = Math.max(
+                                              1,
+                                              Number.parseInt(String(statusData.autoSyncWindowDays || ''), 10) || 3
+                                            );
                                             if (frequency === 'daily' || frequency === 'weekly' || frequency === 'monthly') {
                                               setCompanyOperationalSettings(businessCompany.id, {
                                                 frequency,
                                                 pullTime,
+                                                autoSyncWindowDays,
                                               });
                                             }
                                           });
@@ -5177,11 +5208,15 @@ export default function SiteAdminDashboard(props: any) {
                                           )}
                                         </div>
                                       </div>
-                                      {/* Row 1: Company Name, Industry, Type */}
+                                      {/* Row 1: Company Name, Company ID, Industry, Type */}
                                       <div style={{ display: 'flex', gap: '16px', marginBottom: '6px', alignItems: 'center' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                           <label style={labelStyle}>Company Name:</label>
                                           <span style={{ fontSize: '13px', color: '#1e293b' }}>{businessCompany?.name || 'Not found'}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <label style={labelStyle}>Company ID:</label>
+                                          <span style={{ fontSize: '13px', color: '#1e293b', fontFamily: 'monospace' }}>{businessCompany?.id || 'Not found'}</span>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                           <label style={labelStyle}>Industry:</label>
@@ -5380,6 +5415,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   await saveInforM3Credentials?.(businessCompany.id, {
                                                     frequency: operationalSettings.frequency,
                                                     pullTime: operationalSettings.pullTime,
+                                                    autoSyncWindowDays: operationalSettings.autoSyncWindowDays,
                                                   });
                                                   await saveCompanyPrograms(businessCompany.id);
                                                 }}
@@ -5566,9 +5602,6 @@ export default function SiteAdminDashboard(props: any) {
                                                   />
                                                 </label>
                                               )}
-                                              <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#94a3b8' }}>
-                                                Most teams use two modes: Historical Daily Backfill (once) + Daily Auto Sync (ongoing).
-                                              </div>
                                             </div>
                                           </div>
                                         </div>
@@ -5620,6 +5653,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   await saveInforM3Credentials?.(businessCompany.id, {
                                                     frequency: operationalSettings.frequency,
                                                     pullTime: operationalSettings.pullTime,
+                                                    autoSyncWindowDays: operationalSettings.autoSyncWindowDays,
                                                   });
                                                   await saveCompanyPrograms(businessCompany.id);
                                                 }}
@@ -5831,6 +5865,24 @@ export default function SiteAdminDashboard(props: any) {
                                             );
                                           })}
                                         </select>
+                                      </label>
+                                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
+                                        <span style={{ fontWeight: 600 }}>Auto Sync Window Days</span>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          step={1}
+                                          value={operationalSettings.autoSyncWindowDays}
+                                          onChange={(e) =>
+                                            setCompanyOperationalSettings(businessCompany.id, {
+                                              autoSyncWindowDays: Number(e.target.value || 3),
+                                            })
+                                          }
+                                          style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                        />
+                                        <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                          Nightly auto-sync window length (inclusive, ending on prior UTC day).
+                                        </span>
                                       </label>
                                     </div>
 

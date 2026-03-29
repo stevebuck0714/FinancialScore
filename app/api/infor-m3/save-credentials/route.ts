@@ -71,6 +71,18 @@ function normalizePullTime(value: unknown): string | null {
   return /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : null;
 }
 
+function normalizePositiveInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const normalized = Math.floor(value);
+    return normalized >= 1 ? normalized : null;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(parsed) && parsed >= 1) return parsed;
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -78,6 +90,7 @@ export async function POST(request: NextRequest) {
     const bodyCredentials = parseBodyCredentials(body);
     const frequency = normalizeFrequency(body.frequency);
     const pullTime = normalizePullTime(body.pullTime);
+    const autoSyncWindowDays = normalizePositiveInt(body.autoSyncWindowDays);
 
     if (!isCompleteCredentials(bodyCredentials)) {
       return NextResponse.json(
@@ -130,6 +143,9 @@ export async function POST(request: NextRequest) {
           connectionMetadata: {
             ...existingMetadata,
             operationalPullTime: pullTime,
+            ...(typeof autoSyncWindowDays === 'number'
+              ? { operationalAutoSyncWindowDays: autoSyncWindowDays }
+              : {}),
             operationalScheduleUpdatedAt: new Date().toISOString(),
           },
         },
