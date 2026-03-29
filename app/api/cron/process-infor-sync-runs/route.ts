@@ -11,6 +11,25 @@ export const dynamic = 'force-dynamic';
 const MAX_RUNS_PER_TICK = 8;
 const MAX_RETRIES_PER_RUN = 6;
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function recoverCursorAfterRepeatedChunkFailure(run: InforOperationalAsyncRun): InforOperationalAsyncRun['cursor'] {
+  const cursor = asRecord(run.cursor);
+  if (Object.keys(cursor).length === 0) return null;
+  const programOffset = Math.max(0, Math.floor(Number(cursor.programOffset || 0)));
+  const programBatchSize = Math.max(1, Math.floor(Number(cursor.programBatchSize || 1)));
+  return {
+    ...cursor,
+    programOffset: programOffset + programBatchSize,
+    requestOffset: 0,
+    bookmark: null,
+    stagnantCursorCount: 0,
+  };
+}
+
 function buildChunkPayload(run: InforOperationalAsyncRun): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     companyId: run.companyId,
@@ -64,6 +83,18 @@ async function processOneRun(
         : data?.details || data?.error || 'Async sync chunk failed';
     const retries = Math.max(0, Number(run.retryCount || 0)) + 1;
     const failed = retries >= MAX_RETRIES_PER_RUN;
+    if (failed && run.mode === 'business_day_backfill') {
+      const recoveredCursor = recoverCursorAfterRepeatedChunkFailure(run);
+      return {
+        ...run,
+        status: 'running',
+        cursor: recoveredCursor,
+        retryCount: 0,
+        updatedAt: nowIso,
+        lastError: String(details).slice(0, 1200),
+        message: `Skipped stuck chunk after ${retries} retries; continuing backfill.`,
+      };
+    }
     return {
       ...run,
       status: failed ? 'failed' : 'running',
