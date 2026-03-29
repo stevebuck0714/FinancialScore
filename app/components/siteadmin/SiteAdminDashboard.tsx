@@ -5186,6 +5186,10 @@ export default function SiteAdminDashboard(props: any) {
                                   const biDraft = getBusinessInfoDraft(businessCompany, businessUser);
                                   const biEditing = !!editingBusinessInfoByCompany[businessCompany.id];
                                   const biSaving = savingBusinessInfoCompanyId === businessCompany.id;
+                                  const sectorById = INDUSTRY_SECTORS.find(
+                                    (sector) => String(sector?.id || '').trim() === String(businessCompany?.industrySector || '').trim()
+                                  );
+                                  const sectorName = sectorById?.name || getSectorNameForCompany(businessCompany) || 'Not set';
                                   const setBiField = (field: string, value: string) =>
                                     setEditingBusinessInfoByCompany((prev) => ({
                                       ...prev,
@@ -5215,7 +5219,7 @@ export default function SiteAdminDashboard(props: any) {
                                           )}
                                         </div>
                                       </div>
-                                      {/* Row 1: Company Name, Company ID, Industry, Type */}
+                                      {/* Row 1: Company Name, Company ID, Company Sector, Type */}
                                       <div style={{ display: 'flex', gap: '16px', marginBottom: '6px', alignItems: 'center' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                           <label style={labelStyle}>Company Name:</label>
@@ -5226,8 +5230,8 @@ export default function SiteAdminDashboard(props: any) {
                                           <span style={{ fontSize: '13px', color: '#1e293b', fontFamily: 'monospace' }}>{businessCompany?.id || 'Not found'}</span>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                          <label style={labelStyle}>Industry:</label>
-                                          <span style={{ fontSize: '13px', color: '#1e293b' }}>{businessCompany?.industrySector || 'Not set'}</span>
+                                          <label style={labelStyle}>Company Sector:</label>
+                                          <span style={{ fontSize: '13px', color: '#1e293b' }}>{sectorName}</span>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                           <label style={labelStyle}>Type:</label>
