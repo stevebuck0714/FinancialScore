@@ -10,6 +10,8 @@ const LEASE_SECONDS = 120;
 const DEFAULT_MAX_ATTEMPTS = 6;
 const MAX_LEASE_ROUNDS_PER_TICK = 12;
 const TICK_TIME_BUDGET_MS = 55_000;
+const DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE = 3;
+const DEFAULT_TICK_CONCURRENCY = 4;
 
 type QueueRunRecord = {
   id: string;
@@ -55,6 +57,24 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asIso(value: Date | null | undefined): string | null {
   return value ? new Date(value).toISOString() : null;
+}
+
+function resolveBackfillProgramBatchSize(): number {
+  const raw = Number(process.env.INFOR_SYNC_BACKFILL_PROGRAM_BATCH_SIZE || DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE;
+  return Math.min(8, Math.max(1, Math.floor(raw)));
+}
+
+function resolveTickConcurrency(): number {
+  const raw = Number(process.env.INFOR_SYNC_TICK_CONCURRENCY || DEFAULT_TICK_CONCURRENCY);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TICK_CONCURRENCY;
+  return Math.min(MAX_TASKS_PER_TICK, Math.max(1, Math.floor(raw)));
+}
+
+function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
+  if (String(run.platform) !== 'INFOR_M3') return 1;
+  if (String(run.mode || '') === 'business_day_backfill') return resolveBackfillProgramBatchSize();
+  return 1;
 }
 
 export function isInforSyncQueueEnabled(): boolean {
@@ -114,7 +134,7 @@ function buildTaskPayload(run: QueueRunRecord, cursor?: Record<string, unknown> 
   const payload: Record<string, unknown> = {
     companyId: run.companyId,
     frequency: run.frequency,
-    programBatchSize: 1,
+    programBatchSize: resolveInitialProgramBatchSize(run),
     syncRunId: run.id,
   };
   if (run.site) payload.site = run.site;
@@ -626,11 +646,50 @@ async function processTask(
   return { runId: task.runId, taskId: task.id, status: 'success' };
 }
 
+async function markTaskExecutionFailure(
+  task: QueueTaskRecord & { run: QueueRunRecord },
+  message: string
+): Promise<Record<string, unknown>> {
+  const now = new Date();
+  await db().$transaction(async (tx: any) => {
+    await tx.inforSyncTask.update({
+      where: { id: task.id },
+      data: {
+        status: 'failed',
+        attemptCount: Math.max(0, Number(task.attemptCount || 0)) + 1,
+        finishedAt: now,
+        updatedAt: now,
+        lastError: message,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
+    });
+    await tx.inforSyncRun.update({
+      where: { id: task.runId },
+      data: {
+        status: 'failed',
+        updatedAt: now,
+        finishedAt: now,
+        lastError: message,
+        message: 'Background queue worker failed on task execution.',
+      },
+    });
+  });
+  await notifyQueueRunFailure(
+    task.companyId,
+    (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
+    'Infor async queue worker task execution failed',
+    String(message).slice(0, 500)
+  );
+  return { runId: task.runId, taskId: task.id, status: 'failed', details: message };
+}
+
 export async function processQueueTick(requestUrl: string, workerSecret: string): Promise<Record<string, unknown>> {
   const tickStartedAt = Date.now();
   let promotedRuns = 0;
   let leasedTasks = 0;
   let leaseRounds = 0;
+  const tickConcurrency = resolveTickConcurrency();
   const results: Array<Record<string, unknown>> = [];
   while (
     leaseRounds < MAX_LEASE_ROUNDS_PER_TICK &&
@@ -641,44 +700,21 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     const leased = await leasePendingTasks(MAX_TASKS_PER_TICK);
     if (leased.length === 0) break;
     leasedTasks += leased.length;
-    for (const task of leased) {
-      try {
-        const result = await processTask(requestUrl, task, workerSecret);
-        results.push(result);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown queue task error';
-        const now = new Date();
-        await db().$transaction(async (tx: any) => {
-          await tx.inforSyncTask.update({
-            where: { id: task.id },
-            data: {
-              status: 'failed',
-              attemptCount: Math.max(0, Number(task.attemptCount || 0)) + 1,
-              finishedAt: now,
-              updatedAt: now,
-              lastError: message,
-              leaseOwner: null,
-              leaseExpiresAt: null,
-            },
-          });
-          await tx.inforSyncRun.update({
-            where: { id: task.runId },
-            data: {
-              status: 'failed',
-              updatedAt: now,
-              finishedAt: now,
-              lastError: message,
-              message: 'Background queue worker failed on task execution.',
-            },
-          });
-        });
-        await notifyQueueRunFailure(
-          task.companyId,
-          (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
-          'Infor async queue worker task execution failed',
-          String(message).slice(0, 500)
-        );
-        results.push({ runId: task.runId, taskId: task.id, status: 'failed', details: message });
+    for (let index = 0; index < leased.length; index += tickConcurrency) {
+      const batch = leased.slice(index, index + tickConcurrency);
+      const settled = await Promise.allSettled(batch.map((task) => processTask(requestUrl, task, workerSecret)));
+      for (let resultIndex = 0; resultIndex < settled.length; resultIndex += 1) {
+        const settledResult = settled[resultIndex];
+        const task = batch[resultIndex];
+        if (settledResult.status === 'fulfilled') {
+          results.push(settledResult.value);
+        } else {
+          const message =
+            settledResult.reason instanceof Error
+              ? settledResult.reason.message
+              : 'Unknown queue task error';
+          results.push(await markTaskExecutionFailure(task, message));
+        }
       }
     }
   }
@@ -688,6 +724,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     promotedRuns,
     leasedTasks,
     leaseRounds,
+    tickConcurrency,
     elapsedMs: Date.now() - tickStartedAt,
     results,
   };
