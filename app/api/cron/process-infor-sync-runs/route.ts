@@ -88,13 +88,25 @@ async function processOneRun(
     body: JSON.stringify(payload),
     cache: 'no-store',
   });
-  const data = await response.json().catch(() => ({}));
+  const rawText = await response.text().catch(() => '');
+  let data: Record<string, unknown> = {};
+  try {
+    data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+  } catch {
+    data = {};
+  }
   const nowIso = new Date().toISOString();
   if (!response.ok || !data?.ok) {
+    const textSnippet = String(rawText || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 280);
     const details =
       Array.isArray(data?.errors) && data.errors.length > 0
         ? data.errors.join(' | ')
-        : data?.details || data?.error || 'Async sync chunk failed';
+        : data?.details ||
+          data?.error ||
+          (textSnippet ? `HTTP ${response.status}: ${textSnippet}` : `HTTP ${response.status}: Async sync chunk failed`);
     const retries = Math.max(0, Number(run.retryCount || 0)) + 1;
     const failed = retries >= MAX_RETRIES_PER_RUN;
     if (failed && run.mode === 'business_day_backfill') {
