@@ -10,8 +10,10 @@ const LEASE_SECONDS = 120;
 const DEFAULT_MAX_ATTEMPTS = 6;
 const MAX_LEASE_ROUNDS_PER_TICK = 12;
 const TICK_TIME_BUDGET_MS = 55_000;
-const DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE = 3;
+const DEFAULT_DAILY_OVERLAP_PROGRAM_BATCH_SIZE = 2;
+const DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE = 4;
 const DEFAULT_TICK_CONCURRENCY = 4;
+const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 4;
 
 type QueueRunRecord = {
   id: string;
@@ -65,15 +67,31 @@ function resolveBackfillProgramBatchSize(): number {
   return Math.min(8, Math.max(1, Math.floor(raw)));
 }
 
+function resolveDailyOverlapProgramBatchSize(): number {
+  const raw = Number(
+    process.env.INFOR_SYNC_DAILY_OVERLAP_PROGRAM_BATCH_SIZE || DEFAULT_DAILY_OVERLAP_PROGRAM_BATCH_SIZE
+  );
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_DAILY_OVERLAP_PROGRAM_BATCH_SIZE;
+  return Math.min(6, Math.max(1, Math.floor(raw)));
+}
+
 function resolveTickConcurrency(): number {
   const raw = Number(process.env.INFOR_SYNC_TICK_CONCURRENCY || DEFAULT_TICK_CONCURRENCY);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TICK_CONCURRENCY;
   return Math.min(MAX_TASKS_PER_TICK, Math.max(1, Math.floor(raw)));
 }
 
+function resolveMaxInflightPerScope(): number {
+  const raw = Number(process.env.INFOR_SYNC_MAX_INFLIGHT_PER_SCOPE || DEFAULT_MAX_INFLIGHT_PER_SCOPE);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_MAX_INFLIGHT_PER_SCOPE;
+  return Math.min(12, Math.max(1, Math.floor(raw)));
+}
+
 function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
   if (String(run.platform) !== 'INFOR_M3') return 1;
-  if (String(run.mode || '') === 'business_day_backfill') return resolveBackfillProgramBatchSize();
+  const mode = String(run.mode || '');
+  if (mode === 'business_day_backfill' || mode === 'backfill') return resolveBackfillProgramBatchSize();
+  if (mode === 'daily_overlap') return resolveDailyOverlapProgramBatchSize();
   return 1;
 }
 
@@ -295,9 +313,40 @@ export async function cancelQueueRun(
   return { cancelled: true, run: (updated as QueueRunRecord) || null };
 }
 
+function getRunModePriority(mode: string | null): number {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (normalized === 'daily_overlap') return 0;
+  if (normalized === 'manual') return 1;
+  if (normalized === 'business_day_backfill' || normalized === 'backfill') return 2;
+  return 3;
+}
+
+function getScopeKey(companyId: string, platform: string): string {
+  return `${companyId}:${platform}`;
+}
+
 async function leasePendingTasks(limit: number): Promise<Array<QueueTaskRecord & { run: QueueRunRecord }>> {
   const now = new Date();
   const leaseOwner = `cron-${randomUUID().slice(0, 8)}`;
+  const maxInflightPerScope = resolveMaxInflightPerScope();
+  const activeLeases = (await db().inforSyncTask.findMany({
+    where: {
+      status: 'leased',
+      leaseExpiresAt: { gt: now },
+    },
+    include: {
+      run: {
+        select: { companyId: true, platform: true },
+      },
+    },
+    take: 1000,
+  })) as Array<{ run: { companyId: string; platform: string } }>;
+  const inflightByScope = new Map<string, number>();
+  for (const lease of activeLeases) {
+    const key = getScopeKey(String(lease.run.companyId), String(lease.run.platform));
+    inflightByScope.set(key, (inflightByScope.get(key) || 0) + 1);
+  }
+
   const candidates = (await db().inforSyncTask.findMany({
     where: {
       status: 'pending',
@@ -307,11 +356,20 @@ async function leasePendingTasks(limit: number): Promise<Array<QueueTaskRecord &
     },
     include: { run: true },
     orderBy: { createdAt: 'asc' },
-    take: limit,
+    take: Math.max(limit * 20, 100),
   })) as Array<QueueTaskRecord & { run: QueueRunRecord }>;
+  const prioritized = candidates.sort((a, b) => {
+    const pa = getRunModePriority(a.run.mode || null);
+    const pb = getRunModePriority(b.run.mode || null);
+    if (pa !== pb) return pa - pb;
+    return new Date(a.run.createdAt).getTime() - new Date(b.run.createdAt).getTime();
+  });
 
   const leased: Array<QueueTaskRecord & { run: QueueRunRecord }> = [];
-  for (const candidate of candidates) {
+  for (const candidate of prioritized) {
+    if (leased.length >= limit) break;
+    const scopeKey = getScopeKey(String(candidate.run.companyId), String(candidate.run.platform));
+    if ((inflightByScope.get(scopeKey) || 0) >= maxInflightPerScope) continue;
     const updated = await db().inforSyncTask.updateMany({
       where: {
         id: candidate.id,
@@ -325,6 +383,7 @@ async function leasePendingTasks(limit: number): Promise<Array<QueueTaskRecord &
     });
     if (Number(updated?.count || 0) === 1) {
       leased.push(candidate);
+      inflightByScope.set(scopeKey, (inflightByScope.get(scopeKey) || 0) + 1);
     }
   }
   return leased;

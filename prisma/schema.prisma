@@ -540,7 +540,9 @@ model InforSyncTask {
   run           InforSyncRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
   attempts      InforSyncTaskAttempt[]
 
+  @@index([runId, status])
   @@index([runId, status, availableAt])
+  @@index([status, leaseExpiresAt])
   @@index([status, availableAt, leaseExpiresAt])
   @@index([companyId, status, createdAt(sort: Desc)])
 }
