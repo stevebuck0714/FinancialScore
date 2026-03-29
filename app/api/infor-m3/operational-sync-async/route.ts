@@ -41,6 +41,15 @@ function normalizeIsoDate(value: unknown): string | undefined {
   return parsed.toISOString();
 }
 
+function monthsBetweenInclusive(startIso: string, endIso: string): number {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 1;
+  const years = end.getUTCFullYear() - start.getUTCFullYear();
+  const months = end.getUTCMonth() - start.getUTCMonth();
+  return Math.max(1, years * 12 + months + 1);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -94,7 +103,7 @@ export async function POST(request: NextRequest) {
 
     const frequency = normalizeFrequency(body.frequency);
     const site = String(body.site || '').trim() || undefined;
-    const mode = normalizeMode(body.mode);
+    let mode = normalizeMode(body.mode);
     const backfillMonths = normalizePositiveInt(body.backfillMonths);
     const lookbackDays = normalizePositiveInt(body.lookbackDays);
     const startDate = normalizeIsoDate(body.startDate);
@@ -116,6 +125,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Large CSI backfills can exceed per-request limits if run as broad windows.
+    // Force resilient business-day chunking for daily CSI history runs.
+    let effectiveBackfillMonths = backfillMonths;
+    if (inforSystem === 'INFOR_CSI' && frequency === 'daily') {
+      const requestedMode = mode;
+      const looksLikeLargeManualWindow =
+        requestedMode === 'manual' &&
+        Boolean(startDate && endDate) &&
+        monthsBetweenInclusive(startDate as string, endDate as string) >= 2;
+      const isLargeBackfillMode = requestedMode === 'backfill';
+      const isImplicitHistory = !requestedMode && typeof backfillMonths === 'number' && backfillMonths >= 2;
+      if (isLargeBackfillMode || looksLikeLargeManualWindow || isImplicitHistory) {
+        mode = 'business_day_backfill';
+        if (!effectiveBackfillMonths) {
+          effectiveBackfillMonths =
+            startDate && endDate
+              ? monthsBetweenInclusive(startDate, endDate)
+              : 36;
+        }
+      }
+    }
+
     const nowIso = new Date().toISOString();
     const run: InforOperationalAsyncRun = {
       syncRunId: randomUUID(),
@@ -124,7 +155,7 @@ export async function POST(request: NextRequest) {
       frequency,
       site,
       mode,
-      backfillMonths,
+      backfillMonths: effectiveBackfillMonths,
       lookbackDays,
       startDate,
       endDate,

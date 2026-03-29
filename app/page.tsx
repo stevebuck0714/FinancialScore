@@ -95,12 +95,14 @@ type InforOperationalSyncStatus = {
   companyId: string;
   syncRunId: string;
   state: 'running' | 'done' | 'failed';
+  runMode: 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill' | null;
   chunkCount: number;
   recordsCreated: number;
   warningCount: number;
   lastChunkAt: string | null;
   lastStatusText: string | null;
   message: string | null;
+  lastError: string | null;
   recentlyActive: boolean;
 };
 
@@ -2119,6 +2121,16 @@ function FinancialScorePage() {
         const apiLastChunkAt =
           typeof data.lastChunkAt === 'string' && data.lastChunkAt.trim().length > 0 ? data.lastChunkAt : null;
         const apiRecentlyActive = data.recentlyActive === true;
+        const apiRunMode =
+          typeof data.runMode === 'string' && data.runMode.trim().length > 0
+            ? (data.runMode.trim() as InforOperationalSyncStatus['runMode'])
+            : null;
+        const apiRunMessage =
+          typeof data.runMessage === 'string' && data.runMessage.trim().length > 0 ? data.runMessage.trim() : null;
+        const apiRunLastError =
+          typeof data.runLastError === 'string' && data.runLastError.trim().length > 0
+            ? data.runLastError.trim()
+            : null;
         const lastChunkTimeMs = apiLastChunkAt
           ? new Date(apiLastChunkAt).getTime()
           : (currentStatus.lastChunkAt ? new Date(currentStatus.lastChunkAt).getTime() : NaN);
@@ -2146,11 +2158,14 @@ function FinancialScorePage() {
           return {
             ...prev,
             state: nextState,
+            runMode: apiRunMode || prev.runMode || null,
             chunkCount: Math.max(prev.chunkCount, apiChunkCount),
             recordsCreated: Math.max(prev.recordsCreated, apiRecordsCreated),
             warningCount: Math.max(prev.warningCount, apiWarningCount),
             lastChunkAt: apiLastChunkAt || prev.lastChunkAt,
             lastStatusText: apiLastStatusText || prev.lastStatusText,
+            message: apiRunMessage || prev.message,
+            lastError: apiRunLastError || prev.lastError,
             recentlyActive: apiRecentlyActive,
           };
         });
@@ -5897,12 +5912,14 @@ function FinancialScorePage() {
       companyId,
       syncRunId: '',
       state: 'running',
+      runMode: null,
       chunkCount: 0,
       recordsCreated: 0,
       warningCount: 0,
       lastChunkAt: new Date().toISOString(),
       lastStatusText: null,
       message: null,
+      lastError: null,
       recentlyActive: true,
     });
     try {
@@ -5954,12 +5971,17 @@ function FinancialScorePage() {
               ...prev,
               syncRunId,
               state: 'running',
+              runMode:
+                typeof run?.mode === 'string' && run.mode.trim().length > 0
+                  ? (run.mode.trim() as InforOperationalSyncStatus['runMode'])
+                  : prev.runMode,
               chunkCount: Math.max(0, Number(run?.chunkCount || 0)),
               recordsCreated: Math.max(0, Number(run?.recordsCreated || 0)),
               warningCount: Math.max(0, Number(run?.warningCount || 0)),
               lastChunkAt: run?.lastChunkAt || new Date().toISOString(),
               lastStatusText: 'running',
               message: String(data?.message || run?.message || 'Background sync started.'),
+              lastError: null,
               recentlyActive: true,
             }
           : prev
@@ -5974,6 +5996,7 @@ function FinancialScorePage() {
               ...prev,
               state: 'failed',
               message,
+              lastError: message,
               lastStatusText: 'failed',
               lastChunkAt: new Date().toISOString(),
               recentlyActive: false,

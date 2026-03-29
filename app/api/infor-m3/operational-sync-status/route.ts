@@ -79,6 +79,8 @@ export async function GET(request: NextRequest) {
       recentlyActive,
       runStatus: runMatches?.status || null,
       runMessage: runMatches?.message || null,
+      runLastError: runMatches?.lastError || null,
+      runMode: runMatches?.mode || null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

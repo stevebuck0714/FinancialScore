@@ -158,6 +158,7 @@ export default function SiteAdminDashboard(props: any) {
   const renderInforSyncStatusPanel = (companyId: string) => {
     const status = inforOperationalSyncStatus;
     if (!status || status.companyId !== companyId) return null;
+    const isAutoChunkedBackfill = status.runMode === 'business_day_backfill';
     const stateColors =
       status.state === 'running'
         ? { text: '#0f766e', border: '#99f6e4', bg: '#f0fdfa' }
@@ -170,6 +171,23 @@ export default function SiteAdminDashboard(props: any) {
         <div style={{ fontSize: '12px', fontWeight: 700, color: stateColors.text, marginBottom: '4px' }}>
           Sync Status: {stateLabel}
         </div>
+        {isAutoChunkedBackfill && (
+          <div
+            style={{
+              display: 'inline-block',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#0f766e',
+              background: '#ccfbf1',
+              border: '1px solid #5eead4',
+              borderRadius: '999px',
+              padding: '2px 8px',
+              marginBottom: '6px',
+            }}
+          >
+            AUTO-CHUNKED BACKFILL ACTIVE
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', fontSize: '11px', color: '#334155' }}>
           <div><strong>Run ID:</strong> {status.syncRunId || 'Pending...'}</div>
           <div><strong>Chunks:</strong> {Number(status.chunkCount || 0).toLocaleString('en-US')}</div>
@@ -179,6 +197,11 @@ export default function SiteAdminDashboard(props: any) {
         {status.message && (
           <div style={{ fontSize: '11px', color: stateColors.text, marginTop: '4px' }}>
             {status.message}
+          </div>
+        )}
+        {status.state === 'failed' && status.lastError && (
+          <div style={{ fontSize: '11px', color: '#7f1d1d', marginTop: '4px' }}>
+            Error: {status.lastError}
           </div>
         )}
       </div>
