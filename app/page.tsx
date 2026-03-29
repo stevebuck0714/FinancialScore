@@ -1967,6 +1967,8 @@ function FinancialScorePage() {
   
   // State - QuickBooks Raw Data
   const [qbRawData, setQbRawData] = useState<any>(null);
+  const [accountReviewRawData, setAccountReviewRawData] = useState<any>(null);
+  const [accountReviewApiValues, setAccountReviewApiValues] = useState<Record<string, number>>({});
   const companyLoadRequestRef = useRef(0);
   const sdeRecommendationsRequestRef = useRef(0);
   const [dataRefreshKey, setDataRefreshKey] = useState(0);
@@ -3375,6 +3377,8 @@ function FinancialScorePage() {
         setLoadedMonthlyData([]);
         setLatestFinancialSource(null);
         setQbRawData(null);
+        setAccountReviewRawData(null);
+        setAccountReviewApiValues({});
         setCsvTrialBalanceData(null);
         setHasSavedCsvInLocalStorage(false);
         setRawRows([]);
@@ -3424,6 +3428,8 @@ function FinancialScorePage() {
             console.error(`?? SECURITY BLOCK: latest record company mismatch. Selected: ${selectedCompanyId}, Record company: ${latestRecord.companyId}`);
             setLoadedMonthlyData([]);
             setQbRawData(null);
+            setAccountReviewRawData(null);
+            setAccountReviewApiValues({});
             setLatestFinancialSource(null);
             return;
           }
@@ -3434,6 +3440,11 @@ function FinancialScorePage() {
             selectedCompany?.accountingSystem,
           );
           setLatestFinancialSource(resolvedSource);
+          setAccountReviewRawData(
+            latestRecord.rawData && typeof latestRecord.rawData === 'object' && !Array.isArray(latestRecord.rawData)
+              ? latestRecord.rawData
+              : null
+          );
           
           // Check if this is QuickBooks data and extract raw QB financial statements
           if (latestRecord.rawData && typeof latestRecord.rawData === 'object' && 
@@ -3851,6 +3862,48 @@ function FinancialScorePage() {
     
     loadCompanyData();
   }, [selectedCompanyId, currentUser, qbLastSync]);
+
+  useEffect(() => {
+    const selectedCompany = Array.isArray(companies)
+      ? companies.find((c) => c.id === selectedCompanyId)
+      : undefined;
+    const system = String(selectedCompany?.accountingSystem || '').toUpperCase();
+    if (!selectedCompanyId || !currentUser || !['INFOR_M3', 'INFOR_CSI'].includes(system)) {
+      setAccountReviewApiValues({});
+      return;
+    }
+    const targetMonth = /^\d{4}-\d{2}$/.test(String(apiFinancialTargetMonth || '').trim())
+      ? String(apiFinancialTargetMonth).trim()
+      : '';
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch(
+          `/api/account-review/latest-values?companyId=${encodeURIComponent(selectedCompanyId)}&targetMonth=${encodeURIComponent(targetMonth)}`,
+          { cache: 'no-store' },
+        );
+        const data = await response.json();
+        if (cancelled) return;
+        const values = data?.values && typeof data.values === 'object' && !Array.isArray(data.values)
+          ? (data.values as Record<string, unknown>)
+          : {};
+        const normalized: Record<string, number> = {};
+        Object.entries(values).forEach(([key, value]) => {
+          const num = typeof value === 'number' ? value : Number(value);
+          if (Number.isFinite(num)) normalized[key] = num;
+        });
+        setAccountReviewApiValues(normalized);
+      } catch (error) {
+        if (cancelled) return;
+        console.warn('Failed to load account review latest values', error);
+        setAccountReviewApiValues({});
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId, currentUser, companies, apiFinancialTargetMonth]);
 
 
   // Track which consultant's companies are currently loaded
@@ -11927,10 +11980,125 @@ function FinancialScorePage() {
 
                           const plValues = qbRawData?.profitAndLoss ? collectLatestValues(qbRawData.profitAndLoss) : new Map<string, number>();
                           const bsValues = qbRawData?.balanceSheet ? collectLatestValues(qbRawData.balanceSheet) : new Map<string, number>();
+                          const collectLatestValuesFromInforPayload = (
+                            rawFinancial: any,
+                            targetMonthLabel: string | null
+                          ): Map<string, number> => {
+                            const valueByKey = new Map<string, number>();
+                            const normalizeNumber = (value: unknown): number => {
+                              if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+                              const parsed = Number(String(value || '').replace(/,/g, '').trim());
+                              return Number.isFinite(parsed) ? parsed : 0;
+                            };
+                            const readAny = (record: Record<string, unknown>, keys: string[]): unknown => {
+                              for (const key of keys) {
+                                if (key in record) return record[key];
+                              }
+                              const lower = new Map<string, unknown>();
+                              Object.entries(record).forEach(([k, v]) => lower.set(k.toLowerCase(), v));
+                              for (const key of keys) {
+                                const value = lower.get(key.toLowerCase());
+                                if (value !== undefined) return value;
+                              }
+                              return undefined;
+                            };
+                            const toYearMonth = (value: unknown): string | null => {
+                              const raw = String(value || '').trim();
+                              if (!raw) return null;
+                              const match = raw.match(/^(\d{4})-(\d{2})/);
+                              if (match) return `${match[1]}-${match[2]}`;
+                              const compact = raw.match(/^(\d{4})(\d{2})$/);
+                              if (compact) return `${compact[1]}-${compact[2]}`;
+                              const parsed = new Date(raw);
+                              if (Number.isNaN(parsed.getTime())) return null;
+                              return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+                            };
+                            const targetMonth = (() => {
+                              const picked = String(apiFinancialTargetMonth || '').trim();
+                              if (/^\d{4}-\d{2}$/.test(picked)) return picked;
+                              const label = String(targetMonthLabel || '').trim();
+                              const m = label.match(/^(\d{2})\/(\d{4})$/);
+                              return m ? `${m[2]}-${m[1]}` : null;
+                            })();
+                            const rawPayload =
+                              rawFinancial?.payload && typeof rawFinancial.payload === 'object' && !Array.isArray(rawFinancial.payload)
+                                ? rawFinancial.payload
+                                : rawFinancial;
+                            if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+                              return valueByKey;
+                            }
+                            const glResponses = Array.isArray((rawPayload as any).glResponses) ? (rawPayload as any).glResponses : [];
+                            const accountAccumulator = new Map<string, number>();
+                            glResponses.forEach((entry: any) => {
+                              if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
+                              const response =
+                                entry.response && typeof entry.response === 'object' && !Array.isArray(entry.response)
+                                  ? entry.response
+                                  : null;
+                              const items = Array.isArray(response?.Items) ? response.Items : [];
+                              items.forEach((item: any) => {
+                                if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+                                const row = item as Record<string, unknown>;
+                                const acct = String(
+                                  readAny(row, ['Acct', 'AcctNum', 'Account', 'account', 'accountId', 'accountCode']) || ''
+                                ).trim();
+                                if (!acct) return;
+                                const year = normalizeNumber(readAny(row, ['ControlYear', 'controlYear', 'FiscalYear', 'fiscalYear']));
+                                const period = normalizeNumber(readAny(row, ['ControlPeriod', 'controlPeriod', 'FiscalPeriod', 'fiscalPeriod']));
+                                const rowMonth =
+                                  year >= 1900 && period >= 1 && period <= 12
+                                    ? `${Math.trunc(year)}-${String(Math.trunc(period)).padStart(2, '0')}`
+                                    : toYearMonth(
+                                        readAny(row, ['PeriodEndDate', 'periodEndDate', 'RecordDate', 'recordDate', 'TransDate', 'transDate', 'Date', 'date'])
+                                      );
+                                if (targetMonth && rowMonth && rowMonth !== targetMonth) return;
+                                const amount = normalizeNumber(
+                                  readAny(row, [
+                                    'EndBalance',
+                                    'endBalance',
+                                    'EndingBalance',
+                                    'endingBalance',
+                                    'Balance',
+                                    'balance',
+                                    'PeriodEndBalance',
+                                    'periodEndBalance',
+                                    'YtdBalance',
+                                    'ytdBalance',
+                                    'ACAM',
+                                    'Amount',
+                                    'amount',
+                                    'DomAmount',
+                                    'domAmount',
+                                  ])
+                                );
+                                accountAccumulator.set(acct, Number(accountAccumulator.get(acct) || 0) + amount);
+                                const name = String(
+                                  readAny(row, ['Description', 'description', 'AcctDesc', 'accountName', 'Name', 'name']) || ''
+                                )
+                                  .trim()
+                                  .toLowerCase();
+                                if (name) valueByKey.set(`name:${name}`, amount);
+                              });
+                            });
+                            accountAccumulator.forEach((amount, acct) => {
+                              valueByKey.set(`id:${String(acct).trim()}`, amount);
+                              const normalized = normalizeAccountCodeForMatch(acct);
+                              if (normalized) valueByKey.set(`id:${normalized}`, amount);
+                            });
+                            return valueByKey;
+                          };
+                          const inforValues = collectLatestValuesFromInforPayload(accountReviewRawData, latestAccountReviewMonthLabel);
+                          const apiInforValues = new Map<string, number>();
+                          Object.entries(accountReviewApiValues || {}).forEach(([key, value]) => {
+                            const num = typeof value === 'number' ? value : Number(value);
+                            if (Number.isFinite(num)) apiInforValues.set(key, num);
+                          });
 
                           const mergedValues = new Map<string, number>([
                             ...Array.from(plValues.entries()),
                             ...Array.from(bsValues.entries()),
+                            ...Array.from(inforValues.entries()),
+                            ...Array.from(apiInforValues.entries()),
                           ]);
                           const latestMasterMonthRow = (() => {
                             const masterRows = Array.isArray((masterData as any)?.monthlyData)
@@ -12030,13 +12198,14 @@ function FinancialScorePage() {
                           : aiMappings.map((mapping: any, idx: number) => {
                               const byId = mapping.qbAccountId ? mergedValues.get(`id:${String(mapping.qbAccountId).trim()}`) : undefined;
                               const byCode = mapping.qbAccountCode ? mergedValues.get(`id:${String(mapping.qbAccountCode).trim()}`) : undefined;
+                              const normalizedCode = normalizeAccountCodeForMatch(mapping.qbAccountCode || mapping.qbAccountId);
+                              const byNormalizedCode = normalizedCode ? mergedValues.get(`id:${normalizedCode}`) : undefined;
                               const byName = mapping.qbAccount ? mergedValues.get(`name:${String(mapping.qbAccount).toLowerCase().trim()}`) : undefined;
-                              const byTargetField = getLatestValueByTargetField(mapping.targetField, mapping.qbAccountClassification);
                               const latestValue =
                                 byId !== undefined ? byId :
                                 byCode !== undefined ? byCode :
+                                byNormalizedCode !== undefined ? byNormalizedCode :
                                 byName !== undefined ? byName :
-                                byTargetField !== undefined ? byTargetField :
                                 null;
                               return (
                               <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -12098,7 +12267,7 @@ function FinancialScorePage() {
                       </p>
                     ) : (
                       <p style={{ fontSize: '12px', color: '#0369a1', margin: 0, fontWeight: '500' }}>
-                        ℹ️ Showing mapped accounts from {mappedApiSourceLabel}. Latest-value amounts are shown using the latest imported API month when available.
+                        ℹ️ Showing mapped accounts from {mappedApiSourceLabel}. Latest-value amounts are account-level matches (ID/code/name) for the latest imported API month.
                       </p>
                     )}
                     <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 0 0' }}>

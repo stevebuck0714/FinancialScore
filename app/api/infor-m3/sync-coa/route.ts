@@ -4,6 +4,7 @@ import { requireCompanyAccess } from '@/lib/tenant-security';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsForCompany } from '@/lib/infor-m3/credentials';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
+import { seedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,7 @@ type ProgramRow = {
   module: string;
   miProgram: string;
   endpointPath?: string;
+  mongooseConfig?: string;
   enabled?: boolean;
 };
 
@@ -21,6 +23,7 @@ function parsePrograms(value: unknown): ProgramRow[] {
       module: typeof row?.module === 'string' ? row.module.trim() : '',
       miProgram: typeof row?.miProgram === 'string' ? row.miProgram.trim() : '',
       endpointPath: typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '',
+      mongooseConfig: typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '',
       enabled: row?.enabled !== false,
     }))
     .filter((row) => row.enabled && (row.module.length > 0 || row.miProgram.length > 0 || (row.endpointPath || '').length > 0));
@@ -45,7 +48,7 @@ function resolveProgramsForSystem(
 
 function selectAccountsSource(
   programRows: ProgramRow[]
-): { type: 'endpoint' | 'mi'; value: string; sourceModule: string } | null {
+): { type: 'endpoint' | 'mi'; value: string; sourceModule: string; mongooseConfig?: string } | null {
   // Preferred for CSI: explicit Accounts endpoint path.
   const accountsEndpoint = programRows.find((row) => {
     const module = String(row.module || '').toLowerCase();
@@ -53,7 +56,12 @@ function selectAccountsSource(
     return endpoint.length > 0 && (module === 'accounts' || module.includes('account'));
   });
   if (accountsEndpoint?.endpointPath) {
-    return { type: 'endpoint', value: accountsEndpoint.endpointPath, sourceModule: 'Accounts' };
+    return {
+      type: 'endpoint',
+      value: accountsEndpoint.endpointPath,
+      sourceModule: 'Accounts',
+      mongooseConfig: accountsEndpoint.mongooseConfig || undefined,
+    };
   }
 
   // Legacy path: Accounts MI program.
@@ -67,7 +75,12 @@ function selectAccountsSource(
       .map((part) => part.trim())
       .filter(Boolean);
     if (programs[0]) {
-      return { type: 'mi', value: programs[0], sourceModule: 'Accounts' };
+      return {
+        type: 'mi',
+        value: programs[0],
+        sourceModule: 'Accounts',
+        mongooseConfig: accountsMi.mongooseConfig || undefined,
+      };
     }
   }
 
@@ -80,7 +93,12 @@ function selectAccountsSource(
     return false;
   });
   if (glChartsEndpoint?.endpointPath) {
-    return { type: 'endpoint', value: glChartsEndpoint.endpointPath, sourceModule: 'GL' };
+    return {
+      type: 'endpoint',
+      value: glChartsEndpoint.endpointPath,
+      sourceModule: 'GL',
+      mongooseConfig: glChartsEndpoint.mongooseConfig || undefined,
+    };
   }
 
   // Last-resort fallback: if any configured endpoint clearly points to SLCharts, use it.
@@ -88,7 +106,12 @@ function selectAccountsSource(
     String(row.endpointPath || '').toLowerCase().includes('/slcharts')
   );
   if (anySlChartsEndpoint?.endpointPath) {
-    return { type: 'endpoint', value: anySlChartsEndpoint.endpointPath, sourceModule: anySlChartsEndpoint.module || 'GL' };
+    return {
+      type: 'endpoint',
+      value: anySlChartsEndpoint.endpointPath,
+      sourceModule: anySlChartsEndpoint.module || 'GL',
+      mongooseConfig: anySlChartsEndpoint.mongooseConfig || undefined,
+    };
   }
 
   return null;
@@ -124,6 +147,17 @@ function safeRecordCount(body: unknown): number {
   }
 
   return 0;
+}
+
+function isPayloadSuccess(body: unknown): boolean {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return true;
+  const data = body as Record<string, unknown>;
+  if (typeof data.Success === 'boolean') return data.Success;
+  if (data.response && typeof data.response === 'object' && !Array.isArray(data.response)) {
+    const nested = data.response as Record<string, unknown>;
+    if (typeof nested.Success === 'boolean') return nested.Success;
+  }
+  return true;
 }
 
 export async function GET(request: NextRequest) {
@@ -248,17 +282,46 @@ export async function POST(request: NextRequest) {
       selectedSource.type === 'endpoint'
         ? selectedSource.value
         : `/${credentials.tenantId}/M3/m3api-rest/execute/${selectedSource.value}`;
-    const result = await callInforIonApi(credentials, endpointPath, { timeoutMs: 20000 });
+    const headers =
+      selectedSource.mongooseConfig
+        ? { 'X-Infor-MongooseConfig': selectedSource.mongooseConfig }
+        : undefined;
+    const result = await callInforIonApi(credentials, endpointPath, { timeoutMs: 20000, headers });
 
-    const statusText = result.ok ? 'success' : 'error';
-    const imported = result.ok ? safeRecordCount(result.body) : 0;
+    const effectiveOk = result.ok && isPayloadSuccess(result.body);
+    const statusText = effectiveOk ? 'success' : 'error';
+    const imported = effectiveOk ? safeRecordCount(result.body) : 0;
     const pulledAtIso = new Date().toISOString();
     const payloadMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiFinancialPayload' : 'inforM3FinancialPayload';
+    const seedLastRunAtMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedLastRunAt' : 'inforM3AccountSeedLastRunAt';
+    const seedSummaryMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedSummary' : 'inforM3AccountSeedSummary';
+    const seedSnapshotMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedSnapshot' : 'inforM3AccountSeedSnapshot';
+    const seedActiveIdsMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiActiveAccountIds' : 'inforM3ActiveAccountIds';
 
     const nextMetadata: Record<string, unknown> = {
       ...metadata,
     };
-    if (result.ok) {
+    let seedSummary:
+      | {
+          extracted: number;
+          created: number;
+          updated: number;
+          unchanged: number;
+          inactive: number;
+          newAccounts: string[];
+          changedAccounts: string[];
+          inactiveAccounts: string[];
+          activeAccountIds: string[];
+          accountSnapshot: Array<{
+            accountId: string;
+            accountName: string;
+            accountCode: string | null;
+            classification: string | null;
+          }>;
+        }
+      | null = null;
+    let seedWarning: string | null = null;
+    if (effectiveOk) {
       const normalizedPayload: Record<string, unknown> = {
         source: 'monthly_coa_pull',
         pulledAt: pulledAtIso,
@@ -281,6 +344,25 @@ export async function POST(request: NextRequest) {
         ];
       }
       nextMetadata[payloadMetadataKey] = normalizedPayload;
+      try {
+        // Keep CSI/M3 load deterministic: COA pull immediately updates mapping seed snapshot.
+        seedSummary = await seedInforAccountMappings(companyId, normalizedPayload);
+        nextMetadata[seedLastRunAtMetadataKey] = pulledAtIso;
+        nextMetadata[seedSummaryMetadataKey] = {
+          extracted: seedSummary.extracted,
+          created: seedSummary.created,
+          updated: seedSummary.updated,
+          unchanged: seedSummary.unchanged,
+          inactive: seedSummary.inactive,
+        };
+        nextMetadata[seedSnapshotMetadataKey] = seedSummary.accountSnapshot;
+        nextMetadata[seedActiveIdsMetadataKey] = seedSummary.activeAccountIds;
+      } catch (seedError) {
+        seedWarning =
+          seedError instanceof Error
+            ? `Account mapping seed failed: ${seedError.message}`
+            : 'Account mapping seed failed with unknown error';
+      }
     }
 
     await prisma.apiSyncLog.create({
@@ -290,8 +372,8 @@ export async function POST(request: NextRequest) {
         syncType: 'monthly_coa_pull',
         status: statusText,
         recordsImported: imported,
-        errorCount: result.ok ? 0 : 1,
-        errorDetails: result.ok
+        errorCount: effectiveOk ? 0 : 1,
+        errorDetails: effectiveOk
           ? {
               pulledByEmail: context.email,
               program: selectedSource.type === 'mi' ? selectedSource.value : null,
@@ -310,6 +392,50 @@ export async function POST(request: NextRequest) {
             },
       },
     });
+    if (seedWarning) {
+      await prisma.apiSyncLog
+        .create({
+          data: {
+            companyId,
+            platform: 'INFOR_M3',
+            syncType: 'infor_account_mapping_seed',
+            status: 'error',
+            recordsImported: 0,
+            errorCount: 1,
+            errorDetails: {
+              warning: seedWarning,
+              sourceType: selectedSource?.type || null,
+              sourceModule: selectedSource?.sourceModule || null,
+              endpointPath,
+              pulledByEmail,
+            },
+          },
+        })
+        .catch(() => undefined);
+    } else if (seedSummary) {
+      await prisma.apiSyncLog
+        .create({
+          data: {
+            companyId,
+            platform: 'INFOR_M3',
+            syncType: 'infor_account_mapping_seed',
+            status: 'success',
+            recordsImported: seedSummary.created + seedSummary.updated,
+            errorCount: 0,
+            errorDetails: {
+              extracted: seedSummary.extracted,
+              created: seedSummary.created,
+              updated: seedSummary.updated,
+              unchanged: seedSummary.unchanged,
+              inactive: seedSummary.inactive,
+              newAccounts: seedSummary.newAccounts,
+              changedAccounts: seedSummary.changedAccounts,
+              inactiveAccounts: seedSummary.inactiveAccounts,
+            },
+          },
+        })
+        .catch(() => undefined);
+    }
 
     await prisma.accountingConnection.upsert({
       where: {
@@ -321,25 +447,25 @@ export async function POST(request: NextRequest) {
       update: {
         connectionMetadata: nextMetadata as any,
         lastSyncAt: new Date(),
-        status: result.ok ? 'ACTIVE' : 'ERROR',
-        errorMessage: result.ok ? null : 'Monthly COA pull failed. Check API sync log details.',
+        status: effectiveOk ? 'ACTIVE' : 'ERROR',
+        errorMessage: effectiveOk ? null : 'Monthly COA pull failed. Check API sync log details.',
       },
       create: {
         companyId,
         platform: 'INFOR_M3',
-        status: result.ok ? 'ACTIVE' : 'ERROR',
+        status: effectiveOk ? 'ACTIVE' : 'ERROR',
         platformVersion: 'ionapi-1.0',
         autoSync: false,
         syncFrequency: 'manual',
         connectionMetadata: nextMetadata as any,
         lastSyncAt: new Date(),
-        errorMessage: result.ok ? null : 'Monthly COA pull failed. Check API sync log details.',
+        errorMessage: effectiveOk ? null : 'Monthly COA pull failed. Check API sync log details.',
       },
     });
 
     return NextResponse.json(
       {
-        ok: result.ok,
+        ok: effectiveOk,
         companyId,
         syncType: 'monthly_coa_pull',
         accountsProgram: selectedSource.type === 'mi' ? selectedSource.value : null,
@@ -348,9 +474,11 @@ export async function POST(request: NextRequest) {
         endpointPath,
         status: result.status,
         recordsImported: imported,
+        accountMappingSeed: seedSummary,
+        accountMappingSeedWarning: seedWarning,
         data: result.body,
       },
-      { status: result.ok ? 200 : result.status }
+      { status: effectiveOk ? 200 : (result.ok ? 502 : result.status) }
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
