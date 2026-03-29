@@ -22,6 +22,9 @@ const RATE_LIMITS = {
   '/api/auth/login': { maxAttempts: 5, windowMs: 15 * 60 * 1000 }, // 5 per 15 minutes
   '/api/auth/reset-password': { maxAttempts: 3, windowMs: 60 * 60 * 1000 }, // 3 per hour
   '/api/payments': { maxAttempts: 3, windowMs: 60 * 60 * 1000 }, // 3 per hour
+  // Sync status polling can be frequent (multiple open admin tabs + background refresh).
+  // Keep protection in place but raise the ceiling to avoid blocking diagnostics in production.
+  '/api/infor-m3/operational-sync-status': { maxAttempts: 600, windowMs: 60 * 1000 }, // 600 per minute
   '/api': { maxAttempts: 100, windowMs: 60 * 1000 }, // 100 per minute (general)
 }
 
@@ -152,7 +155,7 @@ export async function middleware(request: NextRequest) {
           status: 429,
           headers: {
             'Retry-After': retryAfter.toString(),
-            'X-RateLimit-Limit': RATE_LIMITS['/api'].maxAttempts.toString(),
+            'X-RateLimit-Limit': String((Object.entries(RATE_LIMITS).find(([path]) => pathname.startsWith(path) && path !== '/api')?.[1] || RATE_LIMITS['/api']).maxAttempts),
             'X-RateLimit-Remaining': '0',
             'X-RateLimit-Reset': new Date(rateLimit.resetTime).toISOString(),
           }
