@@ -375,10 +375,10 @@ function aggregateForCompanyRollup(
         key,
         { itemName, itemId, sku, quantity: 0, revenue: 0, cogs: 0 },
         (acc) => {
-          acc.quantity =
-            Number(acc.quantity || 0) + pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'InvSeq']);
-          acc.revenue = Number(acc.revenue || 0) + pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA', 'Amount', 'Price', 'ExtPrice']);
-          acc.cogs = Number(acc.cogs || 0) + pickNumber(record, ['cogs', 'costOfGoods', 'COGS', 'Cost', 'UnitCost']);
+          const metrics = deriveSalesMetrics(record);
+          acc.quantity = Number(acc.quantity || 0) + metrics.quantity;
+          acc.revenue = Number(acc.revenue || 0) + metrics.revenue;
+          acc.cogs = Number(acc.cogs || 0) + metrics.cogs;
         }
       );
       continue;
@@ -1252,6 +1252,30 @@ const AR_CHARGE_AMOUNT_HOME_KEYS = [
 const AR_REDUCTION_AMOUNT_HOME_KEYS = ['DerPaymentCheckAmount', 'paidAmountHome', 'paidAmount', 'PYAM', 'ACAM', 'CUAM', 'Amount'];
 const AR_CHARGE_AMOUNT_CURRENCY_KEYS = ['amountCurrency', 'invoiceAmount', 'CUAM', 'Amount'];
 const AR_REDUCTION_AMOUNT_CURRENCY_KEYS = ['DerPaymentCheckAmount', 'paidAmount', 'amountCurrency', 'PYAM', 'CUAM', 'Amount'];
+
+const SALES_QTY_KEYS = ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'QtyShipped', 'qtyShipped', 'InvSeq'];
+const SALES_REVENUE_KEYS = ['revenue', 'amount', 'salesAmount', 'NETA', 'Amount', 'Price', 'ExtPrice', 'ExtAmt', 'LineAmount'];
+const SALES_UNIT_PRICE_KEYS = ['unitPrice', 'price', 'Price', 'salesPrice', 'Upri'];
+const SALES_EXT_COST_KEYS = ['ExtCost', 'extendedCost', 'costAmount', 'LineCost', 'CostAmount', 'ExtMatlCost'];
+const SALES_UNIT_COST_KEYS = ['UnitCost', 'unitCost', 'MatlCost', 'Cost'];
+
+function deriveSalesMetrics(record: Record<string, unknown>): { quantity: number; revenue: number; cogs: number } {
+  const quantity = pickNumber(record, SALES_QTY_KEYS);
+  const explicitRevenue = pickNumber(record, SALES_REVENUE_KEYS);
+  const unitPrice = pickNumber(record, SALES_UNIT_PRICE_KEYS);
+  const revenue = explicitRevenue !== 0 ? explicitRevenue : quantity * unitPrice;
+
+  const extCost = pickNumber(record, SALES_EXT_COST_KEYS);
+  const rawUnitCost = pickNumber(record, SALES_UNIT_COST_KEYS);
+  let cogs = 0;
+  if (extCost !== 0) {
+    cogs = extCost;
+  } else if (rawUnitCost !== 0) {
+    cogs = quantity > 0 ? rawUnitCost * quantity : rawUnitCost;
+  }
+
+  return { quantity, revenue, cogs };
+}
 
 function parseCustomerNameFromComposite(value: string | null): string | null {
   if (!value) return null;
@@ -2829,9 +2853,10 @@ async function saveProductSales(
   await prisma.productSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
   const rows = records
     .map((record) => {
-      const quantitySold = pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'InvSeq']);
-      const revenue = pickNumber(record, ['revenue', 'amount', 'salesAmount', 'NETA', 'Amount', 'Price', 'ExtPrice']);
-      const cogs = pickNumber(record, ['cogs', 'costOfGoods', 'COGS', 'Cost', 'UnitCost']);
+      const metrics = deriveSalesMetrics(record);
+      const quantitySold = metrics.quantity;
+      const revenue = metrics.revenue;
+      const cogs = metrics.cogs;
       const grossMargin = revenue - cogs;
       return {
         companyId,

@@ -158,6 +158,8 @@ const toDate = (value: unknown): Date | null => {
   return null;
 };
 
+const MIN_UNITS_FOR_UNIT_METRICS = 3;
+
 export function buildWeeklyProductMarginModel(params: {
   records?: InputRecord[];
   topProducts?: InputTopProduct[];
@@ -382,6 +384,36 @@ export function buildWeeklyProductMarginModel(params: {
     acc.marginPct = acc.netRevenue === 0 ? null : (acc.marginAmount / acc.netRevenue) * 100;
   });
 
+  const fallbackUnitMetricsByEntity: Record<
+    string,
+    { weightedPrice: number | null; weightedCost: number | null }
+  > = {};
+  for (const [entityKey, rowsByWeek] of Object.entries(byEntityWeek)) {
+    let pricedUnits = 0;
+    let pricedRevenue = 0;
+    let costedUnits = 0;
+    let costedCogs = 0;
+    for (const weekStart of selectedWeeks) {
+      const row = rowsByWeek[weekStart];
+      if (!row) continue;
+      const units = Math.max(0, Number(row.units || 0));
+      const revenue = Number(row.netRevenue || 0);
+      const cogs = Number(row.cogs || 0);
+      if (units > 0 && revenue !== 0) {
+        pricedUnits += units;
+        pricedRevenue += revenue;
+      }
+      if (units > 0 && cogs !== 0) {
+        costedUnits += units;
+        costedCogs += cogs;
+      }
+    }
+    fallbackUnitMetricsByEntity[entityKey] = {
+      weightedPrice: pricedUnits >= MIN_UNITS_FOR_UNIT_METRICS ? pricedRevenue / pricedUnits : null,
+      weightedCost: costedUnits >= MIN_UNITS_FOR_UNIT_METRICS ? costedCogs / costedUnits : null,
+    };
+  }
+
   const hasEntitySignal = (row?: ItemWeekRow): boolean =>
     Boolean(
       row &&
@@ -473,31 +505,31 @@ export function buildWeeklyProductMarginModel(params: {
   const status: 'acceptable' | 'warning' | 'investigate' = 'acceptable';
 
   const comparisonRows = Object.entries(byEntityWeek)
-    .map(([_, rowsByWeek]) => {
+    .map(([entityKey, rowsByWeek]) => {
       const current = rowsByWeek[latestWeek];
       const previous = rowsByWeek[priorWeek];
       if (!current) return null;
 
-      const priceThisWeek =
-        current.units > 0
-          ? current.netRevenue / current.units
-          : current.netRevenue !== 0
-            ? current.netRevenue
-            : null;
-      const pricePriorWeek =
-        previous && previous.units > 0
-          ? previous.netRevenue / previous.units
-          : previous && previous.netRevenue !== 0
-            ? previous.netRevenue
-            : null;
-      const costThisWeek =
-        current.units > 0 ? current.cogs / current.units : current.cogs !== 0 ? current.cogs : null;
-      const costPriorWeek =
-        previous && previous.units > 0
-          ? previous.cogs / previous.units
-          : previous && previous.cogs !== 0
-            ? previous.cogs
-            : null;
+      const fallback = fallbackUnitMetricsByEntity[entityKey] || { weightedPrice: null, weightedCost: null };
+      const unitPriceOrFallback = (row?: ItemWeekRow): number | null => {
+        if (!row) return null;
+        if (row.units >= MIN_UNITS_FOR_UNIT_METRICS && row.netRevenue !== 0) return row.netRevenue / row.units;
+        if (row.units > 0 && row.netRevenue !== 0 && fallback.weightedPrice != null) return fallback.weightedPrice;
+        if (row.units > 0 && row.netRevenue !== 0) return row.netRevenue / row.units;
+        return fallback.weightedPrice;
+      };
+      const unitCostOrFallback = (row?: ItemWeekRow): number | null => {
+        if (!row) return null;
+        if (row.units >= MIN_UNITS_FOR_UNIT_METRICS && row.cogs !== 0) return row.cogs / row.units;
+        if (row.units > 0 && row.cogs !== 0 && fallback.weightedCost != null) return fallback.weightedCost;
+        if (row.units > 0 && row.cogs !== 0) return row.cogs / row.units;
+        return fallback.weightedCost;
+      };
+
+      const priceThisWeek = unitPriceOrFallback(current);
+      const pricePriorWeek = unitPriceOrFallback(previous);
+      const costThisWeek = unitCostOrFallback(current);
+      const costPriorWeek = unitCostOrFallback(previous);
       const spreadThisWeek =
         priceThisWeek != null && costThisWeek != null ? priceThisWeek - costThisWeek : null;
       const spreadPriorWeek =
