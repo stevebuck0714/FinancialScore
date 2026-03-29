@@ -2264,6 +2264,32 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const showAccountingWorkflowGuide = (companyName: string) => {
+    const label = String(companyName || 'this company').trim() || 'this company';
+    alert(
+      `Data Load Instructions: ${label}\n\n` +
+      `Initial setup / backfill:\n` +
+      `1) Run Ops Sync Now\n` +
+      `   - Starts background extraction from Infor (chunked run).\n` +
+      `   - Wait for sync status to stop showing Running.\n\n` +
+      `2) Open Data Mapping (client-owned step)\n` +
+      `   - Review account mapping coverage.\n` +
+      `   - Map any unmapped/new accounts.\n\n` +
+      `3) Save mapping changes\n` +
+      `   - Confirm mappings are complete enough for reporting.\n\n` +
+      `4) Run Financial Import\n` +
+      `   - Reprocesses mapping outputs and builds monthly financials through selected month.\n\n` +
+      `5) Validate outputs\n` +
+      `   - Review statements/charts.\n` +
+      `   - If totals look off, update mapping and rerun Financial Import.\n\n` +
+      `Recurring month-end close (client-owned):\n` +
+      `1) Close month in ERP\n` +
+      `2) Review/save Data Mapping\n` +
+      `3) Run Financial Import for closed month/through month\n` +
+      `4) Validate published financials`
+    );
+  };
+
   return (
     <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '20px' }}>
       <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>Site Administration</h1>
@@ -2985,6 +3011,18 @@ export default function SiteAdminDashboard(props: any) {
                                                   <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration</h4>
                                                   <div style={{ fontSize: '12px', color: '#64748b' }}>
                                                     {getAccountingSystemLabel(company.accountingSystem)}
+                                                  </div>
+                                                  <div style={{ marginTop: '8px', padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px' }}>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => showAccountingWorkflowGuide(company.name || 'this company')}
+                                                      style={{ padding: 0, background: 'none', border: 'none', color: '#1d4ed8', fontSize: '12px', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+                                                    >
+                                                      Data Load Instructions
+                                                    </button>
+                                                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#1e3a8a' }}>
+                                                      Includes sync, data mapping, financial import, and month-end close steps.
+                                                    </div>
                                                   </div>
                                                 </div>
                                                 <input
@@ -5388,6 +5426,18 @@ export default function SiteAdminDashboard(props: any) {
                                         <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>Accounting Integration (Site Admin Only)</h4>
                                         <div style={{ fontSize: '12px', color: '#64748b' }}>
                                           {getAccountingSystemLabel(businessCompany.accountingSystem)}
+                                        </div>
+                                        <div style={{ marginTop: '8px', padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px' }}>
+                                          <button
+                                            type="button"
+                                            onClick={() => showAccountingWorkflowGuide(businessCompany.name || 'this company')}
+                                            style={{ padding: 0, background: 'none', border: 'none', color: '#1d4ed8', fontSize: '12px', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+                                          >
+                                            Data Load Instructions
+                                          </button>
+                                          <div style={{ marginTop: '4px', fontSize: '11px', color: '#1e3a8a' }}>
+                                            Includes sync, data mapping, financial import, and month-end close steps.
+                                          </div>
                                         </div>
                                       </div>
                                       <div style={{ width: '100%' }}>

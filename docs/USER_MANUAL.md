@@ -125,6 +125,9 @@ Once a company is selected, you can manage:
 F.  Connect Accounting Data
 Corelytics supports API-based accounting integrations and file uploads, with system-specific configuration in Site Admin.
 
+For month-end processing ownership and required client steps after close, see:
+* G. Data Mapping -> Month-End Close Workflow (Client-Owned)
+
  A) Accounting API Connection
 1. Open the company.
 2. Go to Accounting Integration in Site Admin.
@@ -205,6 +208,20 @@ Mapping is required before analysis. Corelytics standardizes your chart of accou
 4. Save mappings.
 
 Tip: Mappings are saved per company and reused on future imports.
+
+Month-End Close Workflow (Client-Owned)
+Use this workflow at the end of each month after your books are closed.
+
+1. Confirm month-end close is complete in your ERP/accounting system.
+2. Open Data Mapping (Account Mapping).
+3. Review mapping coverage for the closed month (including any new accounts).
+4. Save mapping updates.
+5. Run Process & Save Monthly Data (or the mapping reprocess action) for the closed month/through month.
+6. Validate monthly financial outputs in statements and dashboards.
+7. If totals look off, update mappings and rerun processing for that month.
+
+Important:
+* Operational sync and data pull can run automatically, but monthly financials are finalized only after this client-owned mapping/processing step.
 
 H.  LOB (Line of Business) Mapping
 
