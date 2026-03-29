@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
+import type { AccountingPlatform } from '@prisma/client';
 import {
   getRunStateFromMetadata,
   withRunStateMetadata,
@@ -33,6 +34,12 @@ function normalizeMode(value: unknown): InforOperationalAsyncRun['mode'] {
   return undefined;
 }
 
+function normalizeQueuePlatform(value: unknown): AccountingPlatform {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (normalized === 'QUICKBOOKS' || normalized === 'QUICKBOOKS_DESKTOP') return 'QUICKBOOKS';
+  return 'INFOR_M3';
+}
+
 function normalizePositiveInt(value: unknown): number | undefined {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
@@ -61,12 +68,13 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
     const action = String(body.action || 'start').trim().toLowerCase();
+    const queuePlatform = normalizeQueuePlatform(body.platform);
 
     const connection = await prisma.accountingConnection.findUnique({
       where: {
         companyId_platform: {
           companyId,
-          platform: 'INFOR_M3',
+          platform: queuePlatform,
         },
       },
       select: {
@@ -75,7 +83,7 @@ export async function POST(request: NextRequest) {
       },
     });
     if (!connection) {
-      return NextResponse.json({ ok: false, error: 'INFOR_M3 connection not found for company.' }, { status: 404 });
+      return NextResponse.json({ ok: false, error: `${queuePlatform} connection not found for company.` }, { status: 404 });
     }
 
     const queueEnabled = isInforSyncQueueEnabled();
@@ -83,7 +91,7 @@ export async function POST(request: NextRequest) {
     if (action === 'cancel') {
       if (queueEnabled) {
         const syncRunId = String(body.syncRunId || '').trim() || undefined;
-        const cancelled = await cancelQueueRun(companyId, syncRunId);
+        const cancelled = await cancelQueueRun(companyId, queuePlatform, syncRunId);
         if (!cancelled.cancelled || !cancelled.run) {
           return NextResponse.json({ ok: true, companyId, cancelled: false, reason: 'No running async sync found.' });
         }
@@ -135,7 +143,7 @@ export async function POST(request: NextRequest) {
       select: { accountingSystem: true },
     });
     const inforSystem = normalizeInforSystem(company?.accountingSystem);
-    if (inforSystem === 'INFOR_CSI' && !site) {
+    if (queuePlatform === 'INFOR_M3' && inforSystem === 'INFOR_CSI' && !site) {
       return NextResponse.json(
         {
           ok: false,
@@ -148,7 +156,7 @@ export async function POST(request: NextRequest) {
     // Large CSI backfills can exceed per-request limits if run as broad windows.
     // Force resilient business-day chunking for daily CSI history runs.
     let effectiveBackfillMonths = backfillMonths;
-    if (inforSystem === 'INFOR_CSI' && frequency === 'daily') {
+    if (queuePlatform === 'INFOR_M3' && inforSystem === 'INFOR_CSI' && frequency === 'daily') {
       const requestedMode = mode;
       const looksLikeLargeManualWindow =
         requestedMode === 'manual' &&
@@ -170,6 +178,7 @@ export async function POST(request: NextRequest) {
     if (queueEnabled) {
       const started = await startQueueRun({
         companyId,
+        platform: queuePlatform,
         frequency,
         site,
         mode,

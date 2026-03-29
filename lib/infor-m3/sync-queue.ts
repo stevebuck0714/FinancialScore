@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import prisma from '@/lib/prisma';
+import type { AccountingPlatform } from '@prisma/client';
 import type { InforOperationalAsyncRun } from '@/lib/infor-m3/async-run-state';
+import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
+import { runOperationalSyncForCompany } from '@/lib/operational-sync/runner';
 
 const MAX_TASKS_PER_TICK = 10;
 const LEASE_SECONDS = 120;
@@ -54,6 +57,26 @@ function asIso(value: Date | null | undefined): string | null {
 
 export function isInforSyncQueueEnabled(): boolean {
   return String(process.env.INFOR_SYNC_QUEUE_ENABLED || '').trim() === '1';
+}
+
+async function notifyQueueRunFailure(
+  companyId: string,
+  platform: AccountingPlatform,
+  errorSummary: string,
+  errorDetails?: string
+): Promise<void> {
+  try {
+    await notifyAdminsOfSyncFailure({
+      companyId,
+      platform,
+      syncType: 'infor_async_queue',
+      errorSummary,
+      errorDetails: String(errorDetails || '').slice(0, 500),
+    });
+  } catch (error) {
+    // Alerts are best-effort and should never block queue execution.
+    console.error('❌ Queue sync failure alert dispatch failed:', error);
+  }
 }
 
 export function mapQueueRunToLegacy(run: QueueRunRecord): InforOperationalAsyncRun {
@@ -128,11 +151,11 @@ function buildSkippedCursorFromPayload(payload: Record<string, unknown>): Record
   return cursor;
 }
 
-export async function getActiveQueueRun(companyId: string): Promise<QueueRunRecord | null> {
+export async function getActiveQueueRun(companyId: string, platform: AccountingPlatform = 'INFOR_M3'): Promise<QueueRunRecord | null> {
   const run = await db().inforSyncRun.findFirst({
     where: {
       companyId,
-      platform: 'INFOR_M3',
+      platform,
       status: { in: ['queued', 'running'] },
     },
     orderBy: { createdAt: 'desc' },
@@ -140,11 +163,11 @@ export async function getActiveQueueRun(companyId: string): Promise<QueueRunReco
   return (run as QueueRunRecord | null) || null;
 }
 
-async function getRunningQueueRun(companyId: string): Promise<QueueRunRecord | null> {
+async function getRunningQueueRun(companyId: string, platform: AccountingPlatform): Promise<QueueRunRecord | null> {
   const run = await db().inforSyncRun.findFirst({
     where: {
       companyId,
-      platform: 'INFOR_M3',
+      platform,
       status: 'running',
     },
     orderBy: { createdAt: 'desc' },
@@ -162,6 +185,7 @@ export async function getQueueRunById(companyId: string, runId: string): Promise
 
 export async function startQueueRun(input: {
   companyId: string;
+  platform: AccountingPlatform;
   frequency: 'daily' | 'weekly' | 'monthly';
   site?: string;
   mode?: InforOperationalAsyncRun['mode'];
@@ -171,14 +195,14 @@ export async function startQueueRun(input: {
   endDate?: string;
   salesOnly?: boolean;
 }): Promise<{ alreadyRunning: boolean; queued: boolean; run: QueueRunRecord }> {
-  const running = await getRunningQueueRun(input.companyId);
+  const running = await getRunningQueueRun(input.companyId, input.platform);
   const initialStatus = running ? 'queued' : 'running';
   const id = randomUUID();
   const run = await db().inforSyncRun.create({
     data: {
       id,
       companyId: input.companyId,
-      platform: 'INFOR_M3',
+      platform: input.platform,
       status: initialStatus,
       frequency: input.frequency,
       site: input.site || null,
@@ -208,10 +232,14 @@ export async function startQueueRun(input: {
   };
 }
 
-export async function cancelQueueRun(companyId: string, syncRunId?: string): Promise<{ cancelled: boolean; run?: QueueRunRecord | null }> {
+export async function cancelQueueRun(
+  companyId: string,
+  platform: AccountingPlatform = 'INFOR_M3',
+  syncRunId?: string
+): Promise<{ cancelled: boolean; run?: QueueRunRecord | null }> {
   const where = syncRunId
-    ? { id: syncRunId, companyId, platform: 'INFOR_M3' }
-    : { companyId, platform: 'INFOR_M3', status: { in: ['queued', 'running'] } };
+    ? { id: syncRunId, companyId, platform }
+    : { companyId, platform, status: { in: ['queued', 'running'] } };
   const run = syncRunId
     ? await db().inforSyncRun.findUnique({ where: { id: syncRunId } })
     : await db().inforSyncRun.findFirst({ where, orderBy: { createdAt: 'desc' } });
@@ -282,13 +310,13 @@ async function leasePendingTasks(limit: number): Promise<Array<QueueTaskRecord &
 
 async function promoteQueuedRunsForIdleCompanies(): Promise<number> {
   const runningRuns = (await db().inforSyncRun.findMany({
-    where: { platform: 'INFOR_M3', status: 'running' },
-    select: { companyId: true },
-  })) as Array<{ companyId: string }>;
-  const runningByCompany = new Set(runningRuns.map((row) => String(row.companyId)));
+    where: { status: 'running' },
+    select: { companyId: true, platform: true },
+  })) as Array<{ companyId: string; platform: string }>;
+  const runningByKey = new Set(runningRuns.map((row) => `${String(row.companyId)}:${String(row.platform)}`));
 
   const queuedRuns = (await db().inforSyncRun.findMany({
-    where: { platform: 'INFOR_M3', status: 'queued' },
+    where: { status: 'queued' },
     orderBy: { createdAt: 'asc' },
     take: 100,
   })) as QueueRunRecord[];
@@ -296,7 +324,9 @@ async function promoteQueuedRunsForIdleCompanies(): Promise<number> {
   let promoted = 0;
   for (const queued of queuedRuns) {
     const companyId = String(queued.companyId);
-    if (!companyId || runningByCompany.has(companyId)) continue;
+    const platform = String(queued.platform || 'INFOR_M3');
+    const key = `${companyId}:${platform}`;
+    if (!companyId || runningByKey.has(key)) continue;
     const now = new Date();
     const updated = await db().inforSyncRun.updateMany({
       where: { id: queued.id, status: 'queued' },
@@ -308,7 +338,7 @@ async function promoteQueuedRunsForIdleCompanies(): Promise<number> {
     });
     if (Number(updated?.count || 0) === 1) {
       promoted += 1;
-      runningByCompany.add(companyId);
+      runningByKey.add(key);
     }
   }
   return promoted;
@@ -327,24 +357,48 @@ async function processTask(
     companyId: task.run.companyId,
   };
   const start = Date.now();
-  const url = new URL('/api/infor-m3/operational-sync', baseUrl);
-  const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-infor-sync-worker-secret': workerSecret,
-      ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
-    },
-    body: JSON.stringify(taskPayload),
-    cache: 'no-store',
-  });
-  const rawText = await response.text().catch(() => '');
   let data: Record<string, unknown> = {};
-  try {
-    data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
-  } catch {
-    data = {};
+  let rawText = '';
+  let responseStatus = 200;
+  if (String(task.run.platform) === 'INFOR_M3') {
+    const url = new URL('/api/infor-m3/operational-sync', baseUrl);
+    const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-infor-sync-worker-secret': workerSecret,
+        ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
+      },
+      body: JSON.stringify(taskPayload),
+      cache: 'no-store',
+    });
+    responseStatus = response.status;
+    rawText = await response.text().catch(() => '');
+    try {
+      data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+    } catch {
+      data = {};
+    }
+  } else if (String(task.run.platform) === 'QUICKBOOKS') {
+    const qbResult = await runOperationalSyncForCompany(task.run.companyId, 'QUICKBOOKS', task.run.frequency);
+    data = {
+      ok: qbResult.success,
+      hasMore: false,
+      cursor: null,
+      recordsCreated: qbResult.recordsCreated,
+      errors: qbResult.errors,
+      details: qbResult.errors.join(' | '),
+    };
+    rawText = JSON.stringify(data);
+    responseStatus = qbResult.success ? 200 : 500;
+  } else {
+    data = {
+      ok: false,
+      error: `Unsupported queue platform: ${String(task.run.platform || 'unknown')}`,
+    };
+    rawText = JSON.stringify(data);
+    responseStatus = 400;
   }
   const now = new Date();
   const durationMs = Date.now() - start;
@@ -354,11 +408,11 @@ async function processTask(
       ? data.errors.join(' | ')
       : (data?.details as string) ||
         (data?.error as string) ||
-        (textSnippet ? `HTTP ${response.status}: ${textSnippet}` : `HTTP ${response.status}: Async sync chunk failed`);
+        (textSnippet ? `HTTP ${responseStatus}: ${textSnippet}` : `HTTP ${responseStatus}: Async sync chunk failed`);
 
   const attemptNo = Math.max(0, Number(task.attemptCount || 0)) + 1;
 
-  if (!response.ok || !data?.ok) {
+  if (responseStatus >= 400 || !data?.ok) {
     const reachedMax = attemptNo >= Math.max(1, Number(task.maxAttempts || DEFAULT_MAX_ATTEMPTS));
     const backoffMs = Math.min(5 * 60 * 1000, Math.max(10_000, Math.floor(2 ** attemptNo) * 1000));
     const isBusinessDayBackfill = String(task.run.mode || '') === 'business_day_backfill';
@@ -371,7 +425,7 @@ async function processTask(
           companyId: task.companyId,
           attemptNo,
           status: shouldSkip ? 'skipped' : reachedMax ? 'failed' : 'retry',
-          httpStatus: response.status || null,
+          httpStatus: responseStatus || null,
           errorMessage: String(details).slice(0, 1200),
           responseSnippet: textSnippet || null,
           recordsCreated: 0,
@@ -469,6 +523,14 @@ async function processTask(
         },
       });
     });
+    if (reachedMax && !shouldSkip) {
+      await notifyQueueRunFailure(
+        task.companyId,
+        (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
+        'Infor async queue run failed after max retries',
+        String(details).slice(0, 500)
+      );
+    }
     return { runId: task.runId, taskId: task.id, status: shouldSkip ? 'skipped' : reachedMax ? 'failed' : 'retry', details };
   }
 
@@ -501,7 +563,7 @@ async function processTask(
         companyId: task.companyId,
         attemptNo,
         status: 'success',
-        httpStatus: response.status || null,
+        httpStatus: responseStatus || null,
         errorMessage: null,
         responseSnippet: null,
         recordsCreated,
@@ -597,6 +659,12 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
           },
         });
       });
+      await notifyQueueRunFailure(
+        task.companyId,
+        (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
+        'Infor async queue worker task execution failed',
+        String(message).slice(0, 500)
+      );
       results.push({ runId: task.runId, taskId: task.id, status: 'failed', details: message });
     }
   }
