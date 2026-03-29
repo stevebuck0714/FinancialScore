@@ -7,6 +7,9 @@ type InputRecord = {
   revenue?: number;
   cogs?: number;
   quantitySold?: number;
+  freightAllocated?: number;
+  otherRevenueAllocated?: number;
+  returnsAmount?: number;
 };
 
 type InputTopProduct = {
@@ -40,6 +43,9 @@ type ItemWeekRow = {
   units: number;
   netRevenue: number;
   cogs: number;
+  freightAllocated: number;
+  otherRevenueAllocated: number;
+  returnsAmount: number;
   marginAmount: number;
   marginPct: number | null;
 };
@@ -156,6 +162,8 @@ export function buildWeeklyProductMarginModel(params: {
   records?: InputRecord[];
   topProducts?: InputTopProduct[];
   weeks?: number;
+  rangeStart?: string | Date;
+  rangeEnd?: string | Date;
 }): WeeklyMarginModel {
   const records = Array.isArray(params.records) ? params.records : [];
   const maxWeeks = Math.max(8, params.weeks || 12);
@@ -172,6 +180,9 @@ export function buildWeeklyProductMarginModel(params: {
     const netRevenue = toNumber(row.revenue);
     const cogs = toNumber(row.cogs);
     const units = toNumber(row.quantitySold);
+    const freightAllocated = toNumber(row.freightAllocated);
+    const otherRevenueAllocated = toNumber(row.otherRevenueAllocated);
+    const returnsAmount = toNumber(row.returnsAmount);
     const key = [weekStart, itemName, sku, site, customer].join('||');
     const existing = keyedRows.get(key);
     if (!existing) {
@@ -184,6 +195,9 @@ export function buildWeeklyProductMarginModel(params: {
         units,
         netRevenue,
         cogs,
+        freightAllocated,
+        otherRevenueAllocated,
+        returnsAmount,
         marginAmount: netRevenue - cogs,
         marginPct: netRevenue === 0 ? null : ((netRevenue - cogs) / netRevenue) * 100,
       });
@@ -192,13 +206,36 @@ export function buildWeeklyProductMarginModel(params: {
     existing.units += units;
     existing.netRevenue += netRevenue;
     existing.cogs += cogs;
+    existing.freightAllocated += freightAllocated;
+    existing.otherRevenueAllocated += otherRevenueAllocated;
+    existing.returnsAmount += returnsAmount;
     existing.marginAmount = existing.netRevenue - existing.cogs;
     existing.marginPct = existing.netRevenue === 0 ? null : (existing.marginAmount / existing.netRevenue) * 100;
   }
 
   const itemRows = Array.from(keyedRows.values());
   const allWeekStarts = Array.from(new Set(itemRows.map((row) => row.weekStart))).sort((a, b) => a.localeCompare(b));
-  const selectedWeeks = allWeekStarts.slice(Math.max(0, allWeekStarts.length - maxWeeks));
+  const rangeStartDate = toDate(params.rangeStart);
+  const rangeEndDate = toDate(params.rangeEnd);
+  const hasValidRange =
+    Boolean(rangeStartDate && rangeEndDate) &&
+    (rangeEndDate as Date).getTime() >= (rangeStartDate as Date).getTime();
+
+  let selectedWeeks: string[];
+  if (hasValidRange) {
+    const startWeekIso = weekStartIso(rangeStartDate as Date);
+    const endWeekIso = weekStartIso(rangeEndDate as Date);
+    const generatedWeeks: string[] = [];
+    let cursor = new Date(`${startWeekIso}T00:00:00Z`);
+    const end = new Date(`${endWeekIso}T00:00:00Z`);
+    while (cursor.getTime() <= end.getTime()) {
+      generatedWeeks.push(cursor.toISOString().split('T')[0]);
+      cursor.setUTCDate(cursor.getUTCDate() + 7);
+    }
+    selectedWeeks = generatedWeeks;
+  } else {
+    selectedWeeks = allWeekStarts.slice(Math.max(0, allWeekStarts.length - maxWeeks));
+  }
 
   const weeklyMap: Record<string, WeeklyMarginPoint> = {};
   const productWeeklyRows: ProductWeeklyPoint[] = [];
@@ -218,13 +255,15 @@ export function buildWeeklyProductMarginModel(params: {
         returnsMagnitude: 0,
       };
     }
-    const grossRevenue = row.netRevenue;
-    const returns = 0;
-    const freight = 0;
-    const otherRevenue = 0;
+    const returns = row.returnsAmount > 0 ? -1 * row.returnsAmount : 0;
+    const grossRevenue = row.netRevenue + Math.abs(returns);
+    const freight = row.freightAllocated;
+    const otherRevenue = row.otherRevenueAllocated;
 
-    const pricePerUnit = row.units > 0 ? row.netRevenue / row.units : null;
-    const costPerUnit = row.units > 0 ? row.cogs / row.units : null;
+    const pricePerUnit =
+      row.units > 0 ? row.netRevenue / row.units : row.netRevenue !== 0 ? row.netRevenue : null;
+    const costPerUnit =
+      row.units > 0 ? row.cogs / row.units : row.cogs !== 0 ? row.cogs : null;
     const spreadPerUnit =
       pricePerUnit != null && costPerUnit != null ? pricePerUnit - costPerUnit : null;
 
@@ -306,23 +345,90 @@ export function buildWeeklyProductMarginModel(params: {
     }
   );
 
-  const latestWeek = selectedWeeks[selectedWeeks.length - 1];
-  const priorWeek = selectedWeeks[selectedWeeks.length - 2];
-  const byItemWeek: Record<string, Record<string, ItemWeekRow>> = {};
+  const entityKeyOf = (row: ItemWeekRow): string => {
+    const sku = String(row.sku || '').trim();
+    const site = String(row.site || '').trim();
+    const item = String(row.itemName || '').trim();
+    if (sku && site) return `${sku}||${site}`;
+    if (sku) return sku;
+    if (item && site) return `${item}||${site}`;
+    return item || 'UNKNOWN_PRODUCT';
+  };
+  const byEntityWeek: Record<string, Record<string, ItemWeekRow>> = {};
   itemRows.forEach((row) => {
-    byItemWeek[row.itemName] ||= {};
-    byItemWeek[row.itemName][row.weekStart] = row;
+    const entityKey = entityKeyOf(row);
+    byEntityWeek[entityKey] ||= {};
+    if (!byEntityWeek[entityKey][row.weekStart]) {
+      byEntityWeek[entityKey][row.weekStart] = {
+        ...row,
+        units: 0,
+        netRevenue: 0,
+        cogs: 0,
+        freightAllocated: 0,
+        otherRevenueAllocated: 0,
+        returnsAmount: 0,
+        marginAmount: 0,
+        marginPct: null,
+      };
+    }
+    const acc = byEntityWeek[entityKey][row.weekStart];
+    acc.units += row.units;
+    acc.netRevenue += row.netRevenue;
+    acc.cogs += row.cogs;
+    acc.freightAllocated += row.freightAllocated;
+    acc.otherRevenueAllocated += row.otherRevenueAllocated;
+    acc.returnsAmount += row.returnsAmount;
+    acc.marginAmount = acc.netRevenue - acc.cogs;
+    acc.marginPct = acc.netRevenue === 0 ? null : (acc.marginAmount / acc.netRevenue) * 100;
   });
 
-  const movers = Object.entries(byItemWeek)
-    .map(([itemName, rowsByWeek]) => {
+  const hasEntitySignal = (row?: ItemWeekRow): boolean =>
+    Boolean(
+      row &&
+        (Number(row.netRevenue || 0) !== 0 ||
+          Number(row.cogs || 0) !== 0 ||
+          Number(row.units || 0) !== 0 ||
+          Number(row.freightAllocated || 0) !== 0 ||
+          Number(row.otherRevenueAllocated || 0) !== 0)
+    );
+  const entityCountForWeek = (weekStart: string): number =>
+    Object.values(byEntityWeek).reduce((count, rowsByWeek) => (hasEntitySignal(rowsByWeek[weekStart]) ? count + 1 : count), 0);
+  const weeksWithEntities = selectedWeeks.filter((weekStart) => entityCountForWeek(weekStart) > 0);
+  let latestWeek = weeksWithEntities[weeksWithEntities.length - 1] || selectedWeeks[selectedWeeks.length - 1];
+  // If the newest week is extremely sparse, choose the densest recent week
+  // so comparison tables/charts remain useful.
+  if (latestWeek) {
+    const sparseThreshold = 10;
+    const latestCount = entityCountForWeek(latestWeek);
+    if (latestCount > 0 && latestCount < sparseThreshold) {
+      const recentCandidates = weeksWithEntities.slice(Math.max(0, weeksWithEntities.length - 8));
+      if (recentCandidates.length > 0) {
+        latestWeek = recentCandidates.reduce((best, candidate) =>
+          entityCountForWeek(candidate) > entityCountForWeek(best) ? candidate : best
+        , recentCandidates[0]);
+      }
+    }
+  }
+  const latestWeekIdx = selectedWeeks.indexOf(latestWeek);
+  let priorWeek: string | undefined = undefined;
+  for (let i = latestWeekIdx - 1; i >= 0; i -= 1) {
+    const weekStart = selectedWeeks[i];
+    if (entityCountForWeek(weekStart) > 0) {
+      priorWeek = weekStart;
+      break;
+    }
+  }
+  if (!priorWeek) priorWeek = latestWeekIdx > 0 ? selectedWeeks[latestWeekIdx - 1] : selectedWeeks[selectedWeeks.length - 2];
+
+  const movers = Object.entries(byEntityWeek)
+    .map(([_, rowsByWeek]) => {
       const current = rowsByWeek[latestWeek];
       const previous = rowsByWeek[priorWeek];
       if (!current || !previous) return null;
       const currentPct = current.marginPct ?? 0;
       const priorPct = previous.marginPct ?? 0;
       return {
-        itemName,
+        itemName: current.itemName,
         revenueThisWeek: current.netRevenue,
         marginAmountThisWeek: current.marginAmount,
         site: current.site,
@@ -366,16 +472,32 @@ export function buildWeeklyProductMarginModel(params: {
   const variancePct = 0;
   const status: 'acceptable' | 'warning' | 'investigate' = 'acceptable';
 
-  const comparisonRows = Object.entries(byItemWeek)
-    .map(([itemName, rowsByWeek]) => {
+  const comparisonRows = Object.entries(byEntityWeek)
+    .map(([_, rowsByWeek]) => {
       const current = rowsByWeek[latestWeek];
       const previous = rowsByWeek[priorWeek];
-      if (!current || !previous) return null;
+      if (!current) return null;
 
-      const priceThisWeek = current.units > 0 ? current.netRevenue / current.units : null;
-      const pricePriorWeek = previous.units > 0 ? previous.netRevenue / previous.units : null;
-      const costThisWeek = current.units > 0 ? current.cogs / current.units : null;
-      const costPriorWeek = previous.units > 0 ? previous.cogs / previous.units : null;
+      const priceThisWeek =
+        current.units > 0
+          ? current.netRevenue / current.units
+          : current.netRevenue !== 0
+            ? current.netRevenue
+            : null;
+      const pricePriorWeek =
+        previous && previous.units > 0
+          ? previous.netRevenue / previous.units
+          : previous && previous.netRevenue !== 0
+            ? previous.netRevenue
+            : null;
+      const costThisWeek =
+        current.units > 0 ? current.cogs / current.units : current.cogs !== 0 ? current.cogs : null;
+      const costPriorWeek =
+        previous && previous.units > 0
+          ? previous.cogs / previous.units
+          : previous && previous.cogs !== 0
+            ? previous.cogs
+            : null;
       const spreadThisWeek =
         priceThisWeek != null && costThisWeek != null ? priceThisWeek - costThisWeek : null;
       const spreadPriorWeek =
@@ -397,7 +519,7 @@ export function buildWeeklyProductMarginModel(params: {
             : 'acceptable';
 
       return {
-        itemName,
+        itemName: current.itemName,
         sku: current.sku,
         site: current.site,
         customer: current.customer,
@@ -415,9 +537,9 @@ export function buildWeeklyProductMarginModel(params: {
         spreadPriorWeek,
         spreadDelta,
         marginPctThisWeek: current.marginPct,
-        marginPctPriorWeek: previous.marginPct,
+        marginPctPriorWeek: previous?.marginPct ?? null,
         marginDeltaPts:
-          current.marginPct != null && previous.marginPct != null
+          current.marginPct != null && previous?.marginPct != null
             ? current.marginPct - previous.marginPct
             : null,
         status: computedStatus,

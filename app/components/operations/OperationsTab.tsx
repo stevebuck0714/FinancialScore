@@ -369,6 +369,7 @@ export default function OperationsTab({
   const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
   const [priceCostSearchTerm, setPriceCostSearchTerm] = useState('');
+  const [priceCostTableExpanded, setPriceCostTableExpanded] = useState(true);
   const [inventorySearchTerm, setInventorySearchTerm] = useState('');
   const [hideZeroQtyInventory, setHideZeroQtyInventory] = useState(false);
   const [inventoryTableExpanded, setInventoryTableExpanded] = useState(true);
@@ -400,18 +401,36 @@ export default function OperationsTab({
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const defaultOpsEndDate = new Date();
-  defaultOpsEndDate.setDate(defaultOpsEndDate.getDate() - 1);
+  const toLocalInputDate = (date: Date): string =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const yesterdayLocal = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d;
+  })();
+  const todayLocalInputDate = toLocalInputDate(new Date());
+  const maxSelectableEndDate = toLocalInputDate(yesterdayLocal);
   const [startDate, setStartDate] = useState<string>(() => {
-    const date = new Date(defaultOpsEndDate);
+    const date = new Date(yesterdayLocal);
     // Default to last 90 days for daily view
     date.setDate(date.getDate() - 90);
-    return date.toISOString().split('T')[0];
+    return toLocalInputDate(date);
   });
   const [endDate, setEndDate] = useState<string>(() => {
-    return defaultOpsEndDate.toISOString().split('T')[0];
+    return maxSelectableEndDate;
   });
   const hasHydratedDateRangeRef = useRef(false);
+
+  useEffect(() => {
+    if (endDate > maxSelectableEndDate) setEndDate(maxSelectableEndDate);
+  }, [endDate, maxSelectableEndDate]);
+
+  useEffect(() => {
+    // Enforce product/user date pickers defaulting to prior day.
+    if (endDate === todayLocalInputDate) {
+      setEndDate(maxSelectableEndDate);
+    }
+  }, [endDate, todayLocalInputDate, maxSelectableEndDate]);
 
   const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'daily-financials'];
   const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules)
@@ -620,7 +639,7 @@ export default function OperationsTab({
         setStartDate(parsed.startDate);
       }
       if (typeof parsed.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.endDate)) {
-        setEndDate(parsed.endDate);
+        setEndDate(parsed.endDate > maxSelectableEndDate ? maxSelectableEndDate : parsed.endDate);
       }
     } catch {
       // Ignore invalid persisted payload
@@ -666,7 +685,7 @@ export default function OperationsTab({
         setStartDate(parsed.startDate);
       }
       if (typeof parsed?.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.endDate)) {
-        setEndDate(parsed.endDate);
+        setEndDate(parsed.endDate > maxSelectableEndDate ? maxSelectableEndDate : parsed.endDate);
       }
     } catch {
       // Ignore invalid saved range payloads
@@ -1365,6 +1384,7 @@ export default function OperationsTab({
           <input
             type="date"
             value={startDate}
+            max={endDate}
             onChange={(e) => setStartDate(e.target.value)}
             style={{
               padding: '6px 10px',
@@ -1383,7 +1403,11 @@ export default function OperationsTab({
           <input
             type="date"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            max={maxSelectableEndDate}
+            onChange={(e) => {
+              const candidate = e.target.value;
+              setEndDate(candidate > maxSelectableEndDate ? maxSelectableEndDate : candidate);
+            }}
             style={{
               padding: '6px 10px',
               border: '1px solid #e2e8f0',
@@ -1443,10 +1467,11 @@ export default function OperationsTab({
               <button
                 onClick={() => {
                   const end = new Date();
-                  const start = new Date();
+                  end.setDate(end.getDate() - 1);
+                  const start = new Date(end);
                   start.setDate(start.getDate() - 30);
-                  setStartDate(start.toISOString().split('T')[0]);
-                  setEndDate(end.toISOString().split('T')[0]);
+                  setStartDate(toLocalInputDate(start));
+                  setEndDate(toLocalInputDate(end));
                 }}
                 style={{
                   padding: '6px 12px',
@@ -1464,10 +1489,11 @@ export default function OperationsTab({
               <button
                 onClick={() => {
                   const end = new Date();
-                  const start = new Date();
+                  end.setDate(end.getDate() - 1);
+                  const start = new Date(end);
                   start.setDate(start.getDate() - 90);
-                  setStartDate(start.toISOString().split('T')[0]);
-                  setEndDate(end.toISOString().split('T')[0]);
+                  setStartDate(toLocalInputDate(start));
+                  setEndDate(toLocalInputDate(end));
                 }}
                 style={{
                   padding: '6px 12px',
@@ -1489,10 +1515,11 @@ export default function OperationsTab({
               <button
                 onClick={() => {
                   const end = new Date();
-                  const start = new Date();
+                  end.setDate(end.getDate() - 1);
+                  const start = new Date(end);
                   start.setDate(start.getDate() - (8 * 7)); // 8 weeks
-                  setStartDate(start.toISOString().split('T')[0]);
-                  setEndDate(end.toISOString().split('T')[0]);
+                  setStartDate(toLocalInputDate(start));
+                  setEndDate(toLocalInputDate(end));
                 }}
                 style={{
                   padding: '6px 12px',
@@ -1510,10 +1537,11 @@ export default function OperationsTab({
               <button
                 onClick={() => {
                   const end = new Date();
-                  const start = new Date();
+                  end.setDate(end.getDate() - 1);
+                  const start = new Date(end);
                   start.setDate(start.getDate() - (16 * 7)); // 16 weeks
-                  setStartDate(start.toISOString().split('T')[0]);
-                  setEndDate(end.toISOString().split('T')[0]);
+                  setStartDate(toLocalInputDate(start));
+                  setEndDate(toLocalInputDate(end));
                 }}
                 style={{
                   padding: '6px 12px',
@@ -1535,10 +1563,11 @@ export default function OperationsTab({
               <button
                 onClick={() => {
                   const end = new Date();
-                  const start = new Date();
+                  end.setDate(end.getDate() - 1);
+                  const start = new Date(end);
                   start.setMonth(start.getMonth() - 6);
-                  setStartDate(start.toISOString().split('T')[0]);
-                  setEndDate(end.toISOString().split('T')[0]);
+                  setStartDate(toLocalInputDate(start));
+                  setEndDate(toLocalInputDate(end));
                 }}
                 style={{
                   padding: '6px 12px',
@@ -1556,10 +1585,11 @@ export default function OperationsTab({
               <button
                 onClick={() => {
                   const end = new Date();
-                  const start = new Date();
+                  end.setDate(end.getDate() - 1);
+                  const start = new Date(end);
                   start.setMonth(start.getMonth() - 12);
-                  setStartDate(start.toISOString().split('T')[0]);
-                  setEndDate(end.toISOString().split('T')[0]);
+                  setStartDate(toLocalInputDate(start));
+                  setEndDate(toLocalInputDate(end));
                 }}
                 style={{
                   padding: '6px 12px',
@@ -4016,10 +4046,23 @@ export default function OperationsTab({
     const weeklyMarginModel = buildWeeklyProductMarginModel({
       records: Array.isArray(records) ? records : [],
       topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
-      weeks: 12,
+      rangeStart: startDate,
+      rangeEnd: endDate,
     });
 
-    const filteredComparisonRows = weeklyMarginModel.comparisonRows.filter((row) => {
+    const comparisonRowsWithSignal = weeklyMarginModel.comparisonRows.filter((row) => {
+      const hasSignal =
+        Number(row.revenueThisWeek || 0) !== 0 ||
+        Number(row.marginAmountThisWeek || 0) !== 0 ||
+        row.priceThisWeek != null ||
+        row.costThisWeek != null ||
+        row.spreadThisWeek != null ||
+        row.pricePriorWeek != null ||
+        row.costPriorWeek != null ||
+        row.spreadPriorWeek != null;
+      return hasSignal;
+    });
+    const filteredComparisonRows = comparisonRowsWithSignal.filter((row) => {
       const matchesSearch =
         !priceCostSearchTerm.trim() ||
         row.itemName.toLowerCase().includes(priceCostSearchTerm.toLowerCase()) ||
@@ -4028,7 +4071,7 @@ export default function OperationsTab({
       const matchesException = !showPriceCostExceptionsOnly || row.status !== 'acceptable';
       return matchesSearch && matchesException;
     });
-    const paretoRows = [...weeklyMarginModel.comparisonRows]
+    const paretoRows = [...comparisonRowsWithSignal]
       .sort((a, b) => b.revenueThisWeek - a.revenueThisWeek)
       .slice(0, 10);
     const paretoRevenueTotal = paretoRows.reduce((sum, row) => sum + Number(row.revenueThisWeek || 0), 0);
@@ -4041,7 +4084,7 @@ export default function OperationsTab({
         cumulativePct: paretoRevenueTotal > 0 ? (cumulativeRevenue / paretoRevenueTotal) * 100 : 0,
       };
     });
-    const scatterData = weeklyMarginModel.comparisonRows.map((row) => ({
+    const scatterData = comparisonRowsWithSignal.map((row) => ({
       name: row.itemName,
       sku: row.sku,
       site: row.site,
@@ -4072,6 +4115,10 @@ export default function OperationsTab({
     }, {});
     const scopedSeries = weeklyMarginModel.weeks.map((row) => {
       if (productScopeMode === 'total') {
+        const derivedPrice =
+          row.units > 0 ? row.netRevenue / row.units : row.netRevenue !== 0 ? row.netRevenue : 0;
+        const derivedCost =
+          row.units > 0 ? row.cogs / row.units : row.cogs !== 0 ? row.cogs : 0;
         return {
           weekStart: row.weekStart,
           units: row.units,
@@ -4082,9 +4129,9 @@ export default function OperationsTab({
           returnsMagnitude: row.returnsMagnitude,
           freightBilled: row.freightBilled,
           otherRevenue: row.otherRevenue,
-          price: row.units > 0 ? row.netRevenue / row.units : 0,
-          cost: row.units > 0 ? row.cogs / row.units : 0,
-          spread: row.units > 0 ? (row.netRevenue - row.cogs) / row.units : 0,
+          price: derivedPrice,
+          cost: derivedCost,
+          spread: derivedPrice - derivedCost,
         };
       }
       const scoped = scopedSeriesByWeek[row.weekStart];
@@ -4106,10 +4153,38 @@ export default function OperationsTab({
     const priceCostTrendData = scopedSeries;
     const latestWeekRow = scopedSeries[scopedSeries.length - 1];
     const priorWeekRow = scopedSeries[scopedSeries.length - 2];
-    const latestPrice = latestWeekRow && latestWeekRow.units > 0 ? latestWeekRow.netRevenue / latestWeekRow.units : 0;
-    const priorPrice = priorWeekRow && priorWeekRow.units > 0 ? priorWeekRow.netRevenue / priorWeekRow.units : 0;
-    const latestCost = latestWeekRow && latestWeekRow.units > 0 ? latestWeekRow.cogs / latestWeekRow.units : 0;
-    const priorCost = priorWeekRow && priorWeekRow.units > 0 ? priorWeekRow.cogs / priorWeekRow.units : 0;
+    const latestPrice =
+      latestWeekRow
+        ? latestWeekRow.units > 0
+          ? latestWeekRow.netRevenue / latestWeekRow.units
+          : latestWeekRow.netRevenue !== 0
+            ? latestWeekRow.netRevenue
+            : 0
+        : 0;
+    const priorPrice =
+      priorWeekRow
+        ? priorWeekRow.units > 0
+          ? priorWeekRow.netRevenue / priorWeekRow.units
+          : priorWeekRow.netRevenue !== 0
+            ? priorWeekRow.netRevenue
+            : 0
+        : 0;
+    const latestCost =
+      latestWeekRow
+        ? latestWeekRow.units > 0
+          ? latestWeekRow.cogs / latestWeekRow.units
+          : latestWeekRow.cogs !== 0
+            ? latestWeekRow.cogs
+            : 0
+        : 0;
+    const priorCost =
+      priorWeekRow
+        ? priorWeekRow.units > 0
+          ? priorWeekRow.cogs / priorWeekRow.units
+          : priorWeekRow.cogs !== 0
+            ? priorWeekRow.cogs
+            : 0
+        : 0;
     const baselineUnits = Math.max(1, Number(priorWeekRow?.units || 1));
     const priceImpact = (latestPrice - priorPrice) * baselineUnits;
     const costImpact = -1 * (latestCost - priorCost) * baselineUnits;
@@ -4123,17 +4198,29 @@ export default function OperationsTab({
       { step: 'Mix/Volume Impact', value: mixImpact },
       { step: 'Total Margin Delta', value: totalDeltaMargin },
     ];
-    const coverageStartWeek = weeklyMarginModel.weeks[0]?.weekStart;
-    const coverageEndWeek = weeklyMarginModel.weeks[weeklyMarginModel.weeks.length - 1]?.weekStart;
-    const formatCoverageDate = (isoDate?: string) =>
-      isoDate
-        ? new Date(`${isoDate}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    const parseCoverageUtcDay = (raw?: string): Date | null => {
+      const value = String(raw || '').trim();
+      if (!value) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const [y, m, d] = value.split('-').map(Number);
+        return new Date(Date.UTC(y, m - 1, d));
+      }
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value)) {
+        const [m, d, y] = value.split('/').map(Number);
+        return new Date(Date.UTC(y, m - 1, d));
+      }
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+    };
+    const formatCoverageDate = (rawDate?: string) => {
+      const utcDay = parseCoverageUtcDay(rawDate);
+      return utcDay
+        ? utcDay.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
         : 'N/A';
-    const asOfDateLabel = formatCoverageDate(coverageEndWeek);
-    const coverageLabel =
-      coverageStartWeek && coverageEndWeek
-        ? `${formatCoverageDate(coverageStartWeek)} - ${formatCoverageDate(coverageEndWeek)} (UTC-4)`
-        : 'N/A';
+    };
+    const asOfDateLabel = formatCoverageDate(endDate);
+    const coverageLabel = startDate && endDate ? `${formatCoverageDate(startDate)} - ${formatCoverageDate(endDate)} (selected)` : 'N/A';
     const renderCoverageMeta = () => (
       <div style={{ marginTop: '4px', marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
         As of: {asOfDateLabel} | Coverage: {coverageLabel}
@@ -4157,6 +4244,21 @@ export default function OperationsTab({
               {renderCoverageMeta()}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={() => setPriceCostTableExpanded((prev) => !prev)}
+                style={{
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  background: '#ffffff',
+                  color: '#334155',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                }}
+              >
+                {priceCostTableExpanded ? 'Collapse' : 'Expand'}
+              </button>
               <input
                 value={priceCostSearchTerm}
                 onChange={(event) => setPriceCostSearchTerm(event.target.value)}
@@ -4203,54 +4305,56 @@ export default function OperationsTab({
                   <th style={{ textAlign: 'left', padding: '8px', fontSize: '12px', color: '#334155' }}>Status</th>
                 </tr>
               </thead>
-              <tbody>
-                {filteredComparisonRows.map((row, idx) => (
-                  <tr key={`${row.itemName}-${row.sku}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{row.itemName}</td>
-                    <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.sku}</td>
-                    <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.site}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.priceThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.priceThisWeek)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.pricePriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.pricePriorWeek)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.priceDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
-                      {row.priceDelta == null ? 'N/A' : `${row.priceDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.priceDelta)}`}
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.costThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.costThisWeek)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.costPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.costPriorWeek)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.costDelta ?? 0) <= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
-                      {row.costDelta == null ? 'N/A' : `${row.costDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.costDelta)}`}
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.spreadThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadThisWeek)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.spreadPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadPriorWeek)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.spreadDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 700 }}>
-                      {row.spreadDelta == null ? 'N/A' : `${row.spreadDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.spreadDelta)}`}
-                    </td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.marginPctThisWeek == null ? 'N/A' : `${row.marginPctThisWeek.toFixed(1)}%`}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.marginPctPriorWeek == null ? 'N/A' : `${row.marginPctPriorWeek.toFixed(1)}%`}</td>
-                    <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.marginDeltaPts ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 700 }}>
-                      {row.marginDeltaPts == null ? 'N/A' : `${row.marginDeltaPts >= 0 ? '+' : ''}${row.marginDeltaPts.toFixed(1)}`}
-                    </td>
-                    <td style={{ padding: '8px', fontSize: '12px' }}>
-                      <span style={{
-                        borderRadius: '999px',
-                        padding: '4px 8px',
-                        fontWeight: 700,
-                        textTransform: 'capitalize',
-                        background: row.status === 'acceptable' ? '#dcfce7' : row.status === 'warning' ? '#fef3c7' : '#fee2e2',
-                        color: row.status === 'acceptable' ? '#166534' : row.status === 'warning' ? '#92400e' : '#991b1b',
-                      }}>
-                        {row.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {filteredComparisonRows.length === 0 && (
-                  <tr>
-                    <td colSpan={16} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
-                      No rows match current filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
+              {priceCostTableExpanded && (
+                <tbody>
+                  {filteredComparisonRows.map((row, idx) => (
+                    <tr key={`${row.itemName}-${row.sku}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px', fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{row.itemName}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.sku}</td>
+                      <td style={{ padding: '8px', fontSize: '13px', color: '#475569' }}>{row.site}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.priceThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.priceThisWeek)}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.pricePriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.pricePriorWeek)}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.priceDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
+                        {row.priceDelta == null ? 'N/A' : `${row.priceDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.priceDelta)}`}
+                      </td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.costThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.costThisWeek)}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.costPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.costPriorWeek)}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.costDelta ?? 0) <= 0 ? '#166534' : '#b91c1c', fontWeight: 600 }}>
+                        {row.costDelta == null ? 'N/A' : `${row.costDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.costDelta)}`}
+                      </td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.spreadThisWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadThisWeek)}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.spreadPriorWeek == null ? 'N/A' : formatCurrencyWithCents(row.spreadPriorWeek)}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.spreadDelta ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 700 }}>
+                        {row.spreadDelta == null ? 'N/A' : `${row.spreadDelta >= 0 ? '+' : ''}${formatCurrencyWithCents(row.spreadDelta)}`}
+                      </td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.marginPctThisWeek == null ? 'N/A' : `${row.marginPctThisWeek.toFixed(1)}%`}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px' }}>{row.marginPctPriorWeek == null ? 'N/A' : `${row.marginPctPriorWeek.toFixed(1)}%`}</td>
+                      <td style={{ padding: '8px', textAlign: 'right', fontSize: '13px', color: (row.marginDeltaPts ?? 0) >= 0 ? '#166534' : '#b91c1c', fontWeight: 700 }}>
+                        {row.marginDeltaPts == null ? 'N/A' : `${row.marginDeltaPts >= 0 ? '+' : ''}${row.marginDeltaPts.toFixed(1)}`}
+                      </td>
+                      <td style={{ padding: '8px', fontSize: '12px' }}>
+                        <span style={{
+                          borderRadius: '999px',
+                          padding: '4px 8px',
+                          fontWeight: 700,
+                          textTransform: 'capitalize',
+                          background: row.status === 'acceptable' ? '#dcfce7' : row.status === 'warning' ? '#fef3c7' : '#fee2e2',
+                          color: row.status === 'acceptable' ? '#166534' : row.status === 'warning' ? '#92400e' : '#991b1b',
+                        }}>
+                          {row.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredComparisonRows.length === 0 && (
+                    <tr>
+                      <td colSpan={16} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
+                        No rows match current filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              )}
             </table>
           </div>
         </div>

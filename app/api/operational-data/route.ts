@@ -2124,9 +2124,225 @@ export async function GET(request: NextRequest) {
             frequency,
             snapshotDate: dateFilter,
           },
-          orderBy: { snapshotDate: 'desc' },
-          take: limit,
+          orderBy: [{ snapshotDate: 'asc' }, { itemName: 'asc' }],
         });
+
+        // Use the full selected window for product analytics. If we have any
+        // meaningful rows, drop pure placeholder rows (Unknown Item + zero metrics)
+        // so one noisy day cannot blank out all charts.
+        const hasMeaningfulRows = data.some((row: any) => {
+          const itemName = String(row?.itemName || '').trim().toLowerCase();
+          const revenue = Number(row?.revenue || 0);
+          const cogs = Number(row?.cogs || 0);
+          const qty = Number(row?.quantitySold || 0);
+          return itemName !== 'unknown item' || revenue !== 0 || cogs !== 0 || qty !== 0;
+        });
+        if (hasMeaningfulRows) {
+          data = data.filter((row: any) => {
+            const itemName = String(row?.itemName || '').trim().toLowerCase();
+            const revenue = Number(row?.revenue || 0);
+            const cogs = Number(row?.cogs || 0);
+            const qty = Number(row?.quantitySold || 0);
+            return !(itemName === 'unknown item' && revenue === 0 && cogs === 0 && qty === 0);
+          });
+        }
+
+        // V1: enrich products with best-available operational signals so all product
+        // reports are populated now (real data only, with explicit proxies).
+        const productIsoDay = (value: Date | string): string => {
+          const d = new Date(value);
+          return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        };
+        const canonicalProductKey = (value: unknown): string =>
+          String(value || '')
+            .trim()
+            .replace(/\s+/g, '')
+            .replace(/[^A-Za-z0-9]/g, '')
+            .toUpperCase();
+        const productKeyAliases = (row: any): string[] =>
+          Array.from(
+            new Set(
+              [
+                canonicalProductKey(row?.sku),
+                canonicalProductKey(row?.itemId),
+                canonicalProductKey(row?.itemName),
+              ].filter(Boolean)
+            )
+          );
+
+        const recordsV1 = data.map((row: any) => ({
+          ...row,
+          quantitySold: Number(row?.quantitySold || 0),
+          cogs: Number(row?.cogs || 0),
+          freightAllocated: 0,
+          otherRevenueAllocated: 0,
+          returnsAmount: Number(row?.revenue || 0) < 0 ? Math.abs(Number(row?.revenue || 0)) : 0,
+          isEstimatedCost: false,
+        }));
+
+        // Quantity fallback from order-line snapshots when product quantity is missing/zero.
+        const productOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+        if (productOrderLineDelegate?.findMany) {
+          const qtyRows = await productOrderLineDelegate.findMany({
+            where: {
+              companyId,
+              frequency,
+              snapshotDate: dateFilter,
+            },
+            select: {
+              snapshotDate: true,
+              itemId: true,
+              itemName: true,
+              sku: true,
+              qtyInvoiced: true,
+            },
+          });
+          const qtyByDayAndKey = new Map<string, number>();
+          for (const row of qtyRows) {
+            const qty = Math.max(0, Number(row.qtyInvoiced || 0));
+            if (!qty) continue;
+            const day = productIsoDay(row.snapshotDate);
+            const aliases = Array.from(
+              new Set(
+                [
+                  canonicalProductKey(row.sku),
+                  canonicalProductKey(row.itemId),
+                  canonicalProductKey(row.itemName),
+                ].filter(Boolean)
+              )
+            );
+            for (const alias of aliases) {
+              const mapKey = `${day}|${alias}`;
+              qtyByDayAndKey.set(mapKey, Number(qtyByDayAndKey.get(mapKey) || 0) + qty);
+            }
+          }
+          for (const row of recordsV1) {
+            if (Number(row.quantitySold || 0) > 0) continue;
+            const day = productIsoDay(row.snapshotDate);
+            const qty = productKeyAliases(row)
+              .map((alias) => Number(qtyByDayAndKey.get(`${day}|${alias}`) || 0))
+              .find((n) => n > 0);
+            if (qty && qty > 0) row.quantitySold = qty;
+          }
+        }
+
+        // Cost proxy fallback from inventory avg cost when transactional cogs is missing/zero.
+        const inventoryRows = await prisma.inventorySnapshot.findMany({
+          where: {
+            companyId,
+            snapshotDate: dateFilter,
+            frequency: { in: ['daily', frequency] },
+          },
+          select: {
+            snapshotDate: true,
+            itemId: true,
+            itemName: true,
+            sku: true,
+            avgCost: true,
+          },
+        });
+        const avgCostByDayAndKey = new Map<string, number>();
+        for (const inv of inventoryRows) {
+          const avgCost = Number(inv.avgCost || 0);
+          if (avgCost <= 0) continue;
+          const day = productIsoDay(inv.snapshotDate);
+          const aliases = Array.from(
+            new Set(
+              [
+                canonicalProductKey(inv.sku),
+                canonicalProductKey(inv.itemId),
+                canonicalProductKey(inv.itemName),
+              ].filter(Boolean)
+            )
+          );
+          for (const alias of aliases) {
+            const mapKey = `${day}|${alias}`;
+            if (!avgCostByDayAndKey.has(mapKey)) avgCostByDayAndKey.set(mapKey, avgCost);
+          }
+        }
+        for (const row of recordsV1) {
+          const cogs = Number(row.cogs || 0);
+          const qty = Math.max(0, Number(row.quantitySold || 0));
+          if (cogs > 0 || qty <= 0) continue;
+          const day = productIsoDay(row.snapshotDate);
+          const avgCost = productKeyAliases(row)
+            .map((alias) => Number(avgCostByDayAndKey.get(`${day}|${alias}`) || 0))
+            .find((n) => n > 0);
+          if (avgCost && avgCost > 0) {
+            row.cogs = avgCost * qty;
+            row.isEstimatedCost = true;
+          }
+        }
+
+        // GL allocation bridge for freight and other-revenue proxy lines.
+        const productMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+        if (productMappedLineDelegate?.findMany) {
+          const mappedRows = await productMappedLineDelegate.findMany({
+            where: {
+              companyId,
+              frequency,
+              snapshotDate: dateFilter,
+            },
+            select: {
+              snapshotDate: true,
+              targetField: true,
+              sourceAccountName: true,
+              amount: true,
+            },
+          });
+          const freightByDay = new Map<string, number>();
+          const otherRevenueByDay = new Map<string, number>();
+          for (const line of mappedRows) {
+            const day = productIsoDay(line.snapshotDate);
+            const amount = Math.abs(Number(line.amount || 0));
+            if (!Number.isFinite(amount) || amount === 0) continue;
+            const text = `${String(line.targetField || '')} ${String(line.sourceAccountName || '')}`.toLowerCase();
+            const isFreight =
+              text.includes('freight') || text.includes('shipping') || text.includes('delivery');
+            const isOtherRevenue =
+              text.includes('other revenue') ||
+              text.includes('misc') ||
+              text.includes('surcharge') ||
+              text.includes('handling');
+            if (isFreight) {
+              freightByDay.set(day, Number(freightByDay.get(day) || 0) + amount);
+            } else if (isOtherRevenue) {
+              otherRevenueByDay.set(day, Number(otherRevenueByDay.get(day) || 0) + amount);
+            }
+          }
+
+          const rowIndexesByDay = new Map<string, number[]>();
+          for (let idx = 0; idx < recordsV1.length; idx += 1) {
+            const row = recordsV1[idx];
+            const day = productIsoDay(row.snapshotDate);
+            if (!rowIndexesByDay.has(day)) rowIndexesByDay.set(day, []);
+            rowIndexesByDay.get(day)!.push(idx);
+          }
+          for (const [day, indexes] of rowIndexesByDay.entries()) {
+            if (!indexes.length) continue;
+            const totalFreight = Number(freightByDay.get(day) || 0);
+            const totalOtherRevenue = Number(otherRevenueByDay.get(day) || 0);
+            if (totalFreight <= 0 && totalOtherRevenue <= 0) continue;
+            const bases = indexes.map((idx) => Math.max(0, Number(recordsV1[idx].revenue || 0)));
+            const totalBase = bases.reduce((sum, n) => sum + n, 0);
+            if (totalBase > 0) {
+              indexes.forEach((idx, i) => {
+                const weight = bases[i] / totalBase;
+                if (totalFreight > 0) recordsV1[idx].freightAllocated = weight * totalFreight;
+                if (totalOtherRevenue > 0) recordsV1[idx].otherRevenueAllocated = weight * totalOtherRevenue;
+              });
+            } else {
+              const freightEven = totalFreight > 0 ? totalFreight / indexes.length : 0;
+              const otherEven = totalOtherRevenue > 0 ? totalOtherRevenue / indexes.length : 0;
+              indexes.forEach((idx) => {
+                if (freightEven > 0) recordsV1[idx].freightAllocated = freightEven;
+                if (otherEven > 0) recordsV1[idx].otherRevenueAllocated = otherEven;
+              });
+            }
+          }
+        }
+
+        data = recordsV1 as any;
 
         // Calculate product performance
         const productTotals = data.reduce((acc, record) => {
@@ -2166,7 +2382,7 @@ export async function GET(request: NextRequest) {
               .map((p: any) => ({
                 ...p,
                 grossMargin: p.totalRevenue - p.totalCogs,
-                grossMarginPct: ((p.totalRevenue - p.totalCogs) / p.totalRevenue) * 100,
+                grossMarginPct: p.totalRevenue > 0 ? ((p.totalRevenue - p.totalCogs) / p.totalRevenue) * 100 : 0,
               }))
               .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
               .slice(0, 10),
