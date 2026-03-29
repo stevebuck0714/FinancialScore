@@ -120,6 +120,13 @@ function clearSessionCookies(response: NextResponse) {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+  const cronSecret = String(process.env.CRON_SECRET || '').trim()
+  const workerSecret = String(request.headers.get('x-infor-sync-worker-secret') || '').trim()
+  const isTrustedInternalSyncWorker =
+    pathname.startsWith('/api/infor-m3/operational-sync') &&
+    !!cronSecret &&
+    !!workerSecret &&
+    workerSecret === cronSecret
   
   // Get client identifier for rate limiting
   const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0] || 
@@ -207,7 +214,7 @@ export async function middleware(request: NextRequest) {
     })
   }
   
-  if (pathname.startsWith('/api') && !isPublicRoute) {
+  if (pathname.startsWith('/api') && !isPublicRoute && !isTrustedInternalSyncWorker) {
     console.log('🔐 Middleware auth check:', {
       path: pathname,
       hasToken: !!token,
