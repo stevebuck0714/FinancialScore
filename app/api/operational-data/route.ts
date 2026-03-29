@@ -2195,11 +2195,20 @@ export async function GET(request: NextRequest) {
               itemName: true,
               sku: true,
               qtyInvoiced: true,
+              unitPrice: true,
+              contractValue: true,
+              invoicedAmount: true,
             },
           });
           const qtyByDayAndKey = new Map<string, number>();
           for (const row of qtyRows) {
-            const qty = Math.max(0, Number(row.qtyInvoiced || 0));
+            // Some CSI streams provide shipped/value fields while invoiced qty stays zero.
+            // Derive a conservative quantity proxy from line value when needed.
+            const explicitQty = Math.max(0, Number(row.qtyInvoiced || 0));
+            const unitPrice = Math.max(0, Number(row.unitPrice || 0));
+            const valueBasis = Math.max(0, Number(row.invoicedAmount || 0), Number(row.contractValue || 0));
+            const derivedQty = unitPrice > 0 && valueBasis > 0 ? valueBasis / unitPrice : 0;
+            const qty = explicitQty > 0 ? explicitQty : derivedQty;
             if (!qty) continue;
             const day = productIsoDay(row.snapshotDate);
             const aliases = Array.from(
@@ -2242,10 +2251,12 @@ export async function GET(request: NextRequest) {
           },
         });
         const avgCostByDayAndKey = new Map<string, number>();
+        const descriptionByKey = new Map<string, string>();
+        const looksLikeCode = (value: string): boolean => /^[A-Z0-9\-_.\/]+$/.test(value.trim());
         for (const inv of inventoryRows) {
           const avgCost = Number(inv.avgCost || 0);
-          if (avgCost <= 0) continue;
           const day = productIsoDay(inv.snapshotDate);
+          const candidateDescription = String(inv.itemName || '').trim();
           const aliases = Array.from(
             new Set(
               [
@@ -2257,20 +2268,47 @@ export async function GET(request: NextRequest) {
           );
           for (const alias of aliases) {
             const mapKey = `${day}|${alias}`;
-            if (!avgCostByDayAndKey.has(mapKey)) avgCostByDayAndKey.set(mapKey, avgCost);
+            if (avgCost > 0 && !avgCostByDayAndKey.has(mapKey)) avgCostByDayAndKey.set(mapKey, avgCost);
+            if (candidateDescription) {
+              const existing = String(descriptionByKey.get(mapKey) || '').trim();
+              const existingScore =
+                existing && !looksLikeCode(existing) ? 2 : existing ? 1 : 0;
+              const candidateScore =
+                !looksLikeCode(candidateDescription) ? 2 : 1;
+              // Prefer human-readable inventory descriptions over code-like labels.
+              if (candidateScore > existingScore) {
+                descriptionByKey.set(mapKey, candidateDescription);
+              }
+            }
           }
         }
         for (const row of recordsV1) {
+          const day = productIsoDay(row.snapshotDate);
+          const preferredName = productKeyAliases(row)
+            .map((alias) => String(descriptionByKey.get(`${day}|${alias}`) || '').trim())
+            .find(Boolean);
+          if (preferredName && preferredName.toLowerCase() !== 'unknown item') {
+            row.itemName = preferredName;
+          }
           const cogs = Number(row.cogs || 0);
           const qty = Math.max(0, Number(row.quantitySold || 0));
-          if (cogs > 0 || qty <= 0) continue;
-          const day = productIsoDay(row.snapshotDate);
+          const revenue = Number(row.revenue || 0);
           const avgCost = productKeyAliases(row)
             .map((alias) => Number(avgCostByDayAndKey.get(`${day}|${alias}`) || 0))
             .find((n) => n > 0);
-          if (avgCost && avgCost > 0) {
+          if (cogs <= 0 && qty > 0 && avgCost && avgCost > 0) {
             row.cogs = avgCost * qty;
             row.isEstimatedCost = true;
+          } else if (qty <= 0 && (revenue !== 0 || cogs !== 0)) {
+            // Comparison-safe fallback: when quantity is missing but revenue exists,
+            // assign a synthetic single-unit row so price/cost deltas are not blank.
+            // We still mark cost as estimated and use 0 when no proxy exists.
+            row.quantitySold = 1;
+            row.isEstimatedQuantity = true;
+            if (avgCost && avgCost > 0) {
+              row.cogs = avgCost;
+              row.isEstimatedCost = true;
+            }
           }
         }
 

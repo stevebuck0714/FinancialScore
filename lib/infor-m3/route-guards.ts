@@ -34,6 +34,14 @@ export async function requireSiteAdminAuthorizedInforCompany(
   request: NextRequest,
   body?: Record<string, unknown>
 ): Promise<{ companyId: string }> {
+  const internalSecret = String(process.env.CRON_SECRET || '').trim();
+  const workerSecret = String(request.headers.get('x-infor-sync-worker-secret') || '').trim();
+  const allowDevBypass = !internalSecret && process.env.NODE_ENV === 'development' && Boolean(workerSecret);
+  if ((internalSecret && workerSecret && workerSecret === internalSecret) || allowDevBypass) {
+    const companyId = getRequestedCompanyId(request, body);
+    if (!companyId) throw new Error('companyId is required');
+    return { companyId };
+  }
   await requireSiteAdmin();
   return requireAuthorizedInforCompany(request, body);
 }

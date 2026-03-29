@@ -5906,205 +5906,65 @@ function FinancialScorePage() {
       recentlyActive: true,
     });
     try {
-      const sleep = async (ms: number) => {
-        await new Promise((resolve) => setTimeout(resolve, ms));
+      const isDailyCsiSync = isCsiCompany && frequency === 'daily';
+      const requestedMode = options?.mode;
+      const resolvedMode = requestedMode || (isDailyCsiSync ? 'business_day_backfill' : undefined);
+      const resolvedBackfillMonths =
+        typeof options?.backfillMonths === 'number' && Number.isFinite(options.backfillMonths)
+          ? Math.max(1, Math.floor(options.backfillMonths))
+          : isDailyCsiSync
+            ? 36
+            : undefined;
+      const payload: Record<string, unknown> = {
+        action: 'start',
+        companyId,
+        frequency,
+        ...(String(site || '').trim() ? { site: String(site).trim() } : {}),
       };
-      const isRateLimitMessage = (value: unknown) =>
-        /too many requests|rate limit|429/i.test(String(value || ''));
-
-      let totalRecordsCreated = 0;
-      let chunkCount = 0;
-      let aggregatedErrors: string[] = [];
-      let cursor: Record<string, unknown> | null = null;
-      let syncRunId = '';
-      const maxChunks = 4000;
-      const maxChunkRetries = 5;
-      let lastCursorSignature: string | null = null;
-      let stagnantCursorCount = 0;
-      const maxStagnantCursorChunks = 25;
-      const chunkRequestTimeoutMs = 180000;
-
-      while (chunkCount < maxChunks) {
-        chunkCount += 1;
-        const isDailyCsiSync = isCsiCompany && frequency === 'daily';
-        const requestedMode = options?.mode;
-        const resolvedMode = requestedMode || (isDailyCsiSync ? 'business_day_backfill' : undefined);
-        const resolvedBackfillMonths =
-          typeof options?.backfillMonths === 'number' && Number.isFinite(options.backfillMonths)
-            ? Math.max(1, Math.floor(options.backfillMonths))
-            : isDailyCsiSync
-              ? 36
-              : undefined;
-        const payload: Record<string, unknown> = {
-          companyId,
-          frequency,
-          programBatchSize: 1,
-          ...(String(site || '').trim() ? { site: String(site).trim() } : {}),
-        };
-        if (syncRunId) payload.syncRunId = syncRunId;
-        if (resolvedMode) payload.mode = resolvedMode;
-        if (typeof resolvedBackfillMonths === 'number') payload.backfillMonths = resolvedBackfillMonths;
-        if (options?.salesOnly === true) {
-          payload.salesOnly = true;
-          payload.scope = 'sales';
-        }
-        if (typeof options?.lookbackDays === 'number' && Number.isFinite(options.lookbackDays)) {
-          payload.lookbackDays = Math.max(1, Math.floor(options.lookbackDays));
-        }
-        if (options?.startDate) payload.startDate = options.startDate;
-        if (options?.endDate) payload.endDate = options.endDate;
-        if (cursor) Object.assign(payload, cursor);
-
-        let data: any = null;
-        let chunkSucceeded = false;
-        let lastDetails = 'Operational sync failed';
-        for (let attempt = 0; attempt < maxChunkRetries; attempt += 1) {
-          let response: Response;
-          try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), chunkRequestTimeoutMs);
-            response = await fetch('/api/infor-m3/operational-sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-              signal: controller.signal,
-            });
-            clearTimeout(timeout);
-          } catch (networkError: any) {
-            const networkMessage =
-              String(networkError?.name || '').trim() === 'AbortError'
-                ? `Operational sync chunk timed out after ${Math.floor(chunkRequestTimeoutMs / 1000)}s`
-                : String(networkError?.message || '').trim() || 'Failed to fetch';
-            lastDetails = networkMessage;
-            // Network-level drops can happen mid-backfill; retry chunk before failing run.
-            if (attempt < maxChunkRetries - 1) {
-              const backoffMs = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
-              await sleep(backoffMs);
-              continue;
-            }
-            throw new Error(networkMessage);
-          }
-
-          const rawBody = await response.text();
-          try {
-            data = rawBody ? JSON.parse(rawBody) : {};
-          } catch {
-            data = { error: rawBody || 'Operational sync failed with non-JSON response.' };
-          }
-
-          const details = Array.isArray(data?.errors) && data.errors.length > 0
-            ? data.errors.join('\n')
-            : data?.details || data?.error || 'Operational sync failed';
-          lastDetails = details;
-          const rateLimited =
-            response.status === 429 ||
-            isRateLimitMessage(details) ||
-            isRateLimitMessage(data?.error) ||
-            isRateLimitMessage(data?.details);
-          if ((!response.ok || !data?.ok) && rateLimited && attempt < maxChunkRetries - 1) {
-            const backoffMs = 1000 * Math.pow(2, attempt) + Math.floor(Math.random() * 250);
-            await sleep(backoffMs);
-            continue;
-          }
-          if (!response.ok || !data?.ok) {
-            throw new Error(details);
-          }
-          if (typeof data?.syncRunId === 'string' && data.syncRunId.trim()) {
-            syncRunId = data.syncRunId.trim();
-          }
-          if (syncRunId) {
-            setInforOperationalSyncStatus((prev) =>
-              prev && prev.companyId === companyId
-                ? {
-                    ...prev,
-                    syncRunId,
-                  }
-                : prev
-            );
-          }
-          chunkSucceeded = true;
-          break;
-        }
-
-        if (!chunkSucceeded) {
-          throw new Error(lastDetails);
-        }
-
-        totalRecordsCreated += Number(data?.recordsCreated || 0);
-        if (Array.isArray(data?.errors) && data.errors.length > 0) {
-          aggregatedErrors = aggregatedErrors.concat(data.errors.map((entry: unknown) => String(entry)));
-        }
-        setInforOperationalSyncStatus((prev) => {
-          if (!prev || prev.companyId !== companyId) return prev;
-          return {
-            ...prev,
-            syncRunId: syncRunId || prev.syncRunId,
-            state: 'running',
-            chunkCount,
-            recordsCreated: totalRecordsCreated,
-            warningCount: aggregatedErrors.length,
-            lastChunkAt: new Date().toISOString(),
-            recentlyActive: true,
-          };
-        });
-
-        if (data?.hasMore && (!data?.cursor || typeof data.cursor !== 'object')) {
-          throw new Error('Operational sync returned hasMore=true without a continuation cursor.');
-        }
-
-        if (data?.hasMore && data?.cursor && typeof data.cursor === 'object') {
-          cursor = data.cursor as Record<string, unknown>;
-          if (typeof (cursor as any).syncRunId === 'string' && String((cursor as any).syncRunId).trim()) {
-            syncRunId = String((cursor as any).syncRunId).trim();
-          }
-          const cursorSignature = JSON.stringify(cursor);
-          if (cursorSignature === lastCursorSignature) {
-            stagnantCursorCount += 1;
-          } else {
-            lastCursorSignature = cursorSignature;
-            stagnantCursorCount = 0;
-          }
-          if (stagnantCursorCount >= maxStagnantCursorChunks) {
-            throw new Error(
-              'Operational sync cursor stopped advancing and appears to be looping. Please retry after adjusting sync settings.'
-            );
-          }
-          // Light pacing between continuation chunks reduces upstream rate-limit pressure.
-          await sleep(200);
-          continue;
-        }
-        break;
+      if (resolvedMode) payload.mode = resolvedMode;
+      if (typeof resolvedBackfillMonths === 'number') payload.backfillMonths = resolvedBackfillMonths;
+      if (options?.salesOnly === true) {
+        payload.salesOnly = true;
+        payload.scope = 'sales';
       }
-
-      if (chunkCount >= maxChunks) {
-        throw new Error('Operational sync exceeded maximum continuation chunks. Please retry.');
+      if (typeof options?.lookbackDays === 'number' && Number.isFinite(options.lookbackDays)) {
+        payload.lookbackDays = Math.max(1, Math.floor(options.lookbackDays));
       }
+      if (options?.startDate) payload.startDate = options.startDate;
+      if (options?.endDate) payload.endDate = options.endDate;
 
-      await checkInforM3Status(companyId);
-      const siteSuffix = String(site || '').trim() ? ` Site: ${String(site).trim()}.` : '';
-      const warningSuffix =
-        aggregatedErrors.length > 0
-          ? `\n\nCompleted with ${aggregatedErrors.length} warning(s).\n${aggregatedErrors.slice(0, 5).join('\n')}`
-          : '';
-      alert(
-        `Infor M3 operational sync complete. Records created: ${totalRecordsCreated}. Chunks processed: ${chunkCount}.${siteSuffix}${warningSuffix}`
-      );
+      const response = await fetch('/api/infor-m3/operational-sync-async', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        const details =
+          data?.details ||
+          data?.error ||
+          (Array.isArray(data?.errors) && data.errors.length > 0 ? data.errors.join('\n') : 'Failed to start async sync');
+        throw new Error(details);
+      }
+      const run = data?.run || {};
+      const syncRunId = String(run?.syncRunId || '').trim();
       setInforOperationalSyncStatus((prev) =>
         prev && prev.companyId === companyId
           ? {
               ...prev,
-              syncRunId: syncRunId || prev.syncRunId,
-              state: 'done',
-              chunkCount,
-              recordsCreated: totalRecordsCreated,
-              warningCount: aggregatedErrors.length,
-              lastChunkAt: new Date().toISOString(),
-              lastStatusText: aggregatedErrors.length > 0 ? 'warning' : 'success',
-              message: aggregatedErrors.length > 0 ? `Completed with ${aggregatedErrors.length} warning(s).` : null,
-              recentlyActive: false,
+              syncRunId,
+              state: 'running',
+              chunkCount: Math.max(0, Number(run?.chunkCount || 0)),
+              recordsCreated: Math.max(0, Number(run?.recordsCreated || 0)),
+              warningCount: Math.max(0, Number(run?.warningCount || 0)),
+              lastChunkAt: run?.lastChunkAt || new Date().toISOString(),
+              lastStatusText: 'running',
+              message: String(data?.message || run?.message || 'Background sync started.'),
+              recentlyActive: true,
             }
           : prev
       );
+      alert('Infor M3 operational sync started in background. You can leave this page; progress will continue server-side.');
     } catch (error: any) {
       const message = error?.message || 'Failed to run Infor M3 operational sync';
       setInforError(message);

@@ -1,0 +1,192 @@
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import {
+  getRunStateFromMetadata,
+  withRunStateMetadata,
+  type InforOperationalAsyncRun,
+} from '@/lib/infor-m3/async-run-state';
+
+export const dynamic = 'force-dynamic';
+
+const MAX_RUNS_PER_TICK = 8;
+const MAX_RETRIES_PER_RUN = 6;
+
+function buildChunkPayload(run: InforOperationalAsyncRun): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    companyId: run.companyId,
+    frequency: run.frequency,
+    programBatchSize: 1,
+    syncRunId: run.syncRunId,
+  };
+  if (run.site) payload.site = run.site;
+  if (run.mode) payload.mode = run.mode;
+  if (typeof run.backfillMonths === 'number' && Number.isFinite(run.backfillMonths)) {
+    payload.backfillMonths = Math.max(1, Math.floor(run.backfillMonths));
+  }
+  if (typeof run.lookbackDays === 'number' && Number.isFinite(run.lookbackDays)) {
+    payload.lookbackDays = Math.max(1, Math.floor(run.lookbackDays));
+  }
+  if (run.startDate) payload.startDate = run.startDate;
+  if (run.endDate) payload.endDate = run.endDate;
+  if (run.salesOnly) {
+    payload.salesOnly = true;
+    payload.scope = 'sales';
+  }
+  if (run.cursor && typeof run.cursor === 'object') {
+    Object.assign(payload, run.cursor);
+  }
+  return payload;
+}
+
+async function processOneRun(
+  request: NextRequest,
+  connection: { id: string; companyId: string; connectionMetadata: unknown },
+  run: InforOperationalAsyncRun,
+  workerSecret: string
+): Promise<InforOperationalAsyncRun> {
+  const payload = buildChunkPayload(run);
+  const url = new URL('/api/infor-m3/operational-sync', request.url);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-infor-sync-worker-secret': workerSecret,
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+  const data = await response.json().catch(() => ({}));
+  const nowIso = new Date().toISOString();
+  if (!response.ok || !data?.ok) {
+    const details =
+      Array.isArray(data?.errors) && data.errors.length > 0
+        ? data.errors.join(' | ')
+        : data?.details || data?.error || 'Async sync chunk failed';
+    const retries = Math.max(0, Number(run.retryCount || 0)) + 1;
+    const failed = retries >= MAX_RETRIES_PER_RUN;
+    return {
+      ...run,
+      status: failed ? 'failed' : 'running',
+      retryCount: retries,
+      updatedAt: nowIso,
+      lastError: String(details).slice(0, 1200),
+      message: failed
+        ? `Failed after ${retries} retries.`
+        : `Chunk failed (retry ${retries}/${MAX_RETRIES_PER_RUN}).`,
+    };
+  }
+
+  const chunkWarnings = Array.isArray(data?.errors) ? data.errors.length : 0;
+  const nextRun: InforOperationalAsyncRun = {
+    ...run,
+    syncRunId: String(data?.syncRunId || run.syncRunId),
+    status: data?.hasMore ? 'running' : 'done',
+    cursor:
+      data?.hasMore && data?.cursor && typeof data.cursor === 'object'
+        ? (data.cursor as Record<string, unknown>)
+        : null,
+    chunkCount: Math.max(0, Number(run.chunkCount || 0)) + 1,
+    recordsCreated: Math.max(0, Number(run.recordsCreated || 0)) + Math.max(0, Number(data?.recordsCreated || 0)),
+    warningCount: Math.max(0, Number(run.warningCount || 0)) + chunkWarnings,
+    retryCount: 0,
+    updatedAt: nowIso,
+    lastChunkAt: nowIso,
+    lastError: null,
+    message: data?.hasMore ? null : 'Background sync completed.',
+  };
+  return nextRun;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get('authorization');
+    const cronSecret = String(process.env.CRON_SECRET || '').trim();
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const workerSecret = cronSecret || 'dev-worker';
+
+    const connections = await prisma.accountingConnection.findMany({
+      where: { platform: 'INFOR_M3' },
+      select: { id: true, companyId: true, connectionMetadata: true },
+      orderBy: { updatedAt: 'asc' },
+      take: 100,
+    });
+
+    const running = connections
+      .map((connection) => ({ connection, run: getRunStateFromMetadata(connection.connectionMetadata) }))
+      .filter((entry) => entry.run && entry.run.status === 'running')
+      .slice(0, MAX_RUNS_PER_TICK) as Array<{
+      connection: { id: string; companyId: string; connectionMetadata: unknown };
+      run: InforOperationalAsyncRun;
+    }>;
+
+    const results: Array<Record<string, unknown>> = [];
+    for (const entry of running) {
+      try {
+        const updatedRun = await processOneRun(request, entry.connection, entry.run, workerSecret);
+        await prisma.accountingConnection.update({
+          where: { id: entry.connection.id },
+          data: {
+            connectionMetadata: withRunStateMetadata(entry.connection.connectionMetadata, updatedRun),
+            lastSyncAt:
+              updatedRun.status === 'done' || updatedRun.status === 'failed' || updatedRun.status === 'cancelled'
+                ? new Date()
+                : undefined,
+            errorMessage: updatedRun.status === 'failed' ? updatedRun.lastError || 'Operational sync failed' : undefined,
+          },
+        });
+        results.push({
+          companyId: entry.connection.companyId,
+          syncRunId: updatedRun.syncRunId,
+          status: updatedRun.status,
+          chunkCount: updatedRun.chunkCount,
+          recordsCreated: updatedRun.recordsCreated,
+          warningCount: updatedRun.warningCount,
+          lastError: updatedRun.lastError || null,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown chunk error';
+        const failedRun: InforOperationalAsyncRun = {
+          ...entry.run,
+          status: 'failed',
+          retryCount: MAX_RETRIES_PER_RUN,
+          updatedAt: new Date().toISOString(),
+          lastError: message,
+          message: 'Background worker failed to process this run.',
+        };
+        await prisma.accountingConnection.update({
+          where: { id: entry.connection.id },
+          data: {
+            connectionMetadata: withRunStateMetadata(entry.connection.connectionMetadata, failedRun),
+            errorMessage: message,
+          },
+        });
+        results.push({
+          companyId: entry.connection.companyId,
+          syncRunId: entry.run.syncRunId,
+          status: 'failed',
+          error: message,
+        });
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      scannedConnections: connections.length,
+      runningProcessed: running.length,
+      results,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'Failed to process Infor async sync runs',
+        details: message,
+      },
+      { status: 500 }
+    );
+  }
+}
+

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRequestedCompanyId } from '@/lib/infor-m3/route-guards';
 import { requireSiteAdmin } from '@/lib/tenant-security';
+import { getRunStateFromMetadata } from '@/lib/infor-m3/async-run-state';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'syncRunId is required.' }, { status: 400 });
     }
 
+    const connection = await prisma.accountingConnection.findUnique({
+      where: {
+        companyId_platform: {
+          companyId,
+          platform: 'INFOR_M3',
+        },
+      },
+      select: {
+        connectionMetadata: true,
+      },
+    });
+    const activeRun = getRunStateFromMetadata(connection?.connectionMetadata);
+    const runMatches = activeRun && activeRun.syncRunId === syncRunId ? activeRun : null;
+
     const rows = await prisma.$queryRaw<StatusRow[]>`
       SELECT
         status,
@@ -42,10 +57,15 @@ export async function GET(request: NextRequest) {
     const recordsCreated = rows.reduce((sum, row) => sum + Number(row.recordsImported || 0), 0);
     const warningCount = rows.reduce((sum, row) => sum + Number(row.errorCount || 0), 0);
     const lastRow = rows[0];
-    const lastChunkAt = lastRow?.createdAt ? new Date(lastRow.createdAt).toISOString() : null;
-    const lastStatusText = lastRow?.status ? String(lastRow.status) : null;
+    const lastChunkAt =
+      runMatches?.lastChunkAt ||
+      (lastRow?.createdAt ? new Date(lastRow.createdAt).toISOString() : null);
+    const lastStatusText =
+      (runMatches?.status ? String(runMatches.status) : null) ||
+      (lastRow?.status ? String(lastRow.status) : null);
     const recentlyActive =
-      typeof lastChunkAt === 'string' && Date.now() - new Date(lastChunkAt).getTime() <= 3 * 60 * 1000;
+      (runMatches?.status === 'running' && Date.now() - new Date(runMatches.updatedAt).getTime() <= 15 * 60 * 1000) ||
+      (typeof lastChunkAt === 'string' && Date.now() - new Date(lastChunkAt).getTime() <= 3 * 60 * 1000);
 
     return NextResponse.json({
       ok: true,
@@ -57,6 +77,8 @@ export async function GET(request: NextRequest) {
       lastChunkAt,
       lastStatusText,
       recentlyActive,
+      runStatus: runMatches?.status || null,
+      runMessage: runMatches?.message || null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

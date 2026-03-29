@@ -4052,14 +4052,13 @@ export default function OperationsTab({
 
     const comparisonRowsWithSignal = weeklyMarginModel.comparisonRows.filter((row) => {
       const hasSignal =
-        Number(row.revenueThisWeek || 0) !== 0 ||
-        Number(row.marginAmountThisWeek || 0) !== 0 ||
         row.priceThisWeek != null ||
         row.costThisWeek != null ||
         row.spreadThisWeek != null ||
         row.pricePriorWeek != null ||
         row.costPriorWeek != null ||
-        row.spreadPriorWeek != null;
+        row.spreadPriorWeek != null ||
+        (Number(row.revenueThisWeek || 0) !== 0 && Number(row.marginAmountThisWeek || 0) !== 0);
       return hasSignal;
     });
     const filteredComparisonRows = comparisonRowsWithSignal.filter((row) => {
