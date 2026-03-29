@@ -79,11 +79,13 @@ async function processOneRun(
 ): Promise<InforOperationalAsyncRun> {
   const payload = buildChunkPayload(run);
   const url = new URL('/api/infor-m3/operational-sync', request.url);
+  const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-infor-sync-worker-secret': workerSecret,
+      ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
     },
     body: JSON.stringify(payload),
     cache: 'no-store',
