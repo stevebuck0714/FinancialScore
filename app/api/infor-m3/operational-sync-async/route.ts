@@ -183,10 +183,13 @@ export async function POST(request: NextRequest) {
         ok: true,
         companyId,
         alreadyRunning: started.alreadyRunning,
+        queued: started.queued,
         run: mapQueueRunToLegacy(started.run),
-        message: started.alreadyRunning
-          ? 'Async operational sync already running.'
-          : 'Async operational sync started.',
+        message: started.queued
+          ? 'Async operational sync queued behind active run.'
+          : started.alreadyRunning
+            ? 'Async operational sync already running.'
+            : 'Async operational sync started.',
       });
     }
 

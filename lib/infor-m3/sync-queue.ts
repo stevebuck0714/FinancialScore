@@ -140,6 +140,18 @@ export async function getActiveQueueRun(companyId: string): Promise<QueueRunReco
   return (run as QueueRunRecord | null) || null;
 }
 
+async function getRunningQueueRun(companyId: string): Promise<QueueRunRecord | null> {
+  const run = await db().inforSyncRun.findFirst({
+    where: {
+      companyId,
+      platform: 'INFOR_M3',
+      status: 'running',
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  return (run as QueueRunRecord | null) || null;
+}
+
 export async function getQueueRunById(companyId: string, runId: string): Promise<QueueRunRecord | null> {
   const run = await db().inforSyncRun.findUnique({
     where: { id: runId },
@@ -158,17 +170,16 @@ export async function startQueueRun(input: {
   startDate?: string;
   endDate?: string;
   salesOnly?: boolean;
-}): Promise<{ alreadyRunning: boolean; run: QueueRunRecord }> {
-  const existing = await getActiveQueueRun(input.companyId);
-  if (existing) return { alreadyRunning: true, run: existing };
-
+}): Promise<{ alreadyRunning: boolean; queued: boolean; run: QueueRunRecord }> {
+  const running = await getRunningQueueRun(input.companyId);
+  const initialStatus = running ? 'queued' : 'running';
   const id = randomUUID();
   const run = await db().inforSyncRun.create({
     data: {
       id,
       companyId: input.companyId,
       platform: 'INFOR_M3',
-      status: 'running',
+      status: initialStatus,
       frequency: input.frequency,
       site: input.site || null,
       mode: input.mode || null,
@@ -177,7 +188,7 @@ export async function startQueueRun(input: {
       startDate: input.startDate ? new Date(input.startDate) : null,
       endDate: input.endDate ? new Date(input.endDate) : null,
       salesOnly: input.salesOnly === true,
-      message: 'Queued for background processing.',
+      message: running ? 'Queued behind active run.' : 'Queued for background processing.',
     },
   });
   const runRecord = run as QueueRunRecord;
@@ -190,7 +201,11 @@ export async function startQueueRun(input: {
       payload: buildTaskPayload(runRecord, null),
     },
   });
-  return { alreadyRunning: false, run: runRecord };
+  return {
+    alreadyRunning: false,
+    queued: Boolean(running),
+    run: runRecord,
+  };
 }
 
 export async function cancelQueueRun(companyId: string, syncRunId?: string): Promise<{ cancelled: boolean; run?: QueueRunRecord | null }> {
@@ -263,6 +278,40 @@ async function leasePendingTasks(limit: number): Promise<Array<QueueTaskRecord &
     }
   }
   return leased;
+}
+
+async function promoteQueuedRunsForIdleCompanies(): Promise<number> {
+  const runningRuns = (await db().inforSyncRun.findMany({
+    where: { platform: 'INFOR_M3', status: 'running' },
+    select: { companyId: true },
+  })) as Array<{ companyId: string }>;
+  const runningByCompany = new Set(runningRuns.map((row) => String(row.companyId)));
+
+  const queuedRuns = (await db().inforSyncRun.findMany({
+    where: { platform: 'INFOR_M3', status: 'queued' },
+    orderBy: { createdAt: 'asc' },
+    take: 100,
+  })) as QueueRunRecord[];
+
+  let promoted = 0;
+  for (const queued of queuedRuns) {
+    const companyId = String(queued.companyId);
+    if (!companyId || runningByCompany.has(companyId)) continue;
+    const now = new Date();
+    const updated = await db().inforSyncRun.updateMany({
+      where: { id: queued.id, status: 'queued' },
+      data: {
+        status: 'running',
+        message: 'Queued for background processing.',
+        updatedAt: now,
+      },
+    });
+    if (Number(updated?.count || 0) === 1) {
+      promoted += 1;
+      runningByCompany.add(companyId);
+    }
+  }
+  return promoted;
 }
 
 async function processTask(
@@ -514,6 +563,7 @@ async function processTask(
 }
 
 export async function processQueueTick(requestUrl: string, workerSecret: string): Promise<Record<string, unknown>> {
+  const promotedRuns = await promoteQueuedRunsForIdleCompanies();
   const leased = await leasePendingTasks(MAX_TASKS_PER_TICK);
   const results: Array<Record<string, unknown>> = [];
   for (const task of leased) {
@@ -553,6 +603,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
   return {
     ok: true,
     queueEnabled: true,
+    promotedRuns,
     leasedTasks: leased.length,
     results,
   };
