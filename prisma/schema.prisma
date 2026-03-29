@@ -489,6 +489,84 @@ model ApiSyncLog {
   @@index([createdAt])
 }
 
+model InforSyncRun {
+  id             String   @id
+  companyId      String
+  platform       String   @default("INFOR_M3")
+  status         String   @default("running") // queued | running | done | failed | cancelled
+  frequency      String   @default("daily")
+  site           String?
+  mode           String?
+  backfillMonths Int?
+  lookbackDays   Int?
+  startDate      DateTime?
+  endDate        DateTime?
+  salesOnly      Boolean  @default(false)
+  chunkCount     Int      @default(0)
+  recordsCreated Int      @default(0)
+  warningCount   Int      @default(0)
+  retryCount     Int      @default(0)
+  message        String?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+  lastChunkAt    DateTime?
+  tasks          InforSyncTask[]
+
+  @@index([companyId, status, createdAt(sort: Desc)])
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model InforSyncTask {
+  id            String                @id @default(cuid())
+  runId         String
+  companyId     String
+  status        String                @default("pending") // pending | leased | done | failed | cancelled
+  attemptCount  Int                   @default(0)
+  maxAttempts   Int                   @default(6)
+  availableAt   DateTime              @default(now())
+  leaseOwner    String?
+  leaseExpiresAt DateTime?
+  payload       Json
+  lastError     String?
+  lastResponse  Json?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  run           InforSyncRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  attempts      InforSyncTaskAttempt[]
+
+  @@index([runId, status, availableAt])
+  @@index([status, availableAt, leaseExpiresAt])
+  @@index([companyId, status, createdAt(sort: Desc)])
+}
+
+model InforSyncTaskAttempt {
+  id              String        @id @default(cuid())
+  taskId           String
+  runId            String
+  companyId        String
+  attemptNo        Int
+  status           String       // success | retry | failed | skipped
+  httpStatus       Int?
+  errorMessage     String?
+  responseSnippet  String?
+  recordsCreated   Int          @default(0)
+  warningCount     Int          @default(0)
+  durationMs       Int?
+  startedAt        DateTime     @default(now())
+  finishedAt       DateTime?
+  task             InforSyncTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, attemptNo])
+  @@index([runId, startedAt(sort: Desc)])
+  @@index([companyId, startedAt(sort: Desc)])
+}
+
 model AccountMapping {
   id                      String   @id @default(cuid())
   companyId               String

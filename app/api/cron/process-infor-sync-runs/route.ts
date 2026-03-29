@@ -5,6 +5,7 @@ import {
   withRunStateMetadata,
   type InforOperationalAsyncRun,
 } from '@/lib/infor-m3/async-run-state';
+import { isInforSyncQueueEnabled, processQueueTick } from '@/lib/infor-m3/sync-queue';
 
 export const dynamic = 'force-dynamic';
 
@@ -164,6 +165,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const workerSecret = cronSecret || 'dev-worker';
+    if (isInforSyncQueueEnabled()) {
+      const queued = await processQueueTick(request.url, workerSecret);
+      return NextResponse.json(queued);
+    }
 
     const connections = await prisma.accountingConnection.findMany({
       where: { platform: 'INFOR_M3' },

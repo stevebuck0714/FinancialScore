@@ -8,6 +8,12 @@ import {
   withRunStateMetadata,
   type InforOperationalAsyncRun,
 } from '@/lib/infor-m3/async-run-state';
+import {
+  isInforSyncQueueEnabled,
+  startQueueRun,
+  cancelQueueRun,
+  mapQueueRunToLegacy,
+} from '@/lib/infor-m3/sync-queue';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,8 +78,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'INFOR_M3 connection not found for company.' }, { status: 404 });
     }
 
-    const existingRun = getRunStateFromMetadata(connection.connectionMetadata);
+    const queueEnabled = isInforSyncQueueEnabled();
+    const existingRun = queueEnabled ? null : getRunStateFromMetadata(connection.connectionMetadata);
     if (action === 'cancel') {
+      if (queueEnabled) {
+        const syncRunId = String(body.syncRunId || '').trim() || undefined;
+        const cancelled = await cancelQueueRun(companyId, syncRunId);
+        if (!cancelled.cancelled || !cancelled.run) {
+          return NextResponse.json({ ok: true, companyId, cancelled: false, reason: 'No running async sync found.' });
+        }
+        return NextResponse.json({
+          ok: true,
+          companyId,
+          cancelled: true,
+          run: mapQueueRunToLegacy(cancelled.run),
+        });
+      }
       if (!existingRun || existingRun.status !== 'running') {
         return NextResponse.json({ ok: true, companyId, cancelled: false, reason: 'No running async sync found.' });
       }
@@ -145,6 +165,29 @@ export async function POST(request: NextRequest) {
               : 36;
         }
       }
+    }
+
+    if (queueEnabled) {
+      const started = await startQueueRun({
+        companyId,
+        frequency,
+        site,
+        mode,
+        backfillMonths: effectiveBackfillMonths,
+        lookbackDays,
+        startDate,
+        endDate,
+        salesOnly,
+      });
+      return NextResponse.json({
+        ok: true,
+        companyId,
+        alreadyRunning: started.alreadyRunning,
+        run: mapQueueRunToLegacy(started.run),
+        message: started.alreadyRunning
+          ? 'Async operational sync already running.'
+          : 'Async operational sync started.',
+      });
     }
 
     const nowIso = new Date().toISOString();

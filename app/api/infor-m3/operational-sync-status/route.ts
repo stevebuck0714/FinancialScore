@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getRequestedCompanyId } from '@/lib/infor-m3/route-guards';
 import { requireSiteAdmin } from '@/lib/tenant-security';
 import { getRunStateFromMetadata } from '@/lib/infor-m3/async-run-state';
+import { getQueueRunById, isInforSyncQueueEnabled, mapQueueRunToLegacy } from '@/lib/infor-m3/sync-queue';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,32 @@ export async function GET(request: NextRequest) {
     const syncRunId = String(request.nextUrl.searchParams.get('syncRunId') || '').trim();
     if (!syncRunId) {
       return NextResponse.json({ error: 'syncRunId is required.' }, { status: 400 });
+    }
+
+    if (isInforSyncQueueEnabled()) {
+      const queueRun = await getQueueRunById(companyId, syncRunId);
+      if (queueRun) {
+        const mapped = mapQueueRunToLegacy(queueRun);
+        const recentlyActive =
+          mapped.status === 'running' &&
+          (Date.now() - new Date(mapped.updatedAt).getTime() <= 15 * 60 * 1000 ||
+            (mapped.lastChunkAt ? Date.now() - new Date(mapped.lastChunkAt).getTime() <= 3 * 60 * 1000 : false));
+        return NextResponse.json({
+          ok: true,
+          companyId,
+          syncRunId,
+          chunkCount: mapped.chunkCount,
+          recordsCreated: mapped.recordsCreated,
+          warningCount: mapped.warningCount,
+          lastChunkAt: mapped.lastChunkAt || null,
+          lastStatusText: mapped.status,
+          recentlyActive,
+          runStatus: mapped.status,
+          runMessage: mapped.message || null,
+          runLastError: mapped.lastError || null,
+          runMode: mapped.mode || null,
+        });
+      }
     }
 
     const connection = await prisma.accountingConnection.findUnique({
