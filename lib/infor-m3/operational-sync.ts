@@ -972,7 +972,6 @@ const GL_TRANSACTION_SAFE_PROPERTIES = [
   'Site',
   'TransNum',
   'Ref',
-  'Description',
 ];
 const GL_TRANSACTION_IDO_CANDIDATES = [
   'SLGlTrans',
@@ -3491,16 +3490,26 @@ export async function syncInforM3OperationalData(
           const candidates = buildGlTransactionCandidatePaths(effectiveEndpointPath);
           for (const candidatePath of candidates) {
             if (candidatePath === effectiveEndpointPath) continue;
-            const candidateResponse = await callInforIonApi(credentials, candidatePath, {
-              timeoutMs: requestTimeoutMs,
-              headers: req.headers,
-            });
-            if (!isTransportAndPayloadSuccess(candidateResponse)) continue;
-            const candidateRecords = extractRecords(candidateResponse.body);
-            if (candidateRecords.length === 0) continue;
-            response = candidateResponse;
-            effectiveEndpointPath = candidatePath;
-            break;
+            let currentPath = candidatePath;
+            let attempts = 0;
+            while (currentPath && attempts < 6) {
+              attempts += 1;
+              const candidateResponse = await callInforIonApi(credentials, currentPath, {
+                timeoutMs: requestTimeoutMs,
+                headers: req.headers,
+              });
+              response = candidateResponse;
+              effectiveEndpointPath = currentPath;
+              if (isTransportAndPayloadSuccess(candidateResponse)) break;
+
+              const retryMessage = extractResponseMessage(candidateResponse.body);
+              const missingProperty = parseMissingPropertyFromMessage(retryMessage);
+              if (!missingProperty) break;
+              const reducedPath = removePropertyFromEndpoint(currentPath, missingProperty);
+              if (!reducedPath || reducedPath === currentPath) break;
+              currentPath = reducedPath;
+            }
+            if (isTransportAndPayloadSuccess(response)) break;
           }
         }
       }

@@ -2061,7 +2061,7 @@ function FinancialScorePage() {
   const [inforError, setInforError] = useState<string | null>(null);
   const [inforBusy, setInforBusy] = useState(false);
   const [inforBusyAction, setInforBusyAction] = useState<
-    'connect' | 'save_credentials' | 'test_token' | 'probe' | 'disconnect' | 'operational_sync' | null
+    'connect' | 'save_credentials' | 'test_token' | 'probe' | 'disconnect' | 'operational_sync' | 'operational_sync_reset' | null
   >(null);
   const [inforBusyStartedAt, setInforBusyStartedAt] = useState<number | null>(null);
   const [inforCredentials, setInforCredentials] = useState({
@@ -6085,6 +6085,52 @@ function FinancialScorePage() {
     }
   };
 
+  const resetInforM3OperationalSyncState = async (targetCompanyId?: string) => {
+    const companyId = targetCompanyId || selectedCompanyId;
+    if (!companyId) return;
+    if (!confirm('Reset and clear sync state for this company? This cancels queued/running syncs and clears the Sync Actions panel.')) {
+      return;
+    }
+    setInforBusyAction('operational_sync_reset');
+    setInforBusy(true);
+    setInforBusyStartedAt(Date.now());
+    setInforError(null);
+    try {
+      const currentRunId =
+        inforOperationalSyncStatus?.companyId === companyId
+          ? String(inforOperationalSyncStatus.syncRunId || '').trim()
+          : '';
+      const response = await fetch('/api/infor-m3/operational-sync-async', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reset',
+          companyId,
+          ...(currentRunId ? { syncRunId: currentRunId } : {}),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to reset sync state');
+      }
+      setInforOperationalSyncStatus((prev) => (prev && prev.companyId === companyId ? null : prev));
+      const cancelledRuns = Math.max(0, Number(data?.cancelledRuns || 0));
+      alert(
+        cancelledRuns > 0
+          ? `Sync state reset complete. Cancelled ${cancelledRuns} active run(s).`
+          : 'Sync state reset complete.'
+      );
+    } catch (error: any) {
+      const message = error?.message || 'Failed to reset sync state';
+      setInforError(message);
+      alert(`Failed to reset sync state:\n\n${message}`);
+    } finally {
+      setInforBusy(false);
+      setInforBusyAction(null);
+      setInforBusyStartedAt(null);
+    }
+  };
+
   const runPlatformOperationalSync = async (
     targetCompanyId?: string,
     frequency: 'daily' | 'weekly' | 'monthly' = 'daily'
@@ -8789,6 +8835,7 @@ function FinancialScorePage() {
               probeInforM3={probeInforM3}
               disconnectInforM3={disconnectInforM3}
               runInforM3OperationalSync={runInforM3OperationalSync}
+              resetInforM3OperationalSyncState={resetInforM3OperationalSyncState}
               runPlatformOperationalSync={runPlatformOperationalSync}
               newSiteAdminFirstName={newSiteAdminFirstName}
               setNewSiteAdminFirstName={setNewSiteAdminFirstName}

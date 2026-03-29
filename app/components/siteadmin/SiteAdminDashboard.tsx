@@ -110,7 +110,7 @@ export default function SiteAdminDashboard(props: any) {
     inforConnected, inforStatus, inforLastSync, inforError, inforBusy, inforBusyAction,
     inforCredentials, setInforCredentials, inforProbePath, setInforProbePath, inforProbeSummary,
     inforOperationalSyncStatus,
-    checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3, runInforM3OperationalSync,
+    checkInforM3Status, loadInforM3Credentials, saveInforM3Credentials, connectInforM3, testInforM3Token, probeInforM3, disconnectInforM3, runInforM3OperationalSync, resetInforM3OperationalSyncState,
     runPlatformOperationalSync,
     newSiteAdminFirstName, setNewSiteAdminFirstName,
     newSiteAdminLastName, setNewSiteAdminLastName,
@@ -3066,6 +3066,13 @@ export default function SiteAdminDashboard(props: any) {
                                                         {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
                                                       </button>
                                                       <button
+                                                        onClick={() => resetInforM3OperationalSyncState?.(company.id)}
+                                                        disabled={inforBusy}
+                                                        style={{ justifySelf: 'start', padding: '8px 12px', background: 'white', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                      >
+                                                        {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
+                                                      </button>
+                                                      <button
                                                         onClick={() => connectInforM3?.(company.id)}
                                                         disabled={inforBusy}
                                                         style={{ justifySelf: 'start', padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
@@ -5457,6 +5464,13 @@ export default function SiteAdminDashboard(props: any) {
                                                 {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
                                               </button>
                                               <button
+                                                onClick={() => resetInforM3OperationalSyncState?.(businessCompany.id)}
+                                                disabled={inforBusy}
+                                                style={{ justifySelf: 'start', padding: '8px 12px', background: 'white', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
+                                              </button>
+                                              <button
                                                 onClick={() => connectInforM3?.(businessCompany.id)}
                                                 disabled={inforBusy}
                                                 style={{ justifySelf: 'start', padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
@@ -5700,6 +5714,13 @@ export default function SiteAdminDashboard(props: any) {
                                                 style={{ padding: '8px 12px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
                                                 {inforBusy && inforBusyAction === 'operational_sync' ? 'Working...' : 'Run Ops Sync Now'}
+                                              </button>
+                                              <button
+                                                onClick={() => resetInforM3OperationalSyncState?.(businessCompany.id)}
+                                                disabled={inforBusy}
+                                                style={{ padding: '8px 12px', background: 'white', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
                                               </button>
                                               <button
                                                 onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}

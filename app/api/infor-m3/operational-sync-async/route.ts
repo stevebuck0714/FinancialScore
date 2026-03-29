@@ -120,6 +120,68 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, companyId, cancelled: true, run: cancelledRun });
     }
 
+    if (action === 'reset') {
+      const now = new Date();
+      let cancelledRuns = 0;
+      if (queueEnabled) {
+        const activeRuns = await (prisma as any).inforSyncRun.findMany({
+          where: {
+            companyId,
+            platform: queuePlatform,
+            status: { in: ['queued', 'running'] },
+          },
+          select: { id: true },
+        });
+        const runIds = Array.isArray(activeRuns)
+          ? activeRuns
+              .map((row: any) => String(row?.id || '').trim())
+              .filter((value: string) => value.length > 0)
+          : [];
+        cancelledRuns = runIds.length;
+        if (runIds.length > 0) {
+          await (prisma as any).$transaction([
+            (prisma as any).inforSyncRun.updateMany({
+              where: {
+                id: { in: runIds },
+                status: { in: ['queued', 'running'] },
+              },
+              data: {
+                status: 'cancelled',
+                message: 'Reset by user.',
+                finishedAt: now,
+                updatedAt: now,
+              },
+            }),
+            (prisma as any).inforSyncTask.updateMany({
+              where: {
+                runId: { in: runIds },
+                status: { in: ['pending', 'leased'] },
+              },
+              data: {
+                status: 'cancelled',
+                finishedAt: now,
+                updatedAt: now,
+              },
+            }),
+          ]);
+        }
+      }
+
+      await prisma.accountingConnection.update({
+        where: { id: connection.id },
+        data: {
+          connectionMetadata: withRunStateMetadata(connection.connectionMetadata, null),
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        companyId,
+        reset: true,
+        cancelledRuns,
+      });
+    }
+
     if (existingRun && existingRun.status === 'running') {
       return NextResponse.json({
         ok: true,
