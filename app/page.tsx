@@ -20499,19 +20499,6 @@ function FinancialScorePage() {
         const hasCompanyId = selectedCompanyId || currentUser?.companyId;
         const hasCorrectRole = (currentUser?.role === 'user' && currentUser?.userType === 'assessment') || currentUser?.role === 'consultant';
         const canView = currentView === 'ma-questionnaire' && hasCompanyId && hasCorrectRole;
-        
-        console.log('?? Questionnaire render check:', {
-          currentView,
-          isQuestionnaireView: currentView === 'ma-questionnaire',
-          selectedCompanyId,
-          userCompanyId: currentUser?.companyId,
-          hasCompanyId,
-          role: currentUser?.role,
-          userType: currentUser?.userType,
-          hasCorrectRole,
-          canView
-        });
-        
         return canView;
       })() && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
