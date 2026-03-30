@@ -104,6 +104,12 @@ type InforOperationalSyncStatus = {
   message: string | null;
   lastError: string | null;
   recentlyActive: boolean;
+  diagnostics?: {
+    failedChunks: number;
+    skippedChunks: number;
+    failedPrograms: string[];
+    suggestedRerunWindows: Array<{ startDate: string; endDate: string; reason: string }>;
+  } | null;
 };
 
 type RevenueAnalysisQualifiers = {
@@ -2133,6 +2139,29 @@ function FinancialScorePage() {
           typeof data.runLastError === 'string' && data.runLastError.trim().length > 0
             ? data.runLastError.trim()
             : null;
+        const apiDiagnostics =
+          data?.diagnostics && typeof data.diagnostics === 'object' && !Array.isArray(data.diagnostics)
+            ? {
+                failedChunks: Math.max(0, Number((data.diagnostics as any).failedChunks || 0)),
+                skippedChunks: Math.max(0, Number((data.diagnostics as any).skippedChunks || 0)),
+                failedPrograms: Array.isArray((data.diagnostics as any).failedPrograms)
+                  ? ((data.diagnostics as any).failedPrograms as unknown[])
+                      .map((entry) => String(entry || '').trim())
+                      .filter((entry) => entry.length > 0)
+                      .slice(0, 20)
+                  : [],
+                suggestedRerunWindows: Array.isArray((data.diagnostics as any).suggestedRerunWindows)
+                  ? ((data.diagnostics as any).suggestedRerunWindows as any[])
+                      .map((entry) => ({
+                        startDate: String(entry?.startDate || '').trim(),
+                        endDate: String(entry?.endDate || '').trim(),
+                        reason: String(entry?.reason || '').trim(),
+                      }))
+                      .filter((entry) => entry.startDate && entry.endDate)
+                      .slice(0, 12)
+                  : [],
+              }
+            : null;
         const lastChunkTimeMs = apiLastChunkAt
           ? new Date(apiLastChunkAt).getTime()
           : (currentStatus.lastChunkAt ? new Date(currentStatus.lastChunkAt).getTime() : NaN);
@@ -2182,6 +2211,7 @@ function FinancialScorePage() {
             message: apiRunMessage || prev.message,
             lastError: apiRunLastError || prev.lastError,
             recentlyActive: apiRecentlyActive,
+            diagnostics: apiDiagnostics || prev.diagnostics || null,
           };
         });
       } catch {

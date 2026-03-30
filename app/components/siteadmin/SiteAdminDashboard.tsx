@@ -155,6 +155,27 @@ export default function SiteAdminDashboard(props: any) {
     return String(value);
   };
 
+  const rerunSuggestedWindow = (companyId: string, startDate: string, endDate: string) => {
+    if (!runInforM3OperationalSync) {
+      alert('Operational sync handler is unavailable. Refresh and try again.');
+      return;
+    }
+    if (!startDate || !endDate) {
+      alert('Missing start/end dates for suggested rerun window.');
+      return;
+    }
+    const site = requireCompanyCsiSite(companyId);
+    if (site === null) return;
+    const syncSettings = getCompanyOperationalSettings(companyId);
+    runInforM3OperationalSync(companyId, syncSettings.frequency, site, {
+      mode: 'business_day_backfill',
+      backfillMonths: syncSettings.backfillMonths,
+      lookbackDays: syncSettings.lookbackDays,
+      startDate,
+      endDate,
+    });
+  };
+
   const renderInforSyncStatusPanel = (companyId: string) => {
     const status = inforOperationalSyncStatus;
     if (!status || status.companyId !== companyId) return null;
@@ -202,6 +223,44 @@ export default function SiteAdminDashboard(props: any) {
         {status.state === 'failed' && status.lastError && (
           <div style={{ fontSize: '11px', color: '#7f1d1d', marginTop: '4px' }}>
             Error: {status.lastError}
+          </div>
+        )}
+        {(status as any)?.diagnostics && (
+          <div style={{ marginTop: '8px', borderTop: '1px dashed #cbd5e1', paddingTop: '8px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+              COVERAGE & GAPS
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', fontSize: '11px', color: '#334155' }}>
+              <div><strong>Failed Chunks:</strong> {Math.max(0, Number((status as any).diagnostics?.failedChunks || 0))}</div>
+              <div><strong>Skipped Chunks:</strong> {Math.max(0, Number((status as any).diagnostics?.skippedChunks || 0))}</div>
+              <div><strong>Programs Affected:</strong> {Array.isArray((status as any).diagnostics?.failedPrograms) ? (status as any).diagnostics.failedPrograms.length : 0}</div>
+            </div>
+            {Array.isArray((status as any).diagnostics?.failedPrograms) && (status as any).diagnostics.failedPrograms.length > 0 && (
+              <div style={{ marginTop: '4px', fontSize: '11px', color: '#475569' }}>
+                {(status as any).diagnostics.failedPrograms.slice(0, 4).join(', ')}
+                {(status as any).diagnostics.failedPrograms.length > 4 ? ` +${(status as any).diagnostics.failedPrograms.length - 4} more` : ''}
+              </div>
+            )}
+            {Array.isArray((status as any).diagnostics?.suggestedRerunWindows) && (status as any).diagnostics.suggestedRerunWindows.length > 0 && (
+              <div style={{ marginTop: '6px', padding: '6px', borderRadius: '6px', border: '1px solid #bfdbfe', background: '#eff6ff' }}>
+                <div style={{ fontSize: '11px', color: '#1e3a8a', marginBottom: '4px' }}>
+                  Suggested rerun window: {(status as any).diagnostics.suggestedRerunWindows[0].startDate} to {(status as any).diagnostics.suggestedRerunWindows[0].endDate}
+                </div>
+                <button
+                  onClick={() =>
+                    rerunSuggestedWindow(
+                      companyId,
+                      String((status as any).diagnostics.suggestedRerunWindows[0].startDate || ''),
+                      String((status as any).diagnostics.suggestedRerunWindows[0].endDate || '')
+                    )
+                  }
+                  disabled={inforBusy}
+                  style={{ padding: '6px 10px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                >
+                  {inforBusy && inforBusyAction === 'operational_sync' ? 'Starting...' : 'Rerun Missing Slice'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
