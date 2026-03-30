@@ -1629,20 +1629,45 @@ async function saveBalanceMovementsFromGl(
   const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
   if (!mappedLineDelegate || records.length === 0) return 0;
 
-  const accountMappings = await prisma.accountMapping.findMany({
-    where: {
-      companyId,
-      targetField: {
-        notIn: ['', 'unmapped', 'UNMAPPED'],
+  let accountMappings: Array<{
+    sourceAccountName: string | null;
+    sourceAccountId: string | null;
+    sourceAccountCode: string | null;
+    targetField: string | null;
+  }> = [];
+  try {
+    const rawMappings = await prisma.accountMapping.findMany({
+      where: {
+        companyId,
+        AND: [
+          { NOT: { targetField: null } },
+          { NOT: { targetField: '' } },
+          { NOT: { targetField: 'unmapped' } },
+          { NOT: { targetField: 'UNMAPPED' } },
+        ],
       },
-    },
-    select: {
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
-      targetField: true,
-    },
-  });
+      select: {
+        qbAccount: true,
+        qbAccountId: true,
+        qbAccountCode: true,
+        targetField: true,
+      },
+    });
+    // NOTE: accountMapping uses historical qb* column names as generic source-account
+    // tokens across all platforms (including Infor). Keep these aliases local to avoid
+    // leaking QuickBooks terminology into Infor error paths.
+    accountMappings = rawMappings.map((row) => ({
+      sourceAccountName: row.qbAccount,
+      sourceAccountId: row.qbAccountId,
+      sourceAccountCode: row.qbAccountCode,
+      targetField: row.targetField,
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `GL mapping lookup failed. accountMapping uses legacy qb* columns as platform-agnostic source-account tokens. Original error: ${message}`
+    );
+  }
 
   if (accountMappings.length === 0) return 0;
 
@@ -1650,7 +1675,7 @@ async function saveBalanceMovementsFromGl(
   for (const mapping of accountMappings) {
     const targetField = String(mapping.targetField || '').trim();
     if (!targetField) continue;
-    const tokens = [mapping.qbAccount, mapping.qbAccountId, mapping.qbAccountCode]
+    const tokens = [mapping.sourceAccountName, mapping.sourceAccountId, mapping.sourceAccountCode]
       .map((value) => String(value || '').trim().toLowerCase())
       .filter(Boolean);
     for (const token of tokens) {
