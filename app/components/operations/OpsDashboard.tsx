@@ -15,6 +15,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
+import { formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
 
 interface OpsDashboardProps {
   selectedCompanyId: string;
@@ -75,8 +76,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     }
     
     return {
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0]
+      startDate: toLocalInputDate(start),
+      endDate: toLocalInputDate(end)
     };
   };
 
@@ -92,13 +93,14 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
   // Format date based on frequency
   const formatDate = (dateString: string, frequency: string) => {
-    const date = new Date(dateString);
+    const date = parseDateSafeUtc(dateString);
+    if (!date) return 'N/A';
     if (frequency === 'daily') {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return formatDateSafeUtc(date, { month: 'short', day: 'numeric' });
     } else if (frequency === 'weekly') {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return formatDateSafeUtc(date, { month: 'short', day: 'numeric' });
     } else {
-      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+      return formatDateSafeUtc(date, { year: 'numeric', month: 'short' });
     }
   };
 

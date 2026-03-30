@@ -29,6 +29,7 @@ import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operatio
 import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
+import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
 
 interface OperationsTabProps {
   selectedCompanyId: string;
@@ -401,8 +402,6 @@ export default function OperationsTab({
   
   // Date range and frequency filters
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const toLocalInputDate = (date: Date): string =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const yesterdayLocal = (() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -1077,7 +1076,7 @@ export default function OperationsTab({
         startHere: top ? `Open AR for ${top.name}` : playbook.path,
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: arDrivers.length >= 3 ? 'High' : 'Medium',
         severity,
         focusCustomer: top?.name || null,
@@ -1097,7 +1096,7 @@ export default function OperationsTab({
         startHere: top ? `Open AP for ${top.name}` : playbook.path,
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: apDrivers.length >= 3 ? 'High' : 'Medium',
         severity,
         focusVendor: top?.name || null,
@@ -1121,7 +1120,7 @@ export default function OperationsTab({
         startHere: 'Open cash trend + account variance',
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: drivers.length ? 'High' : 'Medium',
         severity,
       };
@@ -1144,7 +1143,7 @@ export default function OperationsTab({
         startHere: 'Open products sorted by gross margin %',
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: lowestMargin.length ? 'Medium' : 'Low',
         severity,
       };
@@ -1168,7 +1167,7 @@ export default function OperationsTab({
         startHere: 'Open cash and reconcile AR / Inventory / AP contributions',
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: 'Medium',
         severity,
       };
@@ -1186,7 +1185,7 @@ export default function OperationsTab({
         startHere: topCustomers[0] ? `Open customer trends for ${topCustomers[0].name}` : playbook.path,
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: topCustomers.length ? 'Medium' : 'Low',
         severity,
       };
@@ -1204,7 +1203,7 @@ export default function OperationsTab({
         startHere: playbook.path,
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: products.length ? 'Medium' : 'Low',
         severity: products.length ? 'normal' : 'loading',
       };
@@ -1219,7 +1218,7 @@ export default function OperationsTab({
         startHere: playbook.path,
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: itemCount > 0 ? 'Medium' : 'Low',
         severity: itemCount > 0 ? 'normal' : 'loading',
       };
@@ -1233,7 +1232,7 @@ export default function OperationsTab({
         startHere: playbook.path,
         owner: ownerMeta.owner,
         eta: ownerMeta.eta,
-        freshness: `As of ${new Date(endDate).toLocaleDateString()}`,
+        freshness: `As of ${formatDateInputLabel(endDate)}`,
         confidence: topCustomers.length ? 'Medium' : 'Low',
         severity: topCustomers.length ? 'normal' : 'loading',
       };
@@ -1304,29 +1303,25 @@ export default function OperationsTab({
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = parseDateSafeUtc(dateString);
+    if (!date) return 'N/A';
     // Format based on frequency
     if (frequency === 'daily') {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     } else if (frequency === 'weekly') {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     } else {
-      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' });
     }
   };
   const parseDateValue = (raw: string | undefined | null): Date | null => {
-    if (!raw) return null;
-    const parsed = new Date(raw);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+    return parseDateSafeUtc(raw ?? null);
   };
   const formatDateUtcMinus4 = (
     raw: string | Date | null | undefined,
     options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
   ): string => {
-    const parsed = raw instanceof Date ? raw : parseDateValue(raw ?? null);
-    if (!parsed) return 'N/A';
-    const shifted = new Date(parsed.getTime() - 4 * 60 * 60 * 1000);
-    return shifted.toLocaleDateString('en-US', { ...options, timeZone: 'UTC' });
+    return formatDateSafeUtc(raw ?? null, options);
   };
 
   const renderFilters = () => {
@@ -1748,7 +1743,19 @@ export default function OperationsTab({
     if (!customerData) return null;
 
     const { records, summary } = customerData;
-    const customerTotalsFromRecords = records.reduce((acc: Record<string, { name: string; totalRevenue: number; totalInvoices: number }>, record: any) => {
+    const selectedStartForCustomer = parseDateValue(startDate);
+    const selectedEndForCustomer = parseDateValue(endDate);
+    const selectedStartKey = selectedStartForCustomer ? selectedStartForCustomer.toISOString().slice(0, 10) : null;
+    const selectedEndKey = selectedEndForCustomer ? selectedEndForCustomer.toISOString().slice(0, 10) : null;
+    const recordsInSelectedDateRange = records.filter((record: any) => {
+      const parsed = parseDateValue(record?.snapshotDate);
+      if (!parsed) return false;
+      const dayKey = parsed.toISOString().slice(0, 10);
+      if (selectedStartKey && dayKey < selectedStartKey) return false;
+      if (selectedEndKey && dayKey > selectedEndKey) return false;
+      return true;
+    });
+    const customerTotalsFromRecords = recordsInSelectedDateRange.reduce((acc: Record<string, { name: string; totalRevenue: number; totalInvoices: number }>, record: any) => {
       const name = String(record?.customerName || 'Unknown Customer');
       if (!acc[name]) {
         acc[name] = {
@@ -1764,7 +1771,7 @@ export default function OperationsTab({
     const rankedCustomers = Object.values(customerTotalsFromRecords).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
 
     // Aggregate data by period for trend chart
-    const periodTrend = records.reduce((acc: any, record: any) => {
+    const periodTrend = recordsInSelectedDateRange.reduce((acc: any, record: any) => {
       const period = formatDate(record.snapshotDate);
       if (!acc[period]) {
         acc[period] = { month: period, revenue: 0, invoices: 0 };
@@ -1775,24 +1782,25 @@ export default function OperationsTab({
     }, {});
 
     const trendData = Object.values(periodTrend);
-    const customerCoverageDates = records
+    const customerCoverageDates = recordsInSelectedDateRange
       .map((record: any) => parseDateValue(record.snapshotDate))
       .filter((date): date is Date => Boolean(date))
       .sort((a, b) => a.getTime() - b.getTime());
     const customerCoverageStart = customerCoverageDates[0] || null;
     const customerCoverageEnd = customerCoverageDates[customerCoverageDates.length - 1] || null;
     const customerAsOfLabel = customerCoverageEnd
-      ? customerCoverageEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      ? formatDateSafeUtc(customerCoverageEnd, { year: 'numeric', month: 'short', day: 'numeric' })
       : 'N/A';
     const customerCoverageLabel =
       customerCoverageStart && customerCoverageEnd
-        ? `${formatDateUtcMinus4(customerCoverageStart)} - ${formatDateUtcMinus4(customerCoverageEnd)} (UTC-4)`
+        ? `${formatDateUtcMinus4(customerCoverageStart)} - ${formatDateUtcMinus4(customerCoverageEnd)}`
         : 'N/A';
-    const selectedStartDate = parseDateValue(startDate);
-    const selectedEndDate = parseDateValue(endDate);
+    const formatSelectedFilterDate = (raw: string): string => {
+      return formatDateInputLabel(raw);
+    };
     const selectedDateRangeLabel =
-      selectedStartDate && selectedEndDate
-        ? `${formatDateUtcMinus4(selectedStartDate)} - ${formatDateUtcMinus4(selectedEndDate)} (UTC-4)`
+      startDate && endDate
+        ? `${formatSelectedFilterDate(startDate)} - ${formatSelectedFilterDate(endDate)}`
         : customerCoverageLabel;
     const kpiDateRangeLabel = `Date range: ${selectedDateRangeLabel}`;
     const totalRevenueAll = rankedCustomers.reduce((sum: number, customer: any) => sum + Number(customer.totalRevenue || 0), 0);
@@ -2064,7 +2072,7 @@ export default function OperationsTab({
                   </div>
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px' }}>
-                  Selected period: {selectedPeriodLabel}
+                  Date range: {selectedDateRangeLabel} | Selected period: {selectedPeriodLabel}
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -2193,7 +2201,7 @@ export default function OperationsTab({
                   Revenue Retention Proxy (Top Accounts)
                 </h3>
                 <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
-                  Current vs baseline-period proxy for top accounts.
+                  Date range: {selectedDateRangeLabel} | Current vs baseline-period proxy for top accounts.
                 </div>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={retentionProxyRows} layout="vertical" margin={{ left: 16 }}>
@@ -2225,7 +2233,7 @@ export default function OperationsTab({
                   Revenue vs Invoice Velocity
                 </h3>
                 <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
-                  Tracks revenue and average invoice value over time.
+                  Date range: {selectedDateRangeLabel} | Tracks revenue and average invoice value over time.
                 </div>
                 <ResponsiveContainer width="100%" height={260}>
                   <ComposedChart data={invoiceVelocityTrend}>
@@ -3389,7 +3397,7 @@ export default function OperationsTab({
     const apCoverageEnd = apCoverageDates.length > 0 ? new Date(Math.max(...apCoverageDates.map((date) => date.getTime()))) : null;
     const apCoverageLabel =
       apCoverageStart && apCoverageEnd
-        ? `${formatDateUtcMinus4(apCoverageStart)} - ${formatDateUtcMinus4(apCoverageEnd)} (UTC-4)`
+        ? `${formatDateUtcMinus4(apCoverageStart)} - ${formatDateUtcMinus4(apCoverageEnd)}`
         : 'N/A';
     const apAsOfDate = apCoverageEnd || parseDateValue(latestRecord?.snapshotDate) || new Date();
     const apAsOfLabel = apAsOfDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -5115,7 +5123,7 @@ export default function OperationsTab({
       : 'N/A';
     const cashCoverageLabel =
       cashCoverageStart && cashCoverageEnd
-        ? `${formatDateUtcMinus4(cashCoverageStart)} - ${formatDateUtcMinus4(cashCoverageEnd)} (UTC-4)`
+        ? `${formatDateUtcMinus4(cashCoverageStart)} - ${formatDateUtcMinus4(cashCoverageEnd)}`
         : 'N/A';
     const startOfWeek = (date: Date): Date => {
       const d = new Date(date);
@@ -5156,7 +5164,7 @@ export default function OperationsTab({
       : 'N/A';
     const cash13WeekCoverageLabel =
       cash13WeekCoverageStart && cash13WeekCoverageEnd
-        ? `${formatDateUtcMinus4(cash13WeekCoverageStart)} - ${formatDateUtcMinus4(cash13WeekCoverageEnd)} (UTC-4)`
+        ? `${formatDateUtcMinus4(cash13WeekCoverageStart)} - ${formatDateUtcMinus4(cash13WeekCoverageEnd)}`
         : 'N/A';
     const cashBridgeRows = cash13WeekRows.map((row, index) => {
       const prior = index > 0 ? cash13WeekRows[index - 1] : null;

@@ -688,6 +688,8 @@ export async function GET(request: NextRequest) {
 
         // Fallback for tenants where CustomerSalesSnapshot rows exist but revenue/invoice
         // are not populated yet: derive customer revenue from order-line snapshots.
+        // Important: emit rows at business period dates (orderDate when present), not
+        // a single endDate stamp, so all customer charts/tables can period-group correctly.
         if (!hasNonZeroCustomerSales) {
           const orderLineDelegate = (prisma as any).customerOrderLineSnapshot;
           if (orderLineDelegate?.findMany) {
@@ -699,59 +701,66 @@ export async function GET(request: NextRequest) {
               },
               select: {
                 snapshotDate: true,
+                orderDate: true,
                 customerId: true,
                 customerName: true,
                 orderId: true,
                 lineId: true,
+                contractValue: true,
                 invoicedAmount: true,
               },
               orderBy: [{ snapshotDate: 'asc' }],
               take: 250000,
             });
 
-            const lineState = new Map<
+            const latestLineSnapshot = new Map<
               string,
               {
+                snapshotDate: Date;
+                effectiveDate: Date;
                 customerId: string | null;
                 customerName: string;
                 orderId: string;
-                startBaseline: number;
-                endValue: number;
-                hasInRangeSnapshot: boolean;
+                lineId: string;
+                invoicedAmount: number;
+                contractValue: number;
               }
             >();
 
             for (const row of orderRows as any[]) {
-              const snapshotDate = new Date(row.snapshotDate);
+              const snapshotDate = new Date(row.snapshotDate || row.orderDate);
               if (Number.isNaN(snapshotDate.getTime())) continue;
+              if (snapshotDate > endDate) continue;
+              const orderDateRaw = row.orderDate ? new Date(row.orderDate) : null;
+              const effectiveDate =
+                orderDateRaw && !Number.isNaN(orderDateRaw.getTime())
+                  ? orderDateRaw
+                  : snapshotDate;
+              if (effectiveDate < startDate || effectiveDate > endDate) continue;
               const customerName = String(row.customerName || 'Unknown Customer');
               const customerId = row.customerId ? String(row.customerId) : null;
               const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
               const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
               const key = `${customerId || customerName.toLowerCase()}|${orderId}|${lineId}`;
-              if (!lineState.has(key)) {
-                lineState.set(key, {
+              const existing = latestLineSnapshot.get(key);
+              if (!existing || snapshotDate >= existing.snapshotDate) {
+                latestLineSnapshot.set(key, {
+                  snapshotDate,
+                  effectiveDate,
                   customerId,
                   customerName,
                   orderId,
-                  startBaseline: 0,
-                  endValue: 0,
-                  hasInRangeSnapshot: false,
+                  lineId,
+                  invoicedAmount: Number(row.invoicedAmount || 0),
+                  contractValue: Number(row.contractValue || 0),
                 });
-              }
-              const state = lineState.get(key)!;
-              const amount = Number(row.invoicedAmount || 0);
-              if (snapshotDate < startDate) {
-                state.startBaseline = amount;
-              } else if (snapshotDate <= endDate) {
-                state.endValue = amount;
-                state.hasInRangeSnapshot = true;
               }
             }
 
-            const customerAgg = new Map<
+            const customerDayAgg = new Map<
               string,
               {
+                snapshotDate: Date;
                 customerId: string | null;
                 customerName: string;
                 revenue: number;
@@ -759,28 +768,29 @@ export async function GET(request: NextRequest) {
               }
             >();
 
-            for (const state of lineState.values()) {
-              if (!state.hasInRangeSnapshot) continue;
-              const delta = Math.max(state.endValue - state.startBaseline, 0);
-              if (delta <= 0) continue;
-              const customerKey = `${state.customerId || ''}|${state.customerName.toLowerCase()}`;
-              if (!customerAgg.has(customerKey)) {
-                customerAgg.set(customerKey, {
+            for (const state of latestLineSnapshot.values()) {
+              const recognizedRevenue = state.invoicedAmount > 0 ? state.invoicedAmount : state.contractValue;
+              if (recognizedRevenue <= 0) continue;
+              const dayKey = state.effectiveDate.toISOString().slice(0, 10);
+              const customerKey = `${state.customerId || ''}|${state.customerName.toLowerCase()}|${dayKey}`;
+              if (!customerDayAgg.has(customerKey)) {
+                customerDayAgg.set(customerKey, {
+                  snapshotDate: new Date(`${dayKey}T00:00:00.000Z`),
                   customerId: state.customerId,
                   customerName: state.customerName,
                   revenue: 0,
                   orderIds: new Set<string>(),
                 });
               }
-              const acc = customerAgg.get(customerKey)!;
-              acc.revenue += delta;
+              const acc = customerDayAgg.get(customerKey)!;
+              acc.revenue += recognizedRevenue;
               acc.orderIds.add(state.orderId);
             }
 
-            data = Array.from(customerAgg.values())
+            data = Array.from(customerDayAgg.values())
               .map((row) => ({
                 companyId,
-                snapshotDate: endDate,
+                snapshotDate: row.snapshotDate,
                 frequency,
                 customerId: row.customerId,
                 customerName: row.customerName,

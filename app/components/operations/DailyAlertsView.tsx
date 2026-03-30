@@ -13,6 +13,7 @@ import {
   type PulsePolicyUnit,
   type PulsePolicyValues,
 } from '@/lib/company-pulse/policy';
+import { toLocalInputDate } from '@/app/utils/date';
 
 type AlertItem = {
   id: string;
@@ -311,8 +312,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const end = new Date();
         const start = new Date();
         start.setDate(start.getDate() - 7);
-        const startDate = start.toISOString().split('T')[0];
-        const endDate = end.toISOString().split('T')[0];
+        const startDate = toLocalInputDate(start);
+        const endDate = toLocalInputDate(end);
 
         const fetchOps = async (type: 'ar-aging' | 'ap-aging' | 'cash') => {
           const params = new URLSearchParams({
@@ -1120,8 +1121,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       companyId,
       type,
       frequency: 'daily',
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0],
+      startDate: toLocalInputDate(start),
+      endDate: toLocalInputDate(end),
     });
     const response = await fetch(`/api/operational-data?${params}`);
     if (!response.ok) throw new Error(`Failed to load ${type} trend preview`);
