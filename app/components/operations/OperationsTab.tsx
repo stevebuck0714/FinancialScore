@@ -5650,6 +5650,7 @@ export default function OperationsTab({
       if (snapshotValue !== 0) return snapshotValue;
       return getMappedAliasValue(canonicalField, dateKey);
     };
+    const getSnapshotOnlyValue = (row: any, canonicalField: string): number => Number(row?.[canonicalField] || 0);
 
     const statementDays = statementWindow.map((row: any) => {
       const dateKey = toDayKey(row.snapshotDate);
@@ -5668,36 +5669,38 @@ export default function OperationsTab({
       const federalIncomeTaxes = getSnapshotOrMappedValue(row, 'federalIncomeTaxes', dateKey);
       const netIncome = incomeBeforeTax - stateIncomeTaxes - federalIncomeTaxes;
 
-      const cash = getSnapshotOrMappedValue(row, 'cash', dateKey);
-      const ar = getSnapshotOrMappedValue(row, 'ar', dateKey);
-      const inventory = getSnapshotOrMappedValue(row, 'inventory', dateKey);
-      const otherCA = getSnapshotOrMappedValue(row, 'otherCA', dateKey);
-      const tcaRaw = getSnapshotOrMappedValue(row, 'tca', dateKey);
+      // Balance sheet must use snapshot point-in-time values.
+      // Using mapped movement fallback here can shift values across adjacent days.
+      const cash = getSnapshotOnlyValue(row, 'cash');
+      const ar = getSnapshotOnlyValue(row, 'ar');
+      const inventory = getSnapshotOnlyValue(row, 'inventory');
+      const otherCA = getSnapshotOnlyValue(row, 'otherCA');
+      const tcaRaw = getSnapshotOnlyValue(row, 'tca');
       const tca = tcaRaw !== 0 ? tcaRaw : cash + ar + inventory + otherCA;
-      const fixedAssets = getSnapshotOrMappedValue(row, 'fixedAssets', dateKey);
-      const otherAssets = getSnapshotOrMappedValue(row, 'otherAssets', dateKey);
-      const totalAssetsRaw = getSnapshotOrMappedValue(row, 'totalAssets', dateKey);
+      const fixedAssets = getSnapshotOnlyValue(row, 'fixedAssets');
+      const otherAssets = getSnapshotOnlyValue(row, 'otherAssets');
+      const totalAssetsRaw = getSnapshotOnlyValue(row, 'totalAssets');
       const totalAssets = totalAssetsRaw !== 0 ? totalAssetsRaw : tca + fixedAssets + otherAssets;
-      const ap = getSnapshotOrMappedValue(row, 'ap', dateKey);
-      const loc = getSnapshotOrMappedValue(row, 'loc', dateKey);
-      const otherCL = getSnapshotOrMappedValue(row, 'otherCL', dateKey);
-      const tclRaw = getSnapshotOrMappedValue(row, 'tcl', dateKey);
+      const ap = getSnapshotOnlyValue(row, 'ap');
+      const loc = getSnapshotOnlyValue(row, 'loc');
+      const otherCL = getSnapshotOnlyValue(row, 'otherCL');
+      const tclRaw = getSnapshotOnlyValue(row, 'tcl');
       const tcl = tclRaw !== 0 ? tclRaw : ap + loc + otherCL;
-      const ltd = getSnapshotOrMappedValue(row, 'ltd', dateKey);
-      const totalLiabRaw = getSnapshotOrMappedValue(row, 'totalLiab', dateKey);
+      const ltd = getSnapshotOnlyValue(row, 'ltd');
+      const totalLiabRaw = getSnapshotOnlyValue(row, 'totalLiab');
       const totalLiab = totalLiabRaw !== 0 ? totalLiabRaw : tcl + ltd;
-      const ownersCapital = getSnapshotOrMappedValue(row, 'ownersCapital', dateKey);
-      const ownersDraw = getSnapshotOrMappedValue(row, 'ownersDraw', dateKey);
-      const commonStock = getSnapshotOrMappedValue(row, 'commonStock', dateKey);
-      const preferredStock = getSnapshotOrMappedValue(row, 'preferredStock', dateKey);
-      const retainedEarnings = getSnapshotOrMappedValue(row, 'retainedEarnings', dateKey);
-      const additionalPaidInCapital = getSnapshotOrMappedValue(row, 'additionalPaidInCapital', dateKey);
-      const treasuryStock = getSnapshotOrMappedValue(row, 'treasuryStock', dateKey);
-      const totalEquityRaw = getSnapshotOrMappedValue(row, 'totalEquity', dateKey);
+      const ownersCapital = getSnapshotOnlyValue(row, 'ownersCapital');
+      const ownersDraw = getSnapshotOnlyValue(row, 'ownersDraw');
+      const commonStock = getSnapshotOnlyValue(row, 'commonStock');
+      const preferredStock = getSnapshotOnlyValue(row, 'preferredStock');
+      const retainedEarnings = getSnapshotOnlyValue(row, 'retainedEarnings');
+      const additionalPaidInCapital = getSnapshotOnlyValue(row, 'additionalPaidInCapital');
+      const treasuryStock = getSnapshotOnlyValue(row, 'treasuryStock');
+      const totalEquityRaw = getSnapshotOnlyValue(row, 'totalEquity');
       const totalEquity = totalEquityRaw !== 0
         ? totalEquityRaw
         : ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
-      const totalLAndERaw = getSnapshotOrMappedValue(row, 'totalLAndE', dateKey);
+      const totalLAndERaw = getSnapshotOnlyValue(row, 'totalLAndE');
       const totalLAndE = totalLAndERaw !== 0 ? totalLAndERaw : totalLiab + totalEquity;
       const weekday = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
       const isBusinessDay = weekday !== 0 && weekday !== 6;
@@ -5757,12 +5760,14 @@ export default function OperationsTab({
 
     const mappedFieldHasAnyValue = (field: string): boolean =>
       Object.values(lineIndex[field] || {}).some((value) => Number(value || 0) !== 0);
+    const normalizedMappedFieldHasAnyValue = (field: string): boolean =>
+      Object.values(normalizedLineIndex[field] || {}).some((value) => Number(value || 0) !== 0);
 
-    const revenueDetailFields = Object.keys(lineIndex)
-      .filter((field) => field.startsWith('rev_') && mappedFieldHasAnyValue(field))
+    const revenueDetailFields = Object.keys(normalizedLineIndex)
+      .filter((field) => field.startsWith('rev_') && normalizedMappedFieldHasAnyValue(field))
       .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
-    const dynamicCogsFields = Object.keys(lineIndex)
-      .filter((field) => field.startsWith('cogs_') && field !== 'cogs_total' && mappedFieldHasAnyValue(field))
+    const dynamicCogsFields = Object.keys(normalizedLineIndex)
+      .filter((field) => field.startsWith('cogs_') && field !== 'cogs_total' && normalizedMappedFieldHasAnyValue(field))
       .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
     const cogsDetailFields = dynamicCogsFields;
     const operatingExpenseFields = [
@@ -5779,8 +5784,10 @@ export default function OperationsTab({
     const dateKeys = statementDays.map((day) => day.dateKey);
     const getMappedValue = (field: string, dateKey: string): number =>
       Number(lineIndex[field]?.[dateKey] || 0);
-    const sumFieldsForDate = (fields: string[], dateKey: string): number =>
-      fields.reduce((sum, field) => sum + getMappedValue(field, dateKey), 0);
+    const getNormalizedMappedValue = (field: string, dateKey: string): number =>
+      Number(normalizedLineIndex[field]?.[dateKey] || 0);
+    const sumNormalizedFieldsForDate = (fields: string[], dateKey: string): number =>
+      fields.reduce((sum, field) => sum + getNormalizedMappedValue(field, dateKey), 0);
     const buildSeriesFromDateKeys = (calculator: (dateKey: string) => number): Record<string, number> =>
       dateKeys.reduce<Record<string, number>>((acc, dateKey) => {
         acc[dateKey] = calculator(dateKey);
@@ -5789,12 +5796,12 @@ export default function OperationsTab({
 
     const revenueByDate = buildSeriesFromDateKeys((dateKey) =>
       revenueDetailFields.length > 0
-        ? sumFieldsForDate(revenueDetailFields, dateKey)
+        ? sumNormalizedFieldsForDate(revenueDetailFields, dateKey)
         : Number(statementDayByKey[dateKey]?.revenue || 0)
     );
     const cogsTotalByDate = buildSeriesFromDateKeys((dateKey) =>
       cogsDetailFields.length > 0
-        ? sumFieldsForDate(cogsDetailFields, dateKey)
+        ? sumNormalizedFieldsForDate(cogsDetailFields, dateKey)
         : Number(statementDayByKey[dateKey]?.cogsTotal || 0)
     );
     const expenseFieldByDate = (field: string, dateKey: string): number => {
@@ -5859,13 +5866,13 @@ export default function OperationsTab({
       ...revenueDetailFields.map((field) => ({
         label: `  ${getFieldDisplayName(field)}`,
         styleType: 'normal' as const,
-        valuesByDate: lineIndex[field] || {},
+        valuesByDate: normalizedLineIndex[field] || {},
       })),
       { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
       ...dynamicCogsFields.map((field) => ({
         label: `  ${getFieldDisplayName(field)}`,
         styleType: 'normal' as const,
-        valuesByDate: lineIndex[field] || {},
+        valuesByDate: normalizedLineIndex[field] || {},
       })),
       { label: 'Total COGS', styleType: 'subtotal', valuesByDate: cogsTotalByDate },
       { label: 'GROSS PROFIT', styleType: 'subtotal', valuesByDate: grossProfitByDate },

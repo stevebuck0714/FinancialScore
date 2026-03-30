@@ -1632,7 +1632,30 @@ async function saveBalanceMovementsFromGl(
   const accountMappings = await prisma.accountMapping.findMany({
     where: {
       companyId,
-      qbAccountClassification: { in: ['A', 'Asset', 'ASSET', 'asset', 'L', 'Liability', 'LIABILITY', 'liability'] },
+      qbAccountClassification: {
+        in: [
+          'A',
+          'Asset',
+          'ASSET',
+          'asset',
+          'L',
+          'Liability',
+          'LIABILITY',
+          'liability',
+          'R',
+          'Revenue',
+          'REVENUE',
+          'revenue',
+          'E',
+          'Expense',
+          'EXPENSE',
+          'expense',
+          'COGS',
+          'cogs',
+          'CostOfGoodsSold',
+          'COST_OF_GOODS_SOLD',
+        ],
+      },
     },
     select: {
       qbAccount: true,
@@ -1693,12 +1716,30 @@ async function saveBalanceMovementsFromGl(
     const sourceAccountId = accountId ? String(accountId) : null;
     for (const mappedTargetField of matchedTargetFields) {
       const targetField = `balance_movement:${mappedTargetField}`;
+      const normalizedTarget = String(mappedTargetField || '').trim().toLowerCase();
+      const normalizedAmount =
+        normalizedTarget === 'revenue' ||
+        normalizedTarget.startsWith('rev_') ||
+        normalizedTarget === 'cogstotal' ||
+        normalizedTarget.startsWith('cogs') ||
+        normalizedTarget === 'expense' ||
+        normalizedTarget === 'otherexpense' ||
+        normalizedTarget.includes('expense') ||
+        normalizedTarget.includes('income')
+          ? Math.abs(amount)
+          : amount;
       const key = `${snapshotDate.toISOString()}|${targetField}|${sourceAccountName}`;
       if (!movementByKey.has(key)) {
-        movementByKey.set(key, { snapshotDate, sourceAccountName, sourceAccountId, amount: 0, targetField });
+        movementByKey.set(key, {
+          snapshotDate,
+          sourceAccountName,
+          sourceAccountId,
+          amount: 0,
+          targetField,
+        });
       }
       const acc = movementByKey.get(key)!;
-      acc.amount += amount;
+      acc.amount += normalizedAmount;
       if (!acc.sourceAccountId && sourceAccountId) acc.sourceAccountId = sourceAccountId;
     }
   }
@@ -2850,8 +2891,23 @@ async function saveProductSales(
   records: Record<string, unknown>[]
 ): Promise<number> {
   await prisma.productSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
+  const snapshotDayUtcMs = startOfUtcDay(snapshotDate).getTime();
   const rows = records
     .map((record) => {
+      if (frequency === 'daily') {
+        const salesRecordDate = firstRecordDate(record, [
+          'InvDate',
+          'invoiceDate',
+          'ShipDate',
+          'shipDate',
+          'OrderDate',
+          'orderDate',
+          'RecordDate',
+          'date',
+        ]);
+        if (!salesRecordDate) return null;
+        if (startOfUtcDay(salesRecordDate).getTime() !== snapshotDayUtcMs) return null;
+      }
       const metrics = deriveSalesMetrics(record);
       const quantitySold = metrics.quantity;
       const revenue = metrics.revenue;
@@ -2871,6 +2927,7 @@ async function saveProductSales(
         grossMarginPct: revenue > 0 ? (grossMargin / revenue) * 100 : null,
       };
     })
+    .filter((row): row is NonNullable<typeof row> => !!row)
     .filter((row) => row.itemName);
 
   if (rows.length === 0) return 0;
@@ -2912,18 +2969,49 @@ async function saveInventory(
   return rows.length;
 }
 
+type DailyFinancialSnapshotHydrationOutcome = {
+  written: boolean;
+  targetSnapshotDate: string;
+  sourceDates: {
+    cash: string | null;
+    inventory: string | null;
+    sales: string | null;
+    ar: string | null;
+    ap: string | null;
+  };
+  staleOrMissingSources: string[];
+  reason: string | null;
+};
+
+function toIsoDayOrNull(value: Date | null | undefined): string | null {
+  if (!value) return null;
+  if (Number.isNaN(value.getTime())) return null;
+  return value.toISOString().slice(0, 10);
+}
+
 async function upsertDailyFinancialSnapshotFromOperationalTables(
   companyId: string,
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly'
-): Promise<void> {
+): Promise<DailyFinancialSnapshotHydrationOutcome> {
   const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
-  if (!dailySnapshotDelegate) return;
+  const targetSnapshotDate = toIsoDayOrNull(snapshotDate) || String(snapshotDate);
+  if (!dailySnapshotDelegate) {
+    return {
+      written: false,
+      targetSnapshotDate,
+      sourceDates: { cash: null, inventory: null, sales: null, ar: null, ap: null },
+      staleOrMissingSources: ['dailyFinancialSnapshotModel'],
+      reason: 'DailyFinancialSnapshot model delegate not available.',
+    };
+  }
 
-  const [cashAgg, inventoryRows, productAgg, arSnapshot, apSnapshot] = await Promise.all([
+  const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+  const [cashAgg, inventoryRows, productAgg, arSnapshot, apSnapshot, glBalanceMovementRows] = await Promise.all([
     prisma.cashSnapshot.aggregate({
       where: { companyId, snapshotDate, frequency },
       _sum: { cashBalance: true },
+      _count: { _all: true },
     }),
     prisma.inventorySnapshot.findMany({
       where: { companyId, snapshotDate, frequency },
@@ -2939,6 +3027,7 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     prisma.productSalesSnapshot.aggregate({
       where: { companyId, snapshotDate, frequency },
       _sum: { revenue: true, cogs: true },
+      _count: { _all: true },
     }),
     prisma.aRAgingSnapshot.findUnique({
       where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
@@ -2948,7 +3037,48 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
       where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
       select: { totalAP: true },
     }),
+    mappedLineDelegate
+      ? mappedLineDelegate.findMany({
+          where: {
+            companyId,
+            frequency,
+            snapshotDate,
+            sourceAccountType: 'gl_balance_account',
+            targetField: { startsWith: 'balance_movement:' },
+          },
+          select: { targetField: true, amount: true },
+        })
+      : Promise.resolve([]),
   ]);
+
+  const sourceDates = {
+    cash: Number(cashAgg?._count?._all || 0) > 0 ? targetSnapshotDate : null,
+    inventory: Array.isArray(inventoryRows) && inventoryRows.length > 0 ? targetSnapshotDate : null,
+    sales: Number(productAgg?._count?._all || 0) > 0 ? targetSnapshotDate : null,
+    ar: arSnapshot ? targetSnapshotDate : null,
+    ap: apSnapshot ? targetSnapshotDate : null,
+  };
+
+  const staleOrMissingSources = Object.entries(sourceDates)
+    .filter(([, day]) => !day)
+    .map(([source]) => source);
+
+  const hasAnyOperationalSource =
+    Boolean(sourceDates.cash) ||
+    Boolean(sourceDates.inventory) ||
+    Boolean(sourceDates.sales) ||
+    Boolean(sourceDates.ar) ||
+    Boolean(sourceDates.ap);
+  const hasAnyGlMappedRows = Array.isArray(glBalanceMovementRows) && glBalanceMovementRows.length > 0;
+  if (!hasAnyOperationalSource && !hasAnyGlMappedRows) {
+    return {
+      written: false,
+      targetSnapshotDate,
+      sourceDates,
+      staleOrMissingSources,
+      reason: 'No same-day operational or GL mapped source rows found for target snapshot date.',
+    };
+  }
 
   // Keep daily inventory snapshot aligned with inventory table logic:
   // remove exact duplicate rows, then aggregate to unique SKU before summing value.
@@ -2987,15 +3117,63 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     inventoryBySku.set(skuKey, Number(inventoryBySku.get(skuKey) || 0) + Number((row as any).assetValue || 0));
   }
 
-  const cash = Number(cashAgg?._sum?.cashBalance || 0);
+  const glMovementTotals = new Map<string, number>();
+  for (const row of Array.isArray(glBalanceMovementRows) ? glBalanceMovementRows : []) {
+    const rawTargetField = String((row as any).targetField || '').trim().toLowerCase();
+    const amount = Number((row as any).amount || 0);
+    if (!rawTargetField.startsWith('balance_movement:') || !Number.isFinite(amount)) continue;
+    const field = rawTargetField.replace('balance_movement:', '').trim();
+    if (!field) continue;
+    glMovementTotals.set(field, Number(glMovementTotals.get(field) || 0) + Math.abs(amount));
+  }
+
+  const sumGlByPredicate = (predicate: (field: string) => boolean): number => {
+    let total = 0;
+    glMovementTotals.forEach((value, field) => {
+      if (!predicate(field)) return;
+      total += Number(value || 0);
+    });
+    return total;
+  };
+  const hasExactSalesForDay = Boolean(sourceDates.sales);
+
+  const cashFromOps = Number(cashAgg?._sum?.cashBalance || 0);
   const inventory = Array.from(inventoryBySku.values()).reduce((sum, value) => sum + Number(value || 0), 0);
-  const revenue = Number(productAgg?._sum?.revenue || 0);
-  const cogsTotal = Number(productAgg?._sum?.cogs || 0);
+  const revenueFromOps = Number(productAgg?._sum?.revenue || 0);
+  const cogsFromOps = Number(productAgg?._sum?.cogs || 0);
+  const revenueFromGl = sumGlByPredicate((field) => field.startsWith('rev'));
+  const cogsFromGl = sumGlByPredicate(
+    (field) => field === 'cogstotal' || field.startsWith('cogs') || field.includes('costofgoods')
+  );
+  const expenseFromGl = sumGlByPredicate(
+    (field) =>
+      field === 'expense' ||
+      field === 'otherexpense' ||
+      field.includes('expense') ||
+      field.includes('payroll') ||
+      field.includes('rent') ||
+      field.includes('insurance') ||
+      field.includes('tax') ||
+      field.includes('interest') ||
+      field.includes('depreciation')
+  );
+
+  const revenue = hasExactSalesForDay ? Math.max(revenueFromOps, revenueFromGl) : revenueFromGl;
+  const cogsTotal = hasExactSalesForDay ? Math.max(cogsFromOps, cogsFromGl) : cogsFromGl;
+  const expense = expenseFromGl;
+  // Balance-sheet values are strict same-day snapshots only.
+  // Do not use mapped movement fallback for point-in-time balances.
+  const cash = cashFromOps;
   const ar = Number(arSnapshot?.totalAR || 0);
+  const inventoryEffective = inventory;
   const ap = Number(apSnapshot?.totalAP || 0);
-  const tca = cash + ar + inventory;
+  const loc = 0;
+  const otherCL = 0;
+  const ltd = 0;
+  const tca = cash + ar + inventoryEffective;
+  const tcl = ap + loc + otherCL;
   const totalAssets = tca;
-  const totalLiab = ap;
+  const totalLiab = tcl + ltd;
   const totalEquity = totalAssets - totalLiab;
   const totalLAndE = totalLiab + totalEquity;
 
@@ -3006,15 +3184,18 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     sourcePlatform: 'INFOR_M3',
     revenue,
     cogsTotal,
-    // Operating expense is not available from this aggregate-only fallback path.
-    // Do not mirror COGS into expense; that double-counts costs in statements.
-    expense: 0,
+    expense,
+    otherExpense: expenseFromGl,
     cash,
     ar,
-    inventory,
+    inventory: inventoryEffective,
     tca,
     totalAssets,
     ap,
+    loc,
+    otherCL,
+    tcl,
+    ltd,
     totalLiab,
     totalEquity,
     totalLAndE,
@@ -3031,6 +3212,29 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     create: payload,
     update: payload,
   });
+  return {
+    written: true,
+    targetSnapshotDate,
+    sourceDates,
+    staleOrMissingSources,
+    reason: (() => {
+      const notes: string[] = [];
+      if (staleOrMissingSources.length > 0) {
+        notes.push('Daily snapshot written from latest available source data on/before target date.');
+      }
+      if (!hasExactSalesForDay) {
+        if (revenueFromGl > 0 || cogsFromGl > 0 || expenseFromGl > 0) {
+          notes.push('Daily P&L inferred from same-day GL mapped movements due to missing sales snapshot rows.');
+        } else {
+          notes.push('Daily revenue/cogs suppressed because no same-day sales snapshot was available.');
+        }
+      }
+      if (staleOrMissingSources.length > 0) {
+        notes.push('Balance sheet uses strict same-day snapshots; missing sources remain zero for that day.');
+      }
+      return notes.length > 0 ? notes.join(' ') : null;
+    })(),
+  };
 }
 
 export async function syncInforM3OperationalData(
@@ -4041,7 +4245,37 @@ export async function syncInforM3OperationalData(
       },
     });
     try {
-      await upsertDailyFinancialSnapshotFromOperationalTables(companyId, snapshotDate, frequency);
+      const dailySnapshotOutcome = await upsertDailyFinancialSnapshotFromOperationalTables(
+        companyId,
+        snapshotDate,
+        frequency
+      );
+      if (!dailySnapshotOutcome.written || dailySnapshotOutcome.staleOrMissingSources.length > 0) {
+        const staleList = dailySnapshotOutcome.staleOrMissingSources.join(', ') || 'none';
+        const message = !dailySnapshotOutcome.written
+          ? `Daily financial snapshot skipped: source data stale/missing for target ${dailySnapshotOutcome.targetSnapshotDate}.`
+          : `Daily financial snapshot used prior source dates for target ${dailySnapshotOutcome.targetSnapshotDate}.`;
+        await prisma.apiSyncLog.create({
+          data: {
+            companyId,
+            platform: 'INFOR_M3',
+            syncType: 'operational_data_sync',
+            status: 'warning',
+            recordsImported: dailySnapshotOutcome.written ? 1 : 0,
+            errorCount: 0,
+            errorDetails: {
+              syncRunId,
+              module: 'DAILY_FINANCIAL',
+              transaction: 'UPSERT_SNAPSHOT',
+              responseMessage: `${message} Sources: ${staleList}.`,
+              targetSnapshotDate: dailySnapshotOutcome.targetSnapshotDate,
+              staleSources: dailySnapshotOutcome.staleOrMissingSources,
+              sourceDates: dailySnapshotOutcome.sourceDates,
+              reason: dailySnapshotOutcome.reason || null,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        });
+      }
     } catch (dailyPersistError) {
       const message =
         dailyPersistError instanceof Error ? dailyPersistError.message : 'Failed to upsert DailyFinancialSnapshot row';

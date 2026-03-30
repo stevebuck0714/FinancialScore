@@ -24,6 +24,9 @@ type DiagnosticRow = {
   responseMessage: string | null;
   syncWindowStart: string | null;
   syncWindowEnd: string | null;
+  targetSnapshotDate: string | null;
+  staleSourcesJson: string | null;
+  sourceDatesJson: string | null;
 };
 
 async function buildRunDiagnostics(companyId: string, syncRunId: string) {
@@ -37,7 +40,10 @@ async function buildRunDiagnostics(companyId: string, syncRunId: string) {
       COALESCE("errorDetails"->>'error', '') AS "errorMessage",
       COALESCE("errorDetails"->>'responseMessage', '') AS "responseMessage",
       COALESCE("errorDetails"->'syncWindow'->>'startDate', '') AS "syncWindowStart",
-      COALESCE("errorDetails"->'syncWindow'->>'endDate', '') AS "syncWindowEnd"
+      COALESCE("errorDetails"->'syncWindow'->>'endDate', '') AS "syncWindowEnd",
+      COALESCE("errorDetails"->>'targetSnapshotDate', '') AS "targetSnapshotDate",
+      COALESCE("errorDetails"->>'staleSources', '') AS "staleSourcesJson",
+      COALESCE("errorDetails"->>'sourceDates', '') AS "sourceDatesJson"
     FROM "ApiSyncLog"
     WHERE "companyId" = ${companyId}
       AND platform = 'INFOR_M3'
@@ -77,11 +83,57 @@ async function buildRunDiagnostics(companyId: string, syncRunId: string) {
     return text.includes('skipped stuck chunk') || text.includes('bookmark did not advance');
   });
 
+  const staleSourceWarnings = rows
+    .filter((row) => String(row.module || '').trim().toUpperCase() === 'DAILY_FINANCIAL')
+    .map((row) => {
+      const message = String(row.responseMessage || row.errorMessage || '').trim();
+      const targetSnapshotDate = String(row.targetSnapshotDate || '').trim() || null;
+      const staleSources = (() => {
+        const raw = String(row.staleSourcesJson || '').trim();
+        if (!raw) return [] as string[];
+        try {
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return [] as string[];
+          return parsed
+            .map((entry) => String(entry || '').trim())
+            .filter((entry) => entry.length > 0)
+            .slice(0, 10);
+        } catch {
+          return [] as string[];
+        }
+      })();
+      const sourceDates = (() => {
+        const raw = String(row.sourceDatesJson || '').trim();
+        if (!raw) return {} as Record<string, string | null>;
+        try {
+          const parsed = JSON.parse(raw) as Record<string, unknown>;
+          const out: Record<string, string | null> = {};
+          for (const [key, value] of Object.entries(parsed || {})) {
+            const token = String(value || '').trim();
+            out[key] = token || null;
+          }
+          return out;
+        } catch {
+          return {} as Record<string, string | null>;
+        }
+      })();
+      return {
+        createdAt: new Date(row.createdAt).toISOString(),
+        targetSnapshotDate,
+        message: message.slice(0, 220),
+        staleSources,
+        sourceDates,
+      };
+    })
+    .filter((entry) => entry.message.length > 0)
+    .slice(0, 6);
+
   return {
     failedChunks: failedRows.length,
     skippedChunks: skippedRows.length,
     failedPrograms,
     suggestedRerunWindows: Array.from(windows.values()).slice(0, 8),
+    staleSourceWarnings,
   };
 }
 

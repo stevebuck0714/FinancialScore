@@ -109,6 +109,13 @@ type InforOperationalSyncStatus = {
     skippedChunks: number;
     failedPrograms: string[];
     suggestedRerunWindows: Array<{ startDate: string; endDate: string; reason: string }>;
+    staleSourceWarnings: Array<{
+      createdAt: string;
+      targetSnapshotDate: string | null;
+      message: string;
+      staleSources: string[];
+      sourceDates: Record<string, string | null>;
+    }>;
   } | null;
 };
 
@@ -2159,6 +2166,31 @@ function FinancialScorePage() {
                       }))
                       .filter((entry) => entry.startDate && entry.endDate)
                       .slice(0, 12)
+                  : [],
+                staleSourceWarnings: Array.isArray((data.diagnostics as any).staleSourceWarnings)
+                  ? ((data.diagnostics as any).staleSourceWarnings as any[])
+                      .map((entry) => ({
+                        createdAt: String(entry?.createdAt || '').trim(),
+                        targetSnapshotDate: String(entry?.targetSnapshotDate || '').trim() || null,
+                        message: String(entry?.message || '').trim(),
+                        staleSources: Array.isArray(entry?.staleSources)
+                          ? (entry.staleSources as unknown[])
+                              .map((value) => String(value || '').trim())
+                              .filter((value) => value.length > 0)
+                              .slice(0, 10)
+                          : [],
+                        sourceDates:
+                          entry?.sourceDates && typeof entry.sourceDates === 'object' && !Array.isArray(entry.sourceDates)
+                            ? Object.fromEntries(
+                                Object.entries(entry.sourceDates as Record<string, unknown>).map(([key, value]) => [
+                                  key,
+                                  String(value || '').trim() || null,
+                                ])
+                              )
+                            : {},
+                      }))
+                      .filter((entry) => entry.message.length > 0)
+                      .slice(0, 8)
                   : [],
               }
             : null;

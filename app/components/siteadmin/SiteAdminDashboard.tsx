@@ -178,7 +178,26 @@ export default function SiteAdminDashboard(props: any) {
 
   const renderInforSyncStatusPanel = (companyId: string) => {
     const status = inforOperationalSyncStatus;
-    if (!status || status.companyId !== companyId) return null;
+    if (!status || status.companyId !== companyId) {
+      return (
+        <div
+          style={{
+            gridColumn: '1 / -1',
+            border: '1px solid #cbd5e1',
+            borderRadius: '6px',
+            padding: '8px',
+            background: '#f8fafc',
+          }}
+        >
+          <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+            Sync Status: Idle
+          </div>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>
+            No active or recently polled sync status for this company yet.
+          </div>
+        </div>
+      );
+    }
     const isAutoChunkedBackfill = status.runMode === 'business_day_backfill';
     const stateColors =
       status.state === 'running'
@@ -261,6 +280,28 @@ export default function SiteAdminDashboard(props: any) {
                 </button>
               </div>
             )}
+            {Array.isArray((status as any).diagnostics?.staleSourceWarnings) &&
+              (status as any).diagnostics.staleSourceWarnings.length > 0 && (
+                <div style={{ marginTop: '6px', padding: '6px', borderRadius: '6px', border: '1px solid #fcd34d', background: '#fffbeb' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>
+                    DATA FRESHNESS WARNING
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#78350f' }}>
+                    {(status as any).diagnostics.staleSourceWarnings[0].message}
+                  </div>
+                  {(status as any).diagnostics.staleSourceWarnings[0].targetSnapshotDate && (
+                    <div style={{ marginTop: '2px', fontSize: '11px', color: '#92400e' }}>
+                      Target date: {(status as any).diagnostics.staleSourceWarnings[0].targetSnapshotDate}
+                    </div>
+                  )}
+                  {Array.isArray((status as any).diagnostics.staleSourceWarnings[0].staleSources) &&
+                    (status as any).diagnostics.staleSourceWarnings[0].staleSources.length > 0 && (
+                      <div style={{ marginTop: '2px', fontSize: '11px', color: '#92400e' }}>
+                        Sources: {(status as any).diagnostics.staleSourceWarnings[0].staleSources.join(', ')}
+                      </div>
+                    )}
+                </div>
+              )}
           </div>
         )}
       </div>
