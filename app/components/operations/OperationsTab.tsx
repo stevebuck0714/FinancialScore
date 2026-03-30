@@ -5560,6 +5560,7 @@ export default function OperationsTab({
         .replace(/^balance_movement:/, '')
         .replace(/[^a-z0-9]/g, '');
     const normalizedLineIndex: Record<string, Record<string, number>> = {};
+    const normalizedDynamicFieldLabels: Record<string, string> = {};
     const incomeActivityByDayKey: Record<string, number> = {};
     mappedLines.forEach((line: any) => {
       const targetField = String(line.targetField || '').trim();
@@ -5572,6 +5573,10 @@ export default function OperationsTab({
         Number(lineIndex[targetField][dateKey] || 0) + amount;
       const normalizedTarget = normalizeTargetField(targetField);
       if (!normalizedTarget) return;
+      if (!normalizedDynamicFieldLabels[normalizedTarget]) {
+        const rawTarget = String(targetField || '').trim().replace(/^balance_movement:/i, '');
+        normalizedDynamicFieldLabels[normalizedTarget] = getFieldDisplayName(rawTarget);
+      }
       normalizedLineIndex[normalizedTarget] ||= {};
       normalizedLineIndex[normalizedTarget][dateKey] =
         Number(normalizedLineIndex[normalizedTarget][dateKey] || 0) + amount;
@@ -5705,12 +5710,24 @@ export default function OperationsTab({
       const weekday = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
       const isBusinessDay = weekday !== 0 && weekday !== 6;
       const hasIncomeActivity = Number(incomeActivityByDayKey[dateKey] || 0) > 0 || revenue !== 0 || cogsTotal !== 0 || opex !== 0;
+      const hasBalanceSource =
+        cash !== 0 ||
+        ar !== 0 ||
+        inventory !== 0 ||
+        otherCA !== 0 ||
+        fixedAssets !== 0 ||
+        otherAssets !== 0 ||
+        ap !== 0 ||
+        loc !== 0 ||
+        otherCL !== 0 ||
+        ltd !== 0;
 
       return {
         dateKey,
         dateLabel,
         isBusinessDay,
         hasIncomeActivity,
+        hasBalanceSource,
         revenue,
         cogsTotal,
         grossProfit,
@@ -5762,13 +5779,15 @@ export default function OperationsTab({
       Object.values(lineIndex[field] || {}).some((value) => Number(value || 0) !== 0);
     const normalizedMappedFieldHasAnyValue = (field: string): boolean =>
       Object.values(normalizedLineIndex[field] || {}).some((value) => Number(value || 0) !== 0);
+    const getDynamicFieldDisplayName = (field: string): string =>
+      String(normalizedDynamicFieldLabels[field] || getFieldDisplayName(field));
 
     const revenueDetailFields = Object.keys(normalizedLineIndex)
-      .filter((field) => field.startsWith('rev_') && normalizedMappedFieldHasAnyValue(field))
-      .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
+      .filter((field) => field.startsWith('rev') && normalizedMappedFieldHasAnyValue(field))
+      .sort((a, b) => getDynamicFieldDisplayName(a).localeCompare(getDynamicFieldDisplayName(b)));
     const dynamicCogsFields = Object.keys(normalizedLineIndex)
-      .filter((field) => field.startsWith('cogs_') && field !== 'cogs_total' && normalizedMappedFieldHasAnyValue(field))
-      .sort((a, b) => getFieldDisplayName(a).localeCompare(getFieldDisplayName(b)));
+      .filter((field) => field.startsWith('cogs') && field !== 'cogstotal' && normalizedMappedFieldHasAnyValue(field))
+      .sort((a, b) => getDynamicFieldDisplayName(a).localeCompare(getDynamicFieldDisplayName(b)));
     const cogsDetailFields = dynamicCogsFields;
     const operatingExpenseFields = [
       'payroll', 'ownerBasePay', 'ownersRetirement', 'benefits', 'insurance', 'professionalFees',
@@ -5794,16 +5813,16 @@ export default function OperationsTab({
         return acc;
       }, {});
 
-    const revenueByDate = buildSeriesFromDateKeys((dateKey) =>
-      revenueDetailFields.length > 0
-        ? sumNormalizedFieldsForDate(revenueDetailFields, dateKey)
-        : Number(statementDayByKey[dateKey]?.revenue || 0)
-    );
-    const cogsTotalByDate = buildSeriesFromDateKeys((dateKey) =>
-      cogsDetailFields.length > 0
-        ? sumNormalizedFieldsForDate(cogsDetailFields, dateKey)
-        : Number(statementDayByKey[dateKey]?.cogsTotal || 0)
-    );
+    const revenueByDate = buildSeriesFromDateKeys((dateKey) => {
+      const detailTotal = revenueDetailFields.length > 0 ? sumNormalizedFieldsForDate(revenueDetailFields, dateKey) : 0;
+      const snapshotTotal = Number(statementDayByKey[dateKey]?.revenue || 0);
+      return detailTotal !== 0 ? detailTotal : snapshotTotal;
+    });
+    const cogsTotalByDate = buildSeriesFromDateKeys((dateKey) => {
+      const detailTotal = cogsDetailFields.length > 0 ? sumNormalizedFieldsForDate(cogsDetailFields, dateKey) : 0;
+      const snapshotTotal = Number(statementDayByKey[dateKey]?.cogsTotal || 0);
+      return detailTotal !== 0 ? detailTotal : snapshotTotal;
+    });
     const expenseFieldByDate = (field: string, dateKey: string): number => {
       const mappedRaw = getMappedValue(field, dateKey);
       if (mappedRaw !== 0) return mappedRaw;
@@ -5864,13 +5883,13 @@ export default function OperationsTab({
     const incomeRowDefs: StatementRowDef[] = [
       { label: 'Total Revenue', styleType: 'section', valuesByDate: revenueByDate },
       ...revenueDetailFields.map((field) => ({
-        label: `  ${getFieldDisplayName(field)}`,
+        label: `  ${getDynamicFieldDisplayName(field)}`,
         styleType: 'normal' as const,
         valuesByDate: normalizedLineIndex[field] || {},
       })),
       { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
       ...dynamicCogsFields.map((field) => ({
-        label: `  ${getFieldDisplayName(field)}`,
+        label: `  ${getDynamicFieldDisplayName(field)}`,
         styleType: 'normal' as const,
         valuesByDate: normalizedLineIndex[field] || {},
       })),
@@ -6221,11 +6240,13 @@ export default function OperationsTab({
                         >
                           {rowDef.suppressValues
                             ? ''
-                            : formatCurrency(Number(
-                                rowDef.valuesByDate
-                                  ? rowDef.valuesByDate[day.dateKey] || 0
-                                  : (rowDef.key ? day[rowDef.key as keyof typeof day] : 0) || 0
-                              ))}
+                            : !day.hasBalanceSource && rowDef.key
+                              ? '—'
+                              : formatCurrency(Number(
+                                  rowDef.valuesByDate
+                                    ? rowDef.valuesByDate[day.dateKey] || 0
+                                    : (rowDef.key ? day[rowDef.key as keyof typeof day] : 0) || 0
+                                ))}
                         </td>
                       ))}
                     </tr>

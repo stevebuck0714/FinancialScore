@@ -2996,6 +2996,8 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
 ): Promise<DailyFinancialSnapshotHydrationOutcome> {
   const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
   const targetSnapshotDate = toIsoDayOrNull(snapshotDate) || String(snapshotDate);
+  const dayStart = startOfUtcDay(snapshotDate);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
   if (!dailySnapshotDelegate) {
     return {
       written: false,
@@ -3007,14 +3009,14 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
   }
 
   const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
-  const [cashAgg, inventoryRows, productAgg, arSnapshot, apSnapshot, glBalanceMovementRows] = await Promise.all([
+  const [cashAgg, inventoryRows, productAgg, arSnapshot, apSnapshot, glBalanceMovementRows, glBalanceMovementRowsToDate] = await Promise.all([
     prisma.cashSnapshot.aggregate({
-      where: { companyId, snapshotDate, frequency },
+      where: { companyId, frequency, snapshotDate: { gte: dayStart, lt: dayEnd } },
       _sum: { cashBalance: true },
       _count: { _all: true },
     }),
     prisma.inventorySnapshot.findMany({
-      where: { companyId, snapshotDate, frequency },
+      where: { companyId, frequency, snapshotDate: { gte: dayStart, lt: dayEnd } },
       select: {
         itemId: true,
         itemName: true,
@@ -3025,24 +3027,38 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
       },
     }),
     prisma.productSalesSnapshot.aggregate({
-      where: { companyId, snapshotDate, frequency },
+      where: { companyId, frequency, snapshotDate: { gte: dayStart, lt: dayEnd } },
       _sum: { revenue: true, cogs: true },
       _count: { _all: true },
     }),
-    prisma.aRAgingSnapshot.findUnique({
-      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+    prisma.aRAgingSnapshot.findFirst({
+      where: { companyId, frequency, snapshotDate: { gte: dayStart, lt: dayEnd } },
       select: { totalAR: true },
+      orderBy: { snapshotDate: 'desc' },
     }),
-    prisma.aPAgingSnapshot.findUnique({
-      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+    prisma.aPAgingSnapshot.findFirst({
+      where: { companyId, frequency, snapshotDate: { gte: dayStart, lt: dayEnd } },
       select: { totalAP: true },
+      orderBy: { snapshotDate: 'desc' },
     }),
     mappedLineDelegate
       ? mappedLineDelegate.findMany({
           where: {
             companyId,
             frequency,
-            snapshotDate,
+            snapshotDate: { gte: dayStart, lt: dayEnd },
+            sourceAccountType: 'gl_balance_account',
+            targetField: { startsWith: 'balance_movement:' },
+          },
+          select: { targetField: true, amount: true },
+        })
+      : Promise.resolve([]),
+    mappedLineDelegate
+      ? mappedLineDelegate.findMany({
+          where: {
+            companyId,
+            frequency,
+            snapshotDate: { lt: dayEnd },
             sourceAccountType: 'gl_balance_account',
             targetField: { startsWith: 'balance_movement:' },
           },
@@ -3135,6 +3151,29 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     });
     return total;
   };
+  const cumulativeBalanceTotals = new Map<string, number>();
+  for (const row of Array.isArray(glBalanceMovementRowsToDate) ? glBalanceMovementRowsToDate : []) {
+    const rawTargetField = String((row as any).targetField || '').trim().toLowerCase();
+    const amount = Number((row as any).amount || 0);
+    if (!rawTargetField.startsWith('balance_movement:') || !Number.isFinite(amount)) continue;
+    const field = rawTargetField.replace('balance_movement:', '').trim();
+    if (!field) continue;
+    cumulativeBalanceTotals.set(field, Number(cumulativeBalanceTotals.get(field) || 0) + amount);
+  }
+  const normalizeGlTargetKey = (value: string): string => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const getGlTargetTotal = (aliases: string[]): number => {
+    const aliasSet = new Set(aliases.map((alias) => normalizeGlTargetKey(alias)));
+    return sumGlByPredicate((field) => aliasSet.has(normalizeGlTargetKey(field)));
+  };
+  const getCumulativeBalanceTargetTotal = (aliases: string[]): number => {
+    const aliasSet = new Set(aliases.map((alias) => normalizeGlTargetKey(alias)));
+    let total = 0;
+    cumulativeBalanceTotals.forEach((value, field) => {
+      if (!aliasSet.has(normalizeGlTargetKey(field))) return;
+      total += Number(value || 0);
+    });
+    return total;
+  };
   const hasExactSalesForDay = Boolean(sourceDates.sales);
 
   const cashFromOps = Number(cashAgg?._sum?.cashBalance || 0);
@@ -3161,20 +3200,61 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
   const revenue = hasExactSalesForDay ? Math.max(revenueFromOps, revenueFromGl) : revenueFromGl;
   const cogsTotal = hasExactSalesForDay ? Math.max(cogsFromOps, cogsFromGl) : cogsFromGl;
   const expense = expenseFromGl;
-  // Balance-sheet values are strict same-day snapshots only.
-  // Do not use mapped movement fallback for point-in-time balances.
-  const cash = cashFromOps;
-  const ar = Number(arSnapshot?.totalAR || 0);
-  const inventoryEffective = inventory;
-  const ap = Number(apSnapshot?.totalAP || 0);
-  const loc = 0;
-  const otherCL = 0;
-  const ltd = 0;
-  const tca = cash + ar + inventoryEffective;
-  const tcl = ap + loc + otherCL;
-  const totalAssets = tca;
-  const totalLiab = tcl + ltd;
-  const totalEquity = totalAssets - totalLiab;
+  // Daily balance sheet is end-of-day balance by account (cumulative ledger),
+  // not same-day movement.
+  const cashFromGl = getCumulativeBalanceTargetTotal(['cash']);
+  const arFromGl = getCumulativeBalanceTargetTotal(['ar', 'accountsReceivable']);
+  const inventoryFromGl = getCumulativeBalanceTargetTotal(['inventory']);
+  const otherCAFromGl = getCumulativeBalanceTargetTotal(['otherCA', 'otherCurrentAssets']);
+  const fixedAssetsFromGl = getCumulativeBalanceTargetTotal(['fixedAssets']);
+  const otherAssetsFromGl = getCumulativeBalanceTargetTotal(['otherAssets']);
+  const apFromGl = getCumulativeBalanceTargetTotal(['ap', 'accountsPayable']);
+  const locFromGl = getCumulativeBalanceTargetTotal(['loc', 'lineOfCredit']);
+  const otherCLFromGl = getCumulativeBalanceTargetTotal(['otherCL', 'otherCurrentLiabilities']);
+  const ltdFromGl = getCumulativeBalanceTargetTotal(['ltd', 'longTermDebt']);
+  const tcaFromGl = getCumulativeBalanceTargetTotal(['tca', 'totalCurrentAssets']);
+  const tclFromGl = getCumulativeBalanceTargetTotal(['tcl', 'totalCurrentLiabilities']);
+  const totalAssetsFromGl = getCumulativeBalanceTargetTotal(['totalAssets']);
+  const totalLiabFromGl = getCumulativeBalanceTargetTotal(['totalLiab', 'totalLiabilities']);
+  const ownersCapitalFromGl = getCumulativeBalanceTargetTotal(['ownersCapital']);
+  const ownersDrawFromGl = getCumulativeBalanceTargetTotal(['ownersDraw']);
+  const commonStockFromGl = getCumulativeBalanceTargetTotal(['commonStock']);
+  const preferredStockFromGl = getCumulativeBalanceTargetTotal(['preferredStock']);
+  const retainedEarningsFromGl = getCumulativeBalanceTargetTotal(['retainedEarnings']);
+  const additionalPaidInCapitalFromGl = getCumulativeBalanceTargetTotal(['additionalPaidInCapital']);
+  const treasuryStockFromGl = getCumulativeBalanceTargetTotal(['treasuryStock']);
+  const totalEquityFromGl = getCumulativeBalanceTargetTotal(['totalEquity']);
+  const totalLAndEFromGl = getCumulativeBalanceTargetTotal(['totalLAndE', 'totalLiabilitiesAndEquity']);
+
+  const cash = (() => {
+    const sameDayCash = Number(cashAgg?._sum?.cashBalance || 0);
+    if (Number.isFinite(sameDayCash) && sameDayCash !== 0) return Math.abs(sameDayCash);
+    return Math.abs(cashFromGl);
+  })();
+  const ar = Math.abs(arFromGl);
+  const inventoryEffective = Math.abs(inventoryFromGl);
+  const otherCA = Math.abs(otherCAFromGl);
+  const fixedAssets = Math.abs(fixedAssetsFromGl);
+  const otherAssets = Math.abs(otherAssetsFromGl);
+  const ap = Math.abs(apFromGl);
+  const loc = Math.abs(locFromGl);
+  const otherCL = Math.abs(otherCLFromGl);
+  const ltd = Math.abs(ltdFromGl);
+  const tca = Math.abs(tcaFromGl) > 0 ? Math.abs(tcaFromGl) : cash + ar + inventoryEffective + otherCA;
+  const tcl = Math.abs(tclFromGl) > 0 ? Math.abs(tclFromGl) : ap + loc + otherCL;
+  const totalAssets = Math.abs(totalAssetsFromGl) > 0 ? Math.abs(totalAssetsFromGl) : tca + fixedAssets + otherAssets;
+  const totalLiab = Math.abs(totalLiabFromGl) > 0 ? Math.abs(totalLiabFromGl) : tcl + ltd;
+  const ownersCapital = Math.abs(ownersCapitalFromGl);
+  const ownersDraw = Math.abs(ownersDrawFromGl);
+  const commonStock = Math.abs(commonStockFromGl);
+  const preferredStock = Math.abs(preferredStockFromGl);
+  const retainedEarnings = Math.abs(retainedEarningsFromGl);
+  const additionalPaidInCapital = Math.abs(additionalPaidInCapitalFromGl);
+  const treasuryStock = Math.abs(treasuryStockFromGl);
+  const totalEquity =
+    Math.abs(totalEquityFromGl) > 0
+      ? Math.abs(totalEquityFromGl)
+      : ownersCapital + ownersDraw + commonStock + preferredStock + retainedEarnings + additionalPaidInCapital + treasuryStock;
   const totalLAndE = totalLiab + totalEquity;
 
   const payload = {
@@ -3189,7 +3269,10 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     cash,
     ar,
     inventory: inventoryEffective,
+    otherCA,
     tca,
+    fixedAssets,
+    otherAssets,
     totalAssets,
     ap,
     loc,
@@ -3197,8 +3280,15 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     tcl,
     ltd,
     totalLiab,
+    ownersCapital,
+    ownersDraw,
+    commonStock,
+    preferredStock,
+    retainedEarnings,
+    additionalPaidInCapital,
+    treasuryStock,
     totalEquity,
-    totalLAndE,
+    totalLAndE: totalLAndEFromGl > 0 ? totalLAndEFromGl : totalLAndE,
   };
 
   await dailySnapshotDelegate.upsert({
@@ -3220,7 +3310,7 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     reason: (() => {
       const notes: string[] = [];
       if (staleOrMissingSources.length > 0) {
-        notes.push('Daily snapshot written from latest available source data on/before target date.');
+        notes.push('Daily snapshot written from same-day available source data.');
       }
       if (!hasExactSalesForDay) {
         if (revenueFromGl > 0 || cogsFromGl > 0 || expenseFromGl > 0) {
@@ -3229,8 +3319,8 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
           notes.push('Daily revenue/cogs suppressed because no same-day sales snapshot was available.');
         }
       }
-      if (staleOrMissingSources.length > 0) {
-        notes.push('Balance sheet uses strict same-day snapshots; missing sources remain zero for that day.');
+      if (cashFromGl !== 0 || arFromGl !== 0 || inventoryFromGl !== 0 || apFromGl !== 0 || totalAssetsFromGl !== 0 || totalLiabFromGl !== 0) {
+        notes.push('Daily balance sheet fields were hydrated from end-of-day cumulative GL ledger balances.');
       }
       return notes.length > 0 ? notes.join(' ') : null;
     })(),
