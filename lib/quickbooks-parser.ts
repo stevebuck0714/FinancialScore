@@ -428,18 +428,38 @@ export function createMonthlyRecords(
       }
     }
 
+    const RESERVED_BALANCE_SHEET_FIELDS = new Set([
+      'cash',
+      'ar',
+      'inventory',
+      'otherCA',
+      'tca',
+      'fixedAssets',
+      'otherAssets',
+      'totalAssets',
+      'ap',
+      'otherCL',
+      'tcl',
+      'ltd',
+      'totalLiab',
+      'totalEquity',
+      'totalLAndE',
+    ]);
+
     const mappedFieldTotals =
       lobData?.totals && typeof lobData.totals === 'object'
         ? Object.entries(lobData.totals).reduce((acc, [field, value]) => {
             // Keep report-level totals as source of truth; only populate category fields from mappings.
             if (['revenue', 'expense', 'cogsTotal'].includes(field)) return acc;
+            // Prevent account-mapping totals from clobbering balance-sheet rollups.
+            if (RESERVED_BALANCE_SHEET_FIELDS.has(field)) return acc;
             const numeric = Number(value || 0);
             acc[field] = Number.isFinite(numeric) ? Math.abs(numeric) : 0;
             return acc;
           }, {} as Record<string, number>)
         : {};
 
-    records.push({
+    const record: ParsedFinancialData = {
       monthDate,
       revenue,
       expense,
@@ -465,7 +485,36 @@ export function createMonthlyRecords(
       cogsBreakdown: lobData?.cogsBreakdown || null,
       lobBreakdowns: lobData ? roundAllBreakdowns(lobData.breakdowns) : null,
       ...mappedFieldTotals,
-    });
+    };
+
+    // Final guardrail: keep totals coherent even when source labels differ by tenant.
+    const normalizedTca = Math.max(
+      0,
+      Number(record.tca || 0) || Number(record.cash || 0) + Number(record.ar || 0) + Number(record.inventory || 0) + Number(record.otherCA || 0)
+    );
+    const normalizedTcl = Math.max(
+      0,
+      Number(record.tcl || 0) || Number(record.ap || 0) + Number(record.otherCL || 0)
+    );
+    const normalizedTotalAssets = Math.max(
+      0,
+      Number(record.totalAssets || 0) || normalizedTca + Number(record.fixedAssets || 0) + Number(record.otherAssets || 0)
+    );
+    const normalizedTotalLiab = Math.max(
+      0,
+      Number(record.totalLiab || 0) || normalizedTcl + Number(record.ltd || 0)
+    );
+    const normalizedTotalEquity = Number(record.totalEquity || 0) || (normalizedTotalAssets - normalizedTotalLiab);
+    const normalizedTotalLAndE = Number(record.totalLAndE || 0) || (normalizedTotalLiab + normalizedTotalEquity);
+
+    record.tca = normalizedTca;
+    record.tcl = normalizedTcl;
+    record.totalAssets = normalizedTotalAssets;
+    record.totalLiab = normalizedTotalLiab;
+    record.totalEquity = normalizedTotalEquity;
+    record.totalLAndE = normalizedTotalLAndE;
+
+    records.push(record);
   }
 
   return records;
