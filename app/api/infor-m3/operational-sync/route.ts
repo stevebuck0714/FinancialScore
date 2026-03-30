@@ -5,6 +5,8 @@ import prisma from '@/lib/prisma';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { randomUUID } from 'node:crypto';
 
+export const maxDuration = 300;
+
 type Frequency = 'daily' | 'weekly' | 'monthly';
 type SyncMode = 'daily_overlap' | 'backfill' | 'manual' | 'business_day_backfill';
 type SyncWindow = { startDate: Date; endDate: Date; mode: SyncMode } | null;

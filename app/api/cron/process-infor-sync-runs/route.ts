@@ -8,6 +8,7 @@ import {
 import { isInforSyncQueueEnabled, processQueueTick } from '@/lib/infor-m3/sync-queue';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 const MAX_RUNS_PER_TICK = 8;
 const MAX_RETRIES_PER_RUN = 6;
