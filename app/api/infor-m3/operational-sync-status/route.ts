@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma';
 import { getRequestedCompanyId } from '@/lib/infor-m3/route-guards';
 import { requireSiteAdmin } from '@/lib/tenant-security';
 import { getRunStateFromMetadata } from '@/lib/infor-m3/async-run-state';
-import { getQueueRunById, isInforSyncQueueEnabled, mapQueueRunToLegacy } from '@/lib/infor-m3/sync-queue';
+import { getQueueRunById, isInforSyncQueueEnabled, mapQueueRunToLegacy, processQueueTick } from '@/lib/infor-m3/sync-queue';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,7 +150,23 @@ export async function GET(request: NextRequest) {
     }
 
     if (isInforSyncQueueEnabled()) {
-      const queueRun = await getQueueRunById(companyId, syncRunId);
+      let queueRun = await getQueueRunById(companyId, syncRunId);
+      if (queueRun?.status === 'running') {
+        const lastProgressAt = queueRun.lastChunkAt || queueRun.updatedAt;
+        const millisSinceProgress = Date.now() - new Date(lastProgressAt).getTime();
+        // Opportunistically advance the queue from status polling when progress
+        // has gone quiet for a short interval (helps staging/dev without cron cadence).
+        if (Number.isFinite(millisSinceProgress) && millisSinceProgress > 15000) {
+          const cronSecret = String(process.env.CRON_SECRET || '').trim();
+          const workerSecret = cronSecret || 'dev-worker';
+          try {
+            await processQueueTick(request.url, workerSecret);
+            queueRun = await getQueueRunById(companyId, syncRunId);
+          } catch {
+            // Best-effort queue kick: status endpoint should still return current run info.
+          }
+        }
+      }
       if (queueRun) {
         const mapped = mapQueueRunToLegacy(queueRun);
         const diagnostics = await buildRunDiagnostics(companyId, syncRunId);
