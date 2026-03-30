@@ -301,7 +301,9 @@ function parseRowMonth(record: JsonRecord): Date | null {
     }
   }
 
-  const explicitDate = firstNonEmptyToken(record, DATE_KEYS);
+  // CSI ledger rows often have RecordDate in a later posting month while
+  // TransDate reflects the business transaction month; prefer TransDate.
+  const explicitDate = firstNonEmptyToken(record, ['TransDate', 'transDate']) || firstNonEmptyToken(record, DATE_KEYS);
   if (explicitDate) {
     const compactParsed = parseCompactDateToken(explicitDate);
     if (compactParsed) return compactParsed;
@@ -563,6 +565,27 @@ function monthKey(date: Date): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+function isEffectivelyZero(value: unknown): boolean {
+  return Math.abs(toNumber(value)) < 0.000001;
+}
+
+function isSyntheticZeroMonthRow(row: ReturnType<typeof initMonthRow>): boolean {
+  return (
+    isEffectivelyZero(row.revenue) &&
+    isEffectivelyZero(row.cogsTotal) &&
+    isEffectivelyZero(row.expense) &&
+    isEffectivelyZero(row.cash) &&
+    isEffectivelyZero(row.ar) &&
+    isEffectivelyZero(row.inventory) &&
+    isEffectivelyZero(row.tca) &&
+    isEffectivelyZero(row.totalAssets) &&
+    isEffectivelyZero(row.ap) &&
+    isEffectivelyZero(row.tcl) &&
+    isEffectivelyZero(row.totalLiab) &&
+    isEffectivelyZero(row.totalEquity)
+  );
+}
+
 function endOfMonthIso(month: string): string {
   const [yearText, monthText] = month.split('-');
   const year = Number(yearText);
@@ -779,6 +802,7 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
   const { chartRows, ledgerRows } = inferRowsBySource(params.glResponses || []);
   const chartByAccount = buildChartIndex(chartRows);
   const monthly = new Map<string, ReturnType<typeof initMonthRow>>();
+  const sourceMonthKeys = new Set<string>();
   const mappingByName = new Map<string, string>();
   const mappingByCode = new Map<string, string>();
   for (const row of Array.isArray(params.accountMappings) ? params.accountMappings : []) {
@@ -813,6 +837,7 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     const monthStart = new Date(Date.UTC(rowMonth.getUTCFullYear(), rowMonth.getUTCMonth(), 1));
     const rowMonthKey = monthKey(monthStart);
     if (rowMonthKey < earliestMonth || rowMonthKey > throughMonth) continue;
+    sourceMonthKeys.add(rowMonthKey);
 
     const key = rowMonthKey;
     if (!monthly.has(key)) monthly.set(key, initMonthRow(key));
@@ -938,6 +963,18 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
       }
       return row;
     });
+
+  // Do not persist synthetic trailing empty months as the "latest" month.
+  // Keep placeholder months inside the range, but trim only the all-zero tail
+  // that was generated solely by timeline continuity filling.
+  while (monthlyData.length > 0) {
+    const tail = monthlyData[monthlyData.length - 1];
+    const tailMonth = String(tail.month || '').trim();
+    if (!tailMonth) break;
+    if (sourceMonthKeys.has(tailMonth)) break;
+    if (!isSyntheticZeroMonthRow(tail)) break;
+    monthlyData.pop();
+  }
 
   return {
     monthlyData,

@@ -39,6 +39,17 @@ function hasMonthlyDataRows(payload: Record<string, unknown> | null): boolean {
   return Array.isArray(rows) && rows.length > 0;
 }
 
+function looksLikeCoaOnlyPayloadStub(payload: Record<string, unknown> | null): boolean {
+  if (!payload) return false;
+  const metadata =
+    payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+      ? (payload.metadata as Record<string, unknown>)
+      : {};
+  const sourceType = String(metadata.sourceType || '').trim().toLowerCase();
+  const sourceModule = String(metadata.sourceModule || '').trim().toUpperCase();
+  return sourceType === 'endpoint' && sourceModule === 'GL' && !hasMonthlyDataRows(payload);
+}
+
 function resolveThroughMonthForRebuild(
   payload: Record<string, unknown> | null,
   requestedTargetMonth: string | null,
@@ -435,9 +446,16 @@ export async function POST(request: NextRequest) {
 
     if (configuredPlatform === 'INFOR_M3' || configuredPlatform === 'INFOR_CSI') {
       const isInforCsi = configuredPlatform === 'INFOR_CSI';
+      const payloadLooksStub = isInforCsi && looksLikeCoaOnlyPayloadStub(financialPayload);
       const useHistoricalSlLedgers =
         useHistoricalSlLedgersRequested ||
-        (mode === 'only' && !!targetMonth);
+        (mode === 'only' && !!targetMonth) ||
+        payloadLooksStub ||
+        !hasMonthlyDataRows(financialPayload);
+      const effectivePersistRebuiltPayload =
+        persistRebuiltPayload ||
+        payloadLooksStub ||
+        !hasMonthlyDataRows(financialPayload);
       const diagnostics: Record<string, unknown> = {
         companyId: String(companyId),
         configuredPlatform,
@@ -445,6 +463,8 @@ export async function POST(request: NextRequest) {
         mode,
         useHistoricalSlLedgersRequested,
         useHistoricalSlLedgersEffective: useHistoricalSlLedgers,
+        payloadLooksStub,
+        effectivePersistRebuiltPayload,
       };
       const payloadRows = await prisma.$queryRaw<Array<{ csi: unknown; m3: unknown }>>`
         SELECT
@@ -509,7 +529,7 @@ export async function POST(request: NextRequest) {
       diagnostics.glRebuildSkippedForOnlyMode = shouldSkipGlRebuildForOnlyMode;
       diagnostics.hasSectorAwareMappings = hasSectorAwareMappings;
       diagnostics.hasDetailedBreakdownForTargetMonth = hasDetailedBreakdownForTargetMonth;
-      if (glResponsesRaw.length > 0 && !shouldSkipGlRebuildForOnlyMode) {
+      if ((glResponsesRaw.length > 0 || useHistoricalSlLedgers) && !shouldSkipGlRebuildForOnlyMode) {
         // Keep "only" mode lightweight so month-targeted reprocess calls do not
         // attempt a full 36-month CSI rebuild and exceed serverless limits.
         const rebuildMaxMonths = mode === 'only' && targetMonth ? 1 : CSI_REBUILD_MAX_MONTHS;
@@ -597,7 +617,7 @@ export async function POST(request: NextRequest) {
               buildStats: built.stats,
             },
           };
-          if (persistRebuiltPayload) {
+          if (effectivePersistRebuiltPayload) {
             const connection = await prisma.accountingConnection.findUnique({
               where: {
                 companyId_platform: {

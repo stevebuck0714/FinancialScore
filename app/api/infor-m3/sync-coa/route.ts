@@ -292,7 +292,7 @@ export async function POST(request: NextRequest) {
     const statusText = effectiveOk ? 'success' : 'error';
     const imported = effectiveOk ? safeRecordCount(result.body) : 0;
     const pulledAtIso = new Date().toISOString();
-    const payloadMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiFinancialPayload' : 'inforM3FinancialPayload';
+    const payloadMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiCoaPayload' : 'inforM3CoaPayload';
     const seedLastRunAtMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedLastRunAt' : 'inforM3AccountSeedLastRunAt';
     const seedSummaryMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedSummary' : 'inforM3AccountSeedSummary';
     const seedSnapshotMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedSnapshot' : 'inforM3AccountSeedSnapshot';
