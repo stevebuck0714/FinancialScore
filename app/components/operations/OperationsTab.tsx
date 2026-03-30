@@ -1826,9 +1826,11 @@ export default function OperationsTab({
     }
     const periodOptions = Array.from(periodSet).sort((a, b) => String(b).localeCompare(String(a)));
     const effectivePeriodKey =
-      customerRevenuePeriodKey !== 'all' && periodOptions.includes(customerRevenuePeriodKey)
-        ? customerRevenuePeriodKey
-        : periodOptions[0] || 'all';
+      customerRevenuePeriodKey === 'all'
+        ? 'all'
+        : periodOptions.includes(customerRevenuePeriodKey)
+          ? customerRevenuePeriodKey
+          : 'all';
     const filteredRecordsForTopCustomers =
       effectivePeriodKey === 'all'
         ? records
@@ -1847,9 +1849,9 @@ export default function OperationsTab({
     const rankedCustomersForTable = Object.values(tableCustomerTotals).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
     const selectedPeriodLabel =
       customerRevenuePeriodMode === 'year'
-        ? effectivePeriodKey
+        ? (effectivePeriodKey === 'all' ? 'All Years' : effectivePeriodKey)
         : customerRevenuePeriodMode === 'quarter'
-          ? effectivePeriodKey
+          ? (effectivePeriodKey === 'all' ? 'All Quarters' : effectivePeriodKey)
           : effectivePeriodKey === 'all'
             ? 'All Months'
             : (() => {
@@ -2029,6 +2031,13 @@ export default function OperationsTab({
                       onChange={(e) => setCustomerRevenuePeriodKey(e.target.value)}
                       style={{ padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', color: '#334155', background: 'white' }}
                     >
+                      <option value="all">
+                        {customerRevenuePeriodMode === 'month'
+                          ? 'All Months'
+                          : customerRevenuePeriodMode === 'quarter'
+                            ? 'All Quarters'
+                            : 'All Years'}
+                      </option>
                       {periodOptions.map((option) => (
                         <option key={option} value={option}>
                           {customerRevenuePeriodMode === 'month'
