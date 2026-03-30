@@ -1632,29 +1632,8 @@ async function saveBalanceMovementsFromGl(
   const accountMappings = await prisma.accountMapping.findMany({
     where: {
       companyId,
-      qbAccountClassification: {
-        in: [
-          'A',
-          'Asset',
-          'ASSET',
-          'asset',
-          'L',
-          'Liability',
-          'LIABILITY',
-          'liability',
-          'R',
-          'Revenue',
-          'REVENUE',
-          'revenue',
-          'E',
-          'Expense',
-          'EXPENSE',
-          'expense',
-          'COGS',
-          'cogs',
-          'CostOfGoodsSold',
-          'COST_OF_GOODS_SOLD',
-        ],
+      targetField: {
+        notIn: ['', 'unmapped', 'UNMAPPED'],
       },
     },
     select: {

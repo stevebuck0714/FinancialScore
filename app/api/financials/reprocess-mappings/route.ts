@@ -446,26 +446,6 @@ export async function POST(request: NextRequest) {
 
     if (configuredPlatform === 'INFOR_M3' || configuredPlatform === 'INFOR_CSI') {
       const isInforCsi = configuredPlatform === 'INFOR_CSI';
-      const payloadLooksStub = isInforCsi && looksLikeCoaOnlyPayloadStub(financialPayload);
-      const useHistoricalSlLedgers =
-        useHistoricalSlLedgersRequested ||
-        (mode === 'only' && !!targetMonth) ||
-        payloadLooksStub ||
-        !hasMonthlyDataRows(financialPayload);
-      const effectivePersistRebuiltPayload =
-        persistRebuiltPayload ||
-        payloadLooksStub ||
-        !hasMonthlyDataRows(financialPayload);
-      const diagnostics: Record<string, unknown> = {
-        companyId: String(companyId),
-        configuredPlatform,
-        targetMonth: targetMonth || null,
-        mode,
-        useHistoricalSlLedgersRequested,
-        useHistoricalSlLedgersEffective: useHistoricalSlLedgers,
-        payloadLooksStub,
-        effectivePersistRebuiltPayload,
-      };
       const payloadRows = await prisma.$queryRaw<Array<{ csi: unknown; m3: unknown }>>`
         SELECT
           "connectionMetadata"->'inforCsiFinancialPayload' AS csi,
@@ -503,6 +483,27 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
+
+      const payloadLooksStub = isInforCsi && looksLikeCoaOnlyPayloadStub(financialPayload);
+      const useHistoricalSlLedgers =
+        useHistoricalSlLedgersRequested ||
+        (mode === 'only' && !!targetMonth) ||
+        payloadLooksStub ||
+        !hasMonthlyDataRows(financialPayload);
+      const effectivePersistRebuiltPayload =
+        persistRebuiltPayload ||
+        payloadLooksStub ||
+        !hasMonthlyDataRows(financialPayload);
+      const diagnostics: Record<string, unknown> = {
+        companyId: String(companyId),
+        configuredPlatform,
+        targetMonth: targetMonth || null,
+        mode,
+        useHistoricalSlLedgersRequested,
+        useHistoricalSlLedgersEffective: useHistoricalSlLedgers,
+        payloadLooksStub,
+        effectivePersistRebuiltPayload,
+      };
 
       const mappings = await prisma.accountMapping.findMany({
         where: { companyId: String(companyId) },

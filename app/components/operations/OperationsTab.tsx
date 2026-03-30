@@ -1847,6 +1847,15 @@ export default function OperationsTab({
       return acc;
     }, {});
     const rankedCustomersForTable = Object.values(tableCustomerTotals).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
+    const summaryTopCustomers = Array.isArray(summary?.topCustomers)
+      ? (summary.topCustomers as Array<any>).map((row) => ({
+          name: String(row?.name || row?.customerName || 'Unknown Customer'),
+          totalRevenue: Number(row?.totalRevenue || row?.revenue || 0),
+          totalInvoices: Number(row?.totalInvoices || row?.invoiceCount || 0),
+        }))
+      : [];
+    const rankedCustomersForTableEffective =
+      rankedCustomersForTable.length > 0 ? rankedCustomersForTable : summaryTopCustomers;
     const selectedPeriodLabel =
       customerRevenuePeriodMode === 'year'
         ? (effectivePeriodKey === 'all' ? 'All Years' : effectivePeriodKey)
@@ -1887,7 +1896,7 @@ export default function OperationsTab({
         </h2>
 
         {(() => {
-          const topTenRaw = rankedCustomersForTable.slice(0, 10);
+          const topTenRaw = rankedCustomersForTableEffective.slice(0, 10);
           const tableCustomers = topTenRaw.map((customer) => ({
             ...customer,
             totalInvoices: Math.max(1, Math.round(customer.totalInvoices || customer.totalRevenue / 10000)),
@@ -2069,19 +2078,27 @@ export default function OperationsTab({
                       </tr>
                     </thead>
                     <tbody>
-                      {tableCustomers.map((customer: any, index: number) => (
-                        <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b' }}>#{index + 1}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{customer.name}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
-                            {formatCurrency(customer.totalRevenue)}
-                          </td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>{customer.totalInvoices}</td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
-                            {formatCurrency(customer.totalRevenue / customer.totalInvoices)}
+                      {tableCustomers.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} style={{ padding: '10px', fontSize: '12px', color: '#64748b', textAlign: 'center' }}>
+                            No customer revenue records found for the selected date range.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        tableCustomers.map((customer: any, index: number) => (
+                          <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b' }}>#{index + 1}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{customer.name}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
+                              {formatCurrency(customer.totalRevenue)}
+                            </td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>{customer.totalInvoices}</td>
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
+                              {formatCurrency(customer.totalRevenue / customer.totalInvoices)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
