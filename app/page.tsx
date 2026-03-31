@@ -2093,6 +2093,7 @@ function FinancialScorePage() {
   const [inforProbePath, setInforProbePath] = useState('/APR_PRD/CSI/IDORequestService/ido/load/SLCustomers?properties=CustNum,Name&recordCap=1');
   const [inforProbeSummary, setInforProbeSummary] = useState<string | null>(null);
   const [inforOperationalSyncStatus, setInforOperationalSyncStatus] = useState<InforOperationalSyncStatus | null>(null);
+  const inforSyncPollFailureCountRef = useRef(0);
   useEffect(() => {
     if (inforBusy && !inforBusyStartedAt) {
       setInforBusyStartedAt(Date.now());
@@ -2119,13 +2120,55 @@ function FinancialScorePage() {
     const shouldPoll = inforBusy || currentStatus.state === 'running' || currentStatus.recentlyActive;
     if (!shouldPoll) return;
     let cancelled = false;
+    const registerPollingFailure = (reason: string) => {
+      inforSyncPollFailureCountRef.current += 1;
+      if (inforSyncPollFailureCountRef.current < 6) return;
+      setInforOperationalSyncStatus((prev) => {
+        if (!prev) return prev;
+        if (prev.companyId !== currentStatus.companyId || prev.syncRunId !== currentStatus.syncRunId) return prev;
+        return {
+          ...prev,
+          state: 'failed',
+          recentlyActive: false,
+          lastStatusText: 'failed',
+          lastError: reason || prev.lastError,
+          message:
+            prev.message ||
+            'Sync status polling lost connection. Reset sync state and retry to continue.',
+        };
+      });
+      if (inforBusy) {
+        setInforBusy(false);
+        setInforBusyAction(null);
+        setInforBusyStartedAt(null);
+      }
+    };
     const poll = async () => {
       try {
         const response = await fetch(
           `/api/infor-m3/operational-sync-status?companyId=${encodeURIComponent(currentStatus.companyId)}&syncRunId=${encodeURIComponent(currentStatus.syncRunId)}`
         );
         const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data?.ok || cancelled) return;
+        if (cancelled) return;
+        if (!response.ok || !data?.ok) {
+          const statusText = typeof data?.error === 'string' ? data.error : `status_${response.status}`;
+          registerPollingFailure(statusText);
+          return;
+        }
+        inforSyncPollFailureCountRef.current = 0;
+        if (data?.runNotFound === true) {
+          setInforOperationalSyncStatus((prev) => {
+            if (!prev) return prev;
+            if (prev.companyId !== currentStatus.companyId || prev.syncRunId !== currentStatus.syncRunId) return prev;
+            return null;
+          });
+          if (inforBusy) {
+            setInforBusy(false);
+            setInforBusyAction(null);
+            setInforBusyStartedAt(null);
+          }
+          return;
+        }
         const apiChunkCount = Number(data.chunkCount || 0);
         const apiRecordsCreated = Number(data.recordsCreated || 0);
         const apiWarningCount = Number(data.warningCount || 0);
@@ -2247,7 +2290,8 @@ function FinancialScorePage() {
           };
         });
       } catch {
-        // Keep prior status visible if polling fails.
+        // Repeated transport failures should not leave status polling in a permanent loop.
+        registerPollingFailure('status polling failed');
       }
     };
     void poll();
@@ -6101,6 +6145,21 @@ function FinancialScorePage() {
       }
       const run = data?.run || {};
       const syncRunId = String(run?.syncRunId || '').trim();
+      if (!syncRunId) {
+        throw new Error('Sync start did not return a run ID.');
+      }
+      // Prevent phantom "running" states: require backend to acknowledge this run ID.
+      const verifyResponse = await fetch(
+        `/api/infor-m3/operational-sync-status?companyId=${encodeURIComponent(companyId)}&syncRunId=${encodeURIComponent(syncRunId)}`
+      );
+      const verifyData = await verifyResponse.json().catch(() => ({}));
+      if (!verifyResponse.ok || !verifyData?.ok || verifyData?.runNotFound === true) {
+        const verifyDetails =
+          verifyData?.details ||
+          verifyData?.error ||
+          'Backend did not register sync run. Please retry.';
+        throw new Error(verifyDetails);
+      }
       setInforOperationalSyncStatus((prev) =>
         prev && prev.companyId === companyId
           ? {

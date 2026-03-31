@@ -224,6 +224,7 @@ export async function GET(request: NextRequest) {
     const chunkCount = rows.length;
     const recordsCreated = rows.reduce((sum, row) => sum + Number(row.recordsImported || 0), 0);
     const warningCount = rows.reduce((sum, row) => sum + Number(row.errorCount || 0), 0);
+    const runNotFound = !runMatches && rows.length === 0;
     const lastRow = rows[0];
     const lastChunkAt =
       runMatches?.lastChunkAt ||
@@ -240,6 +241,7 @@ export async function GET(request: NextRequest) {
       ok: true,
       companyId,
       syncRunId,
+      runNotFound,
       chunkCount,
       recordsCreated,
       warningCount,

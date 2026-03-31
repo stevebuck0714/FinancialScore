@@ -4,6 +4,7 @@ const next = require('next');
 const { Server: SocketIOServer } = require('socket.io');
 const fs = require('fs');
 const dotenv = require('dotenv');
+const { killProcessOnPort } = require('./scripts/clean-dev-servers');
 
 // Load environment variables - .env.local takes precedence for development
 // IMPORTANT: Use override=true so a blank host env var doesn't mask .env.local
@@ -96,67 +97,141 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
-  const server = createServer(async (req, res) => {
-    try {
-      const parsedUrl = parse(req.url, true);
-      await handle(req, res, parsedUrl);
-    } catch (err) {
-      console.error('Error occurred handling', req.url, err);
-      res.statusCode = 500;
-      res.end('internal server error');
-    }
-  });
+  function createHttpServer() {
+    return createServer(async (req, res) => {
+      try {
+        const parsedUrl = parse(req.url, true);
+        await handle(req, res, parsedUrl);
+      } catch (err) {
+        console.error('Error occurred handling', req.url, err);
+        res.statusCode = 500;
+        res.end('internal server error');
+      }
+    });
+  }
 
-  // Initialize Socket.IO
-  const io = new SocketIOServer(server, {
-    cors: {
-      origin: process.env.NEXT_PUBLIC_APP_URL || `http://${hostname}:${port}`,
-      methods: ['GET', 'POST'],
-    },
-    path: '/api/socket',
-  });
+  function createSocketServer(server) {
+    return new SocketIOServer(server, {
+      cors: {
+        origin: process.env.NEXT_PUBLIC_APP_URL || `http://${hostname}:${port}`,
+        methods: ['GET', 'POST'],
+      },
+      path: '/api/socket',
+    });
+  }
 
-  // Store io instance globally for API routes to access
-  global.io = io;
+  function wireSocketEvents(io) {
+    io.on('connection', (socket) => {
+      console.log('🔌 New WebSocket connection:', socket.id);
 
-  io.on('connection', (socket) => {
-    console.log('🔌 New WebSocket connection:', socket.id);
+      // Join user-specific room
+      socket.on('join', (userId) => {
+        socket.join(`user:${userId}`);
+        console.log(`User ${userId} joined their room`);
+        socket.emit('joined', { userId, message: 'Successfully joined' });
+      });
 
-    // Join user-specific room
-    socket.on('join', (userId) => {
-      socket.join(`user:${userId}`);
-      console.log(`User ${userId} joined their room`);
-      socket.emit('joined', { userId, message: 'Successfully joined' });
+      // Join company-specific room
+      socket.on('joinCompany', (companyId) => {
+        socket.join(`company:${companyId}`);
+        console.log(`Joined company room: ${companyId}`);
+        socket.emit('joinedCompany', { companyId, message: 'Successfully joined company room' });
+      });
+
+      // Leave company room
+      socket.on('leaveCompany', (companyId) => {
+        socket.leave(`company:${companyId}`);
+        console.log(`Left company room: ${companyId}`);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('🔌 WebSocket disconnected:', socket.id);
+      });
+
+      // Ping/pong for connection health
+      socket.on('ping', () => {
+        socket.emit('pong');
+      });
+    });
+  }
+
+  let shuttingDown = false;
+  let hasRetriedPortRecovery = false;
+  let server = null;
+  let io = null;
+
+  function installShutdownHandlers() {
+    const shutdown = (signal) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      console.log(`🛑 Received ${signal}, closing dev server...`);
+
+      const finalize = () => process.exit(0);
+      const forceExitTimer = setTimeout(() => {
+        console.warn('⚠️ Graceful shutdown timed out, forcing exit.');
+        process.exit(1);
+      }, 10000);
+
+      const closeServer = () => {
+        if (!server) {
+          clearTimeout(forceExitTimer);
+          finalize();
+          return;
+        }
+        server.close(() => {
+          clearTimeout(forceExitTimer);
+          finalize();
+        });
+      };
+
+      if (io) {
+        io.close(() => {
+          closeServer();
+        });
+      } else {
+        closeServer();
+      }
+    };
+
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+  }
+
+  function startListening() {
+    server = createHttpServer();
+    io = createSocketServer(server);
+    global.io = io;
+    wireSocketEvents(io);
+
+    server.on('error', (err) => {
+      if (err?.code === 'EADDRINUSE' && !hasRetriedPortRecovery) {
+        hasRetriedPortRecovery = true;
+        console.warn(`⚠️ Port ${port} already in use. Attempting one-time cleanup and retry...`);
+        try {
+          killProcessOnPort(port);
+        } catch (cleanupError) {
+          console.warn('⚠️ Automatic port cleanup failed:', cleanupError?.message || cleanupError);
+        }
+        setTimeout(() => {
+          startListening();
+        }, 500);
+        return;
+      }
+      console.error(`❌ Server failed to start on port ${port}:`, err);
+      process.exit(1);
     });
 
-    // Join company-specific room
-    socket.on('joinCompany', (companyId) => {
-      socket.join(`company:${companyId}`);
-      console.log(`Joined company room: ${companyId}`);
-      socket.emit('joinedCompany', { companyId, message: 'Successfully joined company room' });
+    server.listen(port, () => {
+      console.log(`✅ Server ready on http://${hostname}:${port}`);
+      console.log(`✅ WebSocket ready on ws://${hostname}:${port}/api/socket`);
     });
+  }
 
-    // Leave company room
-    socket.on('leaveCompany', (companyId) => {
-      socket.leave(`company:${companyId}`);
-      console.log(`Left company room: ${companyId}`);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('🔌 WebSocket disconnected:', socket.id);
-    });
-
-    // Ping/pong for connection health
-    socket.on('ping', () => {
-      socket.emit('pong');
-    });
-  });
-
-  server.listen(port, (err) => {
-    if (err) throw err;
-    console.log(`✅ Server ready on http://${hostname}:${port}`);
-    console.log(`✅ WebSocket ready on ws://${hostname}:${port}/api/socket`);
-  });
+  installShutdownHandlers();
+  startListening();
+}).catch((error) => {
+  console.error('❌ Failed to prepare Next.js app:', error);
+  process.exit(1);
 });
 
 

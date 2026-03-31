@@ -5,6 +5,7 @@ import { getToken } from 'next-auth/jwt'
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const LAST_ACTIVITY_COOKIE = 'fs_last_activity'
 const DISABLE_IDLE_TIMEOUT = process.env.DISABLE_INACTIVITY_TIMEOUT === '1'
+const DEBUG_MIDDLEWARE = process.env.DEBUG_MIDDLEWARE === '1'
 const AUTH_COOKIE_NAMES = [
   'next-auth.session-token',
   '__Secure-next-auth.session-token',
@@ -144,7 +145,9 @@ export async function middleware(request: NextRequest) {
     
     if (!rateLimit.allowed) {
       const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
-      console.log('⚠️ Rate limit exceeded for:', pathname);
+      if (DEBUG_MIDDLEWARE) {
+        console.log('⚠️ Rate limit exceeded for:', pathname)
+      }
       return NextResponse.json(
         { 
           error: 'Too many requests',
@@ -165,7 +168,9 @@ export async function middleware(request: NextRequest) {
     
     // Only log rate limit for non-session endpoints (session checks are very frequent)
     if (!pathname.includes('/api/auth/session')) {
-      console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining);
+      if (DEBUG_MIDDLEWARE) {
+        console.log('✅ Rate limit passed for:', pathname, 'Remaining:', rateLimit.remaining)
+      }
     }
   }
   
@@ -209,7 +214,7 @@ export async function middleware(request: NextRequest) {
   }
   
   // Debug logging for MFA endpoints
-  if (pathname.includes('/mfa/')) {
+  if (DEBUG_MIDDLEWARE && pathname.includes('/mfa/')) {
     console.log('🔍 MFA endpoint detected:', {
       pathname,
       isPublicRoute,
@@ -218,23 +223,29 @@ export async function middleware(request: NextRequest) {
   }
   
   if (pathname.startsWith('/api') && !isPublicRoute && !isTrustedInternalSyncWorker) {
-    console.log('🔐 Middleware auth check:', {
-      path: pathname,
-      hasToken: !!token,
-      hasSecret: !!process.env.NEXTAUTH_SECRET,
-      cookies: request.cookies.getAll().map(c => c.name),
-      tokenEmail: token?.email || 'none'
-    })
+    if (DEBUG_MIDDLEWARE) {
+      console.log('🔐 Middleware auth check:', {
+        path: pathname,
+        hasToken: !!token,
+        hasSecret: !!process.env.NEXTAUTH_SECRET,
+        cookies: request.cookies.getAll().map(c => c.name),
+        tokenEmail: token?.email || 'none'
+      })
+    }
     
     if (!token) {
-      console.log('❌ No token found, returning 401');
+      if (DEBUG_MIDDLEWARE) {
+        console.log('❌ No token found, returning 401')
+      }
       return NextResponse.json(
         { error: 'Unauthorized', message: 'Authentication required' },
         { status: 401 }
       )
     }
     
-    console.log('✅ Token found, user:', token.email);
+    if (DEBUG_MIDDLEWARE) {
+      console.log('✅ Token found, user:', token.email)
+    }
     
     // Add user context to headers for downstream use
     const requestHeaders = new Headers(request.headers)

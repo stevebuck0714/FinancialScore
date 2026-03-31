@@ -96,7 +96,14 @@ function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
 }
 
 export function isInforSyncQueueEnabled(): boolean {
-  return String(process.env.INFOR_SYNC_QUEUE_ENABLED || '').trim() === '1';
+  const raw = String(process.env.INFOR_SYNC_QUEUE_ENABLED || '')
+    .trim()
+    .toLowerCase();
+  if (raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on') return true;
+  if (raw === '0' || raw === 'false' || raw === 'no' || raw === 'off') return false;
+  // In local/staging development, default to queue mode so async runs cannot
+  // get stuck in metadata-only "running" state without a cron worker.
+  return String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production';
 }
 
 async function notifyQueueRunFailure(

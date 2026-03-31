@@ -2454,12 +2454,30 @@ export async function GET(request: NextRequest) {
                 totalDue: 0,
               };
             }
-            const bucketCurrent = Number(row.current || 0);
-            const bucket1to30 = Number(row.days1to30 || 0);
-            const bucket31to60 = Number(row.days31to60 || 0);
-            const bucket61to90 = Number(row.days61to90 || 0);
-            const bucket90plus = Number(row.days90plus || 0);
+            let bucketCurrent = Number(row.current || 0);
+            let bucket1to30 = Number(row.days1to30 || 0);
+            let bucket31to60 = Number(row.days31to60 || 0);
+            let bucket61to90 = Number(row.days61to90 || 0);
+            let bucket90plus = Number(row.days90plus || 0);
             const openAmount = Number(row.amountDueHome || 0);
+            if (
+              bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus === 0 &&
+              openAmount > 0
+            ) {
+              const asOfDate = startOfUtcDay(new Date(latestOpenBillsSnapshotDate.snapshotDate));
+              const ageBasisRaw = row.dueDate || row.billDate;
+              const ageBasis = ageBasisRaw ? new Date(ageBasisRaw) : null;
+              if (ageBasis && !Number.isNaN(ageBasis.getTime())) {
+                const ageDays = Math.floor((asOfDate.getTime() - startOfUtcDay(ageBasis).getTime()) / (24 * 60 * 60 * 1000));
+                if (ageDays <= 0) bucketCurrent = openAmount;
+                else if (ageDays <= 30) bucket1to30 = openAmount;
+                else if (ageDays <= 60) bucket31to60 = openAmount;
+                else if (ageDays <= 90) bucket61to90 = openAmount;
+                else bucket90plus = openAmount;
+              } else {
+                bucket90plus = openAmount;
+              }
+            }
             acc[name].current += bucketCurrent;
             acc[name].days1to30 += bucket1to30;
             acc[name].days31to60 += bucket31to60;

@@ -477,19 +477,12 @@ function parsePrograms(value: unknown): InforProgramRow[] {
   for (const row of value) {
     const module = typeof row?.module === 'string' ? row.module.trim() : '';
     const miProgramRaw = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
-    const upperMiProgram = miProgramRaw.toUpperCase();
-    const miProgram =
-      upperMiProgram === 'SLAPTRX' || upperMiProgram === 'SLAPTRXP' || upperMiProgram === 'SLAPTRXS' || upperMiProgram === 'SLAPTRXPS'
-        ? 'SLAptrx'
-        : miProgramRaw;
+    const miProgram = miProgramRaw;
     const transactions = normalizeTransactions(row);
     const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
     const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
     const endpointPathRaw = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
-    const endpointPath =
-      upperMiProgram === 'SLAPTRX' || upperMiProgram === 'SLAPTRXP' || upperMiProgram === 'SLAPTRXS' || upperMiProgram === 'SLAPTRXPS'
-        ? endpointPathRaw.replace(/SLAptrxp|SLAptrxs|SLAptrxps/gi, 'SLAptrx')
-        : endpointPathRaw;
+    const endpointPath = endpointPathRaw;
     const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
     const site = typeof row?.site === 'string' ? row.site.trim() : '';
     const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
@@ -1241,6 +1234,11 @@ function buildCsiEndpointPath(row: InforProgramRow): string | null {
 }
 
 function asString(value: unknown): string | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const wrapped = value as Record<string, unknown>;
+    if ('value' in wrapped) return asString(wrapped.value);
+    if ('Value' in wrapped) return asString(wrapped.Value);
+  }
   if (typeof value === 'string') {
     const v = value.trim();
     return v.length > 0 ? v : null;
@@ -1250,6 +1248,11 @@ function asString(value: unknown): string | null {
 }
 
 function toNumber(value: unknown): number {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const wrapped = value as Record<string, unknown>;
+    if ('value' in wrapped) return toNumber(wrapped.value);
+    if ('Value' in wrapped) return toNumber(wrapped.Value);
+  }
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (typeof value === 'string') {
     const cleaned = value.replace(/,/g, '').trim();
@@ -1259,10 +1262,36 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
+function lookupRecordValue(record: Record<string, unknown>, key: string): unknown {
+  if (key in record) return record[key];
+  const target = key.toLowerCase();
+  const directKey = Object.keys(record).find((entry) => entry.toLowerCase() === target);
+  if (directKey) return record[directKey];
+  // Some IDO payloads can return name/value property arrays.
+  const propsCandidate =
+    (record as any).Properties ||
+    (record as any).properties ||
+    (record as any).PropertyValues ||
+    (record as any).propertyValues;
+  if (Array.isArray(propsCandidate)) {
+    for (const prop of propsCandidate) {
+      if (!prop || typeof prop !== 'object') continue;
+      const property = prop as Record<string, unknown>;
+      const name = asString(property.Name) || asString(property.name) || asString(property.Property) || asString(property.property);
+      if (!name || name.toLowerCase() !== target) continue;
+      if ('Value' in property) return property.Value;
+      if ('value' in property) return property.value;
+      return null;
+    }
+  }
+  return undefined;
+}
+
 function pickNumber(record: Record<string, unknown>, keys: string[]): number {
   for (const key of keys) {
-    if (key in record) {
-      const value = toNumber(record[key]);
+    const raw = lookupRecordValue(record, key);
+    if (raw !== undefined) {
+      const value = toNumber(raw);
       if (value !== 0) return value;
     }
   }
@@ -1271,8 +1300,9 @@ function pickNumber(record: Record<string, unknown>, keys: string[]): number {
 
 function pickString(record: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
-    if (key in record) {
-      const value = asString(record[key]);
+    const raw = lookupRecordValue(record, key);
+    if (raw !== undefined) {
+      const value = asString(raw);
       if (value) return value;
     }
   }
@@ -1281,7 +1311,7 @@ function pickString(record: Record<string, unknown>, keys: string[]): string | n
 
 const CUSTOMER_NAME_KEYS = ['customerName', 'name', 'Name', 'CUNM', 'customer'];
 const CUSTOMER_ID_KEYS = ['customerId', 'CustNum', 'CUNO', 'customerNumber', 'customerNo'];
-const VENDOR_NAME_KEYS = ['vendorName', 'name', 'Name', 'VendName', 'SUNM', 'vendor', 'supplier'];
+const VENDOR_NAME_KEYS = ['vendorName', 'name', 'Name', 'VendName', 'VadName', 'SUNM', 'vendor', 'supplier'];
 const VENDOR_ID_KEYS = ['vendorId', 'VendNum', 'supplierId', 'SUNO', 'vendorNo'];
 const AR_INVOICE_NO_KEYS = ['invoiceNo', 'invoiceNumber', 'InvNum', 'IVNO', 'voucher', 'ApplyToInvNum', 'DerApplyToInvNum'];
 const AR_AMOUNT_DUE_KEYS = [
@@ -1526,7 +1556,7 @@ function filterRecordsByDateWindow(
 
   const dateKeysByModule: Record<string, string[]> = {
     ar: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
-    ap: ['InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
+    ap: ['InvDate', 'invoiceDate', 'DistDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
     sales: ['OrderDate', 'orderDate', 'InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'ShipDate', 'RecordDate', 'date'],
     inventory: ['ItemChangeDate', 'ChangeDate', 'RecordDate', 'SSDATE', 'date'],
   };
@@ -3412,9 +3442,9 @@ async function saveAPAging(
   );
 
   const derived = calculateAgingTotalsFromTransactions(records, {
-    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date'],
-    balanceKeys: ['Balance', 'balance', 'openBalance', 'openAmount', 'amountDue'],
-    amountKeys: ['Amount', 'amount', 'invoiceAmount'],
+    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'invoiceDate', 'DistDate', 'IVDT', 'RecordDate', 'date'],
+    balanceKeys: ['Balance', 'balance', 'openBalance', 'openAmount', 'amountDue', 'InvAmt', 'Amount'],
+    amountKeys: ['Amount', 'amount', 'invoiceAmount', 'InvAmt'],
     openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
     statusKeys: ['Status', 'status', 'STAT', 'state', 'State'],
     asOfDate: snapshotDate,
@@ -3461,8 +3491,17 @@ async function saveAPOpenBills(
     .map((record, idx) => {
       const vendorName = pickString(record, VENDOR_NAME_KEYS) || `Unknown Vendor ${idx + 1}`;
       const billNo =
-        pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'voucher', 'SINO']) || `UNKNOWN-${idx + 1}`;
-      const amountDueHome = pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
+        pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'voucher', 'Voucher', 'SINO']) ||
+        `UNKNOWN-${idx + 1}`;
+      const amountDueHome = pickNumber(record, [
+        'amountDueHome',
+        'amountDue',
+        'openAmount',
+        'balance',
+        'InvAmt',
+        'CUAM',
+        'ACAM',
+      ]);
       return {
         companyId,
         snapshotDate,
@@ -3470,12 +3509,12 @@ async function saveAPOpenBills(
         vendorId: pickString(record, VENDOR_ID_KEYS),
         vendorName,
         billNo,
-        billDate: parseMaybeDate(pickString(record, ['billDate', 'invoiceDate', 'date', 'IVDT'])),
-        dueDate: parseMaybeDate(pickString(record, ['dueDate', 'DUDT'])),
+        billDate: parseMaybeDate(pickString(record, ['billDate', 'invoiceDate', 'InvDate', 'DistDate', 'date', 'IVDT'])),
+        dueDate: parseMaybeDate(pickString(record, ['dueDate', 'DUDT', 'DueDate', 'InvDate', 'DistDate'])),
         status: pickString(record, ['status', 'STAT']),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
-        amountCurrency: pickNumber(record, ['amountCurrency', 'billAmount', 'CUAM']) || null,
-        amountHome: pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']) || null,
+        amountCurrency: pickNumber(record, ['amountCurrency', 'billAmount', 'InvAmt', 'CUAM']) || null,
+        amountHome: pickNumber(record, ['amountHome', 'homeAmount', 'InvAmt', 'ACAM']) || null,
         amountDueHome,
         current: pickNumber(record, ['current', 'bucket0']) || null,
         days1to30: pickNumber(record, ['days1to30', 'bucket1']) || null,
@@ -3487,13 +3526,44 @@ async function saveAPOpenBills(
         sourceTransaction: context.transaction,
         cono: context.cono || null,
         divi: context.divi || null,
+        sourceRecordDate: parseMaybeDate(pickString(record, ['RecordDate', 'recordDate', 'DistDate', 'InvDate', 'date'])),
       };
     })
     .filter((row) => row.vendorName && row.billNo && Number.isFinite(row.amountDueHome));
 
   if (!rows.length) return 0;
-  await (prisma as any).aPOpenBillSnapshot.createMany({ data: rows });
-  return rows.length;
+  const deduped = new Map<
+    string,
+    { row: Omit<(typeof rows)[number], 'sourceRecordDate'>; sourceRecordDate: Date | null; score: number }
+  >();
+  const scoreRow = (row: (typeof rows)[number]): number =>
+    (Number(row.amountDueHome || 0) !== 0 ? 4 : 0) +
+    (row.billDate ? 1 : 0) +
+    (row.dueDate ? 1 : 0) +
+    (Number(row.amountHome || 0) !== 0 ? 1 : 0) +
+    (Number(row.amountCurrency || 0) !== 0 ? 1 : 0);
+  for (const row of rows) {
+    const key = `${String(row.vendorId || '').trim() || row.vendorName}||${row.billNo}`;
+    const existing = deduped.get(key);
+    const nextScore = scoreRow(row);
+    const existingDateMs = existing?.sourceRecordDate ? existing.sourceRecordDate.getTime() : Number.NEGATIVE_INFINITY;
+    const nextDateMs = row.sourceRecordDate ? row.sourceRecordDate.getTime() : Number.NEGATIVE_INFINITY;
+    const isNewer = nextDateMs > existingDateMs;
+    const isSameMomentBetterScore = nextDateMs === existingDateMs && nextScore >= (existing?.score || 0);
+    if (!existing || isNewer || isSameMomentBetterScore) {
+      const { sourceRecordDate, ...persistableRow } = row;
+      deduped.set(key, { row: persistableRow, sourceRecordDate: sourceRecordDate || null, score: nextScore });
+    }
+  }
+
+  const finalRows = Array.from(deduped.values()).map((entry) => entry.row);
+  if (!finalRows.length) return 0;
+  const BATCH_SIZE = 2000;
+  for (let i = 0; i < finalRows.length; i += BATCH_SIZE) {
+    const batch = finalRows.slice(i, i + BATCH_SIZE);
+    await (prisma as any).aPOpenBillSnapshot.createMany({ data: batch });
+  }
+  return finalRows.length;
 }
 
 async function saveAPPayments(
@@ -3503,18 +3573,35 @@ async function saveAPPayments(
 ): Promise<number> {
   const rows = records
     .map((record, idx) => {
-      const paymentDate = parseMaybeDate(pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT']));
+      const paymentDate = parseMaybeDate(
+        pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT', 'DistDate', 'CheckDate', 'CreateDate', 'RecordDate'])
+      );
       if (!paymentDate) return null;
-      const vendorName = pickString(record, VENDOR_NAME_KEYS) || `Unknown Vendor ${idx + 1}`;
+      const vendorName =
+        pickString(record, ['UbVendName', 'VendaddrName', 'VendorName', ...VENDOR_NAME_KEYS]) || `Unknown Vendor ${idx + 1}`;
       return {
         companyId,
         paymentDate,
         vendorId: pickString(record, VENDOR_ID_KEYS),
         vendorName,
-        billNo: pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'SINO']),
+        billNo: pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'Voucher', 'voucher', 'SINO']),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
         paidAmountCurrency: pickNumber(record, ['paidAmountCurrency', 'CUAM']) || null,
-        paidAmountHome: pickNumber(record, ['paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM']),
+        paidAmountHome: pickNumber(record, [
+          'paidAmountHome',
+          'paidAmount',
+          'AmtPaid',
+          'UbPayment',
+          'DerDomAmtApplied',
+          'DerForAmtApplied',
+          'DerAmtBal',
+          'DomCheckAmt',
+          'ForCheckAmt',
+          'DerDomCheckAmount',
+          'amount',
+          'ACAM',
+          'PYAM',
+        ]),
         sourcePlatform: 'INFOR_M3',
         sourceProgram: context.miProgram,
         sourceTransaction: context.transaction,
@@ -4889,7 +4976,14 @@ export async function syncInforM3OperationalData(
                   cono: row.cono,
                   divi: row.divi,
                 };
-                if (arApFlow === 'payments') {
+                const apProgramId = String(row.miProgram || '').trim().toUpperCase();
+                const forcePaymentProgram =
+                  apProgramId === 'SLAPTRX' ||
+                  apProgramId === 'SLAPTRXS' ||
+                  apProgramId === 'SLAPTRXPS' ||
+                  apProgramId === 'SLAPPMTS' ||
+                  apProgramId === 'SLAPTRXP';
+                if (forcePaymentProgram || arApFlow === 'payments') {
                   moduleRecordsCreated = await saveAPPayments(companyId, records, context);
                 } else if (arApFlow === 'open') {
                   const openRowsCreated = await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
