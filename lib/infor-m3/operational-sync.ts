@@ -1866,9 +1866,13 @@ async function saveBalanceMovementsFromGl(
     }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `GL mapping lookup failed. accountMapping uses legacy qb* columns as platform-agnostic source-account tokens. Original error: ${message}`
+    // Do not abort GL sync when accountMapping metadata is missing/mismatched.
+    // We can still persist raw GLTransactionFact rows and rely on COA fallback
+    // classification where available.
+    console.warn(
+      `GL mapping lookup failed; continuing with empty account mappings. Original error: ${message}`
     );
+    accountMappings = [];
   }
 
   const tokenToTargetFields = new Map<string, Set<string>>();
