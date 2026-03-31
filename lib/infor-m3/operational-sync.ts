@@ -46,6 +46,8 @@ type SyncOptions = {
   skipPrune?: boolean;
   syncRunId?: string;
   salesOnly?: boolean;
+  arOnlyBackfill?: boolean;
+  skipDailySnapshotHydration?: boolean;
   programOffset?: number;
   programLimit?: number;
   requestOffset?: number;
@@ -4088,11 +4090,29 @@ export async function syncInforM3OperationalData(
     };
   }
   const baseProgramRows = parsedProgramRows.length > 0 ? parsedProgramRows : DEFAULT_CSI_PROGRAM_ROWS;
+  const isDailyBackfillWindow = frequency === 'daily' && syncWindow?.mode === 'backfill';
+  const arOnlyBackfill = (() => {
+    if (typeof options?.arOnlyBackfill === 'boolean') return options.arOnlyBackfill;
+    if (typeof process.env.SYNC_AR_BACKFILL_AR_ONLY === 'string') return process.env.SYNC_AR_BACKFILL_AR_ONLY === '1';
+    return isDailyBackfillWindow;
+  })();
+  const skipDailySnapshotHydrationForArBackfill = (() => {
+    if (typeof options?.skipDailySnapshotHydration === 'boolean') return options.skipDailySnapshotHydration;
+    if (typeof process.env.SYNC_AR_BACKFILL_SKIP_DAILY_SNAPSHOT === 'string') {
+      return process.env.SYNC_AR_BACKFILL_SKIP_DAILY_SNAPSHOT === '1';
+    }
+    return isDailyBackfillWindow;
+  })();
+  const isArBackfillFastPath =
+    isDailyBackfillWindow && arOnlyBackfill;
+  const filteredProgramRows = isArBackfillFastPath
+    ? baseProgramRows.filter((row) => classifyModule(row.module) === 'ar')
+    : baseProgramRows;
   const salesOnly = options?.salesOnly === true;
   const SALES_ONLY_PROGRAM_IDS = new Set(['SLCOHDRS', 'SLCOS', 'SLCOITEMS']);
   const programRows = salesOnly
-    ? baseProgramRows.filter((row) => SALES_ONLY_PROGRAM_IDS.has(resolveCsiProgramId(row, row.endpointPath)))
-    : baseProgramRows;
+    ? filteredProgramRows.filter((row) => SALES_ONLY_PROGRAM_IDS.has(resolveCsiProgramId(row, row.endpointPath)))
+    : filteredProgramRows;
   const hasSlCustDrftsProgram = programRows.some(
     (row) => row.enabled && resolveCsiProgramId(row, row.endpointPath) === 'SLCUSTDRFTS'
   );
@@ -5100,42 +5120,48 @@ export async function syncInforM3OperationalData(
         amountDueHome: { lte: 0 },
       },
     });
-    try {
-      const dailySnapshotOutcome = await upsertDailyFinancialSnapshotFromOperationalTables(
-        companyId,
-        snapshotDate,
-        frequency
-      );
-      if (!dailySnapshotOutcome.written || dailySnapshotOutcome.staleOrMissingSources.length > 0) {
-        const staleList = dailySnapshotOutcome.staleOrMissingSources.join(', ') || 'none';
-        const message = !dailySnapshotOutcome.written
-          ? `Daily financial snapshot skipped: source data stale/missing for target ${dailySnapshotOutcome.targetSnapshotDate}.`
-          : `Daily financial snapshot used prior source dates for target ${dailySnapshotOutcome.targetSnapshotDate}.`;
-        await prisma.apiSyncLog.create({
-          data: {
-            companyId,
-            platform: 'INFOR_M3',
-            syncType: 'operational_data_sync',
-            status: 'warning',
-            recordsImported: dailySnapshotOutcome.written ? 1 : 0,
-            errorCount: 0,
-            errorDetails: {
-              syncRunId,
-              module: 'DAILY_FINANCIAL',
-              transaction: 'UPSERT_SNAPSHOT',
-              responseMessage: `${message} Sources: ${staleList}.`,
-              targetSnapshotDate: dailySnapshotOutcome.targetSnapshotDate,
-              staleSources: dailySnapshotOutcome.staleOrMissingSources,
-              sourceDates: dailySnapshotOutcome.sourceDates,
-              reason: dailySnapshotOutcome.reason || null,
-            } as unknown as Prisma.InputJsonValue,
-          },
-        });
+    const shouldSkipDailySnapshotHydration =
+      frequency === 'daily' &&
+      syncWindow?.mode === 'backfill' &&
+      (isArBackfillFastPath || skipDailySnapshotHydrationForArBackfill);
+    if (!shouldSkipDailySnapshotHydration) {
+      try {
+        const dailySnapshotOutcome = await upsertDailyFinancialSnapshotFromOperationalTables(
+          companyId,
+          snapshotDate,
+          frequency
+        );
+        if (!dailySnapshotOutcome.written || dailySnapshotOutcome.staleOrMissingSources.length > 0) {
+          const staleList = dailySnapshotOutcome.staleOrMissingSources.join(', ') || 'none';
+          const message = !dailySnapshotOutcome.written
+            ? `Daily financial snapshot skipped: source data stale/missing for target ${dailySnapshotOutcome.targetSnapshotDate}.`
+            : `Daily financial snapshot used prior source dates for target ${dailySnapshotOutcome.targetSnapshotDate}.`;
+          await prisma.apiSyncLog.create({
+            data: {
+              companyId,
+              platform: 'INFOR_M3',
+              syncType: 'operational_data_sync',
+              status: 'warning',
+              recordsImported: dailySnapshotOutcome.written ? 1 : 0,
+              errorCount: 0,
+              errorDetails: {
+                syncRunId,
+                module: 'DAILY_FINANCIAL',
+                transaction: 'UPSERT_SNAPSHOT',
+                responseMessage: `${message} Sources: ${staleList}.`,
+                targetSnapshotDate: dailySnapshotOutcome.targetSnapshotDate,
+                staleSources: dailySnapshotOutcome.staleOrMissingSources,
+                sourceDates: dailySnapshotOutcome.sourceDates,
+                reason: dailySnapshotOutcome.reason || null,
+              } as unknown as Prisma.InputJsonValue,
+            },
+          });
+        }
+      } catch (dailyPersistError) {
+        const message =
+          dailyPersistError instanceof Error ? dailyPersistError.message : 'Failed to upsert DailyFinancialSnapshot row';
+        errors.push(`daily-financial-snapshot: ${message}`);
       }
-    } catch (dailyPersistError) {
-      const message =
-        dailyPersistError instanceof Error ? dailyPersistError.message : 'Failed to upsert DailyFinancialSnapshot row';
-      errors.push(`daily-financial-snapshot: ${message}`);
     }
   }
 
