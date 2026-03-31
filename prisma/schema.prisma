@@ -1081,6 +1081,11 @@ model ARInvoiceDetail {
   invoiceAmount    Float
   amountPaid       Float
   remainingBalance Float
+  sourceClass      String?  @default("UNKNOWN")
+  sourceSystem     String?
+  sourceDocId      String?
+  sourceMatchConfidence String?
+  sourceMatchedBy  String?
   daysOutstanding  Int?
   agingBucket      String
   createdAt        DateTime @default(now())
@@ -1089,7 +1094,31 @@ model ARInvoiceDetail {
   @@index([companyId, asOfDate(sort: Desc)])
   @@index([companyId, customerId, asOfDate(sort: Desc)])
   @@index([companyId, invoiceId])
+  @@index([companyId, sourceClass, asOfDate(sort: Desc)])
   @@unique([companyId, asOfDate, snapshotFrequency, invoiceId, customerName])
+}
+
+model ARInvoiceOriginMap {
+  id                 String   @id @default(cuid())
+  companyId          String
+  invoiceNoNormalized String
+  customerId         String?
+  customerKey        String   @default("")
+  sourceClass        String   @default("UNKNOWN")
+  sourceSystem       String
+  sourceDocId        String?
+  sourceInvoiceNoRaw String?
+  matchConfidence    String   @default("LOW")
+  matchedBy          String   @default("INVOICE_NO")
+  firstSeenAt        DateTime @default(now())
+  lastSeenAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([companyId, sourceClass])
+  @@index([companyId, lastSeenAt(sort: Desc)])
+  @@index([companyId, invoiceNoNormalized])
+  @@unique([companyId, invoiceNoNormalized, customerKey, sourceSystem])
 }
 
 model CustomerContractStatus {
@@ -1164,6 +1193,31 @@ model CustomerOrderLineSnapshot {
   @@index([companyId, itemId])
   @@index([companyId, sku])
   @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
+}
+
+model SalesInvoiceHeaderSnapshot {
+  id               String   @id @default(cuid())
+  companyId        String
+  snapshotDate     DateTime
+  frequency        String   @default("daily")
+  orderId          String
+  invoiceNo        String
+  customerId       String?
+  customerName     String?
+  invoiceDate      DateTime?
+  sourcePlatform   String?  @default("INFOR_M3")
+  sourceProgram    String?
+  sourceTransaction String?
+  cono             String?
+  divi             String?
+  createdAt        DateTime @default(now())
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, orderId])
+  @@index([companyId, invoiceNo])
+  @@index([companyId, customerId])
+  @@unique([companyId, frequency, snapshotDate, orderId, invoiceNo, customerId])
 }
 
 model APOpenBillSnapshot {

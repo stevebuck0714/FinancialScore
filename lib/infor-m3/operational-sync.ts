@@ -66,6 +66,16 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   },
   {
     module: 'AR',
+    miProgram: 'SLCustDrfts',
+    endpointPath:
+      '/APR_PRD/CSI/IDORequestService/ido/load/SLCustDrfts?properties=CustNum,InvNum,InvDate,DueDate,DomAmt,BalDue,CurrCode,RecordDate&recordCap=1000',
+    mongooseConfig: 'TMSManager',
+    site: '',
+    transactions: ['CSI_LOAD'],
+    enabled: true,
+  },
+  {
+    module: 'AR',
     miProgram: 'SLArtrans',
     endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLArtrans?recordCap=1000',
     mongooseConfig: 'TMSManager',
@@ -217,7 +227,17 @@ function filterRecordsBySiteIfSupported(records: Record<string, unknown>[], site
 }
 
 const SITE_REQUIRED_CSI_IDOS = new Set(['SLITEMLOCS', 'SLCOITEMS', 'SLINVHDRS', 'SLBANKHDRS']);
-const SITE_OPTIONAL_CSI_IDOS = new Set(['SLITEMS', 'SLARTRANS', 'SLAPTRX', 'SLAPTRXP', 'SLAPTRXPS', 'SLAPTRXS', 'SLCUSTOMERS', 'SLVENDORS']);
+const SITE_OPTIONAL_CSI_IDOS = new Set([
+  'SLITEMS',
+  'SLARTRANS',
+  'SLCUSTDRFTS',
+  'SLAPTRX',
+  'SLAPTRXP',
+  'SLAPTRXPS',
+  'SLAPTRXS',
+  'SLCUSTOMERS',
+  'SLVENDORS',
+]);
 
 function resolveSitePolicy(row: InforProgramRow, moduleType: ReturnType<typeof classifyModule>): SitePolicy {
   const ido = String(row.miProgram || '').trim().toUpperCase();
@@ -650,8 +670,24 @@ function buildSlArtransWindowFilter(window?: SyncWindow, site?: string): string 
 
 function buildSlArtransAsOfFilter(window?: SyncWindow, site?: string): string | null {
   if (!window) return null;
+  const collectibleStartDate = new Date(
+    startOfUtcDay(window.endDate).getTime() - AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+  );
+  const collectibleStart = formatCsiDateLiteral(collectibleStartDate);
   const end = formatCsiDateLiteral(window.endDate);
-  const clauses = [`(RecordDate <= '${end}')`];
+  const clauses = [`(RecordDate <= '${end}')`, `(InvDate >= '${collectibleStart}')`];
+  const siteValue = String(site || '').trim();
+  if (siteValue) {
+    const safeSite = siteValue.replace(/'/g, "''");
+    clauses.unshift(`Site='${safeSite}'`);
+  }
+  return `(${clauses.join(' and ')})`;
+}
+
+function buildSlCustDrftsAsOfFilter(window?: SyncWindow, site?: string): string | null {
+  if (!window) return null;
+  const end = formatCsiDateLiteral(window.endDate);
+  const clauses = [`(InvDate <= '${end}')`];
   const siteValue = String(site || '').trim();
   if (siteValue) {
     const safeSite = siteValue.replace(/'/g, "''");
@@ -733,6 +769,16 @@ function applyCsiSourceWindowAndSort(
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true };
   }
+  if (moduleType === 'ar' && ido === 'SLCUSTDRFTS') {
+    if (window && window.mode !== 'daily_overlap') {
+      const asOfFilter = buildSlCustDrftsAsOfFilter(window, row.site);
+      if (asOfFilter) params.set('filter', asOfFilter);
+    }
+    params.set('recordCap', '1000');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'CustNum asc, InvNum asc');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+  }
 
   return { endpointPath, applied: false };
 }
@@ -756,6 +802,7 @@ type SlLedgersKeyset = {
   site: string;
   transNum: string;
 };
+const AR_EOD_COLLECTIBLE_LOOKBACK_DAYS = 180;
 
 function encodeSlInvHdrsKeysetBookmark(value: SlInvHdrsKeyset): string {
   const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
@@ -1232,8 +1279,9 @@ const AR_AMOUNT_DUE_KEYS = [
   'DerOrderBalance',
   'CUAM',
   'ACAM',
+  'BalDue',
 ];
-const AR_AMOUNT_HOME_KEYS = ['amountHome', 'homeAmount', 'Amount', 'ACAM', 'CUAM'];
+const AR_AMOUNT_HOME_KEYS = ['amountHome', 'homeAmount', 'Amount', 'ACAM', 'CUAM', 'DomAmt'];
 const AR_AMOUNT_CURRENCY_KEYS = ['amountCurrency', 'invoiceAmount', 'Amount', 'CUAM'];
 const AR_APPLY_TO_INVOICE_KEYS = ['DerApplyToInvNum', 'ApplyToInvNum', 'ApplyToInv', 'applyToInvoiceNo'];
 const AR_CHARGE_AMOUNT_HOME_KEYS = [
@@ -1244,11 +1292,24 @@ const AR_CHARGE_AMOUNT_HOME_KEYS = [
   'Balance',
   'ACAM',
   'CUAM',
+  'BalDue',
+  'DomAmt',
   'amountHome',
   'homeAmount',
   'Amount',
 ];
-const AR_REDUCTION_AMOUNT_HOME_KEYS = ['DerPaymentCheckAmount', 'paidAmountHome', 'paidAmount', 'PYAM', 'ACAM', 'CUAM', 'Amount'];
+const AR_REDUCTION_AMOUNT_HOME_KEYS = [
+  'DerPaymentCheckAmount',
+  'paidAmountHome',
+  'paidAmount',
+  'PYAM',
+  'ACAM',
+  'CUAM',
+  'Amount',
+  'DomAmt',
+  'amountHome',
+  'homeAmount',
+];
 const AR_CHARGE_AMOUNT_CURRENCY_KEYS = ['amountCurrency', 'invoiceAmount', 'CUAM', 'Amount'];
 const AR_REDUCTION_AMOUNT_CURRENCY_KEYS = ['DerPaymentCheckAmount', 'paidAmount', 'amountCurrency', 'PYAM', 'CUAM', 'Amount'];
 
@@ -1806,9 +1867,9 @@ async function saveARAging(
   );
 
   const derived = calculateAgingTotalsFromTransactions(records, {
-    // Some CSI AR payloads omit DueDate; fall back to invoice/record dates so
-    // we still persist aging snapshots instead of dropping the day entirely.
-    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date'],
+    // Align AR aging to invoice-date basis for consistency with validated
+    // customer-facing open-invoice snapshots.
+    dueDateKeys: ['InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date'],
     balanceKeys: AR_AMOUNT_DUE_KEYS,
     amountKeys: ['Amount', 'amount', 'invoiceAmount', 'DerPaymentCheckAmount', 'DerOrderBalance'],
     openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
@@ -1853,11 +1914,21 @@ async function saveAROpenInvoices(
 ): Promise<number> {
   const snapshotDayStart = startOfUtcDay(snapshotDate);
   const snapshotDayEnd = new Date(snapshotDayStart.getTime() + 24 * 60 * 60 * 1000);
+  const collectibleWindowStart = new Date(
+    snapshotDayStart.getTime() - AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+  );
   const normalizeInvoiceNo = (value: string | null): string =>
     String(value || '')
       .trim()
       .replace(/\s+/g, '')
       .toUpperCase();
+  const isValidInvoiceAnchorNo = (invoiceNo: string): boolean => {
+    const inv = normalizeInvoiceNo(invoiceNo);
+    if (!inv || inv === '0') return false;
+    // Credit memo/doc-only identifiers must net against invoices, not become anchors.
+    if (inv.startsWith('CR')) return false;
+    return true;
+  };
   const isReductionMovement = (record: Record<string, unknown>): boolean => {
     const typeToken = normalizeToken(record['Type']) || '';
     const drCrToken = normalizeToken(record['DrCr']) || '';
@@ -1917,9 +1988,50 @@ async function saveAROpenInvoices(
       remainingCurrency: number;
     }
   >();
+  const priorSnapshotDate = new Date(snapshotDayStart.getTime() - 24 * 60 * 60 * 1000);
+  const priorOpenKeys = new Set<string>();
+  const priorRows = await prisma.aROpenInvoiceSnapshot.findMany({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate: priorSnapshotDate,
+      amountDueHome: { gt: 0 },
+    },
+    select: {
+      customerId: true,
+      customerName: true,
+      invoiceNo: true,
+    },
+  });
+  for (const row of priorRows) {
+    const invoiceNo = normalizeInvoiceNo(String(row.invoiceNo || ''));
+    if (!invoiceNo) continue;
+    const customerKey = String(row.customerId || row.customerName || '').trim().toLowerCase();
+    if (!customerKey) continue;
+    priorOpenKeys.add(`${customerKey}|${invoiceNo}`);
+  }
+
+  type ParsedArMovement = {
+    logicalKey: string;
+    customerId: string | null;
+    customerName: string;
+    invoiceNo: string;
+    invoiceDate: Date | null;
+    dueDate: Date | null;
+    status: string | null;
+    currencyCode: string | null;
+    baseHome: number;
+    baseCurrency: number;
+    movementHome: number;
+    movementCurrency: number;
+  };
+  const parsedMovements: ParsedArMovement[] = [];
+  const allAnchorKeys = new Set<string>();
+  const todayAnchorKeys = new Set<string>();
 
   for (let idx = 0; idx < records.length; idx += 1) {
     const record = records[idx];
+    const typeToken = normalizeToken(record['Type']) || '';
     const reductionMovement = isReductionMovement(record);
     const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
     const customerId =
@@ -1949,55 +2061,96 @@ async function saveAROpenInvoices(
     if (!Number.isFinite(movementHome) || movementHome === 0) continue;
 
     const customerKey = String(customerId || customerName).trim().toLowerCase();
-    const groupKey = `${companyId}|${frequency}|${snapshotDayStart.toISOString()}|${customerKey}|${invoiceNo}`;
+    if (!customerKey) continue;
+    const logicalKey = `${customerKey}|${invoiceNo}`;
     const rawInvoiceDate = parseMaybeDate(
       pickString(record, ['InvDate', 'invoiceDate', 'IssueDate', 'RecordDate', 'date', 'IVDT'])
     );
     const rawDueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT']));
     // Anchor aging to the true invoice row; mapped adjustments (DR/apply-to and reductions)
     // must not bring their own document dates into the invoice bucket.
-    const isInvoiceAnchorRow = !reductionMovement && !shouldMapToAppliedInvoice;
+    const isInvoiceType = typeToken === 'i' || typeToken === 'invoice';
+    const isInvoiceAnchorRow = isInvoiceType && !reductionMovement && !shouldMapToAppliedInvoice;
+    if (isInvoiceAnchorRow) {
+      if (!isValidInvoiceAnchorNo(invoiceNo)) continue;
+      // Locked collectible policy: only track invoices issued within lookback window.
+      if (!rawInvoiceDate) continue;
+      if (rawInvoiceDate.getTime() < collectibleWindowStart.getTime()) continue;
+      if (rawInvoiceDate.getTime() >= snapshotDayEnd.getTime()) continue;
+      allAnchorKeys.add(logicalKey);
+      if (movementDate && movementDate.getTime() >= snapshotDayStart.getTime() && movementDate.getTime() < snapshotDayEnd.getTime()) {
+        todayAnchorKeys.add(logicalKey);
+      }
+    }
     const invoiceDate = isInvoiceAnchorRow ? rawInvoiceDate : null;
     const dueDate = isInvoiceAnchorRow ? rawDueDate : null;
     const baseHome = isInvoiceAnchorRow && movementHome > 0 ? movementHome : 0;
     const baseCurrency = isInvoiceAnchorRow && movementCurrency > 0 ? movementCurrency : 0;
+    parsedMovements.push({
+      logicalKey,
+      customerId,
+      customerName,
+      invoiceNo,
+      invoiceDate,
+      dueDate,
+      status: deriveArStatus(record),
+      currencyCode: pickString(record, ['currencyCode', 'currency', 'CurrCode', 'CUCD']),
+      baseHome,
+      baseCurrency,
+      movementHome,
+      movementCurrency,
+    });
+  }
 
+  const allowedKeys = new Set<string>();
+  if (priorOpenKeys.size > 0) {
+    priorOpenKeys.forEach((key) => allowedKeys.add(key));
+    todayAnchorKeys.forEach((key) => allowedKeys.add(key));
+  } else {
+    allAnchorKeys.forEach((key) => allowedKeys.add(key));
+  }
+  for (const movement of parsedMovements) {
+    if (!allowedKeys.has(movement.logicalKey)) continue;
+    const groupKey = `${companyId}|${frequency}|${snapshotDayStart.toISOString()}|${movement.logicalKey}`;
     const existing = invoiceAccumulator.get(groupKey);
     if (!existing) {
       invoiceAccumulator.set(groupKey, {
         companyId,
         snapshotDate: snapshotDayStart,
         frequency,
-        customerId,
-        customerName,
-        invoiceNo,
-        invoiceDate,
-        dueDate,
-        status: deriveArStatus(record),
-        currencyCode: pickString(record, ['currencyCode', 'currency', 'CurrCode', 'CUCD']),
-        invoiceBaseHome: baseHome,
-        invoiceBaseCurrency: baseCurrency,
-        remainingHome: movementHome,
-        remainingCurrency: movementCurrency,
+        customerId: movement.customerId,
+        customerName: movement.customerName,
+        invoiceNo: movement.invoiceNo,
+        invoiceDate: movement.invoiceDate,
+        dueDate: movement.dueDate,
+        status: movement.status || 'OPEN_NET',
+        currencyCode: movement.currencyCode,
+        invoiceBaseHome: movement.baseHome,
+        invoiceBaseCurrency: movement.baseCurrency,
+        remainingHome: movement.movementHome,
+        remainingCurrency: movement.movementCurrency,
       });
       continue;
     }
 
-    existing.invoiceBaseHome += baseHome;
-    existing.invoiceBaseCurrency += baseCurrency;
-    existing.remainingHome += movementHome;
-    existing.remainingCurrency += movementCurrency;
-    existing.customerId = existing.customerId || customerId;
-    existing.invoiceDate = existing.invoiceDate || invoiceDate;
-    existing.dueDate = existing.dueDate || dueDate;
-    existing.status = existing.status || deriveArStatus(record);
-    existing.currencyCode = existing.currencyCode || pickString(record, ['currencyCode', 'currency', 'CurrCode', 'CUCD']);
+    existing.invoiceBaseHome += movement.baseHome;
+    existing.invoiceBaseCurrency += movement.baseCurrency;
+    existing.remainingHome += movement.movementHome;
+    existing.remainingCurrency += movement.movementCurrency;
+    existing.customerId = existing.customerId || movement.customerId;
+    existing.invoiceDate = existing.invoiceDate || movement.invoiceDate;
+    existing.dueDate = existing.dueDate || movement.dueDate;
+    existing.status = existing.status || movement.status;
+    existing.currencyCode = existing.currencyCode || movement.currencyCode;
   }
 
   const movementRows = Array.from(invoiceAccumulator.values())
     .map((entry) => {
       const remainingHome = Number(entry.remainingHome || 0);
       if (!Number.isFinite(remainingHome) || remainingHome === 0) return null;
+      const invoiceDateMs = entry.invoiceDate?.getTime();
+      if (!invoiceDateMs) return null;
+      if (invoiceDateMs < collectibleWindowStart.getTime() || invoiceDateMs >= snapshotDayEnd.getTime()) return null;
       const remainingCurrency = Number(entry.remainingCurrency || 0);
       const invoiceBaseHome = Number(entry.invoiceBaseHome || 0);
       const invoiceBaseCurrency = Number(entry.invoiceBaseCurrency || 0);
@@ -2047,7 +2200,9 @@ async function saveAROpenInvoices(
     );
   }
 
-  const batchSize = 500;
+  // Keep raw insert chunks modest to avoid Postgres cached-plan memory pressure
+  // on large historical AR backfills.
+  const batchSize = 100;
   for (let i = 0; i < movementRows.length; i += batchSize) {
     const chunk = movementRows.slice(i, i + batchSize);
     const values = chunk.map((row) => Prisma.sql`(
@@ -2430,19 +2585,224 @@ async function saveCustomerOrderLines(
   return { persisted: debug.rowsPersisted || finalRows.length, debug };
 }
 
+async function saveSalesInvoiceHeaders(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  records: Record<string, unknown>[],
+  context: {
+    miProgram: string;
+    transaction: string;
+    cono?: string;
+    divi?: string;
+    resetSnapshot?: boolean;
+  }
+): Promise<number> {
+  const delegate = (prisma as any).salesInvoiceHeaderSnapshot;
+  if (!delegate?.createMany || !delegate?.deleteMany) return 0;
+
+  if (context.resetSnapshot) {
+    await delegate.deleteMany({ where: { companyId, frequency, snapshotDate } });
+  }
+
+  const parsedRows = records
+    .map((record) => {
+      const orderId = normalizeOrderJoinKey(
+        pickString(record, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum'])
+      );
+      const invoiceNo = normalizeInvoiceKeyForOrigin(
+        pickString(record, ['InvNum', 'invoiceNo', 'invoiceNumber', 'DerInvNum', 'IVNO'])
+      );
+      if (!orderId || !invoiceNo) return null;
+      return {
+        companyId,
+        snapshotDate,
+        frequency,
+        orderId,
+        invoiceNo,
+        customerId: pickString(record, ['CustNum', 'custNum', 'CustNo', ...CUSTOMER_ID_KEYS]) || null,
+        customerName: pickCustomerDisplayName(record) || pickString(record, ['CustName', 'DerCustName', ...CUSTOMER_NAME_KEYS]) || null,
+        invoiceDate: parseMaybeDate(pickString(record, ['InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date'])),
+        sourcePlatform: 'INFOR_M3',
+        sourceProgram: context.miProgram,
+        sourceTransaction: context.transaction,
+        cono: context.cono || null,
+        divi: context.divi || null,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+  if (!parsedRows.length) return 0;
+  await delegate.createMany({ data: parsedRows, skipDuplicates: true });
+  return parsedRows.length;
+}
+
 function buildAgingBucketFromDueDate(
   dueDate: Date | null,
   invoiceDate: Date | null,
   asOfDate: Date
 ): { daysOutstanding: number | null; agingBucket: string } {
-  const baselineDueDate = dueDate || (invoiceDate ? new Date(startOfUtcDay(invoiceDate).getTime() + 30 * 24 * 60 * 60 * 1000) : null);
-  if (!baselineDueDate) return { daysOutstanding: null, agingBucket: '90+' };
-  const days = Math.floor((startOfUtcDay(asOfDate).getTime() - startOfUtcDay(baselineDueDate).getTime()) / (24 * 60 * 60 * 1000));
+  const baselineInvoiceDate = invoiceDate ? startOfUtcDay(invoiceDate) : null;
+  if (!baselineInvoiceDate) return { daysOutstanding: null, agingBucket: '90+' };
+  const days = Math.floor((startOfUtcDay(asOfDate).getTime() - baselineInvoiceDate.getTime()) / (24 * 60 * 60 * 1000));
   if (days <= 0) return { daysOutstanding: days, agingBucket: 'Current' };
   if (days <= 30) return { daysOutstanding: days, agingBucket: '30' };
   if (days <= 60) return { daysOutstanding: days, agingBucket: '60' };
   if (days <= 90) return { daysOutstanding: days, agingBucket: '90' };
   return { daysOutstanding: days, agingBucket: '90+' };
+}
+
+const normalizeInvoiceKeyForOrigin = (value: string | null | undefined): string =>
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '');
+
+let arInvoiceDetailSourceColumnsSupportedCache: boolean | null = null;
+async function arInvoiceDetailSupportsSourceColumns(): Promise<boolean> {
+  if (arInvoiceDetailSourceColumnsSupportedCache !== null) return arInvoiceDetailSourceColumnsSupportedCache;
+  try {
+    const rows = await prisma.$queryRaw<Array<{ column_name: string }>>`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'ARInvoiceDetail'
+        AND column_name IN ('sourceClass', 'sourceSystem', 'sourceDocId', 'sourceMatchConfidence', 'sourceMatchedBy')
+    `;
+    const names = new Set(rows.map((row) => String(row.column_name || '').trim()));
+    arInvoiceDetailSourceColumnsSupportedCache =
+      names.has('sourceClass') &&
+      names.has('sourceSystem') &&
+      names.has('sourceDocId') &&
+      names.has('sourceMatchConfidence') &&
+      names.has('sourceMatchedBy');
+  } catch {
+    arInvoiceDetailSourceColumnsSupportedCache = false;
+  }
+  return arInvoiceDetailSourceColumnsSupportedCache;
+}
+
+async function upsertArInvoiceOriginMapFromOrderLines(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  invoiceRows: Array<{ invoiceId: string; customerId: string | null; invoiceAmount: number; remainingBalance: number }>
+): Promise<void> {
+  const originMapDelegate = (prisma as any).aRInvoiceOriginMap;
+  const orderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+  const invoiceHeaderDelegate = (prisma as any).salesInvoiceHeaderSnapshot;
+  if (
+    !originMapDelegate?.createMany ||
+    !orderLineDelegate?.findFirst ||
+    !orderLineDelegate?.findMany ||
+    !invoiceHeaderDelegate?.findFirst ||
+    !invoiceHeaderDelegate?.findMany
+  ) {
+    return;
+  }
+
+  const openInvoiceKeys = new Set<string>();
+  for (const row of invoiceRows) {
+    const invoiceNo = normalizeInvoiceKeyForOrigin(row.invoiceId);
+    if (!invoiceNo) continue;
+    openInvoiceKeys.add(`${String(row.customerId || '').trim()}|${invoiceNo}`);
+  }
+  if (openInvoiceKeys.size === 0) return;
+
+  const latestOrderSnapshot = await orderLineDelegate.findFirst({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate: { lte: snapshotDate },
+    },
+    orderBy: [{ snapshotDate: 'desc' }],
+    select: { snapshotDate: true },
+  });
+  if (!latestOrderSnapshot?.snapshotDate) return;
+
+  const orderRows = await orderLineDelegate.findMany({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate: latestOrderSnapshot.snapshotDate,
+    },
+    select: {
+      customerId: true,
+      orderId: true,
+    },
+    take: 100000,
+  });
+  const contractOrderKeys = new Set<string>();
+  for (const row of orderRows as any[]) {
+    const orderId = normalizeOrderJoinKey(String(row.orderId || ''));
+    if (!orderId) continue;
+    const customerId = String(row.customerId || '').trim();
+    contractOrderKeys.add(`${customerId}|${orderId}`);
+  }
+  if (contractOrderKeys.size === 0) return;
+
+  const latestInvoiceHeaderSnapshot = await invoiceHeaderDelegate.findFirst({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate: { lte: snapshotDate },
+    },
+    orderBy: [{ snapshotDate: 'desc' }],
+    select: { snapshotDate: true },
+  });
+  if (!latestInvoiceHeaderSnapshot?.snapshotDate) return;
+
+  const invoiceHeaderRows = await invoiceHeaderDelegate.findMany({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate: latestInvoiceHeaderSnapshot.snapshotDate,
+    },
+    select: {
+      customerId: true,
+      orderId: true,
+      invoiceNo: true,
+    },
+    take: 100000,
+  });
+
+  const now = new Date();
+  const rowsToCreate = new Map<string, Record<string, unknown>>();
+  for (const row of invoiceHeaderRows as any[]) {
+    const orderId = normalizeOrderJoinKey(String(row.orderId || ''));
+    if (!orderId) continue;
+    const invoiceNoNormalized = normalizeInvoiceKeyForOrigin(row.invoiceNo);
+    if (!invoiceNoNormalized) continue;
+    const customerId = String(row.customerId || '').trim() || null;
+    const contractOrderKey = `${customerId || ''}|${orderId}`;
+    if (!contractOrderKeys.has(contractOrderKey)) continue;
+    const joinKey = `${customerId || ''}|${invoiceNoNormalized}`;
+    if (!openInvoiceKeys.has(joinKey)) continue;
+    const dedupeKey = `${companyId}|${invoiceNoNormalized}|${customerId || ''}|CSI_ORDER_INVOICE_HEADER`;
+    rowsToCreate.set(dedupeKey, {
+      companyId,
+      invoiceNoNormalized,
+      customerId,
+      customerKey: String(customerId || '').trim(),
+      sourceClass: 'CONTRACT',
+      sourceSystem: 'CSI_ORDER_INVOICE_HEADER',
+      sourceDocId: `${orderId}:${String(row.invoiceNo || '')}`,
+      sourceInvoiceNoRaw: row.invoiceNo || null,
+      matchConfidence: 'HIGH',
+      matchedBy: 'ORDER_ID_TO_INVOICE_NO_AND_CUSTOMER',
+      firstSeenAt: now,
+      lastSeenAt: now,
+    });
+  }
+  if (rowsToCreate.size === 0) return;
+
+  try {
+    await originMapDelegate.createMany({
+      data: Array.from(rowsToCreate.values()),
+      skipDuplicates: true,
+    });
+  } catch (error) {
+    console.warn('[Operational Sync] Unable to upsert AR invoice origin map:', error);
+  }
 }
 
 async function upsertArContractSupportTables(
@@ -2456,20 +2816,53 @@ async function upsertArContractSupportTables(
     return `name:${String(customerName || '').trim().toLowerCase()}`;
   };
 
-  const openRows = await prisma.aROpenInvoiceSnapshot.findMany({
-    where: { companyId, frequency, snapshotDate },
-    select: {
-      customerId: true,
-      customerName: true,
-      invoiceNo: true,
-      invoiceDate: true,
-      dueDate: true,
-      amountHome: true,
-      amountDueHome: true,
-    },
-    orderBy: [{ amountDueHome: 'desc' }],
-    take: 50000,
-  });
+  const openRows: Array<{
+    customerId: string | null;
+    customerName: string;
+    invoiceNo: string;
+    invoiceDate: Date | null;
+    dueDate: Date | null;
+    amountHome: number | null;
+    amountDueHome: number;
+  }> = [];
+  let lastId: string | null = null;
+  const pageSize = 5000;
+  while (true) {
+    const page = await prisma.aROpenInvoiceSnapshot.findMany({
+      where: {
+        companyId,
+        frequency,
+        snapshotDate,
+        ...(lastId ? { id: { gt: lastId } } : {}),
+      },
+      select: {
+        id: true,
+        customerId: true,
+        customerName: true,
+        invoiceNo: true,
+        invoiceDate: true,
+        dueDate: true,
+        amountHome: true,
+        amountDueHome: true,
+      },
+      orderBy: [{ id: 'asc' }],
+      take: pageSize,
+    });
+    if (!page.length) break;
+    for (const row of page) {
+      openRows.push({
+        customerId: row.customerId || null,
+        customerName: row.customerName,
+        invoiceNo: row.invoiceNo,
+        invoiceDate: row.invoiceDate ? new Date(row.invoiceDate) : null,
+        dueDate: row.dueDate ? new Date(row.dueDate) : null,
+        amountHome: row.amountHome ?? null,
+        amountDueHome: Number(row.amountDueHome || 0),
+      });
+    }
+    lastId = page[page.length - 1].id;
+    if (page.length < pageSize) break;
+  }
 
   const invoiceRows = openRows
     .filter((row) => Number(row.amountDueHome || 0) > 0)
@@ -2492,14 +2885,92 @@ async function upsertArContractSupportTables(
         remainingBalance,
         daysOutstanding: aging.daysOutstanding,
         agingBucket: aging.agingBucket,
+        sourceClass: 'UNKNOWN',
+        sourceSystem: null as string | null,
+        sourceDocId: null as string | null,
+        sourceMatchConfidence: null as string | null,
+        sourceMatchedBy: null as string | null,
       };
     });
 
+  await upsertArInvoiceOriginMapFromOrderLines(companyId, snapshotDate, frequency, invoiceRows);
+
+  const originMapDelegate = (prisma as any).aRInvoiceOriginMap;
+  const originByInvoiceAndCustomer = new Map<string, any>();
+  const originByInvoiceOnly = new Map<string, any>();
+  if (originMapDelegate?.findMany && invoiceRows.length > 0) {
+    const invoiceNos = Array.from(
+      new Set(invoiceRows.map((row) => normalizeInvoiceKeyForOrigin(row.invoiceId)).filter(Boolean))
+    );
+    if (invoiceNos.length > 0) {
+      const originRows = await originMapDelegate.findMany({
+        where: {
+          companyId,
+          invoiceNoNormalized: { in: invoiceNos },
+          matchConfidence: 'HIGH',
+        },
+        select: {
+          invoiceNoNormalized: true,
+          customerId: true,
+          sourceClass: true,
+          sourceSystem: true,
+          sourceDocId: true,
+          matchConfidence: true,
+          matchedBy: true,
+          lastSeenAt: true,
+        },
+        orderBy: [{ lastSeenAt: 'desc' }],
+        take: Math.max(invoiceNos.length * 4, 2000),
+      });
+      for (const row of originRows as any[]) {
+        const invoiceNo = normalizeInvoiceKeyForOrigin(row.invoiceNoNormalized);
+        const customerId = String(row.customerId || '').trim();
+        const byCustomerKey = `${invoiceNo}|${customerId}`;
+        if (invoiceNo && customerId && !originByInvoiceAndCustomer.has(byCustomerKey)) {
+          originByInvoiceAndCustomer.set(byCustomerKey, row);
+        }
+        if (invoiceNo && !originByInvoiceOnly.has(invoiceNo)) {
+          originByInvoiceOnly.set(invoiceNo, row);
+        }
+      }
+    }
+  }
+
+  const invoiceRowsWithSource = invoiceRows.map((row) => {
+    const invoiceNo = normalizeInvoiceKeyForOrigin(row.invoiceId);
+    const customerId = String(row.customerId || '').trim();
+    const direct = originByInvoiceAndCustomer.get(`${invoiceNo}|${customerId}`);
+    const fallback = originByInvoiceOnly.get(invoiceNo);
+    const match = direct || fallback;
+    if (!match) return row;
+    return {
+      ...row,
+      sourceClass: String(match.sourceClass || 'UNKNOWN'),
+      sourceSystem: String(match.sourceSystem || ''),
+      sourceDocId: match.sourceDocId ? String(match.sourceDocId) : null,
+      sourceMatchConfidence: match.matchConfidence ? String(match.matchConfidence) : null,
+      sourceMatchedBy: match.matchedBy ? String(match.matchedBy) : null,
+    };
+  });
+
   const arInvoiceDetailDelegate = (prisma as any).aRInvoiceDetail;
   if (arInvoiceDetailDelegate?.deleteMany && arInvoiceDetailDelegate?.createMany) {
+    const supportsSourceColumns = await arInvoiceDetailSupportsSourceColumns();
+    const invoiceRowsForPersist = supportsSourceColumns
+      ? invoiceRowsWithSource
+      : invoiceRowsWithSource.map(
+          ({
+            sourceClass: _sourceClass,
+            sourceSystem: _sourceSystem,
+            sourceDocId: _sourceDocId,
+            sourceMatchConfidence: _sourceMatchConfidence,
+            sourceMatchedBy: _sourceMatchedBy,
+            ...rest
+          }) => rest
+        );
     await arInvoiceDetailDelegate.deleteMany({ where: { companyId, asOfDate: snapshotDate, snapshotFrequency: frequency } });
-    if (invoiceRows.length > 0) {
-      await arInvoiceDetailDelegate.createMany({ data: invoiceRows });
+    if (invoiceRowsForPersist.length > 0) {
+      await arInvoiceDetailDelegate.createMany({ data: invoiceRowsForPersist });
     }
   }
 
@@ -3346,22 +3817,28 @@ export async function syncInforM3OperationalData(
   // mixed local-time snapshot variants (e.g. 00:00 and 07:00).
   const snapshotDate = startOfUtcDay(options?.snapshotDateOverride ? new Date(options.snapshotDateOverride) : new Date());
 
-  const connection = await prisma.accountingConnection.findUnique({
-    where: {
-      companyId_platform: {
-        companyId,
-        platform: 'INFOR_M3',
-      },
-    },
-    select: {
-      connectionMetadata: true,
-    },
-  });
-
-  const metadata =
-    connection?.connectionMetadata && typeof connection.connectionMetadata === 'object'
-      ? (connection.connectionMetadata as Record<string, unknown>)
-      : {};
+  const connectionRows = await prisma.$queryRaw<
+    Array<{ accountingProgramsBySystem: unknown; accountingPrograms: unknown }>
+  >`
+    SELECT
+      "connectionMetadata"->'accountingProgramsBySystem' AS "accountingProgramsBySystem",
+      "connectionMetadata"->'accountingPrograms' AS "accountingPrograms"
+    FROM "AccountingConnection"
+    WHERE "companyId" = ${companyId}
+      AND platform = 'INFOR_M3'
+    LIMIT 1
+  `;
+  const metadataRow = connectionRows[0];
+  const metadata = {
+    accountingProgramsBySystem:
+      metadataRow?.accountingProgramsBySystem && typeof metadataRow.accountingProgramsBySystem === 'object'
+        ? metadataRow.accountingProgramsBySystem
+        : null,
+    accountingPrograms:
+      metadataRow?.accountingPrograms && Array.isArray(metadataRow.accountingPrograms)
+        ? metadataRow.accountingPrograms
+        : null,
+  } as Record<string, unknown>;
   const company = await prisma.company.findUnique({
     where: { id: companyId },
     select: { accountingSystem: true },
@@ -3407,6 +3884,9 @@ export async function syncInforM3OperationalData(
   const programRows = salesOnly
     ? baseProgramRows.filter((row) => SALES_ONLY_PROGRAM_IDS.has(resolveCsiProgramId(row, row.endpointPath)))
     : baseProgramRows;
+  const hasSlCustDrftsProgram = programRows.some(
+    (row) => row.enabled && resolveCsiProgramId(row, row.endpointPath) === 'SLCUSTDRFTS'
+  );
   const totalProgramRows = programRows.length;
   const programOffset = Math.max(0, Math.floor(Number(options?.programOffset || 0)));
   const requestedLimit =
@@ -3560,11 +4040,18 @@ export async function syncInforM3OperationalData(
       const moduleType = classifyModule(row.module);
       const programId = resolveCsiProgramId(row, req.endpointPath);
       const isSlCoitemsProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
+      const isSlArtransProgram = moduleType === 'ar' && programId === 'SLARTRANS';
+      const isHistoricalDailySliceRequest = frequency === 'daily' && Boolean(options?.snapshotDateOverride);
       const isArBackfillWindow = moduleType === 'ar' && syncWindow?.mode === 'backfill';
       const requestTimeoutMs = moduleType === 'inventory' || isArBackfillWindow ? 120000 : 30000;
       // Keep SLCoitems chunk duration bounded so each sync call returns promptly
       // with a continuation cursor instead of appearing "stuck" on one huge page pull.
-      const maxPagesPerRequest = isSlCoitemsProgram ? 8 : MAX_CSI_PAGES_PER_REQUEST;
+      const maxPagesPerRequest =
+        isSlCoitemsProgram
+          ? 8
+          : isSlArtransProgram && isHistoricalDailySliceRequest
+            ? 2
+            : MAX_CSI_PAGES_PER_REQUEST;
       const sourceWindowPathResult = applyCsiSourceWindowAndSort(req.endpointPath, row, moduleType, syncWindow);
       if (debugSync) {
         console.log(
@@ -4082,6 +4569,10 @@ export async function syncInforM3OperationalData(
               break;
             case 'ar':
               {
+                const arProgramId = programId;
+                const isSlArtransProgram = arProgramId === 'SLARTRANS';
+                const isSlCustDrftsProgram = arProgramId === 'SLCUSTDRFTS';
+                const isHistoricalDailySlice = frequency === 'daily' && Boolean(options?.snapshotDateOverride);
                 const context = {
                   miProgram: row.miProgram || row.module,
                   transaction: req.transaction,
@@ -4091,13 +4582,30 @@ export async function syncInforM3OperationalData(
                 };
                 if (arApFlow === 'payments') {
                   moduleRecordsCreated = await saveARPayments(companyId, records, context);
-                  await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+                  if (!isHistoricalDailySlice) {
+                    await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+                  }
                 } else if (arApFlow === 'open') {
-                  const openRowsCreated = await saveAROpenInvoices(companyId, snapshotDate, frequency, records, context);
-                  const agingRowsCreated = await saveARAging(companyId, snapshotDate, frequency, records);
-                  const paymentRowsCreated = await saveARPayments(companyId, records, context);
+                  // Prefer SLCustDrfts for open-item snapshots when configured; keep
+                  // SLArtrans for payment/reconciliation facts to avoid double counting open AR.
+                  // For historical day rebuilds (locked EOD path), force SLArtrans as the
+                  // single open-invoice source and skip SLCustDrfts open writes.
+                  const preferCustDrftsForOpen =
+                    hasSlCustDrftsProgram && isSlArtransProgram && !isHistoricalDailySlice;
+                  const skipCustDrftsOpenForHistoricalSlice = isHistoricalDailySlice && isSlCustDrftsProgram;
+                  const skipOpenForProgram = preferCustDrftsForOpen || skipCustDrftsOpenForHistoricalSlice;
+                  const openRowsCreated = skipOpenForProgram
+                    ? 0
+                    : await saveAROpenInvoices(companyId, snapshotDate, frequency, records, context);
+                  const agingRowsCreated = skipOpenForProgram
+                    ? 0
+                    : await saveARAging(companyId, snapshotDate, frequency, records);
+                  const paymentRowsCreated =
+                    isSlCustDrftsProgram || isHistoricalDailySlice ? 0 : await saveARPayments(companyId, records, context);
                   moduleRecordsCreated = openRowsCreated + agingRowsCreated + paymentRowsCreated;
-                  await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+                  if (!isHistoricalDailySlice) {
+                    await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+                  }
                 } else {
                   moduleRecordsCreated = await saveARAging(companyId, snapshotDate, frequency, records);
                 }
@@ -4159,6 +4667,13 @@ export async function syncInforM3OperationalData(
                 }
                 const salesProgram = salesProgramId;
                 let slcosHydrationResult: { loaded: number; message?: string } | null = null;
+                const invoiceHeaderRowsCreated =
+                  salesProgram === 'SLINVHDRS'
+                    ? await saveSalesInvoiceHeaders(companyId, snapshotDate, frequency, recordsAfterDateWindow, {
+                        ...context,
+                        resetSnapshot: !options?.bookmark,
+                      })
+                    : 0;
                 if (salesProgram === 'SLCOITEMS') {
                   slcosHydrationResult = await hydrateOrderLookupFromSlCos();
                   if (debugSync) {
@@ -4206,7 +4721,7 @@ export async function syncInforM3OperationalData(
                   // so Contract Total / Invoiced / Remaining stay in sync with sales data.
                   await upsertArContractSupportTables(companyId, snapshotDate, frequency);
                 }
-                moduleRecordsCreated = salesRowsCreated + contractRowsCreated;
+                moduleRecordsCreated = salesRowsCreated + contractRowsCreated + invoiceHeaderRowsCreated;
               }
               break;
             case 'inventory':
@@ -4245,6 +4760,7 @@ export async function syncInforM3OperationalData(
       recordsCreated += moduleRecordsCreated;
 
       try {
+        const responseBodyForLog = isHistoricalDailySliceRequest ? null : response.body;
         await prisma.apiSyncLog.create({
           data: {
             companyId,
@@ -4287,7 +4803,7 @@ export async function syncInforM3OperationalData(
               optionalProgramSkipped: optionalProgramMissing,
               optionalProgramSkipReason: optionalProgramMissing ? payloadMsg : null,
               persistDebug: modulePersistDebug,
-              response: response.body,
+              response: responseBodyForLog,
             } as unknown as Prisma.InputJsonValue),
           },
         });

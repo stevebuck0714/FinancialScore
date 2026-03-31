@@ -239,19 +239,17 @@ export async function getInforM3CredentialsForCompany(
   companyId: string,
   system?: InforSystem
 ): Promise<InforM3Credentials | null> {
-  const resolvedSystem = await resolveInforSystemForCompany(companyId, system);
+  await resolveInforSystemForCompany(companyId, system);
   // Performance: avoid loading entire connectionMetadata (which can contain
   // large CSI payload snapshots). Read only credential-related paths.
   const rows = await prisma.$queryRaw<
     Array<{
       status: string | null;
-      profiles: unknown;
       legacy: unknown;
     }>
   >`
     SELECT
       status,
-      "connectionMetadata"->'inforProfiles' AS profiles,
       jsonb_build_object(
         'tenantId', "connectionMetadata"->>'tenantId',
         'clientName', "connectionMetadata"->>'clientName',
@@ -276,19 +274,11 @@ export async function getInforM3CredentialsForCompany(
     return null;
   }
 
-  const profiles =
-    connection.profiles && typeof connection.profiles === 'object' && !Array.isArray(connection.profiles)
-      ? (connection.profiles as Record<string, unknown>)
-      : {};
-  const profileMetadata = profiles[resolvedSystem] as InforM3ConnectionMetadata | undefined;
   const legacyMetadata =
     connection.legacy && typeof connection.legacy === 'object' && !Array.isArray(connection.legacy)
       ? (connection.legacy as Partial<InforM3ConnectionMetadata>)
       : undefined;
 
-  if (isCompleteMetadata(profileMetadata)) {
-    return fromMetadata(profileMetadata);
-  }
   if (isCompleteMetadata(legacyMetadata)) {
     return fromMetadata(legacyMetadata);
   }

@@ -2456,8 +2456,7 @@ export default function OperationsTab({
           arCurrent: Number(row.current || 0),
           ar31to60: Number(row.days1to30 || 0),
           ar61to90: Number(row.days31to60 || 0),
-          ar91to120: Number(row.days61to90 || 0),
-          ar121plus: Number(row.days90plus || 0),
+          ar90plus: Number(row.days61to90 || 0) + Number(row.days90plus || 0),
           cashCollectedToDate,
           lastPaymentDate: row.lastPaymentDate || paid?.lastPaymentDate || '-',
           totalBilledRevenue,
@@ -2470,7 +2469,7 @@ export default function OperationsTab({
     const arAgingRows = [...contractAndCashFlowRows].sort(
       (a, b) =>
         b.arOutstanding - a.arOutstanding ||
-        b.ar121plus + b.ar91to120 + b.ar61to90 + b.ar31to60 - (a.ar121plus + a.ar91to120 + a.ar61to90 + a.ar31to60)
+        b.ar90plus + b.ar61to90 + b.ar31to60 - (a.ar90plus + a.ar61to90 + a.ar31to60)
     );
     const customerOptions = Array.from(new Set(customerInvoiceRows.map((row) => row.customerName))).sort();
     const filteredCustomerInvoices =
@@ -2579,8 +2578,7 @@ export default function OperationsTab({
         'Open AR 0-30': record ? Number(record.current || 0) : null,
         'Open AR 31-60': record ? Number(record.days1to30 || 0) : null,
         'Open AR 61-90': record ? Number(record.days31to60 || 0) : null,
-        'Open AR 91-120': record ? Number(record.days61to90 || 0) : null,
-        'Open AR 121+': record ? Number(record.days90plus || 0) : null,
+        'Open AR 90+': record ? Number(record.days61to90 || 0) + Number(record.days90plus || 0) : null,
         total: record ? Number(record.totalAR || 0) : 0,
         hasData: Boolean(record),
       };
@@ -2596,9 +2594,9 @@ export default function OperationsTab({
       dso: 0,
       over30Pct:
         row.total > 0
-          ? ((row['Open AR 31-60'] + row['Open AR 61-90'] + row['Open AR 91-120'] + row['Open AR 121+']) / row.total) * 100
+          ? ((row['Open AR 31-60'] + row['Open AR 61-90'] + row['Open AR 90+']) / row.total) * 100
           : 0,
-      over90Pct: row.total > 0 ? ((row['Open AR 91-120'] + row['Open AR 121+']) / row.total) * 100 : 0,
+      over90Pct: row.total > 0 ? (row['Open AR 90+'] / row.total) * 100 : 0,
     }));
     const arCollectionsRiskQueue = arCustomers
       .map((row) => {
@@ -2688,8 +2686,7 @@ export default function OperationsTab({
               <Bar dataKey="Open AR 0-30" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="Open AR 61-90" stackId="a" fill={AR_TREND_COLORS[3]} />
-              <Bar dataKey="Open AR 91-120" stackId="a" fill={AR_TREND_COLORS[1]} />
-              <Bar dataKey="Open AR 121+" stackId="a" fill={AR_TREND_COLORS[4]} />
+              <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[1]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -2954,8 +2951,7 @@ export default function OperationsTab({
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
-                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>91-120</th>
-                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>121+</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>90+</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2969,8 +2965,7 @@ export default function OperationsTab({
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(row.arCurrent)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#f97316', textAlign: 'right' }}>{formatCurrency(row.ar31to60)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>{formatCurrency(row.ar61to90)}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar91to120)}</td>
-                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#7f1d1d', textAlign: 'right' }}>{formatCurrency(row.ar121plus)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar90plus)}</td>
                       </tr>
                     ))}
                 </tbody>

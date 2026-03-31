@@ -1139,6 +1139,7 @@ export async function GET(request: NextRequest) {
           amountDue: number;
         }> = [];
         let customerInvoices: Array<{
+          customerId?: string | null;
           customerName: string;
           invoiceNo: string;
           date: string | null;
@@ -1147,7 +1148,14 @@ export async function GET(request: NextRequest) {
           amountCurrency: number;
           amountHome: number;
           amountDueHome: number;
+          sourceClass?: string;
         }> = [];
+        let invoiceClassificationRows: Array<{ invoiceNo: string; customerId: string | null; amountDueHome: number }> = [];
+        const normalizeInvoiceNo = (value: unknown): string =>
+          String(value || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[\s-]+/g, '');
         let paidInvoices: Array<{
           customerName: string;
           currentMonth: number;
@@ -1399,6 +1407,7 @@ export async function GET(request: NextRequest) {
               amountDue: Number(row.amountDue || 0),
             }));
           customerInvoices = invoiceRowsOpenDeduped.slice(0, 500).map((row: any) => ({
+            customerId: row.customerId ? String(row.customerId) : null,
             customerName: row.customerName || 'Unknown Customer',
             invoiceNo: row.invoiceId || '-',
             date: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
@@ -1406,6 +1415,12 @@ export async function GET(request: NextRequest) {
             currency: 'USD',
             amountCurrency: Number(row.amountDue || 0),
             amountHome: Number(row.amountDue || 0),
+            amountDueHome: Number(row.amountDue || 0),
+            sourceClass: 'UNKNOWN',
+          }));
+          invoiceClassificationRows = invoiceRowsOpenDeduped.map((row: any) => ({
+            invoiceNo: String(row.invoiceId || ''),
+            customerId: row.customerId ? String(row.customerId) : null,
             amountDueHome: Number(row.amountDue || 0),
           }));
           latestOpenTotals = unpaidByCustomer.reduce(
@@ -1752,6 +1767,7 @@ export async function GET(request: NextRequest) {
             }));
 
             customerInvoices = openRowsEligible.slice(0, 500).map((row: any) => ({
+            customerId: row.customerId ? String(row.customerId) : null,
             customerName: row.customerName || 'Unknown Customer',
             invoiceNo: row.invoiceNo || '-',
             date: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
@@ -1760,7 +1776,26 @@ export async function GET(request: NextRequest) {
             amountCurrency: Number(row.amountCurrency || row.amountHome || 0),
             amountHome: Number(row.amountHome || row.amountDueHome || 0),
             amountDueHome: Number(row.amountDueHome || 0),
+            sourceClass: 'UNKNOWN',
             }));
+            const dedupedInvoiceMap = (openRowsEligible as any[]).reduce(
+              (acc: Map<string, { invoiceNo: string; customerId: string | null; amountDueHome: number }>, row: any) => {
+                const invoiceNo = String(row.invoiceNo || '').trim();
+                if (!invoiceNo) return acc;
+                const customerId = row.customerId ? String(row.customerId) : null;
+                const key = `${normalizeInvoiceNo(invoiceNo)}|${String(customerId || '').trim()}`;
+                if (!acc.has(key)) {
+                  acc.set(key, { invoiceNo, customerId, amountDueHome: 0 });
+                }
+                const bucket = acc.get(key)!;
+                bucket.amountDueHome += Number(row.amountDueHome || 0);
+                return acc;
+              },
+              new Map<string, { invoiceNo: string; customerId: string | null; amountDueHome: number }>()
+            );
+            const dedupedInvoiceRows: Array<{ invoiceNo: string; customerId: string | null; amountDueHome: number }> =
+              Array.from(dedupedInvoiceMap.values());
+            invoiceClassificationRows = dedupedInvoiceRows.filter((row) => Number(row.amountDueHome || 0) > 0);
           }
         }
 
@@ -2003,6 +2038,70 @@ export async function GET(request: NextRequest) {
             .slice(0, 25);
         }
 
+        const originMapDelegate = (prisma as any).aRInvoiceOriginMap;
+        const originByInvoiceAndCustomer = new Map<string, string>();
+        const originByInvoiceOnly = new Map<string, string>();
+        if (originMapDelegate?.findMany && invoiceClassificationRows.length > 0) {
+          const invoiceNos = Array.from(
+            new Set(invoiceClassificationRows.map((row) => normalizeInvoiceNo(row.invoiceNo)).filter(Boolean))
+          );
+          if (invoiceNos.length > 0) {
+            const originRows = await originMapDelegate.findMany({
+              where: {
+                companyId,
+                invoiceNoNormalized: { in: invoiceNos },
+              },
+              select: {
+                invoiceNoNormalized: true,
+                customerId: true,
+                sourceClass: true,
+                lastSeenAt: true,
+              },
+              orderBy: [{ lastSeenAt: 'desc' }],
+              take: Math.max(invoiceNos.length * 4, 2000),
+            });
+            for (const row of originRows as any[]) {
+              const inv = normalizeInvoiceNo(row.invoiceNoNormalized);
+              const cust = String(row.customerId || '').trim();
+              const sourceClass = String(row.sourceClass || 'UNKNOWN');
+              if (inv && cust && !originByInvoiceAndCustomer.has(`${inv}|${cust}`)) {
+                originByInvoiceAndCustomer.set(`${inv}|${cust}`, sourceClass);
+              }
+              if (inv && !originByInvoiceOnly.has(inv)) {
+                originByInvoiceOnly.set(inv, sourceClass);
+              }
+            }
+          }
+        }
+        const resolveSourceClass = (invoiceNo: unknown, customerId: unknown): string => {
+          const inv = normalizeInvoiceNo(invoiceNo);
+          const cust = String(customerId || '').trim();
+          if (!inv) return 'UNKNOWN';
+          const direct = originByInvoiceAndCustomer.get(`${inv}|${cust}`);
+          if (direct) return direct;
+          return originByInvoiceOnly.get(inv) || 'UNKNOWN';
+        };
+        customerInvoices = customerInvoices.map((row) => ({
+          ...row,
+          sourceClass: resolveSourceClass(row.invoiceNo, row.customerId || null),
+        }));
+        const sourceClassTotals = invoiceClassificationRows.reduce(
+          (acc, row) => {
+            const amount = Number(row.amountDueHome || 0);
+            if (!Number.isFinite(amount) || amount <= 0) return acc;
+            const sourceClass = resolveSourceClass(row.invoiceNo, row.customerId).toUpperCase();
+            if (sourceClass === 'CONTRACT') {
+              acc.contractAR += amount;
+            } else if (sourceClass === 'NON_CONTRACT') {
+              acc.nonContractAR += amount;
+            } else {
+              acc.unknownSourceAR += amount;
+            }
+            return acc;
+          },
+          { contractAR: 0, nonContractAR: 0, unknownSourceAR: 0 }
+        );
+
         if (!data.length && shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
@@ -2064,6 +2163,9 @@ export async function GET(request: NextRequest) {
           summary: {
             totalAR: Number(summaryTotals.totalAR || 0),
             totalOpenAR: Number(summaryTotals.totalAR || 0),
+            contractAR: Number(sourceClassTotals.contractAR || 0),
+            nonContractAR: Number(sourceClassTotals.nonContractAR || 0),
+            unknownSourceAR: Number(sourceClassTotals.unknownSourceAR || 0),
             currentPct: Number(currentPct),
             over30Pct: Number(over30Pct),
             over90Pct: Number(over90Pct),
