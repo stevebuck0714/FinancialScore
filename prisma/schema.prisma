@@ -1068,6 +1068,36 @@ model ARPaymentFact {
   @@index([companyId, invoiceNo])
 }
 
+model GLTransactionFact {
+  id                String   @id @default(cuid())
+  companyId         String
+  transDate         DateTime
+  accountId         String
+  accountName       String?
+  accountType       String?
+  accountCategory   String?
+  signedAmount      Float
+  debitAmount       Float?
+  creditAmount      Float?
+  drCr              String?
+  transNum          String?
+  ref               String?
+  description       String?
+  site              String?
+  sourcePlatform    String?  @default("INFOR_M3")
+  sourceProgram     String?
+  sourceTransaction String?
+  cono              String?
+  divi              String?
+  createdAt         DateTime @default(now())
+
+  @@index([companyId, transDate(sort: Desc)])
+  @@index([companyId, accountId, transDate(sort: Desc)])
+  @@index([companyId, transNum])
+  @@index([companyId, ref])
+  @@unique([companyId, transDate, accountId, transNum, ref, description])
+}
+
 model ARInvoiceDetail {
   id               String   @id @default(cuid())
   companyId        String

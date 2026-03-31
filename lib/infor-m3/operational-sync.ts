@@ -167,7 +167,7 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   {
     module: 'GL',
     miProgram: 'SLChartAccts',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLChartAccts?recordCap=1000',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLChartAccts?properties=Acct,Description,Type,Category&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -1174,20 +1174,34 @@ function isOptionalCsiGlSummaryIdoMissing(params: {
   endpointPath: string;
   payloadMessage: string;
 }): boolean {
-  if (params.moduleType !== 'gl') return false;
   const msg = params.payloadMessage.trim().toLowerCase();
-  if (!msg.includes('ido not found')) return false;
   const program = String(params.row.miProgram || '').trim().toUpperCase();
-  if (program && OPTIONAL_CSI_GL_SUMMARY_PROGRAMS.has(program)) return true;
   const endpoint = params.endpointPath.toLowerCase();
-  return (
-    endpoint.includes('/load/glacctperiodbalances') ||
-    endpoint.includes('/load/slglacctperiodbalances') ||
-    endpoint.includes('/load/glaccountbalances') ||
-    endpoint.includes('/load/glledgerperiods') ||
-    endpoint.includes('/load/slglledgerperiods') ||
-    endpoint.includes('/load/ledgerbalances')
-  );
+
+  // Optional GL summary IDOs can be absent on some tenants.
+  if (params.moduleType === 'gl') {
+    if (!msg.includes('ido not found')) return false;
+    if (program && OPTIONAL_CSI_GL_SUMMARY_PROGRAMS.has(program)) return true;
+    return (
+      endpoint.includes('/load/glacctperiodbalances') ||
+      endpoint.includes('/load/slglacctperiodbalances') ||
+      endpoint.includes('/load/glaccountbalances') ||
+      endpoint.includes('/load/glledgerperiods') ||
+      endpoint.includes('/load/slglledgerperiods') ||
+      endpoint.includes('/load/ledgerbalances')
+    );
+  }
+
+  // SLCustDrfts is optional. Property variance by tenant (e.g., BalDue missing)
+  // should not fail the whole AR chunk/run.
+  if (params.moduleType === 'ar') {
+    const isSlCustDrftsProgram = program === 'SLCUSTDRFTS' || endpoint.includes('/load/slcustdrfts');
+    if (!isSlCustDrftsProgram) return false;
+    const propertyMissing = msg.includes('property') && msg.includes('not found');
+    return propertyMissing;
+  }
+
+  return false;
 }
 
 function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'gl' | 'other' {
@@ -1312,6 +1326,68 @@ const AR_REDUCTION_AMOUNT_HOME_KEYS = [
 ];
 const AR_CHARGE_AMOUNT_CURRENCY_KEYS = ['amountCurrency', 'invoiceAmount', 'CUAM', 'Amount'];
 const AR_REDUCTION_AMOUNT_CURRENCY_KEYS = ['DerPaymentCheckAmount', 'paidAmount', 'amountCurrency', 'PYAM', 'CUAM', 'Amount'];
+const GL_ACCOUNT_MASTER_PROGRAM_IDS = new Set(['SLCHARTACCTS', 'SLCHARTOFACCOUNTS', 'SLGLACCOUNTS', 'SLACCT']);
+type GlAccountMasterEntry = {
+  accountId: string;
+  accountName: string | null;
+  accountType: string | null;
+  accountCategory: string | null;
+};
+const normalizeGlAccountKey = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_.]+/g, '');
+const parseGlAccountMasterEntry = (record: Record<string, unknown>): GlAccountMasterEntry | null => {
+  const accountId =
+    pickString(record, ['Acct', 'AcctNum', 'Account', 'AccountNo', 'GLAccount', 'ACNO', 'ACID']) ||
+    pickString(record, ['accountId', 'accountCode', 'accountNumber']);
+  if (!accountId) return null;
+  const accountName =
+    pickString(record, ['Description', 'AcctDesc', 'Name', 'accountName', 'description', 'name', 'ACNM']) || null;
+  const accountType =
+    pickString(record, ['Type', 'AcctType', 'AccountType', 'classification', 'type', 'NormalBalance']) || null;
+  const accountCategory =
+    pickString(record, ['Category', 'AcctClass', 'AccountClass', 'Class', 'category', 'class']) || null;
+  return {
+    accountId,
+    accountName,
+    accountType,
+    accountCategory,
+  };
+};
+const extractSignedGlAmount = (
+  record: Record<string, unknown>
+): { signedAmount: number; debitAmount: number; creditAmount: number; drCrToken: string } => {
+  const drCrToken =
+    normalizeToken(record['DrCr']) ||
+    normalizeToken(record['drCr']) ||
+    normalizeToken(record['drcr']) ||
+    '';
+  const debitAmount = pickNumber(record, ['DerDomAmountDebit', 'DomAmountDebit', 'Debit', 'debit']);
+  const creditAmount = pickNumber(record, ['DerDomAmountCredit', 'DomAmountCredit', 'Credit', 'credit']);
+  const explicitSigned = pickNumber(record, ['DomAmount', 'DerSumDomAmount', 'domAmount']);
+  const unsignedAmount = pickNumber(record, ['Amount', 'amount', 'ForAmount', 'forAmount']);
+  const signedAmount = (() => {
+    if (Number.isFinite(explicitSigned) && explicitSigned !== 0) return explicitSigned;
+    if (
+      (Number.isFinite(debitAmount) && debitAmount !== 0) ||
+      (Number.isFinite(creditAmount) && creditAmount !== 0)
+    ) {
+      return debitAmount - creditAmount;
+    }
+    if (!Number.isFinite(unsignedAmount) || unsignedAmount === 0) return 0;
+    if (drCrToken.startsWith('c')) return -Math.abs(unsignedAmount);
+    if (drCrToken.startsWith('d')) return Math.abs(unsignedAmount);
+    return unsignedAmount;
+  })();
+  return {
+    signedAmount,
+    debitAmount,
+    creditAmount,
+    drCrToken,
+  };
+};
 
 const SALES_QTY_KEYS = ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'QtyShipped', 'qtyShipped', 'InvSeq'];
 const SALES_REVENUE_KEYS = ['revenue', 'amount', 'salesAmount', 'NETA', 'Amount', 'Price', 'ExtPrice', 'ExtAmt', 'LineAmount'];
@@ -1593,6 +1669,7 @@ function isOpenAgingRecord(
 export async function pruneCompanyOperationalData(companyId: string): Promise<void> {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 3);
+  const glFactDelegate = (prisma as any).gLTransactionFact;
 
   await Promise.all([
     prisma.cashSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
@@ -1605,6 +1682,7 @@ export async function pruneCompanyOperationalData(companyId: string): Promise<vo
     prisma.aRPaymentFact.deleteMany({ where: { companyId, paymentDate: { lt: cutoff } } }),
     (prisma as any).aPOpenBillSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     (prisma as any).aPPaymentFact.deleteMany({ where: { companyId, paymentDate: { lt: cutoff } } }),
+    glFactDelegate?.deleteMany ? glFactDelegate.deleteMany({ where: { companyId, transDate: { lt: cutoff } } }) : Promise.resolve(),
   ]);
 }
 
@@ -1682,10 +1760,71 @@ async function saveCash(
   return rows.length;
 }
 
+async function saveGLTransactionFacts(
+  companyId: string,
+  records: Record<string, unknown>[],
+  context: { miProgram: string; transaction: string; cono?: string | null; divi?: string | null },
+  glAccountMasterById?: Map<string, GlAccountMasterEntry>
+): Promise<number> {
+  const delegate = (prisma as any).gLTransactionFact;
+  if (!delegate?.createMany || records.length === 0) return 0;
+  const rows = records
+    .map((record) => {
+      const transDate = parseMaybeDate(pickString(record, ['TransDate', 'transDate', 'RecordDate', 'date']));
+      const accountId =
+        pickString(record, ['Acct', 'AcctNum', 'Account', 'AccountNo', 'GLAccount', 'ACNO', 'ACID']) ||
+        pickString(record, ['accountId', 'accountCode', 'accountNumber']);
+      if (!transDate || !accountId) return null;
+      const { signedAmount, debitAmount, creditAmount, drCrToken } = extractSignedGlAmount(record);
+      if (!Number.isFinite(signedAmount) || signedAmount === 0) return null;
+      const accountMaster = glAccountMasterById?.get(normalizeGlAccountKey(accountId));
+      return {
+        companyId,
+        transDate,
+        accountId: String(accountId),
+        accountName:
+          pickString(record, ['ChaDescription', 'ChtDescription', 'Description', 'AcctDesc', 'accountName', 'name']) ||
+          accountMaster?.accountName ||
+          null,
+        accountType: accountMaster?.accountType || null,
+        accountCategory: accountMaster?.accountCategory || null,
+        signedAmount,
+        debitAmount: Number.isFinite(debitAmount) && debitAmount !== 0 ? debitAmount : null,
+        creditAmount: Number.isFinite(creditAmount) && creditAmount !== 0 ? creditAmount : null,
+        drCr: drCrToken || null,
+        transNum: pickString(record, ['TransNum', 'transNum']) || null,
+        ref: pickString(record, ['Ref', 'ref', 'reference']) || null,
+        description: pickString(record, ['Description', 'description', 'TransDesc']) || null,
+        site: pickString(record, ['Site', 'site']) || null,
+        sourcePlatform: 'INFOR_M3',
+        sourceProgram: context.miProgram || null,
+        sourceTransaction: context.transaction || null,
+        cono: context.cono || null,
+        divi: context.divi || null,
+      };
+    })
+    .filter(Boolean) as Array<Record<string, unknown>>;
+  if (rows.length === 0) return 0;
+  await delegate.createMany({
+    data: rows,
+    skipDuplicates: true,
+  });
+  return rows.length;
+}
+
 async function saveBalanceMovementsFromGl(
   companyId: string,
   frequency: 'daily' | 'weekly' | 'monthly',
-  records: Record<string, unknown>[]
+  records: Record<string, unknown>[],
+  glAccountMasterById?: Map<
+    string,
+    {
+      accountId: string;
+      accountName: string | null;
+      accountType: string | null;
+      accountCategory: string | null;
+    }
+  >
 ): Promise<number> {
   const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
   if (!mappedLineDelegate || records.length === 0) return 0;
@@ -1730,8 +1869,6 @@ async function saveBalanceMovementsFromGl(
     );
   }
 
-  if (accountMappings.length === 0) return 0;
-
   const tokenToTargetFields = new Map<string, Set<string>>();
   for (const mapping of accountMappings) {
     const targetField = String(mapping.targetField || '').trim();
@@ -1744,10 +1881,67 @@ async function saveBalanceMovementsFromGl(
       tokenToTargetFields.get(token)!.add(targetField);
     }
   }
+  const deriveTargetFieldsFromAccountMaster = (entry: {
+    accountType: string | null;
+    accountCategory: string | null;
+    accountName: string | null;
+  }): string[] => {
+    const text = `${entry.accountType || ''} ${entry.accountCategory || ''} ${entry.accountName || ''}`
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    const targets = new Set<string>();
+    const has = (token: string): boolean => text.includes(token);
+    if (has('revenue') || has('income') || has('sales')) targets.add('revenue');
+    if (has('cost of goods') || has('costofgoods') || has(' cogs') || has('cogs ')) targets.add('cogsTotal');
+    if (
+      has('expense') ||
+      has('payroll') ||
+      has('rent') ||
+      has('insurance') ||
+      has('depreciation') ||
+      has('interest')
+    ) {
+      targets.add('expense');
+    }
+    if (has('asset')) {
+      targets.add('totalAssets');
+      if (has('cash') || has('bank')) targets.add('cash');
+      if (has('receivable') || has('a/r') || has(' ar')) targets.add('ar');
+      if (has('inventory')) targets.add('inventory');
+      if (has('fixed')) targets.add('fixedAssets');
+      if (has('current asset') || has('other current')) targets.add('otherCA');
+      if (has('other asset') || has('intangible') || has('prepaid')) targets.add('otherAssets');
+    }
+    if (has('liability')) {
+      targets.add('totalLiab');
+      if (has('payable') || has('a/p') || has(' ap')) targets.add('ap');
+      if (has('line of credit') || has('loc')) targets.add('loc');
+      if (has('long term') || has('long-term') || has('non current')) targets.add('ltd');
+      if (has('current liab') || has('other current')) targets.add('otherCL');
+    }
+    if (has('equity') || has('capital') || has('retained earnings') || has('common stock') || has('preferred stock')) {
+      targets.add('totalEquity');
+      if (has('owner') && has('capital')) targets.add('ownersCapital');
+      if (has('owner') && has('draw')) targets.add('ownersDraw');
+      if (has('common stock')) targets.add('commonStock');
+      if (has('preferred stock')) targets.add('preferredStock');
+      if (has('retained earnings')) targets.add('retainedEarnings');
+      if (has('treasury')) targets.add('treasuryStock');
+    }
+    return Array.from(targets);
+  };
 
   const movementByKey = new Map<
     string,
-    { snapshotDate: Date; sourceAccountName: string; sourceAccountId: string | null; amount: number; targetField: string }
+    {
+      snapshotDate: Date;
+      sourceAccountName: string;
+      sourceAccountId: string | null;
+      sourceAccountType: string | null;
+      amount: number;
+      targetField: string;
+    }
   >();
 
   for (const record of records) {
@@ -1765,7 +1959,15 @@ async function saveBalanceMovementsFromGl(
     for (const token of matchingTokens) {
       const fields = tokenToTargetFields.get(token);
       if (!fields) continue;
-      for (const field of fields) matchedTargetFields.add(field);
+      fields.forEach((field) => matchedTargetFields.add(field));
+    }
+    if (matchedTargetFields.size === 0 && glAccountMasterById && accountId) {
+      const account = glAccountMasterById.get(normalizeGlAccountKey(accountId));
+      if (account) {
+        for (const field of deriveTargetFieldsFromAccountMaster(account)) {
+          matchedTargetFields.add(field);
+        }
+      }
     }
     if (matchedTargetFields.size === 0) continue;
 
@@ -1774,31 +1976,36 @@ async function saveBalanceMovementsFromGl(
     );
     if (!transDate) continue;
     const snapshotDate = startOfUtcDay(transDate);
-    const amount = pickNumber(record, ['DomAmount', 'ForAmount', 'amount', 'Amount', 'DerSumDomAmount']);
-    if (!Number.isFinite(amount) || amount === 0) continue;
+    const { signedAmount } = extractSignedGlAmount(record);
+    if (!Number.isFinite(signedAmount) || signedAmount === 0) continue;
 
     const sourceAccountName = String(accountName || accountId || 'Cash Account');
     const sourceAccountId = accountId ? String(accountId) : null;
-    for (const mappedTargetField of matchedTargetFields) {
+    const sourceAccountType = glAccountMasterById && accountId
+      ? glAccountMasterById.get(normalizeGlAccountKey(accountId))?.accountType || null
+      : null;
+    matchedTargetFields.forEach((mappedTargetField) => {
       const targetField = `balance_movement:${mappedTargetField}`;
       const normalizedTarget = String(mappedTargetField || '').trim().toLowerCase();
-      const normalizedAmount =
-        normalizedTarget === 'revenue' ||
-        normalizedTarget.startsWith('rev_') ||
+      const isExpenseLike =
         normalizedTarget === 'cogstotal' ||
         normalizedTarget.startsWith('cogs') ||
         normalizedTarget === 'expense' ||
         normalizedTarget === 'otherexpense' ||
-        normalizedTarget.includes('expense') ||
-        normalizedTarget.includes('income')
-          ? Math.abs(amount)
-          : amount;
+        normalizedTarget.includes('expense');
+      const isRevenueLike =
+        normalizedTarget === 'revenue' ||
+        normalizedTarget.startsWith('rev_') ||
+        (normalizedTarget.includes('income') && !isExpenseLike);
+      const normalizedAmount = isRevenueLike ? -signedAmount : signedAmount;
+      if (!Number.isFinite(normalizedAmount) || normalizedAmount === 0) return;
       const key = `${snapshotDate.toISOString()}|${targetField}|${sourceAccountName}`;
       if (!movementByKey.has(key)) {
         movementByKey.set(key, {
           snapshotDate,
           sourceAccountName,
           sourceAccountId,
+          sourceAccountType,
           amount: 0,
           targetField,
         });
@@ -1806,7 +2013,8 @@ async function saveBalanceMovementsFromGl(
       const acc = movementByKey.get(key)!;
       acc.amount += normalizedAmount;
       if (!acc.sourceAccountId && sourceAccountId) acc.sourceAccountId = sourceAccountId;
-    }
+      if (!acc.sourceAccountType && sourceAccountType) acc.sourceAccountType = sourceAccountType;
+    });
   }
 
   const movementRows = Array.from(movementByKey.values());
@@ -1836,7 +2044,7 @@ async function saveBalanceMovementsFromGl(
       frequency,
       sourceAccountName: row.sourceAccountName,
       sourceAccountId: row.sourceAccountId,
-      sourceAccountType: 'gl_balance_account',
+      sourceAccountType: row.sourceAccountType || 'gl_balance_account',
       targetField: row.targetField,
       amount: row.amount,
       sourcePlatform: 'INFOR_M3',
@@ -3932,6 +4140,7 @@ export async function syncInforM3OperationalData(
 
   let continuation: InforOperationalSyncResult['continuation'] = null;
   const orderCustomerLookup = new Map<string, { customerId: string | null; customerName: string; orderDate: Date | null }>();
+  const glAccountMasterById = new Map<string, GlAccountMasterEntry>();
   let attemptedSlCosLookupHydration = false;
   const hydrateOrderLookupFromSlCos = async (): Promise<{ loaded: number; message?: string }> => {
     if (attemptedSlCosLookupHydration) return { loaded: 0, message: 'lookup_hydration_already_attempted' };
@@ -4560,9 +4769,45 @@ export async function syncInforM3OperationalData(
               break;
             case 'gl':
               {
-                const glProgram = String(row.miProgram || '').trim().toUpperCase();
+                const glProgram = String(programId || row.miProgram || '').trim().toUpperCase();
+                if (GL_ACCOUNT_MASTER_PROGRAM_IDS.has(glProgram)) {
+                  for (const record of records) {
+                    const parsed = parseGlAccountMasterEntry(record);
+                    if (!parsed) continue;
+                    const key = normalizeGlAccountKey(parsed.accountId);
+                    if (!key) continue;
+                    const existing = glAccountMasterById.get(key);
+                    if (!existing) {
+                      glAccountMasterById.set(key, parsed);
+                      continue;
+                    }
+                    glAccountMasterById.set(key, {
+                      accountId: existing.accountId || parsed.accountId,
+                      accountName: existing.accountName || parsed.accountName,
+                      accountType: existing.accountType || parsed.accountType,
+                      accountCategory: existing.accountCategory || parsed.accountCategory,
+                    });
+                  }
+                }
+                const glContext = {
+                  miProgram: row.miProgram || row.module,
+                  transaction: req.transaction,
+                  cono: row.cono,
+                  divi: row.divi,
+                };
+                const glFactRowsCreated =
+                  glProgram === 'SLGLTRANS'
+                    ? await saveGLTransactionFacts(companyId, records, glContext, glAccountMasterById)
+                    : 0;
                 if (glProgram === 'SLLEDGERS' || glProgram === 'SLGLTRANS') {
-                moduleRecordsCreated = await saveBalanceMovementsFromGl(companyId, frequency, records);
+                moduleRecordsCreated =
+                  glFactRowsCreated +
+                  (await saveBalanceMovementsFromGl(
+                    companyId,
+                    frequency,
+                    records,
+                    glAccountMasterById
+                  ));
                 } else {
                   moduleRecordsCreated = records.length;
                 }
