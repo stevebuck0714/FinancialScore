@@ -2033,10 +2033,10 @@ async function saveAROpenInvoices(
     const record = records[idx];
     const typeToken = normalizeToken(record['Type']) || '';
     const reductionMovement = isReductionMovement(record);
-    const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
     const customerId =
       pickString(record, CUSTOMER_ID_KEYS) ||
       parseCustomerIdFromComposite(pickString(record, ['DerCustNoName', 'customerComposite']));
+    const customerName = pickCustomerDisplayName(record) || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
     const applyToInvoiceNo = normalizeInvoiceNo(pickString(record, AR_APPLY_TO_INVOICE_KEYS));
     const nativeInvoiceNo = normalizeInvoiceNo(pickString(record, ['InvNum', 'DerInvNum', ...AR_INVOICE_NO_KEYS]));
     const nativeUpper = nativeInvoiceNo.toUpperCase();
@@ -2274,7 +2274,8 @@ async function saveARPayments(
         ])
       );
       if (!paymentDate) return null;
-      const customerName = pickCustomerDisplayName(record) || `Unknown Customer ${idx + 1}`;
+      const customerId = pickString(record, CUSTOMER_ID_KEYS);
+      const customerName = pickCustomerDisplayName(record) || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
       const paidAmountHomeRaw = pickNumber(record, [
         'DerPaymentCheckAmount',
         'paidAmountHome',
@@ -2290,7 +2291,7 @@ async function saveARPayments(
       return {
         companyId,
         paymentDate,
-        customerId: pickString(record, CUSTOMER_ID_KEYS),
+        customerId,
         customerName,
         invoiceNo: pickString(record, ['DerApplyToInvNum', 'ApplyToInvNum', ...AR_INVOICE_NO_KEYS]),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),

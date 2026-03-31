@@ -1157,6 +1157,7 @@ export async function GET(request: NextRequest) {
             .toUpperCase()
             .replace(/[\s-]+/g, '');
         let paidInvoices: Array<{
+          customerId: string | null;
           customerName: string;
           currentMonth: number;
           lastMonth: number;
@@ -1164,6 +1165,36 @@ export async function GET(request: NextRequest) {
           cashCollectedToDate: number;
           lastPaymentDate: string | null;
         }> = [];
+        const normalizeCustomerName = (name: unknown, customerId?: unknown): string => {
+          const cid = String(customerId || '').trim();
+          const raw = String(name || '').trim();
+          if (/^unknown customer \d+$/i.test(raw)) return cid ? `Customer ${cid}` : 'Unknown Customer';
+          if (raw) return raw;
+          return cid ? `Customer ${cid}` : 'Unknown Customer';
+        };
+        const isPlaceholderCustomerName = (name: unknown): boolean => {
+          const normalized = String(name || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+          if (!normalized) return true;
+          if (normalized === 'unknown customer') return true;
+          if (/^unknown customer \d+$/.test(normalized)) return true;
+          if (/^customer \d+$/.test(normalized)) return true;
+          return false;
+        };
+        const chooseCustomerName = (existingName: unknown, candidateName: unknown, customerId?: unknown): string => {
+          const existing = normalizeCustomerName(existingName, customerId);
+          const candidate = normalizeCustomerName(candidateName, customerId);
+          if (!isPlaceholderCustomerName(candidate)) return candidate;
+          if (!isPlaceholderCustomerName(existing)) return existing;
+          return existing || candidate;
+        };
+        const buildCustomerGroupKey = (customerId: unknown, customerName: unknown): string => {
+          const cid = String(customerId || '').trim();
+          if (cid && cid !== '-') return `id:${cid}`;
+          return `name:${normalizeCustomerName(customerName, customerId).toLowerCase().replace(/\s+/g, ' ')}`;
+        };
         let latestOpenTotals = {
           totalAR: 0,
           current: 0,
@@ -1176,7 +1207,7 @@ export async function GET(request: NextRequest) {
         };
         let arAsOfReferenceDate = endDate;
         let usedArInvoiceDetail = false;
-        const preferOpenInvoiceSnapshotTrend = false;
+        const preferOpenInvoiceSnapshotTrend = true;
 
         const arInvoiceTrendRows = await prisma.$queryRaw<
           Array<{
@@ -1344,19 +1375,23 @@ export async function GET(request: NextRequest) {
               };
             })
             .filter((row: any) => Number.isFinite(row.amountDue) && row.amountDue > 0);
-          const invoiceRowsOpenDeduped = Array.from(
-            invoiceRowsOpen.reduce((acc: Map<string, any>, row: any) => {
+          const invoiceRowsOpenDeduped: any[] = Array.from(
+            invoiceRowsOpen
+              .reduce((acc: Map<string, any>, row: any) => {
               const invoiceKey =
                 String(row.invoiceId || '').trim() ||
                 `NOINV|${String(row.customerId || row.customerName || '').trim()}|${row.invoiceDate ? new Date(row.invoiceDate).toISOString().slice(0, 10) : 'na'}`;
               if (!acc.has(invoiceKey)) acc.set(invoiceKey, row);
               return acc;
-            }, new Map<string, any>())
+              }, new Map<string, any>())
+              .values()
           );
           const customerAging = invoiceRowsOpenDeduped.reduce((acc: Record<string, any>, row: any) => {
-            const name = row.customerName || 'Unknown Customer';
-            if (!acc[name]) {
-              acc[name] = {
+            const customerId = row.customerId ? String(row.customerId) : null;
+            const name = normalizeCustomerName(row.customerName, customerId);
+            const customerKey = buildCustomerGroupKey(customerId, name);
+            if (!acc[customerKey]) {
+              acc[customerKey] = {
                 customerId: row.customerId || '-',
                 customerName: name,
                 current: 0,
@@ -1367,7 +1402,8 @@ export async function GET(request: NextRequest) {
                 totalDue: 0,
               };
             }
-            if (!acc[name].customerId && row.customerId) acc[name].customerId = row.customerId;
+            if (!acc[customerKey].customerId && row.customerId) acc[customerKey].customerId = row.customerId;
+            acc[customerKey].customerName = chooseCustomerName(acc[customerKey].customerName, row.customerName, customerId);
             const buckets = deriveArBucketsFromRow(
               {
                 amountDueHome: Number(row.amountDue || 0),
@@ -1377,12 +1413,12 @@ export async function GET(request: NextRequest) {
               latestArInvoiceSnapshotDate
             );
             if (buckets.totalAR <= 0) return acc;
-            acc[name].current += buckets.current;
-            acc[name].days1to30 += buckets.days1to30;
-            acc[name].days31to60 += buckets.days31to60;
-            acc[name].days61to90 += buckets.days61to90;
-            acc[name].days90plus += buckets.days90plus;
-            acc[name].totalDue += buckets.totalAR;
+            acc[customerKey].current += buckets.current;
+            acc[customerKey].days1to30 += buckets.days1to30;
+            acc[customerKey].days31to60 += buckets.days31to60;
+            acc[customerKey].days61to90 += buckets.days61to90;
+            acc[customerKey].days90plus += buckets.days90plus;
+            acc[customerKey].totalDue += buckets.totalAR;
             return acc;
           }, {});
           unpaidByCustomer = Object.values(customerAging)
@@ -1400,7 +1436,7 @@ export async function GET(request: NextRequest) {
             })
             .slice(0, 250)
             .map((row: any) => ({
-              customerName: row.customerName || 'Unknown Customer',
+              customerName: normalizeCustomerName(row.customerName, row.customerId),
               customerNumber: row.customerId || '-',
               invoiceDate: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
               dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
@@ -1408,7 +1444,7 @@ export async function GET(request: NextRequest) {
             }));
           customerInvoices = invoiceRowsOpenDeduped.slice(0, 500).map((row: any) => ({
             customerId: row.customerId ? String(row.customerId) : null,
-            customerName: row.customerName || 'Unknown Customer',
+            customerName: normalizeCustomerName(row.customerName, row.customerId),
             invoiceNo: row.invoiceId || '-',
             date: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
             dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
@@ -1717,9 +1753,11 @@ export async function GET(request: NextRequest) {
           }
 
           const customerAging = openRowsEligible.reduce((acc: Record<string, any>, row: any) => {
-            const name = row.customerName || 'Unknown Customer';
-            if (!acc[name]) {
-              acc[name] = {
+            const customerId = row.customerId ? String(row.customerId) : null;
+            const name = normalizeCustomerName(row.customerName, customerId);
+            const customerKey = buildCustomerGroupKey(customerId, name);
+            if (!acc[customerKey]) {
+              acc[customerKey] = {
                 customerId: row.customerId || '-',
                 customerName: name,
                 current: 0,
@@ -1730,15 +1768,16 @@ export async function GET(request: NextRequest) {
                 totalDue: 0,
               };
             }
-            if (!acc[name].customerId && row.customerId) acc[name].customerId = row.customerId;
+            if (!acc[customerKey].customerId && row.customerId) acc[customerKey].customerId = row.customerId;
+            acc[customerKey].customerName = chooseCustomerName(acc[customerKey].customerName, row.customerName, customerId);
             const buckets = deriveArBucketsFromRow(row, latestOpenSnapshotDate || endDate);
             if (buckets.totalAR <= 0) return acc;
-            acc[name].current += buckets.current;
-            acc[name].days1to30 += buckets.days1to30;
-            acc[name].days31to60 += buckets.days31to60;
-            acc[name].days61to90 += buckets.days61to90;
-            acc[name].days90plus += buckets.days90plus;
-            acc[name].totalDue += buckets.totalAR;
+            acc[customerKey].current += buckets.current;
+            acc[customerKey].days1to30 += buckets.days1to30;
+            acc[customerKey].days31to60 += buckets.days31to60;
+            acc[customerKey].days61to90 += buckets.days61to90;
+            acc[customerKey].days90plus += buckets.days90plus;
+            acc[customerKey].totalDue += buckets.totalAR;
             return acc;
           }, {});
 
@@ -1759,7 +1798,7 @@ export async function GET(request: NextRequest) {
             })
             .slice(0, 250)
             .map((row: any) => ({
-              customerName: row.customerName || 'Unknown Customer',
+              customerName: normalizeCustomerName(row.customerName, row.customerId),
               customerNumber: row.customerId || '-',
               invoiceDate: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
               dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
@@ -1768,7 +1807,7 @@ export async function GET(request: NextRequest) {
 
             customerInvoices = openRowsEligible.slice(0, 500).map((row: any) => ({
             customerId: row.customerId ? String(row.customerId) : null,
-            customerName: row.customerName || 'Unknown Customer',
+            customerName: normalizeCustomerName(row.customerName, row.customerId),
             invoiceNo: row.invoiceNo || '-',
             date: row.invoiceDate ? new Date(row.invoiceDate).toISOString().split('T')[0] : null,
             dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
@@ -1815,9 +1854,12 @@ export async function GET(request: NextRequest) {
 
         if (paymentRows.length) {
           const grouped = paymentRows.reduce((acc: Record<string, any>, row: any) => {
-            const name = row.customerName || 'Unknown Customer';
-            if (!acc[name]) {
-              acc[name] = {
+            const customerId = row.customerId ? String(row.customerId) : null;
+            const name = normalizeCustomerName(row.customerName, customerId);
+            const customerKey = buildCustomerGroupKey(customerId, name);
+            if (!acc[customerKey]) {
+              acc[customerKey] = {
+                customerId,
                 customerName: name,
                 currentMonth: 0,
                 lastMonth: 0,
@@ -1828,12 +1870,16 @@ export async function GET(request: NextRequest) {
             }
             const dt = new Date(row.paymentDate);
             const amount = Number(row.paidAmountHome || 0);
-            if (dt >= monthStart && dt <= endDate) acc[name].currentMonth += amount;
-            if (dt >= lastMonthStart && dt < monthStart) acc[name].lastMonth += amount;
-            if (dt >= trailing12Start && dt <= endDate) acc[name].last12Months += amount;
-            if (dt <= endDate) acc[name].cashCollectedToDate += amount;
-            if (!acc[name].lastPaymentDate || dt.getTime() > new Date(acc[name].lastPaymentDate).getTime()) {
-              acc[name].lastPaymentDate = dt.toISOString().split('T')[0];
+            acc[customerKey].customerName = chooseCustomerName(acc[customerKey].customerName, row.customerName, customerId);
+            if (dt >= monthStart && dt <= endDate) acc[customerKey].currentMonth += amount;
+            if (dt >= lastMonthStart && dt < monthStart) acc[customerKey].lastMonth += amount;
+            if (dt >= trailing12Start && dt <= endDate) acc[customerKey].last12Months += amount;
+            if (dt <= endDate) acc[customerKey].cashCollectedToDate += amount;
+            if (
+              !acc[customerKey].lastPaymentDate ||
+              dt.getTime() > new Date(acc[customerKey].lastPaymentDate).getTime()
+            ) {
+              acc[customerKey].lastPaymentDate = dt.toISOString().split('T')[0];
             }
             return acc;
           }, {});
@@ -1882,10 +1928,12 @@ export async function GET(request: NextRequest) {
             });
           }
           for (const row of contractRows as any[]) {
-            const name = row.customerName || 'Unknown Customer';
-            if (!contractStatusByCustomer.has(name)) {
-              contractStatusByCustomer.set(name, {
-                customerId: row.customerId || '-',
+            const customerId = row.customerId ? String(row.customerId) : '-';
+            const name = normalizeCustomerName(row.customerName, customerId);
+            const customerKey = buildCustomerGroupKey(customerId, name);
+            if (!contractStatusByCustomer.has(customerKey)) {
+              contractStatusByCustomer.set(customerKey, {
+                customerId,
                 customerName: name,
                 contractValueTotal: 0,
                 remainingToInvoice: 0,
@@ -1895,7 +1943,7 @@ export async function GET(request: NextRequest) {
                 lastPaymentDate: null,
               });
             }
-            const acc = contractStatusByCustomer.get(name)!;
+            const acc = contractStatusByCustomer.get(customerKey)!;
             acc.contractValueTotal += Number(row.contractValue || 0);
             acc.remainingToInvoice += Number(row.remainingValue || 0);
             acc.accruedRevenueUnbilled += Number(row.accruedRevenueUnbilled || 0);
@@ -1905,11 +1953,17 @@ export async function GET(request: NextRequest) {
               acc.lastPaymentDate = new Date(row.lastPaymentDate).toISOString().split('T')[0];
             }
             if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
+            acc.customerName = chooseCustomerName(acc.customerName, row.customerName, customerId);
           }
         }
 
         const paidByCustomerName = new Map(
           paidInvoices.map((row) => [row.customerName, row])
+        );
+        const paidByCustomerId = new Map(
+          paidInvoices
+            .filter((row) => String(row.customerId || '').trim().length > 0 && String(row.customerId || '').trim() !== '-')
+            .map((row) => [String(row.customerId).trim(), row])
         );
         const normalizeText = (value: unknown): string =>
           String(value || '')
@@ -1956,7 +2010,7 @@ export async function GET(request: NextRequest) {
               take: 100000,
             });
             for (const row of orderRows as any[]) {
-              const name = row.customerName || 'Unknown Customer';
+              const name = normalizeCustomerName(row.customerName, row.customerId);
               if (!orderContractByCustomerName.has(name)) {
                 orderContractByCustomerName.set(name, {
                   customerId: row.customerId || '-',
@@ -1973,6 +2027,7 @@ export async function GET(request: NextRequest) {
               acc.remainingToInvoice += Number(row.remainingAmount || 0);
               acc.accruedRevenueUnbilled += Number(row.unbilledAccrual || 0);
               if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
+              acc.customerName = chooseCustomerName(acc.customerName, row.customerName, row.customerId);
             }
           }
         }
@@ -1984,14 +2039,70 @@ export async function GET(request: NextRequest) {
         const orderContractByNormalizedName = new Map(
           Array.from(orderContractByCustomerName.values()).map((row) => [normalizeText(row.customerName), row])
         );
+        const canonicalCustomerNameById = new Map<string, string>();
+        const rememberCanonicalCustomerName = (customerId: unknown, customerName: unknown): void => {
+          const cid = String(customerId || '').trim();
+          if (!cid || cid === '-') return;
+          const candidate = normalizeCustomerName(customerName, cid);
+          if (isPlaceholderCustomerName(candidate)) return;
+          const existing = canonicalCustomerNameById.get(cid);
+          canonicalCustomerNameById.set(cid, chooseCustomerName(existing, candidate, cid));
+        };
+        for (const row of Array.from(orderContractByCustomerName.values())) {
+          rememberCanonicalCustomerName(row.customerId, row.customerName);
+        }
+        for (const row of Array.from(contractStatusByCustomer.values())) {
+          rememberCanonicalCustomerName(row.customerId, row.customerName);
+        }
+        for (const row of paidInvoices) {
+          rememberCanonicalCustomerName(row.customerId, row.customerName);
+        }
+        const salesInvoiceHeaderDelegate = (prisma as any).salesInvoiceHeaderSnapshot;
+        if (salesInvoiceHeaderDelegate?.findFirst && salesInvoiceHeaderDelegate?.findMany) {
+          const latestSalesHeaderSnapshot = await salesInvoiceHeaderDelegate.findFirst({
+            where: {
+              companyId,
+              frequency: arFrequencyForQuery,
+              snapshotDate: { lte: endDate },
+            },
+            orderBy: [{ snapshotDate: 'desc' }],
+            select: { snapshotDate: true },
+          });
+          if (latestSalesHeaderSnapshot?.snapshotDate) {
+            const salesHeaderRows = await salesInvoiceHeaderDelegate.findMany({
+              where: {
+                companyId,
+                frequency: arFrequencyForQuery,
+                snapshotDate: latestSalesHeaderSnapshot.snapshotDate,
+                customerId: { not: null },
+                customerName: { not: null },
+              },
+              select: {
+                customerId: true,
+                customerName: true,
+              },
+              take: 100000,
+            });
+            for (const row of salesHeaderRows as any[]) {
+              rememberCanonicalCustomerName(row.customerId, row.customerName);
+            }
+          }
+        }
+        const resolvedCustomerName = (customerId: unknown, customerName: unknown): string => {
+          const cid = String(customerId || '').trim();
+          if (cid && canonicalCustomerNameById.has(cid)) return canonicalCustomerNameById.get(cid)!;
+          return normalizeCustomerName(customerName, cid);
+        };
 
         unpaidByCustomer = unpaidByCustomer.map((row) => {
-          const contract = contractStatusByCustomer.get(row.customerName);
+          const contract =
+            contractStatusByCustomer.get(buildCustomerGroupKey(row.customerId, row.customerName)) ||
+            contractStatusByCustomer.get(`name:${normalizeText(row.customerName)}`);
           const orderContract =
             orderContractByCustomerId.get(normalizeText(row.customerId)) ||
             orderContractByCustomerName.get(row.customerName) ||
             orderContractByNormalizedName.get(normalizeText(row.customerName));
-          const paid = paidByCustomerName.get(row.customerName);
+          const paid = paidByCustomerId.get(String(row.customerId || '').trim()) || paidByCustomerName.get(row.customerName);
           const cashCollected = Number(contract?.cashCollectedToDate ?? paid?.cashCollectedToDate ?? 0);
           const invoicedRevenue = Number(orderContract?.invoicedRevenue ?? contract?.invoicedRevenue ?? row.totalDue + cashCollected);
           const contractValueTotal = Number(
@@ -2006,6 +2117,7 @@ export async function GET(request: NextRequest) {
           );
           return {
             ...row,
+            customerName: resolvedCustomerName(row.customerId, row.customerName),
             contractValueTotal,
             remainingToInvoice,
             accruedRevenueUnbilled: Number(orderContract?.accruedRevenueUnbilled ?? contract?.accruedRevenueUnbilled ?? 0),
@@ -2014,6 +2126,18 @@ export async function GET(request: NextRequest) {
             lastPaymentDate: contract?.lastPaymentDate || paid?.lastPaymentDate || null,
           };
         });
+        unpaidInvoices = unpaidInvoices.map((row) => ({
+          ...row,
+          customerName: resolvedCustomerName(row.customerNumber, row.customerName),
+        }));
+        customerInvoices = customerInvoices.map((row) => ({
+          ...row,
+          customerName: resolvedCustomerName(row.customerId, row.customerName),
+        }));
+        paidInvoices = paidInvoices.map((row) => ({
+          ...row,
+          customerName: resolvedCustomerName(row.customerId, row.customerName),
+        }));
         if (unpaidByCustomer.length === 0 && contractStatusByCustomer.size > 0) {
           unpaidByCustomer = Array.from(contractStatusByCustomer.values())
             .map((row) => ({
