@@ -263,7 +263,7 @@ function deriveArBucketsFromRow(
   }
 
   // Age by due date first, then invoice date.
-  // Current: 0-30, 1-30: 31-60, 31-60: 61-90, 61-90: 91-120, 90+: 121+.
+  // AR view uses 1-30 as all <=30 (Current intentionally unused/zeroed).
   const dueDateRaw = row.dueDate ? new Date(row.dueDate) : null;
   const invoiceDateRaw = row.invoiceDate ? new Date(row.invoiceDate) : null;
   const agingAnchor =
@@ -275,8 +275,8 @@ function deriveArBucketsFromRow(
   if (!agingAnchor) {
     return {
       totalAR: openAmount,
-      current: openAmount,
-      days1to30: 0,
+      current: 0,
+      days1to30: openAmount,
       days31to60: 0,
       days61to90: 0,
       days90plus: 0,
@@ -285,15 +285,12 @@ function deriveArBucketsFromRow(
   const dayMs = 24 * 60 * 60 * 1000;
   const invoiceAgeDays = Math.floor((startOfUtcDay(asOfDate).getTime() - startOfUtcDay(agingAnchor).getTime()) / dayMs);
   if (invoiceAgeDays <= 30) {
-    return { totalAR: openAmount, current: openAmount, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
-  }
-  if (invoiceAgeDays <= 60) {
     return { totalAR: openAmount, current: 0, days1to30: openAmount, days31to60: 0, days61to90: 0, days90plus: 0 };
   }
-  if (invoiceAgeDays <= 90) {
+  if (invoiceAgeDays <= 60) {
     return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: openAmount, days61to90: 0, days90plus: 0 };
   }
-  if (invoiceAgeDays <= 120) {
+  if (invoiceAgeDays <= 90) {
     return { totalAR: openAmount, current: 0, days1to30: 0, days31to60: 0, days61to90: openAmount, days90plus: 0 };
   }
   return {
@@ -1315,11 +1312,11 @@ export async function GET(request: NextRequest) {
               day AS "snapshotDate",
               MAX(snapshot_ts) AS "snapshotTs",
               SUM(amount_due)::double precision AS "totalAR",
-              SUM(CASE WHEN age_days IS NULL OR age_days <= 30 THEN amount_due ELSE 0 END)::double precision AS "current",
-              SUM(CASE WHEN age_days > 30 AND age_days <= 60 THEN amount_due ELSE 0 END)::double precision AS "days1to30",
-              SUM(CASE WHEN age_days > 60 AND age_days <= 90 THEN amount_due ELSE 0 END)::double precision AS "days31to60",
-              SUM(CASE WHEN age_days > 90 AND age_days <= 120 THEN amount_due ELSE 0 END)::double precision AS "days61to90",
-              SUM(CASE WHEN age_days > 120 THEN amount_due ELSE 0 END)::double precision AS "days90plus"
+              0::double precision AS "current",
+              SUM(CASE WHEN age_days IS NULL OR age_days <= 30 THEN amount_due ELSE 0 END)::double precision AS "days1to30",
+              SUM(CASE WHEN age_days > 30 AND age_days <= 60 THEN amount_due ELSE 0 END)::double precision AS "days31to60",
+              SUM(CASE WHEN age_days > 60 AND age_days <= 90 THEN amount_due ELSE 0 END)::double precision AS "days61to90",
+              SUM(CASE WHEN age_days > 90 THEN amount_due ELSE 0 END)::double precision AS "days90plus"
             FROM base
             GROUP BY day
           )
@@ -1681,28 +1678,23 @@ export async function GET(request: NextRequest) {
                   WHEN invoice_age_days <= 30 THEN amount_due
                   ELSE 0
                 END
-              )::double precision AS "current",
+              )::double precision AS "days1to30",
+              0::double precision AS "current",
               SUM(
                 CASE
                   WHEN invoice_age_days > 30 AND invoice_age_days <= 60 THEN amount_due
                   ELSE 0
                 END
-              )::double precision AS "days1to30",
+              )::double precision AS "days31to60",
               SUM(
                 CASE
                   WHEN invoice_age_days > 60 AND invoice_age_days <= 90 THEN amount_due
                   ELSE 0
                 END
-              )::double precision AS "days31to60",
-              SUM(
-                CASE
-                  WHEN invoice_age_days > 90 AND invoice_age_days <= 120 THEN amount_due
-                  ELSE 0
-                END
               )::double precision AS "days61to90",
               SUM(
                 CASE
-                  WHEN invoice_age_days > 120 THEN amount_due
+                  WHEN invoice_age_days > 90 THEN amount_due
                   ELSE 0
                 END
               )::double precision AS "days90plus"
@@ -2266,16 +2258,16 @@ export async function GET(request: NextRequest) {
                 dsoWeightedDaysDenominator: 0,
               };
         const totalARForPct = Number(summaryTotals.totalAR || 0);
-        // Bucket naming is historical:
-        // current=0-30, days1to30=31-60, days31to60=61-90, days61to90=91-120, days90plus=121+
+        // Standard bucket naming:
+        // current<=0, days1to30=1-30, days31to60=31-60, days61to90=61-90, days90plus=>90
         const over30Amount = Number(
-          summaryTotals.days1to30 + summaryTotals.days31to60 + summaryTotals.days61to90 + summaryTotals.days90plus
+          summaryTotals.days31to60 + summaryTotals.days61to90 + summaryTotals.days90plus
         );
         const currentPct = totalARForPct > 0 ? (Number(summaryTotals.current) / totalARForPct) * 100 : 0;
         const over30Pct = totalARForPct > 0 ? (over30Amount / totalARForPct) * 100 : 0;
         const over90Pct =
           totalARForPct > 0
-            ? (Number(summaryTotals.days61to90 + summaryTotals.days90plus) / totalARForPct) * 100
+            ? (Number(summaryTotals.days90plus) / totalARForPct) * 100
             : 0;
         const dso =
           summaryTotals.dsoWeightedDaysDenominator > 0

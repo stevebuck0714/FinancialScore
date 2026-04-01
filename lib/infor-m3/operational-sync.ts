@@ -4949,13 +4949,11 @@ export async function syncInforM3OperationalData(
                     await upsertArContractSupportTables(companyId, snapshotDate, frequency);
                   }
                 } else if (arApFlow === 'open') {
-                  // Prefer SLCustDrfts for open-item snapshots when configured; keep
-                  // SLArtrans for payment/reconciliation facts to avoid double counting open AR.
-                  // For historical day rebuilds (locked EOD path), force SLArtrans as the
-                  // single open-invoice source and skip SLCustDrfts open writes.
+                  // Prefer SLCustDrfts for open-item snapshots whenever configured.
+                  // Keep SLArtrans for payment/reconciliation facts to avoid double counting open AR.
                   const preferCustDrftsForOpen =
-                    hasSlCustDrftsProgram && isSlArtransProgram && !isHistoricalDailySlice;
-                  const skipCustDrftsOpenForHistoricalSlice = isHistoricalDailySlice && isSlCustDrftsProgram;
+                    hasSlCustDrftsProgram && isSlArtransProgram;
+                  const skipCustDrftsOpenForHistoricalSlice = false;
                   const skipOpenForProgram = preferCustDrftsForOpen || skipCustDrftsOpenForHistoricalSlice;
                   const openRowsCreated = skipOpenForProgram
                     ? 0

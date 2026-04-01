@@ -2452,9 +2452,9 @@ export default function OperationsTab({
           invoicedRevenue,
           arOutstanding,
           arCurrent: Number(row.current || 0),
-          ar31to60: Number(row.days1to30 || 0),
-          ar61to90: Number(row.days31to60 || 0),
-          ar90plus: Number(row.days61to90 || 0) + Number(row.days90plus || 0),
+          ar31to60: Number(row.days31to60 || 0),
+          ar61to90: Number(row.days61to90 || 0),
+          ar90plus: Number(row.days90plus || 0),
           cashCollectedToDate,
           lastPaymentDate: row.lastPaymentDate || paid?.lastPaymentDate || '-',
           totalBilledRevenue,
@@ -2573,10 +2573,10 @@ export default function OperationsTab({
       return {
         periodKey: toIsoDay(period.anchor),
         month: formatArTrendDate(period.anchor),
-        'Open AR 0-30': record ? Number(record.current || 0) : null,
-        'Open AR 31-60': record ? Number(record.days1to30 || 0) : null,
-        'Open AR 61-90': record ? Number(record.days31to60 || 0) : null,
-        'Open AR 90+': record ? Number(record.days61to90 || 0) + Number(record.days90plus || 0) : null,
+        'Open AR 1-30': record ? Number(record.days1to30 || 0) : null,
+        'Open AR 31-60': record ? Number(record.days31to60 || 0) : null,
+        'Open AR 61-90': record ? Number(record.days61to90 || 0) : null,
+        'Open AR 90+': record ? Number(record.days90plus || 0) : null,
         total: record ? Number(record.totalAR || 0) : 0,
         hasData: Boolean(record),
       };
@@ -2600,7 +2600,7 @@ export default function OperationsTab({
       .map((row) => {
         const overdue =
           Number(row.days1to30 || 0) + Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
-        const over90 = Number(row.days61to90 || 0) + Number(row.days90plus || 0);
+        const over90 = Number(row.days90plus || 0);
         const riskScore = overdue + over90 * 0.5;
         return {
           customerName: row.customerName,
@@ -2681,7 +2681,7 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="Open AR 0-30" stackId="a" fill={AR_TREND_COLORS[0]} />
+              <Bar dataKey="Open AR 1-30" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="Open AR 61-90" stackId="a" fill={AR_TREND_COLORS[3]} />
               <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[1]} />
