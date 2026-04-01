@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ingestFinancialPayload } from '@/lib/financial-ingestion';
 import { seedInforAccountMappings } from '@/lib/infor-m3/account-mapping-seed';
+import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 type FinancialImportMode = 'through' | 'only';
@@ -36,22 +37,17 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const expectedSecret = process.env.INFOR_M3_FINANCIAL_PUSH_SECRET || process.env.INFOR_M3_PUSH_SECRET || '';
-    if (!expectedSecret) {
-      return NextResponse.json(
-        { ok: false, error: 'INFOR_M3_FINANCIAL_PUSH_SECRET (or INFOR_M3_PUSH_SECRET) is not configured.' },
-        { status: 500 },
-      );
-    }
-
-    const token = getBearerToken(request);
-    if (!token || token !== expectedSecret) {
-      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-    }
-
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const companyId = typeof body.companyId === 'string' ? body.companyId.trim() : '';
-    if (!companyId) {
+    const expectedSecret = process.env.INFOR_M3_FINANCIAL_PUSH_SECRET || process.env.INFOR_M3_PUSH_SECRET || '';
+    const token = getBearerToken(request);
+    const hasValidSecret = Boolean(expectedSecret) && token === expectedSecret;
+
+    let companyId = typeof body.companyId === 'string' ? body.companyId.trim() : '';
+    if (!hasValidSecret) {
+      // UI-originated calls are authorized via Site Admin session.
+      const resolved = await requireSiteAdminAuthorizedInforCompany(request, body);
+      companyId = resolved.companyId;
+    } else if (!companyId) {
       return NextResponse.json({ ok: false, error: 'companyId is required' }, { status: 400 });
     }
 

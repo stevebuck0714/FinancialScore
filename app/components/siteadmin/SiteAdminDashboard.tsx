@@ -2364,6 +2364,41 @@ export default function SiteAdminDashboard(props: any) {
     }
   };
 
+  const runInforM3FinancialPayloadPush = async (companyId: string, companyName: string) => {
+    const financialImportSettings = getCompanyFinancialImportSettings(companyId);
+    if (!/^\d{4}-\d{2}$/.test(financialImportSettings.targetMonth)) {
+      alert('Select a valid target month first (YYYY-MM).');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/infor-m3/financial-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId,
+          frequency: getCompanyOperationalSettings(companyId).frequency,
+          targetMonth: financialImportSettings.targetMonth,
+          mode: 'through',
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.details || data?.error || 'Failed to push Infor financial payload');
+      }
+
+      const recordsImported = typeof data?.recordsImported === 'number' ? data.recordsImported : null;
+      alert(
+        recordsImported !== null
+          ? `Infor financial payload push complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth}.`
+          : `Infor financial payload push complete for ${companyName}.`
+      );
+      await checkInforM3Status?.(companyId);
+    } catch (error: any) {
+      alert(`Infor financial payload push failed: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   const showAccountingWorkflowGuide = (companyName: string) => {
     const label = String(companyName || 'this company').trim() || 'this company';
     alert(
@@ -3112,17 +3147,21 @@ export default function SiteAdminDashboard(props: any) {
                                                   <div style={{ fontSize: '12px', color: '#64748b' }}>
                                                     {getAccountingSystemLabel(company.accountingSystem)}
                                                   </div>
-                                                  <div style={{ marginTop: '8px', padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px' }}>
+                                                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                                     <button
-                                                      type="button"
-                                                      onClick={() => showAccountingWorkflowGuide(company.name || 'this company')}
-                                                      style={{ padding: 0, background: 'none', border: 'none', color: '#1d4ed8', fontSize: '12px', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+                                                      onClick={() => connectInforM3?.(company.id)}
+                                                      disabled={inforBusy}
+                                                      style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                                     >
-                                                      Data Load Instructions
+                                                      {inforBusy && inforBusyAction === 'connect' ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
                                                     </button>
-                                                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#1e3a8a' }}>
-                                                      Includes sync, data mapping, financial import, and month-end close steps.
-                                                    </div>
+                                                    <button
+                                                      onClick={() => disconnectInforM3?.(company.id)}
+                                                      disabled={inforBusy || !inforConnected}
+                                                      style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Disconnect
+                                                    </button>
                                                   </div>
                                                 </div>
                                                 <input
@@ -3134,17 +3173,17 @@ export default function SiteAdminDashboard(props: any) {
                                                     handleInforCredentialsFileImport(event, company.id, company.name)
                                                   }
                                                 />
-                                                <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'minmax(0, 0.85fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 0.85fr)', gap: '8px' }}>
+                                                <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'minmax(0, 1.08fr) minmax(0, 1fr) minmax(0, 1.12fr) minmax(0, 0.7fr)', gap: '8px' }}>
                                                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
                                                     <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>CONNECTION</div>
-                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center', justifyContent: 'start' }}>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center', justifyContent: 'start' }}>
                                                       <button
                                                         onClick={() => {
                                                           const fileInput = document.getElementById(`consultant-infor-json-file-${company.id}`) as HTMLInputElement | null;
                                                           fileInput?.click();
                                                         }}
                                                         disabled={inforBusy}
-                                                        style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                        style={{ width: '100%', minWidth: 0, padding: '6px 8px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                                       >
                                                         Import JSON
                                                       </button>
@@ -3166,16 +3205,31 @@ export default function SiteAdminDashboard(props: any) {
                                                           await saveCompanyPrograms(company.id);
                                                         }}
                                                         disabled={inforBusy}
-                                                        style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                        style={{ width: '100%', minWidth: 0, padding: '6px 8px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                                       >
                                                         Save
                                                       </button>
+                                                      <input
+                                                        type="month"
+                                                        value={getCompanyFinancialImportSettings(company.id).targetMonth}
+                                                        onChange={(e) =>
+                                                          setCompanyFinancialImportSettings(company.id, { targetMonth: e.target.value })
+                                                        }
+                                                        style={{ width: '100%', minWidth: 0, border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                      />
                                                       <button
-                                                        onClick={() => disconnectInforM3?.(company.id)}
+                                                        onClick={() => runInforM3FinancialPayloadPush(company.id, company.name)}
                                                         disabled={inforBusy || !inforConnected}
-                                                        style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                        style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                                       >
-                                                        Disconnect
+                                                        Push Financial Payload
+                                                      </button>
+                                                      <button
+                                                        onClick={() => runInforM3FinancialImport(company.id, company.name)}
+                                                        disabled={inforBusy || !inforConnected}
+                                                        style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                      >
+                                                        Run Financial Import
                                                       </button>
                                                     </div>
                                                   </div>
@@ -3210,32 +3264,6 @@ export default function SiteAdminDashboard(props: any) {
                                                       >
                                                         {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
                                                       </button>
-                                                      <button
-                                                        onClick={() => connectInforM3?.(company.id)}
-                                                        disabled={inforBusy}
-                                                        style={{ justifySelf: 'start', padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                                      >
-                                                        {inforBusy && inforBusyAction === 'connect' ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
-                                                      </button>
-                                                      <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-start' }}>
-                                                        <button
-                                                          onClick={() => runInforM3FinancialImport(company.id, company.name)}
-                                                          disabled={inforBusy || !inforConnected}
-                                                          style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                        >
-                                                          Run Financial Import
-                                                        </button>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
-                                                          <input
-                                                            type="month"
-                                                            value={getCompanyFinancialImportSettings(company.id).targetMonth}
-                                                            onChange={(e) =>
-                                                              setCompanyFinancialImportSettings(company.id, { targetMonth: e.target.value })
-                                                            }
-                                                            style={{ width: '132px', maxWidth: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                          />
-                                                        </div>
-                                                      </div>
                                                     </div>
                                                   </div>
                                                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: '#f8fafc', gridColumn: '4', gridRow: '1' }}>
@@ -5527,17 +5555,21 @@ export default function SiteAdminDashboard(props: any) {
                                         <div style={{ fontSize: '12px', color: '#64748b' }}>
                                           {getAccountingSystemLabel(businessCompany.accountingSystem)}
                                         </div>
-                                        <div style={{ marginTop: '8px', padding: '8px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px' }}>
+                                        <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                           <button
-                                            type="button"
-                                            onClick={() => showAccountingWorkflowGuide(businessCompany.name || 'this company')}
-                                            style={{ padding: 0, background: 'none', border: 'none', color: '#1d4ed8', fontSize: '12px', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+                                            onClick={() => connectInforM3?.(businessCompany.id)}
+                                            disabled={inforBusy}
+                                            style={{ padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                           >
-                                            Data Load Instructions
+                                            {inforBusy && inforBusyAction === 'connect' ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
                                           </button>
-                                          <div style={{ marginTop: '4px', fontSize: '11px', color: '#1e3a8a' }}>
-                                            Includes sync, data mapping, financial import, and month-end close steps.
-                                          </div>
+                                          <button
+                                            onClick={() => disconnectInforM3?.(businessCompany.id)}
+                                            disabled={inforBusy || !inforConnected}
+                                            style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                          >
+                                            Disconnect
+                                          </button>
                                         </div>
                                       </div>
                                       <div style={{ width: '100%' }}>
@@ -5550,17 +5582,17 @@ export default function SiteAdminDashboard(props: any) {
                                             handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
                                           }
                                         />
-                                        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'minmax(0, 0.85fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 0.85fr)', gap: '8px' }}>
+                                        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'minmax(0, 1.08fr) minmax(0, 1fr) minmax(0, 1.12fr) minmax(0, 0.7fr)', gap: '8px' }}>
                                           <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white' }}>
                                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '8px', whiteSpace: 'nowrap' }}>CONNECTION</div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center', justifyContent: 'start' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center', justifyContent: 'start' }}>
                                               <button
                                                 onClick={() => {
                                                   const fileInput = document.getElementById(`business-infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
                                                   fileInput?.click();
                                                 }}
                                                 disabled={inforBusy}
-                                                style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                style={{ width: '100%', minWidth: 0, padding: '6px 8px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
                                                 Import JSON
                                               </button>
@@ -5581,16 +5613,31 @@ export default function SiteAdminDashboard(props: any) {
                                                   await saveCompanyPrograms(businessCompany.id);
                                                 }}
                                                 disabled={inforBusy}
-                                                style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                style={{ width: '100%', minWidth: 0, padding: '6px 8px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
                                                 Save
                                               </button>
+                                              <input
+                                                type="month"
+                                                value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
+                                                onChange={(e) =>
+                                                  setCompanyFinancialImportSettings(businessCompany.id, { targetMonth: e.target.value })
+                                                }
+                                                style={{ width: '100%', minWidth: 0, border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                              />
                                               <button
-                                                onClick={() => disconnectInforM3?.(businessCompany.id)}
+                                                onClick={() => runInforM3FinancialPayloadPush(businessCompany.id, businessCompany.name)}
                                                 disabled={inforBusy || !inforConnected}
-                                                style={{ padding: '8px 12px', background: 'white', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
                                               >
-                                                Disconnect
+                                                Push Financial Payload
+                                              </button>
+                                              <button
+                                                onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Run Financial Import
                                               </button>
                                             </div>
                                           </div>
@@ -5624,32 +5671,6 @@ export default function SiteAdminDashboard(props: any) {
                                               >
                                                 {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
                                               </button>
-                                              <button
-                                                onClick={() => connectInforM3?.(businessCompany.id)}
-                                                disabled={inforBusy}
-                                                style={{ justifySelf: 'start', padding: '8px 12px', background: '#1d4ed8', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
-                                              >
-                                                {inforBusy && inforBusyAction === 'connect' ? 'Working...' : (inforConnected ? 'Connected' : 'Reconnect')}
-                                              </button>
-                                              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-start' }}>
-                                                <button
-                                                  onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
-                                                  disabled={inforBusy || !inforConnected}
-                                                  style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                                >
-                                                  Run Financial Import
-                                                </button>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
-                                                  <input
-                                                    type="month"
-                                                    value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
-                                                    onChange={(e) =>
-                                                      setCompanyFinancialImportSettings(businessCompany.id, { targetMonth: e.target.value })
-                                                    }
-                                                    style={{ width: '132px', maxWidth: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                  />
-                                                </div>
-                                              </div>
                                             </div>
                                           </div>
                                           <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px', background: 'white', gridColumn: '4', gridRow: '1' }}>
@@ -5795,17 +5816,17 @@ export default function SiteAdminDashboard(props: any) {
                                             handleInforCredentialsFileImport(event, businessCompany.id, businessCompany.name)
                                           }
                                         />
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 248px))', justifyContent: 'end', gap: '8px' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(232px, 264px))', justifyContent: 'end', gap: '8px' }}>
                                           <div style={{ width: '248px', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px' }}>
                                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '6px', whiteSpace: 'nowrap' }}>CONNECTION</div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: '6px', alignItems: 'center' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', alignItems: 'center' }}>
                                               <button
                                                 onClick={() => {
                                                   const fileInput = document.getElementById(`infor-json-file-${businessCompany.id}`) as HTMLInputElement | null;
                                                   fileInput?.click();
                                                 }}
                                                 disabled={inforBusy}
-                                                style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                style={{ width: '100%', minWidth: 0, padding: '6px 8px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
                                                 Import JSON
                                               </button>
@@ -5826,7 +5847,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   await saveCompanyPrograms(businessCompany.id);
                                                 }}
                                                 disabled={inforBusy}
-                                                style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
+                                                style={{ width: '100%', minWidth: 0, padding: '6px 8px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: inforBusy ? 'not-allowed' : 'pointer' }}
                                               >
                                                 Save
                                               </button>
@@ -5876,13 +5897,6 @@ export default function SiteAdminDashboard(props: any) {
                                               >
                                                 {inforBusy && inforBusyAction === 'operational_sync_reset' ? 'Resetting...' : 'Reset Sync State'}
                                               </button>
-                                              <button
-                                                onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
-                                                disabled={inforBusy || !inforConnected}
-                                                style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
-                                              >
-                                                Run Financial Import
-                                              </button>
                                               <input
                                                 type="month"
                                                 value={getCompanyFinancialImportSettings(businessCompany.id).targetMonth}
@@ -5891,6 +5905,20 @@ export default function SiteAdminDashboard(props: any) {
                                                 }
                                                 style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                               />
+                                              <button
+                                                onClick={() => runInforM3FinancialPayloadPush(businessCompany.id, businessCompany.name)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ padding: '8px 12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Push Financial Payload
+                                              </button>
+                                              <button
+                                                onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
+                                                disabled={inforBusy || !inforConnected}
+                                                style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                              >
+                                                Run Financial Import
+                                              </button>
                                             </div>
                                           </div>
                                         </div>
@@ -6465,14 +6493,14 @@ export default function SiteAdminDashboard(props: any) {
                                                 const fileInput = document.getElementById(`qbdesktop-json-file-${businessCompany.id}`) as HTMLInputElement | null;
                                                 fileInput?.click();
                                               }}
-                                              style={{ padding: '8px 12px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                            style={{ padding: '6px 8px', background: 'white', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                                             >
                                               Import JSON
                                             </button>
                                           </div>
                                           <button
                                             onClick={() => saveQbDesktopSettings(businessCompany.id)}
-                                            style={{ padding: '8px 12px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                            style={{ padding: '6px 8px', background: '#334155', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                                           >
                                             Save
                                           </button>
