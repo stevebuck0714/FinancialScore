@@ -359,8 +359,6 @@ export default function OperationsTab({
   const [selectedInvoiceCustomer, setSelectedInvoiceCustomer] = useState('All');
   const [apSummaryPage, setApSummaryPage] = useState(1);
   const [unpaidBillsPage, setUnpaidBillsPage] = useState(1);
-  const [vendorBillsPage, setVendorBillsPage] = useState(1);
-  const [selectedVendorBill, setSelectedVendorBill] = useState('All');
   const [demandSortKey, setDemandSortKey] = useState<'customer' | 'bookingsMtd' | 'bookingsQtd' | 'bookingsYtd' | 'backlogTotal' | 'backlog60' | 'shareBacklog' | 'trend'>('backlogTotal');
   const [demandSortDir, setDemandSortDir] = useState<'asc' | 'desc'>('desc');
   const [customerDateRangeSaveStatus, setCustomerDateRangeSaveStatus] = useState<string | null>(null);
@@ -3334,7 +3332,9 @@ export default function OperationsTab({
       date: row.date,
       dueDate: row.dueDate,
       amountDue: row.amountDue || row.balance || 0,
-    }));
+    }))
+      .filter((row: any) => Number(row.amountDue || 0) > 0)
+      .sort((a: any, b: any) => Number(b.amountDue || 0) - Number(a.amountDue || 0));
     const paidBills = (summary?.paidBills || [])
       .map((row: any) => ({
         vendorName: row.vendorName || row.vendor,
@@ -3345,37 +3345,6 @@ export default function OperationsTab({
       .sort((a: any, b: any) => b.last12Months - a.last12Months)
       .slice(0, 10);
     const paidBillsTotal = paidBills.reduce((sum: number, item: any) => sum + item.last12Months, 0);
-    const vendorBillRows = (summary?.vendorBills || []).map((row: any) => ({
-      vendorName: row.vendorName || row.vendor,
-      billNo: row.billNo || row.billNumber,
-      date: row.date,
-      dueDate: row.dueDate,
-      currency: 'USD',
-      amountCurrency: row.amountCurrency || row.amount || 0,
-      amountHome: row.amountHome || row.amountHomeCurrency || 0,
-      amountDueHome: row.amountDueHome || row.amountDue || 0,
-    }));
-    const vendorOptions = Array.from(new Set(vendorBillRows.map((row) => row.vendorName))).sort();
-    const filteredVendorBills =
-      selectedVendorBill === 'All'
-        ? vendorBillRows
-        : vendorBillRows.filter((row) => row.vendorName === selectedVendorBill);
-    const vendorBillPageSize = 50;
-    const vendorBillTotalPages = Math.max(1, Math.ceil(filteredVendorBills.length / vendorBillPageSize));
-    const vendorBillSlice = filteredVendorBills.slice(
-      (vendorBillsPage - 1) * vendorBillPageSize,
-      vendorBillsPage * vendorBillPageSize
-    );
-    const vendorBillTotals = filteredVendorBills.reduce(
-      (acc, row) => {
-        acc.amountCurrency += row.amountCurrency;
-        acc.amountHome += row.amountHome;
-        acc.amountDueHome += row.amountDueHome;
-        return acc;
-      },
-      { amountCurrency: 0, amountHome: 0, amountDueHome: 0 }
-    );
-
     const chartData = records.map((record: any) => ({
       month: formatDate(record.snapshotDate),
       Current: record.current,
@@ -3385,17 +3354,9 @@ export default function OperationsTab({
       '90+ Days': record.days90plus,
       total: record.totalAP
     }));
-    const apCoverageDates = records
-      .map((record: any) => parseDateValue(record.snapshotDate))
-      .filter((date): date is Date => Boolean(date));
-    const apCoverageStart = apCoverageDates.length > 0 ? new Date(Math.min(...apCoverageDates.map((date) => date.getTime()))) : null;
-    const apCoverageEnd = apCoverageDates.length > 0 ? new Date(Math.max(...apCoverageDates.map((date) => date.getTime()))) : null;
-    const apCoverageLabel =
-      apCoverageStart && apCoverageEnd
-        ? `${formatDateUtcMinus4(apCoverageStart)} - ${formatDateUtcMinus4(apCoverageEnd)}`
-        : 'N/A';
-    const apAsOfDate = apCoverageEnd || parseDateValue(latestRecord?.snapshotDate) || new Date();
-    const apAsOfLabel = apAsOfDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    const apCoverageLabel = `${formatDateInputLabel(startDate)} - ${formatDateInputLabel(endDate)}`;
+    const apAsOfDate = parseDateSafeUtc(endDate) || new Date();
+    const apAsOfLabel = formatDateInputLabel(endDate);
     const paymentCadenceTrend = [...records]
       .reverse()
       .map((record: any) => ({
@@ -3587,7 +3548,7 @@ export default function OperationsTab({
                   <tbody>
                     {apVendors
                       .sort((a, b) => b.totalDue - a.totalDue)
-                      .slice((apSummaryPage - 1) * 8, apSummaryPage * 8)
+                      .slice((apSummaryPage - 1) * 10, apSummaryPage * 10)
                       .map((row) => (
                         <tr key={row.vendorName} style={{ borderBottom: '1px solid #e2e8f0' }}>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
@@ -3622,8 +3583,8 @@ export default function OperationsTab({
             {apVendors.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
                 <span>
-                  {Math.min((apSummaryPage - 1) * 8 + 1, apVendors.length)}-
-                  {Math.min(apSummaryPage * 8, apVendors.length)} of {apVendors.length}
+                  {Math.min((apSummaryPage - 1) * 10 + 1, apVendors.length)}-
+                  {Math.min(apSummaryPage * 10, apVendors.length)} of {apVendors.length}
                 </span>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -3640,14 +3601,14 @@ export default function OperationsTab({
                     Prev
                   </button>
                   <button
-                    onClick={() => setApSummaryPage((page) => Math.min(Math.ceil(apVendors.length / 8), page + 1))}
-                    disabled={apSummaryPage >= Math.ceil(apVendors.length / 8)}
+                    onClick={() => setApSummaryPage((page) => Math.min(Math.ceil(apVendors.length / 10), page + 1))}
+                    disabled={apSummaryPage >= Math.ceil(apVendors.length / 10)}
                     style={{
                       padding: '4px 8px',
                       borderRadius: '6px',
                       border: '1px solid #e2e8f0',
-                      background: apSummaryPage >= Math.ceil(apVendors.length / 8) ? '#f1f5f9' : 'white',
-                      cursor: apSummaryPage >= Math.ceil(apVendors.length / 8) ? 'not-allowed' : 'pointer'
+                      background: apSummaryPage >= Math.ceil(apVendors.length / 10) ? '#f1f5f9' : 'white',
+                      cursor: apSummaryPage >= Math.ceil(apVendors.length / 10) ? 'not-allowed' : 'pointer'
                     }}
                   >
                     Next
@@ -3818,127 +3779,6 @@ export default function OperationsTab({
                 No paid bills available for this period.
               </div>
             )}
-          </div>
-        </div>
-
-        <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              Vendor Bills
-            </h3>
-            <select
-              value={selectedVendorBill}
-              onChange={(event) => {
-                setSelectedVendorBill(event.target.value);
-                setVendorBillsPage(1);
-              }}
-              style={{
-                padding: '6px 10px',
-                border: '1px solid #e2e8f0',
-                borderRadius: '6px',
-                fontSize: '13px',
-                color: '#1e293b',
-                background: 'white',
-                cursor: 'pointer',
-              }}
-            >
-              <option value="All">All Vendors</option>
-              {vendorOptions.map((vendor) => (
-                <option key={vendor} value={vendor}>
-                  {vendor}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
-                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
-                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Bill No.</th>
-                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Date</th>
-                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
-                  <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Currency</th>
-                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
-                    Amount in currency
-                  </th>
-                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
-                    Amount in home currency
-                  </th>
-                  <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>
-                    Amount Due in home currency
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {vendorBillSlice.map((row, index) => (
-                  <tr key={`${row.vendorName}-${row.billNo}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.billNo}</td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.date}</td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.dueDate}</td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.currency}</td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
-                      {formatCurrencyWithCents(row.amountCurrency)}
-                    </td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>
-                      {formatCurrencyWithCents(row.amountHome)}
-                    </td>
-                    <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>
-                      {formatCurrencyWithCents(row.amountDueHome)}
-                    </td>
-                  </tr>
-                ))}
-                <tr>
-                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '700' }} colSpan={5}>
-                    Grand total
-                  </td>
-                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
-                    {formatCurrencyWithCents(vendorBillTotals.amountCurrency)}
-                  </td>
-                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
-                    {formatCurrencyWithCents(vendorBillTotals.amountHome)}
-                  </td>
-                  <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: '700' }}>
-                    {formatCurrencyWithCents(vendorBillTotals.amountDueHome)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '13px', color: '#64748b' }}>
-            <span>
-              {filteredVendorBills.length === 0 ? 0 : (vendorBillsPage - 1) * vendorBillPageSize + 1}-
-              {Math.min(vendorBillsPage * vendorBillPageSize, filteredVendorBills.length)} / {filteredVendorBills.length}
-            </span>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => setVendorBillsPage((page) => Math.max(1, page - 1))}
-                disabled={vendorBillsPage === 1}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: '6px',
-                  border: '1px solid #e2e8f0',
-                  background: vendorBillsPage === 1 ? '#f1f5f9' : 'white',
-                  cursor: vendorBillsPage === 1 ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {'<'}
-              </button>
-              <button
-                onClick={() => setVendorBillsPage((page) => Math.min(vendorBillTotalPages, page + 1))}
-                disabled={vendorBillsPage >= vendorBillTotalPages}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: '6px',
-                  border: '1px solid #e2e8f0',
-                  background: vendorBillsPage >= vendorBillTotalPages ? '#f1f5f9' : 'white',
-                  cursor: vendorBillsPage >= vendorBillTotalPages ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {'>'}
-              </button>
-            </div>
           </div>
         </div>
 

@@ -2419,6 +2419,14 @@ export async function GET(request: NextRequest) {
           lastMonth: number;
           last12Months: number;
         }> = [];
+        let computedApFromOpen: {
+          totalAP: number;
+          current: number;
+          days1to30: number;
+          days31to60: number;
+          days61to90: number;
+          days90plus: number;
+        } | null = null;
 
         const latestOpenBillsSnapshotDate = await (prisma as any).aPOpenBillSnapshot.findFirst({
           where: {
@@ -2431,6 +2439,78 @@ export async function GET(request: NextRequest) {
         });
 
         if (latestOpenBillsSnapshotDate?.snapshotDate) {
+          const apPaymentsForNetting = await (prisma as any).aPPaymentFact.findMany({
+            where: {
+              companyId,
+              paymentDate: {
+                lte: endDate,
+              },
+            },
+            select: {
+              vendorName: true,
+              billNo: true,
+              paymentDate: true,
+              paidAmountHome: true,
+              sourceProgram: true,
+            },
+          });
+          const apOpenItemSignalRows = await (prisma as any).aPPaymentFact.findMany({
+            where: {
+              companyId,
+              paymentDate: {
+                lte: endDate,
+              },
+              sourceProgram: {
+                contains: 'SLAptrxps',
+                mode: 'insensitive',
+              },
+            },
+            select: {
+              vendorName: true,
+              billNo: true,
+              paymentDate: true,
+            },
+          });
+          const normalizeVendorBillKey = (vendorName: unknown, billNo: unknown) =>
+            `${String(vendorName || 'Unknown Vendor').trim().toUpperCase()}|${String(billNo || '').trim().toUpperCase()}`;
+          const seenPaymentSignatures = new Set<string>();
+          const appliedByVendorBill = new Map<string, number>();
+          const openItemFirstSeenByBill = new Map<string, Date>();
+          const openItemLastSeenByBill = new Map<string, Date>();
+          for (const signalRow of apOpenItemSignalRows) {
+            const billNo = String(signalRow.billNo || '').trim();
+            if (!billNo) continue;
+            const signalDate = signalRow.paymentDate ? new Date(signalRow.paymentDate) : null;
+            if (!signalDate || Number.isNaN(signalDate.getTime())) continue;
+            const billKey = normalizeVendorBillKey(signalRow.vendorName, billNo);
+            const existing = openItemFirstSeenByBill.get(billKey);
+            if (!existing || signalDate.getTime() < existing.getTime()) {
+              openItemFirstSeenByBill.set(billKey, signalDate);
+            }
+            const existingLast = openItemLastSeenByBill.get(billKey);
+            if (!existingLast || signalDate.getTime() > existingLast.getTime()) {
+              openItemLastSeenByBill.set(billKey, signalDate);
+            }
+          }
+          const useOpenItemFilter = openItemFirstSeenByBill.size > 0;
+          for (const paymentRow of apPaymentsForNetting) {
+            const billNo = String(paymentRow.billNo || '').trim();
+            if (!billNo) continue;
+            const billKey = normalizeVendorBillKey(paymentRow.vendorName, billNo);
+            const paidAmountHome = Number(paymentRow.paidAmountHome || 0);
+            if (!Number.isFinite(paidAmountHome) || paidAmountHome <= 0) continue;
+            const paymentDateIso = paymentRow.paymentDate ? new Date(paymentRow.paymentDate).toISOString() : '';
+            const signature = [
+              billKey,
+              paymentDateIso,
+              String(paymentRow.sourceProgram || ''),
+              paidAmountHome.toFixed(6),
+            ].join('|');
+            if (seenPaymentSignatures.has(signature)) continue;
+            seenPaymentSignatures.add(signature);
+            appliedByVendorBill.set(billKey, Number(appliedByVendorBill.get(billKey) || 0) + paidAmountHome);
+          }
+
           const openBillRows = await (prisma as any).aPOpenBillSnapshot.findMany({
             where: {
               companyId,
@@ -2438,10 +2518,187 @@ export async function GET(request: NextRequest) {
               snapshotDate: latestOpenBillsSnapshotDate.snapshotDate,
             },
             orderBy: [{ amountDueHome: 'desc' }],
-            take: Math.max(limit, 500),
+          });
+          const nettedOpenBillRows = openBillRows.map((row: any) => {
+            const grossAmount = Number(row.amountDueHome || 0);
+            const billKey = normalizeVendorBillKey(row.vendorName, row.billNo);
+            const paidApplied = Number(appliedByVendorBill.get(billKey) || 0);
+            const netAmount = Math.max(grossAmount - paidApplied, 0);
+            const openSignalDate = openItemLastSeenByBill.get(billKey) || null;
+            const openItemEligible = !useOpenItemFilter || Boolean(openSignalDate);
+            return {
+              ...row,
+              netAmountDueHome: netAmount,
+              openItemEligible,
+              openSignalDate,
+            };
           });
 
-          const vendorAging = openBillRows.reduce((acc: Record<string, any>, row: any) => {
+          const positiveNettedRowsSorted = nettedOpenBillRows
+            .filter((row: any) => Number(row.netAmountDueHome || 0) > 0)
+            .sort((a: any, b: any) => Number(b.netAmountDueHome || 0) - Number(a.netAmountDueHome || 0));
+          const OPEN_AMOUNT_EPSILON = 1;
+          const allOpenRows = positiveNettedRowsSorted.filter((row: any) => Number(row.netAmountDueHome || 0) > OPEN_AMOUNT_EPSILON);
+          const summaryAndUnpaidRows = allOpenRows;
+          const asOfDateForBuckets = startOfUtcDay(new Date(latestOpenBillsSnapshotDate.snapshotDate));
+          computedApFromOpen = allOpenRows.reduce(
+            (acc: any, row: any) => {
+              const openAmount = Number(row.netAmountDueHome || 0);
+              if (!Number.isFinite(openAmount) || openAmount <= 0) return acc;
+              const ageCandidates = [row.dueDate, row.billDate, row.openSignalDate]
+                .map((value: any) => (value ? new Date(value) : null))
+                .filter((dt: Date | null): dt is Date => Boolean(dt) && !Number.isNaN(dt.getTime()));
+              const ageBasis = ageCandidates.length
+                ? new Date(Math.max(...ageCandidates.map((dt) => dt.getTime())))
+                : null;
+              const ageDays =
+                ageBasis && !Number.isNaN(ageBasis.getTime())
+                  ? Math.floor((asOfDateForBuckets.getTime() - startOfUtcDay(ageBasis).getTime()) / (24 * 60 * 60 * 1000))
+                  : 99999;
+              acc.totalAP += openAmount;
+              if (ageDays <= 0) acc.current += openAmount;
+              else if (ageDays <= 30) acc.days1to30 += openAmount;
+              else if (ageDays <= 60) acc.days31to60 += openAmount;
+              else if (ageDays <= 90) acc.days61to90 += openAmount;
+              else acc.days90plus += openAmount;
+              return acc;
+            },
+            { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+          );
+
+          // Canonical AP trend: recompute each snapshot from net-open vouchers
+          // using cumulative applied payments up to each snapshot date.
+          const trendOpenRows = await (prisma as any).aPOpenBillSnapshot.findMany({
+            where: {
+              companyId,
+              frequency,
+              snapshotDate: dateFilter,
+            },
+            select: {
+              snapshotDate: true,
+              vendorName: true,
+              billNo: true,
+              amountDueHome: true,
+              billDate: true,
+              dueDate: true,
+            },
+            orderBy: [{ snapshotDate: 'asc' }],
+          });
+          if (trendOpenRows.length) {
+            const trendPaymentsRaw = await (prisma as any).aPPaymentFact.findMany({
+              where: {
+                companyId,
+                paymentDate: {
+                  lte: endDate,
+                },
+              },
+              select: {
+                vendorName: true,
+                billNo: true,
+                paymentDate: true,
+                paidAmountHome: true,
+                sourceProgram: true,
+              },
+              orderBy: [{ paymentDate: 'asc' }],
+            });
+            const trendSeenSignatures = new Set<string>();
+            const trendPayments = trendPaymentsRaw
+              .map((row: any) => {
+                const billNo = String(row.billNo || '').trim();
+                if (!billNo) return null;
+                const amount = Number(row.paidAmountHome || 0);
+                const paymentDate = row.paymentDate ? new Date(row.paymentDate) : null;
+                if (!paymentDate || Number.isNaN(paymentDate.getTime()) || !Number.isFinite(amount) || amount <= 0) return null;
+                const billKey = normalizeVendorBillKey(row.vendorName, billNo);
+                const signature = [
+                  billKey,
+                  paymentDate.toISOString(),
+                  String(row.sourceProgram || ''),
+                  amount.toFixed(6),
+                ].join('|');
+                if (trendSeenSignatures.has(signature)) return null;
+                trendSeenSignatures.add(signature);
+                return { billKey, paymentDate, amount };
+              })
+              .filter((row: any): row is { billKey: string; paymentDate: Date; amount: number } => Boolean(row));
+
+            const rowsBySnapshot = new Map<string, Array<any>>();
+            for (const row of trendOpenRows) {
+              const dayKey = startOfUtcDay(new Date(row.snapshotDate)).toISOString();
+              if (!rowsBySnapshot.has(dayKey)) rowsBySnapshot.set(dayKey, []);
+              rowsBySnapshot.get(dayKey)!.push(row);
+            }
+            const snapshotKeysAsc = Array.from(rowsBySnapshot.keys()).sort();
+            let expandedSnapshotKeysAsc = snapshotKeysAsc;
+            if (frequency === 'daily' && snapshotKeysAsc.length <= 1) {
+              const rangeKeys: string[] = [];
+              const cursor = startOfUtcDay(new Date(startDate));
+              const rangeEnd = startOfUtcDay(new Date(endDate));
+              while (cursor.getTime() <= rangeEnd.getTime()) {
+                rangeKeys.push(new Date(cursor).toISOString());
+                cursor.setUTCDate(cursor.getUTCDate() + 1);
+              }
+              if (rangeKeys.length) expandedSnapshotKeysAsc = rangeKeys;
+            }
+            const trendTemplateRows =
+              snapshotKeysAsc.length > 0
+                ? rowsBySnapshot.get(snapshotKeysAsc[snapshotKeysAsc.length - 1]) || []
+                : [];
+            const cumulativeAppliedByBill = new Map<string, number>();
+            let paymentPtr = 0;
+            const trendRowsAsc: Array<any> = [];
+            for (const snapshotKey of expandedSnapshotKeysAsc) {
+              const snapshotDate = new Date(snapshotKey);
+              while (paymentPtr < trendPayments.length && trendPayments[paymentPtr].paymentDate.getTime() <= snapshotDate.getTime()) {
+                const p = trendPayments[paymentPtr];
+                cumulativeAppliedByBill.set(p.billKey, Number(cumulativeAppliedByBill.get(p.billKey) || 0) + p.amount);
+                paymentPtr += 1;
+              }
+              const rows = rowsBySnapshot.get(snapshotKey) || trendTemplateRows;
+              const bucket = {
+                snapshotDate,
+                frequency,
+                totalAP: 0,
+                current: 0,
+                days1to30: 0,
+                days31to60: 0,
+                days61to90: 0,
+                days90plus: 0,
+              };
+              for (const row of rows) {
+                const grossAmount = Number(row.amountDueHome || 0);
+                if (!Number.isFinite(grossAmount) || grossAmount <= 0) continue;
+                const billKey = normalizeVendorBillKey(row.vendorName, row.billNo);
+                const firstSeen = openItemFirstSeenByBill.get(billKey);
+                if (useOpenItemFilter && (!firstSeen || firstSeen.getTime() > snapshotDate.getTime())) continue;
+                const paidApplied = Number(cumulativeAppliedByBill.get(billKey) || 0);
+                const openAmount = Math.max(grossAmount - paidApplied, 0);
+                if (openAmount <= OPEN_AMOUNT_EPSILON) continue;
+                const ageCandidates = [row.dueDate, row.billDate, firstSeen]
+                  .map((value: any) => (value ? new Date(value) : null))
+                  .filter((dt: Date | null): dt is Date => Boolean(dt) && !Number.isNaN(dt.getTime()));
+                const ageBasis = ageCandidates.length
+                  ? new Date(Math.max(...ageCandidates.map((dt) => dt.getTime())))
+                  : null;
+                const ageDays =
+                  ageBasis && !Number.isNaN(ageBasis.getTime())
+                    ? Math.floor((snapshotDate.getTime() - startOfUtcDay(ageBasis).getTime()) / (24 * 60 * 60 * 1000))
+                    : 99999;
+                bucket.totalAP += openAmount;
+                if (ageDays <= 0) bucket.current += openAmount;
+                else if (ageDays <= 30) bucket.days1to30 += openAmount;
+                else if (ageDays <= 60) bucket.days31to60 += openAmount;
+                else if (ageDays <= 90) bucket.days61to90 += openAmount;
+                else bucket.days90plus += openAmount;
+              }
+              trendRowsAsc.push(bucket);
+            }
+            data = trendRowsAsc
+              .sort((a, b) => new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime())
+              .slice(0, limit) as any;
+          }
+
+          const vendorAging = summaryAndUnpaidRows.reduce((acc: Record<string, any>, row: any) => {
             const name = row.vendorName || 'Unknown Vendor';
             if (!acc[name]) {
               acc[name] = {
@@ -2454,19 +2711,20 @@ export async function GET(request: NextRequest) {
                 totalDue: 0,
               };
             }
-            let bucketCurrent = Number(row.current || 0);
-            let bucket1to30 = Number(row.days1to30 || 0);
-            let bucket31to60 = Number(row.days31to60 || 0);
-            let bucket61to90 = Number(row.days61to90 || 0);
-            let bucket90plus = Number(row.days90plus || 0);
-            const openAmount = Number(row.amountDueHome || 0);
-            if (
-              bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus === 0 &&
-              openAmount > 0
-            ) {
+            let bucketCurrent = 0;
+            let bucket1to30 = 0;
+            let bucket31to60 = 0;
+            let bucket61to90 = 0;
+            let bucket90plus = 0;
+            const openAmount = Number(row.netAmountDueHome || 0);
+            if (openAmount > 0) {
               const asOfDate = startOfUtcDay(new Date(latestOpenBillsSnapshotDate.snapshotDate));
-              const ageBasisRaw = row.dueDate || row.billDate;
-              const ageBasis = ageBasisRaw ? new Date(ageBasisRaw) : null;
+              const ageCandidates = [row.dueDate, row.billDate, row.openSignalDate]
+                .map((value: any) => (value ? new Date(value) : null))
+                .filter((dt: Date | null): dt is Date => Boolean(dt) && !Number.isNaN(dt.getTime()));
+              const ageBasis = ageCandidates.length
+                ? new Date(Math.max(...ageCandidates.map((dt) => dt.getTime())))
+                : null;
               if (ageBasis && !Number.isNaN(ageBasis.getTime())) {
                 const ageDays = Math.floor((asOfDate.getTime() - startOfUtcDay(ageBasis).getTime()) / (24 * 60 * 60 * 1000));
                 if (ageDays <= 0) bucketCurrent = openAmount;
@@ -2494,27 +2752,31 @@ export async function GET(request: NextRequest) {
             .sort((a: any, b: any) => b.totalDue - a.totalDue)
             .slice(0, 25) as any[];
 
-          unpaidBills = openBillRows
-            .filter((row: any) => Number(row.amountDueHome || 0) > 0)
-            .slice(0, 250)
+          unpaidBills = summaryAndUnpaidRows
             .map((row: any) => ({
               vendorName: row.vendorName || 'Unknown Vendor',
               billNo: row.billNo || '-',
               date: row.billDate ? new Date(row.billDate).toISOString().split('T')[0] : null,
               dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
-              amountDue: Number(row.amountDueHome || 0),
-            }));
+              amountDue: Number(row.netAmountDueHome || 0),
+            }))
+            .filter((row: any) => Number.isFinite(Number(row.amountDue || 0)) && Number(row.amountDue || 0) > OPEN_AMOUNT_EPSILON)
+            .sort((a: any, b: any) => Number(b.amountDue || 0) - Number(a.amountDue || 0))
+            .slice(0, 500);
 
-          vendorBills = openBillRows.slice(0, 500).map((row: any) => ({
-            vendorName: row.vendorName || 'Unknown Vendor',
-            billNo: row.billNo || '-',
-            date: row.billDate ? new Date(row.billDate).toISOString().split('T')[0] : null,
-            dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
-            currency: row.currencyCode || 'USD',
-            amountCurrency: Number(row.amountCurrency || row.amountHome || 0),
-            amountHome: Number(row.amountHome || row.amountDueHome || 0),
-            amountDueHome: Number(row.amountDueHome || 0),
-          }));
+          vendorBills = summaryAndUnpaidRows
+            .map((row: any) => ({
+              vendorName: row.vendorName || 'Unknown Vendor',
+              billNo: row.billNo || '-',
+              date: row.billDate ? new Date(row.billDate).toISOString().split('T')[0] : null,
+              dueDate: row.dueDate ? new Date(row.dueDate).toISOString().split('T')[0] : null,
+              currency: row.currencyCode || 'USD',
+              amountCurrency: Number(row.amountCurrency || row.amountHome || 0),
+              amountHome: Number(row.amountHome || row.amountDueHome || 0),
+              amountDueHome: Number(row.netAmountDueHome || 0),
+            }))
+            .sort((a: any, b: any) => b.amountDueHome - a.amountDueHome)
+            .slice(0, 500);
         }
 
         const apMonthStart = startOfMonth(endDate);
@@ -2611,15 +2873,8 @@ export async function GET(request: NextRequest) {
                 amountDueHome: Number(row.totalDue || 0),
               }));
             }
-            if (!unpaidBills.length) {
-              unpaidBills = vendorBills.slice(0, 250).map((row) => ({
-                vendorName: row.vendorName,
-                billNo: row.billNo,
-                date: row.date,
-                dueDate: row.dueDate,
-                amountDue: Number(row.amountDueHome || 0),
-              }));
-            }
+            // Do not synthesize unpaid bill rows from vendor totals.
+            // The Unpaid Bills table must remain true bill-level open items only.
           }
         }
 
@@ -2637,11 +2892,35 @@ export async function GET(request: NextRequest) {
           );
         }
 
+        const effectiveApMetrics = computedApFromOpen
+          ? {
+              totalAP: Number(computedApFromOpen.totalAP || 0),
+              currentPct:
+                computedApFromOpen.totalAP > 0
+                  ? (Number(computedApFromOpen.current || 0) / Number(computedApFromOpen.totalAP || 0)) * 100
+                  : 0,
+              over30Pct:
+                computedApFromOpen.totalAP > 0
+                  ? ((Number(computedApFromOpen.days1to30 || 0) +
+                      Number(computedApFromOpen.days31to60 || 0) +
+                      Number(computedApFromOpen.days61to90 || 0) +
+                      Number(computedApFromOpen.days90plus || 0)) /
+                      Number(computedApFromOpen.totalAP || 0)) *
+                    100
+                  : 0,
+              over90Pct:
+                computedApFromOpen.totalAP > 0
+                  ? (Number(computedApFromOpen.days90plus || 0) / Number(computedApFromOpen.totalAP || 0)) * 100
+                  : 0,
+              dpo: Number(apMetrics?.dpo || 0),
+            }
+          : apMetrics;
+
         return NextResponse.json({
           records: data,
-          summary: apMetrics
+          summary: effectiveApMetrics
             ? {
-                ...apMetrics,
+                ...effectiveApMetrics,
                 breakdown: unpaidByVendor,
                 unpaidByVendor,
                 unpaidBills,

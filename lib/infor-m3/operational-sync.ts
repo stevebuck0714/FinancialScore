@@ -4801,9 +4801,15 @@ export async function syncInforM3OperationalData(
       // is rebuilt from that day slice instead of replaying one global snapshot.
       const isArOpenSnapshotProgram =
         moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
+      const isApOpenSupportProgram =
+        moduleType === 'ap' &&
+        ['SLAPTRXPS', 'SLAPPMTS', 'SLAPTRXP', 'SLAPTRXS'].includes(String(row.miProgram || '').trim().toUpperCase());
       const isArApOpenFlow =
         ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
-      const keepFullArApPopulation = isArOpenSnapshotProgram || (isArApOpenFlow && syncWindow?.mode === 'daily_overlap');
+      const keepFullArApPopulation =
+        isArOpenSnapshotProgram ||
+        isApOpenSupportProgram ||
+        (isArApOpenFlow && syncWindow?.mode === 'daily_overlap');
       // Contract/backlog math from SLCoitems also requires full line populations; clipping
       // to overlap windows can zero out Contract Total for customers with older open orders.
       const isOrderLineProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
