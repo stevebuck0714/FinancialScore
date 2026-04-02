@@ -2,6 +2,31 @@
 
 const { spawnSync } = require('node:child_process');
 
+function sleepSync(ms) {
+  const durationMs = Number(ms);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+  const buffer = new SharedArrayBuffer(4);
+  const view = new Int32Array(buffer);
+  Atomics.wait(view, 0, 0, durationMs);
+}
+
+function runPrismaCommand(args) {
+  return spawnSync(
+    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    args,
+    {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: process.env,
+      encoding: 'utf8',
+    }
+  );
+}
+
+function printCommandOutput(result) {
+  if (result?.stdout) process.stdout.write(result.stdout);
+  if (result?.stderr) process.stderr.write(result.stderr);
+}
+
 /**
  * Check if deployment should be blocked
  * Used to prevent auto-deploys to production when BLOCK_AUTO_DEPLOY=true
@@ -121,6 +146,7 @@ WHERE m."id" = r."id"
   );
 
   if (dedupeMappings.status !== 0) {
+    printCommandOutput(dedupeMappings);
     console.error('');
     console.error('🛑 ACCOUNT MAPPING DEDUPE FAILED');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -134,37 +160,62 @@ WHERE m."id" = r."id"
   }
 
   console.log('🔎 Applying Prisma migrations (deploy)...');
-  const migrationDeploy = spawnSync(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
-    {
-      stdio: 'inherit',
-      env: process.env,
-    }
+  const maxDeployAttempts = Math.max(
+    1,
+    Number.parseInt(process.env.PRISMA_MIGRATE_DEPLOY_RETRIES || '4', 10) || 4
   );
+  let migrationDeploy = null;
+  for (let attempt = 1; attempt <= maxDeployAttempts; attempt += 1) {
+    if (attempt > 1) {
+      console.log(`🔁 Retrying Prisma migrate deploy (attempt ${attempt}/${maxDeployAttempts})...`);
+    }
+    migrationDeploy = runPrismaCommand(['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma']);
+    printCommandOutput(migrationDeploy);
+    if (migrationDeploy.status === 0) break;
 
-  if (migrationDeploy.status !== 0) {
+    const combinedOutput = `${migrationDeploy.stdout || ''}\n${migrationDeploy.stderr || ''}`;
+    const advisoryLockTimeout = /pg_advisory_lock|migrate-advisory-locking|Timed out trying to acquire a postgres advisory lock/i.test(
+      combinedOutput
+    );
+    if (!advisoryLockTimeout || attempt >= maxDeployAttempts) {
+      break;
+    }
+    const waitMs = Math.min(30000, attempt * 5000);
+    console.warn(`⚠️  Advisory lock contention detected, waiting ${waitMs}ms before retry...`);
+    sleepSync(waitMs);
+  }
+
+  if (!migrationDeploy || migrationDeploy.status !== 0) {
+    const postFailureStatus = runPrismaCommand(['prisma', 'migrate', 'status', '--schema', 'prisma/schema.prisma']);
+    printCommandOutput(postFailureStatus);
+    if (postFailureStatus.status === 0) {
+      console.warn('');
+      console.warn('⚠️  PRISMA MIGRATION DEPLOY WARNING');
+      console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.warn('');
+      console.warn('Migration deploy command did not complete cleanly, but migration status is now up to date.');
+      console.warn('This commonly happens during concurrent deploy lock contention; continuing build.');
+      console.warn('');
+      console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.warn('');
+    } else {
     console.error('');
     console.error('🛑 PRISMA MIGRATION DEPLOY FAILED');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('');
     console.error('Could not apply Prisma migrations in production build environment.');
     console.error('Verify DATABASE_URL for this environment and re-run deploy.');
+    console.error('If this keeps failing, ensure only one deploy runs migrations at a time.');
     console.error('');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('');
-    process.exit(migrationDeploy.status || 1);
+    process.exit(migrationDeploy?.status || 1);
+    }
   }
 
   console.log('🔎 Validating Prisma migration status...');
-  const migrationStatus = spawnSync(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['prisma', 'migrate', 'status', '--schema', 'prisma/schema.prisma'],
-    {
-      stdio: 'inherit',
-      env: process.env,
-    }
-  );
+  const migrationStatus = runPrismaCommand(['prisma', 'migrate', 'status', '--schema', 'prisma/schema.prisma']);
+  printCommandOutput(migrationStatus);
 
   if (migrationStatus.status !== 0) {
     const strictMigrationStatusCheck = process.env.STRICT_PRISMA_MIGRATION_STATUS === 'true';
