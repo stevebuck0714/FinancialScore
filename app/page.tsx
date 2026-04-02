@@ -1425,14 +1425,12 @@ function FinancialScorePage() {
 
   const normalizeMappingsForUi = (mappings: any[]): any[] =>
     (Array.isArray(mappings) ? mappings : []).map((m: any) => {
-      const normalizedId = String(m?.qbAccountId || m?.accountId || m?.acctId || '').trim();
-      const normalizedCode = String(
-        m?.qbAccountCode || m?.accountCode || m?.acctCode || m?.accountNumber || normalizedId || ''
-      ).trim();
+      const normalizedId = String(m?.qbAccountId || '').trim();
+      const normalizedCode = String(m?.qbAccountCode || normalizedId || '').trim();
       return {
         ...m,
-        qbAccountId: normalizedId || m?.qbAccountId,
-        qbAccountCode: normalizedCode || m?.qbAccountCode,
+        qbAccountId: normalizedId || undefined,
+        qbAccountCode: normalizedCode || undefined,
         targetField: normalizeMappingTargetField(m?.targetField),
       };
     });
@@ -1450,22 +1448,11 @@ function FinancialScorePage() {
   };
 
   const getDisplayAccountCode = (mapping: any): string => {
-    const preferred = [
-      mapping?.qbAccountCode,
-      mapping?.qbAccountId,
-      mapping?.accountCode,
-      mapping?.accountId,
-      mapping?.acctId,
-    ];
+    const preferred = [mapping?.qbAccountCode, mapping?.qbAccountId];
     for (const value of preferred) {
       const raw = String(value || '').trim();
       if (raw) return raw;
     }
-    // Fallback: if no explicit account/code ID exists, try to extract a numeric token.
-    const accountName = String(mapping?.qbAccount || '').trim();
-    if (!accountName) return 'N/A';
-    const directMatch = accountName.match(/\b(\d+)\b/);
-    if (directMatch?.[1]) return directMatch[1];
     return 'N/A';
   };
 
@@ -3978,7 +3965,8 @@ function FinancialScorePage() {
       ? companies.find((c) => c.id === selectedCompanyId)
       : undefined;
     const system = String(selectedCompany?.accountingSystem || '').toUpperCase();
-    if (!selectedCompanyId || !currentUser || !['INFOR_M3', 'INFOR_CSI'].includes(system)) {
+    const supportsAccountReviewLatestValues = ['INFOR_M3', 'INFOR_CSI', 'QUICKBOOKS', 'QUICKBOOKS_DESKTOP'].includes(system);
+    if (!selectedCompanyId || !currentUser || !supportsAccountReviewLatestValues) {
       setAccountReviewApiValues({});
       return;
     }
@@ -4000,7 +3988,15 @@ function FinancialScorePage() {
         const normalized: Record<string, number> = {};
         Object.entries(values).forEach(([key, value]) => {
           const num = typeof value === 'number' ? value : Number(value);
-          if (Number.isFinite(num)) normalized[key] = num;
+          if (!Number.isFinite(num)) return;
+          normalized[key] = num;
+          // Keep ID matching strict to primary source, but tolerant to key formatting
+          // differences (dash/space/case) between persisted mappings and API payloads.
+          if (key.toLowerCase().startsWith('id:')) {
+            const idToken = key.slice(3).trim();
+            const canonical = idToken.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (canonical) normalized[`id:${canonical}`] = num;
+          }
         });
         setAccountReviewApiValues(normalized);
       } catch (error) {
@@ -12418,14 +12414,9 @@ function FinancialScorePage() {
                               .map(({ mapping, originalIndex }, idx: number) => {
                               const byId = mapping.qbAccountId ? mergedValues.get(`id:${String(mapping.qbAccountId).trim()}`) : undefined;
                               const byCode = mapping.qbAccountCode ? mergedValues.get(`id:${String(mapping.qbAccountCode).trim()}`) : undefined;
-                              const normalizedCode = normalizeAccountCodeForMatch(mapping.qbAccountCode || mapping.qbAccountId);
-                              const byNormalizedCode = normalizedCode ? mergedValues.get(`id:${normalizedCode}`) : undefined;
-                              const byName = mapping.qbAccount ? mergedValues.get(`name:${String(mapping.qbAccount).toLowerCase().trim()}`) : undefined;
                               const latestValue =
                                 byId !== undefined ? byId :
                                 byCode !== undefined ? byCode :
-                                byNormalizedCode !== undefined ? byNormalizedCode :
-                                byName !== undefined ? byName :
                                 null;
                               return (
                               <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
