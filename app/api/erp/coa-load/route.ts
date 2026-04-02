@@ -579,8 +579,22 @@ export async function POST(request: NextRequest) {
       connector.platform,
       connector.payloadMetadataKey,
     );
+    const legacyPayloadMetadataKey =
+      accountingSystem === 'INFOR_CSI'
+        ? 'inforCsiCoaPayload'
+        : accountingSystem === 'INFOR_M3'
+          ? 'inforM3CoaPayload'
+          : null;
+    const payloadFromLegacyMetadata =
+      !payloadFromMetadata && legacyPayloadMetadataKey
+        ? await loadPayloadFromConnectionMetadataPath(
+            companyId,
+            connector.platform,
+            legacyPayloadMetadataKey,
+          )
+        : null;
     let payloadFromOperationalGlSync: Record<string, unknown> | null = null;
-    let payload = payloadFromRequest || payloadFromMetadata;
+    let payload = payloadFromRequest || payloadFromMetadata || payloadFromLegacyMetadata;
 
     const isInforCsiOrM3 = accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI';
     const shouldAttemptOperationalGlFallback =
@@ -602,6 +616,8 @@ export async function POST(request: NextRequest) {
         ? 'request'
         : payloadFromMetadata
           ? 'connection_metadata'
+          : payloadFromLegacyMetadata
+            ? 'legacy_connection_metadata'
           : payloadFromOperationalGlSync
             ? 'operational_gl_sync_fallback'
             : 'none',

@@ -9892,13 +9892,13 @@ function FinancialScorePage() {
               {(selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI') && (
                 <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '20px', marginBottom: '16px', border: '2px solid #e2e8f0' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-                    Infor Syteline CSI Monthly COA Pull
+                    Infor SyteLine CSI Source Payload Refresh
                   </h3>
                   <div style={{ marginBottom: '12px', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                    Infor Syteline CSI credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
-                    This action triggers a monthly Chart of Accounts pull using the configured <strong>Accounts source</strong>
+                    Infor SyteLine CSI credential setup and program configuration are managed in <strong>Site Administration &gt; Businesses</strong>.
+                    This action refreshes the source Accounts/COA payload using the configured <strong>Accounts source</strong>
                     {selectedAccountingSystem === 'INFOR_CSI'
-                      ? ' (endpoint path preferred; MI program optional).'
+                      ? ' (endpoint path preferred; MI program optional). This does not process Data Mapping output.'
                       : ' (MI program or endpoint path).'}
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -9923,6 +9923,21 @@ function FinancialScorePage() {
                         ? 'Requires Accounts source in Site Admin > Businesses (endpoint path preferred).'
                         : 'Requires Accounts source in Site Admin > Businesses.'}
                     </span>
+                    <button
+                      onClick={() => setAdminDashboardTab('data-mapping')}
+                      style={{
+                        padding: '8px 12px',
+                        background: 'white',
+                        color: '#1d4ed8',
+                        border: '1px solid #93c5fd',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Go to Data Mapping
+                    </button>
                   </div>
                   <div style={{ marginTop: '10px', fontSize: '12px', color: '#475569' }}>
                     <strong>Last COA pull:</strong>{' '}

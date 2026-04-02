@@ -293,6 +293,7 @@ export async function POST(request: NextRequest) {
     const imported = effectiveOk ? safeRecordCount(result.body) : 0;
     const pulledAtIso = new Date().toISOString();
     const payloadMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiCoaPayload' : 'inforM3CoaPayload';
+    const financialPayloadMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiFinancialPayload' : 'inforM3FinancialPayload';
     const seedLastRunAtMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedLastRunAt' : 'inforM3AccountSeedLastRunAt';
     const seedSummaryMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedSummary' : 'inforM3AccountSeedSummary';
     const seedSnapshotMetadataKey = inforSystem === 'INFOR_CSI' ? 'inforCsiAccountSeedSnapshot' : 'inforM3AccountSeedSnapshot';
@@ -344,6 +345,8 @@ export async function POST(request: NextRequest) {
         ];
       }
       nextMetadata[payloadMetadataKey] = normalizedPayload;
+      // Keep ERP COA load readers compatible with monthly COA pull output.
+      nextMetadata[financialPayloadMetadataKey] = normalizedPayload;
       try {
         // Keep CSI/M3 load deterministic: COA pull immediately updates mapping seed snapshot.
         seedSummary = await seedInforAccountMappings(companyId, normalizedPayload);
