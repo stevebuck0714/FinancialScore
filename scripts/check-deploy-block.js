@@ -27,6 +27,24 @@ function printCommandOutput(result) {
   if (result?.stderr) process.stderr.write(result.stderr);
 }
 
+function extractFailedMigrationNames(outputText) {
+  const names = new Set();
+  const patterns = [
+    /The migration `([^`]+)` failed/gi,
+    /Migration `([^`]+)` failed/gi,
+    /following migration(?:s)?(?: have)? failed[:\s]+`([^`]+)`/gi,
+    /failed migrations?:\s*`([^`]+)`/gi,
+  ];
+  for (const pattern of patterns) {
+    let match = pattern.exec(outputText);
+    while (match) {
+      if (match[1]) names.add(String(match[1]).trim());
+      match = pattern.exec(outputText);
+    }
+  }
+  return Array.from(names).filter(Boolean);
+}
+
 /**
  * Check if deployment should be blocked
  * Used to prevent auto-deploys to production when BLOCK_AUTO_DEPLOY=true
@@ -183,6 +201,51 @@ WHERE m."id" = r."id"
     const waitMs = Math.min(30000, attempt * 5000);
     console.warn(`⚠️  Advisory lock contention detected, waiting ${waitMs}ms before retry...`);
     sleepSync(waitMs);
+  }
+
+  if (!migrationDeploy || migrationDeploy.status !== 0) {
+    const deployOutput = `${migrationDeploy?.stdout || ''}\n${migrationDeploy?.stderr || ''}`;
+    const migrationNeedsResolve = /migrate-resolve|A migration failed to apply|failed migration/i.test(deployOutput);
+    if (migrationNeedsResolve) {
+      const failedMigrations = extractFailedMigrationNames(deployOutput);
+      if (failedMigrations.length > 0) {
+        console.warn('⚠️  Detected failed Prisma migration state; attempting automatic resolve and retry...');
+      }
+      for (const migrationName of failedMigrations) {
+        const resolveRolledBack = runPrismaCommand([
+          'prisma',
+          'migrate',
+          'resolve',
+          '--rolled-back',
+          migrationName,
+          '--schema',
+          'prisma/schema.prisma',
+        ]);
+        printCommandOutput(resolveRolledBack);
+        if (resolveRolledBack.status !== 0) {
+          console.error('');
+          console.error('🛑 PRISMA MIGRATION RESOLVE FAILED');
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.error('');
+          console.error(`Could not mark failed migration as rolled back: ${migrationName}`);
+          console.error('Resolve this migration manually, then redeploy.');
+          console.error('');
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.error('');
+          process.exit(resolveRolledBack.status || 1);
+        }
+      }
+      if (failedMigrations.length > 0) {
+        console.log('🔁 Re-running Prisma migrate deploy after resolve...');
+        migrationDeploy = runPrismaCommand(['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma']);
+        printCommandOutput(migrationDeploy);
+      }
+    }
+
+    if (migrationDeploy && migrationDeploy.status === 0) {
+      console.warn('⚠️  Prisma migrate deploy succeeded after automatic migration resolve.');
+    }
+
   }
 
   if (!migrationDeploy || migrationDeploy.status !== 0) {
