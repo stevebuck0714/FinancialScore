@@ -211,6 +211,16 @@ async function collectValuesFromApiSyncLogs(companyId: string, targetMonth: stri
         : toYearMonth(readAny(item, ['PeriodEndDate', 'periodEndDate', 'TransDate', 'transDate', 'RecordDate', 'recordDate', 'Date', 'date']));
     if (targetMonth && rowMonth && rowMonth !== targetMonth) continue;
 
+    const signedAmountFallback = (() => {
+      const explicitSigned = readAny(item, ['SignedAmount', 'signedAmount', 'DomAmount', 'domAmount', 'Amount', 'amount']);
+      if (explicitSigned !== undefined && explicitSigned !== null && String(explicitSigned).trim() !== '') {
+        return normalizeNumber(explicitSigned);
+      }
+      const debit = normalizeNumber(readAny(item, ['Debit', 'debit', 'DebitAmount', 'debitAmount']));
+      const credit = normalizeNumber(readAny(item, ['Credit', 'credit', 'CreditAmount', 'creditAmount']));
+      if (debit !== 0 || credit !== 0) return debit - credit;
+      return 0;
+    })();
     const amount = normalizeNumber(
       readAny(item, [
         'EndBalance',
@@ -224,7 +234,7 @@ async function collectValuesFromApiSyncLogs(companyId: string, targetMonth: stri
         'YtdBalance',
         'ytdBalance',
       ]),
-    );
+    ) || signedAmountFallback;
     accountAccumulator.set(acct, Number(accountAccumulator.get(acct) || 0) + amount);
     const name = String(readAny(item, ['Description', 'description', 'AcctDesc', 'accountName', 'Name', 'name']) ?? '')
       .trim()
@@ -233,7 +243,10 @@ async function collectValuesFromApiSyncLogs(companyId: string, targetMonth: stri
   }
 
   for (const [acct, amount] of accountAccumulator.entries()) {
-    valueByKey.set(`id:${String(acct).trim()}`, amount);
+    const id = String(acct).trim();
+    valueByKey.set(`id:${id}`, amount);
+    const normalized = id.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normalized) valueByKey.set(`id:${normalized}`, amount);
   }
   return valueByKey;
 }
@@ -689,6 +702,13 @@ export async function GET(request: NextRequest) {
       }
       const name = String(mapping.qbAccount || '').trim().toLowerCase();
       if (name) bsAccountKeySet.add(`name:${name}`);
+    }
+
+    // Fallback source: raw Infor sync logs (SLGLTRANS/ledger-style items).
+    // This keeps account-level values available even when GL facts are not yet hydrated.
+    const apiSyncValues = await collectValuesFromApiSyncLogs(companyId, targetMonth);
+    for (const [key, value] of apiSyncValues.entries()) {
+      if (!valueByKey.has(key)) valueByKey.set(key, value);
     }
 
     // Income/expense accounts should show month movement, not cumulative balances.
