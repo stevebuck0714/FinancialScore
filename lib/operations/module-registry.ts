@@ -79,14 +79,42 @@ const MODULE_MAP: Record<string, ModuleDefinition> = MODULE_DEFINITIONS.reduce((
   return acc;
 }, {} as Record<string, ModuleDefinition>);
 
+function normalizeModuleToken(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\/&]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+}
+
+const MODULE_KEY_ALIASES: Record<string, string> = MODULE_DEFINITIONS.reduce((acc, module) => {
+  const normalizedKey = normalizeModuleToken(module.key);
+  if (normalizedKey) acc[normalizedKey] = module.key;
+  const normalizedLabel = normalizeModuleToken(module.label);
+  if (normalizedLabel && !acc[normalizedLabel]) acc[normalizedLabel] = module.key;
+  return acc;
+}, {} as Record<string, string>);
+
+export function resolveModuleKey(moduleKey: string): string {
+  const raw = String(moduleKey || '').trim();
+  if (!raw) return '';
+  const lowered = raw.toLowerCase();
+  if (MODULE_MAP[lowered]) return lowered;
+  const normalized = normalizeModuleToken(raw);
+  if (!normalized) return lowered;
+  return MODULE_KEY_ALIASES[normalized] || normalized;
+}
+
 export function mapModuleToDataType(moduleKey: string): OpsDataType | null {
-  const key = String(moduleKey || '').trim().toLowerCase();
+  const key = resolveModuleKey(moduleKey);
   if (!key) return null;
   return MODULE_MAP[key]?.dataType || null;
 }
 
 export function getModuleLabel(moduleKey: string): string {
-  const key = String(moduleKey || '').trim().toLowerCase();
+  const key = resolveModuleKey(moduleKey);
   if (!key) return '';
   return MODULE_MAP[key]?.label || key.replace(/_/g, ' ');
 }

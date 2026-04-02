@@ -3,12 +3,15 @@ import prisma from '@/lib/prisma';
 import { requireCompanyAccess } from '@/lib/tenant-security';
 import { auditFinancialAccess, auditForbiddenAccess } from '@/lib/audit-logger';
 import { financialQuerySchema, validateInput } from '@/lib/validation-schemas';
+import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
 
 // GET financial records for a company
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('companyId');
+    const includeRawData = searchParams.get('includeRawData') === 'true';
+    const includeAllRecords = searchParams.get('includeAllRecords') === 'true';
 
     // Validate input
     if (!companyId) {
@@ -30,24 +33,29 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch records (user has validated access)
-    const records = await prisma.financialRecord.findMany({
-      where: { companyId },
-      select: {
-        id: true,
-        companyId: true,
-        uploadedByUserId: true,
-        fileName: true,
-        fileUrl: true,
-        rawData: true,
-        columnMapping: true,
-        createdAt: true,
-        updatedAt: true,
-        monthlyData: {
-          orderBy: { monthDate: 'asc' }
-        },
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+    const records = await withPrismaReconnectRetry(
+      () =>
+        prisma.financialRecord.findMany({
+          where: { companyId },
+          select: {
+            id: true,
+            companyId: true,
+            uploadedByUserId: true,
+            fileName: true,
+            fileUrl: true,
+            rawData: includeRawData,
+            columnMapping: true,
+            createdAt: true,
+            updatedAt: true,
+            monthlyData: {
+              orderBy: { monthDate: 'asc' }
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          ...(includeAllRecords ? {} : { take: 1 }),
+        }),
+      'financials.get.findMany'
+    );
 
     // AUDIT: Log financial data access
     if (records.length > 0) {

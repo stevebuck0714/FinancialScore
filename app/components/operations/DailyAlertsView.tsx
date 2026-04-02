@@ -105,6 +105,25 @@ type PreviewSpec = {
   direction: 'higher-worse' | 'lower-worse' | 'neutral';
 };
 
+const DAILY_ALERTS_FETCH_TIMEOUT_MS = 20000;
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs = DAILY_ALERTS_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 const RESOLVED_STATUSES = new Set(['resolved', 'realized', 'closed', 'done', 'complete', 'completed']);
 const OPERATIONAL_FOCUS_KEY = '__focusWatchlist';
 const AR_TOP_CUSTOMER_MATERIALITY_LIMIT = 5;
@@ -323,7 +342,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             startDate,
             endDate,
           });
-          const response = await fetch(`/api/operational-data?${params}`);
+          const response = await fetchWithTimeout(`/api/operational-data?${params}`);
           if (!response.ok) throw new Error(`Failed to load ${type} data`);
           return response.json();
         };
@@ -334,21 +353,21 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             severity: 'critical',
             limit: '100',
           });
-          const response = await fetch(`/api/performance-analytics/findings?${params}`);
+          const response = await fetchWithTimeout(`/api/performance-analytics/findings?${params}`);
           if (!response.ok) throw new Error('Failed to load findings');
           return response.json();
         };
 
         const fetchOperationalGoals = async () => {
           const params = new URLSearchParams({ companyId });
-          const response = await fetch(`/api/operational-goals?${params}`);
+          const response = await fetchWithTimeout(`/api/operational-goals?${params}`);
           if (!response.ok) return { goals: {} };
           return response.json();
         };
 
         const fetchCompanyMeta = async () => {
           const params = new URLSearchParams({ companyId, limit: '1' });
-          const response = await fetch(`/api/companies?${params}`);
+          const response = await fetchWithTimeout(`/api/companies?${params}`);
           if (!response.ok) return { companies: [] };
           return response.json();
         };
@@ -814,7 +833,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
 
         let persistedAlerts: AlertItem[] = visibleScored;
         try {
-          const syncResponse = await fetch('/api/pulse/alerts', {
+          const syncResponse = await fetchWithTimeout('/api/pulse/alerts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -886,7 +905,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           setAlerts(persistedAlerts);
         }
       } catch (err: any) {
-        if (!cancelled) setError(err.message || 'Failed to load daily alerts');
+        if (!cancelled) {
+          const isAbort = err?.name === 'AbortError';
+          setError(isAbort ? 'Daily alerts request timed out. Please retry.' : (err.message || 'Failed to load daily alerts'));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

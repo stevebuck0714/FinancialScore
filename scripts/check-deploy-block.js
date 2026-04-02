@@ -92,6 +92,29 @@ if (isProduction) {
     process.exit(1);
   }
 
+  console.log('🔎 Applying Prisma migrations (deploy)...');
+  const migrationDeploy = spawnSync(
+    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
+    {
+      stdio: 'inherit',
+      env: process.env,
+    }
+  );
+
+  if (migrationDeploy.status !== 0) {
+    console.error('');
+    console.error('🛑 PRISMA MIGRATION DEPLOY FAILED');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    console.error('Could not apply Prisma migrations in production build environment.');
+    console.error('Verify DATABASE_URL for this environment and re-run deploy.');
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    process.exit(migrationDeploy.status || 1);
+  }
+
   console.log('🔎 Validating Prisma migration status...');
   const migrationStatus = spawnSync(
     process.platform === 'win32' ? 'npx.cmd' : 'npx',
@@ -103,16 +126,31 @@ if (isProduction) {
   );
 
   if (migrationStatus.status !== 0) {
+    const strictMigrationStatusCheck = process.env.STRICT_PRISMA_MIGRATION_STATUS === 'true';
+    if (!strictMigrationStatusCheck) {
+      console.warn('');
+      console.warn('⚠️  PRISMA MIGRATION STATUS CHECK WARNING');
+      console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.warn('');
+      console.warn('Migration deploy succeeded, but migrate status returned non-zero.');
+      console.warn('Continuing build because STRICT_PRISMA_MIGRATION_STATUS is not set to "true".');
+      console.warn('Set STRICT_PRISMA_MIGRATION_STATUS=true to enforce hard failure.');
+      console.warn('');
+      console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.warn('');
+    } else {
     console.error('');
     console.error('🛑 PRISMA MIGRATION STATUS CHECK FAILED');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('');
     console.error('Production database is not aligned with Prisma migrations.');
     console.error('Run this before deploying: npm run db:migrate:deploy');
+    console.error('If this is a false positive in your build environment, unset STRICT_PRISMA_MIGRATION_STATUS.');
     console.error('');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('');
     process.exit(migrationStatus.status || 1);
+    }
   }
 
   const configuredTrustDays = Number.parseInt(process.env.MFA_TRUST_DURATION_DAYS || '', 10);

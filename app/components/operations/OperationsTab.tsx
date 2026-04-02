@@ -26,7 +26,7 @@ import FinancialForecastTab from '../FinancialForecastTab';
 import WorkingCapitalForecastTab from './WorkingCapitalForecastTab';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { getSectorMockProfile, getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
-import { getModuleLabel, mapModuleToDataType, type OpsDataType } from '@/lib/operations/module-registry';
+import { getModuleLabel, mapModuleToDataType, resolveModuleKey, type OpsDataType } from '@/lib/operations/module-registry';
 import { buildWeeklyProductMarginModel } from '@/lib/operations/product-margin-weekly';
 import { getFieldDisplayName } from '@/lib/constants/field-display-names';
 import { formatDateInputLabel, formatDateSafeUtc, parseDateSafeUtc, toLocalInputDate } from '@/app/utils/date';
@@ -47,6 +47,7 @@ type OpTab = 'dashboard' | 'overview' | string;
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
+const BUSINESS_TZ_OFFSET_MS = -4 * 60 * 60 * 1000;
 const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
   if (!percent || percent < 0.04) return null;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -399,7 +400,7 @@ export default function OperationsTab({
   };
   
   // Date range and frequency filters
-  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
   const yesterdayLocal = (() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -409,8 +410,9 @@ export default function OperationsTab({
   const maxSelectableEndDate = toLocalInputDate(yesterdayLocal);
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date(yesterdayLocal);
-    // Default to last 90 days for daily view
-    date.setDate(date.getDate() - 90);
+    // Keep initial query window tighter so first render does not stall on
+    // high-volume tenants with expensive daily AR/AP aggregations.
+    date.setDate(date.getDate() - 45);
     return toLocalInputDate(date);
   });
   const [endDate, setEndDate] = useState<string>(() => {
@@ -432,10 +434,10 @@ export default function OperationsTab({
   const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'daily-financials'];
   const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules)
     ? opsSectorLayoutConfig.modules
-        .map((module: unknown) => String(module || '').trim())
+        .map((module: unknown) => resolveModuleKey(String(module || '').trim()))
         .filter((module: string) => module && module.toLowerCase() !== 'ops-default')
     : [];
-  const sectorModules = getTopLineBucketsForSector(industrySectorCategory).map((bucket) => bucket.key);
+  const sectorModules = getTopLineBucketsForSector(industrySectorCategory).map((bucket) => resolveModuleKey(bucket.key));
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
   const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
   const enabledDashboardModules = resolvedModules.filter((module) => isTabModuleEnabled(module));
@@ -3345,8 +3347,34 @@ export default function OperationsTab({
       .sort((a: any, b: any) => b.last12Months - a.last12Months)
       .slice(0, 10);
     const paidBillsTotal = paidBills.reduce((sum: number, item: any) => sum + item.last12Months, 0);
-    const chartData = records.map((record: any) => ({
-      month: formatDate(record.snapshotDate),
+    const toUtcDay = (value: string | Date | null | undefined): Date | null => {
+      const parsed = parseDateValue(value as any);
+      if (!parsed) return null;
+      return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+    };
+    const toBusinessUtcDay = (value: string | Date | null | undefined): Date | null => {
+      const parsed = parseDateValue(value as any);
+      if (!parsed) return null;
+      // Operational snapshots are business-day keyed in UTC-4.
+      const shifted = new Date(parsed.getTime() + BUSINESS_TZ_OFFSET_MS);
+      return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
+    };
+    const selectedStartUtc = toUtcDay(startDate);
+    const selectedEndUtc = toUtcDay(endDate);
+    const recordsForWindow = records
+      .map((record: any) => ({
+        ...record,
+        businessDay: toBusinessUtcDay(record.snapshotDate),
+      }))
+      .filter((record: any) => {
+        if (!record.businessDay) return false;
+        if (selectedStartUtc && record.businessDay < selectedStartUtc) return false;
+        if (selectedEndUtc && record.businessDay > selectedEndUtc) return false;
+        return true;
+      })
+      .sort((a: any, b: any) => a.businessDay.getTime() - b.businessDay.getTime());
+    const chartData = recordsForWindow.map((record: any) => ({
+      month: formatDate(record.businessDay.toISOString()),
       Current: record.current,
       '1-30 Days': record.days1to30,
       '31-60 Days': record.days31to60,
@@ -3357,10 +3385,9 @@ export default function OperationsTab({
     const apCoverageLabel = `${formatDateInputLabel(startDate)} - ${formatDateInputLabel(endDate)}`;
     const apAsOfDate = parseDateSafeUtc(endDate) || new Date();
     const apAsOfLabel = formatDateInputLabel(endDate);
-    const paymentCadenceTrend = [...records]
-      .reverse()
+    const paymentCadenceTrend = [...recordsForWindow]
       .map((record: any) => ({
-        period: formatDate(record.snapshotDate),
+        period: formatDate(record.businessDay.toISOString()),
         dpo: Number(record.dpo || 0),
         over30Pct: Number(record.over30Pct || 0),
         over90Pct: Number(record.over90Pct || 0),
