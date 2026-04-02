@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { spawnSync } = require('node:child_process');
+const { Client } = require('pg');
 
 function sleepSync(ms) {
   const durationMs = Number(ms);
@@ -25,6 +26,33 @@ function runPrismaCommand(args) {
 function printCommandOutput(result) {
   if (result?.stdout) process.stdout.write(result.stdout);
   if (result?.stderr) process.stderr.write(result.stderr);
+}
+
+async function getFailedPrismaMigrations(databaseUrl) {
+  const client = new Client({
+    connectionString: databaseUrl,
+    ssl: { rejectUnauthorized: false },
+  });
+  try {
+    await client.connect();
+    const result = await client.query(`
+      SELECT migration_name
+      FROM "_prisma_migrations"
+      WHERE finished_at IS NULL
+        AND rolled_back_at IS NULL
+      ORDER BY started_at DESC
+    `);
+    return (result.rows || [])
+      .map((row) => String(row.migration_name || '').trim())
+      .filter((name) => name.length > 0);
+  } catch (error) {
+    // If migration table does not exist yet, there is nothing to resolve.
+    const message = String(error?.message || '');
+    if (/relation .*_prisma_migrations.* does not exist/i.test(message)) return [];
+    throw error;
+  } finally {
+    await client.end().catch(() => {});
+  }
 }
 
 function extractFailedMigrationNames(outputText) {
@@ -76,6 +104,7 @@ const isProduction = isVercel
   : process.env.NODE_ENV === 'production';
 
 if (isProduction) {
+  (async () => {
   const sharedInforKeys = [
     'INFOR_M3_TENANT_ID',
     'INFOR_M3_CLIENT_NAME',
@@ -175,6 +204,49 @@ WHERE m."id" = r."id"
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('');
     process.exit(dedupeMappings.status || 1);
+  }
+
+  try {
+    const failedMigrations = await getFailedPrismaMigrations(process.env.DATABASE_URL);
+    if (failedMigrations.length > 0) {
+      console.warn('⚠️  Found failed Prisma migrations, resolving as rolled back before deploy:');
+      failedMigrations.forEach((name) => console.warn(`   - ${name}`));
+      for (const migrationName of failedMigrations) {
+        const resolveResult = runPrismaCommand([
+          'prisma',
+          'migrate',
+          'resolve',
+          '--rolled-back',
+          migrationName,
+          '--schema',
+          'prisma/schema.prisma',
+        ]);
+        printCommandOutput(resolveResult);
+        if (resolveResult.status !== 0) {
+          console.error('');
+          console.error('🛑 PRISMA MIGRATION RESOLVE FAILED');
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.error('');
+          console.error(`Failed to mark migration as rolled back: ${migrationName}`);
+          console.error('Use prisma migrate resolve manually in production and re-run deploy.');
+          console.error('');
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.error('');
+          process.exit(resolveResult.status || 1);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('');
+    console.error('🛑 PRISMA MIGRATION PRECHECK FAILED');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    console.error('Could not inspect failed migration state before deploy.');
+    console.error(String(error?.message || error));
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    process.exit(1);
   }
 
   console.log('🔎 Applying Prisma migrations (deploy)...');
@@ -333,8 +405,13 @@ WHERE m."id" = r."id"
     console.error('');
     process.exit(1);
   }
+  console.log('✅ Deploy check passed - proceeding with build...');
+  })().catch((error) => {
+    console.error('Unexpected deploy check error:', error);
+    process.exit(1);
+  });
+} else {
+  // Non-production builds skip deploy safety checks.
+  console.log('✅ Deploy check passed - proceeding with build...');
 }
-
-// Continue with build
-console.log('✅ Deploy check passed - proceeding with build...');
 
