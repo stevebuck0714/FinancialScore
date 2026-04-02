@@ -203,7 +203,28 @@ function extractAccountsFromPayload(payload: unknown): SourceAccount[] {
     if (!existing.classification && account.classification) existing.classification = account.classification;
   }
 
-  return Array.from(deduped.values());
+  // Second-pass dedupe by normalized account name because source payloads can
+  // contain multiple IDs that map to the same human-readable account name.
+  // AccountMapping uniqueness is name-based per company, so this prevents
+  // duplicate-name create attempts during seed.
+  const dedupedByName = new Map<string, SourceAccount>();
+  for (const account of deduped.values()) {
+    const nameKey = account.accountName.trim().toLowerCase();
+    if (!nameKey) continue;
+    const existing = dedupedByName.get(nameKey);
+    if (!existing) {
+      dedupedByName.set(nameKey, account);
+      continue;
+    }
+    if (!existing.accountCode && account.accountCode) existing.accountCode = account.accountCode;
+    if (!existing.classification && account.classification) existing.classification = account.classification;
+    // Prefer a more explicit ID token over a fallback name-derived ID.
+    if (existing.accountId.trim().toLowerCase() === nameKey && account.accountId.trim().toLowerCase() !== nameKey) {
+      existing.accountId = account.accountId;
+    }
+  }
+
+  return Array.from(dedupedByName.values());
 }
 
 function isManualClassification(value: unknown): boolean {
@@ -280,6 +301,7 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   }> = [];
   const sourceIdSet = new Set(sourceAccounts.map((a) => a.accountId.trim().toLowerCase()));
   const sourceNameSet = new Set(sourceAccounts.map((a) => a.accountName.trim().toLowerCase()));
+  const pendingCreateNameSet = new Set<string>();
 
   for (const source of sourceAccounts) {
     const idKey = source.accountId.trim().toLowerCase();
@@ -289,6 +311,10 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
     const existingRow = existingById || existingByName;
 
     if (!existingRow) {
+      if (pendingCreateNameSet.has(nameKey)) {
+        unchanged += 1;
+        continue;
+      }
       rowsToCreate.push({
         companyId,
         qbAccount: source.accountName,
@@ -299,6 +325,7 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
         allocationMethod: 'manual',
         confidence: 'low',
       });
+      pendingCreateNameSet.add(nameKey);
       created += 1;
       newAccounts.push(source.accountName);
       continue;
