@@ -334,7 +334,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const startDate = toLocalInputDate(start);
         const endDate = toLocalInputDate(end);
 
-        const fetchOps = async (type: 'ar-aging' | 'ap-aging' | 'cash') => {
+        const fetchOps = async (
+          type: 'ar-aging' | 'ap-aging' | 'cash' | 'customers' | 'products' | 'inventory' | 'daily-financials'
+        ) => {
           const params = new URLSearchParams({
             companyId,
             type,
@@ -358,6 +360,35 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           return response.json();
         };
 
+        const fetchExpertFindings = async () => {
+          const params = new URLSearchParams({
+            companyId,
+            limit: '200',
+          });
+          const response = await fetchWithTimeout(`/api/performance-analytics/findings?${params}`);
+          if (!response.ok) return { findings: [] };
+          return response.json();
+        };
+
+        const fetchPerformanceContext = async () => {
+          const params = new URLSearchParams({
+            companyId,
+            frequency: 'monthly',
+            months: '18',
+            limit: '300',
+          });
+          const response = await fetchWithTimeout(`/api/performance-analytics/context?${params}`);
+          if (!response.ok) return {};
+          return response.json();
+        };
+
+        const fetchCovenantAlerts = async () => {
+          const params = new URLSearchParams({ companyId });
+          const response = await fetchWithTimeout(`/api/covenants/alerts?${params}`);
+          if (!response.ok) return { alerts: [] };
+          return response.json();
+        };
+
         const fetchOperationalGoals = async () => {
           const params = new URLSearchParams({ companyId });
           const response = await fetchWithTimeout(`/api/operational-goals?${params}`);
@@ -372,13 +403,43 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           return response.json();
         };
 
-        const [arData, apData, cashData, findingsData, operationalGoalsData, companyMetaData] = await Promise.all([
-          fetchOps('ar-aging'),
-          fetchOps('ap-aging'),
-          fetchOps('cash'),
-          fetchFindings(),
-          fetchOperationalGoals(),
-          fetchCompanyMeta(),
+        const withFallback = async <T,>(label: string, promise: Promise<T>, fallback: T): Promise<T> => {
+          try {
+            return await promise;
+          } catch (error) {
+            console.warn(`Daily alerts: ${label} fetch failed, using fallback.`, error);
+            return fallback;
+          }
+        };
+
+        const [
+          arData,
+          apData,
+          cashData,
+          customerData,
+          productData,
+          inventoryData,
+          dailyFinancialData,
+          findingsData,
+          expertFindingsData,
+          performanceContextData,
+          covenantAlertsData,
+          operationalGoalsData,
+          companyMetaData,
+        ] = await Promise.all([
+          withFallback('AR', fetchOps('ar-aging'), { records: [], summary: {} }),
+          withFallback('AP', fetchOps('ap-aging'), { records: [], summary: {} }),
+          withFallback('cash', fetchOps('cash'), { records: [], summary: {} }),
+          withFallback('customers', fetchOps('customers'), { records: [], summary: {} }),
+          withFallback('products', fetchOps('products'), { records: [], summary: {} }),
+          withFallback('inventory', fetchOps('inventory'), { records: [], trend: [], summary: {} }),
+          withFallback('daily-financials', fetchOps('daily-financials'), { records: [], summary: {} }),
+          withFallback('critical findings', fetchFindings(), { findings: [] }),
+          withFallback('expert findings', fetchExpertFindings(), { findings: [] }),
+          withFallback('performance context', fetchPerformanceContext(), { data: { monthlyFinancials: [] } }),
+          withFallback('covenant alerts', fetchCovenantAlerts(), { alerts: [] }),
+          withFallback('operational goals', fetchOperationalGoals(), { goals: {} }),
+          withFallback('company meta', fetchCompanyMeta(), { companies: [] }),
         ]);
         const goals = (operationalGoalsData?.goals && typeof operationalGoalsData.goals === 'object')
           ? operationalGoalsData.goals
@@ -569,18 +630,83 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const apOver30 = asNumber(apSummary.over30Pct);
         const dso = asNumber(arSummary.dso);
         const cashChangePct = asNumber(cashSummary.changePercent);
-        const explicitRunwayWeeks = asNumber(cashSummary.runwayWeeks);
-        const hasExplicitRunway = Number.isFinite(explicitRunwayWeeks) && explicitRunwayWeeks > 0;
+        const explicitRunwayRaw = (cashSummary as any)?.runwayWeeks;
+        const explicitRunwayWeeks = Number(explicitRunwayRaw);
+        const hasCashBasis =
+          cashRecords.length > 0 &&
+          Number.isFinite(asNumber(cashSummary.totalCash));
+        const inferredRunwayWeeksFromCashSummary =
+          !hasCashBasis
+            ? null
+            : Number.isFinite(explicitRunwayWeeks)
+            ? explicitRunwayWeeks
+            : Number.isFinite(asNumber(cashSummary.totalCash))
+              ? Math.abs(asNumber(cashSummary.changeAmount)) > 0
+                ? (asNumber(cashSummary.totalCash) / Math.abs(asNumber(cashSummary.changeAmount))) * 4.33
+                : asNumber(cashSummary.totalCash) > 0
+                  ? 999
+                  : null
+              : null;
+        const hasExplicitRunway =
+          inferredRunwayWeeksFromCashSummary !== null &&
+          Number.isFinite(inferredRunwayWeeksFromCashSummary);
         const allowProxyRunway = asNumber(pulsePolicy['cash_open_critical.allow_proxy_runway']) >= 1;
         const totalCash = asNumber(cashSummary.totalCash);
         const burnProxy = Math.max(1, Math.abs(asNumber(cashSummary.changeAmount)));
         const proxyRunwayWeeks = (totalCash / burnProxy) * 4.33;
         const runwayWeeks = hasExplicitRunway
-          ? explicitRunwayWeeks
+          ? inferredRunwayWeeksFromCashSummary
           : allowProxyRunway
             ? proxyRunwayWeeks
             : null;
         const hasRunwaySignal = runwayWeeks !== null && Number.isFinite(runwayWeeks);
+        const arCriticalMinDays = Math.max(1, Math.floor(asNumber(pulsePolicy['ar_open_critical.min_consecutive_days']) || 1));
+        const apCriticalMinDays = Math.max(1, Math.floor(asNumber(pulsePolicy['ap_open_critical.min_consecutive_days']) || 1));
+        const computeTrailingCriticalDays = (rows: any[], isCritical: (row: any) => boolean): number => {
+          if (!Array.isArray(rows) || rows.length === 0) return 0;
+          const sorted = [...rows].sort(
+            (a, b) => new Date(b?.snapshotDate || 0).getTime() - new Date(a?.snapshotDate || 0).getTime()
+          );
+          let streak = 0;
+          for (const row of sorted) {
+            if (!isCritical(row)) break;
+            streak += 1;
+          }
+          return streak;
+        };
+        const arRowOver30Pct = (row: any): number => {
+          const total = asNumber(row?.totalAR);
+          if (total <= 0) return 0;
+          const over30Amt = asNumber(row?.days31to60) + asNumber(row?.days61to90) + asNumber(row?.days90plus);
+          return (over30Amt / total) * 100;
+        };
+        const arRowDso = (row: any): number => {
+          const direct = asNumber((row as any)?.dso);
+          if (Number.isFinite(direct) && direct > 0) return direct;
+          const days90plus = asNumber(row?.days90plus);
+          if (days90plus > 0) return 90;
+          const days61to90 = asNumber(row?.days61to90);
+          if (days61to90 > 0) return 75;
+          const days31to60 = asNumber(row?.days31to60);
+          if (days31to60 > 0) return 45;
+          return 20;
+        };
+        const apRowOver30Pct = (row: any): number => {
+          const total = asNumber(row?.totalAP);
+          if (total <= 0) return 0;
+          const over30Amt = asNumber(row?.days31to60) + asNumber(row?.days61to90) + asNumber(row?.days90plus);
+          return (over30Amt / total) * 100;
+        };
+        const arCriticalStreakDays = computeTrailingCriticalDays(
+          arRecords,
+          (row) =>
+            arRowOver30Pct(row) >= pulsePolicy['ar_open_critical.min_over30_pct'] ||
+            arRowDso(row) >= pulsePolicy['ar_open_critical.min_dso_days']
+        );
+        const apCriticalStreakDays = computeTrailingCriticalDays(
+          apRecords,
+          (row) => apRowOver30Pct(row) >= pulsePolicy['ap_open_critical.min_over30_pct']
+        );
         const latestDateFrom = (rows: any[]): string | undefined => {
           if (!Array.isArray(rows) || rows.length === 0) return undefined;
           const dates = rows
@@ -631,11 +757,276 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 : 'Sourced runwayWeeks missing and proxy fallback disabled by policy.',
             lastUpdated: endDate,
           },
+          {
+            key: 'customers',
+            label: 'Customer operational data',
+            status:
+              Array.isArray(customerData?.records) && customerData.records.length >= 2
+                ? 'ready'
+                : Array.isArray(customerData?.records) && customerData.records.length > 0
+                  ? 'partial'
+                  : 'missing',
+            reason:
+              Array.isArray(customerData?.records) && customerData.records.length >= 2
+                ? 'Customer sales data is available for multi-day trend checks.'
+                : 'Customer sales records are sparse for trend-level coverage.',
+            lastUpdated: latestDateFrom(Array.isArray(customerData?.records) ? customerData.records : []),
+          },
+          {
+            key: 'products',
+            label: 'Product operational data',
+            status: Array.isArray(productData?.records) && productData.records.length > 0 ? 'ready' : 'missing',
+            reason:
+              Array.isArray(productData?.records) && productData.records.length > 0
+                ? 'Product-level operational records are available.'
+                : 'No product operational rows available in the selected window.',
+            lastUpdated: latestDateFrom(Array.isArray(productData?.records) ? productData.records : []),
+          },
+          {
+            key: 'inventory',
+            label: 'Inventory operational data',
+            status: Array.isArray(inventoryData?.records) && inventoryData.records.length > 0 ? 'ready' : 'missing',
+            reason:
+              Array.isArray(inventoryData?.records) && inventoryData.records.length > 0
+                ? 'Inventory snapshots are available for operational monitoring.'
+                : 'No inventory snapshots available in the selected window.',
+            lastUpdated: latestDateFrom(Array.isArray(inventoryData?.trend) ? inventoryData.trend : []),
+          },
+          {
+            key: 'financial',
+            label: 'Financial trend data',
+            status:
+              Array.isArray(dailyFinancialData?.records) && dailyFinancialData.records.length >= 2
+                ? 'ready'
+                : Array.isArray(dailyFinancialData?.records) && dailyFinancialData.records.length > 0
+                  ? 'partial'
+                  : 'missing',
+            reason:
+              Array.isArray(dailyFinancialData?.records) && dailyFinancialData.records.length >= 2
+                ? 'Daily financial snapshots are available for trend and margin signals.'
+                : 'Need at least 2 daily financial snapshots for full financial trend checks.',
+            lastUpdated: latestDateFrom(Array.isArray(dailyFinancialData?.records) ? dailyFinancialData.records : []),
+          },
+          {
+            key: 'expert-analysis',
+            label: 'Expert analysis feed',
+            status:
+              Array.isArray(expertFindingsData?.findings) && expertFindingsData.findings.length > 0
+                ? 'ready'
+                : 'missing',
+            reason:
+              Array.isArray(expertFindingsData?.findings) && expertFindingsData.findings.length > 0
+                ? 'Expert findings are available for cross-signal scoring.'
+                : 'No expert findings currently available for this company.',
+            lastUpdated: latestDateFrom(
+              (Array.isArray(expertFindingsData?.findings) ? expertFindingsData.findings : []).map((f: any) => ({
+                snapshotDate: f?.updatedAt,
+              }))
+            ),
+          },
+          {
+            key: 'policy',
+            label: 'Policy settings',
+            status: 'ready',
+            reason: `Pulse policy resolved with ${Object.keys(pulseOverrides || {}).length} company override(s); sector baseline applied.`,
+            lastUpdated: endDate,
+          },
+          {
+            key: 'covenants',
+            label: 'Loan covenant warnings',
+            status:
+              Array.isArray(covenantAlertsData?.alerts) && covenantAlertsData.alerts.length > 0
+                ? 'ready'
+                : 'missing',
+            reason:
+              Array.isArray(covenantAlertsData?.alerts) && covenantAlertsData.alerts.length > 0
+                ? 'Covenant monitoring feed has active warning/breach signals.'
+                : 'No covenant alerts returned (no active warning/breach or no configured covenants).',
+            lastUpdated:
+              Array.isArray(covenantAlertsData?.alerts) && covenantAlertsData.alerts.length > 0
+                ? String(covenantAlertsData.alerts[0]?.timestamp || endDate)
+                : endDate,
+          },
         ];
 
+        const dailyFinancialRecords = Array.isArray(dailyFinancialData?.records) ? dailyFinancialData.records : [];
+        if (dailyFinancialRecords.length >= 2) {
+          const latest = dailyFinancialRecords[0];
+          const prev = dailyFinancialRecords[1];
+          const latestRevenue = asNumber(latest?.revenue);
+          const prevRevenue = asNumber(prev?.revenue);
+          const latestExpense = asNumber(latest?.expense);
+          const prevExpense = asNumber(prev?.expense);
+          const latestNet = latestRevenue - latestExpense;
+          const prevNet = prevRevenue - prevExpense;
+          const netDelta = latestNet - prevNet;
+          const revenuePct = dayOverDayPct(latestRevenue, prevRevenue);
+          const expensePct = dayOverDayPct(latestExpense, prevExpense);
+
+          if (latestNet < 0 && netDelta < 0) {
+            built.push({
+              id: `financial-net-pressure-${latest.snapshotDate}`,
+              fingerprint: 'financial-net-pressure',
+              source: 'open-critical',
+              title: 'Financial Pressure: Net Trend Worsened',
+              detail: `Daily net ${latestNet.toFixed(0)} (${netDelta.toFixed(0)} vs prior day)`,
+              owner: 'Controller',
+              drillView: 'pa-critical-issues',
+              updatedAt: latest.snapshotDate,
+              explainability: {
+                triggerName: 'Financial Pressure: Net Trend Worsened',
+                formula: 'latestNet = revenue - expense; trigger when latestNet is negative and netDelta is negative',
+                threshold: 'latestNet < 0 AND netDelta < 0',
+                reasonNow: `latestNet ${latestNet.toFixed(0)}, netDelta ${netDelta.toFixed(0)}`,
+                policySource: 'Cross-signal financial health rule',
+                dataRefs: ['/api/operational-data?type=daily-financials'],
+                sourceTimestamp: latest.snapshotDate,
+              },
+            });
+          }
+          if (revenuePct <= -10 && expensePct >= 0) {
+            built.push({
+              id: `financial-revenue-drop-${latest.snapshotDate}`,
+              fingerprint: 'financial-revenue-drop',
+              source: 'daily-change',
+              title: 'Financial Signal: Revenue Drop With Flat/Rising Expense',
+              detail: `Revenue ${revenuePct.toFixed(1)}% DoD, expense ${expensePct.toFixed(1)}% DoD`,
+              owner: 'Controller',
+              drillView: 'pa-critical-issues',
+              deltaText: `Rev ${revenuePct.toFixed(1)}% | Exp ${expensePct.toFixed(1)}%`,
+              updatedAt: latest.snapshotDate,
+              explainability: {
+                triggerName: 'Financial Signal: Revenue Drop With Flat/Rising Expense',
+                formula: 'Trigger when revenue falls materially while expense does not decline',
+                threshold: 'revenue DoD <= -10% AND expense DoD >= 0%',
+                reasonNow: `Revenue ${revenuePct.toFixed(1)}%, expense ${expensePct.toFixed(1)}%`,
+                policySource: 'Cross-signal financial trend rule',
+                dataRefs: ['/api/operational-data?type=daily-financials'],
+                sourceTimestamp: latest.snapshotDate,
+              },
+            });
+          }
+        }
+
+        const customerRecords = Array.isArray(customerData?.records) ? customerData.records : [];
+        const customerSummaryTop = Array.isArray((customerData as any)?.summary?.topCustomers)
+          ? (customerData as any).summary.topCustomers
+          : [];
+        const bookingSummaryTop = Array.isArray((customerData as any)?.summary?.bookings?.topCustomers)
+          ? (customerData as any).summary.bookings.topCustomers
+          : [];
+        const customerBasis =
+          customerSummaryTop.some((row: any) => asNumber(row?.totalRevenue) > 0)
+            ? customerSummaryTop.map((row: any) => ({
+                customerName: String(row?.customerName || row?.name || 'Unknown Customer'),
+                value: asNumber(row?.totalRevenue),
+              }))
+            : bookingSummaryTop
+                .map((row: any) => ({
+                  customerName: String(row?.name || row?.customerName || 'Unknown Customer'),
+                  value: asNumber(row?.ytd || row?.currentMonth || row?.last12Months || 0),
+                }))
+                .filter((row: any) => row.value > 0);
+        if (customerBasis.length > 0 || customerRecords.length > 0) {
+          const latestSnapshotDate = String(customerRecords[0]?.snapshotDate || endDate);
+          const latestRows =
+            customerBasis.length > 0
+              ? customerBasis
+              : customerRecords
+                  .filter((row: any) => String(row?.snapshotDate || '') === latestSnapshotDate)
+                  .map((row: any) => ({
+                    customerName: String(row?.customerName || 'Unknown Customer'),
+                    value: asNumber(row?.revenue),
+                  }));
+          const totalRevenue = latestRows.reduce((sum: number, row: any) => sum + asNumber(row?.value), 0);
+          const topCustomer = [...latestRows].sort((a: any, b: any) => asNumber(b?.value) - asNumber(a?.value))[0];
+          const topShare = totalRevenue > 0 ? (asNumber(topCustomer?.value) / totalRevenue) * 100 : 0;
+          if (topShare >= 35) {
+            built.push({
+              id: `customer-concentration-${latestSnapshotDate}`,
+              fingerprint: 'customer-concentration',
+              source: 'unresolved',
+              title: 'Operational Signal: Customer Concentration Elevated',
+              detail: `${String(topCustomer?.customerName || 'Top customer')} is ${topShare.toFixed(1)}% of latest customer concentration basis`,
+              owner: 'Sales Lead',
+              drillView: 'pa-overview',
+              updatedAt: latestSnapshotDate,
+              itemLabel: String(topCustomer?.customerName || ''),
+              explainability: {
+                triggerName: 'Operational Signal: Customer Concentration Elevated',
+                formula: 'Top customer share = topCustomerValue / totalCustomerValue * 100 (revenue first, bookings fallback)',
+                threshold: 'top customer share >= 35%',
+                reasonNow: `Top share ${topShare.toFixed(1)}%`,
+                policySource: 'Operational concentration watch rule',
+                dataRefs: ['/api/operational-data?type=customers', 'customers.summary.topCustomers / bookings.topCustomers'],
+                sourceTimestamp: latestSnapshotDate,
+              },
+            });
+          }
+        }
+
+        const inventoryTrend = Array.isArray(inventoryData?.trend) ? inventoryData.trend : [];
+        if (inventoryTrend.length >= 2) {
+          const latest = inventoryTrend[inventoryTrend.length - 1];
+          const prev = inventoryTrend[inventoryTrend.length - 2];
+          const latestValue = asNumber(latest?.assetValue);
+          const prevValue = asNumber(prev?.assetValue);
+          const inventoryPct = dayOverDayPct(latestValue, prevValue);
+          if (inventoryPct >= 15) {
+            built.push({
+              id: `inventory-build-${String(latest?.snapshotDate || endDate)}`,
+              fingerprint: 'inventory-build',
+              source: 'daily-change',
+              title: 'Operational Signal: Inventory Build',
+              detail: `Inventory value ${inventoryPct.toFixed(1)}% DoD`,
+              owner: 'Operations Lead',
+              drillView: 'pa-overview',
+              deltaText: `DoD ${inventoryPct.toFixed(1)}%`,
+              updatedAt: String(latest?.snapshotDate || endDate),
+              explainability: {
+                triggerName: 'Operational Signal: Inventory Build',
+                formula: 'Inventory DoD % = (latestValue - previousValue) / previousValue * 100',
+                threshold: 'Inventory DoD % >= 15%',
+                reasonNow: `Inventory DoD ${inventoryPct.toFixed(1)}%`,
+                policySource: 'Operational inventory momentum rule',
+                dataRefs: ['/api/operational-data?type=inventory'],
+                sourceTimestamp: String(latest?.snapshotDate || endDate),
+              },
+            });
+          }
+        }
+
+        const productTop = Array.isArray(productData?.summary?.topProducts) ? productData.summary.topProducts : [];
+        const weakMarginProduct = productTop.find(
+          (row: any) => asNumber(row?.grossMarginPct) < 10 && asNumber(row?.totalRevenue) > 0
+        );
+        if (weakMarginProduct) {
+          built.push({
+            id: `product-margin-pressure-${endDate}`,
+            fingerprint: 'product-margin-pressure',
+            source: 'unresolved',
+            title: 'Operational Signal: Product Margin Pressure',
+            detail: `${String(weakMarginProduct?.name || 'Top product')} margin ${asNumber(weakMarginProduct?.grossMarginPct).toFixed(1)}%`,
+            owner: 'Operations Lead',
+            drillView: 'pa-overview',
+            updatedAt: endDate,
+            itemLabel: String(weakMarginProduct?.name || ''),
+            explainability: {
+              triggerName: 'Operational Signal: Product Margin Pressure',
+              formula: 'Flag top products with low gross margin percentage',
+              threshold: 'grossMarginPct < 10% on revenue-bearing product',
+              reasonNow: `grossMarginPct ${asNumber(weakMarginProduct?.grossMarginPct).toFixed(1)}%`,
+              policySource: 'Operational product margin watch rule',
+              dataRefs: ['/api/operational-data?type=products'],
+              sourceTimestamp: endDate,
+            },
+          });
+        }
+
         if (
-          arOver30 >= pulsePolicy['ar_open_critical.min_over30_pct'] ||
-          dso >= pulsePolicy['ar_open_critical.min_dso_days']
+          (arOver30 >= pulsePolicy['ar_open_critical.min_over30_pct'] ||
+            dso >= pulsePolicy['ar_open_critical.min_dso_days']) &&
+          arCriticalStreakDays >= arCriticalMinDays
         ) {
           built.push({
             id: `open-critical-ar-${endDate}`,
@@ -648,16 +1039,20 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             updatedAt: endDate,
             explainability: {
               triggerName: 'Outstanding Critical: AR Quality',
-              formula: 'Open critical if AR >30d % or Days Sales Outstanding remains above critical threshold',
-              threshold: `AR >30d >= ${pulsePolicy['ar_open_critical.min_over30_pct']} OR Days Sales Outstanding >= ${pulsePolicy['ar_open_critical.min_dso_days']}`,
-              reasonNow: `AR >30d ${arOver30.toFixed(1)}%, Days Sales Outstanding ${dso.toFixed(1)} days`,
+              formula:
+                'Open critical if AR >30d % or Days Sales Outstanding remains above critical threshold for the configured consecutive-day window',
+              threshold: `(AR >30d >= ${pulsePolicy['ar_open_critical.min_over30_pct']} OR Days Sales Outstanding >= ${pulsePolicy['ar_open_critical.min_dso_days']}) for >= ${arCriticalMinDays} day(s)`,
+              reasonNow: `AR >30d ${arOver30.toFixed(1)}%, Days Sales Outstanding ${dso.toFixed(1)} days, streak ${arCriticalStreakDays} day(s)`,
               policySource: `Company Pulse policy (company override + sector default fallback)`,
               dataRefs: ['AR daily summary over30Pct', 'AR daily summary Days Sales Outstanding'],
               sourceTimestamp: endDate,
             },
           });
         }
-        if (apOver30 >= pulsePolicy['ap_open_critical.min_over30_pct']) {
+        if (
+          apOver30 >= pulsePolicy['ap_open_critical.min_over30_pct'] &&
+          apCriticalStreakDays >= apCriticalMinDays
+        ) {
           built.push({
             id: `open-critical-ap-${endDate}`,
             fingerprint: 'open-critical-ap',
@@ -669,9 +1064,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             updatedAt: endDate,
             explainability: {
               triggerName: 'Outstanding Critical: AP Pressure',
-              formula: 'Open critical if AP >30d % remains above threshold',
-              threshold: `AP >30d >= ${pulsePolicy['ap_open_critical.min_over30_pct']}`,
-              reasonNow: `AP >30d ${apOver30.toFixed(1)}%`,
+              formula: 'Open critical if AP >30d % remains above threshold for the configured consecutive-day window',
+              threshold: `AP >30d >= ${pulsePolicy['ap_open_critical.min_over30_pct']} for >= ${apCriticalMinDays} day(s)`,
+              reasonNow: `AP >30d ${apOver30.toFixed(1)}%, streak ${apCriticalStreakDays} day(s)`,
               policySource: `Company Pulse policy (company override + sector default fallback)`,
               dataRefs: ['AP daily summary over30Pct'],
               sourceTimestamp: endDate,
@@ -720,7 +1115,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           });
         }
 
-        if (!hasRunwaySignal) {
+        if (!hasRunwaySignal && cashRecords.length > 0) {
           built.push({
             id: `data-gap-cash-runway-${endDate}`,
             fingerprint: 'data-gap-cash-runway',
@@ -777,6 +1172,306 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               },
             });
           });
+
+        const criticalFindingIds = new Set(findings.map((finding: any) => String(finding?.id || '')));
+        const expertFindings = Array.isArray(expertFindingsData?.findings) ? expertFindingsData.findings : [];
+        expertFindings
+          .filter((finding: any) => {
+            const id = String(finding?.id || '');
+            if (!id || criticalFindingIds.has(id)) return false;
+            const status = String(finding?.payload?.status || '').trim().toLowerCase();
+            if (status && RESOLVED_STATUSES.has(status)) return false;
+            const severity = String(finding?.severity || '').trim().toLowerCase();
+            return !severity || severity === 'high' || severity === 'medium';
+          })
+          .slice(0, 20)
+          .forEach((finding: any) => {
+            built.push({
+              id: `expert-${finding.id}`,
+              fingerprint: `expert-finding-${finding.id}`,
+              source: 'unresolved',
+              title: finding?.payload?.title || finding?.metric || 'Expert Analysis Signal',
+              detail:
+                finding?.payload?.summary ||
+                finding?.payload?.likelyCause ||
+                'Expert analytics identified a notable operating/financial signal.',
+              owner: finding?.payload?.owner || 'Ops/Finance Owner',
+              drillView: 'pa-overview',
+              updatedAt: finding?.updatedAt,
+              itemLabel: finding?.metric || undefined,
+              explainability: {
+                triggerName: 'Expert Analysis Signal',
+                formula: 'Include unresolved expert findings (non-critical tiers) in pulse monitoring',
+                threshold: 'finding unresolved AND severity in {high, medium} (or unspecified)',
+                reasonNow: `Expert finding remains open (${String(finding?.type || 'analysis')})`,
+                policySource: 'Expert findings ingestion rule + Pulse priority policy',
+                dataRefs: ['/api/performance-analytics/findings'],
+                sourceTimestamp: finding?.updatedAt,
+              },
+            });
+          });
+
+        const monthlyFinancialCount = Array.isArray(performanceContextData?.data?.monthlyFinancials)
+          ? performanceContextData.data.monthlyFinancials.length
+          : 0;
+        const monthlyFinancialRows = Array.isArray(performanceContextData?.data?.monthlyFinancials)
+          ? [...performanceContextData.data.monthlyFinancials]
+          : [];
+        const latestMonthlyFinancial = monthlyFinancialRows
+          .filter((row: any) => row && typeof row === 'object')
+          .sort((a: any, b: any) => new Date(b?.monthDate || 0).getTime() - new Date(a?.monthDate || 0).getTime())[0];
+        const latestLiabilities = latestMonthlyFinancial
+          ? Math.max(
+              0,
+              asNumber(
+                latestMonthlyFinancial.totalLiab ??
+                  latestMonthlyFinancial.totalLiabilities ??
+                  latestMonthlyFinancial.totalLiability ??
+                  latestMonthlyFinancial.liabilities
+              )
+            )
+          : 0;
+        const latestEquity = latestMonthlyFinancial
+          ? Math.max(
+              0,
+              asNumber(
+                latestMonthlyFinancial.totalEquity ??
+                  latestMonthlyFinancial.equity
+              )
+            )
+          : 0;
+        const debtToEquityRatio = latestEquity > 0 ? latestLiabilities / latestEquity : null;
+        if (debtToEquityRatio !== null && Number.isFinite(debtToEquityRatio)) {
+          const debtToEquityPct = debtToEquityRatio * 100;
+          const isCriticalLeverage = debtToEquityRatio >= 1;
+          const isHighLeverage = debtToEquityRatio >= 0.5;
+          if (isHighLeverage) {
+            built.push({
+              id: `debt-to-equity-${String(latestMonthlyFinancial?.monthDate || endDate)}`,
+              fingerprint: 'debt-to-equity-leverage',
+              source: isCriticalLeverage ? 'open-critical' : 'unresolved',
+              title: isCriticalLeverage ? 'Outstanding Critical: Leverage Risk' : 'Leverage Signal: Debt-to-Equity Elevated',
+              detail: `Debt-to-Equity is ${debtToEquityPct.toFixed(1)}% (L ${latestLiabilities.toFixed(0)} / E ${latestEquity.toFixed(0)})`,
+              owner: 'Controller',
+              drillView: 'pa-overview',
+              updatedAt: String(latestMonthlyFinancial?.monthDate || endDate),
+              explainability: {
+                triggerName: isCriticalLeverage
+                  ? 'Outstanding Critical: Leverage Risk'
+                  : 'Leverage Signal: Debt-to-Equity Elevated',
+                formula: 'Debt-to-Equity = total liabilities / total equity',
+                threshold: isCriticalLeverage
+                  ? 'Debt-to-Equity >= 100%'
+                  : 'Debt-to-Equity >= 50%',
+                reasonNow: `Debt-to-Equity ${debtToEquityPct.toFixed(1)}%`,
+                policySource: 'Financial structure watch rule (monthly context)',
+                dataRefs: ['/api/performance-analytics/context monthlyFinancials'],
+                sourceTimestamp: String(latestMonthlyFinancial?.monthDate || endDate),
+              },
+            });
+          }
+        }
+
+        const contextBenchmarks = Array.isArray(performanceContextData?.benchmarks?.items)
+          ? performanceContextData.benchmarks.items
+          : [];
+        const grossMarginRatio =
+          latestMonthlyFinancial && asNumber(latestMonthlyFinancial.revenue) > 0
+            ? asNumber(
+                latestMonthlyFinancial.grossMargin ??
+                  latestMonthlyFinancial.grossMarginPct ??
+                  latestMonthlyFinancial.grossProfit
+              ) > 0
+              ? (
+                  asNumber(
+                    latestMonthlyFinancial.grossMargin ??
+                      latestMonthlyFinancial.grossMarginPct ??
+                      latestMonthlyFinancial.grossProfit
+                  ) /
+                  (String(latestMonthlyFinancial.grossMarginPct || '').includes('%') ? 1 : asNumber(latestMonthlyFinancial.revenue))
+                )
+              : (asNumber(latestMonthlyFinancial.revenue) - asNumber(latestMonthlyFinancial.cogsTotal)) /
+                Math.max(asNumber(latestMonthlyFinancial.revenue), 1)
+            : null;
+        const netMarginRatio =
+          latestMonthlyFinancial && asNumber(latestMonthlyFinancial.revenue) > 0
+            ? asNumber(
+                latestMonthlyFinancial.netMargin ??
+                  latestMonthlyFinancial.netMarginPct ??
+                  latestMonthlyFinancial.netIncome ??
+                  latestMonthlyFinancial.netProfit
+              ) > 0
+              ? (
+                  asNumber(
+                    latestMonthlyFinancial.netMargin ??
+                      latestMonthlyFinancial.netMarginPct ??
+                      latestMonthlyFinancial.netIncome ??
+                      latestMonthlyFinancial.netProfit
+                  ) /
+                  (String(latestMonthlyFinancial.netMarginPct || '').includes('%') ? 1 : asNumber(latestMonthlyFinancial.revenue))
+                )
+              : null
+            : null;
+        const currentLiabilities = asNumber(
+          latestMonthlyFinancial?.currentLiabilities ??
+            latestMonthlyFinancial?.currentLiab
+        );
+        const currentAssets = asNumber(
+          latestMonthlyFinancial?.currentAssets
+        );
+        const currentRatio =
+          currentLiabilities > 0
+            ? (currentAssets > 0
+                ? currentAssets / currentLiabilities
+                : (asNumber(latestMonthlyFinancial?.cash) + asNumber(latestMonthlyFinancial?.ar)) / currentLiabilities)
+            : null;
+        const quickRatio =
+          currentLiabilities > 0
+            ? (asNumber(latestMonthlyFinancial?.cash) + asNumber(latestMonthlyFinancial?.ar)) / currentLiabilities
+            : null;
+        const dsoDays =
+          Number.isFinite(asNumber(arSummary?.dso)) && asNumber(arSummary?.dso) > 0
+            ? asNumber(arSummary.dso)
+            : Number.isFinite(asNumber(latestMonthlyFinancial?.dso))
+              ? asNumber(latestMonthlyFinancial?.dso)
+              : null;
+        const dpoDays = Number.isFinite(asNumber(latestMonthlyFinancial?.dpo))
+          ? asNumber(latestMonthlyFinancial?.dpo)
+          : null;
+        const dioDays = Number.isFinite(asNumber(latestMonthlyFinancial?.dio ?? latestMonthlyFinancial?.daysInventory))
+          ? asNumber(latestMonthlyFinancial?.dio ?? latestMonthlyFinancial?.daysInventory)
+          : null;
+        type BenchmarkSignal = {
+          label: string;
+          companyValue: number;
+          benchmarkValue: number;
+          direction: 'higher-better' | 'lower-better';
+          unit: 'ratio' | 'days' | 'percent';
+        };
+        const benchmarkSignals: BenchmarkSignal[] = [];
+        const benchmarkRules: Array<{
+          label: string;
+          matcher: RegExp;
+          direction: 'higher-better' | 'lower-better';
+          unit: 'ratio' | 'days' | 'percent';
+          value: number | null;
+        }> = [
+          { label: 'Debt-to-Equity', matcher: /debt.*equity|equity.*debt|leverage/i, direction: 'lower-better', unit: 'ratio', value: debtToEquityRatio },
+          { label: 'Current Ratio', matcher: /current\s*ratio/i, direction: 'higher-better', unit: 'ratio', value: currentRatio },
+          { label: 'Quick Ratio', matcher: /quick\s*ratio|acid\s*test/i, direction: 'higher-better', unit: 'ratio', value: quickRatio },
+          { label: 'Gross Margin', matcher: /gross\s*margin/i, direction: 'higher-better', unit: 'percent', value: grossMarginRatio },
+          { label: 'Net Margin', matcher: /net\s*margin|profit\s*margin/i, direction: 'higher-better', unit: 'percent', value: netMarginRatio },
+          { label: 'DSO', matcher: /days\s*(sales\s*outstanding|receivables)|\bdso\b/i, direction: 'lower-better', unit: 'days', value: dsoDays },
+          { label: 'DPO', matcher: /days\s*payables|\bdpo\b/i, direction: 'lower-better', unit: 'days', value: dpoDays },
+          { label: 'DIO', matcher: /days\s*inventory|\bdio\b|inventory\s*days/i, direction: 'lower-better', unit: 'days', value: dioDays },
+        ];
+        for (const benchmark of contextBenchmarks) {
+          const metricName = String(benchmark?.metricName || '');
+          const benchmarkValue = Number(benchmark?.fiveYearValue);
+          if (!metricName || !Number.isFinite(benchmarkValue)) continue;
+          const rule = benchmarkRules.find((candidate) => candidate.matcher.test(metricName));
+          if (!rule || rule.value === null || !Number.isFinite(rule.value)) continue;
+          benchmarkSignals.push({
+            label: rule.label,
+            companyValue: Number(rule.value),
+            benchmarkValue,
+            direction: rule.direction,
+            unit: rule.unit,
+          });
+        }
+        const adverseBenchmarkSignals = benchmarkSignals.filter((signal) => {
+          if (signal.direction === 'higher-better') {
+            return signal.companyValue < signal.benchmarkValue * 0.85;
+          }
+          return signal.companyValue > signal.benchmarkValue * 1.15;
+        });
+        if (adverseBenchmarkSignals.length > 0) {
+          const topSignals = adverseBenchmarkSignals.slice(0, 3);
+          const formatBenchmarkValue = (signal: BenchmarkSignal, value: number): string => {
+            if (signal.unit === 'days') return `${value.toFixed(1)}d`;
+            if (signal.unit === 'percent') return `${(value * 100).toFixed(1)}%`;
+            return `${value.toFixed(2)}x`;
+          };
+          built.push({
+            id: `benchmark-variance-${endDate}`,
+            fingerprint: 'benchmark-variance',
+            source: 'unresolved',
+            title: 'Benchmark Variance Watch',
+            detail: `${adverseBenchmarkSignals.length} benchmark gap(s): ${topSignals
+              .map(
+                (signal) =>
+                  `${signal.label} ${formatBenchmarkValue(signal, signal.companyValue)} vs ${formatBenchmarkValue(
+                    signal,
+                    signal.benchmarkValue
+                  )}`
+              )
+              .join(' | ')}`,
+            owner: 'Controller',
+            drillView: 'pa-overview',
+            updatedAt: endDate,
+            explainability: {
+              triggerName: 'Benchmark Variance Watch',
+              formula: 'Compare company ratios against available industry benchmarks and flag materially adverse variance',
+              threshold: 'Adverse variance >15% vs benchmark (direction-aware)',
+              reasonNow: `${adverseBenchmarkSignals.length} ratio(s) are materially away from benchmark.`,
+              policySource: 'Industry benchmark variance rule',
+              dataRefs: ['/api/performance-analytics/context benchmarks + monthlyFinancials'],
+              sourceTimestamp: endDate,
+            },
+          });
+        }
+
+        const covenantAlerts = Array.isArray(covenantAlertsData?.alerts) ? covenantAlertsData.alerts : [];
+        covenantAlerts
+          .filter((alert: any) => String(alert?.status || '').toLowerCase() === 'active')
+          .slice(0, 20)
+          .forEach((alert: any) => {
+            const severity = String(alert?.severity || '').toLowerCase();
+            const covenantName = String(alert?.covenantName || alert?.title || 'Covenant').trim();
+            built.push({
+              id: `covenant-${String(alert?.id || Math.random().toString(36).slice(2))}`,
+              fingerprint: `covenant-${String(alert?.id || '').trim() || String(alert?.title || '').trim()}`,
+              source: severity === 'critical' ? 'open-critical' : 'unresolved',
+              title: `Loan Covenant ${severity === 'critical' ? 'Breach Risk' : 'Warning'}: ${covenantName}`,
+              detail: String(alert?.description || alert?.title || 'Covenant outside allowed range'),
+              owner: 'Covenant Manager',
+              drillView: 'covenants',
+              updatedAt: String(alert?.timestamp || endDate),
+              explainability: {
+                triggerName: 'Loan Covenant Warning/Breach',
+                formula: 'Ingest active covenant warnings and breach-level statuses from covenant monitor',
+                threshold: 'status = active and severity in {warning, critical}',
+                reasonNow: `${covenantName} is active at ${severity || 'warning'} severity`,
+                policySource: 'Covenant monitoring feed',
+                dataRefs: ['/api/covenants/alerts'],
+                sourceTimestamp: String(alert?.timestamp || endDate),
+              },
+            });
+          });
+
+        if (monthlyFinancialCount <= 0) {
+          built.push({
+            id: `financial-context-gap-${endDate}`,
+            fingerprint: 'financial-context-gap',
+            source: 'unresolved',
+            title: 'Financial Context Coverage Gap',
+            detail: 'Monthly financial context is unavailable; pulse scoring may underweight broader financial trends.',
+            owner: 'Controller',
+            drillView: 'pa-overview',
+            updatedAt: endDate,
+            explainability: {
+              triggerName: 'Financial Context Coverage Gap',
+              formula: 'Raise monitoring item when monthly financial context feed is empty',
+              threshold: 'performance context monthlyFinancials count = 0',
+              reasonNow: 'No monthly financial context records were returned for the selected range.',
+              policySource: 'Cross-signal readiness rule',
+              dataRefs: ['/api/performance-analytics/context'],
+              sourceTimestamp: endDate,
+              readinessStatus: 'partial',
+              readinessReason: 'Monthly context missing while operational signals continue to run.',
+            },
+          });
+        }
 
         priorityFocusTerms.slice(0, 10).forEach((term) => {
           built.push({

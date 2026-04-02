@@ -3998,6 +3998,15 @@ export async function GET(request: NextRequest) {
         const previousTotal = previousCash.reduce((sum, record) => sum + record.cashBalance, 0);
         const changeAmount = previousTotal ? totalCash - previousTotal : 0;
         const changePercent = previousTotal ? (changeAmount / previousTotal) * 100 : 0;
+        const hasCashObservation = latestCash.length > 0;
+        const estimatedRunwayWeeks =
+          !hasCashObservation
+            ? null
+            : Math.abs(changeAmount) > 0
+              ? (totalCash / Math.abs(changeAmount)) * 4.33
+              : totalCash > 0
+                ? 999
+                : null;
 
         // Calculate average cash balance over the period
         const accountBalances = data.reduce((acc, record) => {
@@ -4020,6 +4029,8 @@ export async function GET(request: NextRequest) {
           totalCash,
           changeAmount,
           changePercent,
+          runwayWeeks: estimatedRunwayWeeks,
+          runwaySource: estimatedRunwayWeeks !== null ? 'derived_from_cash_change' : 'unavailable',
           accountCount: latestCash.length,
           accounts: accountSummaries,
           avgTotalCash: data.length > 0 

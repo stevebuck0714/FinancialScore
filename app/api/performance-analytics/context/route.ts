@@ -132,22 +132,10 @@ export async function GET(request: NextRequest) {
         )
       : [];
 
-    const latestFinancialRecord = await safeFindFirst(
-      'latest financial record',
-      prisma.financialRecord.findFirst({
-        where: { companyId },
-        select: { id: true },
-        orderBy: { createdAt: 'desc' },
-      })
-    );
-
     const monthlyFinancialWhere: any = {
       companyId,
       monthDate: { gte: startDate, lte: endDate },
     };
-    if (latestFinancialRecord?.id) {
-      monthlyFinancialWhere.financialRecordId = latestFinancialRecord.id;
-    }
 
     const [
       monthlyFinancials,
