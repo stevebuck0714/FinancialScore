@@ -330,6 +330,45 @@ async function loadSeedLastRunAtFromMetadataPath(
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function parseQuickBooksSnapshotFromRawData(rawData: unknown): AccountSnapshotRow[] {
+  if (!rawData || typeof rawData !== "object" || Array.isArray(rawData)) return [];
+  const record = rawData as Record<string, unknown>;
+  const chart = record.chartOfAccounts;
+  if (!chart || typeof chart !== "object" || Array.isArray(chart)) return [];
+  const chartRecord = chart as Record<string, unknown>;
+  const queryResponse =
+    chartRecord.QueryResponse && typeof chartRecord.QueryResponse === "object" && !Array.isArray(chartRecord.QueryResponse)
+      ? (chartRecord.QueryResponse as Record<string, unknown>)
+      : null;
+  const accounts = Array.isArray(queryResponse?.Account) ? (queryResponse?.Account as unknown[]) : [];
+  return accounts
+    .map((row) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+      const account = row as Record<string, unknown>;
+      const accountId = String(account.Id || "").trim();
+      const accountName = String(account.Name || "").trim();
+      if (!accountId || !accountName) return null;
+      const accountCode = String(account.AcctNum || accountId).trim();
+      const classification = String(account.AccountType || account.Classification || "").trim() || null;
+      return {
+        accountId,
+        accountName,
+        accountCode,
+        classification,
+      } as AccountSnapshotRow;
+    })
+    .filter((row): row is AccountSnapshotRow => !!row);
+}
+
+async function loadQuickBooksSnapshotFromLatestFinancialRecord(companyId: string): Promise<AccountSnapshotRow[]> {
+  const latestRecord = await prisma.financialRecord.findFirst({
+    where: { companyId },
+    orderBy: { createdAt: "desc" },
+    select: { rawData: true },
+  });
+  return parseQuickBooksSnapshotFromRawData(latestRecord?.rawData);
+}
+
 // GET - Retrieve mappings for a company
 export async function GET(request: NextRequest) {
   try {
@@ -370,7 +409,10 @@ export async function GET(request: NextRequest) {
     const seedLastRunAt = seededPlatform
       ? await loadSeedLastRunAtFromMetadataPath(companyId, accountingSystem)
       : null;
-    const snapshot = parseAccountSnapshot(snapshotRaw);
+    const snapshot =
+      accountingSystem === "QUICKBOOKS"
+        ? await loadQuickBooksSnapshotFromLatestFinancialRecord(companyId)
+        : parseAccountSnapshot(snapshotRaw);
     const snapshotById = new Map(snapshot.map((row) => [normalize(row.accountId), row]));
     const snapshotByName = new Map(snapshot.map((row) => [normalize(row.accountName), row]));
     const snapshotByComparableName = new Map(
@@ -566,7 +608,7 @@ export async function POST(request: NextRequest) {
     // Resolve company sector for sector-specific Revenue/COGS validation.
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { id: true, industrySectorCategory: true },
+      select: { id: true, industrySectorCategory: true, accountingSystem: true },
     });
     if (!company) {
       return NextResponse.json(
@@ -577,6 +619,14 @@ export async function POST(request: NextRequest) {
 
     const sectorCategory = company.industrySectorCategory || '01';
     const allowedTargetFields = getAllowedTargetFieldSet(sectorCategory);
+    const accountingSystem = String((company as any)?.accountingSystem || "").toUpperCase();
+    const quickBooksSnapshot =
+      accountingSystem === "QUICKBOOKS"
+        ? await loadQuickBooksSnapshotFromLatestFinancialRecord(companyId)
+        : [];
+    const quickBooksByName = new Map(
+      quickBooksSnapshot.map((row) => [normalize(row.accountName), row]),
+    );
 
     const uniqueMappings = mappings.filter(
       (mapping: any, index: number, self: any[]) =>
@@ -653,9 +703,13 @@ export async function POST(request: NextRequest) {
       const incomingAccountCode = String(m.qbAccountCode || "").trim() || null;
       const existingAccountId = String(existing?.qbAccountId || "").trim() || null;
       const existingAccountCode = String(existing?.qbAccountCode || "").trim() || null;
+      const sourceMatch = quickBooksByName.get(normalize(m.qbAccount));
+      const sourceAccountId = sourceMatch?.accountId ? String(sourceMatch.accountId).trim() : null;
+      const sourceAccountCode = sourceMatch?.accountCode ? String(sourceMatch.accountCode).trim() : null;
       const baseMappingData = {
-        qbAccountId: incomingAccountId || existingAccountId,
-        qbAccountCode: incomingAccountCode || existingAccountCode || incomingAccountId || existingAccountId,
+        qbAccountId: incomingAccountId || existingAccountId || sourceAccountId,
+        qbAccountCode:
+          incomingAccountCode || existingAccountCode || sourceAccountCode || incomingAccountId || existingAccountId || sourceAccountId,
         qbAccountClassification:
           m.qbAccountClassification || existing?.qbAccountClassification || null,
         targetField,

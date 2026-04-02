@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
         uploadedByUserId: true,
         fileName: true,
         fileUrl: true,
+        rawData: true,
+        columnMapping: true,
         createdAt: true,
         updatedAt: true,
         monthlyData: {

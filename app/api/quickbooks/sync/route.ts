@@ -56,6 +56,13 @@ function parseTargetMonth(value: unknown): Date | null {
   return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
 }
 
+function normalizeAccountNameForMatch(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
 export async function POST(request: NextRequest) {
   const syncStartTime = Date.now();
   let recordsImported = 0;
@@ -150,7 +157,7 @@ export async function POST(request: NextRequest) {
     const refreshAccessToken = async (reason: string): Promise<void> => {
       console.log(`🔄 Refreshing QuickBooks token (${reason})...`);
       try {
-        const refreshResponse = await oauthClient.refresh();
+        const refreshResponse = await oauthClient.refreshUsingToken(refreshToken);
         const newToken = refreshResponse.getJson();
 
         await prisma.accountingConnection.update({
@@ -513,14 +520,51 @@ export async function POST(request: NextRequest) {
     const accountMappings = await prisma.accountMapping.findMany({
       where: { companyId },
       select: {
+        id: true,
         qbAccount: true,
         qbAccountId: true,
+        qbAccountCode: true,
         targetField: true,
         lobAllocations: true,
         allocationMethod: true,
       },
     });
     console.log(`✅ Found ${accountMappings.length} account mappings (${accountMappings.filter(m => m.lobAllocations).length} with LOB allocations)`);
+
+    if (accountsData?.QueryResponse?.Account && Array.isArray(accountsData.QueryResponse.Account) && accountMappings.length > 0) {
+      const accountsByName = new Map<string, { id: string; code: string }>();
+      for (const row of accountsData.QueryResponse.Account) {
+        if (!row || typeof row !== 'object') continue;
+        const accountName = normalizeAccountNameForMatch((row as any).Name);
+        const accountId = String((row as any).Id || '').trim();
+        if (!accountName || !accountId || accountsByName.has(accountName)) continue;
+        const accountCode = String((row as any).AcctNum || accountId).trim();
+        accountsByName.set(accountName, { id: accountId, code: accountCode || accountId });
+      }
+
+      let updatedIdentityCount = 0;
+      for (const mapping of accountMappings) {
+        const existingId = String(mapping.qbAccountId || '').trim();
+        const existingCode = String(mapping.qbAccountCode || '').trim();
+        if (existingId && existingCode) continue;
+        const match = accountsByName.get(normalizeAccountNameForMatch(mapping.qbAccount));
+        if (!match) continue;
+        await prisma.accountMapping.update({
+          where: { id: mapping.id },
+          data: {
+            qbAccountId: existingId || match.id,
+            qbAccountCode: existingCode || match.code || match.id,
+          },
+        });
+        mapping.qbAccountId = existingId || match.id;
+        (mapping as any).qbAccountCode = existingCode || match.code || match.id;
+        updatedIdentityCount += 1;
+      }
+
+      if (updatedIdentityCount > 0) {
+        console.log(`✅ Backfilled QuickBooks account IDs/codes on ${updatedIdentityCount} saved mappings`);
+      }
+    }
 
     // Fetch company LOBs with headcount percentages
     const company = await prisma.company.findUnique({
@@ -793,10 +837,12 @@ export async function POST(request: NextRequest) {
       recordsCreated: number;
       errors: string[];
     } | null = null;
+    let operationalErrorMessage: string | null = null;
     try {
       operationalSyncResult = await runOperationalSyncForCompany(companyId, 'QUICKBOOKS', 'monthly');
       if (!operationalSyncResult.success) {
         const opError = `Operational monthly sync failed: ${operationalSyncResult.errors.join(' | ')}`.slice(0, 900);
+        operationalErrorMessage = opError;
         await prisma.accountingConnection.update({
           where: {
             companyId_platform: {
@@ -811,6 +857,7 @@ export async function POST(request: NextRequest) {
       }
     } catch (error: any) {
       const opErrorMessage = `Operational monthly sync failed: ${error?.message || 'Unknown error'}`.slice(0, 900);
+      operationalErrorMessage = opErrorMessage;
       await prisma.accountingConnection.update({
         where: {
           companyId_platform: {
@@ -840,11 +887,12 @@ export async function POST(request: NextRequest) {
       data: {
         status: 'ACTIVE',
         lastSyncAt: new Date(),
-        errorMessage: null,
+        errorMessage: operationalErrorMessage,
       },
     });
 
     // Log the sync
+    const operationalErrors = operationalSyncResult?.success === false ? operationalSyncResult.errors || [] : [];
     await prisma.apiSyncLog.create({
       data: {
         companyId,
@@ -852,8 +900,11 @@ export async function POST(request: NextRequest) {
         syncType: 'manual',
         status: 'success',
         recordsImported,
-        errorCount,
-        errorDetails: errors.length > 0 ? { errors, traceId: syncTraceId } : ({ traceId: syncTraceId } as any),
+        errorCount: errorCount + operationalErrors.length,
+        errorDetails:
+          errors.length > 0 || operationalErrors.length > 0
+            ? { errors, operationalErrors, operationalSync: operationalSyncResult, traceId: syncTraceId }
+            : ({ traceId: syncTraceId } as any),
         intuitTid: intuitTid,
         duration: Date.now() - syncStartTime,
       },

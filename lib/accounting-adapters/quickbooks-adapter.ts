@@ -82,7 +82,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
     };
 
     try {
-      const refreshResponse = await oauthClient.refresh();
+      const refreshResponse = await oauthClient.refreshUsingToken(this.config.refreshToken);
       const newToken = refreshResponse.getJson();
       const accessToken = newToken.access_token || this.config.accessToken;
       const refreshToken = newToken.refresh_token || this.config.refreshToken;

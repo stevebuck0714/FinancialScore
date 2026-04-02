@@ -3158,6 +3158,19 @@ function FinancialScorePage() {
       return 'Other';
     };
 
+    const chartRows = Array.isArray(qbRawData?.chartOfAccounts?.QueryResponse?.Account)
+      ? qbRawData.chartOfAccounts.QueryResponse.Account
+      : [];
+    const chartByName = new Map<string, { id: string; code: string }>();
+    for (const row of chartRows) {
+      if (!row || typeof row !== 'object') continue;
+      const accountName = String((row as any).Name || '').trim().toLowerCase();
+      if (!accountName || chartByName.has(accountName)) continue;
+      const accountId = String((row as any).Id || '').trim();
+      const accountCode = String((row as any).AcctNum || accountId || '').trim();
+      chartByName.set(accountName, { id: accountId, code: accountCode });
+    }
+
     const collectAccounts = (statementData: any, statementType: 'profitAndLoss' | 'balanceSheet') => {
       const collected: Array<{ qbAccount: string; qbAccountId: string; qbAccountCode: string; qbAccountClassification: string; targetField: string; confidence: string }> = [];
       const seen = new Set<string>();
@@ -3178,7 +3191,10 @@ function FinancialScorePage() {
             if (!accountName || accountName.toLowerCase().includes('total')) continue;
 
             // QBO report rows carry account id on the first (name) column.
-            const accountId = (row.ColData[0]?.id || row.ColData[1]?.id || row.ColData[1]?.value || '').toString().trim();
+            const reportAccountId = (row.ColData[0]?.id || row.ColData[1]?.id || '').toString().trim();
+            const chartMatch = chartByName.get(accountName.toLowerCase());
+            const accountId = (reportAccountId || chartMatch?.id || '').toString().trim();
+            const accountCode = (chartMatch?.code || accountId || '').toString().trim();
             const classification = classifyAccount(statementType, sectionName);
             const dedupeKey = accountId
               ? `${statementType}:id:${accountId}`
@@ -3189,7 +3205,7 @@ function FinancialScorePage() {
             collected.push({
               qbAccount: accountName,
               qbAccountId: accountId,
-              qbAccountCode: accountId,
+              qbAccountCode: accountCode,
               qbAccountClassification: classification,
               targetField: 'unmapped',
               confidence: 'low',
@@ -12138,6 +12154,41 @@ function FinancialScorePage() {
                             const parsed = Number.parseFloat(normalized);
                             return Number.isFinite(parsed) ? parsed : 0;
                           };
+                          const collectQboAccountIdsByName = (rawData: any): Map<string, string> => {
+                            const valueByName = new Map<string, string>();
+                            const upsert = (name: unknown, id: unknown) => {
+                              const accountName = String(name || '').trim().toLowerCase();
+                              const accountId = String(id || '').trim();
+                              if (!accountName || !accountId) return;
+                              if (!valueByName.has(accountName)) valueByName.set(accountName, accountId);
+                            };
+
+                            const chartAccounts = Array.isArray(rawData?.chartOfAccounts?.QueryResponse?.Account)
+                              ? rawData.chartOfAccounts.QueryResponse.Account
+                              : [];
+                            chartAccounts.forEach((account: any) => {
+                              if (!account || typeof account !== 'object') return;
+                              upsert(account.Name, account.Id || account.AcctNum);
+                            });
+
+                            const visitRows = (rows: any[]) => {
+                              for (const row of rows) {
+                                if (row?.type === 'Section') {
+                                  const nested = Array.isArray(row?.Rows?.Row) ? row.Rows.Row : [];
+                                  if (nested.length > 0) visitRows(nested);
+                                  continue;
+                                }
+                                if (row?.type !== 'Data' || !Array.isArray(row?.ColData)) continue;
+                                upsert(row.ColData[0]?.value, row.ColData[0]?.id || row.ColData[1]?.id || row.ColData[1]?.value);
+                              }
+                            };
+                            const plRows = Array.isArray(rawData?.profitAndLoss?.Rows?.Row) ? rawData.profitAndLoss.Rows.Row : [];
+                            const bsRows = Array.isArray(rawData?.balanceSheet?.Rows?.Row) ? rawData.balanceSheet.Rows.Row : [];
+                            if (plRows.length > 0) visitRows(plRows);
+                            if (bsRows.length > 0) visitRows(bsRows);
+
+                            return valueByName;
+                          };
 
                           const collectLatestValues = (report: any) => {
                             const valueByKey = new Map<string, number>();
@@ -12193,7 +12244,11 @@ function FinancialScorePage() {
                                 const accountId = String(row.ColData[0]?.id || '').trim();
                                 const amount = parseAmount(row.ColData[latestColIndex]?.value);
 
-                                if (accountId) valueByKey.set(`id:${accountId}`, amount);
+                                if (accountId) {
+                                  valueByKey.set(`id:${accountId}`, amount);
+                                  const normalizedId = accountId.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                  if (normalizedId) valueByKey.set(`id:${normalizedId}`, amount);
+                                }
                                 valueByKey.set(`name:${name.toLowerCase()}`, amount);
                               }
                             };
@@ -12323,7 +12378,9 @@ function FinancialScorePage() {
                               ? companies.find((company: any) => company.id === selectedCompanyId)?.accountingSystem
                               : '') || ''
                           ).toUpperCase();
+                          const isQboCompany = selectedAccountingSystem === 'QUICKBOOKS' || selectedAccountingSystem === 'QUICKBOOKS_DESKTOP';
                           const isInforCompany = selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI';
+                          const qboAccountIdsByName = isQboCompany ? collectQboAccountIdsByName(qbRawData) : new Map<string, string>();
                           // For Infor, authoritative account-review values come from the dedicated API endpoint.
                           // Avoid mixing in payload-derived rollups that can fan out one target-field total
                           // (e.g. cash) to many detailed accounts.
@@ -12441,11 +12498,32 @@ function FinancialScorePage() {
                                 )
                               )
                               .map(({ mapping, originalIndex }, idx: number) => {
-                              const byId = mapping.qbAccountId ? mergedValues.get(`id:${String(mapping.qbAccountId).trim()}`) : undefined;
-                              const byCode = mapping.qbAccountCode ? mergedValues.get(`id:${String(mapping.qbAccountCode).trim()}`) : undefined;
+                              const idRaw = String(mapping.qbAccountId || '').trim();
+                              const codeRaw = String(mapping.qbAccountCode || '').trim();
+                              const nameRaw = String(mapping.qbAccount || '').trim();
+                              const resolvedQboClassId =
+                                codeRaw ||
+                                idRaw ||
+                                (isQboCompany ? String(qboAccountIdsByName.get(nameRaw.toLowerCase()) || '').trim() : '');
+                              const idNormalized = idRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+                              const codeNormalized = codeRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+                              const resolvedNormalized = resolvedQboClassId.toLowerCase().replace(/[^a-z0-9]/g, '');
+                              const nameKey = nameRaw.toLowerCase();
+                              const byId = idRaw ? mergedValues.get(`id:${idRaw}`) : undefined;
+                              const byCode = codeRaw ? mergedValues.get(`id:${codeRaw}`) : undefined;
+                              const byResolved = resolvedQboClassId ? mergedValues.get(`id:${resolvedQboClassId}`) : undefined;
+                              const byIdNormalized = idNormalized ? mergedValues.get(`id:${idNormalized}`) : undefined;
+                              const byCodeNormalized = codeNormalized ? mergedValues.get(`id:${codeNormalized}`) : undefined;
+                              const byResolvedNormalized = resolvedNormalized ? mergedValues.get(`id:${resolvedNormalized}`) : undefined;
+                              const byName = nameKey ? mergedValues.get(`name:${nameKey}`) : undefined;
                               const latestValue =
                                 byId !== undefined ? byId :
                                 byCode !== undefined ? byCode :
+                                byResolved !== undefined ? byResolved :
+                                byIdNormalized !== undefined ? byIdNormalized :
+                                byCodeNormalized !== undefined ? byCodeNormalized :
+                                byResolvedNormalized !== undefined ? byResolvedNormalized :
+                                byName !== undefined ? byName :
                                 null;
                               return (
                               <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -12484,7 +12562,7 @@ function FinancialScorePage() {
                                   </select>
                                 </td>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>
-                                  {getDisplayAccountCode(mapping)}
+                                  {resolvedQboClassId || getDisplayAccountCode(mapping)}
                                 </td>
                                 <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
