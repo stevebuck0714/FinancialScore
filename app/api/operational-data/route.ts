@@ -1114,6 +1114,11 @@ export async function GET(request: NextRequest) {
       case 'ar-aging':
         // Get AR aging data
         let arFrequencyForQuery: 'daily' | 'weekly' | 'monthly' = frequency;
+        // QBO operational enrichment is month-end keyed. When the UI is still on
+        // daily frequency, prefer monthly snapshots so AR/AP tabs do not appear empty.
+        if (isQuickBooksCompany && frequency === 'daily') {
+          arFrequencyForQuery = 'monthly';
+        }
         data = [];
 
         let unpaidByCustomer: Array<{
@@ -1499,7 +1504,7 @@ export async function GET(request: NextRequest) {
           const latestOpenSnapshot = await prisma.aROpenInvoiceSnapshot.findFirst({
           where: {
             companyId,
-            frequency: 'daily',
+            frequency: arFrequencyForQuery,
             snapshotDate: { lte: endDate },
           },
           select: { snapshotDate: true },
@@ -1515,7 +1520,7 @@ export async function GET(request: NextRequest) {
           ? await prisma.aROpenInvoiceSnapshot.findMany({
               where: {
                 companyId,
-                frequency: 'daily',
+                frequency: arFrequencyForQuery,
                 snapshotDate: {
                   gte: latestOpenSnapshotDate,
                   lte: new Date(latestOpenSnapshotDate.getTime() + 24 * 60 * 60 * 1000 - 1),
@@ -2300,10 +2305,12 @@ export async function GET(request: NextRequest) {
 
       case 'ap-aging':
         // Get AP aging data
+        const apFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
+          isQuickBooksCompany && frequency === 'daily' ? 'monthly' : frequency;
         data = await prisma.aPAgingSnapshot.findMany({
           where: {
             companyId,
-            frequency,
+            frequency: apFrequencyForQuery,
             snapshotDate: dateFilter,
           },
           orderBy: { snapshotDate: 'desc' },
@@ -2427,7 +2434,7 @@ export async function GET(request: NextRequest) {
         const latestOpenBillsSnapshotDate = await (prisma as any).aPOpenBillSnapshot.findFirst({
           where: {
             companyId,
-            frequency,
+            frequency: apFrequencyForQuery,
             snapshotDate: dateFilter,
           },
           select: { snapshotDate: true },
@@ -2510,7 +2517,7 @@ export async function GET(request: NextRequest) {
           const openBillRows = await (prisma as any).aPOpenBillSnapshot.findMany({
             where: {
               companyId,
-              frequency,
+              frequency: apFrequencyForQuery,
               snapshotDate: latestOpenBillsSnapshotDate.snapshotDate,
             },
             orderBy: [{ amountDueHome: 'desc' }],
@@ -2567,7 +2574,7 @@ export async function GET(request: NextRequest) {
           const trendOpenRows = await (prisma as any).aPOpenBillSnapshot.findMany({
             where: {
               companyId,
-              frequency,
+              frequency: apFrequencyForQuery,
               snapshotDate: dateFilter,
             },
             select: {
@@ -2653,7 +2660,7 @@ export async function GET(request: NextRequest) {
               const rows = rowsBySnapshot.get(snapshotKey) || trendTemplateRows;
               const bucket = {
                 snapshotDate,
-                frequency,
+                frequency: apFrequencyForQuery,
                 totalAP: 0,
                 current: 0,
                 days1to30: 0,
