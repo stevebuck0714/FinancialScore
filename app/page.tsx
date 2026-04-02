@@ -1512,7 +1512,7 @@ function FinancialScorePage() {
     });
   };
 
-  const runCsiMappingPipeline = async (params: { trigger: 'save' | 'apply' }) => {
+  const runCsiMappingPipeline = async () => {
     const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
     if (!currentCompany?.id) {
       alert(`Cannot process mappings: Company not found. Selected: ${selectedCompanyId}, Available companies: ${companies?.length || 0}`);
@@ -1533,11 +1533,10 @@ function FinancialScorePage() {
       targetField: normalizeMappingTargetField(m?.targetField),
     }));
 
-    if (params.trigger === 'save') setIsSavingMappings(true);
-    if (params.trigger === 'apply') setIsProcessingMonthlyData(true);
+    setIsProcessingMonthlyData(true);
     setCsiPipelineStatus({
       state: 'running',
-      trigger: params.trigger,
+      trigger: 'apply',
       stage: 'start',
       message: `Running CSI pipeline for ${apiFinancialTargetMonth}...`,
       updatedAt: Date.now(),
@@ -1562,7 +1561,7 @@ function FinancialScorePage() {
           : '';
         setCsiPipelineStatus({
           state: 'error',
-          trigger: params.trigger,
+          trigger: 'apply',
           stage,
           message: result?.error || result?.message || 'CSI pipeline failed',
           updatedAt: Date.now(),
@@ -1605,7 +1604,7 @@ function FinancialScorePage() {
       await refreshCompanyMappings(currentCompany.id);
       setCsiPipelineStatus({
         state: 'success',
-        trigger: params.trigger,
+        trigger: 'apply',
         stage: 'complete',
         message: `CSI pipeline completed for ${apiFinancialTargetMonth}.`,
         updatedAt: Date.now(),
@@ -1618,7 +1617,7 @@ function FinancialScorePage() {
     } catch (error: any) {
       setCsiPipelineStatus({
         state: 'error',
-        trigger: params.trigger,
+        trigger: 'apply',
         stage: 'exception',
         message: error?.message || 'CSI pipeline failed',
         updatedAt: Date.now(),
@@ -1626,19 +1625,13 @@ function FinancialScorePage() {
       alert(`CSI processing failed: ${error?.message || 'Unknown error'}`);
       return false;
     } finally {
-      if (params.trigger === 'save') setIsSavingMappings(false);
-      if (params.trigger === 'apply') setIsProcessingMonthlyData(false);
+      setIsProcessingMonthlyData(false);
     }
   };
 
   const saveAccountMappings = async () => {
     try {
       const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
-      const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
-      if (selectedSystemNormalized === 'INFOR_CSI') {
-        await runCsiMappingPipeline({ trigger: 'save' });
-        return;
-      }
       console.log('?? Save Mappings Debug:', {
         currentCompany,
         currentCompanyId: currentCompany?.id,
@@ -12057,7 +12050,7 @@ function FinancialScorePage() {
                               }
 
                               if (selectedSystemNormalized === 'INFOR_CSI') {
-                                const csiCompleted = await runCsiMappingPipeline({ trigger: 'apply' });
+                                const csiCompleted = await runCsiMappingPipeline();
                                 if (csiCompleted) {
                                   setAdminDashboardTab('data-review');
                                 }
