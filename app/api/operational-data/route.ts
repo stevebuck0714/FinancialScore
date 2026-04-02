@@ -1122,9 +1122,9 @@ export async function GET(request: NextRequest) {
       case 'ar-aging':
         // Get AR aging data
         let arFrequencyForQuery: 'daily' | 'weekly' | 'monthly' = frequency;
-        // QBO operational enrichment is month-end keyed. When the UI is still on
-        // daily frequency, prefer monthly snapshots so AR/AP tabs do not appear empty.
-        if (isQuickBooksCompany && frequency === 'daily') {
+        // QBO operational enrichment is month-end keyed. When the UI is not on
+        // monthly frequency, prefer monthly snapshots so AR/AP tabs do not appear empty.
+        if (isQuickBooksCompany && frequency !== 'monthly') {
           arFrequencyForQuery = 'monthly';
         }
         data = [];
@@ -2333,7 +2333,7 @@ export async function GET(request: NextRequest) {
       case 'ap-aging':
         // Get AP aging data
         const apFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
-          isQuickBooksCompany && frequency === 'daily' ? 'monthly' : frequency;
+          isQuickBooksCompany && frequency !== 'monthly' ? 'monthly' : frequency;
         data = await prisma.aPAgingSnapshot.findMany({
           where: {
             companyId,
