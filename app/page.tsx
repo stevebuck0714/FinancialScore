@@ -3142,7 +3142,7 @@ function FinancialScorePage() {
 
   // Restore first-pass mapping for API-imported financial data when no mappings exist yet.
   useEffect(() => {
-    if (!selectedCompanyId || adminDashboardTab !== 'data-mapping' || aiMappings.length > 0) return;
+    if (!selectedCompanyId || adminDashboardTab !== 'data-mapping') return;
     if (!qbRawData || (!qbRawData.profitAndLoss && !qbRawData.balanceSheet)) return;
 
     const classifyAccount = (statementType: 'profitAndLoss' | 'balanceSheet', sectionName: string): string => {
@@ -3234,10 +3234,11 @@ function FinancialScorePage() {
     ];
 
     if (generatedMappings.length > 0) {
-      setAiMappings(generatedMappings);
+      // Always refresh from latest QBO sources and preserve existing user mappings/allocations.
+      setAiMappings((prev) => mergeGeneratedMappingsWithExisting(generatedMappings, prev));
       setShowMappingSection(true);
     }
-  }, [selectedCompanyId, adminDashboardTab, qbRawData, aiMappings.length]);
+  }, [selectedCompanyId, adminDashboardTab, qbRawData]);
 
   // Save dashboard widgets to database
   const saveDashboardPreferences = async () => {
