@@ -584,7 +584,8 @@ model AccountMapping {
   lobAllocations          Json?
   company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@unique([companyId, qbAccount])
+  @@unique([companyId, qbAccountId])
+  @@index([companyId, qbAccount])
   @@index([companyId])
 }
 

@@ -60,6 +60,17 @@ function normalize(v: unknown): string {
   return "";
 }
 
+function buildMappingIdentityKey(mapping: {
+  qbAccount?: string | null;
+  qbAccountId?: string | null;
+  qbAccountCode?: string | null;
+}): string {
+  const idOrCode = normalize(mapping.qbAccountId) || normalize(mapping.qbAccountCode);
+  const name = normalizeForCompare(String(mapping.qbAccount || ""));
+  if (idOrCode && name) return `${idOrCode}|${name}`;
+  return idOrCode || name;
+}
+
 function stripManualClassificationPrefix(value: unknown): string {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -628,10 +639,14 @@ export async function POST(request: NextRequest) {
       quickBooksSnapshot.map((row) => [normalize(row.accountName), row]),
     );
 
-    const uniqueMappings = mappings.filter(
-      (mapping: any, index: number, self: any[]) =>
-        index === self.findIndex((m: any) => m.qbAccount === mapping.qbAccount),
-    );
+    const seenIdentity = new Set<string>();
+    const uniqueMappings = mappings.filter((mapping: any) => {
+      const key = buildMappingIdentityKey(mapping);
+      if (!key) return false;
+      if (seenIdentity.has(key)) return false;
+      seenIdentity.add(key);
+      return true;
+    });
     const sanitizedUniqueMappings = uniqueMappings.map((m: any) => {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const semanticallyInvalid =
@@ -685,12 +700,17 @@ export async function POST(request: NextRequest) {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const targetField =
         normalizedTargetField && normalizedTargetField !== "" ? normalizedTargetField : "unmapped";
-      const existing = await prisma.accountMapping.findUnique({
+      const incomingAccountId = String(m.qbAccountId || "").trim() || null;
+      const incomingAccountCode = String(m.qbAccountCode || "").trim() || null;
+      const incomingAccountName = String(m.qbAccount || "").trim();
+      const existing = await prisma.accountMapping.findFirst({
         where: {
-          companyId_qbAccount: {
-            companyId,
-            qbAccount: m.qbAccount,
-          },
+          companyId,
+          OR: [
+            ...(incomingAccountId ? [{ qbAccountId: incomingAccountId }] : []),
+            ...(incomingAccountCode ? [{ qbAccountCode: incomingAccountCode, qbAccount: incomingAccountName }] : []),
+            ...(!incomingAccountId && !incomingAccountCode && incomingAccountName ? [{ qbAccount: incomingAccountName }] : []),
+          ],
         },
         select: {
           id: true,
@@ -699,8 +719,6 @@ export async function POST(request: NextRequest) {
           qbAccountClassification: true,
         },
       });
-      const incomingAccountId = String(m.qbAccountId || "").trim() || null;
-      const incomingAccountCode = String(m.qbAccountCode || "").trim() || null;
       const existingAccountId = String(existing?.qbAccountId || "").trim() || null;
       const existingAccountCode = String(existing?.qbAccountCode || "").trim() || null;
       const sourceMatch = quickBooksByName.get(normalize(m.qbAccount));

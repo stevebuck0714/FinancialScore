@@ -95,6 +95,17 @@ function normalizeTargetField(value: unknown): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
+function asObjectPayload(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function hasGlResponsesPayload(value: unknown): boolean {
+  const payload = asObjectPayload(value);
+  if (!payload) return false;
+  return Array.isArray(payload.glResponses) && payload.glResponses.length > 0;
+}
+
 function collectValuesFromInforPayload(rawPayload: unknown, targetMonth: string | null): Map<string, number> {
   const valueByKey = new Map<string, number>();
   if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
@@ -617,10 +628,12 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = await withPrismaReconnectRetry(
-      () => prisma.$queryRaw<Array<{ csi: unknown; m3: unknown }>>`
+      () => prisma.$queryRaw<Array<{ csiFinancial: unknown; m3Financial: unknown; csiCoa: unknown; m3Coa: unknown }>>`
       SELECT
-        "connectionMetadata"->'inforCsiFinancialPayload' AS csi,
-        "connectionMetadata"->'inforM3FinancialPayload' AS m3
+        "connectionMetadata"->'inforCsiFinancialPayload' AS "csiFinancial",
+        "connectionMetadata"->'inforM3FinancialPayload' AS "m3Financial",
+        "connectionMetadata"->'inforCsiCoaPayload' AS "csiCoa",
+        "connectionMetadata"->'inforM3CoaPayload' AS "m3Coa"
       FROM "AccountingConnection"
       WHERE "companyId" = ${companyId}
         AND platform = 'INFOR_M3'
@@ -628,7 +641,20 @@ export async function GET(request: NextRequest) {
     `,
       'account-review.latest-values.get.accounting-connection',
     );
-    const metadataPayload = rows[0]?.csi ?? rows[0]?.m3 ?? null;
+    const payloadRow = rows[0] || null;
+    const metadataPayload = hasGlResponsesPayload(payloadRow?.csiFinancial)
+      ? asObjectPayload(payloadRow?.csiFinancial)
+      : hasGlResponsesPayload(payloadRow?.csiCoa)
+        ? asObjectPayload(payloadRow?.csiCoa)
+        : hasGlResponsesPayload(payloadRow?.m3Financial)
+          ? asObjectPayload(payloadRow?.m3Financial)
+          : hasGlResponsesPayload(payloadRow?.m3Coa)
+            ? asObjectPayload(payloadRow?.m3Coa)
+            : asObjectPayload(payloadRow?.csiFinancial) ||
+              asObjectPayload(payloadRow?.csiCoa) ||
+              asObjectPayload(payloadRow?.m3Financial) ||
+              asObjectPayload(payloadRow?.m3Coa) ||
+              null;
     const valueByKey = collectValuesFromInforPayload(metadataPayload, targetMonth);
 
     const mappings = await withPrismaReconnectRetry(

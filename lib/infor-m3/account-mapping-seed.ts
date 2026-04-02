@@ -94,6 +94,21 @@ function normalizeText(value: unknown): string {
   return '';
 }
 
+function normalizeIdentityToken(value: unknown): string {
+  return normalizeText(value).toLowerCase();
+}
+
+function buildAccountIdentityKey(account: {
+  accountId?: string | null;
+  accountCode?: string | null;
+  accountName?: string | null;
+}): string {
+  const idOrCode = normalizeIdentityToken(account.accountId) || normalizeIdentityToken(account.accountCode);
+  const name = normalizeIdentityToken(account.accountName);
+  if (idOrCode && name) return `${idOrCode}|${name}`;
+  return idOrCode || name;
+}
+
 function getCaseInsensitiveValue(record: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const exact = normalizeText(record[key]);
@@ -203,28 +218,29 @@ function extractAccountsFromPayload(payload: unknown): SourceAccount[] {
     if (!existing.classification && account.classification) existing.classification = account.classification;
   }
 
-  // Second-pass dedupe by normalized account name because source payloads can
-  // contain multiple IDs that map to the same human-readable account name.
-  // AccountMapping uniqueness is name-based per company, so this prevents
-  // duplicate-name create attempts during seed.
-  const dedupedByName = new Map<string, SourceAccount>();
+  // Second-pass dedupe by account identity (account number/id + name),
+  // not name alone. Two distinct IDs can legitimately share a label.
+  const dedupedByIdentity = new Map<string, SourceAccount>();
   for (const account of deduped.values()) {
-    const nameKey = account.accountName.trim().toLowerCase();
-    if (!nameKey) continue;
-    const existing = dedupedByName.get(nameKey);
+    const identityKey = buildAccountIdentityKey(account);
+    if (!identityKey) continue;
+    const existing = dedupedByIdentity.get(identityKey);
     if (!existing) {
-      dedupedByName.set(nameKey, account);
+      dedupedByIdentity.set(identityKey, account);
       continue;
     }
     if (!existing.accountCode && account.accountCode) existing.accountCode = account.accountCode;
     if (!existing.classification && account.classification) existing.classification = account.classification;
     // Prefer a more explicit ID token over a fallback name-derived ID.
-    if (existing.accountId.trim().toLowerCase() === nameKey && account.accountId.trim().toLowerCase() !== nameKey) {
+    if (
+      existing.accountId.trim().toLowerCase() === existing.accountName.trim().toLowerCase() &&
+      account.accountId.trim().toLowerCase() !== account.accountName.trim().toLowerCase()
+    ) {
       existing.accountId = account.accountId;
     }
   }
 
-  return Array.from(dedupedByName.values());
+  return Array.from(dedupedByIdentity.values());
 }
 
 function isManualClassification(value: unknown): boolean {
@@ -269,10 +285,19 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   });
 
   const byId = new Map<string, (typeof existing)[number]>();
-  const byName = new Map<string, (typeof existing)[number]>();
+  const byCode = new Map<string, (typeof existing)[number]>();
+  const byIdentity = new Map<string, (typeof existing)[number]>();
   for (const row of existing) {
-    if (row.qbAccountId) byId.set(row.qbAccountId.trim().toLowerCase(), row);
-    byName.set(row.qbAccount.trim().toLowerCase(), row);
+    const idKey = normalizeIdentityToken(row.qbAccountId);
+    const codeKey = normalizeIdentityToken(row.qbAccountCode);
+    const identityKey = buildAccountIdentityKey({
+      accountId: row.qbAccountId,
+      accountCode: row.qbAccountCode,
+      accountName: row.qbAccount,
+    });
+    if (idKey) byId.set(idKey, row);
+    if (codeKey) byCode.set(codeKey, row);
+    if (identityKey) byIdentity.set(identityKey, row);
   }
 
   let created = 0;
@@ -300,18 +325,20 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
     };
   }> = [];
   const sourceIdSet = new Set(sourceAccounts.map((a) => a.accountId.trim().toLowerCase()));
-  const sourceNameSet = new Set(sourceAccounts.map((a) => a.accountName.trim().toLowerCase()));
-  const pendingCreateNameSet = new Set<string>();
+  const sourceIdentitySet = new Set(sourceAccounts.map((a) => buildAccountIdentityKey(a)).filter(Boolean));
+  const pendingCreateIdentitySet = new Set<string>();
 
   for (const source of sourceAccounts) {
     const idKey = source.accountId.trim().toLowerCase();
-    const nameKey = source.accountName.trim().toLowerCase();
+    const codeKey = normalizeIdentityToken(source.accountCode);
+    const identityKey = buildAccountIdentityKey(source);
     const existingById = byId.get(idKey);
-    const existingByName = byName.get(nameKey);
-    const existingRow = existingById || existingByName;
+    const existingByCode = codeKey ? byCode.get(codeKey) : undefined;
+    const existingByIdentity = identityKey ? byIdentity.get(identityKey) : undefined;
+    const existingRow = existingById || existingByCode || existingByIdentity;
 
     if (!existingRow) {
-      if (pendingCreateNameSet.has(nameKey)) {
+      if (identityKey && pendingCreateIdentitySet.has(identityKey)) {
         unchanged += 1;
         continue;
       }
@@ -325,7 +352,7 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
         allocationMethod: 'manual',
         confidence: 'low',
       });
-      pendingCreateNameSet.add(nameKey);
+      if (identityKey) pendingCreateIdentitySet.add(identityKey);
       created += 1;
       newAccounts.push(source.accountName);
       continue;
@@ -373,9 +400,13 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   const inactiveAccounts = existing
     .filter((row) => {
       const idKey = row.qbAccountId ? row.qbAccountId.trim().toLowerCase() : '';
-      const nameKey = row.qbAccount.trim().toLowerCase();
+      const identityKey = buildAccountIdentityKey({
+        accountId: row.qbAccountId,
+        accountCode: row.qbAccountCode,
+        accountName: row.qbAccount,
+      });
       if (idKey && sourceIdSet.has(idKey)) return false;
-      if (sourceNameSet.has(nameKey)) return false;
+      if (identityKey && sourceIdentitySet.has(identityKey)) return false;
       return true;
     })
     .map((row) => row.qbAccount);
