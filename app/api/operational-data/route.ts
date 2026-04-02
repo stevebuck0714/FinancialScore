@@ -7,6 +7,11 @@ import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from 
 export const dynamic = 'force-dynamic';
 
 async function companyHasAnyRealOperationalData(companyId: string): Promise<boolean> {
+  const optionalFindFirst = async (delegate: any): Promise<{ id: string } | null> => {
+    if (!delegate || typeof delegate.findFirst !== 'function') return null;
+    return delegate.findFirst({ where: { companyId }, select: { id: true } });
+  };
+
   const [
     customers,
     arAging,
@@ -27,8 +32,8 @@ async function companyHasAnyRealOperationalData(companyId: string): Promise<bool
     prisma.cashSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
     prisma.aROpenInvoiceSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
     prisma.aRPaymentFact.findFirst({ where: { companyId }, select: { id: true } }),
-    (prisma as any).aPOpenBillSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
-    (prisma as any).aPPaymentFact.findFirst({ where: { companyId }, select: { id: true } }),
+    optionalFindFirst((prisma as any).aPOpenBillSnapshot),
+    optionalFindFirst((prisma as any).aPPaymentFact),
   ]);
   return Boolean(
     customers ||
@@ -653,8 +658,11 @@ export async function GET(request: NextRequest) {
     }
     // Hard guard: once a company is on real operational data, never serve mock payloads.
     // This prevents mixed real+mock experiences if a stale demo flag remains enabled.
+    // Additional prod guard: production should never serve operational mock payloads.
     const shouldUseMockData =
-      company.forceOperationalMockData === true && hasRealOperationalData !== true;
+      !isProduction &&
+      company.forceOperationalMockData === true &&
+      hasRealOperationalData !== true;
 
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
     const normalizedAccountingSystem = String(company.accountingSystem || '').trim().toUpperCase();
@@ -1215,25 +1223,43 @@ export async function GET(request: NextRequest) {
         let usedArInvoiceDetail = false;
         const preferOpenInvoiceSnapshotTrend = true;
 
-        const arInvoiceTrendRows = await prisma.$queryRaw<
-          Array<{
-            snapshotDate: Date;
-            snapshotTs: Date;
-            totalAR: number;
-            current: number;
-            days1to30: number;
-            days31to60: number;
-            days61to90: number;
-            days90plus: number;
-            currentPct: number;
-            days1to30Pct: number;
-            days31to60Pct: number;
-            days61to90Pct: number;
-            days90plusPct: number;
-            over30Pct: number;
-            over90Pct: number;
-          }>
-        >`
+        let arInvoiceTrendRows: Array<{
+          snapshotDate: Date;
+          snapshotTs: Date;
+          totalAR: number;
+          current: number;
+          days1to30: number;
+          days31to60: number;
+          days61to90: number;
+          days90plus: number;
+          currentPct: number;
+          days1to30Pct: number;
+          days31to60Pct: number;
+          days61to90Pct: number;
+          days90plusPct: number;
+          over30Pct: number;
+          over90Pct: number;
+        }> = [];
+        if (!preferOpenInvoiceSnapshotTrend) {
+          arInvoiceTrendRows = await prisma.$queryRaw<
+            Array<{
+              snapshotDate: Date;
+              snapshotTs: Date;
+              totalAR: number;
+              current: number;
+              days1to30: number;
+              days31to60: number;
+              days61to90: number;
+              days90plus: number;
+              currentPct: number;
+              days1to30Pct: number;
+              days31to60Pct: number;
+              days61to90Pct: number;
+              days90plusPct: number;
+              over30Pct: number;
+              over90Pct: number;
+            }>
+          >`
           WITH day_snapshots AS (
             SELECT
               date_trunc('day', d."asOfDate") AS day,
@@ -1348,7 +1374,8 @@ export async function GET(request: NextRequest) {
           FROM bucketed b
           ORDER BY b."snapshotDate" DESC
           LIMIT ${Math.max(limit, 365)}
-        `;
+          `;
+        }
         if (!preferOpenInvoiceSnapshotTrend && arInvoiceTrendRows.length > 0) {
           usedArInvoiceDetail = true;
           data = arInvoiceTrendRows;
@@ -2633,7 +2660,7 @@ export async function GET(request: NextRequest) {
             }
             const snapshotKeysAsc = Array.from(rowsBySnapshot.keys()).sort();
             let expandedSnapshotKeysAsc = snapshotKeysAsc;
-            if (frequency === 'daily' && snapshotKeysAsc.length <= 1) {
+            if (frequency === 'daily' && snapshotKeysAsc.length > 0) {
               const rangeKeys: string[] = [];
               const cursor = startOfUtcDay(new Date(startDate));
               const rangeEnd = startOfUtcDay(new Date(endDate));

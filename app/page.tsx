@@ -91,6 +91,14 @@ const formatDollar = (value: number): string => {
   return '$' + Math.round(Math.abs(value)).toLocaleString('en-US');
 };
 
+type AccountReviewApiValueCacheEntry = {
+  cachedAt: number;
+  values: Record<string, number>;
+};
+
+const ACCOUNT_REVIEW_VALUES_CACHE_TTL_MS = 2 * 60 * 1000;
+const accountReviewValuesCache = new Map<string, AccountReviewApiValueCacheEntry>();
+
 type InforOperationalSyncStatus = {
   companyId: string;
   syncRunId: string;
@@ -4018,6 +4026,12 @@ function FinancialScorePage() {
     const targetMonth = /^\d{4}-\d{2}$/.test(String(apiFinancialTargetMonth || '').trim())
       ? String(apiFinancialTargetMonth).trim()
       : '';
+    const cacheKey = `${selectedCompanyId}|${targetMonth}`;
+    const cached = accountReviewValuesCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < ACCOUNT_REVIEW_VALUES_CACHE_TTL_MS) {
+      setAccountReviewApiValues(cached.values);
+      return;
+    }
     let cancelled = false;
     const load = async () => {
       try {
@@ -4042,6 +4056,10 @@ function FinancialScorePage() {
             const canonical = idToken.toLowerCase().replace(/[^a-z0-9]/g, '');
             if (canonical) normalized[`id:${canonical}`] = num;
           }
+        });
+        accountReviewValuesCache.set(cacheKey, {
+          cachedAt: Date.now(),
+          values: normalized,
         });
         setAccountReviewApiValues(normalized);
       } catch (error) {
@@ -4145,7 +4163,7 @@ function FinancialScorePage() {
     };
     
     loadConsultants();
-  }, [currentUser, siteAdminTab]);
+  }, [currentUser?.id, currentUser?.role]);
 
   // Load financial data when company is selected
   useEffect(() => {
@@ -5469,7 +5487,9 @@ function FinancialScorePage() {
   const loadErpCaoInDataMapping = async () => {
     const companyIdForLoad = resolveActiveCompanyIdForErpCaoLoad();
     const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
-    const isInforAccountsOnlyLoad = selectedSystemNormalized === 'INFOR_M3' || selectedSystemNormalized === 'INFOR_CSI';
+    // Infor CSI should use ERP COA monthly processing (through-month ingest).
+    // Keep accounts-only shortcut for classic Infor M3 chart sync.
+    const isInforAccountsOnlyLoad = selectedSystemNormalized === 'INFOR_M3';
     console.log('[ERP COA] Load button clicked', {
       selectedCompanyId,
       resolvedCompanyId: companyIdForLoad,
@@ -5494,7 +5514,7 @@ function FinancialScorePage() {
       !['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'].includes(String(selectedAccountingSystem).toUpperCase())
     ) {
       console.warn('[ERP COA] Blocked before POST: unsupported accounting system', { selectedAccountingSystem });
-      alert('ERP COA Load is currently available for QuickBooks Desktop and Infor M3.');
+      alert('ERP COA Load is currently available for QuickBooks Desktop, Infor M3, and Infor SyteLine CSI.');
       return;
     }
 
