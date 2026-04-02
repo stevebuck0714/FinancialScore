@@ -71,6 +71,11 @@ export type CanonicalMonthlyFinancial = {
 export function toFiniteNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (typeof value === 'string') {
+    const upper = value.toUpperCase();
+    if (/\(\s*CR\s*\)/.test(upper) || /\bCR\b/.test(upper)) {
+      // Global guardrail: credit-marked source strings are excluded from imports.
+      return 0;
+    }
     const normalized = value
       .trim()
       .replace(/\$/g, '')

@@ -12,6 +12,7 @@ import {
 } from '@/lib/financial-canonical';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { emitSyncStatus } from '@/lib/websocket-emit';
+import { runOperationalSyncForCompany } from '@/lib/operational-sync/runner';
 
 // Decrypt OAuth tokens using modern cipher
 function decryptToken(encryptedToken: string): string {
@@ -779,6 +780,49 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Trigger QBO monthly operational enrichment in the same user-run sync flow.
+    // This keeps AR/AP operational pages in lockstep with the primary QuickBooks sync action.
+    let operationalSyncResult: {
+      success: boolean;
+      recordsCreated: number;
+      errors: string[];
+    } | null = null;
+    try {
+      operationalSyncResult = await runOperationalSyncForCompany(companyId, 'QUICKBOOKS', 'monthly');
+      if (!operationalSyncResult.success) {
+        const opError = `Operational monthly sync failed: ${operationalSyncResult.errors.join(' | ')}`.slice(0, 900);
+        await prisma.accountingConnection.update({
+          where: {
+            companyId_platform: {
+              companyId,
+              platform: 'QUICKBOOKS',
+            },
+          },
+          data: {
+            errorMessage: opError,
+          },
+        });
+      }
+    } catch (error: any) {
+      const opErrorMessage = `Operational monthly sync failed: ${error?.message || 'Unknown error'}`.slice(0, 900);
+      await prisma.accountingConnection.update({
+        where: {
+          companyId_platform: {
+            companyId,
+            platform: 'QUICKBOOKS',
+          },
+        },
+        data: {
+          errorMessage: opErrorMessage,
+        },
+      });
+      operationalSyncResult = {
+        success: false,
+        recordsCreated: 0,
+        errors: [error?.message || 'Operational monthly sync failed'],
+      };
+    }
+
     // Update connection status
     await prisma.accountingConnection.update({
       where: {
@@ -825,6 +869,7 @@ export async function POST(request: NextRequest) {
       message: `QuickBooks data synced successfully! ${recordsImported} months imported.`,
       recordsImported,
       monthsImported: recordsImported,
+      operationalSync: operationalSyncResult,
       intuitTid,
       traceId: syncTraceId,
     });

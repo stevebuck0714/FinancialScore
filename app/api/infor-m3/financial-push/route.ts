@@ -64,6 +64,16 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    if (String(company.accountingSystem || '').toUpperCase() === 'INFOR_CSI') {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Infor CSI uses ledger-based daily/monthly financials. Run operational sync + reprocess mappings/publish month instead of payload push.',
+        },
+        { status: 409 },
+      );
+    }
 
     const frequency = normalizeFrequency(body.frequency);
     const targetMonth = normalizeTargetMonth(body.targetMonth);

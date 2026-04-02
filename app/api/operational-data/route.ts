@@ -632,6 +632,7 @@ export async function GET(request: NextRequest) {
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: {
+        accountingSystem: true,
         industrySectorCategory: true,
         hasRealOperationalData: true,
         forceOperationalMockData: true,
@@ -656,6 +657,9 @@ export async function GET(request: NextRequest) {
       company.forceOperationalMockData === true && hasRealOperationalData !== true;
 
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
+    const normalizedAccountingSystem = String(company.accountingSystem || '').trim().toUpperCase();
+    const isQuickBooksCompany =
+      normalizedAccountingSystem === 'QUICKBOOKS' || normalizedAccountingSystem === 'QUICKBOOKS_DESKTOP';
 
     // Build date filter
     const dateFilter = {
@@ -2308,7 +2312,7 @@ export async function GET(request: NextRequest) {
 
         // Fallback: derive AP trend from real daily financial snapshots when AP aging snapshots are unavailable.
         // This keeps AP page reports populated with real data in tenants where AP IDOs are not exposed.
-        if (!data.length) {
+        if (!data.length && !isQuickBooksCompany) {
           const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
           const fallbackDaily = dailySnapshotDelegate
             ? await dailySnapshotDelegate.findMany({
@@ -2810,7 +2814,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Fallback vendor/AP detail from mapped AP lines when AP open-bill/payment facts are unavailable.
-        if (!unpaidByVendor.length || !vendorBills.length) {
+        if ((!unpaidByVendor.length || !vendorBills.length) && !isQuickBooksCompany) {
           const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
           const latestMappedDate = mappedLineDelegate
             ? await mappedLineDelegate.findFirst({

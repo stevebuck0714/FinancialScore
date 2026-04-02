@@ -147,6 +147,21 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
       uploaderId = fallbackUser?.id || null;
     }
     if (!uploaderId) {
+      const accessFallback = await prisma.userCompanyAccess.findFirst({
+        where: { companyId },
+        orderBy: { createdAt: 'asc' },
+        select: { userId: true },
+      });
+      uploaderId = accessFallback?.userId || null;
+    }
+    if (!uploaderId) {
+      const anyUser = await prisma.user.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      uploaderId = anyUser?.id || null;
+    }
+    if (!uploaderId) {
       return {
         success: false,
         month: targetMonth,

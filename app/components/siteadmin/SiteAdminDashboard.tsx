@@ -139,6 +139,7 @@ export default function SiteAdminDashboard(props: any) {
     Record<string, { monthly: number; quarterly: number; annual: number }>
   >({});
   const [savingDataRoomPricingCompanyId, setSavingDataRoomPricingCompanyId] = React.useState<string | null>(null);
+  const [runningFinancialImportByCompany, setRunningFinancialImportByCompany] = React.useState<Record<string, boolean>>({});
 
   const getAccountingSystemLabel = (value: unknown): string => {
     const normalized = String(value || '').trim().toUpperCase();
@@ -2331,36 +2332,59 @@ export default function SiteAdminDashboard(props: any) {
   };
 
   const runInforM3FinancialImport = async (companyId: string, companyName: string) => {
+    if (runningFinancialImportByCompany[companyId]) {
+      alert('Financial import is already running for this company.');
+      return;
+    }
     const financialImportSettings = getCompanyFinancialImportSettings(companyId);
     if (!/^\d{4}-\d{2}$/.test(financialImportSettings.targetMonth)) {
       alert('Select a valid target month first (YYYY-MM).');
       return;
     }
+    const company = Array.isArray(companies) ? companies.find((entry: any) => entry.id === companyId) : null;
+    const accountingSystem = String(company?.accountingSystem || '').trim().toUpperCase();
+    const isCsi = accountingSystem === 'INFOR_CSI';
 
+    setRunningFinancialImportByCompany((prev) => ({ ...prev, [companyId]: true }));
     try {
-      const response = await fetch('/api/financials/reprocess-mappings', {
+      const response = await fetch(isCsi ? '/api/financials/publish-month' : '/api/financials/reprocess-mappings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId,
-          targetMonth: financialImportSettings.targetMonth,
-          mode: 'through',
+          ...(isCsi
+            ? { month: financialImportSettings.targetMonth, force: true }
+            : { targetMonth: financialImportSettings.targetMonth, mode: 'through' }),
         }),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.details || data?.error || 'Failed to run Infor financial import');
+      const raw = await response.text();
+      const requestId = response.headers.get('x-vercel-id') || '';
+      const data = (() => {
+        try {
+          return raw ? JSON.parse(raw) : {};
+        } catch {
+          return { error: `Non-JSON response: ${String(raw || '').slice(0, 240)}` };
+        }
+      })();
+      if (!response.ok || (!isCsi && !data?.ok)) {
+        const details = data?.details ? ` Details: ${data.details}` : '';
+        const rid = requestId ? ` Request ID: ${requestId}` : '';
+        throw new Error(`${data?.error || 'Failed to run Infor financial import'}${details}${rid}`);
       }
 
       const recordsImported = typeof data?.recordsImported === 'number' ? data.recordsImported : null;
       alert(
-        recordsImported !== null
-          ? `Infor financial import complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth}.`
-          : `Infor financial import complete for ${companyName} through ${financialImportSettings.targetMonth}.`
+        isCsi
+          ? `CSI month publish complete for ${companyName} (${financialImportSettings.targetMonth}).`
+          : recordsImported !== null
+            ? `Infor financial import complete for ${companyName}. ${recordsImported} records processed through ${financialImportSettings.targetMonth}.`
+            : `Infor financial import complete for ${companyName} through ${financialImportSettings.targetMonth}.`
       );
       await checkInforM3Status?.(companyId);
     } catch (error: any) {
       alert(`Infor financial import failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setRunningFinancialImportByCompany((prev) => ({ ...prev, [companyId]: false }));
     }
   };
 
@@ -3226,10 +3250,10 @@ export default function SiteAdminDashboard(props: any) {
                                                       </button>
                                                       <button
                                                         onClick={() => runInforM3FinancialImport(company.id, company.name)}
-                                                        disabled={inforBusy || !inforConnected}
-                                                        style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                        disabled={inforBusy || !inforConnected || !!runningFinancialImportByCompany[company.id]}
+                                                        style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected || !!runningFinancialImportByCompany[company.id] ? 'not-allowed' : 'pointer' }}
                                                       >
-                                                        Run Financial Import
+                                                        {runningFinancialImportByCompany[company.id] ? 'Running Financial Import...' : 'Run Financial Import'}
                                                       </button>
                                                     </div>
                                                   </div>
@@ -5634,10 +5658,10 @@ export default function SiteAdminDashboard(props: any) {
                                               </button>
                                               <button
                                                 onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
-                                                disabled={inforBusy || !inforConnected}
-                                                style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                disabled={inforBusy || !inforConnected || !!runningFinancialImportByCompany[businessCompany.id]}
+                                                style={{ width: '100%', minWidth: 0, padding: '8px 10px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected || !!runningFinancialImportByCompany[businessCompany.id] ? 'not-allowed' : 'pointer' }}
                                               >
-                                                Run Financial Import
+                                                {runningFinancialImportByCompany[businessCompany.id] ? 'Running Financial Import...' : 'Run Financial Import'}
                                               </button>
                                             </div>
                                           </div>
@@ -5914,10 +5938,10 @@ export default function SiteAdminDashboard(props: any) {
                                               </button>
                                               <button
                                                 onClick={() => runInforM3FinancialImport(businessCompany.id, businessCompany.name)}
-                                                disabled={inforBusy || !inforConnected}
-                                                style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected ? 'not-allowed' : 'pointer' }}
+                                                disabled={inforBusy || !inforConnected || !!runningFinancialImportByCompany[businessCompany.id]}
+                                                style={{ padding: '8px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: inforBusy || !inforConnected || !!runningFinancialImportByCompany[businessCompany.id] ? 'not-allowed' : 'pointer' }}
                                               >
-                                                Run Financial Import
+                                                {runningFinancialImportByCompany[businessCompany.id] ? 'Running Financial Import...' : 'Run Financial Import'}
                                               </button>
                                             </div>
                                           </div>

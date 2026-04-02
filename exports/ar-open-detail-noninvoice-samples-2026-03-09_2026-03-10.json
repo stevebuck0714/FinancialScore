@@ -1,0 +1,276 @@
+{
+  "2026-03-09": [
+    {
+      "status": "D",
+      "invoiceNo": "111599",
+      "customerId": "1036707",
+      "customerName": "Unknown Customer 2353",
+      "invoiceDate": null,
+      "amountDueHome": 2570.2,
+      "amountHome": 0
+    },
+    {
+      "status": "D",
+      "invoiceNo": "202202080",
+      "customerId": "1615801",
+      "customerName": "Unknown Customer 15398",
+      "invoiceDate": null,
+      "amountDueHome": 61.25,
+      "amountHome": null
+    },
+    {
+      "status": "C",
+      "invoiceNo": "112584",
+      "customerId": "1319905",
+      "customerName": "Unknown Customer 6086",
+      "invoiceDate": null,
+      "amountDueHome": 789021.58,
+      "amountHome": 0
+    },
+    {
+      "status": "D",
+      "invoiceNo": "201902725",
+      "customerId": "1165602",
+      "customerName": "Unknown Customer 19719",
+      "invoiceDate": null,
+      "amountDueHome": 0.06,
+      "amountHome": 0
+    },
+    {
+      "status": "D",
+      "invoiceNo": "202104992",
+      "customerId": "1936901",
+      "customerName": "Unknown Customer 7223",
+      "invoiceDate": null,
+      "amountDueHome": 81.6,
+      "amountHome": 0
+    },
+    {
+      "status": "D",
+      "invoiceNo": "20184237",
+      "customerId": "1520802",
+      "customerName": "Unknown Customer 4704",
+      "invoiceDate": null,
+      "amountDueHome": 0.2,
+      "amountHome": 0
+    },
+    {
+      "status": "D",
+      "invoiceNo": "202007854",
+      "customerId": "1822501",
+      "customerName": "Unknown Customer 2304",
+      "invoiceDate": null,
+      "amountDueHome": 3036.88,
+      "amountHome": 0
+    },
+    {
+      "status": "P",
+      "invoiceNo": "202202062",
+      "customerId": "1520804",
+      "customerName": "Unknown Customer 6196",
+      "invoiceDate": "2022-03-21T00:00:00.000Z",
+      "amountDueHome": 3835.2,
+      "amountHome": 4368
+    },
+    {
+      "status": "C",
+      "invoiceNo": "202002951",
+      "customerId": "1319905",
+      "customerName": "Unknown Customer 4915",
+      "invoiceDate": "2020-04-28T00:00:00.000Z",
+      "amountDueHome": 58.82,
+      "amountHome": 102.96
+    },
+    {
+      "status": "C",
+      "invoiceNo": "119609",
+      "customerId": "1456501",
+      "customerName": "Unknown Customer 7575",
+      "invoiceDate": "2017-12-21T00:00:00.000Z",
+      "amountDueHome": 2920,
+      "amountHome": 4380
+    },
+    {
+      "status": "D",
+      "invoiceNo": "201911018",
+      "customerId": "1001101",
+      "customerName": "Unknown Customer 13337",
+      "invoiceDate": null,
+      "amountDueHome": 0.8,
+      "amountHome": 0
+    },
+    {
+      "status": "P",
+      "invoiceNo": "202204529",
+      "customerId": "1822501",
+      "customerName": "Unknown Customer 5192",
+      "invoiceDate": "2022-06-15T00:00:00.000Z",
+      "amountDueHome": 1725,
+      "amountHome": 2070
+    },
+    {
+      "status": "D",
+      "invoiceNo": "111219",
+      "customerId": "1520802",
+      "customerName": "Unknown Customer 8512",
+      "invoiceDate": null,
+      "amountDueHome": 104.4,
+      "amountHome": null
+    },
+    {
+      "status": "D",
+      "invoiceNo": "202301772",
+      "customerId": "1572301",
+      "customerName": "Unknown Customer 6038",
+      "invoiceDate": null,
+      "amountDueHome": 19.97,
+      "amountHome": null
+    },
+    {
+      "status": "D",
+      "invoiceNo": "112861",
+      "customerId": "1275201",
+      "customerName": "Unknown Customer 16490",
+      "invoiceDate": null,
+      "amountDueHome": 0.62,
+      "amountHome": 0
+    }
+  ],
+  "2026-03-10": [
+    {
+      "status": "D",
+      "invoiceNo": "114945",
+      "customerId": "1520801",
+      "customerName": "Unknown Customer 3337",
+      "invoiceDate": null,
+      "amountDueHome": 9.39,
+      "amountHome": null
+    },
+    {
+      "status": "D",
+      "invoiceNo": "116125",
+      "customerId": "1852803",
+      "customerName": "Unknown Customer 14037",
+      "invoiceDate": null,
+      "amountDueHome": 51.3,
+      "amountHome": null
+    },
+    {
+      "status": "D",
+      "invoiceNo": "202402149",
+      "customerId": "1319903",
+      "customerName": "Unknown Customer 11370",
+      "invoiceDate": null,
+      "amountDueHome": 60.6,
+      "amountHome": null
+    },
+    {
+      "status": "C",
+      "invoiceNo": "202208136",
+      "customerId": "1319905",
+      "customerName": "Unknown Customer 4961",
+      "invoiceDate": "2022-10-20T00:00:00.000Z",
+      "amountDueHome": 51.80999999999995,
+      "amountHome": 849.66
+    },
+    {
+      "status": "C",
+      "invoiceNo": "20187890",
+      "customerId": "1319905",
+      "customerName": "Unknown Customer 10198",
+      "invoiceDate": "2018-10-31T00:00:00.000Z",
+      "amountDueHome": 1066.8,
+      "amountHome": 1314
+    },
+    {
+      "status": "P",
+      "invoiceNo": "202500505",
+      "customerId": "1129701",
+      "customerName": "Unknown Customer 5308",
+      "invoiceDate": "2025-01-21T00:00:00.000Z",
+      "amountDueHome": 2420,
+      "amountHome": 2563
+    },
+    {
+      "status": "D",
+      "invoiceNo": "20183743",
+      "customerId": "1577118",
+      "customerName": "Unknown Customer 4198",
+      "invoiceDate": null,
+      "amountDueHome": 10361.6,
+      "amountHome": null
+    },
+    {
+      "status": "P",
+      "invoiceNo": "202106938",
+      "customerId": "1520802",
+      "customerName": "Unknown Customer 7716",
+      "invoiceDate": "2021-08-20T00:00:00.000Z",
+      "amountDueHome": 190.86,
+      "amountHome": 503.7
+    },
+    {
+      "status": "C",
+      "invoiceNo": "202300458",
+      "customerId": "1520802",
+      "customerName": "Unknown Customer 6083",
+      "invoiceDate": "2023-02-03T00:00:00.000Z",
+      "amountDueHome": 195.4,
+      "amountHome": 195.5
+    },
+    {
+      "status": "P",
+      "invoiceNo": "201907383",
+      "customerId": "1319905",
+      "customerName": "Unknown Customer 8995",
+      "invoiceDate": "2019-08-08T00:00:00.000Z",
+      "amountDueHome": 5112.5,
+      "amountHome": 22695
+    },
+    {
+      "status": "D",
+      "invoiceNo": "111067",
+      "customerId": "1520804",
+      "customerName": "Unknown Customer 19367",
+      "invoiceDate": null,
+      "amountDueHome": 10100.38,
+      "amountHome": null
+    },
+    {
+      "status": "D",
+      "invoiceNo": "202007853",
+      "customerId": "1822501",
+      "customerName": "Unknown Customer 11620",
+      "invoiceDate": "2020-10-30T00:00:00.000Z",
+      "amountDueHome": 1191.52,
+      "amountHome": 432.3
+    },
+    {
+      "status": "C",
+      "invoiceNo": "202401817",
+      "customerId": "1456501",
+      "customerName": "Unknown Customer 12906",
+      "invoiceDate": "2024-03-25T00:00:00.000Z",
+      "amountDueHome": 4605.75,
+      "amountHome": 4912.8
+    },
+    {
+      "status": "D",
+      "invoiceNo": "108830",
+      "customerId": "1275201",
+      "customerName": "Unknown Customer 18169",
+      "invoiceDate": null,
+      "amountDueHome": 388,
+      "amountHome": null
+    },
+    {
+      "status": "D",
+      "invoiceNo": "202105384",
+      "customerId": "1127701",
+      "customerName": "Unknown Customer 4932",
+      "invoiceDate": null,
+      "amountDueHome": 157.92,
+      "amountHome": null
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+account_id,account_name,target_field,classification,amount
+100000,OUT-OF-BALANCE ERROR,otherCA,A,
+10100,Cash - Atlantic Union Bank,cash,A,-480689.70
+10150,Cash - National Bank,cash,A,-559363.37
+10200,Money Market Account,cash,A,409058.18
+10250,Money Market Account - NB,cash,A,
+10400,Checking - Flex Spending,cash,A,-1713.89
+10450,Flex Spending - FCB,cash,A,-1981.55
+11100,Accounts Receivable,ar,A,-1051396.52
+11120,Federal/State Income Tax Refund,otherCA,A,
+11150,ERC Receivable,ar,A,
+11160,Split Dollar Life Receivable,otherCA,A,
+11200,Allowance For Bad Debts,otherCA,A,
+113110,B E Aerospace Phillipines 菲律宾,otherCA,A,
+113111,Airedale Int'l Air Conditioning,ar,A,
+113112,PEKM KABELTECHNIK S R O,otherCA,A,
+113113,MODINE THERMAL SYSTEMS PRIVATE LTD,ar,A,
+113114,Bizlink Technology,otherCA,A,
+113115,Airedale Entl Air Conditioning,ar,A,
+113116,Atlantic Precision Resource USA (PARTS),ar,A,
+113117,Modine Hungaria Kft,ar,A,
+11500,Investment in APR Asia Ltd-,otherCA,A,123967.43
+11700,Employee Advances,otherCA,A,
+11800,Prepaid Taxes - Federal,otherCA,A,
+11850,Prepaid Taxes - State,otherCA,A,3490.00
+11870,Prepaid Expenses,otherCA,A,-13251.77
+11900,Prepaid Inventory Invoices IBNR,inventory,A,308751.70
+12000,Inventory,inventory,A,2280842.46
+200000,PAYROLL POSTING ERROR,otherCA,A,
+21000,Furniture & Fixtures,fixedAssets,A,54183.22
+21100,Accum Deprn - Furn & Fixtures,fixedAssets,A,-37893.40
+218103,Personal Social Security,otherCL,L,
+218104,Personal House Fund,otherCL,L,
+22000,Vehicles,fixedAssets,A,287912.99
+22100,Accum- Deprn- - Vehicles,fixedAssets,A,-233489.00
+22500,Leasehold Improvements,fixedAssets,A,
+22600,Accumulated Deprn - Leasehold,fixedAssets,A,
+23000,Machinery & Equipment,fixedAssets,A,201217.35
+23100,Accum Deprn - Mach & Equipment,fixedAssets,A,-133179.64
+23500,Software,otherCA,A,18534.96
+23600,Accumulated Depreciation - Software,fixedAssets,A,-14910.96
+23700,China - Equipment,otherCA,A,9095.21
+23720,Accumulated Depreciation - China Equip,fixedAssets,A,-19887.00
+23800,China Software,otherCA,A,10791.12
+24000,Goodwill,otherAssets,A,
+30100,Accounts Payable,ap,L,455406.34
+30200,Inventory Rec'd/Not Invoiced,otherCL,L,-292799.58
+30300,VRMA Pending,otherCL,L,-215.50
+34100,Federal Withholding,otherCL,L,-6419.85
+34200,FICA Withholding,otherCL,L,-9788.20
+34300,FICA Employer,otherCL,L,-40109.87
+34350,FICA Employer Deferred,otherCL,L,4973.42
+34600,VA State Unemployment,otherCL,L,-2148.00
+34605,GA State Unemployment,otherCL,L,0.00
+34610,NC State Unemployment,otherCL,L,-102.63
+34615,CA State Unemployment,otherCL,L,29.40
+34620,MA State Unemployment,otherCL,L,-368.48
+34625,OH State Unemployment,otherCL,L,0.00
+34630,TX State Unemployment,otherCL,L,0.00
+34640,CO State Unemployment,otherCL,L,0.00
+34645,State Withholding - GA,otherCL,L,65.91
+34650,State Withholding - MA,otherCL,L,1842.32
+34655,State Withholding - CA,otherCL,L,-41.62
+34660,State Withholding - NC,otherCL,L,-547.20
+34670,State Withholding - AL,otherCL,L,
+34675,State Withholding - OH,otherCL,L,-331.35
+34680,AL State Unemployment,otherCL,L,
+34690,State Withholding - CO,otherCL,L,-265.85
+34700,Denver Bus Occupational Privilege Tax,otherCL,L,
+34705,Troy OH City Tax,otherCL,L,58.90
+34800,State Withholding - VA,otherCL,L,-2257.54
+34810,Garnishment,otherCL,L,109.40
+34820,Flex Spending Withheld,otherCL,L,-866.32
+34830,401K Employee Loan Repayment,ap,L,372.55
+34850,Business License Tax,otherCL,L,
+35020,SIMPLE IRA Contributions - Employee,otherCL,L,-12056.42
+35030,401K Traditional Employee Contribution,otherCL,L,1714.00
+35035,401K Roth Employee Contribution,otherCL,L,218.36
+36000,Federal Income Tax Payable,otherCL,L,-9045.00
+37000,State Income Tax Payable,otherCL,L,-5387.57
+39010,Note/Pay - Vehicles,ltd,L,-45709.93
+39110,Shareholder note payable - Ron,ap,L,-143180.82
+39120,Shareholder note payable - Brian,ap,L,-53.50
+39130,Note Payable 02 Ford Explorer,ltd,L,
+39140,Accrued Interest Payable,ap,L,253.29
+39160,AMNB Line Of Credit,loc,L,-659337.46
+39165,AMNB Term Loan,ltd,L,9104.84
+39170,PPP Loan,ltd,L,
+39175,EIDL,ltd,L,
+39180,Capital Lease,ltd,L,1395.03
+39185,LOC - FCB,loc,L,-146525.09
+39190,Accrued Duty,otherCL,L,25000.00
+40000,Capital Stock,commonStock,manual:Equity,
+45000,Retained Earnings,retainedEarnings,manual:Equity,871255.05

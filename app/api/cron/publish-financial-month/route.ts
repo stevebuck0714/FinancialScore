@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { publishMonthFromDailySnapshots } from '@/lib/financial/publish-month-service';
+import { supportsPublishFromDailySnapshots } from '@/lib/financial/pipeline-strategy';
 
 function previousMonthString(now = new Date()): string {
   const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
@@ -36,7 +37,17 @@ export async function GET(request: NextRequest) {
         companyId: 'asc',
       },
     });
-    const companyIds = rows.map((row) => row.companyId);
+    const allCompanyIds = rows.map((row) => row.companyId);
+    const companies = await prisma.company.findMany({
+      where: { id: { in: allCompanyIds } },
+      select: { id: true, accountingSystem: true },
+    });
+    const publishEligibleCompanyIds = new Set(
+      companies
+        .filter((company) => supportsPublishFromDailySnapshots(company.accountingSystem))
+        .map((company) => company.id)
+    );
+    const companyIds = allCompanyIds.filter((companyId) => publishEligibleCompanyIds.has(companyId));
 
     const results: Array<Record<string, unknown>> = [];
     let successCount = 0;

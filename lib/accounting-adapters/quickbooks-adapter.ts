@@ -415,6 +415,26 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return copy;
   }
 
+  private resolveSyncAnchorDate(frequency: 'daily' | 'weekly' | 'monthly'): Date {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (frequency !== 'monthly') return today;
+    // Monthly operational snapshots are strictly keyed to the most recent closed month.
+    return new Date(today.getFullYear(), today.getMonth(), 0);
+  }
+
+  private getMonthBounds(asOfDate: Date): { start: Date; end: Date; monthKey: string } {
+    const start = new Date(asOfDate.getFullYear(), asOfDate.getMonth(), 1);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(asOfDate.getFullYear(), asOfDate.getMonth() + 1, 0);
+    end.setHours(0, 0, 0, 0);
+    return {
+      start,
+      end,
+      monthKey: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
+    };
+  }
+
   private resolveCashHistoryStartDate(
     today: Date,
     frequency: 'daily' | 'weekly' | 'monthly'
@@ -512,6 +532,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
     }
 
     return history;
+  }
+
+  private async getEntityMasterCount(entity: 'Customer' | 'Vendor'): Promise<number> {
+    const rows = await this.runPagedEntityQuery(entity, '');
+    return rows.length;
   }
   
   /**
@@ -753,7 +778,13 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: safeAmount };
   }
 
-  private async syncARTransactionFacts(startDate: Date, asOfDate: Date, frequency: 'daily' | 'weekly' | 'monthly'): Promise<number> {
+  private async syncARTransactionFacts(
+    startDate: Date,
+    asOfDate: Date,
+    frequency: 'daily' | 'weekly' | 'monthly',
+    options?: { includePayments?: boolean }
+  ): Promise<number> {
+    const includePayments = options?.includePayments !== false;
     const startStr = this.formatDate(startDate);
     const endStr = this.formatDate(asOfDate);
     const invoices = await this.runPagedEntityQuery('Invoice', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`);
@@ -795,6 +826,13 @@ export class QuickBooksAdapter implements AccountingAdapter {
     });
     if (openRows.length) {
       await prisma.aROpenInvoiceSnapshot.createMany({ data: openRows });
+    }
+
+    if (!includePayments) {
+      await prisma.aRPaymentFact.deleteMany({
+        where: { companyId: this.config.companyId, paymentDate: { gte: startDate, lte: asOfDate } },
+      });
+      return openRows.length;
     }
 
     const [payments, creditMemos, refundReceipts] = await Promise.all([
@@ -889,7 +927,13 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return openRows.length + paymentRows.length + creditMemoRows.length + refundRows.length;
   }
 
-  private async syncAPTransactionFacts(startDate: Date, asOfDate: Date, frequency: 'daily' | 'weekly' | 'monthly'): Promise<number> {
+  private async syncAPTransactionFacts(
+    startDate: Date,
+    asOfDate: Date,
+    frequency: 'daily' | 'weekly' | 'monthly',
+    options?: { includePayments?: boolean }
+  ): Promise<number> {
+    const includePayments = options?.includePayments !== false;
     const startStr = this.formatDate(startDate);
     const endStr = this.formatDate(asOfDate);
     const bills = await this.runPagedEntityQuery('Bill', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`);
@@ -931,6 +975,13 @@ export class QuickBooksAdapter implements AccountingAdapter {
     });
     if (openRows.length) {
       await (prisma as any).aPOpenBillSnapshot.createMany({ data: openRows });
+    }
+
+    if (!includePayments) {
+      await (prisma as any).aPPaymentFact.deleteMany({
+        where: { companyId: this.config.companyId, paymentDate: { gte: startDate, lte: asOfDate } },
+      });
+      return openRows.length;
     }
 
     const [billPayments, vendorCredits] = await Promise.all([
@@ -1091,15 +1142,32 @@ export class QuickBooksAdapter implements AccountingAdapter {
     };
     
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const asOfDate = this.resolveSyncAnchorDate(frequency);
+      const isMonthly = frequency === 'monthly';
+      const monthWindow = this.getMonthBounds(asOfDate);
+      const detailsStartDate = isMonthly
+        ? monthWindow.start
+        : this.resolveCashHistoryStartDate(asOfDate, frequency);
+      const customersEnabled = this.isProgramEnabled('Customers');
+      const vendorsEnabled = this.isProgramEnabled('Vendors');
+      const arEnabled = this.isProgramEnabled('AR');
+      const arPaymentsEnabled = this.isProgramEnabled('AR Payments');
+      const apEnabled = this.isProgramEnabled('AP');
+      const apPaymentsEnabled = this.isProgramEnabled('AP Payments');
+      const productsEnabled = this.isProgramEnabled('Products');
+      let arAgingSaved = false;
+      let apAgingSaved = false;
+      let arOpenItemRows = 0;
+      let apOpenItemRows = 0;
+      let customerMasterCount = 0;
+      let vendorMasterCount = 0;
       
       // 1. Sync cash balances
       try {
         const cashBalances = await this.getCashBalances();
         if (frequency === 'daily') {
-          const startDate = this.resolveCashHistoryStartDate(today, frequency);
-          const cashHistory = await this.getDailyCashHistory(startDate, today, cashBalances);
+          const startDate = this.resolveCashHistoryStartDate(asOfDate, frequency);
+          const cashHistory = await this.getDailyCashHistory(startDate, asOfDate, cashBalances);
           const dates = Array.from(cashHistory.keys()).sort();
 
           // Replace the full requested daily window so stale trailing days cannot persist.
@@ -1109,7 +1177,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
               frequency,
               snapshotDate: {
                 gte: startDate,
-                lte: today,
+                lte: asOfDate,
               },
             },
           });
@@ -1139,14 +1207,14 @@ export class QuickBooksAdapter implements AccountingAdapter {
             where: {
               companyId: this.config.companyId,
               frequency,
-              snapshotDate: today,
+              snapshotDate: asOfDate,
             },
           });
           for (const balance of cashBalances) {
             await prisma.cashSnapshot.create({
               data: {
                 companyId: this.config.companyId,
-                snapshotDate: today,
+                snapshotDate: asOfDate,
                 frequency,
                 accountId: balance.accountId,
                 accountName: balance.accountName,
@@ -1165,102 +1233,191 @@ export class QuickBooksAdapter implements AccountingAdapter {
       }
       
       // 2. Sync AR Aging
-      try {
-        const arAging = await this.getARAgingReport();
-        await prisma.aRAgingSnapshot.upsert({
-          where: {
-            companyId_snapshotDate_frequency: {
+      if (arEnabled) {
+        try {
+          const arAging = await this.getARAgingReport(asOfDate);
+          await prisma.aRAgingSnapshot.upsert({
+            where: {
+              companyId_snapshotDate_frequency: {
+                companyId: this.config.companyId,
+                snapshotDate: asOfDate,
+                frequency
+              }
+            },
+            update: {
+              totalAR: arAging.totalAR,
+              current: arAging.current,
+              days1to30: arAging.days1to30,
+              days31to60: arAging.days31to60,
+              days61to90: arAging.days61to90,
+              days90plus: arAging.days90plus
+            },
+            create: {
               companyId: this.config.companyId,
-              snapshotDate: today,
-              frequency
+              snapshotDate: asOfDate,
+              frequency,
+              totalAR: arAging.totalAR,
+              current: arAging.current,
+              days1to30: arAging.days1to30,
+              days31to60: arAging.days31to60,
+              days61to90: arAging.days61to90,
+              days90plus: arAging.days90plus
             }
-          },
-          update: {
-            totalAR: arAging.totalAR,
-            current: arAging.current,
-            days1to30: arAging.days1to30,
-            days31to60: arAging.days31to60,
-            days61to90: arAging.days61to90,
-            days90plus: arAging.days90plus
-          },
-          create: {
+          });
+          recordsCreated++;
+          moduleCounts.arAging++;
+          arAgingSaved = true;
+        } catch (error: any) {
+          errors.push(`AR Aging sync failed: ${error.message}`);
+        }
+      } else {
+        await prisma.aRAgingSnapshot.deleteMany({
+          where: {
             companyId: this.config.companyId,
-            snapshotDate: today,
             frequency,
-            totalAR: arAging.totalAR,
-            current: arAging.current,
-            days1to30: arAging.days1to30,
-            days31to60: arAging.days31to60,
-            days61to90: arAging.days61to90,
-            days90plus: arAging.days90plus
-          }
+            snapshotDate: asOfDate,
+          },
         });
-        recordsCreated++;
-        moduleCounts.arAging++;
-      } catch (error: any) {
-        errors.push(`AR Aging sync failed: ${error.message}`);
       }
       
       // 3. Sync AP Aging
-      try {
-        const apAging = await this.getAPAgingReport();
-        await prisma.aPAgingSnapshot.upsert({
-          where: {
-            companyId_snapshotDate_frequency: {
+      if (apEnabled) {
+        try {
+          const apAging = await this.getAPAgingReport(asOfDate);
+          await prisma.aPAgingSnapshot.upsert({
+            where: {
+              companyId_snapshotDate_frequency: {
+                companyId: this.config.companyId,
+                snapshotDate: asOfDate,
+                frequency
+              }
+            },
+            update: {
+              totalAP: apAging.totalAP,
+              current: apAging.current,
+              days1to30: apAging.days1to30,
+              days31to60: apAging.days31to60,
+              days61to90: apAging.days61to90,
+              days90plus: apAging.days90plus
+            },
+            create: {
               companyId: this.config.companyId,
-              snapshotDate: today,
-              frequency
+              snapshotDate: asOfDate,
+              frequency,
+              totalAP: apAging.totalAP,
+              current: apAging.current,
+              days1to30: apAging.days1to30,
+              days31to60: apAging.days31to60,
+              days61to90: apAging.days61to90,
+              days90plus: apAging.days90plus
             }
-          },
-          update: {
-            totalAP: apAging.totalAP,
-            current: apAging.current,
-            days1to30: apAging.days1to30,
-            days31to60: apAging.days31to60,
-            days61to90: apAging.days61to90,
-            days90plus: apAging.days90plus
-          },
-          create: {
+          });
+          recordsCreated++;
+          moduleCounts.apAging++;
+          apAgingSaved = true;
+        } catch (error: any) {
+          errors.push(`AP Aging sync failed: ${error.message}`);
+        }
+      } else {
+        await prisma.aPAgingSnapshot.deleteMany({
+          where: {
             companyId: this.config.companyId,
-            snapshotDate: today,
             frequency,
-            totalAP: apAging.totalAP,
-            current: apAging.current,
-            days1to30: apAging.days1to30,
-            days31to60: apAging.days31to60,
-            days61to90: apAging.days61to90,
-            days90plus: apAging.days90plus
-          }
+            snapshotDate: asOfDate,
+          },
         });
-        recordsCreated++;
-        moduleCounts.apAging++;
-      } catch (error: any) {
-        errors.push(`AP Aging sync failed: ${error.message}`);
       }
 
       // 3b. Sync AR/AP transaction-level facts for drilldowns
-      try {
-        const detailStartDate = this.resolveCashHistoryStartDate(today, frequency);
-        const arDetailCount = await this.syncARTransactionFacts(detailStartDate, today, frequency);
-        recordsCreated += arDetailCount;
-        moduleCounts.arAging += arDetailCount;
-      } catch (error: any) {
-        errors.push(`AR transaction sync failed: ${error.message}`);
+      if (arEnabled) {
+        try {
+          const arDetailCount = await this.syncARTransactionFacts(detailsStartDate, asOfDate, frequency, {
+            includePayments: arPaymentsEnabled,
+          });
+          recordsCreated += arDetailCount;
+          moduleCounts.arAging += arDetailCount;
+          arOpenItemRows = await prisma.aROpenInvoiceSnapshot.count({
+            where: {
+              companyId: this.config.companyId,
+              frequency,
+              snapshotDate: asOfDate,
+            },
+          });
+        } catch (error: any) {
+          errors.push(`AR transaction sync failed: ${error.message}`);
+        }
+      } else {
+        await prisma.aROpenInvoiceSnapshot.deleteMany({
+          where: {
+            companyId: this.config.companyId,
+            frequency,
+            snapshotDate: asOfDate,
+          },
+        });
+        await prisma.aRPaymentFact.deleteMany({
+          where: {
+            companyId: this.config.companyId,
+            paymentDate: { gte: detailsStartDate, lte: asOfDate },
+          },
+        });
       }
-      try {
-        const detailStartDate = this.resolveCashHistoryStartDate(today, frequency);
-        const apDetailCount = await this.syncAPTransactionFacts(detailStartDate, today, frequency);
-        recordsCreated += apDetailCount;
-        moduleCounts.apAging += apDetailCount;
-      } catch (error: any) {
-        errors.push(`AP transaction sync failed: ${error.message}`);
+      if (apEnabled) {
+        try {
+          const apDetailCount = await this.syncAPTransactionFacts(detailsStartDate, asOfDate, frequency, {
+            includePayments: apPaymentsEnabled,
+          });
+          recordsCreated += apDetailCount;
+          moduleCounts.apAging += apDetailCount;
+          apOpenItemRows = await (prisma as any).aPOpenBillSnapshot.count({
+            where: {
+              companyId: this.config.companyId,
+              frequency,
+              snapshotDate: asOfDate,
+            },
+          });
+        } catch (error: any) {
+          errors.push(`AP transaction sync failed: ${error.message}`);
+        }
+      } else {
+        await (prisma as any).aPOpenBillSnapshot.deleteMany({
+          where: {
+            companyId: this.config.companyId,
+            frequency,
+            snapshotDate: asOfDate,
+          },
+        });
+        await (prisma as any).aPPaymentFact.deleteMany({
+          where: {
+            companyId: this.config.companyId,
+            paymentDate: { gte: detailsStartDate, lte: asOfDate },
+          },
+        });
+      }
+
+      // 3c. Pull customer/vendor dimensions for monthly coverage checks.
+      if (isMonthly) {
+        if (customersEnabled) {
+          try {
+            customerMasterCount = await this.getEntityMasterCount('Customer');
+          } catch (error: any) {
+            errors.push(`Customer master sync failed: ${error.message}`);
+          }
+        }
+        if (vendorsEnabled) {
+          try {
+            vendorMasterCount = await this.getEntityMasterCount('Vendor');
+          } catch (error: any) {
+            errors.push(`Vendor master sync failed: ${error.message}`);
+          }
+        }
       }
       
-      // 4. Sync Customer Sales (yesterday's data)
-      try {
+      // 4. Sync Customer Sales
+      if (customersEnabled) {
+        try {
         if (frequency === 'daily') {
-          const startDate = this.resolveCashHistoryStartDate(today, frequency);
-          const buckets = await this.getCustomerSalesDailyBuckets(startDate, today);
+          const startDate = this.resolveCashHistoryStartDate(asOfDate, frequency);
+          const buckets = await this.getCustomerSalesDailyBuckets(startDate, asOfDate);
           for (const bucket of buckets) {
             await prisma.customerSalesSnapshot.deleteMany({
               where: {
@@ -1286,43 +1443,66 @@ export class QuickBooksAdapter implements AccountingAdapter {
             moduleCounts.customers += bucket.rows.length;
           }
         } else {
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          
-          const customerSales = await this.getCustomerSales(yesterday, yesterday);
-          for (const sale of customerSales) {
-            await prisma.customerSalesSnapshot.create({
-              data: {
+          const customerSalesWindow = isMonthly
+            ? { start: monthWindow.start, end: monthWindow.end }
+            : { start: asOfDate, end: asOfDate };
+          const customerSales = await this.getCustomerSales(customerSalesWindow.start, customerSalesWindow.end);
+          await prisma.customerSalesSnapshot.deleteMany({
+            where: {
+              companyId: this.config.companyId,
+              frequency,
+              snapshotDate: asOfDate,
+            },
+          });
+          if (customerSales.length) {
+            await prisma.customerSalesSnapshot.createMany({
+              data: customerSales.map((sale) => ({
                 companyId: this.config.companyId,
-                snapshotDate: today,
+                snapshotDate: asOfDate,
                 frequency,
                 customerId: sale.customerId,
                 customerName: sale.customerName,
                 revenue: sale.revenue,
                 invoiceCount: sale.invoiceCount,
-                avgInvoiceSize: sale.avgInvoiceSize
-              }
+                avgInvoiceSize: sale.avgInvoiceSize ?? (sale.invoiceCount > 0 ? sale.revenue / sale.invoiceCount : null),
+              })),
             });
-            recordsCreated++;
-            moduleCounts.customers++;
+            recordsCreated += customerSales.length;
+            moduleCounts.customers += customerSales.length;
           }
         }
-      } catch (error: any) {
-        errors.push(`Customer sales sync failed: ${error.message}`);
+        } catch (error: any) {
+          errors.push(`Customer sales sync failed: ${error.message}`);
+        }
+      } else {
+        await prisma.customerSalesSnapshot.deleteMany({
+          where: {
+            companyId: this.config.companyId,
+            frequency,
+            snapshotDate: asOfDate,
+          },
+        });
       }
       
-      // 5. Sync Product Sales (yesterday's data)
-      if (this.isProgramEnabled('Products')) {
+      // 5. Sync Product Sales
+      if (productsEnabled) {
         try {
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          
-          const productSales = await this.getProductSales(yesterday, yesterday);
-          for (const product of productSales) {
-            await prisma.productSalesSnapshot.create({
-              data: {
+          const productSalesWindow = isMonthly
+            ? { start: monthWindow.start, end: monthWindow.end }
+            : { start: asOfDate, end: asOfDate };
+          const productSales = await this.getProductSales(productSalesWindow.start, productSalesWindow.end);
+          await prisma.productSalesSnapshot.deleteMany({
+            where: {
+              companyId: this.config.companyId,
+              frequency,
+              snapshotDate: asOfDate,
+            },
+          });
+          if (productSales.length) {
+            await prisma.productSalesSnapshot.createMany({
+              data: productSales.map((product) => ({
                 companyId: this.config.companyId,
-                snapshotDate: today,
+                snapshotDate: asOfDate,
                 frequency,
                 itemId: product.itemId,
                 itemName: product.itemName,
@@ -1331,11 +1511,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
                 revenue: product.revenue,
                 cogs: product.cogs,
                 grossMargin: product.grossMargin,
-                grossMarginPct: product.grossMarginPct
-              }
+                grossMarginPct: product.grossMarginPct,
+              })),
             });
-            recordsCreated++;
-            moduleCounts.products++;
+            recordsCreated += productSales.length;
+            moduleCounts.products += productSales.length;
           }
         } catch (error: any) {
           if (this.isOptionalProductSalesError(error)) {
@@ -1351,25 +1531,78 @@ export class QuickBooksAdapter implements AccountingAdapter {
       // 6. Sync Inventory
       try {
         const inventory = await this.getInventory();
-        for (const item of inventory) {
-          await prisma.inventorySnapshot.create({
-            data: {
+        await prisma.inventorySnapshot.deleteMany({
+          where: {
+            companyId: this.config.companyId,
+            frequency,
+            snapshotDate: asOfDate,
+          },
+        });
+        if (inventory.length) {
+          await prisma.inventorySnapshot.createMany({
+            data: inventory.map((item) => ({
               companyId: this.config.companyId,
-              snapshotDate: today,
+              snapshotDate: asOfDate,
               frequency,
               itemId: item.itemId,
               itemName: item.itemName,
               sku: item.sku,
               qtyOnHand: item.qtyOnHand,
               assetValue: item.assetValue,
-              avgCost: item.avgCost
-            }
+              avgCost: item.avgCost,
+            })),
           });
-          recordsCreated++;
-          moduleCounts.inventory++;
+          recordsCreated += inventory.length;
+          moduleCounts.inventory += inventory.length;
         }
       } catch (error: any) {
         errors.push(`Inventory sync failed: ${error.message}`);
+      }
+
+      if (isMonthly) {
+        if (arEnabled && !arAgingSaved) errors.push(`Monthly QBO dataset missing: AR aging snapshot (${monthWindow.monthKey}).`);
+        if (apEnabled && !apAgingSaved) errors.push(`Monthly QBO dataset missing: AP aging snapshot (${monthWindow.monthKey}).`);
+        if (arEnabled && arOpenItemRows <= 0) errors.push(`Monthly QBO dataset missing: AR open-item detail (${monthWindow.monthKey}).`);
+        if (apEnabled && apOpenItemRows <= 0) errors.push(`Monthly QBO dataset missing: AP open-item detail (${monthWindow.monthKey}).`);
+        if (customersEnabled && customerMasterCount <= 0) errors.push(`Monthly QBO dataset missing: customer master (${monthWindow.monthKey}).`);
+        if (vendorsEnabled && vendorMasterCount <= 0) errors.push(`Monthly QBO dataset missing: vendor master (${monthWindow.monthKey}).`);
+      }
+
+      if (isMonthly) {
+        const existingMetadata =
+          this.config.connectionMetadata && typeof this.config.connectionMetadata === 'object' && !Array.isArray(this.config.connectionMetadata)
+            ? (this.config.connectionMetadata as Record<string, unknown>)
+            : {};
+        const monthlyCoverage = {
+          month: monthWindow.monthKey,
+          asOfDate: asOfDate.toISOString().slice(0, 10),
+          required: {
+            arAging: !arEnabled ? null : arAgingSaved,
+            apAging: !apEnabled ? null : apAgingSaved,
+            arOpenItems: !arEnabled ? null : arOpenItemRows > 0,
+            apOpenItems: !apEnabled ? null : apOpenItemRows > 0,
+            customerMaster: !customersEnabled ? null : customerMasterCount > 0,
+            vendorMaster: !vendorsEnabled ? null : vendorMasterCount > 0,
+          },
+          counts: {
+            arOpenItemRows,
+            apOpenItemRows,
+            customerMasterCount,
+            vendorMasterCount,
+            customerSalesRows: moduleCounts.customers,
+          },
+          status: errors.length === 0 ? 'success' : 'error',
+          updatedAt: new Date().toISOString(),
+        };
+        await prisma.accountingConnection.update({
+          where: { id: this.config.connectionId },
+          data: {
+            connectionMetadata: {
+              ...existingMetadata,
+              quickbooksMonthlyOperationalCoverage: monthlyCoverage,
+            } as any,
+          },
+        });
       }
       
       return {

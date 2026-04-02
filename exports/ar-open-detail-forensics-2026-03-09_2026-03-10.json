@@ -1,0 +1,287 @@
+{
+  "generatedAt": "2026-03-31T00:19:14.678Z",
+  "analysis": [
+    {
+      "file": "exports/ar-open-detail-2026-03-09.jsonl",
+      "rowCount": 74384,
+      "totalOpen": 198213188.65,
+      "uniqueInvoiceNos": 74270,
+      "uniqueCustInvoiceKeys": 74270,
+      "duplicateRowsByInvoiceNo": 114,
+      "duplicateRowsByCustInvoice": 114,
+      "totalUsingInvoiceNoMax": 198099202.12,
+      "totalUsingCustInvoiceMax": 198099202.12,
+      "unknownCustomerNameRows": 74384,
+      "blankInvoiceRows": 0,
+      "statusCounts": {
+        "I": 74163,
+        "D": 143,
+        "C": 40,
+        "P": 38
+      },
+      "topDuplicateInvoiceNos": [
+        {
+          "invoiceNo": "112584",
+          "count": 3,
+          "sum": 789674.94,
+          "max": 789021.58,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 3
+        },
+        {
+          "invoiceNo": "201906908",
+          "count": 3,
+          "sum": 512.42,
+          "max": 312.84,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 3
+        },
+        {
+          "invoiceNo": "20182661",
+          "count": 3,
+          "sum": 655.7,
+          "max": 485.7,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 3
+        },
+        {
+          "invoiceNo": "112573",
+          "count": 2,
+          "sum": 195.91,
+          "max": 195.9,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202105165",
+          "count": 2,
+          "sum": 1152.55,
+          "max": 1008.7,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202205797",
+          "count": 2,
+          "sum": 2761.86,
+          "max": 2670.18,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202104540",
+          "count": 2,
+          "sum": 1550.12,
+          "max": 838.92,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202401174",
+          "count": 2,
+          "sum": 6799.52,
+          "max": 5720.4,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "201902725",
+          "count": 2,
+          "sum": 1146.11,
+          "max": 1146.05,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "20184237",
+          "count": 2,
+          "sum": 3151.4,
+          "max": 3151.2,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202302143",
+          "count": 2,
+          "sum": 6350.5,
+          "max": 6350,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "20188252",
+          "count": 2,
+          "sum": 187.58,
+          "max": 187.56,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "201908409",
+          "count": 2,
+          "sum": 223.88,
+          "max": 223.68,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "201911018",
+          "count": 2,
+          "sum": 2044.4,
+          "max": 2043.6,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "115870",
+          "count": 2,
+          "sum": 1158.56,
+          "max": 1152.8,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        }
+      ]
+    },
+    {
+      "file": "exports/ar-open-detail-2026-03-10.jsonl",
+      "rowCount": 74383,
+      "totalOpen": 129158984.58,
+      "uniqueInvoiceNos": 74269,
+      "uniqueCustInvoiceKeys": 74269,
+      "duplicateRowsByInvoiceNo": 114,
+      "duplicateRowsByCustInvoice": 114,
+      "totalUsingInvoiceNoMax": 129084314.52,
+      "totalUsingCustInvoiceMax": 129084314.52,
+      "unknownCustomerNameRows": 74383,
+      "blankInvoiceRows": 0,
+      "statusCounts": {
+        "I": 74162,
+        "D": 143,
+        "C": 40,
+        "P": 38
+      },
+      "topDuplicateInvoiceNos": [
+        {
+          "invoiceNo": "112584",
+          "count": 3,
+          "sum": 394837.47,
+          "max": 394510.79,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 3
+        },
+        {
+          "invoiceNo": "20182661",
+          "count": 3,
+          "sum": 570.7,
+          "max": 485.7,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 3
+        },
+        {
+          "invoiceNo": "201906908",
+          "count": 3,
+          "sum": 356,
+          "max": 198,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 3
+        },
+        {
+          "invoiceNo": "114945",
+          "count": 2,
+          "sum": 948.27,
+          "max": 938.88,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "116125",
+          "count": 2,
+          "sum": 25468.9,
+          "max": 25417.6,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202402149",
+          "count": 2,
+          "sum": 667.4,
+          "max": 606.8,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202100447",
+          "count": 2,
+          "sum": 916.08,
+          "max": 864.6,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "106318",
+          "count": 2,
+          "sum": 1515.56,
+          "max": 1400,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "20184237",
+          "count": 2,
+          "sum": 3151.3,
+          "max": 3151.2,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "20183743",
+          "count": 2,
+          "sum": 20723.2,
+          "max": 10361.6,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202106938",
+          "count": 2,
+          "sum": 815.64,
+          "max": 624.78,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "111067",
+          "count": 2,
+          "sum": 20302.78,
+          "max": 10202.4,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "202302286",
+          "count": 2,
+          "sum": 13489.2,
+          "max": 8056.05,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "108830",
+          "count": 2,
+          "sum": 1763,
+          "max": 1375,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        },
+        {
+          "invoiceNo": "118333",
+          "count": 2,
+          "sum": 1725.12,
+          "max": 957.2,
+          "uniqueCustomerIds": 1,
+          "uniqueCustomerNames": 2
+        }
+      ]
+    }
+  ]
+}

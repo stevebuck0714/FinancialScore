@@ -107,7 +107,7 @@ function calculateEBITDA(data: MonthlyDataRow): number {
  */
 function calculateRatios(data: MonthlyDataRow): CovenantFinancialRatios {
   const ebitda = calculateEBITDA(data);
-  const totalDebt = data.ltd || 0; // Long-term debt
+  const totalDebt = (data.ltd || 0) + (data.loc || 0); // Funded debt: long-term debt + current LOC
   const cash = data.cash || 0;
   const netDebt = totalDebt - cash;
   const interestExpense = data.interestExpense || 0;

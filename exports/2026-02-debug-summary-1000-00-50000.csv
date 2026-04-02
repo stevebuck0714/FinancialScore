@@ -1,0 +1,3 @@
+company_id,month,site,label,account_id,tx_count,month_movement_transdate,period_end_balance,duplicate_grouped_rows,duplicate_row_total
+cmmnwyofv000fqhp4z8lebbny,2026-02,MAIN,bs,1000-00,0,0,,0,0
+cmmnwyofv000fqhp4z8lebbny,2026-02,MAIN,is,50000,0,0,,0,0

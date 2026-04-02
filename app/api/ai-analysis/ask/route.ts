@@ -44,11 +44,12 @@ function buildRatioSnapshot(month: any, benchmarks: any[]): RatioSnapshot[] {
 
   const ap = month.ap || 0;
   const otherCL = month.otherCL || 0;
-  const tcl = month.tcl || (ap + otherCL);
+  const locDebt = month.loc || 0;
+  const tcl = Math.max(month.tcl || 0, ap + otherCL + locDebt);
 
   const ltDebt = month.ltDebt || 0;
   const otherLTL = month.otherLTL || 0;
-  const totalLiabilities = month.totalLiabilities || (tcl + ltDebt + otherLTL);
+  const totalLiabilities = Math.max(month.totalLiabilities || 0, tcl + ltDebt + otherLTL);
 
   const equity = month.equity || (totalAssets - totalLiabilities);
 

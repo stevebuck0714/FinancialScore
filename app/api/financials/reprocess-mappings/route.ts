@@ -5,6 +5,7 @@ import { buildCsiMonthlyDataFromGlResponses } from '@/lib/infor-m3/csi-monthly-f
 
 export const dynamic = 'force-dynamic';
 const CSI_REBUILD_MAX_MONTHS = 36;
+const CSI_LEDGER_PROGRAMS = new Set(['SLGLTRANS']);
 
 type FinancialImportMode = 'through' | 'only';
 
@@ -86,40 +87,49 @@ function getThroughMonthWindow(throughMonth: string, maxMonths: number): { throu
   return { throughDate, earliestDate };
 }
 
-async function loadHistoricalCsiSlLedgersItems(
+async function loadHistoricalCsiLedgerItems(
   companyId: string,
   throughMonth: string,
   maxMonths: number,
 ): Promise<Record<string, unknown>[]> {
   const window = getThroughMonthWindow(throughMonth, maxMonths);
   if (!window) return [];
-  const rows = await prisma.$queryRaw<Array<{ item: unknown }>>`
+  const rows = await prisma.$queryRaw<Array<{ item: unknown; miProgram: unknown }>>`
     WITH logs AS (
-      SELECT l."errorDetails"->'response'->'Items' AS items
+      SELECT
+        l."errorDetails"->'response'->'Items' AS items,
+        UPPER(COALESCE(l."errorDetails"->>'miProgram','')) AS mi_program
       FROM "ApiSyncLog" l
       WHERE l."companyId" = ${companyId}
         AND l.platform = 'INFOR_M3'
         AND l.status = 'success'
-        AND UPPER(COALESCE(l."errorDetails"->>'miProgram','')) = 'SLLEDGERS'
+        AND UPPER(COALESCE(l."errorDetails"->>'miProgram','')) IN ('SLGLTRANS')
         AND jsonb_typeof(l."errorDetails"->'response'->'Items') = 'array'
     ),
     ledger_rows AS (
-      SELECT x.value AS item
+      SELECT x.value AS item, mi_program
       FROM logs
       CROSS JOIN LATERAL jsonb_array_elements(items) x
     )
-    SELECT item
+    SELECT item, mi_program AS "miProgram"
     FROM ledger_rows
-    WHERE NULLIF(item->>'ControlYear','') IS NOT NULL
-      AND NULLIF(item->>'ControlPeriod','') IS NOT NULL
-      AND make_date(NULLIF(item->>'ControlYear','')::int, NULLIF(item->>'ControlPeriod','')::int, 1) >= ${window.earliestDate}
-      AND make_date(NULLIF(item->>'ControlYear','')::int, NULLIF(item->>'ControlPeriod','')::int, 1) <= ${window.throughDate}
   `;
   const parsedRows = rows
-    .map((row) => (row?.item && typeof row.item === 'object' && !Array.isArray(row.item) ? (row.item as Record<string, unknown>) : null))
+    .map((row) => {
+      if (!row?.item || typeof row.item !== 'object' || Array.isArray(row.item)) return null;
+      return {
+        ...(row.item as Record<string, unknown>),
+        __miProgram: String(row.miProgram || '').trim().toUpperCase(),
+      } as Record<string, unknown>;
+    })
     .filter((row): row is Record<string, unknown> => !!row);
+  const filteredRows = parsedRows.filter((row) => {
+    const monthKey = extractMonthKeyFromLedgerRow(row);
+    if (!monthKey) return false;
+    return monthKey >= `${window.earliestDate.getUTCFullYear()}-${String(window.earliestDate.getUTCMonth() + 1).padStart(2, '0')}` && monthKey <= throughMonth;
+  });
   const deduped = new Map<string, Record<string, unknown>>();
-  for (const row of parsedRows) {
+  for (const row of filteredRows) {
     const rowPointer = String(row.RowPointer || row.rowPointer || '').trim().toLowerCase();
     if (rowPointer) {
       if (!deduped.has(`ptr:${rowPointer}`)) deduped.set(`ptr:${rowPointer}`, row);
@@ -136,7 +146,7 @@ async function loadHistoricalCsiSlLedgersItems(
     return Array.from(deduped.values());
   }
   // Defensive fallback (should be unreachable with non-empty parsedRows).
-  for (const row of parsedRows) {
+  for (const row of filteredRows) {
     const keyParts = [
       String(row.RowPointer || row.rowPointer || '').trim(),
       String(row.Acct || row.account || '').trim(),
@@ -154,6 +164,73 @@ async function loadHistoricalCsiSlLedgersItems(
     if (!deduped.has(key)) deduped.set(key, row);
   }
   return Array.from(deduped.values());
+}
+
+async function loadHistoricalCsiLedgerFacts(
+  companyId: string,
+  throughMonth: string,
+  maxMonths: number,
+): Promise<Record<string, unknown>[]> {
+  const window = getThroughMonthWindow(throughMonth, maxMonths);
+  if (!window) return [];
+  const endExclusive = new Date(Date.UTC(window.throughDate.getUTCFullYear(), window.throughDate.getUTCMonth() + 1, 1));
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      transDate: Date;
+      accountId: string;
+      accountName: string | null;
+      signedAmount: number;
+      debitAmount: number | null;
+      creditAmount: number | null;
+      sourceProgram: string | null;
+      drCr: string | null;
+      transNum: string | null;
+      ref: string | null;
+      description: string | null;
+    }>
+  >`
+    SELECT
+      id,
+      "transDate",
+      "accountId",
+      "accountName",
+      "signedAmount",
+      "debitAmount",
+      "creditAmount",
+      "sourceProgram",
+      "drCr",
+      "transNum",
+      ref,
+      description
+    FROM "GLTransactionFact"
+    WHERE "companyId" = ${companyId}
+      AND "transDate" >= ${window.earliestDate}
+      AND "transDate" < ${endExclusive}
+    ORDER BY "transDate" ASC
+  `;
+
+  return (Array.isArray(rows) ? rows : []).map((row: any) => {
+    const d = row?.transDate ? new Date(row.transDate) : null;
+    const controlYear = d && !Number.isNaN(d.getTime()) ? d.getUTCFullYear() : null;
+    const controlPeriod = d && !Number.isNaN(d.getTime()) ? d.getUTCMonth() + 1 : null;
+    return {
+      RowPointer: String(row?.id || ''),
+      TransDate: d ? d.toISOString() : null,
+      ControlYear: controlYear,
+      ControlPeriod: controlPeriod,
+      Acct: String(row?.accountId || ''),
+      Description: String(row?.accountName || row?.description || ''),
+      SignedAmount: Number(row?.signedAmount || 0),
+      DomAmount: Number(row?.signedAmount || 0),
+      Debit: Number(row?.debitAmount || 0),
+      Credit: Number(row?.creditAmount || 0),
+      DrCr: String(row?.drCr || ''),
+      TransNum: String(row?.transNum || ''),
+      Ref: String(row?.ref || ''),
+      __miProgram: String(row?.sourceProgram || 'GLTRANSACTIONFACT').trim().toUpperCase(),
+    } as Record<string, unknown>;
+  });
 }
 
 type MonthCoverageSummary = {
@@ -202,8 +279,8 @@ function extractMonthKeyFromLedgerRow(row: Record<string, unknown>): string | nu
   const periodToken = toYearMonth(row.ControlPeriod || row.controlPeriod || row.FiscalPeriod || row.fiscalPeriod);
   if (periodToken) return periodToken;
   return (
-    toYearMonth(row.RecordDate || row.recordDate) ||
     toYearMonth(row.TransDate || row.transDate) ||
+    toYearMonth(row.RecordDate || row.recordDate) ||
     toYearMonth(row.Date || row.date)
   );
 }
@@ -274,13 +351,13 @@ function hasDetailedSectorBreakdownsForMonth(
   return hasDetailedRevenue || hasDetailedCogs;
 }
 
-function extractSlLedgersRowsFromGlResponses(glResponses: unknown[]): Record<string, unknown>[] {
+function extractCsiLedgerRowsFromGlResponses(glResponses: unknown[]): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
   for (const entry of glResponses) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const wrapper = entry as Record<string, unknown>;
     const program = String(wrapper.miProgram || wrapper.program || '').trim().toUpperCase();
-    if (program !== 'SLLEDGERS') continue;
+    if (!CSI_LEDGER_PROGRAMS.has(program)) continue;
     const response =
       wrapper.response && typeof wrapper.response === 'object' && !Array.isArray(wrapper.response)
         ? (wrapper.response as Record<string, unknown>)
@@ -473,15 +550,24 @@ export async function POST(request: NextRequest) {
           : null;
 
       if (!financialPayload) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: isInforCsi
-              ? 'No Infor CSI financial payload is available yet. Push financial payload first, then reprocess.'
-              : 'No Infor M3 financial payload is available yet. Push financial payload first, then reprocess.',
+        if (!isInforCsi) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'No Infor M3 financial payload is available yet. Push financial payload first, then reprocess.',
+            },
+            { status: 400 },
+          );
+        }
+        // CSI reprocess must be able to rebuild from historical GL transaction logs
+        // even when the cached payload metadata has not been populated yet.
+        financialPayload = {
+          monthlyData: [],
+          metadata: {
+            source: 'csi_reprocess_without_cached_payload',
+            generatedAt: new Date().toISOString(),
           },
-          { status: 400 },
-        );
+        };
       }
 
       const payloadLooksStub = isInforCsi && looksLikeCoaOnlyPayloadStub(financialPayload);
@@ -538,42 +624,55 @@ export async function POST(request: NextRequest) {
         diagnostics.throughMonthForBuild = throughMonthForBuild;
         diagnostics.rebuildMaxMonths = rebuildMaxMonths;
         const historicalLedgers = useHistoricalSlLedgers
-          ? await loadHistoricalCsiSlLedgersItems(
+          ? await loadHistoricalCsiLedgerItems(
               String(companyId),
               throughMonthForBuild,
               rebuildMaxMonths,
             )
           : [];
-        const slLedgersRowsFromPayload = extractSlLedgersRowsFromGlResponses(glResponsesRaw);
-        const sourceRowsForCoverage = historicalLedgers.length > 0 ? historicalLedgers : slLedgersRowsFromPayload;
+        const factLedgerRows =
+          historicalLedgers.length === 0
+            ? await loadHistoricalCsiLedgerFacts(String(companyId), throughMonthForBuild, rebuildMaxMonths)
+            : [];
+        const payloadLedgerRows = extractCsiLedgerRowsFromGlResponses(glResponsesRaw);
+        const sourceRowsForCoverage =
+          historicalLedgers.length > 0
+            ? historicalLedgers
+            : factLedgerRows.length > 0
+              ? factLedgerRows
+              : payloadLedgerRows;
         diagnostics.sourceCoverage = {
-          source: historicalLedgers.length > 0 ? 'historical_slledgers_sql' : 'payload_slledgers',
+          source:
+            historicalLedgers.length > 0
+              ? 'historical_csi_ledger_sql'
+              : factLedgerRows.length > 0
+                ? 'gl_transaction_fact'
+                : 'payload_csi_ledger',
           useHistoricalSlLedgers,
           ...summarizeLedgerCoverage(sourceRowsForCoverage),
         };
         const glResponsesForBuild =
-          historicalLedgers.length > 0
+          sourceRowsForCoverage.length > 0
             ? (() => {
-                // Keep at most one SLLEDGERS response to avoid double-counting the same
-                // historical rows when multiple SLLEDGERS wrappers exist in metadata.
+                // Keep at most one CSI ledger response to avoid double-counting.
                 const nonLedgers = glResponsesRaw.filter((entry) => {
                   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return true;
                   const row = entry as Record<string, unknown>;
                   const program = String(row.miProgram || row.program || '').trim().toUpperCase();
-                  return program !== 'SLLEDGERS';
+                  return !CSI_LEDGER_PROGRAMS.has(program);
                 });
                 const existingLedgers = glResponsesRaw.find((entry) => {
                   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
                   const row = entry as Record<string, unknown>;
                   const program = String(row.miProgram || row.program || '').trim().toUpperCase();
-                  return program === 'SLLEDGERS';
+                  return CSI_LEDGER_PROGRAMS.has(program);
                 });
                 if (existingLedgers && typeof existingLedgers === 'object' && !Array.isArray(existingLedgers)) {
                   const row = existingLedgers as Record<string, unknown>;
                   const response =
                     row.response && typeof row.response === 'object' && !Array.isArray(row.response)
-                      ? ({ ...(row.response as Record<string, unknown>), Items: historicalLedgers } as Record<string, unknown>)
-                      : ({ Items: historicalLedgers } as Record<string, unknown>);
+                      ? ({ ...(row.response as Record<string, unknown>), Items: sourceRowsForCoverage } as Record<string, unknown>)
+                      : ({ Items: sourceRowsForCoverage } as Record<string, unknown>);
                   return [
                     ...nonLedgers,
                     {
@@ -586,9 +685,9 @@ export async function POST(request: NextRequest) {
                   ...nonLedgers,
                   {
                     module: 'GL',
-                    miProgram: 'SLLEDGERS',
+                    miProgram: 'SLGLTRANS',
                     createdAt: new Date().toISOString(),
-                    response: { Items: historicalLedgers },
+                    response: { Items: sourceRowsForCoverage },
                   },
                 ];
               })()
@@ -604,6 +703,19 @@ export async function POST(request: NextRequest) {
           ...summarizeMonthlyRowsCoverage(built.monthlyData as Array<Record<string, unknown>>),
           buildStats: built.stats,
         };
+        if (sourceRowsForCoverage.length === 0 || built.monthlyData.length === 0) {
+          const isOnlyModeMissingMonth = mode === 'only' && !!targetMonth;
+          return NextResponse.json(
+            {
+              success: false,
+              error: isOnlyModeMissingMonth
+                ? `No valid monthlyData rows found for targetMonth ${targetMonth}.`
+                : 'Reprocess could not build monthly data from real ledger rows. Run ledger sync for this month range, then retry.',
+              diagnostics,
+            },
+            { status: 400 },
+          );
+        }
         if (built.monthlyData.length > 0) {
           financialPayload = {
             ...financialPayload,

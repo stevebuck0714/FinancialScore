@@ -291,15 +291,53 @@ export default function AccountMappingTable({
     );
   };
 
+  const getClassId = (mapping: AccountMapping): string => {
+    const rawMapping = mapping as any;
+    const extractNumericCode = (...values: unknown[]): string => {
+      for (const value of values) {
+        const raw = String(value || '').trim();
+        if (!raw) continue;
+        const directMatch = raw.match(/\b(\d{4,})\b/);
+        if (directMatch?.[1]) return directMatch[1];
+        const digitsOnly = raw.replace(/\D/g, '');
+        if (digitsOnly.length >= 4) return digitsOnly;
+      }
+      return '';
+    };
+    return extractNumericCode(
+      mapping.qbAccountCode,
+      mapping.qbAccountId,
+      rawMapping.accountCode,
+      rawMapping.accountId,
+      rawMapping.acctId,
+      mapping.qbAccount,
+    );
+  };
+
+  const sortMappingsByClassId = (rows: AccountMapping[]): AccountMapping[] =>
+    [...rows].sort((a, b) => {
+      const aId = getClassId(a);
+      const bId = getClassId(b);
+      const aNum = Number(aId);
+      const bNum = Number(bId);
+      const aHasNum = Number.isFinite(aNum) && aId.length > 0;
+      const bHasNum = Number.isFinite(bNum) && bId.length > 0;
+      if (aHasNum && bHasNum && aNum !== bNum) return aNum - bNum;
+      if (aHasNum !== bHasNum) return aHasNum ? -1 : 1;
+      const idCompare = aId.localeCompare(bId, undefined, { numeric: true, sensitivity: 'base' });
+      if (idCompare !== 0) return idCompare;
+      return String(a.qbAccount || '').localeCompare(String(b.qbAccount || ''), undefined, { sensitivity: 'base' });
+    });
+
   // Group mappings by normalized classification
   const groupedMappings = {
-    revenue: mappings.filter(m => getGroupingClassification(m) === 'revenue' && isActionable(m)),
-    cogs: mappings.filter(m => getGroupingClassification(m) === 'cogs' && isActionable(m)),
-    expense: mappings.filter(m => getGroupingClassification(m) === 'expense' && isActionable(m)),
-    nonOperating: mappings.filter(m => getGroupingClassification(m) === 'nonOperating' && isActionable(m)),
-    asset: mappings.filter(m => getGroupingClassification(m) === 'asset' && isActionable(m)),
-    liability: mappings.filter(m => getGroupingClassification(m) === 'liability' && isActionable(m)),
-    equity: mappings.filter(m => getGroupingClassification(m) === 'equity' && isActionable(m))
+    revenue: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'revenue' && isActionable(m))),
+    cogs: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'cogs' && isActionable(m))),
+    expense: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'expense' && isActionable(m))),
+    nonOperating: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'nonOperating' && isActionable(m))),
+    asset: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'asset' && isActionable(m))),
+    liability: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'liability' && isActionable(m))),
+    equity: sortMappingsByClassId(mappings.filter(m => getGroupingClassification(m) === 'equity' && isActionable(m)))
   };
 
   const sections = [
@@ -339,29 +377,6 @@ export default function AccountMappingTable({
     const allOptions = Object.values(targetFieldOptions).flat();
     const option = allOptions.find(opt => opt.value === canonicalValue);
     return option ? option.label : canonicalValue;
-  };
-
-  const getClassId = (mapping: AccountMapping): string => {
-    const rawMapping = mapping as any;
-    const extractNumericCode = (...values: unknown[]): string => {
-      for (const value of values) {
-        const raw = String(value || '').trim();
-        if (!raw) continue;
-        const directMatch = raw.match(/\b(\d{4,})\b/);
-        if (directMatch?.[1]) return directMatch[1];
-        const digitsOnly = raw.replace(/\D/g, '');
-        if (digitsOnly.length >= 4) return digitsOnly;
-      }
-      return '';
-    };
-    return extractNumericCode(
-      mapping.qbAccountCode,
-      mapping.qbAccountId,
-      rawMapping.accountCode,
-      rawMapping.accountId,
-      rawMapping.acctId,
-      mapping.qbAccount,
-    );
   };
 
   const renderMappingRow = (mapping: AccountMapping, sectionKey: string) => {

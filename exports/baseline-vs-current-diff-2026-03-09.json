@@ -1,0 +1,434 @@
+≡ƒöù DATABASE: STAGING (cold-frost)
+{
+  "day": "2026-03-09",
+  "baselineCount": 771,
+  "currentCount": 2963,
+  "matchedKeys": 643,
+  "onlyBaselineKeys": 4,
+  "onlyCurrentKeys": 2320,
+  "baselineTotal": 1459058.35,
+  "currentTotal": 7002950.42,
+  "totalDelta": 5543892.07,
+  "deltaFromOnlyCurrent": 5544148.46,
+  "deltaFromMatchedKeys": 357.84,
+  "topCustomerDelta": [
+    {
+      "customerId": "1319905",
+      "base": 504997.16,
+      "cur": 4387332.2,
+      "delta": 3882335.04
+    },
+    {
+      "customerId": "1852803",
+      "base": 11799.6,
+      "cur": 338686.97,
+      "delta": 326887.37
+    },
+    {
+      "customerId": "1520804",
+      "base": 95493,
+      "cur": 236329.64,
+      "delta": 140836.64
+    },
+    {
+      "customerId": "1319904",
+      "base": 9497.61,
+      "cur": 115790.72,
+      "delta": 106293.11
+    },
+    {
+      "customerId": "1520801",
+      "base": 39228.12,
+      "cur": 133911.72,
+      "delta": 94683.6
+    },
+    {
+      "customerId": "1577118",
+      "base": 154097.23,
+      "cur": 247013.61,
+      "delta": 92916.38
+    },
+    {
+      "customerId": "1032101",
+      "base": 0,
+      "cur": 74977.11,
+      "delta": 74977.11
+    },
+    {
+      "customerId": "1577106",
+      "base": 70027.62,
+      "cur": 143913.66,
+      "delta": 73886.04
+    },
+    {
+      "customerId": "1928301",
+      "base": 21374.78,
+      "cur": 82007.66,
+      "delta": 60632.88
+    },
+    {
+      "customerId": "1456501",
+      "base": 73264.68,
+      "cur": 129169.76,
+      "delta": 55905.08
+    },
+    {
+      "customerId": "1248401",
+      "base": 0,
+      "cur": 53826.83,
+      "delta": 53826.83
+    },
+    {
+      "customerId": "1577107",
+      "base": 46241.3,
+      "cur": 99088.5,
+      "delta": 52847.2
+    },
+    {
+      "customerId": "1577125",
+      "base": 74326.2,
+      "cur": 118746,
+      "delta": 44419.8
+    },
+    {
+      "customerId": "1822501",
+      "base": 61751.49,
+      "cur": 101893.76,
+      "delta": 40142.27
+    },
+    {
+      "customerId": "1319903",
+      "base": 5680.45,
+      "cur": 43983.53,
+      "delta": 38303.08
+    },
+    {
+      "customerId": "1275203",
+      "base": 77846.96,
+      "cur": 111375.16,
+      "delta": 33528.2
+    },
+    {
+      "customerId": "1839209",
+      "base": 2875,
+      "cur": 30230,
+      "delta": 27355
+    },
+    {
+      "customerId": "1520802",
+      "base": 24317.34,
+      "cur": 45206.84,
+      "delta": 20889.5
+    },
+    {
+      "customerId": "1052301",
+      "base": 0,
+      "cur": 18770,
+      "delta": 18770
+    },
+    {
+      "customerId": "1283301",
+      "base": 18207.94,
+      "cur": 35167.14,
+      "delta": 16959.2
+    }
+  ],
+  "topOverstated": [
+    {
+      "key": "202506315|1319904",
+      "base": 0,
+      "cur": 96333.17,
+      "delta": 96333.17,
+      "invoiceDate": "2025-09-22",
+      "dueDate": "2025-10-22",
+      "status": "I"
+    },
+    {
+      "key": "202600333|1852803",
+      "base": 0,
+      "cur": 78657,
+      "delta": 78657,
+      "invoiceDate": "2026-01-22",
+      "dueDate": "2026-02-21",
+      "status": "I"
+    },
+    {
+      "key": "202506518|1852803",
+      "base": 0,
+      "cur": 39328.5,
+      "delta": 39328.5,
+      "invoiceDate": "2025-10-01",
+      "dueDate": "2025-10-31",
+      "status": "I"
+    },
+    {
+      "key": "202507758|1852803",
+      "base": 0,
+      "cur": 39328.5,
+      "delta": 39328.5,
+      "invoiceDate": "2025-12-16",
+      "dueDate": "2026-01-15",
+      "status": "I"
+    },
+    {
+      "key": "202507395|1852803",
+      "base": 0,
+      "cur": 39328.5,
+      "delta": 39328.5,
+      "invoiceDate": "2025-11-20",
+      "dueDate": "2025-12-20",
+      "status": "I"
+    },
+    {
+      "key": "202507479|1577107",
+      "base": 0,
+      "cur": 26423.6,
+      "delta": 26423.6,
+      "invoiceDate": "2025-11-25",
+      "dueDate": "2026-02-23",
+      "status": "I"
+    },
+    {
+      "key": "202506519|1852803",
+      "base": 0,
+      "cur": 24330,
+      "delta": 24330,
+      "invoiceDate": "2025-10-01",
+      "dueDate": "2025-10-31",
+      "status": "I"
+    },
+    {
+      "key": "202507396|1852803",
+      "base": 0,
+      "cur": 24330,
+      "delta": 24330,
+      "invoiceDate": "2025-11-20",
+      "dueDate": "2025-12-20",
+      "status": "I"
+    },
+    {
+      "key": "202507007|1852803",
+      "base": 0,
+      "cur": 24330,
+      "delta": 24330,
+      "invoiceDate": "2025-10-28",
+      "dueDate": "2025-11-27",
+      "status": "I"
+    },
+    {
+      "key": "202507003|1577106",
+      "base": 0,
+      "cur": 22397.2,
+      "delta": 22397.2,
+      "invoiceDate": "2025-10-28",
+      "dueDate": "2026-01-26",
+      "status": "I"
+    },
+    {
+      "key": "202506227|1577118",
+      "base": 0,
+      "cur": 21879.76,
+      "delta": 21879.76,
+      "invoiceDate": "2025-09-16",
+      "dueDate": "2025-12-15",
+      "status": "I"
+    },
+    {
+      "key": "202507066|1520801",
+      "base": 0,
+      "cur": 20955,
+      "delta": 20955,
+      "invoiceDate": "2025-10-31",
+      "dueDate": "2025-12-30",
+      "status": "I"
+    },
+    {
+      "key": "202600334|1852803",
+      "base": 0,
+      "cur": 20315.55,
+      "delta": 20315.55,
+      "invoiceDate": "2026-01-22",
+      "dueDate": "2026-02-21",
+      "status": "I"
+    },
+    {
+      "key": "202506516|1852803",
+      "base": 0,
+      "cur": 19396.08,
+      "delta": 19396.08,
+      "invoiceDate": "2025-10-01",
+      "dueDate": "2025-10-31",
+      "status": "I"
+    },
+    {
+      "key": "202506172|1052301",
+      "base": 0,
+      "cur": 18770,
+      "delta": 18770,
+      "invoiceDate": "2025-09-12",
+      "dueDate": "2025-10-12",
+      "status": "I"
+    },
+    {
+      "key": "202506861|1577118",
+      "base": 0,
+      "cur": 18431.81,
+      "delta": 18431.81,
+      "invoiceDate": "2025-10-21",
+      "dueDate": "2026-01-19",
+      "status": "I"
+    },
+    {
+      "key": "202507560|1032101",
+      "base": 0,
+      "cur": 16693.56,
+      "delta": 16693.56,
+      "invoiceDate": "2025-12-04",
+      "dueDate": "2026-01-03",
+      "status": "I"
+    },
+    {
+      "key": "202507067|1520801",
+      "base": 0,
+      "cur": 16150.2,
+      "delta": 16150.2,
+      "invoiceDate": "2025-10-31",
+      "dueDate": "2025-12-30",
+      "status": "I"
+    },
+    {
+      "key": "202507641|1303501",
+      "base": 0,
+      "cur": 15716.7,
+      "delta": 15716.7,
+      "invoiceDate": "2025-12-09",
+      "dueDate": "2026-02-07",
+      "status": "I"
+    },
+    {
+      "key": "202507814|1134301",
+      "base": 0,
+      "cur": 14784,
+      "delta": 14784,
+      "invoiceDate": "2025-12-18",
+      "dueDate": "2026-01-17",
+      "status": "I"
+    },
+    {
+      "key": "202506487|1248401",
+      "base": 0,
+      "cur": 14503.05,
+      "delta": 14503.05,
+      "invoiceDate": "2025-09-30",
+      "dueDate": "2025-10-30",
+      "status": "I"
+    },
+    {
+      "key": "202600486|1319905",
+      "base": 0,
+      "cur": 14008.4,
+      "delta": 14008.4,
+      "invoiceDate": "2026-01-30",
+      "dueDate": "2026-02-14",
+      "status": "I"
+    },
+    {
+      "key": "202507358|1577118",
+      "base": 0,
+      "cur": 13997.09,
+      "delta": 13997.09,
+      "invoiceDate": "2025-11-18",
+      "dueDate": "2026-02-16",
+      "status": "I"
+    },
+    {
+      "key": "202506860|1577118",
+      "base": 0,
+      "cur": 13767.04,
+      "delta": 13767.04,
+      "invoiceDate": "2025-10-21",
+      "dueDate": "2026-01-19",
+      "status": "I"
+    },
+    {
+      "key": "202506306|1520804",
+      "base": 0,
+      "cur": 13411.2,
+      "delta": 13411.2,
+      "invoiceDate": "2025-09-22",
+      "dueDate": "2025-11-21",
+      "status": "I"
+    },
+    {
+      "key": "202506538|1520804",
+      "base": 0,
+      "cur": 13411.2,
+      "delta": 13411.2,
+      "invoiceDate": "2025-10-02",
+      "dueDate": "2025-12-01",
+      "status": "I"
+    },
+    {
+      "key": "202600078|1319905",
+      "base": 0,
+      "cur": 13235.84,
+      "delta": 13235.84,
+      "invoiceDate": "2026-01-07",
+      "dueDate": "2026-01-22",
+      "status": "I"
+    },
+    {
+      "key": "202600300|1319905",
+      "base": 0,
+      "cur": 13235.84,
+      "delta": 13235.84,
+      "invoiceDate": "2026-01-21",
+      "dueDate": "2026-02-05",
+      "status": "I"
+    },
+    {
+      "key": "202600360|1319905",
+      "base": 0,
+      "cur": 12950,
+      "delta": 12950,
+      "invoiceDate": "2026-01-23",
+      "dueDate": "2026-02-07",
+      "status": "I"
+    },
+    {
+      "key": "202600366|1319905",
+      "base": 0,
+      "cur": 12775.68,
+      "delta": 12775.68,
+      "invoiceDate": "2026-01-23",
+      "dueDate": "2026-02-07",
+      "status": "I"
+    }
+  ],
+  "topMissingOrUnderstated": [
+    {
+      "key": "0|1852803",
+      "base": 248.94,
+      "cur": 0,
+      "delta": -248.94
+    },
+    {
+      "key": "20188470|1577118",
+      "base": 152.79,
+      "cur": 0,
+      "delta": -152.79
+    },
+    {
+      "key": "CR0000000452|1577106",
+      "base": 127.5,
+      "cur": 0,
+      "delta": -127.5
+    },
+    {
+      "key": "CR0000000458|1577106",
+      "base": 85,
+      "cur": 0,
+      "delta": -85
+    }
+  ]
+}

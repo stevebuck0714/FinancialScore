@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireCompanyAccess } from '@/lib/tenant-security';
 import { publishMonthFromDailySnapshots } from '@/lib/financial/publish-month-service';
 import prisma from '@/lib/prisma';
+import { supportsPublishFromDailySnapshots } from '@/lib/financial/pipeline-strategy';
 
 function isCronAuthorized(request: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
@@ -32,17 +33,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // This endpoint is only valid for CSV trial-balance publish workflow.
+    // Daily->monthly publish applies to ERP-ledger and CSV trial-balance lanes.
+    // Lightweight payload systems (QBO/Sage/Xero) should use push/reprocess flows.
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { accountingSystem: true },
     });
     const accountingSystem = String(company?.accountingSystem || '').toUpperCase();
-    if (accountingSystem !== 'CSV_FILE') {
+    if (!supportsPublishFromDailySnapshots(accountingSystem)) {
       return NextResponse.json(
         {
           error:
-            'Publish Monthly Financials is only supported for CSV trial-balance workflow. Use Process/Reprocess for API-connected systems.',
+            'Publish Monthly Financials is only supported for ERP-ledger/CSV workflows. Use payload Process/Reprocess for lightweight accounting systems.',
         },
         { status: 409 }
       );

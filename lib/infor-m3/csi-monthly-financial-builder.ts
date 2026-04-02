@@ -140,13 +140,8 @@ const DOM_DEBIT_KEYS = ['DerDomAmountDebit', 'derDomAmountDebit', 'DomAmountDebi
 const DOM_CREDIT_KEYS = ['DerDomAmountCredit', 'derDomAmountCredit', 'DomAmountCredit', 'domAmountCredit'];
 const DOM_SIGNED_AMOUNT_KEYS = ['DomAmount', 'domAmount', 'Amount', 'amount', 'ForAmount', 'forAmount'];
 
-const GL_SUMMARY_PROGRAM_HINTS = new Set([
-  'GLACCTPERIODBALANCES',
-  'SLGLACCTPERIODBALANCES',
-  'GLACCOUNTBALANCES',
-  'GLLEDGERPERIODS',
-  'SLGLLEDGERPERIODS',
-  'LEDGERBALANCES',
+const GL_TRANSACTION_PROGRAM_HINTS = new Set([
+  'SLGLTRANS',
 ]);
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -343,7 +338,12 @@ function resolveDebitCreditAmounts(record: JsonRecord): { debit: number; credit:
     return { debit: domDebit, credit: domCredit };
   }
 
+  const drCrToken = normalizeToken(readAny(record, ['DrCr', 'drCr', 'drcr']));
   const signedAmount = pickNumber(record, DOM_SIGNED_AMOUNT_KEYS);
+  if (drCrToken) {
+    if (drCrToken.startsWith('d')) return { debit: Math.abs(signedAmount), credit: 0 };
+    if (drCrToken.startsWith('c')) return { debit: 0, credit: Math.abs(signedAmount) };
+  }
   if (signedAmount > 0) return { debit: signedAmount, credit: 0 };
   if (signedAmount < 0) return { debit: 0, credit: Math.abs(signedAmount) };
   return { debit: 0, credit: 0 };
@@ -492,9 +492,7 @@ function extractRows(payloadLike: unknown): JsonRecord[] {
 
 function inferRowsBySource(glResponses: unknown[]): { chartRows: JsonRecord[]; ledgerRows: JsonRecord[] } {
   const chartRows: JsonRecord[] = [];
-  const explicitSlLedgersRows: JsonRecord[] = [];
-  const explicitSummaryLedgerRows: JsonRecord[] = [];
-  const inferredLedgerRows: JsonRecord[] = [];
+  const explicitGlTransactionRows: JsonRecord[] = [];
 
   for (const entry of glResponses) {
     const wrapper = asRecord(entry);
@@ -508,36 +506,18 @@ function inferRowsBySource(glResponses: unknown[]): { chartRows: JsonRecord[]; l
       chartRows.push(...rows);
       continue;
     }
-    if (programHint === 'SLLEDGERS') {
-      explicitSlLedgersRows.push(...rows);
-      continue;
-    }
-    if (GL_SUMMARY_PROGRAM_HINTS.has(programHint)) {
-      explicitSummaryLedgerRows.push(...rows);
+    if (GL_TRANSACTION_PROGRAM_HINTS.has(programHint)) {
+      explicitGlTransactionRows.push(...rows);
       continue;
     }
 
+    // Strict source policy: do not infer ledger rows from non-transaction programs.
     for (const row of rows) {
-      const hasPeriod = parseRowMonth(row) !== null;
-      const hasBalanceSignal =
-        pickNumber(row, ENDING_BALANCE_KEYS) !== 0 ||
-        pickNumber(row, DEBIT_KEYS) !== 0 ||
-        pickNumber(row, CREDIT_KEYS) !== 0;
-      if (hasPeriod && hasBalanceSignal) {
-        inferredLedgerRows.push(row);
-      } else {
-        chartRows.push(row);
-      }
+      chartRows.push(row);
     }
   }
-  // Choose a single ledger source to avoid accidental double counting:
-  // 1) SLLEDGERS (most detailed), 2) summary GL programs, 3) inferred fallback.
-  const ledgerRows =
-    explicitSlLedgersRows.length > 0
-      ? explicitSlLedgersRows
-      : explicitSummaryLedgerRows.length > 0
-        ? explicitSummaryLedgerRows
-        : inferredLedgerRows;
+  // Daily statement source-of-truth: detailed GL transaction rows only.
+  const ledgerRows = explicitGlTransactionRows;
   return {
     chartRows: dedupeRowsByLedgerIdentity(chartRows),
     ledgerRows: dedupeRowsByLedgerIdentity(ledgerRows),
@@ -673,6 +653,38 @@ type MappingRow = {
   targetField?: string | null;
 };
 
+type OpeningBalanceSeedRow = {
+  accountId?: string | null;
+  accountCode?: string | null;
+  asOfDate?: string | null;
+  endingBalance?: number | string | null;
+};
+
+const BS_TARGET_FIELDS = new Set([
+  'cash',
+  'ar',
+  'inventory',
+  'otherca',
+  'fixedassets',
+  'otherassets',
+  'totalassets',
+  'ap',
+  'loc',
+  'othercl',
+  'tcl',
+  'ltd',
+  'totalliab',
+  'ownerscapital',
+  'ownersdraw',
+  'commonstock',
+  'preferredstock',
+  'retainedearnings',
+  'additionalpaidincapital',
+  'treasurystock',
+  'totalequity',
+  'totallande',
+]);
+
 function normalizeMappingKey(value: unknown): string {
   return String(value || '')
     .trim()
@@ -789,6 +801,7 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
   throughMonth: string;
   maxMonths?: number;
   accountMappings?: MappingRow[];
+  openingBalances?: OpeningBalanceSeedRow[];
 }) {
   const throughMonth = String(params.throughMonth || '').trim();
   if (!/^\d{4}-\d{2}$/.test(throughMonth)) {
@@ -803,6 +816,20 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
   const chartByAccount = buildChartIndex(chartRows);
   const monthly = new Map<string, ReturnType<typeof initMonthRow>>();
   const sourceMonthKeys = new Set<string>();
+  const openingBalanceByAccount = new Map<string, { effectiveFromMonth: string; balance: number; applied: boolean }>();
+  const cumulativeByAccount = new Map<string, number>();
+  const bsSnapshotsByMonth = new Map<
+    string,
+    Map<
+      string,
+      {
+        accountName: string;
+        accountType: AccountType;
+        mappedTargetField: string | null;
+        endingBalance: number;
+      }
+    >
+  >();
   const mappingByName = new Map<string, string>();
   const mappingByCode = new Map<string, string>();
   for (const row of Array.isArray(params.accountMappings) ? params.accountMappings : []) {
@@ -820,7 +847,37 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
     }
   }
 
-  for (const row of ledgerRows) {
+  for (const row of Array.isArray(params.openingBalances) ? params.openingBalances : []) {
+    const accountKey = buildAccountKey(String(row.accountId || row.accountCode || '').trim());
+    if (!accountKey) continue;
+    const balance = Number(row.endingBalance ?? 0);
+    if (!Number.isFinite(balance)) continue;
+    const asOf = String(row.asOfDate || '').trim();
+    const parsed =
+      parseCompactDateToken(asOf) ||
+      (asOf ? (() => {
+        const d = new Date(asOf);
+        return Number.isNaN(d.getTime()) ? null : d;
+      })() : null);
+    if (!parsed) continue;
+    const effective = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, 1));
+    const effectiveFromMonth = monthKey(effective);
+    const existing = openingBalanceByAccount.get(accountKey);
+    if (!existing || existing.effectiveFromMonth < effectiveFromMonth) {
+      openingBalanceByAccount.set(accountKey, { effectiveFromMonth, balance, applied: false });
+    }
+  }
+
+  const orderedLedgerRows = [...ledgerRows].sort((a, b) => {
+    const ad = parseCsiDateTimeToken(readAny(a, ['TransDate', 'transDate', 'RecordDate', 'recordDate']));
+    const bd = parseCsiDateTimeToken(readAny(b, ['TransDate', 'transDate', 'RecordDate', 'recordDate']));
+    const at = ad ? ad.getTime() : 0;
+    const bt = bd ? bd.getTime() : 0;
+    if (at !== bt) return at - bt;
+    return pickString(a, ['TransNum', 'transNum']).localeCompare(pickString(b, ['TransNum', 'transNum']));
+  });
+
+  for (const row of orderedLedgerRows) {
     const normalizedLedger = normalizeCsiSlLedgersRow(row);
     const parsedMonth = parseRowMonth(row);
     const hasControlMonth =
@@ -870,17 +927,37 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
 
     const debit = normalizedLedger.debit;
     const credit = normalizedLedger.credit;
-    const begin = pickNumber(row, BEGIN_BALANCE_KEYS);
-    const explicitEnding = pickNumber(row, ENDING_BALANCE_KEYS);
-    const endingBalance = explicitEnding !== 0 ? explicitEnding : begin + debit - credit;
+    const signedMovement = Number.isFinite(normalizedLedger.signedAmount)
+      ? normalizedLedger.signedAmount
+      : debit - credit;
 
     const expenseMovement = debit - credit;
     const revenueMovement = credit - debit;
     const cogsMovement = debit - credit;
+    const normalizedMappedTarget = mappedTargetField ? String(mappedTargetField).trim().toLowerCase() : '';
+    const isBalanceSheetMapped = normalizedMappedTarget ? BS_TARGET_FIELDS.has(normalizedMappedTarget) : false;
+
+    if (accountKey && (isBalanceSheetMapped || accountType === 'asset' || accountType === 'liability' || accountType === 'equity')) {
+      const openingSeed = openingBalanceByAccount.get(accountKey);
+      if (openingSeed && !openingSeed.applied && rowMonthKey >= openingSeed.effectiveFromMonth) {
+        cumulativeByAccount.set(accountKey, openingSeed.balance);
+        openingSeed.applied = true;
+      }
+      const nextBalance = Number(cumulativeByAccount.get(accountKey) || 0) + signedMovement;
+      cumulativeByAccount.set(accountKey, nextBalance);
+      if (!bsSnapshotsByMonth.has(key)) bsSnapshotsByMonth.set(key, new Map());
+      bsSnapshotsByMonth.get(key)!.set(accountKey, {
+        accountName,
+        accountType,
+        mappedTargetField: mappedTargetField || null,
+        endingBalance: nextBalance,
+      });
+    }
 
     if (
       mappedTargetField &&
-      applyMappedAmount(bucket, mappedTargetField, expenseMovement, revenueMovement, endingBalance)
+      !isBalanceSheetMapped &&
+      applyMappedAmount(bucket, mappedTargetField, expenseMovement, revenueMovement, 0)
     ) {
       continue;
     }
@@ -915,28 +992,42 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
         bucket.otherExpense += amount;
       }
       addToBreakdown(bucket.expenseBreakdown as Record<string, unknown>, 'Unallocated', amount);
-    } else if (accountType === 'asset') {
-      const amount = endingBalance;
-      bucket.totalAssets += amount;
-      if (accountName.toLowerCase().includes('cash') || accountName.toLowerCase().includes('bank')) bucket.cash += amount;
-      else if (accountName.toLowerCase().includes('receivable') || accountName.toLowerCase().includes('a/r')) bucket.ar += amount;
-      else if (accountName.toLowerCase().includes('inventory')) bucket.inventory += amount;
-      else if (accountName.toLowerCase().includes('fixed')) bucket.fixedAssets += amount;
-      else bucket.otherCA += amount;
-    } else if (accountType === 'liability') {
-      const amount = endingBalance;
-      bucket.totalLiab += amount;
-      if (accountName.toLowerCase().includes('payable') || accountName.toLowerCase().includes('a/p')) bucket.ap += amount;
-      else if (accountName.toLowerCase().includes('line of credit') || accountName.toLowerCase().includes('loc')) bucket.loc += amount;
-      else if (accountName.toLowerCase().includes('long') || accountName.toLowerCase().includes('loan') || accountName.toLowerCase().includes('debt')) bucket.ltd += amount;
-      else bucket.otherCL += amount;
-    } else if (accountType === 'equity') {
-      const amount = endingBalance;
-      bucket.totalEquity += amount;
-      if (accountName.toLowerCase().includes('retained')) bucket.retainedEarnings += amount;
-      else if (accountName.toLowerCase().includes('draw')) bucket.ownersDraw += amount;
-      else if (accountName.toLowerCase().includes('capital')) bucket.ownersCapital += amount;
-      else bucket.additionalPaidInCapital += amount;
+    }
+  }
+
+  for (const [monthKeyValue, accountMap] of bsSnapshotsByMonth.entries()) {
+    if (!monthly.has(monthKeyValue)) monthly.set(monthKeyValue, initMonthRow(monthKeyValue));
+    const bucket = monthly.get(monthKeyValue)!;
+    for (const snapshot of accountMap.values()) {
+      const endingBalance = snapshot.endingBalance;
+      const mappedTargetField = snapshot.mappedTargetField;
+      if (mappedTargetField && BS_TARGET_FIELDS.has(String(mappedTargetField).trim().toLowerCase())) {
+        applyMappedAmount(bucket, mappedTargetField, 0, 0, endingBalance);
+        continue;
+      }
+      const amount = Math.abs(endingBalance);
+      const accountName = snapshot.accountName.toLowerCase();
+      const accountType = snapshot.accountType;
+      if (accountType === 'asset') {
+        bucket.totalAssets += amount;
+        if (accountName.includes('cash') || accountName.includes('bank')) bucket.cash += amount;
+        else if (accountName.includes('receivable') || accountName.includes('a/r')) bucket.ar += amount;
+        else if (accountName.includes('inventory')) bucket.inventory += amount;
+        else if (accountName.includes('fixed')) bucket.fixedAssets += amount;
+        else bucket.otherCA += amount;
+      } else if (accountType === 'liability') {
+        bucket.totalLiab += amount;
+        if (accountName.includes('payable') || accountName.includes('a/p')) bucket.ap += amount;
+        else if (accountName.includes('line of credit') || accountName.includes('loc')) bucket.loc += amount;
+        else if (accountName.includes('long') || accountName.includes('loan') || accountName.includes('debt')) bucket.ltd += amount;
+        else bucket.otherCL += amount;
+      } else if (accountType === 'equity') {
+        bucket.totalEquity += amount;
+        if (accountName.includes('retained')) bucket.retainedEarnings += amount;
+        else if (accountName.includes('draw')) bucket.ownersDraw += amount;
+        else if (accountName.includes('capital')) bucket.ownersCapital += amount;
+        else bucket.additionalPaidInCapital += amount;
+      }
     }
   }
 

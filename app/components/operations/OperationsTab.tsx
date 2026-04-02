@@ -5634,7 +5634,7 @@ export default function OperationsTab({
         totalEquity,
         totalLAndE,
       };
-    }).filter((day: any) => day.isBusinessDay || day.hasIncomeActivity);
+    }).filter((day: any) => day.isBusinessDay || day.hasIncomeActivity || day.hasBalanceSource);
 
     type StatementRowDef = {
       key?: keyof (typeof statementDays)[number];

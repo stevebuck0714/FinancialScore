@@ -1,0 +1,16 @@
+{
+  "companyId": "cmmnwyofv000fqhp4z8lebbny",
+  "generatedAt": "2026-03-31T00:14:20.296Z",
+  "days": {
+    "2026-03-09": {
+      "file": "exports/ar-open-detail-2026-03-09.jsonl",
+      "rowCount": 74384,
+      "totalOpen": 198213188.65
+    },
+    "2026-03-10": {
+      "file": "exports/ar-open-detail-2026-03-10.jsonl",
+      "rowCount": 74383,
+      "totalOpen": 129158984.58
+    }
+  }
+}

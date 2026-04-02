@@ -1,0 +1,3 @@
+account,account_name,ending_balance_eom,abs_contribution_to_cash,tx_count_in_month,is_explicit_cash_mapping,monthlyfinancial_cash
+10150,10150,360045.0400000003,360045.0400000003,9,yes,94458.93999999997
+TOTAL,,,360045.0400000003,,,94458.93999999997

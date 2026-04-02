@@ -128,11 +128,16 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
 
     const ap = toNumber((m as any).ap);
     const otherCL = toNumber((m as any).otherCL);
-    const tcl = toNumber((m as any).tcl) || (ap + otherCL);
+    const locDebt = toNumber((m as any).loc);
+    const reportedTcl = toNumber((m as any).tcl);
+    const fallbackTcl = ap + otherCL + locDebt;
+    const tcl = Math.max(reportedTcl, fallbackTcl);
 
     const ltDebt = toNumber((m as any).ltDebt || (m as any).ltd);
     const otherLTL = toNumber((m as any).otherLTL);
-    const totalLiabilities = toNumber((m as any).totalLiabilities || (m as any).totalLiab) || (tcl + ltDebt + otherLTL);
+    const reportedTotalLiabilities = toNumber((m as any).totalLiabilities || (m as any).totalLiab);
+    const fallbackTotalLiabilities = tcl + ltDebt + otherLTL;
+    const totalLiabilities = Math.max(reportedTotalLiabilities, fallbackTotalLiabilities);
     const equity = toNumber((m as any).equity || (m as any).totalEquity) || (totalAssets - totalLiabilities);
 
     const prevInventory = hasPreviousMonthData ? toNumber((previousMonth as any).inventory) : null;

@@ -179,7 +179,7 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     module: 'GL',
     miProgram: 'SLGLTRANS',
     endpointPath:
-      '/APR_PRD/CSI/IDORequestService/ido/load/SLGLTRANS?properties=Acct,TransDate,DomAmount,ForAmount,Amount,DrCr,RecordDate,Site,TransNum,Ref,Description&recordCap=1000',
+      '/APR_PRD/CSI/IDORequestService/ido/load/SLGLTRANS?properties=*&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -205,6 +205,62 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
     enabled: true,
   },
 ];
+
+type CsiFinancialIdoContract = {
+  glTransactionIdo?: string | null;
+  accountMasterIdo?: string | null;
+  periodBalanceIdo?: string | null;
+};
+
+function normalizeIdoName(value: unknown): string {
+  return String(value || '').trim();
+}
+
+function applyCsiFinancialIdoContract(
+  rows: InforProgramRow[],
+  contract: CsiFinancialIdoContract | null
+): InforProgramRow[] {
+  if (!contract) return rows;
+  const glTransactionIdo = normalizeIdoName(contract.glTransactionIdo);
+  const accountMasterIdo = normalizeIdoName(contract.accountMasterIdo);
+  const periodBalanceIdo = normalizeIdoName(contract.periodBalanceIdo);
+  if (!glTransactionIdo && !accountMasterIdo && !periodBalanceIdo) return rows;
+
+  return rows.map((row) => {
+    const currentProgram = String(row.miProgram || '').trim().toUpperCase();
+    const [pathOnly, queryString = ''] = String(row.endpointPath || '').trim().split('?');
+    const isCsiLoadPath = /\/ido\/load\//i.test(pathOnly);
+    if (!isCsiLoadPath) return row;
+
+    const rewriteIdoPath = (nextIdo: string): string => {
+      const normalizedPath = pathOnly.replace(/\/ido\/load\/[^/?]+/i, `/ido/load/${nextIdo}`);
+      return queryString ? `${normalizedPath}?${queryString}` : normalizedPath;
+    };
+
+    if (glTransactionIdo && (currentProgram === 'SLGLTRANS' || currentProgram === 'SLGLTRN' || currentProgram === 'SLGLTRAN')) {
+      return {
+        ...row,
+        miProgram: glTransactionIdo,
+        endpointPath: rewriteIdoPath(glTransactionIdo),
+      };
+    }
+    if (accountMasterIdo && GL_ACCOUNT_MASTER_PROGRAM_IDS.has(currentProgram)) {
+      return {
+        ...row,
+        miProgram: accountMasterIdo,
+        endpointPath: rewriteIdoPath(accountMasterIdo),
+      };
+    }
+    if (periodBalanceIdo && currentProgram === 'GLACCTPERIODBALANCES') {
+      return {
+        ...row,
+        miProgram: periodBalanceIdo,
+        endpointPath: rewriteIdoPath(periodBalanceIdo),
+      };
+    }
+    return row;
+  });
+}
 
 function recordSiteValue(record: Record<string, unknown>): string | null {
   return (
@@ -1370,6 +1426,14 @@ const normalizeGlAccountKey = (value: unknown): string =>
     .trim()
     .toLowerCase()
     .replace(/[\s\-_.]+/g, '');
+const isGenericAccountLabel = (label: string | null, accountId: string | null): boolean => {
+  const normalized = String(label || '').trim().toLowerCase();
+  if (!normalized) return false;
+  const compact = normalized.replace(/\s+/g, ' ');
+  if (/^account\s+[a-z0-9_-]+$/i.test(compact)) return true;
+  const accountToken = String(accountId || '').trim().toLowerCase();
+  return Boolean(accountToken) && compact === `account ${accountToken}`;
+};
 const parseGlAccountMasterEntry = (record: Record<string, unknown>): GlAccountMasterEntry | null => {
   const accountId =
     pickString(record, ['Acct', 'AcctNum', 'Account', 'AccountNo', 'GLAccount', 'ACNO', 'ACID']) ||
@@ -1420,6 +1484,26 @@ const extractSignedGlAmount = (
     drCrToken,
   };
 };
+
+function parseBooleanToken(value: unknown): boolean | null {
+  const token = normalizeToken(value);
+  if (!token) return null;
+  if (['1', 'true', 't', 'yes', 'y', 'posted', 'post', 'closed', 'final'].includes(token)) return true;
+  if (['0', 'false', 'f', 'no', 'n', 'unposted', 'open', 'draft'].includes(token)) return false;
+  return null;
+}
+
+function shouldIncludePostedGlRecord(record: Record<string, unknown>): boolean {
+  const posted = parseBooleanToken(
+    pickString(record, ['Posted', 'posted', 'IsPosted', 'isPosted', 'PostFlag', 'postFlag'])
+  );
+  if (posted === false) return false;
+  const inWorkflow = parseBooleanToken(
+    pickString(record, ['InWorkflow', 'inWorkflow', 'Workflow', 'workflow'])
+  );
+  if (inWorkflow === true) return false;
+  return true;
+}
 
 const SALES_QTY_KEYS = ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'QtyShipped', 'qtyShipped', 'InvSeq'];
 const SALES_REVENUE_KEYS = ['revenue', 'amount', 'salesAmount', 'NETA', 'Amount', 'Price', 'ExtPrice', 'ExtAmt', 'LineAmount'];
@@ -1798,11 +1882,12 @@ async function saveGLTransactionFacts(
   context: { miProgram: string; transaction: string; cono?: string | null; divi?: string | null },
   glAccountMasterById?: Map<string, GlAccountMasterEntry>
 ): Promise<number> {
-  const delegate = (prisma as any).gLTransactionFact;
-  if (!delegate?.createMany || records.length === 0) return 0;
-  const rows = records
+  if (records.length === 0) return 0;
+  const rowsRaw = records
     .map((record) => {
-      const transDate = parseMaybeDate(pickString(record, ['TransDate', 'transDate', 'RecordDate', 'date']));
+      if (!shouldIncludePostedGlRecord(record)) return null;
+      // Financial fact date must use accounting effective date only.
+      const transDate = parseMaybeDate(pickString(record, ['TransDate', 'transDate']));
       const accountId =
         pickString(record, ['Acct', 'AcctNum', 'Account', 'AccountNo', 'GLAccount', 'ACNO', 'ACID']) ||
         pickString(record, ['accountId', 'accountCode', 'accountNumber']);
@@ -1836,11 +1921,135 @@ async function saveGLTransactionFacts(
       };
     })
     .filter(Boolean) as Array<Record<string, unknown>>;
+  if (rowsRaw.length === 0) return 0;
+  // In-run de-duplication guardrail.
+  const dedupedRows = new Map<string, Record<string, unknown>>();
+  for (const row of rowsRaw) {
+    const transDate =
+      row.transDate instanceof Date ? row.transDate.toISOString() : String(row.transDate || '');
+    const key = [
+      String(row.companyId || companyId).trim(),
+      transDate,
+      String(row.accountId || '').trim(),
+      String(row.transNum || '').trim(),
+      String(row.ref || '').trim(),
+      String(row.description || '').trim(),
+      String(Number(row.signedAmount || 0)),
+      String(Number(row.debitAmount || 0)),
+      String(Number(row.creditAmount || 0)),
+    ].join('|');
+    if (!dedupedRows.has(key)) dedupedRows.set(key, row);
+  }
+  const rows = Array.from(dedupedRows.values());
   if (rows.length === 0) return 0;
-  await delegate.createMany({
-    data: rows,
-    skipDuplicates: true,
-  });
+  // Runtime safety fallback: some Prisma client builds in this environment do not
+  // expose the GLTransactionFact delegate. Insert via SQL so SLGLTRANS ingestion
+  // still persists raw ledger facts.
+  const sqlRows = rows.map((row) => ({
+    id: randomUUID(),
+    companyId: String(row.companyId || companyId),
+    transDate: row.transDate instanceof Date ? row.transDate.toISOString() : String(row.transDate || ''),
+    accountId: String(row.accountId || ''),
+    accountName: row.accountName == null ? null : String(row.accountName),
+    accountType: row.accountType == null ? null : String(row.accountType),
+    accountCategory: row.accountCategory == null ? null : String(row.accountCategory),
+    signedAmount: Number(row.signedAmount || 0),
+    debitAmount: row.debitAmount == null ? null : Number(row.debitAmount),
+    creditAmount: row.creditAmount == null ? null : Number(row.creditAmount),
+    drCr: row.drCr == null ? null : String(row.drCr),
+    transNum: row.transNum == null ? null : String(row.transNum),
+    ref: row.ref == null ? null : String(row.ref),
+    description: row.description == null ? null : String(row.description),
+    site: row.site == null ? null : String(row.site),
+    sourcePlatform: row.sourcePlatform == null ? null : String(row.sourcePlatform),
+    sourceProgram: row.sourceProgram == null ? null : String(row.sourceProgram),
+    sourceTransaction: row.sourceTransaction == null ? null : String(row.sourceTransaction),
+    cono: row.cono == null ? null : String(row.cono),
+    divi: row.divi == null ? null : String(row.divi),
+  }));
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO "GLTransactionFact" (
+        "id",
+        "companyId",
+        "transDate",
+        "accountId",
+        "accountName",
+        "accountType",
+        "accountCategory",
+        "signedAmount",
+        "debitAmount",
+        "creditAmount",
+        "drCr",
+        "transNum",
+        "ref",
+        "description",
+        "site",
+        "sourcePlatform",
+        "sourceProgram",
+        "sourceTransaction",
+        "cono",
+        "divi"
+      )
+      SELECT
+        x."id",
+        x."companyId",
+        x."transDate",
+        x."accountId",
+        x."accountName",
+        x."accountType",
+        x."accountCategory",
+        x."signedAmount",
+        x."debitAmount",
+        x."creditAmount",
+        x."drCr",
+        x."transNum",
+        x."ref",
+        x."description",
+        x."site",
+        x."sourcePlatform",
+        x."sourceProgram",
+        x."sourceTransaction",
+        x."cono",
+        x."divi"
+      FROM jsonb_to_recordset($1::jsonb) AS x(
+        "id" text,
+        "companyId" text,
+        "transDate" timestamptz,
+        "accountId" text,
+        "accountName" text,
+        "accountType" text,
+        "accountCategory" text,
+        "signedAmount" double precision,
+        "debitAmount" double precision,
+        "creditAmount" double precision,
+        "drCr" text,
+        "transNum" text,
+        "ref" text,
+        "description" text,
+        "site" text,
+        "sourcePlatform" text,
+        "sourceProgram" text,
+        "sourceTransaction" text,
+        "cono" text,
+        "divi" text
+      )
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM "GLTransactionFact" g
+        WHERE g."companyId" = x."companyId"
+          AND g."transDate" = x."transDate"
+          AND g."accountId" = x."accountId"
+          AND COALESCE(g."transNum",'') = COALESCE(x."transNum",'')
+          AND COALESCE(g."ref",'') = COALESCE(x."ref",'')
+          AND COALESCE(g."description",'') = COALESCE(x."description",'')
+          AND COALESCE(g."signedAmount",0) = COALESCE(x."signedAmount",0)
+          AND COALESCE(g."debitAmount",0) = COALESCE(x."debitAmount",0)
+          AND COALESCE(g."creditAmount",0) = COALESCE(x."creditAmount",0)
+      )
+    `,
+    JSON.stringify(sqlRows)
+  );
   return rows.length;
 }
 
@@ -1871,12 +2080,7 @@ async function saveBalanceMovementsFromGl(
     const rawMappings = await prisma.accountMapping.findMany({
       where: {
         companyId,
-        AND: [
-          { NOT: { targetField: null } },
-          { NOT: { targetField: '' } },
-          { NOT: { targetField: 'unmapped' } },
-          { NOT: { targetField: 'UNMAPPED' } },
-        ],
+        targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
       },
       select: {
         qbAccount: true,
@@ -1922,25 +2126,54 @@ async function saveBalanceMovementsFromGl(
     accountCategory: string | null;
     accountName: string | null;
   }): string[] => {
-    const text = `${entry.accountType || ''} ${entry.accountCategory || ''} ${entry.accountName || ''}`
+    const accountTypeText = String(entry.accountType || '').toLowerCase().trim();
+    const accountCategoryText = String(entry.accountCategory || '').toLowerCase().trim();
+    const accountNameText = String(entry.accountName || '').toLowerCase().trim();
+    const text = `${accountTypeText} ${accountCategoryText} ${accountNameText}`
       .toLowerCase()
       .replace(/\s+/g, ' ')
       .trim();
     const targets = new Set<string>();
     const has = (token: string): boolean => text.includes(token);
-    if (has('revenue') || has('income') || has('sales')) targets.add('revenue');
-    if (has('cost of goods') || has('costofgoods') || has(' cogs') || has('cogs ')) targets.add('cogsTotal');
-    if (
+
+    const indicatesAsset =
+      accountTypeText.startsWith('a') ||
+      has('asset') ||
+      has('cash') ||
+      has('receivable') ||
+      has('inventory') ||
+      has('bank');
+    const indicatesLiability =
+      accountTypeText.startsWith('l') ||
+      has('liability') ||
+      has('payable') ||
+      has('line of credit') ||
+      has('long term debt');
+    const indicatesEquity =
+      accountTypeText.startsWith('e') && !has('expense') ||
+      has('equity') ||
+      has('capital') ||
+      has('retained earnings') ||
+      has('common stock') ||
+      has('preferred stock');
+    const indicatesRevenue =
+      accountTypeText.startsWith('r') ||
+      has('revenue') ||
+      has('sales') ||
+      (has('income') && !has('expense'));
+    const indicatesExpense =
+      accountTypeText.startsWith('x') ||
       has('expense') ||
       has('payroll') ||
       has('rent') ||
       has('insurance') ||
       has('depreciation') ||
-      has('interest')
-    ) {
-      targets.add('expense');
-    }
-    if (has('asset')) {
+      has('interest');
+
+    if (indicatesRevenue) targets.add('revenue');
+    if (has('cost of goods') || has('costofgoods') || has(' cogs') || has('cogs ')) targets.add('cogsTotal');
+    if (indicatesExpense) targets.add('expense');
+    if (indicatesAsset) {
       targets.add('totalAssets');
       if (has('cash') || has('bank')) targets.add('cash');
       if (has('receivable') || has('a/r') || has(' ar')) targets.add('ar');
@@ -1949,14 +2182,14 @@ async function saveBalanceMovementsFromGl(
       if (has('current asset') || has('other current')) targets.add('otherCA');
       if (has('other asset') || has('intangible') || has('prepaid')) targets.add('otherAssets');
     }
-    if (has('liability')) {
+    if (indicatesLiability) {
       targets.add('totalLiab');
       if (has('payable') || has('a/p') || has(' ap')) targets.add('ap');
       if (has('line of credit') || has('loc')) targets.add('loc');
       if (has('long term') || has('long-term') || has('non current')) targets.add('ltd');
       if (has('current liab') || has('other current')) targets.add('otherCL');
     }
-    if (has('equity') || has('capital') || has('retained earnings') || has('common stock') || has('preferred stock')) {
+    if (indicatesEquity) {
       targets.add('totalEquity');
       if (has('owner') && has('capital')) targets.add('ownersCapital');
       if (has('owner') && has('draw')) targets.add('ownersDraw');
@@ -1985,9 +2218,20 @@ async function saveBalanceMovementsFromGl(
       pickString(record, ['Acct', 'accountId', 'accountNumber', 'ACID']) ||
       pickString(record, ['ChaAccount', 'GLAccount']) ||
       null;
+    const accountMaster =
+      glAccountMasterById && accountId
+        ? glAccountMasterById.get(normalizeGlAccountKey(accountId)) || null
+        : null;
+    const rawAccountName =
+      pickString(record, ['ChaDescription', 'ChtDescription', 'accountName', 'name', 'Name']) || null;
+    const preferredAccountName =
+      accountMaster?.accountName && String(accountMaster.accountName).trim()
+        ? String(accountMaster.accountName).trim()
+        : null;
     const accountName =
-      pickString(record, ['ChaDescription', 'ChtDescription', 'accountName', 'name', 'Name']) ||
-      (accountId ? `Account ${accountId}` : null);
+      preferredAccountName && (isGenericAccountLabel(rawAccountName, accountId) || !rawAccountName)
+        ? preferredAccountName
+        : rawAccountName || preferredAccountName || (accountId ? `Account ${accountId}` : null);
     const matchingTokens = [accountId, accountName]
       .map((value) => String(value || '').trim().toLowerCase())
       .filter(Boolean);
@@ -1997,12 +2241,9 @@ async function saveBalanceMovementsFromGl(
       if (!fields) continue;
       fields.forEach((field) => matchedTargetFields.add(field));
     }
-    if (matchedTargetFields.size === 0 && glAccountMasterById && accountId) {
-      const account = glAccountMasterById.get(normalizeGlAccountKey(accountId));
-      if (account) {
-        for (const field of deriveTargetFieldsFromAccountMaster(account)) {
+    if (matchedTargetFields.size === 0 && accountMaster) {
+      for (const field of deriveTargetFieldsFromAccountMaster(accountMaster)) {
           matchedTargetFields.add(field);
-        }
       }
     }
     if (matchedTargetFields.size === 0) continue;
@@ -2017,9 +2258,7 @@ async function saveBalanceMovementsFromGl(
 
     const sourceAccountName = String(accountName || accountId || 'Cash Account');
     const sourceAccountId = accountId ? String(accountId) : null;
-    const sourceAccountType = glAccountMasterById && accountId
-      ? glAccountMasterById.get(normalizeGlAccountKey(accountId))?.accountType || null
-      : null;
+    const sourceAccountType = accountMaster?.accountType || null;
     matchedTargetFields.forEach((mappedTargetField) => {
       const targetField = `balance_movement:${mappedTargetField}`;
       const normalizedTarget = String(mappedTargetField || '').trim().toLowerCase();
@@ -4180,7 +4419,18 @@ export async function syncInforM3OperationalData(
       totalProgramRows: 0,
     };
   }
-  const baseProgramRows = parsedProgramRows.length > 0 ? parsedProgramRows : DEFAULT_CSI_PROGRAM_ROWS;
+  const csiFinancialIdoContract =
+    inforSystem === 'INFOR_CSI' &&
+    metadata.inforCsiFinancialIdoContract &&
+    typeof metadata.inforCsiFinancialIdoContract === 'object' &&
+    !Array.isArray(metadata.inforCsiFinancialIdoContract)
+      ? (metadata.inforCsiFinancialIdoContract as CsiFinancialIdoContract)
+      : null;
+  const baseProgramRowsRaw = parsedProgramRows.length > 0 ? parsedProgramRows : DEFAULT_CSI_PROGRAM_ROWS;
+  const baseProgramRows =
+    inforSystem === 'INFOR_CSI'
+      ? applyCsiFinancialIdoContract(baseProgramRowsRaw, csiFinancialIdoContract)
+      : baseProgramRowsRaw;
   const isDailyBackfillWindow = frequency === 'daily' && syncWindow?.mode === 'backfill';
   const arOnlyBackfill = (() => {
     if (typeof options?.arOnlyBackfill === 'boolean') return options.arOnlyBackfill;
@@ -4795,7 +5045,12 @@ export async function syncInforM3OperationalData(
       const arApFlow = moduleType === 'ar' || moduleType === 'ap' ? classifyArApFlow(moduleType, req.transaction) : null;
       const sitePolicy = resolveSitePolicy(row, moduleType);
       const siteDetected = hasRecordSiteDimension(rawRecords);
-      const recordsAfterSiteFilter = filterRecordsBySiteIfSupported(rawRecords, row.site);
+      // GL/other site-agnostic modules should not be narrowed to a single site code.
+      // Restrict explicit site filtering to modules that declare required/optional site policy.
+      const recordsAfterSiteFilter =
+        sitePolicy === 'none'
+          ? rawRecords
+          : filterRecordsBySiteIfSupported(rawRecords, row.site);
       // For daily-overlap syncs only, keep full open-item populations for AR/AP
       // snapshots. Backfill/manual modes must honor the date window so each day
       // is rebuilt from that day slice instead of replaying one global snapshot.
@@ -4916,7 +5171,7 @@ export async function syncInforM3OperationalData(
                   glProgram === 'SLGLTRANS'
                     ? await saveGLTransactionFacts(companyId, records, glContext, glAccountMasterById)
                     : 0;
-                if (glProgram === 'SLLEDGERS' || glProgram === 'SLGLTRANS') {
+                if (glProgram === 'SLGLTRANS') {
                 moduleRecordsCreated =
                   glFactRowsCreated +
                   (await saveBalanceMovementsFromGl(

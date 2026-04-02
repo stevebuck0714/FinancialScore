@@ -1,0 +1,8 @@
+account_id,account_name,slgltrans_cumulative_eom,slgltrans_month_movement,tx_count_through_eom,tx_count_in_month,monthlyfinancial_cash_rollup
+10100,Cash - Atlantic Union Bank,-11161.84,0,4,0,3541974.579999999
+10150,Cash - National Bank,360045.0400000003,0,193,0,3541974.579999999
+10200,Money Market Account,0,0,0,0,3541974.579999999
+10250,Money Market Account - NB,0,0,0,0,3541974.579999999
+10400,Checking - Flex Spending,0,0,0,0,3541974.579999999
+10450,Flex Spending - FCB,0,0,0,0,3541974.579999999
+TOTAL_MAPPED_CASH,,348883.2000000003,,,,3541974.579999999

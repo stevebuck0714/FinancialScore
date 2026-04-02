@@ -316,6 +316,23 @@ function isLikelyNumericText(value: string | undefined): boolean {
   return /^-?\(?\d+(\.\d+)?\)?$/.test(cleaned);
 }
 
+function hasCreditMarker(value: string | undefined): boolean {
+  const raw = (value || '').trim();
+  if (!raw) return false;
+  const upper = raw.toUpperCase();
+  // Ignore generic "credit" wording and only detect accounting credit markers
+  // attached to numeric amounts, e.g. "35,966.13 (CR)" or "35,966.13 CR".
+  if (!/\d/.test(upper)) return false;
+  return /\(\s*CR\s*\)/.test(upper) || /\bCR\b/.test(upper);
+}
+
+function rowHasCreditMarker(values: string[], dateColumnIndexes: number[]): boolean {
+  for (const idx of dateColumnIndexes) {
+    if (hasCreditMarker(values[idx])) return true;
+  }
+  return false;
+}
+
 /**
  * Parse a number from a CSV value (handles commas, quotes, negative numbers, accounting parentheses)
  */
@@ -483,6 +500,8 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
   for (let i = headerIndex + 1; i < lines.length; i++) {
     const line = lines[i];
     const values = parseCSVLine(line);
+    // Per mapping rules, drop any row explicitly tagged as credit in amount cells.
+    if (rowHasCreditMarker(values, dateColumnIndexes)) continue;
 
     let rawAcctType = '';
     let acctId = '';

@@ -650,6 +650,10 @@ function FinancialScorePage() {
   };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const selectedCompany = useMemo(
+    () => (Array.isArray(companies) ? companies.find((c: any) => c.id === selectedCompanyId) : undefined),
+    [companies, selectedCompanyId]
+  );
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -7272,7 +7276,9 @@ function FinancialScorePage() {
       const ltmEBIT = ltmR - ltmE;
       const interestCov = ltmInterest > 0 ? ltmEBIT / ltmInterest : 0;
       
-      const ltmDebtSvc = cur.ltd * 0.1 + ltmInterest;
+      const locDebt = Number(cur.loc || 0);
+      const debtBase = Math.max(Number(cur.totalLiab || 0), currentLiab + Number(cur.ltd || 0));
+      const ltmDebtSvc = debtBase * 0.1 + ltmInterest;
       const debtSvcCov = ltmDebtSvc > 0 ? ltmEBIT / ltmDebtSvc : 0;
       
       // Calculate Operating Cash Flow for Cash Flow to Debt ratio
@@ -7286,10 +7292,10 @@ function FinancialScorePage() {
       const ltmOperatingCF = ltmNetIncome + ltmDepreciation - changeInWorkingCap;
       
       // Total Debt = Total Liabilities (more conservative) or Long Term Debt + Current Liabilities
-      const totalDebt = cur.totalLiab;
+      const totalDebt = debtBase;
       const cfToDebt = totalDebt > 0 ? ltmOperatingCF / totalDebt : 0;
       
-      const debtToNW = cur.totalEquity > 0 ? cur.totalLiab / cur.totalEquity : 0;
+      const debtToNW = cur.totalEquity > 0 ? debtBase / cur.totalEquity : 0;
       const fixedToNW = cur.totalEquity > 0 ? cur.fixedAssets / cur.totalEquity : 0;
       const leverage = cur.totalEquity > 0 ? cur.totalAssets / cur.totalEquity : 0;
       
@@ -12071,9 +12077,34 @@ function FinancialScorePage() {
                       </thead>
                       <tbody>
                         {(() => {
+                          const extractSortableId = (value: unknown): { raw: string; numeric: number | null } => {
+                            const raw = String(value || '').trim();
+                            if (!raw) return { raw: '', numeric: null };
+                            const match = raw.match(/\d+/g);
+                            const digits = match ? match.join('') : '';
+                            if (!digits) return { raw, numeric: null };
+                            const numeric = Number(digits);
+                            return Number.isFinite(numeric) ? { raw, numeric } : { raw, numeric: null };
+                          };
+                          const compareByIdThenName = (
+                            aId: unknown,
+                            bId: unknown,
+                            aName: unknown,
+                            bName: unknown
+                          ): number => {
+                            const a = extractSortableId(aId);
+                            const b = extractSortableId(bId);
+                            if (a.numeric !== null && b.numeric !== null && a.numeric !== b.numeric) return a.numeric - b.numeric;
+                            if ((a.numeric !== null) !== (b.numeric !== null)) return a.numeric !== null ? -1 : 1;
+                            const idCompare = a.raw.localeCompare(b.raw, undefined, { numeric: true, sensitivity: 'base' });
+                            if (idCompare !== 0) return idCompare;
+                            return String(aName || '').localeCompare(String(bName || ''), undefined, { sensitivity: 'base' });
+                          };
                           const parseAmount = (raw: unknown): number => {
                             if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
                             if (typeof raw !== 'string') return 0;
+                            const upper = raw.toUpperCase();
+                            if (/\(\s*CR\s*\)/.test(upper) || /\bCR\b/.test(upper)) return 0;
                             const normalized = raw
                               .trim()
                               .replace(/\$/g, '')
@@ -12262,10 +12293,19 @@ function FinancialScorePage() {
                             if (Number.isFinite(num)) apiInforValues.set(key, num);
                           });
 
+                          const selectedAccountingSystem = String(
+                            (Array.isArray(companies)
+                              ? companies.find((company: any) => company.id === selectedCompanyId)?.accountingSystem
+                              : '') || ''
+                          ).toUpperCase();
+                          const isInforCompany = selectedAccountingSystem === 'INFOR_M3' || selectedAccountingSystem === 'INFOR_CSI';
+                          // For Infor, authoritative account-review values come from the dedicated API endpoint.
+                          // Avoid mixing in payload-derived rollups that can fan out one target-field total
+                          // (e.g. cash) to many detailed accounts.
                           const mergedValues = new Map<string, number>([
                             ...Array.from(plValues.entries()),
                             ...Array.from(bsValues.entries()),
-                            ...Array.from(inforValues.entries()),
+                            ...(isInforCompany ? [] : Array.from(inforValues.entries())),
                             ...Array.from(apiInforValues.entries()),
                           ]);
                           const latestMasterMonthRow = (() => {
@@ -12336,7 +12376,9 @@ function FinancialScorePage() {
                           };
 
                           return (hasCsvData && csvTrialBalanceData
-                          ? csvTrialBalanceData.accounts?.map((account: any, idx: number) => {
+                          ? [...(csvTrialBalanceData.accounts || [])]
+                              .sort((a: any, b: any) => compareByIdThenName(a?.acctId, b?.acctId, a?.description, b?.description))
+                              .map((account: any, idx: number) => {
                               const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
                               const latestDate = validDates[validDates.length - 1];
                               let latestValue = 0;
@@ -12363,7 +12405,17 @@ function FinancialScorePage() {
                                 </tr>
                               );
                             })
-                          : aiMappings.map((mapping: any, idx: number) => {
+                          : aiMappings
+                              .map((mapping: any, originalIndex: number) => ({ mapping, originalIndex }))
+                              .sort((a, b) =>
+                                compareByIdThenName(
+                                  getDisplayAccountCode(a.mapping),
+                                  getDisplayAccountCode(b.mapping),
+                                  a.mapping?.qbAccount,
+                                  b.mapping?.qbAccount
+                                )
+                              )
+                              .map(({ mapping, originalIndex }, idx: number) => {
                               const byId = mapping.qbAccountId ? mergedValues.get(`id:${String(mapping.qbAccountId).trim()}`) : undefined;
                               const byCode = mapping.qbAccountCode ? mergedValues.get(`id:${String(mapping.qbAccountCode).trim()}`) : undefined;
                               const normalizedCode = normalizeAccountCodeForMatch(mapping.qbAccountCode || mapping.qbAccountId);
@@ -12384,9 +12436,9 @@ function FinancialScorePage() {
                                       const selected = e.target.value;
                                       setAiMappings((prev) => {
                                         const updated = [...(Array.isArray(prev) ? prev : [])];
-                                        if (!updated[idx]) return prev;
-                                        updated[idx] = {
-                                          ...updated[idx],
+                                        if (!updated[originalIndex]) return prev;
+                                        updated[originalIndex] = {
+                                          ...updated[originalIndex],
                                           qbAccountClassification: encodeManualClassification(selected),
                                         };
                                         return updated;

@@ -1,0 +1,90 @@
+{
+  "invoiceCount": 8,
+  "totals": {
+    "total_2026_03_09": 27232.58,
+    "total_2026_03_10": 19015.98,
+    "delta": -8216.6
+  },
+  "rows": [
+    {
+      "invoiceNo": "202601265",
+      "customerId": "1822501",
+      "invoiceDate": "2026-03-09T00:00:00.000Z",
+      "amountDue_2026_03_09": 8221.2,
+      "amountDue_2026_03_10": 4110.6,
+      "delta_0310_minus_0309": -4110.6,
+      "status_0309": "I",
+      "status_0310": "I"
+    },
+    {
+      "invoiceNo": "202601266",
+      "customerId": "1822501",
+      "invoiceDate": "2026-03-09T00:00:00.000Z",
+      "amountDue_2026_03_09": 2827.5,
+      "amountDue_2026_03_10": 1413.75,
+      "delta_0310_minus_0309": -1413.75,
+      "status_0309": "I",
+      "status_0310": "I"
+    },
+    {
+      "invoiceNo": "202601267",
+      "customerId": "1456501",
+      "invoiceDate": "2026-03-09T00:00:00.000Z",
+      "amountDue_2026_03_09": 634.2,
+      "amountDue_2026_03_10": 634.2,
+      "delta_0310_minus_0309": 0,
+      "status_0309": "I",
+      "status_0310": "I"
+    },
+    {
+      "invoiceNo": "202601268",
+      "customerId": "1456501",
+      "invoiceDate": "2026-03-09T00:00:00.000Z",
+      "amountDue_2026_03_09": 1344.5,
+      "amountDue_2026_03_10": 672.25,
+      "delta_0310_minus_0309": -672.25,
+      "status_0309": "I",
+      "status_0310": "I"
+    },
+    {
+      "invoiceNo": "202601269",
+      "customerId": "1577118",
+      "invoiceDate": "2026-03-09T00:00:00.000Z",
+      "amountDue_2026_03_09": 2809.28,
+      "amountDue_2026_03_10": 2809.28,
+      "delta_0310_minus_0309": 0,
+      "status_0309": "I",
+      "status_0310": "I"
+    },
+    {
+      "invoiceNo": "202601270",
+      "customerId": "1714901",
+      "invoiceDate": "2026-03-09T00:00:00.000Z",
+      "amountDue_2026_03_09": 750,
+      "amountDue_2026_03_10": 750,
+      "delta_0310_minus_0309": 0,
+      "status_0309": "I",
+      "status_0310": "I"
+    },
+    {
+      "invoiceNo": "202601271",
+      "customerId": "1577107",
+      "invoiceDate": "2026-03-09T00:00:00.000Z",
+      "amountDue_2026_03_09": 6605.9,
+      "amountDue_2026_03_10": 6605.9,
+      "delta_0310_minus_0309": 0,
+      "status_0309": "I",
+      "status_0310": "I"
+    },
+    {
+      "invoiceNo": "202601272",
+      "customerId": "1549801",
+      "invoiceDate": "2026-03-09T00:00:00.000Z",
+      "amountDue_2026_03_09": 4040,
+      "amountDue_2026_03_10": 2020,
+      "delta_0310_minus_0309": -2020,
+      "status_0309": "I",
+      "status_0310": "I"
+    }
+  ]
+}

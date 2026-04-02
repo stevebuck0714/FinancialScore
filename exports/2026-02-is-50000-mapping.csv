@@ -1,0 +1,2 @@
+qb_account,qb_account_id,qb_account_code,classification,target_field
+Sales,50000,50000,R,rev_finished_goods_sales

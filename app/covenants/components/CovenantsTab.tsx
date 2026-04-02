@@ -726,7 +726,8 @@ export default function CovenantsTab({
     
     const ap = m.ap || 0;
     const otherCL = m.otherCL || 0;
-    const tcl = m.tcl || (ap + otherCL);
+    const locDebt = m.loc || 0;
+    const tcl = Math.max(m.tcl || 0, ap + otherCL + locDebt);
     
     const fixedAssets = m.fixedAssets || 0;
     const otherAssets = m.otherAssets || 0;
@@ -734,7 +735,7 @@ export default function CovenantsTab({
     
     const ltDebt = m.ltd || m.ltDebt || 0;
     const otherLTL = m.otherLTL || 0;
-    const totalLiabilities = m.totalLiabilities || m.totalLiab || (tcl + ltDebt + otherLTL);
+    const totalLiabilities = Math.max(m.totalLiabilities || m.totalLiab || 0, tcl + ltDebt + otherLTL);
     
     const equity = m.equity || m.totalEquity || (totalAssets - totalLiabilities);
 
