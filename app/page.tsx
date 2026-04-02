@@ -3177,9 +3177,12 @@ function FinancialScorePage() {
             const accountName = (row.ColData[0]?.value || '').trim();
             if (!accountName || accountName.toLowerCase().includes('total')) continue;
 
-            const accountId = (row.ColData[1]?.id || row.ColData[1]?.value || accountName).toString();
+            // QBO report rows carry account id on the first (name) column.
+            const accountId = (row.ColData[0]?.id || row.ColData[1]?.id || row.ColData[1]?.value || '').toString().trim();
             const classification = classifyAccount(statementType, sectionName);
-            const dedupeKey = `${statementType}:${classification}:${accountName.toLowerCase()}`;
+            const dedupeKey = accountId
+              ? `${statementType}:id:${accountId}`
+              : `${statementType}:name:${classification}:${accountName.toLowerCase()}`;
             if (seen.has(dedupeKey)) continue;
             seen.add(dedupeKey);
 
@@ -3200,7 +3203,32 @@ function FinancialScorePage() {
       return collected;
     };
 
+    const collectAccountsFromChartOfAccounts = (chartData: any) => {
+      const collected: Array<{ qbAccount: string; qbAccountId: string; qbAccountCode: string; qbAccountClassification: string; targetField: string; confidence: string }> = [];
+      const rows = Array.isArray(chartData?.QueryResponse?.Account)
+        ? chartData.QueryResponse.Account
+        : [];
+      for (const row of rows) {
+        if (!row || typeof row !== 'object') continue;
+        const accountName = String((row as any).Name || '').trim();
+        if (!accountName) continue;
+        const accountId = String((row as any).Id || '').trim();
+        const accountCode = String((row as any).AcctNum || accountId || '').trim();
+        const classification = String((row as any).AccountType || (row as any).Classification || 'Other').trim() || 'Other';
+        collected.push({
+          qbAccount: accountName,
+          qbAccountId: accountId,
+          qbAccountCode: accountCode,
+          qbAccountClassification: classification,
+          targetField: 'unmapped',
+          confidence: 'low',
+        });
+      }
+      return collected;
+    };
+
     const generatedMappings = [
+      ...collectAccountsFromChartOfAccounts(qbRawData.chartOfAccounts),
       ...collectAccounts(qbRawData.profitAndLoss, 'profitAndLoss'),
       ...collectAccounts(qbRawData.balanceSheet, 'balanceSheet'),
     ];

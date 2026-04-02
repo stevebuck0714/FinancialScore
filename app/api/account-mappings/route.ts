@@ -635,10 +635,29 @@ export async function POST(request: NextRequest) {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const targetField =
         normalizedTargetField && normalizedTargetField !== "" ? normalizedTargetField : "unmapped";
+      const existing = await prisma.accountMapping.findUnique({
+        where: {
+          companyId_qbAccount: {
+            companyId,
+            qbAccount: m.qbAccount,
+          },
+        },
+        select: {
+          id: true,
+          qbAccountId: true,
+          qbAccountCode: true,
+          qbAccountClassification: true,
+        },
+      });
+      const incomingAccountId = String(m.qbAccountId || "").trim() || null;
+      const incomingAccountCode = String(m.qbAccountCode || "").trim() || null;
+      const existingAccountId = String(existing?.qbAccountId || "").trim() || null;
+      const existingAccountCode = String(existing?.qbAccountCode || "").trim() || null;
       const baseMappingData = {
-        qbAccountId: m.qbAccountId || null,
-        qbAccountCode: m.qbAccountCode || null,
-        qbAccountClassification: m.qbAccountClassification || null,
+        qbAccountId: incomingAccountId || existingAccountId,
+        qbAccountCode: incomingAccountCode || existingAccountCode || incomingAccountId || existingAccountId,
+        qbAccountClassification:
+          m.qbAccountClassification || existing?.qbAccountClassification || null,
         targetField,
       };
       const extendedMappingData = {
@@ -647,15 +666,6 @@ export async function POST(request: NextRequest) {
         confidence: m.confidence || "medium",
         lobAllocations: m.lobAllocations || null,
       };
-      const existing = await prisma.accountMapping.findUnique({
-        where: {
-          companyId_qbAccount: {
-            companyId,
-            qbAccount: m.qbAccount,
-          },
-        },
-        select: { id: true },
-      });
       if (!existing) {
         try {
           await prisma.accountMapping.create({
