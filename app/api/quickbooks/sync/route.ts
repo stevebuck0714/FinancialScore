@@ -731,6 +731,12 @@ export async function POST(request: NextRequest) {
     });
     
     if (canonicalRecords.length > 0) {
+      // QBO monthly sync is authoritative for this company: replace the existing
+      // monthly set with the freshly rebuilt range each run.
+      await prisma.monthlyFinancial.deleteMany({
+        where: { companyId },
+      });
+
       const monthlyRecords = canonicalRecords.map((record) =>
         toMonthlyFinancialCreateInput(companyId, financialRecord.id, record),
       );
