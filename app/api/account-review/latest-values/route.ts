@@ -471,6 +471,63 @@ async function collectBalanceSheetValuesFromMonthlyFinancial(
   return valueByKey;
 }
 
+async function collectAllMappedValuesFromMonthlyFinancial(
+  companyId: string,
+  targetMonth: string | null
+): Promise<Map<string, number>> {
+  const valueByKey = new Map<string, number>();
+  const monthlyRows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT *
+    FROM "MonthlyFinancial" mf
+    WHERE mf."companyId" = ${companyId}
+      ${
+        targetMonth
+          ? Prisma.sql`AND to_char(date_trunc('month', mf."monthDate"), 'YYYY-MM') = ${targetMonth}`
+          : Prisma.empty
+      }
+    ORDER BY mf."monthDate" DESC, mf."createdAt" DESC
+    LIMIT 1
+  `;
+  const monthly = monthlyRows[0] || null;
+  if (!monthly) return valueByKey;
+
+  const mappings = await prisma.accountMapping.findMany({
+    where: {
+      companyId,
+      targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
+    },
+    select: {
+      qbAccount: true,
+      qbAccountId: true,
+      qbAccountCode: true,
+      targetField: true,
+    },
+  });
+
+  for (const mapping of mappings) {
+    const targetField = String(mapping.targetField || '').trim();
+    if (!targetField) continue;
+    const amount = normalizeNumber((monthly as Record<string, unknown>)[targetField]);
+    const accountId = String(mapping.qbAccountId || '').trim();
+    const accountCode = String(mapping.qbAccountCode || '').trim();
+    const accountName = String(mapping.qbAccount || '').trim().toLowerCase();
+
+    if (accountId) {
+      valueByKey.set(`id:${accountId}`, amount);
+      const normalized = accountId.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normalized) valueByKey.set(`id:${normalized}`, amount);
+    }
+    if (accountCode) {
+      valueByKey.set(`id:${accountCode}`, amount);
+      const normalized = accountCode.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normalized) valueByKey.set(`id:${normalized}`, amount);
+    }
+    if (accountName) valueByKey.set(`name:${accountName}`, amount);
+  }
+
+  return valueByKey;
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAuth();
@@ -482,6 +539,12 @@ export async function GET(request: NextRequest) {
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
     }
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { accountingSystem: true },
+    });
+    const accountingSystem = String(company?.accountingSystem || '').trim().toUpperCase();
+
 
     const hasAccess = await validateCompanyAccess(companyId);
     if (!hasAccess) {
@@ -553,6 +616,15 @@ export async function GET(request: NextRequest) {
     for (const [key, value] of factValues.entries()) {
       if (!bsAccountKeySet.has(key)) continue;
       if (!valueByKey.has(key)) valueByKey.set(key, value);
+    }
+
+    // QBO account review does not have GLTransactionFact-style account movement sources.
+    // Fill account rows directly from latest mapped MonthlyFinancial fields.
+    if (accountingSystem === 'QUICKBOOKS' || accountingSystem === 'QUICKBOOKS_DESKTOP') {
+      const qboMonthlyValues = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
+      for (const [key, value] of qboMonthlyValues.entries()) {
+        valueByKey.set(key, value);
+      }
     }
 
     return NextResponse.json({

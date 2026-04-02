@@ -1450,22 +1450,22 @@ function FinancialScorePage() {
   };
 
   const getDisplayAccountCode = (mapping: any): string => {
-    const values = [
+    const preferred = [
       mapping?.qbAccountCode,
       mapping?.qbAccountId,
       mapping?.accountCode,
       mapping?.accountId,
       mapping?.acctId,
-      mapping?.qbAccount,
     ];
-    for (const value of values) {
+    for (const value of preferred) {
       const raw = String(value || '').trim();
-      if (!raw) continue;
-      const directMatch = raw.match(/\b(\d{4,})\b/);
-      if (directMatch?.[1]) return directMatch[1];
-      const digitsOnly = raw.replace(/\D/g, '');
-      if (digitsOnly.length >= 4) return digitsOnly;
+      if (raw) return raw;
     }
+    // Fallback: if no explicit account/code ID exists, try to extract a numeric token.
+    const accountName = String(mapping?.qbAccount || '').trim();
+    if (!accountName) return 'N/A';
+    const directMatch = accountName.match(/\b(\d+)\b/);
+    if (directMatch?.[1]) return directMatch[1];
     return 'N/A';
   };
 
