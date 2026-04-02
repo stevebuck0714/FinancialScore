@@ -92,6 +92,47 @@ if (isProduction) {
     process.exit(1);
   }
 
+  console.log('🧹 Cleaning duplicate AccountMapping identities before migration...');
+  const dedupeSql = `
+WITH ranked AS (
+  SELECT
+    "id",
+    ROW_NUMBER() OVER (
+      PARTITION BY "companyId", "qbAccountId"
+      ORDER BY COALESCE("updatedAt", "createdAt") DESC, "createdAt" DESC, "id" DESC
+    ) AS rn
+  FROM "AccountMapping"
+  WHERE "qbAccountId" IS NOT NULL
+    AND NULLIF(TRIM("qbAccountId"), '') IS NOT NULL
+)
+DELETE FROM "AccountMapping" m
+USING ranked r
+WHERE m."id" = r."id"
+  AND r.rn > 1;
+`;
+  const dedupeMappings = spawnSync(
+    process.platform === 'win32' ? 'npx.cmd' : 'npx',
+    ['prisma', 'db', 'execute', '--schema', 'prisma/schema.prisma', '--stdin'],
+    {
+      stdio: ['pipe', 'inherit', 'inherit'],
+      env: process.env,
+      input: dedupeSql,
+    }
+  );
+
+  if (dedupeMappings.status !== 0) {
+    console.error('');
+    console.error('🛑 ACCOUNT MAPPING DEDUPE FAILED');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    console.error('Could not remove duplicate AccountMapping rows before migration.');
+    console.error('Fix duplicates for ("companyId","qbAccountId") and re-run deploy.');
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    process.exit(dedupeMappings.status || 1);
+  }
+
   console.log('🔎 Applying Prisma migrations (deploy)...');
   const migrationDeploy = spawnSync(
     process.platform === 'win32' ? 'npx.cmd' : 'npx',
