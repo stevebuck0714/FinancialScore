@@ -117,6 +117,7 @@ async function fetchWithTimeout(
   try {
     return await fetch(input, {
       ...init,
+      cache: 'no-store',
       signal: controller.signal,
     });
   } finally {
@@ -330,17 +331,19 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       try {
         const end = new Date();
         const start = new Date();
-        start.setDate(start.getDate() - 7);
+        // Use a wider lookback so monthly/weekly operational snapshots remain visible in Pulse.
+        start.setDate(start.getDate() - 120);
         const startDate = toLocalInputDate(start);
         const endDate = toLocalInputDate(end);
 
         const fetchOps = async (
-          type: 'ar-aging' | 'ap-aging' | 'cash' | 'customers' | 'products' | 'inventory' | 'daily-financials'
+          type: 'ar-aging' | 'ap-aging' | 'cash' | 'customers' | 'products' | 'inventory' | 'daily-financials',
+          frequency: 'daily' | 'weekly' | 'monthly'
         ) => {
           const params = new URLSearchParams({
             companyId,
             type,
-            frequency: 'daily',
+            frequency,
             startDate,
             endDate,
           });
@@ -349,11 +352,32 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           return response.json();
         };
 
+        const fetchOpsWithCadenceFallback = async (
+          type: 'ar-aging' | 'ap-aging' | 'cash' | 'customers' | 'products' | 'inventory' | 'daily-financials',
+          emptyShape: any
+        ) => {
+          const cadenceOrder: Array<'daily' | 'weekly' | 'monthly'> = ['daily', 'weekly', 'monthly'];
+          let bestPayload: any = emptyShape;
+          let bestCount = 0;
+          for (const cadence of cadenceOrder) {
+            try {
+              const payload = await fetchOps(type, cadence);
+              const records = Array.isArray(payload?.records) ? payload.records : [];
+              if (records.length > bestCount) {
+                bestPayload = payload;
+                bestCount = records.length;
+              }
+            } catch (error) {
+              console.warn(`Daily alerts: ${type} ${cadence} fetch failed, trying next cadence.`, error);
+            }
+          }
+          return bestPayload;
+        };
+
         const fetchFindings = async () => {
           const params = new URLSearchParams({
             companyId,
-            severity: 'critical',
-            limit: '100',
+            limit: '1000',
           });
           const response = await fetchWithTimeout(`/api/performance-analytics/findings?${params}`);
           if (!response.ok) throw new Error('Failed to load findings');
@@ -363,10 +387,20 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const fetchExpertFindings = async () => {
           const params = new URLSearchParams({
             companyId,
-            limit: '200',
+            limit: '1000',
           });
           const response = await fetchWithTimeout(`/api/performance-analytics/findings?${params}`);
           if (!response.ok) return { findings: [] };
+          return response.json();
+        };
+
+        const triggerPerformanceRun = async () => {
+          const response = await fetchWithTimeout('/api/performance-analytics/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyId, replace: true, frequency: 'daily' }),
+          }, 30000);
+          if (!response.ok) throw new Error('Failed to run performance analytics');
           return response.json();
         };
 
@@ -412,6 +446,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
         };
 
+        await withFallback('performance run', triggerPerformanceRun(), null);
+
         const [
           arData,
           apData,
@@ -427,13 +463,13 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           operationalGoalsData,
           companyMetaData,
         ] = await Promise.all([
-          withFallback('AR', fetchOps('ar-aging'), { records: [], summary: {} }),
-          withFallback('AP', fetchOps('ap-aging'), { records: [], summary: {} }),
-          withFallback('cash', fetchOps('cash'), { records: [], summary: {} }),
-          withFallback('customers', fetchOps('customers'), { records: [], summary: {} }),
-          withFallback('products', fetchOps('products'), { records: [], summary: {} }),
-          withFallback('inventory', fetchOps('inventory'), { records: [], trend: [], summary: {} }),
-          withFallback('daily-financials', fetchOps('daily-financials'), { records: [], summary: {} }),
+          withFallback('AR', fetchOpsWithCadenceFallback('ar-aging', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('AP', fetchOpsWithCadenceFallback('ap-aging', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('cash', fetchOpsWithCadenceFallback('cash', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('customers', fetchOpsWithCadenceFallback('customers', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('products', fetchOpsWithCadenceFallback('products', { records: [], summary: {} }), { records: [], summary: {} }),
+          withFallback('inventory', fetchOpsWithCadenceFallback('inventory', { records: [], trend: [], summary: {} }), { records: [], trend: [], summary: {} }),
+          withFallback('daily-financials', fetchOpsWithCadenceFallback('daily-financials', { records: [], summary: {} }), { records: [], summary: {} }),
           withFallback('critical findings', fetchFindings(), { findings: [] }),
           withFallback('expert findings', fetchExpertFindings(), { findings: [] }),
           withFallback('performance context', fetchPerformanceContext(), { data: { monthlyFinancials: [] } }),
@@ -1149,7 +1185,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             const status = String(finding?.payload?.status || '').trim().toLowerCase();
             return !status || !RESOLVED_STATUSES.has(status);
           })
-          .slice(0, 25)
           .forEach((finding: any) => {
             built.push({
               id: `open-${finding.id}`,
@@ -1181,10 +1216,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             if (!id || criticalFindingIds.has(id)) return false;
             const status = String(finding?.payload?.status || '').trim().toLowerCase();
             if (status && RESOLVED_STATUSES.has(status)) return false;
-            const severity = String(finding?.severity || '').trim().toLowerCase();
-            return !severity || severity === 'high' || severity === 'medium';
+            return true;
           })
-          .slice(0, 20)
           .forEach((finding: any) => {
             built.push({
               id: `expert-${finding.id}`,
@@ -1424,7 +1457,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const covenantAlerts = Array.isArray(covenantAlertsData?.alerts) ? covenantAlertsData.alerts : [];
         covenantAlerts
           .filter((alert: any) => String(alert?.status || '').toLowerCase() === 'active')
-          .slice(0, 20)
           .forEach((alert: any) => {
             const severity = String(alert?.severity || '').toLowerCase();
             const covenantName = String(alert?.covenantName || alert?.title || 'Covenant').trim();
@@ -1449,7 +1481,16 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             });
           });
 
-        if (monthlyFinancialCount <= 0) {
+        const hasCoreOperationalContext =
+          arRecords.length > 0 ||
+          apRecords.length > 0 ||
+          cashRecords.length > 0 ||
+          customerRecords.length > 0 ||
+          productRecords.length > 0 ||
+          inventoryRecords.length > 0 ||
+          dailyFinancialRecords.length > 0;
+
+        if (monthlyFinancialCount <= 0 && !hasCoreOperationalContext) {
           built.push({
             id: `financial-context-gap-${endDate}`,
             fingerprint: 'financial-context-gap',
@@ -1461,9 +1502,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             updatedAt: endDate,
             explainability: {
               triggerName: 'Financial Context Coverage Gap',
-              formula: 'Raise monitoring item when monthly financial context feed is empty',
-              threshold: 'performance context monthlyFinancials count = 0',
-              reasonNow: 'No monthly financial context records were returned for the selected range.',
+              formula: 'Raise monitoring item when both monthly financial context and core operational context feeds are empty',
+              threshold: 'performance context monthlyFinancials count = 0 AND all core ops records count = 0',
+              reasonNow: 'No monthly financial records and no core operational records were returned for the selected range.',
               policySource: 'Cross-signal readiness rule',
               dataRefs: ['/api/performance-analytics/context'],
               sourceTimestamp: endDate,
@@ -1473,7 +1514,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           });
         }
 
-        priorityFocusTerms.slice(0, 10).forEach((term) => {
+        priorityFocusTerms.forEach((term) => {
           built.push({
             id: `priority-focus-${term}-${endDate}`,
             fingerprint: `priority-focus-${term}`,
@@ -1515,9 +1556,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 : 'monitoring',
           } as AlertItem;
         });
-        const visibleScored = scored.filter(
-          (alert) => asNumber(alert.priorityScore) >= pulsePolicy['bucket.monitoring_min_score']
-        );
+        const visibleScored = scored;
 
         visibleScored.sort((a, b) => {
           const scoreDiff = asNumber(b.priorityScore) - asNumber(a.priorityScore);
@@ -1624,7 +1663,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       }
       try {
         const params = new URLSearchParams({ companyId });
-        const response = await fetch(`/api/users?${params}`);
+        const response = await fetch(`/api/users?${params}`, { cache: 'no-store' });
         if (!response.ok) return;
         const data = await response.json();
         const users = Array.isArray(data?.users) ? data.users : [];
@@ -1819,7 +1858,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     setAlertEvents([]);
     try {
       const params = new URLSearchParams({ companyId });
-      const response = await fetch(`/api/pulse/alerts/${encodeURIComponent(alert.id)}/events?${params}`);
+      const response = await fetch(`/api/pulse/alerts/${encodeURIComponent(alert.id)}/events?${params}`, {
+        cache: 'no-store',
+      });
       if (!response.ok) throw new Error('Failed to load alert history');
       const data = await response.json();
       setAlertEvents(Array.isArray(data?.events) ? data.events : []);
@@ -1841,7 +1882,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       startDate: toLocalInputDate(start),
       endDate: toLocalInputDate(end),
     });
-    const response = await fetch(`/api/operational-data?${params}`);
+    const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Failed to load ${type} trend preview`);
     const data = await response.json();
     return Array.isArray(data?.records) ? data.records : [];

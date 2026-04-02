@@ -397,6 +397,83 @@ function daysInPeriod(recent: any[], prior: any[]) {
   return { recentDays, priorDays };
 }
 
+function getOpsWindowSize(frequency: string) {
+  if (frequency === 'daily') return 7;
+  if (frequency === 'weekly') return 4;
+  return 3;
+}
+
+function getOpsMinPoints(frequency: string) {
+  if (frequency === 'daily') return 14;
+  if (frequency === 'weekly') return 8;
+  return 6;
+}
+
+function getFrequencyLabel(frequency: string) {
+  if (frequency === 'daily') return 'days';
+  if (frequency === 'weekly') return 'weeks';
+  return 'months';
+}
+
+function getOpsSnapshotFrequency(frequency: string) {
+  if (frequency === 'weekly') return 'weekly';
+  if (frequency === 'daily') return 'daily';
+  return 'monthly';
+}
+
+function getPreferredOpsOrder(preferred: string): Array<'daily' | 'weekly' | 'monthly'> {
+  if (preferred === 'weekly') return ['weekly', 'daily', 'monthly'];
+  if (preferred === 'monthly') return ['monthly', 'weekly', 'daily'];
+  return ['daily', 'weekly', 'monthly'];
+}
+
+function selectBestOpsSeries(rows: any[], preferred: string) {
+  const byFrequency: Record<'daily' | 'weekly' | 'monthly', any[]> = {
+    daily: [],
+    weekly: [],
+    monthly: [],
+  };
+  rows.forEach((row: any) => {
+    const freq = String(row?.frequency || '').toLowerCase();
+    if (freq === 'daily' || freq === 'weekly' || freq === 'monthly') {
+      byFrequency[freq].push(row);
+    }
+  });
+
+  const ordered = getPreferredOpsOrder(preferred);
+  for (const freq of ordered) {
+    if (byFrequency[freq].length >= getOpsMinPoints(freq)) {
+      return { frequency: freq, rows: byFrequency[freq] };
+    }
+  }
+
+  const best = ordered
+    .map((freq) => ({ freq, count: byFrequency[freq].length }))
+    .sort((a, b) => b.count - a.count)[0];
+  if (best && best.count > 0) {
+    return { frequency: best.freq, rows: byFrequency[best.freq] };
+  }
+
+  return { frequency: ordered[0], rows: [] };
+}
+
+function getSeriesCadence(rows: any[], fallback: string) {
+  const detected =
+    rows && rows.length > 0
+      ? String(rows[rows.length - 1]?.frequency || rows[0]?.frequency || '').toLowerCase()
+      : '';
+  const frequency =
+    detected === 'daily' || detected === 'weekly' || detected === 'monthly'
+      ? detected
+      : getOpsSnapshotFrequency(fallback);
+  return {
+    frequency,
+    windowSize: getOpsWindowSize(frequency),
+    minPoints: getOpsMinPoints(frequency),
+    label: getFrequencyLabel(frequency),
+  };
+}
+
 function getLatest<T extends { snapshotDate?: Date; monthDate?: Date }>(records: T[]) {
   if (!records.length) return null;
   const sorted = [...records].sort((a, b) => {
@@ -525,10 +602,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const companyId = String(body?.companyId || '').trim();
-    const frequency = body?.frequency || 'monthly';
+    const frequency = body?.frequency || 'daily';
     const replace = body?.replace !== false;
     const includeCovenantDebug = Boolean(body?.includeCovenantDebug);
     const debugLoanName = body?.debugLoanName ? String(body.debugLoanName).trim().toLowerCase() : '';
+    const preferredOpsFrequency = getOpsSnapshotFrequency(frequency);
 
     if (!companyId) {
       return NextResponse.json({ error: 'Company ID is required' }, { status: 400 });
@@ -629,12 +707,12 @@ export async function POST(request: NextRequest) {
 
     const [
       monthlyFinancials,
-      cashSnapshots,
-      arSnapshots,
-      apSnapshots,
-      customerSnapshots,
-      productSnapshots,
-      inventorySnapshots,
+      rawCashSnapshots,
+      rawArSnapshots,
+      rawApSnapshots,
+      rawCustomerSnapshots,
+      rawProductSnapshots,
+      rawInventorySnapshots,
     ] = await Promise.all([
       safeFindMany(
         'monthly financials',
@@ -647,7 +725,7 @@ export async function POST(request: NextRequest) {
       safeFindMany(
         'cash snapshots',
         prisma.cashSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
           orderBy: { snapshotDate: 'asc' },
           take: 200,
         })
@@ -655,7 +733,7 @@ export async function POST(request: NextRequest) {
       safeFindMany(
         'ar snapshots',
         prisma.aRAgingSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
           orderBy: { snapshotDate: 'asc' },
           take: 200,
         })
@@ -663,7 +741,7 @@ export async function POST(request: NextRequest) {
       safeFindMany(
         'ap snapshots',
         prisma.aPAgingSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
           orderBy: { snapshotDate: 'asc' },
           take: 200,
         })
@@ -671,7 +749,7 @@ export async function POST(request: NextRequest) {
       safeFindMany(
         'customer snapshots',
         prisma.customerSalesSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
           orderBy: { snapshotDate: 'asc' },
           take: 200,
         })
@@ -679,7 +757,7 @@ export async function POST(request: NextRequest) {
       safeFindMany(
         'product snapshots',
         prisma.productSalesSnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
           orderBy: { snapshotDate: 'asc' },
           take: 200,
         })
@@ -687,12 +765,34 @@ export async function POST(request: NextRequest) {
       safeFindMany(
         'inventory snapshots',
         prisma.inventorySnapshot.findMany({
-          where: { companyId, frequency, snapshotDate: { gte: startDate, lte: endDate } },
+          where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
           orderBy: { snapshotDate: 'asc' },
           take: 200,
         })
       ),
     ]);
+
+    const { frequency: cashFrequency, rows: cashSnapshots } = selectBestOpsSeries(rawCashSnapshots, preferredOpsFrequency);
+    const { frequency: arFrequency, rows: arSnapshots } = selectBestOpsSeries(rawArSnapshots, preferredOpsFrequency);
+    const { frequency: apFrequency, rows: apSnapshots } = selectBestOpsSeries(rawApSnapshots, preferredOpsFrequency);
+    const { frequency: customerFrequency, rows: customerSnapshots } = selectBestOpsSeries(rawCustomerSnapshots, preferredOpsFrequency);
+    const { frequency: productFrequency, rows: productSnapshots } = selectBestOpsSeries(rawProductSnapshots, preferredOpsFrequency);
+    const { frequency: inventoryFrequency, rows: inventorySnapshots } = selectBestOpsSeries(rawInventorySnapshots, preferredOpsFrequency);
+
+    const selectedFrequencyCounts = [
+      { frequency: cashFrequency, count: cashSnapshots.length },
+      { frequency: arFrequency, count: arSnapshots.length },
+      { frequency: apFrequency, count: apSnapshots.length },
+      { frequency: customerFrequency, count: customerSnapshots.length },
+      { frequency: productFrequency, count: productSnapshots.length },
+      { frequency: inventoryFrequency, count: inventorySnapshots.length },
+    ];
+    const opsSnapshotFrequency =
+      selectedFrequencyCounts
+        .sort((a, b) => b.count - a.count)
+        .map((row) => row.frequency)[0] || preferredOpsFrequency;
+    const opsWindowSize = getOpsWindowSize(opsSnapshotFrequency);
+    const opsFrequencyLabel = getFrequencyLabel(opsSnapshotFrequency);
 
     const [expenseGoals, operationalGoals] = await Promise.all([
       loadGoals('ExpenseGoal', companyId),
@@ -886,7 +986,7 @@ export async function POST(request: NextRequest) {
             confidence: Math.min(0.9, 0.5 + Math.abs(change)),
             payload: {
               title: `${metric.label} ${change > 0 ? 'up' : 'down'} ${formatPct(change)}`,
-              summary: `${metric.label} shifted ${formatPct(change)} comparing the last 3 months to the prior 3. ${revenueContext} ${driverSummary}`.trim(),
+              summary: `${metric.label} shifted ${formatPct(change)} comparing the latest period window to the prior window. ${revenueContext} ${driverSummary}`.trim(),
               magnitude: change,
               onsetDate: recent[0]?.monthDate,
               persistence: persistenceLevel,
@@ -964,7 +1064,7 @@ export async function POST(request: NextRequest) {
           confidence: Math.min(0.9, 0.5 + Math.abs(ocfChange)),
           payload: {
             title: `Operating Cash Flow ${ocfChange > 0 ? 'up' : 'down'} ${formatPct(ocfChange)}`,
-            summary: `Operating cash flow shifted ${formatPct(ocfChange)} vs the prior 3 months.${ocfDrivers.length ? ` Primary drivers: ${ocfDrivers.join(', ')}.` : ''}${wcSummary}`,
+            summary: `Operating cash flow shifted ${formatPct(ocfChange)} vs the prior period window.${ocfDrivers.length ? ` Primary drivers: ${ocfDrivers.join(', ')}.` : ''}${wcSummary}`,
             magnitude: ocfChange,
             onsetDate: recent[0]?.monthDate,
             persistence: 'medium',
@@ -1450,9 +1550,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Opportunity Agent (signal-driven hypotheses)
-    const opsMonthlySeries = (() => {
-      // If the company hasn't uploaded monthly financials yet, we can still build a usable
-      // "monthly series" from operational snapshots (customers/products/inventory + AR/AP/cash).
+    const opsSeries = (() => {
+      // If the company hasn't uploaded financial uploads for the requested cadence, we still
+      // build a usable ops series from operational snapshots (customers/products/inventory + AR/AP/cash).
       // This keeps Actions/Monitor from being empty in early onboarding.
       const byDay = new Map<
         string,
@@ -1470,39 +1570,39 @@ export async function POST(request: NextRequest) {
         return byDay.get(k)!;
       }
 
-      const custMonthly = (customerSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-      for (const r of custMonthly) {
+      const custSeries = customerSnapshots || [];
+      for (const r of custSeries) {
         const row = ensure(new Date(r.snapshotDate));
         row.revenue += Number(r.revenue || 0);
       }
 
-      const prodMonthly = (productSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-      for (const r of prodMonthly) {
+      const prodSeries = productSnapshots || [];
+      for (const r of prodSeries) {
         const row = ensure(new Date(r.snapshotDate));
-        row.revenue += custMonthly.length ? 0 : Number(r.revenue || 0); // prefer customer revenue if present
+        row.revenue += custSeries.length ? 0 : Number(r.revenue || 0); // prefer customer revenue if present
         row.cogsTotal += Number(r.cogs || 0);
       }
 
-      const invMonthly = (inventorySnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-      for (const r of invMonthly) {
+      const invSeries = inventorySnapshots || [];
+      for (const r of invSeries) {
         const row = ensure(new Date(r.snapshotDate));
         row.inventory += Number(r.assetValue || 0);
       }
 
-      const arMonthly = (arSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-      for (const r of arMonthly) {
+      const arSeries = arSnapshots || [];
+      for (const r of arSeries) {
         const row = ensure(new Date(r.snapshotDate));
         row.ar = Number(r.totalAR || 0);
       }
 
-      const apMonthly = (apSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-      for (const r of apMonthly) {
+      const apSeries = apSnapshots || [];
+      for (const r of apSeries) {
         const row = ensure(new Date(r.snapshotDate));
         row.ap = Number(r.totalAP || 0);
       }
 
-      const cashMonthly = (cashSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-      for (const r of cashMonthly) {
+      const cashSeries = cashSnapshots || [];
+      for (const r of cashSeries) {
         const row = ensure(new Date(r.snapshotDate));
         row.cash += Number(r.cashBalance || 0);
       }
@@ -1510,14 +1610,17 @@ export async function POST(request: NextRequest) {
       return Array.from(byDay.values()).sort((a, b) => a.monthDate.getTime() - b.monthDate.getTime());
     })();
 
-    const opportunityMonthly: any[] = (monthlyFinancials.length >= 4 ? (monthlyFinancials as any[]) : opsMonthlySeries) as any[];
-    const opportunityLatest: any | null = getLatest(opportunityMonthly);
+    const useMonthlyFinancialSeries = opsSnapshotFrequency === 'monthly' && monthlyFinancials.length >= 4;
+    const opportunitySeries: any[] = (
+      useMonthlyFinancialSeries ? (monthlyFinancials as any[]) : opsSeries
+    ) as any[];
+    const opportunityLatest: any | null = getLatest(opportunitySeries);
 
-    // If we have enough monthly points (either financial uploads or ops-derived), generate opportunities.
-    if (opportunityLatest && opportunityMonthly.length >= 4) {
-      const windowSize = opportunityMonthly.length >= 6 ? 3 : 2;
-      const recent = opportunityMonthly.slice(-windowSize);
-      const prior = opportunityMonthly.slice(-(windowSize * 2), -windowSize);
+    // If we have enough points (financial monthly or ops cadence), generate opportunities.
+    if (opportunityLatest && opportunitySeries.length >= Math.max(opsWindowSize * 2, 4)) {
+      const windowSize = opsWindowSize;
+      const recent = opportunitySeries.slice(-windowSize);
+      const prior = opportunitySeries.slice(-(windowSize * 2), -windowSize);
 
       const revenue = Number(opportunityLatest.revenue || 0);
       const cogs = Number(opportunityLatest.cogsTotal || 0);
@@ -1613,27 +1716,27 @@ export async function POST(request: NextRequest) {
 
       function buildInventoryEvidence(): OpportunityEvidenceBundle | null {
         // Requires item-level inventory + product snapshots for a meaningful drill-down.
-        if (!Array.isArray(inventorySnapshots) || inventorySnapshots.length < 8) return null;
+        if (!Array.isArray(inventorySnapshots) || inventorySnapshots.length === 0) return null;
 
-        // We only use monthly inventory/product snapshots for now (best aligned with DIO).
-        const invMonthly = inventorySnapshots.filter((r: any) => String(r.frequency || '') === 'monthly');
-        const prodMonthly = Array.isArray(productSnapshots)
-          ? productSnapshots.filter((r: any) => String(r.frequency || '') === 'monthly')
+        const invSeries = Array.isArray(inventorySnapshots) ? inventorySnapshots : [];
+        const prodSeries = Array.isArray(productSnapshots)
+          ? productSnapshots
           : [];
-        if (invMonthly.length < 8) return null;
+        const invCadence = getSeriesCadence(invSeries, opsSnapshotFrequency);
+        if (invSeries.length < invCadence.minPoints) return null;
 
-        const invWindow = latestN(invMonthly, (r: any) => new Date(r.snapshotDate), 3);
-        const prodWindow = latestN(prodMonthly, (r: any) => new Date(r.snapshotDate), 3);
+        const invWindow = latestN(invSeries, (r: any) => new Date(r.snapshotDate), invCadence.windowSize);
+        const prodWindow = latestN(prodSeries, (r: any) => new Date(r.snapshotDate), invCadence.windowSize);
 
         const invByItem = new Map<string, any>();
-        for (const r of invMonthly) {
+        for (const r of invSeries) {
           const k = itemKey(r.itemId, r.itemName, r.sku);
           const list = invByItem.get(k) || [];
           list.push(r);
           invByItem.set(k, list);
         }
         const prodByItem = new Map<string, any>();
-        for (const r of prodMonthly) {
+        for (const r of prodSeries) {
           const k = itemKey(r.itemId, r.itemName, r.sku);
           const list = prodByItem.get(k) || [];
           list.push(r);
@@ -1668,8 +1771,10 @@ export async function POST(request: NextRequest) {
             ? avg(recentProd.map((r: any) => (typeof r.grossMarginPct === 'number' ? r.grossMarginPct : 0))).toFixed(2)
             : null;
 
-          const avgMonthlyUnits = recentUnits;
-          const weeksOnHand = avgMonthlyUnits && avgMonthlyUnits > 0 ? (recentQty / avgMonthlyUnits) * 4.33 : null;
+          const avgUnitsPerPeriod = recentUnits;
+          const weeksOnHand = avgUnitsPerPeriod && avgUnitsPerPeriod > 0
+            ? (recentQty / avgUnitsPerPeriod) * (invCadence.frequency === 'daily' ? 0.143 : invCadence.frequency === 'weekly' ? 1 : 4.33)
+            : null;
 
           const sample = recentInv[0] || invRows[invRows.length - 1];
           out.push({
@@ -1680,7 +1785,7 @@ export async function POST(request: NextRequest) {
             inventoryQtyDelta: Number(invQtyDelta.toFixed(2)),
             recentAssetValue: Number(recentAsset.toFixed(2)),
             recentQtyOnHand: Number(recentQty.toFixed(2)),
-            recentAvgMonthlyUnitsSold: avgMonthlyUnits != null ? Number(avgMonthlyUnits.toFixed(2)) : null,
+            recentAvgMonthlyUnitsSold: avgUnitsPerPeriod != null ? Number(avgUnitsPerPeriod.toFixed(2)) : null,
             unitsSoldDelta: unitsDelta != null ? Number(unitsDelta.toFixed(2)) : null,
             estimatedWeeksOnHand: weeksOnHand != null ? Number(weeksOnHand.toFixed(1)) : null,
             recentGrossMarginPct: recentGmPct != null ? Number(recentGmPct) : null,
@@ -1690,18 +1795,19 @@ export async function POST(request: NextRequest) {
         out.sort((a, b) => b.inventoryAssetDelta - a.inventoryAssetDelta);
         return {
           kind: 'inventory',
-          methodology: 'Top items by inventory asset value increase (recent 3-month avg vs prior 3-month avg), joined to product sales by itemId/sku/name.',
+          methodology: `Top items by inventory asset value increase (recent ${invCadence.windowSize}-${invCadence.label} avg vs prior ${invCadence.windowSize}-${invCadence.label} avg), joined to product sales by itemId/sku/name.`,
           topItems: out.slice(0, 10),
         };
       }
 
       function buildMarginEvidence(params: { targetBenchmarkPct: number | null }): OpportunityEvidenceBundle | null {
         const { targetBenchmarkPct } = params;
-        if (!Array.isArray(productSnapshots) || productSnapshots.length < 8) return null;
-        const prodMonthly = productSnapshots.filter((r: any) => String(r.frequency || '') === 'monthly');
-        if (prodMonthly.length < 8) return null;
+        if (!Array.isArray(productSnapshots) || productSnapshots.length === 0) return null;
+        const prodSeries = productSnapshots;
+        const prodCadence = getSeriesCadence(prodSeries, opsSnapshotFrequency);
+        if (prodSeries.length < prodCadence.minPoints) return null;
 
-        const window = latestN(prodMonthly, (r: any) => new Date(r.snapshotDate), 3);
+        const window = latestN(prodSeries, (r: any) => new Date(r.snapshotDate), prodCadence.windowSize);
         const recent = window.recent;
         const prior = window.prior;
         if (recent.length === 0 || prior.length === 0) return null;
@@ -1748,7 +1854,7 @@ export async function POST(request: NextRequest) {
             inventoryQtyDelta: 0,
             recentAssetValue: 0,
             recentQtyOnHand: 0,
-            recentAvgMonthlyUnitsSold: r.qty / 3,
+            recentAvgMonthlyUnitsSold: r.qty / Math.max(prodCadence.windowSize, 1),
             unitsSoldDelta: null,
             estimatedWeeksOnHand: null,
             recentGrossMarginPct: r.gmPct != null ? Number(r.gmPct.toFixed(2)) : null,
@@ -1757,16 +1863,16 @@ export async function POST(request: NextRequest) {
         if (low.length === 0) return null;
         return {
           kind: 'margin',
-          methodology: 'Low gross-margin items by revenue (recent 3 months), surfaced as candidates for pricing/mix action.',
+          methodology: `Low gross-margin items by revenue (recent ${prodCadence.windowSize} ${prodCadence.label}), surfaced as candidates for pricing/mix action.`,
           topItems: low,
         };
       }
 
       function buildArAgingEvidence(): OpportunityEvidenceBundle | null {
-        const arMonthly = (arSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-        if (arMonthly.length < 4) return null;
-        const windowSize = arMonthly.length >= 6 ? 3 : 2;
-        const win = latestN(arMonthly, (r: any) => new Date(r.snapshotDate), windowSize);
+        const arSeries = arSnapshots || [];
+        const arCadence = getSeriesCadence(arSeries, opsSnapshotFrequency);
+        if (arSeries.length < Math.max(arCadence.windowSize * 2, 4)) return null;
+        const win = latestN(arSeries, (r: any) => new Date(r.snapshotDate), arCadence.windowSize);
         if (win.recent.length === 0 || win.prior.length === 0) return null;
 
         const sum = (rows: any[], key: string) => rows.reduce((s, r) => s + Number(r[key] || 0), 0);
@@ -1801,7 +1907,7 @@ export async function POST(request: NextRequest) {
         return {
           kind: 'ar',
           title: 'AR aging breakdown',
-          methodology: `Recent ${windowSize} vs prior ${windowSize} months. Over-60 mix: ${(over60RecentPct * 100).toFixed(0)}% (${((over60RecentPct - over60PriorPct) * 100).toFixed(1)} pts).`,
+          methodology: `Recent ${arCadence.windowSize} vs prior ${arCadence.windowSize} ${arCadence.label}. Over-60 mix: ${(over60RecentPct * 100).toFixed(0)}% (${((over60RecentPct - over60PriorPct) * 100).toFixed(1)} pts).`,
           columns: [
             { key: 'bucket', label: 'Bucket', align: 'left', format: 'text' },
             { key: 'recent', label: 'Recent $', align: 'right', format: 'money' },
@@ -1854,16 +1960,19 @@ export async function POST(request: NextRequest) {
       }
 
       function buildRevenueDriversEvidence(): OpportunityEvidenceBundle | null {
-        const custMonthly = (customerSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-        const prodMonthly = (productSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-        const base = custMonthly.length >= 8 ? custMonthly : prodMonthly.length >= 8 ? prodMonthly : [];
-        if (base.length < 8) return null;
+        const custSeries = customerSnapshots || [];
+        const prodSeries = productSnapshots || [];
+        const custCadence = getSeriesCadence(custSeries, opsSnapshotFrequency);
+        const prodCadence = getSeriesCadence(prodSeries, opsSnapshotFrequency);
+        const useCustomer = custSeries.length >= custCadence.minPoints || custSeries.length >= prodSeries.length;
+        const base = useCustomer ? custSeries : prodSeries;
+        const baseCadence = useCustomer ? custCadence : prodCadence;
+        if (base.length < baseCadence.minPoints) return null;
 
-        const windowSize = base.length >= 18 ? 3 : 2;
-        const win = latestN(base, (r: any) => new Date(r.snapshotDate), windowSize);
+        const win = latestN(base, (r: any) => new Date(r.snapshotDate), baseCadence.windowSize);
         if (win.recent.length === 0 || win.prior.length === 0) return null;
 
-        const isCustomer = base === custMonthly;
+        const isCustomer = useCustomer;
         const keyOf = (r: any) => (isCustomer ? String(r.customerName || r.customerId || 'Customer') : String(r.itemName || r.itemId || 'Item'));
 
         const recentTotals = new Map<string, number>();
@@ -1892,7 +2001,7 @@ export async function POST(request: NextRequest) {
         return {
           kind: 'revenue',
           title: isCustomer ? 'Revenue drivers (customers)' : 'Revenue drivers (products)',
-          methodology: `Ranked by absolute revenue change (recent ${windowSize} vs prior ${windowSize} months).`,
+          methodology: `Ranked by absolute revenue change (recent ${baseCadence.windowSize} vs prior ${baseCadence.windowSize} ${baseCadence.label}).`,
           columns: [
             { key: 'name', label: isCustomer ? 'Customer' : 'Item', align: 'left', format: 'text' },
             { key: 'delta', label: 'Δ Revenue', align: 'right', format: 'money' },
@@ -2024,7 +2133,7 @@ export async function POST(request: NextRequest) {
             { description: 'Review gross margin % and scrap/expedite; if no improvement in 14 days escalate to pricing committee', owner: 'Finance', dueHorizon: '14 days', dataReference: 'Gross margin %' },
           ],
           monitoring: {
-            primaryKpi: 'Gross margin % (monthly)',
+            primaryKpi: `Gross margin % (${opsSnapshotFrequency})`,
             leadingIndicators: ['Discount % by segment (daily)', 'Scrap rate / expedite freight % (daily)', 'Win rate by segment (weekly)'],
             timeWindowDays: 14,
             stopContinueRule: 'If gross margin does not improve by 0.5 pts in 14 days or churn increases >0.5%, escalate to pricing committee; if scrap stays >3% for 3 consecutive days after containment, escalate to supplier action plan.',
@@ -2071,7 +2180,7 @@ export async function POST(request: NextRequest) {
             { description: 'Implement credit hold threshold update; measure DSO change over 30 days', owner: 'Finance', dueHorizon: '7 days', dataReference: 'DSO + AR aging' },
           ],
           monitoring: {
-            primaryKpi: 'DSO (days sales outstanding, monthly)',
+            primaryKpi: `DSO (days sales outstanding, ${opsSnapshotFrequency})`,
             leadingIndicators: ['AR aging bucket mix (daily)', 'Over 60 days % (weekly)', 'Dispute count (weekly)'],
             timeWindowDays: 14,
             stopContinueRule: 'If DSO does not improve by 2+ days in 14 days, escalate to credit manager; if disputes spike >10%, pause and review process.',
@@ -2139,7 +2248,7 @@ export async function POST(request: NextRequest) {
           family: 'Sales efficiency & pipeline',
           objective: 'Growth',
           why: [
-            `Revenue growth ${formatPct(growth)} over last 3 months.`,
+            `Revenue growth ${formatPct(growth)} over the recent ${opsWindowSize} ${opsFrequencyLabel}.`,
             `Gross margin ${formatPct(grossMargin)} ${grossMarginBenchmark != null ? `vs peer ${formatPct(grossMarginBenchmark)}` : 'is healthy'}.`,
             ...(topNames.length ? [`Growth drivers include: ${topNames.join(', ')}.`] : []),
           ],
@@ -2168,7 +2277,7 @@ export async function POST(request: NextRequest) {
             { description: 'Review revenue and CAC at 30 days; continue or pause per guardrails', owner: 'Marketing', dueHorizon: '30 days', dataReference: 'Revenue + CAC' },
           ],
           monitoring: {
-            primaryKpi: 'Revenue (monthly)',
+            primaryKpi: `Revenue (${opsSnapshotFrequency})`,
             leadingIndicators: ['Channel spend vs plan (daily)', 'Conversion rate by channel (weekly)', 'CAC by channel (weekly)'],
             timeWindowDays: 30,
             stopContinueRule: 'If CAC increases >15% vs baseline, pause channel; if utilization >92%, trigger capacity review before adding spend.',
@@ -2207,7 +2316,7 @@ export async function POST(request: NextRequest) {
             { description: 'Review pipeline conversion at 30 days; continue or re-evaluate per guardrails', owner: 'Sales', dueHorizon: '30 days', dataReference: 'Conversion %' },
           ],
           monitoring: {
-            primaryKpi: 'Revenue growth % (monthly)',
+            primaryKpi: `Revenue growth % (${opsSnapshotFrequency})`,
             leadingIndicators: ['Pipeline added by channel (weekly)', 'Conversion % by channel (weekly)', 'Lead quality score (weekly)'],
             timeWindowDays: 30,
             stopContinueRule: 'If pipeline conversion stays <10% at 30 days, re-evaluate channel; escalate to sales leadership for channel mix review.',
@@ -2256,7 +2365,7 @@ export async function POST(request: NextRequest) {
             { description: 'Measure inventory days and cash released at 30 days; roll back if stockout >2%', owner: 'Ops', dueHorizon: '30 days', dataReference: 'Inventory days + stockout %' },
           ],
           monitoring: {
-            primaryKpi: 'Inventory days (monthly)',
+            primaryKpi: `Inventory days (${opsSnapshotFrequency})`,
             leadingIndicators: ['Stockout rate by SKU (daily)', 'Inventory $ by category (weekly)', 'Reorder trigger hits (weekly)'],
             timeWindowDays: 14,
             stopContinueRule: 'If stockout rate exceeds 2%, roll back reorder changes; if inventory days do not improve in 14 days, escalate to procurement/supplier action plan.',
@@ -2388,10 +2497,11 @@ export async function POST(request: NextRequest) {
     // NOTE: we do this even if there is already 1 opportunity (e.g. "Scale channels...") so
     // the page can show a richer 3–6 card set when ops snapshots are present.
     if (!findings.some((f) => f.type === 'opportunity' && String(f.metric || '') === 'AR / Collections')) {
-      const arMonthly = (arSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-      if (arMonthly.length >= 6 && opsMonthlySeries.length >= 6) {
-        const recent = arMonthly.slice(-3);
-        const prior = arMonthly.slice(-6, -3);
+      const arSeries = arSnapshots || [];
+      const arCadence = getSeriesCadence(arSeries, opsSnapshotFrequency);
+      if (arSeries.length >= Math.max(arCadence.windowSize * 2, 6) && opsSeries.length >= Math.max(arCadence.windowSize, 3)) {
+        const recent = arSeries.slice(-arCadence.windowSize);
+        const prior = arSeries.slice(-(arCadence.windowSize * 2), -arCadence.windowSize);
         const recentTotal = average(recent.map((r: any) => Number(r.totalAR || 0)));
         const priorTotal = average(prior.map((r: any) => Number(r.totalAR || 0)));
         const recentOver60 = average(recent.map((r: any) => Number((r.days31to60 || 0) + (r.days61to90 || 0) + (r.days90plus || 0))));
@@ -2400,7 +2510,7 @@ export async function POST(request: NextRequest) {
         const priorPct = priorTotal ? priorOver60 / priorTotal : 0;
         const pctDelta = recentPct - priorPct;
 
-        const revRecent = average(opsMonthlySeries.slice(-3).map((m: any) => Number(m.revenue || 0)));
+        const revRecent = average(opsSeries.slice(-arCadence.windowSize).map((m: any) => Number(m.revenue || 0)));
         const dsoRecent = revRecent > 0 ? (recentTotal / revRecent) * 30 : null;
 
         if (pctDelta >= 0.03 || (dsoRecent != null && dsoRecent >= 60) || recentPct >= 0.22) {
@@ -2408,7 +2518,7 @@ export async function POST(request: NextRequest) {
           const arEvidence = {
             kind: 'ar',
             title: 'AR aging breakdown',
-            methodology: `Recent 3 vs prior 3 months. Over-60 mix: ${(recentPct * 100).toFixed(0)}% (${((recentPct - priorPct) * 100).toFixed(1)} pts).`,
+            methodology: `Recent ${arCadence.windowSize} vs prior ${arCadence.windowSize} ${arCadence.label}. Over-60 mix: ${(recentPct * 100).toFixed(0)}% (${((recentPct - priorPct) * 100).toFixed(1)} pts).`,
             columns: [
               { key: 'bucket', label: 'Bucket', align: 'left', format: 'text' },
               { key: 'recent', label: 'Recent $', align: 'right', format: 'money' },
@@ -2466,10 +2576,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (!findings.some((f) => f.type === 'opportunity' && String(f.metric || '') === 'Customer Concentration')) {
-      const custMonthly = (customerSnapshots || []).filter((r: any) => String(r.frequency || '') === 'monthly');
-      if (custMonthly.length >= 6) {
-        const latestDate = new Date(custMonthly[custMonthly.length - 1].snapshotDate).toISOString().slice(0, 10);
-        const latestRows = custMonthly.filter((r: any) => new Date(r.snapshotDate).toISOString().slice(0, 10) === latestDate);
+      const custSeries = customerSnapshots || [];
+      const custCadence = getSeriesCadence(custSeries, opsSnapshotFrequency);
+      if (custSeries.length >= Math.max(custCadence.windowSize * 2, 6)) {
+        const latestDate = new Date(custSeries[custSeries.length - 1].snapshotDate).toISOString().slice(0, 10);
+        const latestRows = custSeries.filter((r: any) => new Date(r.snapshotDate).toISOString().slice(0, 10) === latestDate);
         const totalRev = latestRows.reduce((sum: number, r: any) => sum + Number(r.revenue || 0), 0);
         if (totalRev > 0) {
           const ranked = [...latestRows].sort((a: any, b: any) => Number(b.revenue || 0) - Number(a.revenue || 0));
@@ -2481,7 +2592,7 @@ export async function POST(request: NextRequest) {
             const names = top.map((r: any) => String(r.customerName || 'Customer')).slice(0, 3);
             const evidence = {
               kind: 'revenue',
-              title: 'Top customers (latest month)',
+              title: `Top customers (latest ${opsSnapshotFrequency})`,
               methodology: 'Revenue concentration on a small set of customers increases volatility and reduces pricing power.',
               columns: [
                 { key: 'name', label: 'Customer', align: 'left', format: 'text' },
@@ -2503,7 +2614,7 @@ export async function POST(request: NextRequest) {
                 title: 'Reduce customer concentration risk and smooth revenue',
                 type: 'Sales efficiency & pipeline',
                 objective: 'Risk',
-                summary: `Top customers represent ${Math.round(topShare * 100)}% of recent monthly revenue (${names.join(', ')}).`,
+                summary: `Top customers represent ${Math.round(topShare * 100)}% of recent ${opsSnapshotFrequency} revenue (${names.join(', ')}).`,
                 evidence,
                 why: [
                   `Top 1 customer share: ${Math.round(top1Share * 100)}%.`,
@@ -2524,7 +2635,7 @@ export async function POST(request: NextRequest) {
                   { description: 'Launch 30-day outreach pilot; measure meetings, SQLs, and pipeline added', owner: 'Sales', dueHorizon: '7 days', dataReference: 'Pipeline dashboard' },
                 ],
                 monitoring: {
-                  primaryKpi: 'Top 3 customer revenue share (monthly)',
+                  primaryKpi: `Top 3 customer revenue share (${opsSnapshotFrequency})`,
                   leadingIndicators: ['Qualified pipeline added outside top accounts (weekly)', 'Meetings booked per segment (weekly)'],
                   timeWindowDays: 30,
                   stopContinueRule: 'If pipeline diversification does not improve within 30 days, revisit segments and messaging; avoid discounting below floor.',
@@ -2540,10 +2651,10 @@ export async function POST(request: NextRequest) {
     if (!findings.some((f) => f.type === 'opportunity' && String(f.metric || '') === 'Pipeline / Growth')) {
       // Generic growth opportunity using ops-derived revenue trend when everything is "within bounds"
       // (or when benchmarks exist but don't match available fields yet).
-      if (opsMonthlySeries.length >= 4) {
-        const windowSize = opsMonthlySeries.length >= 6 ? 3 : 2;
-        const recentRev = average(opsMonthlySeries.slice(-windowSize).map((m: any) => Number(m.revenue || 0)));
-        const priorRev = average(opsMonthlySeries.slice(-(windowSize * 2), -windowSize).map((m: any) => Number(m.revenue || 0)));
+      if (opsSeries.length >= Math.max(opsWindowSize * 2, 4)) {
+        const windowSize = opsWindowSize;
+        const recentRev = average(opsSeries.slice(-windowSize).map((m: any) => Number(m.revenue || 0)));
+        const priorRev = average(opsSeries.slice(-(windowSize * 2), -windowSize).map((m: any) => Number(m.revenue || 0)));
         const growth = percentChange(recentRev, priorRev);
         if (Number.isFinite(growth) && growth < 0.03) {
           findings.push({
@@ -2735,8 +2846,8 @@ export async function POST(request: NextRequest) {
           assetSizeCategory,
           benchmarksCount: benchmarks.length,
           monthlyFinancialCount: monthlyFinancials.length,
-          opsMonthlyCount: opsMonthlySeries.length,
-          opportunityMonthlySource: monthlyFinancials.length >= 4 ? 'monthlyFinancials' : 'opsDerived',
+          opsSeriesCount: opsSeries.length,
+          opportunitySeriesSource: useMonthlyFinancialSeries ? 'monthlyFinancials' : `ops:${opsSnapshotFrequency}`,
           snapshotCounts: {
             cash: cashSnapshots.length,
             ar: arSnapshots.length,

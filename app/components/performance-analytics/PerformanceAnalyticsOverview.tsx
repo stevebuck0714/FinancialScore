@@ -95,7 +95,10 @@ function sanitizeFocusValues(raw: any): Record<string, string> {
        setLoading(true);
        setError(null);
        try {
-        const response = await fetch(`/api/performance-analytics/context?companyId=${companyId}&months=${monthsWindow}`);
+        const response = await fetch(
+          `/api/performance-analytics/context?companyId=${companyId}&months=${monthsWindow}`,
+          { cache: 'no-store' }
+        );
         if (!response.ok) {
           let message = 'Failed to load performance analytics context';
           try {
@@ -159,7 +162,7 @@ function sanitizeFocusValues(raw: any): Record<string, string> {
       const response = await fetch('/api/performance-analytics/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, replace: true })
+        body: JSON.stringify({ companyId, replace: true, frequency: 'daily' })
       });
       if (!response.ok) {
         let message = 'Failed to run performance analytics agents';

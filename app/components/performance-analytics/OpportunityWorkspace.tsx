@@ -62,7 +62,9 @@ const evidenceLevel = (confidence?: number | null) => {
        setLoading(true);
        setError(null);
        try {
-         const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`);
+        const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`, {
+          cache: 'no-store',
+        });
          if (!response.ok) {
            let message = 'Failed to load opportunities';
            try {
@@ -104,7 +106,9 @@ const evidenceLevel = (confidence?: number | null) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`);
+      const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`, {
+        cache: 'no-store',
+      });
       if (!response.ok) {
         let message = 'Failed to load opportunities';
         try {
@@ -138,7 +142,7 @@ const evidenceLevel = (confidence?: number | null) => {
       const response = await fetch('/api/performance-analytics/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, replace: true })
+        body: JSON.stringify({ companyId, replace: true, frequency: 'daily' })
       });
       if (!response.ok) {
         let message = 'Failed to run performance agents';

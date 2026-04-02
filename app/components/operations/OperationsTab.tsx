@@ -400,7 +400,7 @@ export default function OperationsTab({
   };
   
   // Date range and frequency filters
-  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const yesterdayLocal = (() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -410,9 +410,7 @@ export default function OperationsTab({
   const maxSelectableEndDate = toLocalInputDate(yesterdayLocal);
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date(yesterdayLocal);
-    // Keep initial query window tighter so first render does not stall on
-    // high-volume tenants with expensive daily AR/AP aggregations.
-    date.setDate(date.getDate() - 45);
+    date.setDate(date.getDate() - 90);
     return toLocalInputDate(date);
   });
   const [endDate, setEndDate] = useState<string>(() => {
@@ -619,32 +617,14 @@ export default function OperationsTab({
   useEffect(() => {
     if (!selectedCompanyId) return;
     hasHydratedDateRangeRef.current = false;
-    try {
-      const storageKey = `ops:date-range:${selectedCompanyId}`;
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) {
-        hasHydratedDateRangeRef.current = true;
-        return;
-      }
-      const parsed = JSON.parse(raw) as {
-        frequency?: 'daily' | 'weekly' | 'monthly';
-        startDate?: string;
-        endDate?: string;
-      };
-      if (parsed.frequency === 'daily' || parsed.frequency === 'weekly' || parsed.frequency === 'monthly') {
-        setFrequency(parsed.frequency);
-      }
-      if (typeof parsed.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate)) {
-        setStartDate(parsed.startDate);
-      }
-      if (typeof parsed.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.endDate)) {
-        setEndDate(parsed.endDate > maxSelectableEndDate ? maxSelectableEndDate : parsed.endDate);
-      }
-    } catch {
-      // Ignore invalid persisted payload
-    } finally {
-      hasHydratedDateRangeRef.current = true;
-    }
+    const end = new Date();
+    end.setDate(end.getDate() - 1);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 90);
+    setFrequency('daily');
+    setStartDate(toLocalInputDate(start));
+    setEndDate(toLocalInputDate(end));
+    hasHydratedDateRangeRef.current = true;
   }, [selectedCompanyId]);
 
   useEffect(() => {
@@ -667,28 +647,7 @@ export default function OperationsTab({
 
   useEffect(() => {
     if (!isCustomersTab || !selectedCompanyId) return;
-    try {
-      const unifiedStorageKey = `ops:date-range:${selectedCompanyId}`;
-      const legacyStorageKey = `ops:customers:date-range:${selectedCompanyId}`;
-      const raw = window.localStorage.getItem(unifiedStorageKey) || window.localStorage.getItem(legacyStorageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        frequency?: 'daily' | 'weekly' | 'monthly';
-        startDate?: string;
-        endDate?: string;
-      };
-      if (parsed.frequency === 'daily' || parsed.frequency === 'weekly' || parsed.frequency === 'monthly') {
-        setFrequency(parsed.frequency);
-      }
-      if (typeof parsed?.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate)) {
-        setStartDate(parsed.startDate);
-      }
-      if (typeof parsed?.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.endDate)) {
-        setEndDate(parsed.endDate > maxSelectableEndDate ? maxSelectableEndDate : parsed.endDate);
-      }
-    } catch {
-      // Ignore invalid saved range payloads
-    }
+    // Customer module follows the same company-level default-on-open window.
   }, [isCustomersTab, selectedCompanyId]);
 
   useEffect(() => {

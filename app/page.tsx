@@ -98,6 +98,47 @@ type AccountReviewApiValueCacheEntry = {
 
 const ACCOUNT_REVIEW_VALUES_CACHE_TTL_MS = 2 * 60 * 1000;
 const accountReviewValuesCache = new Map<string, AccountReviewApiValueCacheEntry>();
+const PERFORMANCE_AUTO_RUN_INTERVAL_MS = 60 * 60 * 1000;
+const NAVIGABLE_VIEWS = new Set([
+  'login',
+  'admin',
+  'consultant-dashboard',
+  'siteadmin',
+  'upload',
+  'results',
+  'kpis',
+  'mda',
+  'ai-analysis',
+  'daily-alerts',
+  'financial-forecast',
+  'projections',
+  'working-capital',
+  'valuation',
+  'cash-flow',
+  'financial-statements',
+  'trend-analysis',
+  'profile',
+  'goals',
+  'fs-intro',
+  'fs-score',
+  'ma-welcome',
+  'ma-questionnaire',
+  'ma-your-results',
+  'ma-scores-summary',
+  'ma-scoring-guide',
+  'ma-charts',
+  'custom-print',
+  'dashboard',
+  'covenants',
+  'operations',
+  'pa-overview',
+  'pa-critical-issues',
+  'pa-focus-board',
+  'pa-trend-explorer',
+  'pa-anomaly-inbox',
+  'pa-opportunity-workspace',
+  'dataroom',
+]);
 
 type InforOperationalSyncStatus = {
   companyId: string;
@@ -2144,6 +2185,8 @@ function FinancialScorePage() {
   const [accountReviewApiValues, setAccountReviewApiValues] = useState<Record<string, number>>({});
   const companyLoadRequestRef = useRef(0);
   const sdeRecommendationsRequestRef = useRef(0);
+  const performanceAutoRunInFlightRef = useRef<Set<string>>(new Set());
+  const suppressHistorySyncRef = useRef(false);
   const [dataRefreshKey, setDataRefreshKey] = useState(0);
   
   // State - CSV Trial Balance Data
@@ -3631,12 +3674,9 @@ function FinancialScorePage() {
     const success = urlParams.get('success');
     const error = urlParams.get('error');
 
-    // Set view if specified (e.g. from Support page Team Assessment link)
-    if (view === 'admin') {
-      setCurrentView('admin');
-    }
-    if (view === 'ma-welcome') {
-      handleNavigation('ma-welcome');
+    // Set view if specified in URL.
+    if (view && NAVIGABLE_VIEWS.has(view)) {
+      setCurrentView(view as any);
     }
 
     // Set admin dashboard tab if specified
@@ -3677,6 +3717,41 @@ function FinancialScorePage() {
       window.history.replaceState({}, '', window.location.pathname + '?view=admin');
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onPopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get('view');
+      if (view && NAVIGABLE_VIEWS.has(view)) {
+        suppressHistorySyncRef.current = true;
+        setCurrentView(view as any);
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (suppressHistorySyncRef.current) {
+      suppressHistorySyncRef.current = false;
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const currentParam = params.get('view');
+    const targetView = currentView || 'login';
+    if (currentParam === targetView) return;
+
+    params.set('view', targetView);
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash || ''}`;
+    window.history.pushState({}, '', nextUrl);
+  }, [currentView]);
 
   // Load company-specific data from API when company is selected
   useEffect(() => {
@@ -4241,6 +4316,51 @@ function FinancialScorePage() {
       cancelled = true;
     };
   }, [selectedCompanyId, currentUser, companies, apiFinancialTargetMonth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isLoggedIn || !currentUser || !selectedCompanyId) return;
+
+    const inFlightKey = `${selectedCompanyId}`;
+    if (performanceAutoRunInFlightRef.current.has(inFlightKey)) return;
+
+    const storageKey = `pa:auto-run:last:${selectedCompanyId}`;
+    const lastRunRaw = window.localStorage.getItem(storageKey);
+    const lastRunAt = Number(lastRunRaw || 0);
+    if (Number.isFinite(lastRunAt) && lastRunAt > 0 && Date.now() - lastRunAt < PERFORMANCE_AUTO_RUN_INTERVAL_MS) {
+      return;
+    }
+
+    performanceAutoRunInFlightRef.current.add(inFlightKey);
+
+    const runInBackground = async () => {
+      try {
+        const response = await fetch('/api/performance-analytics/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            companyId: selectedCompanyId,
+            replace: true,
+            frequency: 'daily',
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn('Background performance-agent run failed', response.status);
+          return;
+        }
+
+        window.localStorage.setItem(storageKey, String(Date.now()));
+      } catch (error) {
+        console.warn('Background performance-agent run error', error);
+      } finally {
+        performanceAutoRunInFlightRef.current.delete(inFlightKey);
+      }
+    };
+
+    runInBackground();
+  }, [isLoggedIn, currentUser, selectedCompanyId]);
 
   useEffect(() => {
     setCsiPipelineStatus({ state: 'idle' });
