@@ -1455,6 +1455,63 @@ function FinancialScorePage() {
     return String(numeric);
   };
 
+  const normalizeAccountReviewApiValues = (values: unknown): Record<string, number> => {
+    if (!values || typeof values !== 'object' || Array.isArray(values)) return {};
+    const normalized: Record<string, number> = {};
+    Object.entries(values as Record<string, unknown>).forEach(([key, value]) => {
+      const num = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(num)) return;
+      normalized[key] = num;
+      if (key.toLowerCase().startsWith('id:')) {
+        const idToken = key.slice(3).trim();
+        const canonical = idToken.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (canonical) normalized[`id:${canonical}`] = num;
+      }
+    });
+    return normalized;
+  };
+
+  const invalidateAccountReviewValuesCache = (companyId: string) => {
+    const prefix = `${companyId}|`;
+    Array.from(accountReviewValuesCache.keys()).forEach((key) => {
+      if (key.startsWith(prefix)) accountReviewValuesCache.delete(key);
+    });
+  };
+
+  const refreshAccountReviewLatestValues = async (
+    companyId: string,
+    targetMonth: string,
+    options?: { forceRefresh?: boolean; clearOnFailure?: boolean }
+  ): Promise<Record<string, number> | null> => {
+    const normalizedMonth = /^\d{4}-\d{2}$/.test(String(targetMonth || '').trim())
+      ? String(targetMonth).trim()
+      : '';
+    const forceRefresh = !!options?.forceRefresh;
+    const clearOnFailure = options?.clearOnFailure !== false;
+    const cacheKey = `${companyId}|${normalizedMonth}`;
+    try {
+      const response = await fetch(
+        `/api/account-review/latest-values?companyId=${encodeURIComponent(companyId)}&targetMonth=${encodeURIComponent(normalizedMonth)}${forceRefresh ? '&forceRefresh=1' : ''}`,
+        { cache: 'no-store' },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(data?.error || data?.details || `HTTP ${response.status}`));
+      }
+      const normalized = normalizeAccountReviewApiValues(data?.values);
+      accountReviewValuesCache.set(cacheKey, {
+        cachedAt: Date.now(),
+        values: normalized,
+      });
+      setAccountReviewApiValues(normalized);
+      return normalized;
+    } catch (error) {
+      console.warn('Failed to refresh account review latest values', error);
+      if (clearOnFailure) setAccountReviewApiValues({});
+      return null;
+    }
+  };
+
   const getDisplayAccountCode = (mapping: any): string => {
     const preferred = [mapping?.qbAccountCode, mapping?.qbAccountId];
     for (const value of preferred) {
@@ -1573,32 +1630,12 @@ function FinancialScorePage() {
         return false;
       }
 
-      // Phase C: invalidate local value cache after authoritative server pipeline success.
-      const cachePrefix = `${currentCompany.id}|`;
-      Array.from(accountReviewValuesCache.keys()).forEach((key) => {
-        if (key.startsWith(cachePrefix)) accountReviewValuesCache.delete(key);
+      // Always force refresh latest account-review values after successful CSI processing.
+      invalidateAccountReviewValuesCache(currentCompany.id);
+      await refreshAccountReviewLatestValues(currentCompany.id, apiFinancialTargetMonth, {
+        forceRefresh: true,
+        clearOnFailure: false,
       });
-
-      const values =
-        result?.values && typeof result.values === 'object' && !Array.isArray(result.values)
-          ? (result.values as Record<string, number>)
-          : {};
-      if (Object.keys(values).length > 0) {
-        const normalized: Record<string, number> = {};
-        Object.entries(values).forEach(([key, value]) => {
-          const num = typeof value === 'number' ? value : Number(value);
-          if (!Number.isFinite(num)) return;
-          normalized[key] = num;
-          if (key.toLowerCase().startsWith('id:')) {
-            const idToken = key.slice(3).trim();
-            const canonical = idToken.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (canonical) normalized[`id:${canonical}`] = num;
-          }
-        });
-        setAccountReviewApiValues(normalized);
-      } else {
-        setAccountReviewApiValues({});
-      }
 
       setQbLastSync(new Date());
       await refreshCompanyMappings(currentCompany.id);
@@ -1666,6 +1703,13 @@ function FinancialScorePage() {
       });
 
       if (response.ok) {
+        invalidateAccountReviewValuesCache(currentCompany.id);
+        if (/^\d{4}-\d{2}$/.test(String(apiFinancialTargetMonth || '').trim())) {
+          await refreshAccountReviewLatestValues(currentCompany.id, apiFinancialTargetMonth, {
+            forceRefresh: true,
+            clearOnFailure: false,
+          });
+        }
         alert('Account mappings saved successfully!');
       } else {
         const errorBody = await response.json().catch(() => ({}));
@@ -12181,6 +12225,11 @@ function FinancialScorePage() {
                                         `Request ID: ${firstFailure.requestId}`
                                     );
                                   } else {
+                                    invalidateAccountReviewValuesCache(selectedCompanyId);
+                                    await refreshAccountReviewLatestValues(selectedCompanyId, apiFinancialTargetMonth, {
+                                      forceRefresh: true,
+                                      clearOnFailure: false,
+                                    });
                                     alert(
                                       `Reprocess completed successfully for ${processedCount} month(s).` +
                                         (skipped.length ? `\nSkipped missing month(s): ${skipped.join(', ')}` : '') +
@@ -12212,6 +12261,11 @@ function FinancialScorePage() {
                                   }
 
                                   if (response.ok && result.success) {
+                                    invalidateAccountReviewValuesCache(selectedCompanyId);
+                                    await refreshAccountReviewLatestValues(selectedCompanyId, apiFinancialTargetMonth, {
+                                      forceRefresh: true,
+                                      clearOnFailure: false,
+                                    });
                                     alert(`${result.message}\n\nSwitching to Data Review tab to show your detailed financial data!`);
                                     // Switch to Data Review tab
                                     setAdminDashboardTab('data-review');

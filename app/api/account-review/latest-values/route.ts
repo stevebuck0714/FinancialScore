@@ -100,6 +100,44 @@ function asObjectPayload(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function buildAccountIdAliases(value: unknown): string[] {
+  const aliases = new Set<string>();
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+
+  aliases.add(raw);
+
+  const alnum = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (alnum) aliases.add(alnum);
+
+  const digitsOnly = raw.replace(/\D/g, '');
+  if (digitsOnly) aliases.add(digitsOnly);
+
+  if (/^\d+$/.test(digitsOnly)) {
+    const numeric = Number(digitsOnly);
+    if (Number.isFinite(numeric)) aliases.add(String(numeric));
+
+    if (digitsOnly.length >= 4) aliases.add(digitsOnly.slice(0, 4));
+    if (digitsOnly.length >= 5) aliases.add(digitsOnly.slice(0, 5));
+    if (digitsOnly.length === 4) aliases.add(`${digitsOnly}0`);
+    if (digitsOnly.length >= 5 && digitsOnly.endsWith('0')) aliases.add(digitsOnly.slice(0, -1));
+  }
+
+  return Array.from(aliases).filter((token) => token.length > 0);
+}
+
+function setAccountValueByAliases(valueByKey: Map<string, number>, accountId: unknown, amount: number): void {
+  for (const alias of buildAccountIdAliases(accountId)) {
+    valueByKey.set(`id:${alias}`, amount);
+  }
+}
+
+function addAccountLookupAliases(target: Set<string>, accountId: unknown): void {
+  for (const alias of buildAccountIdAliases(accountId)) {
+    target.add(`id:${alias}`);
+  }
+}
+
 function hasGlResponsesPayload(value: unknown): boolean {
   const payload = asObjectPayload(value);
   if (!payload) return false;
@@ -168,7 +206,7 @@ function collectValuesFromInforPayload(rawPayload: unknown, targetMonth: string 
   }
 
   for (const [acct, amount] of accountAccumulator.entries()) {
-    valueByKey.set(`id:${String(acct).trim()}`, amount);
+    setAccountValueByAliases(valueByKey, acct, amount);
   }
   return valueByKey;
 }
@@ -243,10 +281,7 @@ async function collectValuesFromApiSyncLogs(companyId: string, targetMonth: stri
   }
 
   for (const [acct, amount] of accountAccumulator.entries()) {
-    const id = String(acct).trim();
-    valueByKey.set(`id:${id}`, amount);
-    const normalized = id.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (normalized) valueByKey.set(`id:${normalized}`, amount);
+    setAccountValueByAliases(valueByKey, acct, amount);
   }
   return valueByKey;
 }
@@ -314,10 +349,7 @@ async function collectValuesFromPeriodBalanceLogs(companyId: string, targetMonth
   }
 
   for (const [acct, amount] of accountAccumulator.entries()) {
-    const id = String(acct).trim();
-    valueByKey.set(`id:${id}`, amount);
-    const normalized = id.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (normalized) valueByKey.set(`id:${normalized}`, amount);
+    setAccountValueByAliases(valueByKey, acct, amount);
   }
 
   if (!hasTruePeriodBalanceShape) {
@@ -364,9 +396,7 @@ async function collectValuesFromGlTransactionFacts(companyId: string, targetMont
     const acct = String(row.accountId || '').trim();
     if (!acct) continue;
     const amount = normalizeNumber(row.amount);
-    valueByKey.set(`id:${acct}`, amount);
-    const normalized = acct.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (normalized) valueByKey.set(`id:${normalized}`, amount);
+    setAccountValueByAliases(valueByKey, acct, amount);
     const name = String(row.accountName || '').trim().toLowerCase();
     if (name) valueByKey.set(`name:${name}`, amount);
   }
@@ -417,9 +447,7 @@ async function collectMonthlyMovementFromGlTransactionFacts(companyId: string, t
     const acct = String(row.accountId || '').trim();
     if (!acct) continue;
     const amount = normalizeNumber(row.amount);
-    valueByKey.set(`id:${acct}`, amount);
-    const normalized = acct.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (normalized) valueByKey.set(`id:${normalized}`, amount);
+    setAccountValueByAliases(valueByKey, acct, amount);
     const name = String(row.accountName || '').trim().toLowerCase();
     if (name) valueByKey.set(`name:${name}`, amount);
   }
@@ -509,8 +537,8 @@ async function collectBalanceSheetValuesFromMonthlyFinancial(
     const accountId = String(mapping.qbAccountId || '').trim();
     const accountCode = String(mapping.qbAccountCode || '').trim();
     const accountName = String(mapping.qbAccount || '').trim().toLowerCase();
-    if (accountId) valueByKey.set(`id:${accountId}`, amount);
-    if (accountCode) valueByKey.set(`id:${accountCode}`, amount);
+    if (accountId) setAccountValueByAliases(valueByKey, accountId, amount);
+    if (accountCode) setAccountValueByAliases(valueByKey, accountCode, amount);
     if (accountName) valueByKey.set(`name:${accountName}`, amount);
     valueByKey.set(`target:${normalizedTarget}`, amount);
   }
@@ -585,16 +613,8 @@ async function collectAllMappedValuesFromMonthlyFinancial(
     const accountCode = String(mapping.qbAccountCode || '').trim();
     const accountName = String(mapping.qbAccount || '').trim().toLowerCase();
 
-    if (accountId) {
-      valueByKey.set(`id:${accountId}`, amount);
-      const normalized = accountId.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (normalized) valueByKey.set(`id:${normalized}`, amount);
-    }
-    if (accountCode) {
-      valueByKey.set(`id:${accountCode}`, amount);
-      const normalized = accountCode.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (normalized) valueByKey.set(`id:${normalized}`, amount);
-    }
+    if (accountId) setAccountValueByAliases(valueByKey, accountId, amount);
+    if (accountCode) setAccountValueByAliases(valueByKey, accountCode, amount);
     if (accountName) valueByKey.set(`name:${accountName}`, amount);
     valueByKey.set(`target:${normalizedTarget}`, amount);
   }
@@ -693,12 +713,10 @@ export async function GET(request: NextRequest) {
       const id = String(mapping.qbAccountId || '').trim();
       const code = String(mapping.qbAccountCode || '').trim();
       if (id) {
-        bsAccountKeySet.add(`id:${id}`);
-        bsAccountKeySet.add(`id:${id.toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+        addAccountLookupAliases(bsAccountKeySet, id);
       }
       if (code) {
-        bsAccountKeySet.add(`id:${code}`);
-        bsAccountKeySet.add(`id:${code.toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+        addAccountLookupAliases(bsAccountKeySet, code);
       }
       const name = String(mapping.qbAccount || '').trim().toLowerCase();
       if (name) bsAccountKeySet.add(`name:${name}`);
