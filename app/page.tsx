@@ -1512,9 +1512,133 @@ function FinancialScorePage() {
     });
   };
 
+  const runCsiMappingPipeline = async (params: { trigger: 'save' | 'apply' }) => {
+    const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+    if (!currentCompany?.id) {
+      alert(`Cannot process mappings: Company not found. Selected: ${selectedCompanyId}, Available companies: ${companies?.length || 0}`);
+      return false;
+    }
+    if (!aiMappings || aiMappings.length === 0) {
+      alert('No mappings to process. Please generate or load mappings first.');
+      return false;
+    }
+    if (!/^\d{4}-\d{2}$/.test(String(apiFinancialTargetMonth || '').trim())) {
+      alert('Select a valid target month first (YYYY-MM).');
+      return false;
+    }
+
+    const requestedMode: 'through' | 'only' = apiFinancialImportMode === 'only' ? 'only' : 'through';
+    const mappingsPayload = aiMappings.map((m: any) => ({
+      ...m,
+      targetField: normalizeMappingTargetField(m?.targetField),
+    }));
+
+    if (params.trigger === 'save') setIsSavingMappings(true);
+    if (params.trigger === 'apply') setIsProcessingMonthlyData(true);
+    setCsiPipelineStatus({
+      state: 'running',
+      trigger: params.trigger,
+      stage: 'start',
+      message: `Running CSI pipeline for ${apiFinancialTargetMonth}...`,
+      updatedAt: Date.now(),
+    });
+    try {
+      const response = await fetch('/api/infor-csi/process-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: currentCompany.id,
+          mappings: mappingsPayload,
+          linesOfBusiness,
+          targetMonth: apiFinancialTargetMonth,
+          mode: requestedMode,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        const stage = String(result?.stage || 'unknown');
+        const details = result?.details
+          ? (typeof result.details === 'string' ? result.details : JSON.stringify(result.details))
+          : '';
+        setCsiPipelineStatus({
+          state: 'error',
+          trigger: params.trigger,
+          stage,
+          message: result?.error || result?.message || 'CSI pipeline failed',
+          updatedAt: Date.now(),
+        });
+        alert(
+          `CSI processing failed at stage "${stage}". ${result?.error || result?.message || 'Unknown error.'}` +
+            (details ? `\nDetails: ${details}` : '')
+        );
+        return false;
+      }
+
+      // Phase C: invalidate local value cache after authoritative server pipeline success.
+      const cachePrefix = `${currentCompany.id}|`;
+      Array.from(accountReviewValuesCache.keys()).forEach((key) => {
+        if (key.startsWith(cachePrefix)) accountReviewValuesCache.delete(key);
+      });
+
+      const values =
+        result?.values && typeof result.values === 'object' && !Array.isArray(result.values)
+          ? (result.values as Record<string, number>)
+          : {};
+      if (Object.keys(values).length > 0) {
+        const normalized: Record<string, number> = {};
+        Object.entries(values).forEach(([key, value]) => {
+          const num = typeof value === 'number' ? value : Number(value);
+          if (!Number.isFinite(num)) return;
+          normalized[key] = num;
+          if (key.toLowerCase().startsWith('id:')) {
+            const idToken = key.slice(3).trim();
+            const canonical = idToken.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (canonical) normalized[`id:${canonical}`] = num;
+          }
+        });
+        setAccountReviewApiValues(normalized);
+      } else {
+        setAccountReviewApiValues({});
+      }
+
+      setQbLastSync(new Date());
+      await refreshCompanyMappings(currentCompany.id);
+      setCsiPipelineStatus({
+        state: 'success',
+        trigger: params.trigger,
+        stage: 'complete',
+        message: `CSI pipeline completed for ${apiFinancialTargetMonth}.`,
+        updatedAt: Date.now(),
+      });
+      alert(
+        `CSI mappings processed successfully for ${apiFinancialTargetMonth}.` +
+          (typeof result?.valuesCount === 'number' ? `\nLatest values updated: ${result.valuesCount}` : '')
+      );
+      return true;
+    } catch (error: any) {
+      setCsiPipelineStatus({
+        state: 'error',
+        trigger: params.trigger,
+        stage: 'exception',
+        message: error?.message || 'CSI pipeline failed',
+        updatedAt: Date.now(),
+      });
+      alert(`CSI processing failed: ${error?.message || 'Unknown error'}`);
+      return false;
+    } finally {
+      if (params.trigger === 'save') setIsSavingMappings(false);
+      if (params.trigger === 'apply') setIsProcessingMonthlyData(false);
+    }
+  };
+
   const saveAccountMappings = async () => {
     try {
       const currentCompany = Array.isArray(companies) ? companies.find(c => c.id === selectedCompanyId) : undefined;
+      const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
+      if (selectedSystemNormalized === 'INFOR_CSI') {
+        await runCsiMappingPipeline({ trigger: 'save' });
+        return;
+      }
       console.log('?? Save Mappings Debug:', {
         currentCompany,
         currentCompanyId: currentCompany?.id,
@@ -2340,6 +2464,13 @@ function FinancialScorePage() {
   const [userDefinedAllocations, setUserDefinedAllocations] = useState<{ lobName: string; percentage: number }[]>([]);
   const [showMappingSection, setShowMappingSection] = useState(false);
   const [isProcessingMonthlyData, setIsProcessingMonthlyData] = useState(false);
+  const [csiPipelineStatus, setCsiPipelineStatus] = useState<{
+    state: 'idle' | 'running' | 'success' | 'error';
+    trigger?: 'save' | 'apply';
+    stage?: string;
+    message?: string;
+    updatedAt?: number;
+  }>({ state: 'idle' });
   const [isPublishingMonthlyData, setIsPublishingMonthlyData] = useState(false);
   const [publishMonthInput, setPublishMonthInput] = useState<string>(() => {
     const now = new Date();
@@ -4073,6 +4204,10 @@ function FinancialScorePage() {
       cancelled = true;
     };
   }, [selectedCompanyId, currentUser, companies, apiFinancialTargetMonth]);
+
+  useEffect(() => {
+    setCsiPipelineStatus({ state: 'idle' });
+  }, [selectedCompanyId]);
 
 
   // Track which consultant's companies are currently loaded
@@ -11696,6 +11831,37 @@ function FinancialScorePage() {
                                 ? 'A saved CSV was found for this company. Load it, then process with your mappings.'
                                 : `Save your mappings to apply them to your ${mappedApiSourceLabel} data.`}
                           </p>
+                          {selectedSystemNormalized === 'INFOR_CSI' && csiPipelineStatus.state !== 'idle' && (
+                            <div
+                              style={{
+                                marginTop: '8px',
+                                padding: '8px 10px',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                background:
+                                  csiPipelineStatus.state === 'success'
+                                    ? '#ecfdf5'
+                                    : csiPipelineStatus.state === 'error'
+                                      ? '#fef2f2'
+                                      : '#eff6ff',
+                                color:
+                                  csiPipelineStatus.state === 'success'
+                                    ? '#065f46'
+                                    : csiPipelineStatus.state === 'error'
+                                      ? '#991b1b'
+                                      : '#1e40af',
+                                border:
+                                  csiPipelineStatus.state === 'success'
+                                    ? '1px solid #86efac'
+                                    : csiPipelineStatus.state === 'error'
+                                      ? '1px solid #fecaca'
+                                      : '1px solid #bfdbfe',
+                              }}
+                            >
+                              <strong>CSI Pipeline:</strong> {csiPipelineStatus.message || 'Running...'}
+                              {csiPipelineStatus.stage ? ` (stage: ${csiPipelineStatus.stage})` : ''}
+                            </div>
+                          )}
                         </div>
                         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                           {!hasCsvDataForSelectedCompany && hasSavedCsvInLocalStorage && (
@@ -11887,6 +12053,14 @@ function FinancialScorePage() {
                               }
                               if (!/^\d{4}-\d{2}$/.test(apiFinancialTargetMonth)) {
                                 alert('Select a valid target month first (YYYY-MM).');
+                                return;
+                              }
+
+                              if (selectedSystemNormalized === 'INFOR_CSI') {
+                                const csiCompleted = await runCsiMappingPipeline({ trigger: 'apply' });
+                                if (csiCompleted) {
+                                  setAdminDashboardTab('data-review');
+                                }
                                 return;
                               }
 

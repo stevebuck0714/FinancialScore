@@ -3,8 +3,12 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
+import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
 
 export const dynamic = 'force-dynamic';
+
+const LATEST_VALUES_CACHE_TTL_MS = 60 * 1000;
+const latestValuesResponseCache = new Map<string, { cachedAt: number; payload: Record<string, unknown> }>();
 
 function normalizeNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -161,7 +165,8 @@ function collectValuesFromInforPayload(rawPayload: unknown, targetMonth: string 
 async function collectValuesFromApiSyncLogs(companyId: string, targetMonth: string | null): Promise<Map<string, number>> {
   const valueByKey = new Map<string, number>();
   const accountAccumulator = new Map<string, number>();
-  const rows = await prisma.$queryRaw<Array<{ item: unknown }>>`
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ item: unknown }>>`
     WITH logs AS (
       SELECT l."errorDetails"->'response'->'Items' AS items
       FROM "ApiSyncLog" l
@@ -178,7 +183,9 @@ async function collectValuesFromApiSyncLogs(companyId: string, targetMonth: stri
     )
     SELECT item
     FROM ledger_rows
-  `;
+  `,
+    'account-review.latest-values.collectValuesFromApiSyncLogs',
+  );
 
   for (const row of rows || []) {
     if (!row?.item || typeof row.item !== 'object' || Array.isArray(row.item)) continue;
@@ -225,7 +232,8 @@ async function collectValuesFromPeriodBalanceLogs(companyId: string, targetMonth
   const accountAccumulator = new Map<string, number>();
   if (!targetMonth) return valueByKey;
 
-  const rows = await prisma.$queryRaw<Array<{ item: unknown }>>`
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ item: unknown }>>`
     WITH logs AS (
       SELECT l."errorDetails"->'response'->'Items' AS items
       FROM "ApiSyncLog" l
@@ -242,7 +250,9 @@ async function collectValuesFromPeriodBalanceLogs(companyId: string, targetMonth
     )
     SELECT item
     FROM ledger_rows
-  `;
+  `,
+    'account-review.latest-values.collectValuesFromPeriodBalanceLogs',
+  );
 
   let hasTruePeriodBalanceShape = false;
   for (const row of rows || []) {
@@ -295,7 +305,8 @@ async function collectValuesFromPeriodBalanceLogs(companyId: string, targetMonth
 async function collectValuesFromGlTransactionFacts(companyId: string, targetMonth: string | null): Promise<Map<string, number>> {
   const valueByKey = new Map<string, number>();
   const monthEnd = resolveMonthEndUtc(targetMonth);
-  const rows = await prisma.$queryRaw<Array<{ accountId: string; amount: number; accountName: string | null }>>`
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ accountId: string; amount: number; accountName: string | null }>>`
     WITH account_balances AS (
       SELECT
         TRIM("accountId") AS "accountId",
@@ -321,7 +332,9 @@ async function collectValuesFromGlTransactionFacts(companyId: string, targetMont
     FROM account_balances b
     LEFT JOIN account_names n
       ON n."accountId" = b."accountId"
-  `;
+  `,
+    'account-review.latest-values.collectValuesFromGlTransactionFacts',
+  );
 
   for (const row of rows || []) {
     const acct = String(row.accountId || '').trim();
@@ -343,7 +356,8 @@ async function collectMonthlyMovementFromGlTransactionFacts(companyId: string, t
   const monthEnd = resolveMonthEndUtc(targetMonth);
   if (!monthStart || !monthEnd) return valueByKey;
 
-  const rows = await prisma.$queryRaw<Array<{ accountId: string; amount: number; accountName: string | null }>>`
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ accountId: string; amount: number; accountName: string | null }>>`
     WITH account_movements AS (
       SELECT
         TRIM("accountId") AS "accountId",
@@ -371,7 +385,9 @@ async function collectMonthlyMovementFromGlTransactionFacts(companyId: string, t
     FROM account_movements m
     LEFT JOIN account_names n
       ON n."accountId" = m."accountId"
-  `;
+  `,
+    'account-review.latest-values.collectMonthlyMovementFromGlTransactionFacts',
+  );
 
   for (const row of rows || []) {
     const acct = String(row.accountId || '').trim();
@@ -391,7 +407,8 @@ async function collectBalanceSheetValuesFromMonthlyFinancial(
   targetMonth: string | null
 ): Promise<Map<string, number>> {
   const valueByKey = new Map<string, number>();
-  const monthlyRows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+  const monthlyRows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT
       mf."cash",
       mf."ar",
@@ -424,22 +441,28 @@ async function collectBalanceSheetValuesFromMonthlyFinancial(
       }
     ORDER BY mf."monthDate" DESC, mf."createdAt" DESC
     LIMIT 1
-  `;
+  `,
+    'account-review.latest-values.collectBalanceSheetValuesFromMonthlyFinancial.monthlyRows',
+  );
   const monthly = monthlyRows[0] || null;
   if (!monthly) return valueByKey;
 
-  const mappings = await prisma.accountMapping.findMany({
-    where: {
-      companyId,
-      targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
-    },
-    select: {
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
-      targetField: true,
-    },
-  });
+  const mappings = await withPrismaReconnectRetry(
+    () =>
+      prisma.accountMapping.findMany({
+        where: {
+          companyId,
+          targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
+        },
+        select: {
+          qbAccount: true,
+          qbAccountId: true,
+          qbAccountCode: true,
+          targetField: true,
+        },
+      }),
+    'account-review.latest-values.collectBalanceSheetValuesFromMonthlyFinancial.mappings',
+  );
 
   const bsMappings = mappings.filter((mapping) => BS_TARGET_FIELDS.has(normalizeTargetField(mapping.targetField)));
   const byTarget = new Map<string, typeof bsMappings>();
@@ -476,7 +499,8 @@ async function collectAllMappedValuesFromMonthlyFinancial(
   targetMonth: string | null
 ): Promise<Map<string, number>> {
   const valueByKey = new Map<string, number>();
-  const monthlyRows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+  const monthlyRows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT *
     FROM "MonthlyFinancial" mf
     WHERE mf."companyId" = ${companyId}
@@ -487,27 +511,52 @@ async function collectAllMappedValuesFromMonthlyFinancial(
       }
     ORDER BY mf."monthDate" DESC, mf."createdAt" DESC
     LIMIT 1
-  `;
+  `,
+    'account-review.latest-values.collectAllMappedValuesFromMonthlyFinancial.monthlyRows',
+  );
   const monthly = monthlyRows[0] || null;
   if (!monthly) return valueByKey;
 
-  const mappings = await prisma.accountMapping.findMany({
-    where: {
-      companyId,
-      targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
-    },
-    select: {
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
-      targetField: true,
-    },
-  });
+  const mappings = await withPrismaReconnectRetry(
+    () =>
+      prisma.accountMapping.findMany({
+        where: {
+          companyId,
+          targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
+        },
+        select: {
+          qbAccount: true,
+          qbAccountId: true,
+          qbAccountCode: true,
+          targetField: true,
+        },
+      }),
+    'account-review.latest-values.collectAllMappedValuesFromMonthlyFinancial.mappings',
+  );
 
+  const mappingsByTarget = new Map<string, typeof mappings>();
   for (const mapping of mappings) {
     const targetField = String(mapping.targetField || '').trim();
-    if (!targetField) continue;
-    const amount = normalizeNumber((monthly as Record<string, unknown>)[targetField]);
+    const normalizedTarget = normalizeTargetField(targetField);
+    if (!normalizedTarget) continue;
+    if (!mappingsByTarget.has(normalizedTarget)) mappingsByTarget.set(normalizedTarget, []);
+    mappingsByTarget.get(normalizedTarget)!.push(mapping);
+  }
+
+  for (const [normalizedTarget, targetMappings] of mappingsByTarget.entries()) {
+    const sample = targetMappings[0];
+    const rawTargetField = String(sample?.targetField || '').trim();
+    if (!rawTargetField) continue;
+    const amount = normalizeNumber((monthly as Record<string, unknown>)[rawTargetField]);
+
+    // Guardrail: do not fan out one rolled-up monthly target amount (e.g. payroll)
+    // to every mapped account under that target.
+    if (targetMappings.length !== 1) {
+      valueByKey.set(`target:${normalizedTarget}`, amount);
+      continue;
+    }
+
+    const mapping = targetMappings[0];
     const accountId = String(mapping.qbAccountId || '').trim();
     const accountCode = String(mapping.qbAccountCode || '').trim();
     const accountName = String(mapping.qbAccount || '').trim().toLowerCase();
@@ -523,6 +572,7 @@ async function collectAllMappedValuesFromMonthlyFinancial(
       if (normalized) valueByKey.set(`id:${normalized}`, amount);
     }
     if (accountName) valueByKey.set(`name:${accountName}`, amount);
+    valueByKey.set(`target:${normalizedTarget}`, amount);
   }
 
   return valueByKey;
@@ -535,14 +585,28 @@ export async function GET(request: NextRequest) {
     const companyId = String(searchParams.get('companyId') || '').trim();
     const targetMonthRaw = String(searchParams.get('targetMonth') || '').trim();
     const targetMonth = /^\d{4}-\d{2}$/.test(targetMonthRaw) ? targetMonthRaw : null;
+    const forceRefreshRaw = String(searchParams.get('forceRefresh') || '').trim().toLowerCase();
+    const forceRefresh = forceRefreshRaw === '1' || forceRefreshRaw === 'true' || forceRefreshRaw === 'yes';
+    const cacheKey = `${companyId}|${targetMonth || ''}`;
+    if (forceRefresh) {
+      latestValuesResponseCache.delete(cacheKey);
+    }
+    const cached = latestValuesResponseCache.get(cacheKey);
+    if (!forceRefresh && cached && Date.now() - cached.cachedAt < LATEST_VALUES_CACHE_TTL_MS) {
+      return NextResponse.json(cached.payload);
+    }
 
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
     }
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { accountingSystem: true },
-    });
+    const company = await withPrismaReconnectRetry(
+      () =>
+        prisma.company.findUnique({
+          where: { id: companyId },
+          select: { accountingSystem: true },
+        }),
+      'account-review.latest-values.get.company',
+    );
     const accountingSystem = String(company?.accountingSystem || '').trim().toUpperCase();
 
 
@@ -552,7 +616,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const rows = await prisma.$queryRaw<Array<{ csi: unknown; m3: unknown }>>`
+    const rows = await withPrismaReconnectRetry(
+      () => prisma.$queryRaw<Array<{ csi: unknown; m3: unknown }>>`
       SELECT
         "connectionMetadata"->'inforCsiFinancialPayload' AS csi,
         "connectionMetadata"->'inforM3FinancialPayload' AS m3
@@ -560,22 +625,28 @@ export async function GET(request: NextRequest) {
       WHERE "companyId" = ${companyId}
         AND platform = 'INFOR_M3'
       LIMIT 1
-    `;
+    `,
+      'account-review.latest-values.get.accounting-connection',
+    );
     const metadataPayload = rows[0]?.csi ?? rows[0]?.m3 ?? null;
     const valueByKey = collectValuesFromInforPayload(metadataPayload, targetMonth);
 
-    const mappings = await prisma.accountMapping.findMany({
-      where: {
-        companyId,
-        targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
-      },
-      select: {
-        qbAccountId: true,
-        qbAccountCode: true,
-        qbAccount: true,
-        targetField: true,
-      },
-    });
+    const mappings = await withPrismaReconnectRetry(
+      () =>
+        prisma.accountMapping.findMany({
+          where: {
+            companyId,
+            targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
+          },
+          select: {
+            qbAccountId: true,
+            qbAccountCode: true,
+            qbAccount: true,
+            targetField: true,
+          },
+        }),
+      'account-review.latest-values.get.mappings',
+    );
     const bsAccountKeySet = new Set<string>();
     for (const mapping of mappings) {
       const normalizedTarget = normalizeTargetField(mapping.targetField);
@@ -627,13 +698,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const payload = {
       ok: true,
       companyId,
       targetMonth,
       count: valueByKey.size,
       values: Object.fromEntries(valueByKey.entries()),
+    };
+    latestValuesResponseCache.set(cacheKey, {
+      cachedAt: Date.now(),
+      payload,
     });
+    return NextResponse.json(payload);
   } catch (error) {
     const details = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
