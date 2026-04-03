@@ -17,6 +17,10 @@ export interface UserContext {
   consultantId: string | null
 }
 
+const DEV_AUTH_BYPASS_ENABLED =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.DISABLE_AUTH_SIGNIN === '1'
+
 function normalizeRole(value: string | null): UserContext['role'] | null {
   if (!value) return null
   const normalized = value.trim().toUpperCase()
@@ -43,6 +47,16 @@ function getUserCompanyAccessDelegate():
  * Headers are set by middleware.ts after validating JWT token
  */
 export async function getUserContext(): Promise<UserContext | null> {
+  if (DEV_AUTH_BYPASS_ENABLED) {
+    return {
+      userId: 'dev-bypass-user',
+      email: 'dev-bypass@localhost',
+      role: 'SITEADMIN',
+      companyId: null,
+      consultantId: null,
+    }
+  }
+
   const headersList = headers()
   
   const userId = headersList.get('x-user-id')

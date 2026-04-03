@@ -5,6 +5,9 @@ import { getToken } from 'next-auth/jwt'
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const LAST_ACTIVITY_COOKIE = 'fs_last_activity'
 const DISABLE_IDLE_TIMEOUT = process.env.DISABLE_INACTIVITY_TIMEOUT === '1'
+const DISABLE_AUTH_SIGNIN =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.DISABLE_AUTH_SIGNIN === '1'
 const DEBUG_MIDDLEWARE = process.env.DEBUG_MIDDLEWARE === '1'
 const AUTH_COOKIE_NAMES = [
   'next-auth.session-token',
@@ -184,7 +187,7 @@ export async function middleware(request: NextRequest) {
   
   // Check if this is a public route
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
-  const token = await resolveAuthToken(request)
+  const token = DISABLE_AUTH_SIGNIN ? null : await resolveAuthToken(request)
 
   const lastActivityRaw = request.cookies.get(LAST_ACTIVITY_COOKIE)?.value
   const lastActivityMs = lastActivityRaw ? Number.parseInt(lastActivityRaw, 10) : NaN
@@ -222,7 +225,12 @@ export async function middleware(request: NextRequest) {
     })
   }
   
-  if (pathname.startsWith('/api') && !isPublicRoute && !isTrustedInternalSyncWorker) {
+  if (
+    pathname.startsWith('/api') &&
+    !isPublicRoute &&
+    !isTrustedInternalSyncWorker &&
+    !DISABLE_AUTH_SIGNIN
+  ) {
     if (DEBUG_MIDDLEWARE) {
       console.log('🔐 Middleware auth check:', {
         path: pathname,
