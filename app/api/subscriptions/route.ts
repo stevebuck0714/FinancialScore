@@ -205,6 +205,11 @@ export async function POST(request: NextRequest) {
         selectedSubscriptionPlan: plan,
         subscriptionStatus: 'active',
         subscriptionStartDate: initialPaymentDate,
+        nextBillingDate,
+        affiliateCode:
+          String(company.subscriptionStatus || '').toLowerCase().startsWith('demo')
+            ? null
+            : company.affiliateCode,
       },
     });
 

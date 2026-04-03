@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import prisma from '@/lib/prisma';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
+import { isDemoCompany, isDemoExpired } from '@/lib/demo-access';
 
 export const dynamic = 'force-dynamic';
 const DEV_DEFAULT_COMPANY_NAME = 'test atlantic precision CSI';
@@ -38,6 +39,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
+      );
+    }
+
+    const demoCompany = isDemoCompany(user.company);
+    const demoExpired = isDemoExpired(user.company);
+    if (demoExpired) {
+      return NextResponse.json(
+        { error: 'Demo expired', message: 'Your 7-day demo has expired. Please upgrade to continue.' },
+        { status: 403 }
       );
     }
 
@@ -95,6 +105,9 @@ export async function GET(request: NextRequest) {
         consultantType: consultant?.type,
         consultantCompanyName: consultant?.companyName,
         mfaEnabled: user.mfaEnabled,
+        demoCompany,
+        demoExpired,
+        demoExpiresAt: user.company?.nextBillingDate?.toISOString() || null,
         accessibleCompanies,
       },
       activeCompanyId,

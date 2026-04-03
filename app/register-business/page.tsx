@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 
 export default function RegisterBusinessWelcome() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialAffiliateCodeFromUrl = String(searchParams.get('affiliate') || '').trim().toUpperCase();
   const [isNavigating, setIsNavigating] = useState(false);
   const [formData, setFormData] = useState({
     userName: '',
@@ -16,74 +18,12 @@ export default function RegisterBusinessWelcome() {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
-  // Affiliate state
-  const [affiliates, setAffiliates] = useState<any[]>([]);
-  const [selectedAffiliateId, setSelectedAffiliateId] = useState('');
-  const [affiliateCode, setAffiliateCode] = useState('');
-  const [validatedAffiliate, setValidatedAffiliate] = useState<any>(null);
-  const [codeError, setCodeError] = useState('');
-  const [isValidatingCode, setIsValidatingCode] = useState(false);
-
-  // Fetch affiliates on mount
-  useEffect(() => {
-    const fetchAffiliates = async () => {
-      try {
-        const response = await fetch('/api/affiliates');
-        const data = await response.json();
-        if (data.affiliates) {
-          // Only show active affiliates
-          setAffiliates(data.affiliates.filter((a: any) => a.isActive));
-        }
-      } catch (error) {
-        console.error('Error fetching affiliates:', error);
-      }
-    };
-    fetchAffiliates();
-  }, []);
+  const [affiliateCode, setAffiliateCode] = useState(initialAffiliateCodeFromUrl);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     setError('');
-  };
-
-  // Validate affiliate code
-  const validateAffiliateCode = async () => {
-    if (!selectedAffiliateId || !affiliateCode) {
-      setCodeError('');
-      setValidatedAffiliate(null);
-      return;
-    }
-
-    setIsValidatingCode(true);
-    setCodeError('');
-
-    try {
-      const response = await fetch('/api/affiliates/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          affiliateId: selectedAffiliateId,
-          affiliateCode: affiliateCode
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.valid) {
-        setValidatedAffiliate(data);
-        setCodeError('');
-      } else {
-        setCodeError(data.error || 'Invalid code');
-        setValidatedAffiliate(null);
-      }
-    } catch (error) {
-      console.error('Error validating code:', error);
-      setCodeError('Error validating code');
-      setValidatedAffiliate(null);
-    } finally {
-      setIsValidatingCode(false);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -133,12 +73,16 @@ export default function RegisterBusinessWelcome() {
         return;
       }
 
-      // Registration successful - trigger MFA enrollment
+      const isDemoSignup = Boolean(data?.user?.isDemoSignup);
+      // Registration successful - proceed to login flow.
       setError('');
       setIsNavigating(false);
-      
-      // Show MFA enrollment message
-      alert('✅ Registration successful!\n\nYou will now be prompted to set up Multi-Factor Authentication (MFA) for account security.');
+
+      if (isDemoSignup) {
+        alert('✅ Demo registration successful!\n\nSigning you in now.');
+      } else {
+        alert('✅ Registration successful!\n\nYou will now be prompted to set up Multi-Factor Authentication (MFA) for account security.');
+      }
       
       // Store credentials for auto-login after MFA setup
       sessionStorage.setItem('pendingMFAEnrollment', JSON.stringify({
@@ -399,8 +343,6 @@ export default function RegisterBusinessWelcome() {
                   value={affiliateCode}
                   onChange={(e) => {
                     setAffiliateCode(e.target.value.toUpperCase());
-                    setValidatedAffiliate(null);
-                    setCodeError('');
                   }}
                   placeholder="Enter affiliate code if you have one"
                   disabled={isNavigating}
@@ -414,163 +356,7 @@ export default function RegisterBusinessWelcome() {
                     textTransform: 'uppercase'
                   }}
                 />
-                <div style={{ 
-                  fontSize: '12px', 
-                  color: '#64748b', 
-                  marginTop: '6px', 
-                  lineHeight: '1.5' 
-                }}>
-                  If you were referred by a partner, enter their code here
-                </div>
               </div>
-
-              {/* Affiliate Selection (Optional) */}
-              {affiliates.length > 0 && (
-                <div style={{ 
-                  marginBottom: '24px', 
-                  padding: '16px', 
-                  background: '#fffbeb', 
-                  border: '2px solid #fbbf24', 
-                  borderRadius: '8px' 
-                }}>
-                  <h3 style={{ 
-                    fontSize: '14px', 
-                    fontWeight: '600', 
-                    color: '#92400e', 
-                    marginBottom: '12px' 
-                  }}>
-                    Have an Affiliate Code? (Optional)
-                  </h3>
-                  
-                  {/* Affiliate Dropdown */}
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      color: '#78350f',
-                      marginBottom: '6px'
-                    }}>
-                      Select Affiliate Partner
-                    </label>
-                    <select
-                      value={selectedAffiliateId}
-                      onChange={(e) => {
-                        setSelectedAffiliateId(e.target.value);
-                        setAffiliateCode('');
-                        setValidatedAffiliate(null);
-                        setCodeError('');
-                      }}
-                      disabled={isNavigating}
-                      style={{
-                        width: '100%',
-                        padding: '10px',
-                        border: '1px solid #d97706',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        backgroundColor: 'white',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value="">-- No Affiliate Code --</option>
-                      {affiliates.map((affiliate) => (
-                        <option key={affiliate.id} value={affiliate.id}>
-                          {affiliate.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Affiliate Code Input */}
-                  {selectedAffiliateId && (
-                    <div>
-                      <label style={{
-                        display: 'block',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        color: '#78350f',
-                        marginBottom: '6px'
-                      }}>
-                        Enter Affiliate Code
-                      </label>
-                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                        <input
-                          type="text"
-                          value={affiliateCode}
-                          onChange={(e) => {
-                            setAffiliateCode(e.target.value.toUpperCase());
-                            setValidatedAffiliate(null);
-                            setCodeError('');
-                          }}
-                          placeholder="Enter code"
-                          disabled={isNavigating || isValidatingCode}
-                          style={{
-                            flex: 1,
-                            padding: '10px',
-                            border: '1px solid #d97706',
-                            borderRadius: '6px',
-                            fontSize: '13px',
-                            textTransform: 'uppercase'
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={validateAffiliateCode}
-                          disabled={!affiliateCode || isValidatingCode || isNavigating}
-                          style={{
-                            padding: '10px 16px',
-                            background: (!affiliateCode || isValidatingCode) ? '#d1d5db' : '#f59e0b',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '13px',
-                            fontWeight: '600',
-                            cursor: (!affiliateCode || isValidatingCode) ? 'not-allowed' : 'pointer',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          {isValidatingCode ? 'Checking...' : 'Validate'}
-                        </button>
-                      </div>
-
-                      {/* Validation Messages */}
-                      {codeError && (
-                        <div style={{
-                          padding: '8px 12px',
-                          background: '#fee2e2',
-                          border: '1px solid #fca5a5',
-                          borderRadius: '6px',
-                          color: '#991b1b',
-                          fontSize: '12px',
-                          marginTop: '8px'
-                        }}>
-                          ❌ {codeError}
-                        </div>
-                      )}
-
-                      {validatedAffiliate && (
-                        <div style={{
-                          padding: '12px',
-                          background: '#d1fae5',
-                          border: '1px solid #6ee7b7',
-                          borderRadius: '6px',
-                          marginTop: '8px'
-                        }}>
-                          <div style={{ color: '#065f46', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                            ✅ Valid Code! Special Pricing Applied:
-                          </div>
-                          <div style={{ color: '#047857', fontSize: '12px' }}>
-                            <div>Monthly: ${validatedAffiliate.monthlyPrice}/month</div>
-                            <div>Quarterly: ${validatedAffiliate.quarterlyPrice}/quarter</div>
-                            <div>Annual: ${validatedAffiliate.annualPrice}/year</div>
-                            <div>Setup Fee: ${validatedAffiliate.setupFee ?? 0} one-time</div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Submit Button */}
               <button 
@@ -600,7 +386,7 @@ export default function RegisterBusinessWelcome() {
                   e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
                 }}
               >
-                {isNavigating ? 'Creating Account...' : 'Create Account & Access Dashboard'}
+                {isNavigating ? 'Creating Account...' : 'Create Account and Access Corelytics'}
               </button>
             </form>
           </div>

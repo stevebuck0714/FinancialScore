@@ -12,6 +12,9 @@ declare module 'next-auth' {
       consultantId?: string;
       isPrimaryContact?: boolean;
       mfaEnabled?: boolean;
+      demoCompany?: boolean;
+      demoExpired?: boolean;
+      demoExpiresAt?: string;
       accessibleCompanies?: Array<{
         companyId: string;
         name: string;
@@ -33,6 +36,9 @@ declare module 'next-auth' {
     consultantId?: string;
     isPrimaryContact?: boolean;
     mfaEnabled?: boolean;
+    demoCompany?: boolean;
+    demoExpired?: boolean;
+    demoExpiresAt?: string | null;
   }
 }
 
@@ -47,6 +53,9 @@ declare module 'next-auth/jwt' {
     consultantId?: string;
     isPrimaryContact?: boolean;
     mfaEnabled?: boolean;
+    demoCompany?: boolean;
+    demoExpired?: boolean;
+    demoExpiresAt?: string | null;
   }
 }
 

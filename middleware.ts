@@ -34,6 +34,7 @@ const RATE_LIMITS = {
   '/api/infor-m3/operational-sync-status': { maxAttempts: 600, windowMs: 60 * 1000 }, // 600 per minute
   '/api': { maxAttempts: 100, windowMs: 60 * 1000 }, // 100 per minute (general)
 }
+const DEMO_EXPIRED_ALLOWED_API_PREFIXES = ['/api/subscriptions', '/api/payments', '/api/auth/']
 
 function checkRateLimit(identifier: string, endpoint: string): { allowed: boolean; remaining: number; resetTime: number } {
   const now = Date.now()
@@ -202,6 +203,13 @@ export async function middleware(request: NextRequest) {
   // Check if this is a public route
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
   const token = DISABLE_AUTH_SIGNIN ? null : await resolveAuthToken(request)
+  const tokenDemoCompany = Boolean(token && (token as any).demoCompany)
+  const tokenDemoExpiredFlag = Boolean(token && (token as any).demoExpired)
+  const tokenDemoExpiresAtRaw = token ? String((token as any).demoExpiresAt || '') : ''
+  const tokenDemoExpiresAtMs = tokenDemoExpiresAtRaw ? Date.parse(tokenDemoExpiresAtRaw) : NaN
+  const tokenDemoExpiredByDate =
+    tokenDemoCompany && Number.isFinite(tokenDemoExpiresAtMs) && Date.now() > tokenDemoExpiresAtMs
+  const tokenDemoExpired = tokenDemoExpiredFlag || tokenDemoExpiredByDate
 
   const lastActivityRaw = request.cookies.get(LAST_ACTIVITY_COOKIE)?.value
   const lastActivityMs = lastActivityRaw ? Number.parseInt(lastActivityRaw, 10) : NaN
@@ -245,6 +253,21 @@ export async function middleware(request: NextRequest) {
     !isTrustedInternalSyncWorker &&
     !DISABLE_AUTH_SIGNIN
   ) {
+    if (tokenDemoExpired) {
+      const isDemoExpiredAllowedApi = DEMO_EXPIRED_ALLOWED_API_PREFIXES.some((prefix) =>
+        pathname.startsWith(prefix)
+      )
+      if (!isDemoExpiredAllowedApi) {
+      return NextResponse.json(
+        {
+          error: 'Demo expired',
+          message: 'Your 7-day demo has expired. Please upgrade to continue.',
+        },
+        { status: 403 }
+      )
+      }
+    }
+
     if (DEBUG_MIDDLEWARE) {
       console.log('🔐 Middleware auth check:', {
         path: pathname,
@@ -297,6 +320,18 @@ export async function middleware(request: NextRequest) {
   }
   
   // Add security headers to all responses
+  if (
+    tokenDemoExpired &&
+    !pathname.startsWith('/api') &&
+    pathname !== '/' &&
+    pathname !== '/register-business'
+  ) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    url.searchParams.set('demoExpired', '1')
+    return NextResponse.redirect(url)
+  }
+
   const response = NextResponse.next()
   if (token && !DISABLE_IDLE_TIMEOUT) {
     applyIdleActivityCookie(response)

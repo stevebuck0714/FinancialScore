@@ -945,6 +945,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         }
 
         const customerRecords = Array.isArray(customerData?.records) ? customerData.records : [];
+        const productRecords = Array.isArray(productData?.records) ? productData.records : [];
         const customerSummaryTop = Array.isArray((customerData as any)?.summary?.topCustomers)
           ? (customerData as any).summary.topCustomers
           : [];

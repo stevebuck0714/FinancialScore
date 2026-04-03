@@ -6,6 +6,7 @@ import { getTrustDurationDays, validateTrustedDevice } from '@/lib/trusted-devic
 import { getMfaAppScope } from '@/lib/mfa-app-scope';
 import { clearMfaDeviceCookie, getMfaDeviceCookieName, getMfaDeviceCookieOptions } from '@/lib/mfa-device-cookie';
 import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
+import { isDemoCompany, isDemoExpired, shouldBypassMfaForDemo } from '@/lib/demo-access';
 
 const DEV_DEFAULT_COMPANY_NAME = 'test atlantic precision CSI';
 
@@ -69,11 +70,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const demoCompany = isDemoCompany(user.company);
+    const demoExpired = isDemoExpired(user.company);
+    if (demoExpired) {
+      await auditLoginFailed(normalizedEmail, 'Demo period expired');
+      return NextResponse.json(
+        { error: 'Your 7-day demo has expired. Please upgrade to continue.' },
+        { status: 403 }
+      );
+    }
+
     // MFA policy:
     // - Production runtime should require MFA.
     // - Dev/staging should allow disabling MFA for simple access/testing.
     const isVercelProd = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
-    const requireMfa = isVercelProd && process.env.DISABLE_MFA !== 'true' && process.env.DISABLE_MFA_DEV !== 'true';
+    const requireMfa =
+      isVercelProd &&
+      process.env.DISABLE_MFA !== 'true' &&
+      process.env.DISABLE_MFA_DEV !== 'true' &&
+      !shouldBypassMfaForDemo(user.company);
     const appScope = getMfaAppScope(request);
 
     let legacyTokenToPromote: string | null = null;
@@ -224,6 +239,9 @@ export async function POST(request: NextRequest) {
         isPrimaryContact: user.isPrimaryContact,
         consultantType: consultant?.type,
         consultantCompanyName: consultant?.companyName,
+        demoCompany,
+        demoExpired,
+        demoExpiresAt: user.company?.nextBillingDate?.toISOString() || null,
         accessibleCompanies,
       },
       activeCompanyId,

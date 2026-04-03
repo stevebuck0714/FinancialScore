@@ -26,6 +26,7 @@ const LineChart = dynamic(() => import('./components/charts/Charts').then(mod =>
 const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 const CompanyDetailsModal = dynamic(() => import('./components/modals/CompanyDetailsModal'), { ssr: false });
 const AddCompanyModal = dynamic(() => import('./components/modals/AddCompanyModal'), { ssr: false });
+const UpgradeRequestModal = dynamic(() => import('./components/modals/UpgradeRequestModal'), { ssr: false });
 const DataReviewTab = dynamic(() => import('./components/dashboard/DataReviewTab'), { ssr: false });
 const TeamManagementTab = dynamic(() => import('./components/dashboard/TeamManagementTab'), { ssr: false });
 const ProfileTab = dynamic(() => import('./components/dashboard/ProfileTab'), { ssr: false });
@@ -703,6 +704,42 @@ function FinancialScorePage() {
     () => (Array.isArray(companies) ? companies.find((c: any) => c.id === selectedCompanyId) : undefined),
     [companies, selectedCompanyId]
   );
+  const demoAccessState = useMemo(() => {
+    const userDemoCompany = Boolean(currentUser?.demoCompany);
+    const userDemoExpired = Boolean(currentUser?.demoExpired);
+    const selectedCompanyStatus = String(selectedCompany?.subscriptionStatus || '').toLowerCase();
+    const selectedAffiliateCode = String(selectedCompany?.affiliateCode || '').trim().toUpperCase();
+    const selectedIsDemo =
+      selectedCompanyStatus.startsWith('demo') || selectedAffiliateCode === 'SEVENDAYDEMO';
+    const isDemoCompany = userDemoCompany || selectedIsDemo;
+
+    if (!isDemoCompany) {
+      return {
+        isDemoCompany: false,
+        isExpired: false,
+        expiresAtIso: null as string | null,
+        daysLeft: null as number | null,
+      };
+    }
+
+    const expiresAtIso = String(
+      selectedCompany?.nextBillingDate || currentUser?.demoExpiresAt || ''
+    ).trim();
+    const expiresAtMs = expiresAtIso ? Date.parse(expiresAtIso) : NaN;
+    const expiredByDate = Number.isFinite(expiresAtMs) && Date.now() > expiresAtMs;
+    const isExpired =
+      userDemoExpired || selectedCompanyStatus === 'demo_expired' || Boolean(expiredByDate);
+    const daysLeft = Number.isFinite(expiresAtMs)
+      ? Math.max(0, Math.ceil((expiresAtMs - Date.now()) / (24 * 60 * 60 * 1000)))
+      : null;
+
+    return {
+      isDemoCompany: true,
+      isExpired,
+      expiresAtIso: expiresAtIso || null,
+      daysLeft,
+    };
+  }, [currentUser, selectedCompany]);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -822,6 +859,7 @@ function FinancialScorePage() {
   // State - Company Details
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false);
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
+  const [showUpgradeRequestModal, setShowUpgradeRequestModal] = useState(false);
   const [editingCompanyId, setEditingCompanyId] = useState('');
   const [companyAddressStreet, setCompanyAddressStreet] = useState('');
   const [companyAddressCity, setCompanyAddressCity] = useState('');
@@ -1312,7 +1350,7 @@ function FinancialScorePage() {
         sessionStorage.removeItem('pendingLogin');
       }
     }
-  }, []);
+  }, [isLoggedIn]);
 
   // Handle MFA enrollment after registration
   useEffect(() => {
@@ -3139,7 +3177,17 @@ function FinancialScorePage() {
     const isMockSource = sourceLabel.includes('mock');
     const approvedSources = ['quickbooks', 'quickbooks_desktop', 'xero', 'sage', 'sage_intacct', 'infor', 'infor_m3', 'dynamics', 'dynamics365', 'csv_trial_balance'];
     const isApprovedSource = approvedSources.some((source) => sourceLabel.includes(source));
-    const isStrictReady = hasCompanyFinancialData && isApprovedSource && !isMockSource;
+    const companySubscriptionStatus = String(selectedCompany?.subscriptionStatus || '').toLowerCase();
+    const companyAffiliateCode = String(selectedCompany?.affiliateCode || '').trim().toUpperCase();
+    const isDemoCompanyContext =
+      companySubscriptionStatus.startsWith('demo') ||
+      companyAffiliateCode === 'SEVENDAYDEMO' ||
+      Boolean((currentUser as any)?.demoCompany);
+    const isDemoExpiredContext =
+      companySubscriptionStatus === 'demo_expired' || Boolean((currentUser as any)?.demoExpired);
+    const isStrictReady =
+      hasCompanyFinancialData &&
+      ((isApprovedSource && !isMockSource) || (isDemoCompanyContext && !isDemoExpiredContext));
 
     if (!isStrictReady) {
       setSdeExecutiveSummaryApi(null);
@@ -3187,7 +3235,15 @@ function FinancialScorePage() {
         if (isStaleRequest()) return;
         setSdeRecommendationsLoading(false);
       });
-  }, [selectedCompanyId, loadedMonthlyData, latestFinancialSource]);
+  }, [
+    selectedCompanyId,
+    loadedMonthlyData,
+    latestFinancialSource,
+    selectedCompany?.subscriptionStatus,
+    selectedCompany?.affiliateCode,
+    currentUser?.demoCompany,
+    currentUser?.demoExpired,
+  ]);
 
   // Load customer-level operational sales for Customer Quality tab
   useEffect(() => {
@@ -3670,9 +3726,20 @@ function FinancialScorePage() {
     if (typeof window === 'undefined') return;
     const urlParams = new URLSearchParams(window.location.search);
     const view = urlParams.get('view');
+    const mode = urlParams.get('mode');
+    const affiliate = urlParams.get('affiliate');
     const tab = urlParams.get('tab');
     const success = urlParams.get('success');
     const error = urlParams.get('error');
+    const demoExpired = urlParams.get('demoExpired');
+
+    if (mode === 'register' && !isLoggedIn) {
+      const registerParams = new URLSearchParams();
+      if (affiliate) registerParams.set('affiliate', affiliate);
+      const target = `/register-business${registerParams.toString() ? `?${registerParams.toString()}` : ''}`;
+      window.location.replace(target);
+      return;
+    }
 
     // Set view if specified in URL.
     if (view && NAVIGABLE_VIEWS.has(view)) {
@@ -3715,6 +3782,14 @@ function FinancialScorePage() {
       alert(`Xero authorization was denied or failed${details ? ': ' + details : ''}. Please try again.`);
       // Clean URL
       window.history.replaceState({}, '', window.location.pathname + '?view=admin');
+    }
+
+    if (demoExpired === '1') {
+      setLoginError('Your 7-day demo has expired. Please contact us to upgrade and continue.');
+      const cleaned = new URLSearchParams(window.location.search);
+      cleaned.delete('demoExpired');
+      const nextQuery = cleaned.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}`);
     }
   }, []);
 
@@ -4866,7 +4941,11 @@ function FinancialScorePage() {
         let loginErrorMessage = 'Invalid email or password';
         try {
           const errorData = await loginResponse.json();
-          if (loginResponse.status >= 500) {
+          const normalizedError = String(errorData?.error || '').toLowerCase();
+          if (loginResponse.status === 403 && normalizedError.includes('demo')) {
+            loginErrorMessage =
+              'Your 7-day demo has expired. Please contact us to upgrade and continue.';
+          } else if (loginResponse.status >= 500) {
             loginErrorMessage =
               'Login service is temporarily unavailable. Please try again in a moment.';
           } else if (typeof errorData?.error === 'string' && errorData.error.trim()) {
@@ -5405,6 +5484,10 @@ function FinancialScorePage() {
     localStorage.removeItem('fs_selectedCompanyId');
     setSiteAdminViewingAs(null);
     setSiteAdminSessionUser(null);
+  };
+
+  const handleUpgradeNow = () => {
+    setShowUpgradeRequestModal(true);
   };
 
   const exitSiteAdminPreview = () => {
@@ -8559,6 +8642,16 @@ function FinancialScorePage() {
     );
   }
 
+  const showDemoBanner = currentUser?.userType === 'company' && demoAccessState.isDemoCompany;
+  const headerHeight = 78;
+  const demoBannerHeight = showDemoBanner ? 44 : 0;
+  const contentTopOffset = showDemoBanner ? 0 : headerHeight;
+  const contentHeightOffset = headerHeight + demoBannerHeight;
+  const formattedDemoExpiry =
+    demoAccessState.expiresAtIso && Number.isFinite(Date.parse(demoAccessState.expiresAtIso))
+      ? new Date(demoAccessState.expiresAtIso).toLocaleDateString('en-US')
+      : null;
+
   return (
     <div className="app-shell" style={{ height: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Toaster />
@@ -8619,8 +8712,60 @@ function FinancialScorePage() {
         />
       </div>
 
+      {showDemoBanner && (
+        <div
+          style={{
+            marginTop: `${headerHeight}px`,
+            height: `${demoBannerHeight}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            padding: '6px 16px',
+            borderBottom: '1px solid #e2e8f0',
+            background: demoAccessState.isExpired ? '#fef2f2' : '#eff6ff',
+            color: demoAccessState.isExpired ? '#991b1b' : '#1e3a8a',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div style={{ fontSize: '13px', fontWeight: 600 }}>
+            {demoAccessState.isExpired
+              ? 'Demo expired. Upgrade now to restore full access.'
+              : `7-day demo active${
+                  typeof demoAccessState.daysLeft === 'number'
+                    ? ` - ${demoAccessState.daysLeft} day${demoAccessState.daysLeft === 1 ? '' : 's'} left`
+                    : ''
+                }${formattedDemoExpiry ? ` (expires ${formattedDemoExpiry})` : ''}.`}
+          </div>
+          <button
+            onClick={handleUpgradeNow}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '8px',
+              border: 'none',
+              background: demoAccessState.isExpired ? '#dc2626' : '#2563eb',
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Upgrade now
+          </button>
+        </div>
+      )}
+
       {/* Main Content Area with Sidebar */}
-      <div className="app-shell-content" style={{ display: 'flex', overflow: 'hidden', marginTop: '70px', height: 'calc(100vh - 70px)' }}>
+      <div
+        className="app-shell-content"
+        style={{
+          display: 'flex',
+          overflow: 'hidden',
+          marginTop: `${contentTopOffset}px`,
+          height: `calc(100vh - ${contentHeightOffset}px)`,
+        }}
+      >
         {/* Left Navigation Sidebar - Not for Site Admin */}
         {currentUser?.role !== 'siteadmin' && !(currentUser?.userType === 'assessment') && (
         <aside className="app-left-sidebar" style={{ 
@@ -12978,6 +13123,15 @@ function FinancialScorePage() {
       )}
 
       {/* Company Details Modal */}
+      <UpgradeRequestModal
+        show={showUpgradeRequestModal}
+        onClose={() => setShowUpgradeRequestModal(false)}
+        companyId={selectedCompanyId || currentUser?.companyId || undefined}
+        defaultCompanyName={companyName || (selectedCompany as any)?.name || ''}
+        defaultContactName={currentUser?.name || ''}
+        defaultContactEmail={currentUser?.email || ''}
+      />
+
       <CompanyDetailsModal
         show={showCompanyDetailsModal}
         onClose={() => setShowCompanyDetailsModal(false)}
@@ -14266,8 +14420,17 @@ function FinancialScorePage() {
             const sdeIsMockSource = sdeSourceLabel.includes('mock');
             const sdeApprovedSources = ['quickbooks', 'quickbooks_desktop', 'xero', 'sage', 'sage_intacct', 'infor', 'infor_m3', 'dynamics', 'dynamics365', 'csv_trial_balance'];
             const sdeIsApprovedSource = sdeApprovedSources.some((source) => sdeSourceLabel.includes(source));
+            const sdeCompanySubscriptionStatus = String(company?.subscriptionStatus || '').toLowerCase();
+            const sdeCompanyAffiliateCode = String(company?.affiliateCode || '').trim().toUpperCase();
+            const sdeIsDemoContext =
+              sdeCompanySubscriptionStatus.startsWith('demo') ||
+              sdeCompanyAffiliateCode === 'SEVENDAYDEMO' ||
+              Boolean((currentUser as any)?.demoCompany);
+            const sdeIsDemoExpired = sdeCompanySubscriptionStatus === 'demo_expired' || Boolean((currentUser as any)?.demoExpired);
             const sdeHasRealOperationalData = Boolean(company?.hasRealOperationalData) && !Boolean(company?.forceOperationalMockData);
-            const sdeStrictReady = sdeHasCompanyFinancialData && sdeIsApprovedSource && !sdeIsMockSource;
+            const sdeStrictReady =
+              sdeHasCompanyFinancialData &&
+              ((sdeIsApprovedSource && !sdeIsMockSource) || (sdeIsDemoContext && !sdeIsDemoExpired));
 
             const cashFlowQualitySeries = (() => {
               const recent = monthly.slice(-36);
@@ -14575,6 +14738,8 @@ function FinancialScorePage() {
                       <strong>Financial data:</strong> {sdeHasCompanyFinancialData ? 'Loaded' : 'Not loaded'} | <strong>Financial source:</strong> {latestFinancialSource || 'Unknown'}
                       <br />
                       <strong>Source approved for SDE:</strong> {sdeIsApprovedSource ? 'Yes' : 'No'}
+                      <br />
+                      <strong>Demo override:</strong> {sdeIsDemoContext && !sdeIsDemoExpired ? 'Enabled (demo company)' : 'Not enabled'}
                       <br />
                       <strong>Operational data:</strong> Optional for future enrichment (not required for current SDE scoring)
                       <br />

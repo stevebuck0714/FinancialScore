@@ -2,6 +2,7 @@ import type { NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { verifyPassword } from './lib/auth';
 import prisma from './lib/prisma';
+import { isDemoCompany, isDemoExpired } from './lib/demo-access';
 
 export const authConfig: NextAuthConfig = {
   trustHost: true,
@@ -60,6 +61,9 @@ export const authConfig: NextAuthConfig = {
             companyRole: user.companyRole
           });
 
+          const demoCompany = isDemoCompany(user.company);
+          const demoExpired = isDemoExpired(user.company);
+
           return {
             id: user.id,
             email: user.email,
@@ -70,7 +74,10 @@ export const authConfig: NextAuthConfig = {
             companyId: user.companyId,
             consultantId: consultantId,
             isPrimaryContact: user.isPrimaryContact,
-            mfaEnabled: user.mfaEnabled // Pass MFA status to session
+            mfaEnabled: user.mfaEnabled, // Pass MFA status to session
+            demoCompany,
+            demoExpired,
+            demoExpiresAt: user.company?.nextBillingDate?.toISOString() || null,
           };
         } catch (error) {
           console.error('❌ NextAuth authorize error:', error);
@@ -90,6 +97,9 @@ export const authConfig: NextAuthConfig = {
         token.consultantId = user.consultantId;
         token.isPrimaryContact = user.isPrimaryContact;
         token.mfaEnabled = user.mfaEnabled;
+        token.demoCompany = user.demoCompany;
+        token.demoExpired = user.demoExpired;
+        token.demoExpiresAt = user.demoExpiresAt;
       }
       return token;
     },
@@ -103,6 +113,9 @@ export const authConfig: NextAuthConfig = {
         session.user.consultantId = token.consultantId as string | undefined;
         session.user.isPrimaryContact = token.isPrimaryContact as boolean | undefined;
         session.user.mfaEnabled = token.mfaEnabled as boolean | undefined;
+        session.user.demoCompany = token.demoCompany as boolean | undefined;
+        session.user.demoExpired = token.demoExpired as boolean | undefined;
+        session.user.demoExpiresAt = token.demoExpiresAt as string | undefined;
       }
       return session;
     },

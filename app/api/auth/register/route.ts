@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { validatePassword } from '@/lib/password-validator';
 import { sendConsultantRegistrationNotification, sendBusinessRegistrationNotification } from '@/lib/email';
+import { getDemoAffiliateCode, getDemoDurationDays, getDemoExpiryDate, isDemoAffiliateCode } from '@/lib/demo-access';
+import { provisionDemoWorkspace } from '@/lib/demo-provisioning';
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,14 +51,29 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Get pricing - either from affiliate code or default
+    const normalizedAffiliateCode = String(affiliateCode || '').trim().toUpperCase();
+    const isDemoSignup = isDemoAffiliateCode(normalizedAffiliateCode);
+    const demoStartsAt = isDemoSignup ? new Date() : null;
+    const demoExpiresAt = demoStartsAt ? getDemoExpiryDate(demoStartsAt) : null;
+
+    // Get pricing - either from affiliate code/demo code or default
     let pricingToUse = null;
     let resolvedAffiliateId = affiliateId;
-    
+
+    if (isDemoSignup) {
+      pricingToUse = {
+        businessMonthlyPrice: 0,
+        businessQuarterlyPrice: 0,
+        businessAnnualPrice: 0,
+        businessSetupFee: 0,
+      };
+      resolvedAffiliateId = null;
+    }
+
     // Look up affiliate code if provided (with or without affiliateId)
-    if (affiliateCode) {
+    if (normalizedAffiliateCode && !isDemoSignup) {
       const whereClause: any = {
-        code: affiliateCode.toUpperCase(),
+        code: normalizedAffiliateCode,
         isActive: true
       };
       
@@ -138,7 +155,7 @@ export async function POST(request: NextRequest) {
           quarterly: pricingToUse?.businessQuarterlyPrice ?? 500,
           annual: pricingToUse?.businessAnnualPrice ?? 1750,
           setupFee: pricingToUse?.businessSetupFee ?? 0,
-          requiresPayment: !affiliateCode || (pricingToUse?.businessMonthlyPrice ?? 195) > 0 ||
+          requiresPayment: !normalizedAffiliateCode || (pricingToUse?.businessMonthlyPrice ?? 195) > 0 ||
                           (pricingToUse?.businessQuarterlyPrice ?? 500) > 0 ||
                           (pricingToUse?.businessAnnualPrice ?? 1750) > 0 ||
                           (pricingToUse?.businessSetupFee ?? 0) > 0
@@ -155,7 +172,14 @@ export async function POST(request: NextRequest) {
           subscriptionQuarterlyPrice: finalPricing.quarterly,
           subscriptionAnnualPrice: finalPricing.annual,
           subscriptionSetupFee: finalPricing.setupFee,
-          subscriptionStatus: finalPricing.requiresPayment ? "active" : "free",
+          subscriptionStatus: isDemoSignup
+            ? 'demo_active'
+            : finalPricing.requiresPayment
+              ? "active"
+              : "free",
+          subscriptionStartDate: isDemoSignup ? demoStartsAt : undefined,
+          nextBillingDate: isDemoSignup ? demoExpiresAt : undefined,
+          affiliateCode: normalizedAffiliateCode || undefined,
           userDefinedAllocations: {
             dataRoom: {
               enabledByAdmin: false,
@@ -168,6 +192,15 @@ export async function POST(request: NextRequest) {
                 status: 'inactive',
               },
             },
+            demo: isDemoSignup
+              ? {
+                  enabled: true,
+                  affiliateCode: getDemoAffiliateCode(),
+                  startedAt: demoStartsAt?.toISOString(),
+                  expiresAt: demoExpiresAt?.toISOString(),
+                  durationDays: getDemoDurationDays(),
+                }
+              : undefined,
           },
           // DO NOT set selectedSubscriptionPlan - they must pay first
         };
@@ -193,11 +226,11 @@ export async function POST(request: NextRequest) {
         console.log('✅ Business user registered with companyRole:', updatedUser.companyRole);
         
         // If affiliate code was used, increment its usage counter
-        if (resolvedAffiliateId && affiliateCode) {
+        if (resolvedAffiliateId && normalizedAffiliateCode) {
           await tx.affiliateCode.updateMany({
             where: {
               affiliateId: resolvedAffiliateId,
-              code: affiliateCode.toUpperCase()
+              code: normalizedAffiliateCode
             },
             data: {
               currentUses: {
@@ -207,7 +240,25 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        return { user: updatedUser, consultant: null, company };
+        if (isDemoSignup) {
+          await tx.auditLog.create({
+            data: {
+              userId: updatedUser.id,
+              userEmail: updatedUser.email,
+              action: 'DEMO_SIGNUP_COMPLETED',
+              entityType: 'Company',
+              entityId: company.id,
+              changes: {
+                affiliateCode: getDemoAffiliateCode(),
+                demoStartedAt: demoStartsAt?.toISOString(),
+                demoExpiresAt: demoExpiresAt?.toISOString(),
+                durationDays: getDemoDurationDays(),
+              },
+            },
+          });
+        }
+
+        return { user: updatedUser, consultant: null, company, isDemoSignup };
       }
 
       // Consultant registration
@@ -245,8 +296,26 @@ export async function POST(request: NextRequest) {
         data: { consultantId: consultant.id }
       });
 
-      return { user, consultant, company: null };
+      return { user, consultant, company: null, isDemoSignup: false };
     });
+
+    // Provision seeded financial + operational data for active demo signups.
+    if (type === 'business' && (result as any).isDemoSignup && result.company?.id) {
+      const autoProvisionEnabled = process.env.DEMO_AUTOPROVISION_ENABLED !== '0';
+      if (autoProvisionEnabled) {
+        try {
+          await provisionDemoWorkspace({
+            companyId: result.company.id,
+            userId: result.user.id,
+            userEmail: result.user.email,
+            companyName: result.company.name,
+          });
+        } catch (provisionError) {
+          console.error('❌ Demo workspace provisioning failed:', provisionError);
+          // Demo signup must still succeed even if seed job has a transient failure.
+        }
+      }
+    }
 
     // Send email notification to support (don't block the response on this)
     try {
@@ -262,7 +331,7 @@ export async function POST(request: NextRequest) {
           businessPhone: phone,
           industry: undefined, // Not collected during registration
           consultantName: undefined, // Self-registered businesses don't have a consultant yet
-          affiliateCode: affiliateCode ? affiliateCode.toUpperCase() : undefined
+          affiliateCode: normalizedAffiliateCode || undefined
         });
       } else {
         // Consultant registration notification
@@ -294,7 +363,8 @@ export async function POST(request: NextRequest) {
         companyId: result.company?.id || null,
         consultantType: result.consultant?.type || null,
         consultantCompanyName: result.consultant?.companyName || null,
-        isPrimaryContact: result.user.isPrimaryContact
+        isPrimaryContact: result.user.isPrimaryContact,
+        isDemoSignup: Boolean((result as any).isDemoSignup),
       }
     }, { status: 201 });
   } catch (error) {

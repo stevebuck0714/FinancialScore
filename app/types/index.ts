@@ -172,7 +172,11 @@ export interface Company {
   subscriptionQuarterlyPrice?: number;
   subscriptionAnnualPrice?: number;
   subscriptionSetupFee?: number;
+  subscriptionStatus?: string;
+  subscriptionStartDate?: string | null;
+  nextBillingDate?: string | null;
   selectedSubscriptionPlan?: string | null;
+  affiliateCode?: string | null;
   tier1SupportOwner?: 'CORELYTICS' | 'CONSULTANT';
   tier1SupportConsultantId?: string | null;
   tier1SupportContactEmail?: string | null;
@@ -271,6 +275,9 @@ export interface User {
   consultantId?: string;
   consultantType?: string;
   consultantCompanyName?: string;
+  demoCompany?: boolean;
+  demoExpired?: boolean;
+  demoExpiresAt?: string | null;
   role: 'consultant' | 'user' | 'siteadmin';
   userType?: 'company' | 'assessment'; // company = management team, assessment = fills questionnaire
   companyRole?: 'user' | 'admin'; // admin = company admin with full access, user = restricted access
