@@ -9,6 +9,9 @@ const DISABLE_AUTH_SIGNIN =
   process.env.NODE_ENV !== 'production' &&
   process.env.DISABLE_AUTH_SIGNIN === '1'
 const DEBUG_MIDDLEWARE = process.env.DEBUG_MIDDLEWARE === '1'
+const AUTH_JWT_SECRET = String(
+  process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || ''
+).trim()
 const AUTH_COOKIE_NAMES = [
   'next-auth.session-token',
   '__Secure-next-auth.session-token',
@@ -77,19 +80,30 @@ setInterval(() => {
 }, 5 * 60 * 1000)
 
 async function resolveAuthToken(request: NextRequest) {
-  let token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  })
+  if (!AUTH_JWT_SECRET) return null
+
+  let token = null
+  try {
+    token = await getToken({
+      req: request,
+      secret: AUTH_JWT_SECRET,
+    })
+  } catch {
+    token = null
+  }
 
   if (token) return token
 
   for (const cookieName of AUTH_COOKIE_NAMES) {
-    token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET,
-      cookieName,
-    })
+    try {
+      token = await getToken({
+        req: request,
+        secret: AUTH_JWT_SECRET,
+        cookieName,
+      })
+    } catch {
+      token = null
+    }
     if (token) return token
   }
 
@@ -235,7 +249,7 @@ export async function middleware(request: NextRequest) {
       console.log('🔐 Middleware auth check:', {
         path: pathname,
         hasToken: !!token,
-        hasSecret: !!process.env.NEXTAUTH_SECRET,
+        hasSecret: !!AUTH_JWT_SECRET,
         cookies: request.cookies.getAll().map(c => c.name),
         tokenEmail: token?.email || 'none'
       })

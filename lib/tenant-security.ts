@@ -61,12 +61,38 @@ export async function getUserContext(): Promise<UserContext | null> {
   
   const userId = headersList.get('x-user-id')
   const email = headersList.get('x-user-email')
-  const role = normalizeRole(headersList.get('x-user-role'))
-  const companyId = headersList.get('x-active-company-id') || headersList.get('x-company-id')
-  const consultantId = headersList.get('x-consultant-id')
+  const roleFromHeader = normalizeRole(headersList.get('x-user-role'))
+  const activeCompanyId = headersList.get('x-active-company-id')
+  const companyIdFromHeader = headersList.get('x-company-id')
+  const consultantIdFromHeader = headersList.get('x-consultant-id')
   
-  if (!userId || !email || !role) {
+  if (!userId || !email) {
     return null
+  }
+
+  let role = roleFromHeader
+  let companyId = activeCompanyId || companyIdFromHeader
+  let consultantId = consultantIdFromHeader
+
+  // Backward-compatible fallback: older JWTs may miss role/company claims.
+  // Hydrate from DB so authenticated users do not get rejected by strict header checks.
+  if (!role) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        role: true,
+        companyId: true,
+        consultantId: true,
+      },
+    })
+
+    const fallbackRole = normalizeRole(user?.role || null)
+    if (!fallbackRole) {
+      return null
+    }
+    role = fallbackRole
+    companyId = companyId || user?.companyId || null
+    consultantId = consultantId || user?.consultantId || null
   }
   
   return {
