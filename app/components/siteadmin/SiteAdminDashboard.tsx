@@ -5890,7 +5890,64 @@ export default function SiteAdminDashboard(props: any) {
                                                     ? 'Use to rebuild historical daily snapshots day-by-day (most reliable for history fixes).'
                                                     : 'Advanced: refreshes a broad transaction window, but may not replay each day discretely.'}
                                               </div>
-                                              {(operationalSettings.syncMode === 'business_day_backfill' || operationalSettings.syncMode === 'backfill') && (
+                                              <label
+                                                style={{
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  gap: '8px',
+                                                  fontSize: '12px',
+                                                  color: '#334155',
+                                                  gridColumn: '1 / -1',
+                                                }}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={Boolean(operationalSettings.useCustomMonthRange)}
+                                                  onChange={(e) =>
+                                                    setCompanyOperationalSettings(businessCompany.id, {
+                                                      useCustomMonthRange: e.target.checked,
+                                                    })
+                                                  }
+                                                />
+                                                <span style={{ fontWeight: 600 }}>
+                                                  Use Custom Month Range (chunk large history loads)
+                                                </span>
+                                              </label>
+                                              {operationalSettings.useCustomMonthRange && (
+                                                <>
+                                                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                    <span style={{ fontWeight: 600 }}>Start Month</span>
+                                                    <input
+                                                      type="month"
+                                                      value={operationalSettings.customStartMonth}
+                                                      onChange={(e) =>
+                                                        setCompanyOperationalSettings(businessCompany.id, {
+                                                          customStartMonth: e.target.value,
+                                                        })
+                                                      }
+                                                      style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                    />
+                                                  </label>
+                                                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                    <span style={{ fontWeight: 600 }}>End Month</span>
+                                                    <input
+                                                      type="month"
+                                                      value={operationalSettings.customEndMonth}
+                                                      onChange={(e) =>
+                                                        setCompanyOperationalSettings(businessCompany.id, {
+                                                          customEndMonth: e.target.value,
+                                                        })
+                                                      }
+                                                      style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                    />
+                                                  </label>
+                                                  <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#64748b', lineHeight: 1.35 }}>
+                                                    Runs only the selected month band. Use this to split large 36-month initial loads into smaller chunks.
+                                                  </div>
+                                                </>
+                                              )}
+                                              {(operationalSettings.syncMode === 'business_day_backfill' || operationalSettings.syncMode === 'backfill') &&
+                                                !operationalSettings.useCustomMonthRange && (
                                                 <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                                   <span style={{ fontWeight: 600 }}>Backfill Months</span>
                                                   <input
@@ -5907,7 +5964,7 @@ export default function SiteAdminDashboard(props: any) {
                                                   />
                                                 </label>
                                               )}
-                                              {operationalSettings.syncMode === 'daily_overlap' && (
+                                              {operationalSettings.syncMode === 'daily_overlap' && !operationalSettings.useCustomMonthRange && (
                                                 <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                                   <span style={{ fontWeight: 600 }}>Overlap Days</span>
                                                   <input
