@@ -1367,7 +1367,18 @@ function pickString(record: Record<string, unknown>, keys: string[]): string | n
 
 const CUSTOMER_NAME_KEYS = ['customerName', 'name', 'Name', 'CUNM', 'customer'];
 const CUSTOMER_ID_KEYS = ['customerId', 'CustNum', 'CUNO', 'customerNumber', 'customerNo'];
-const VENDOR_NAME_KEYS = ['vendorName', 'name', 'Name', 'VendName', 'VadName', 'SUNM', 'vendor', 'supplier'];
+const VENDOR_NAME_KEYS = [
+  'vendorName',
+  'name',
+  'Name',
+  'VendName',
+  'VendaddrName',
+  'UbVendName',
+  'VadName',
+  'SUNM',
+  'vendor',
+  'supplier',
+];
 const VENDOR_ID_KEYS = ['vendorId', 'VendNum', 'supplierId', 'SUNO', 'vendorNo'];
 const AR_INVOICE_NO_KEYS = ['invoiceNo', 'invoiceNumber', 'InvNum', 'IVNO', 'voucher', 'ApplyToInvNum', 'DerApplyToInvNum'];
 const AR_AMOUNT_DUE_KEYS = [
@@ -3738,6 +3749,8 @@ async function saveAPOpenBills(
         'openAmount',
         'balance',
         'InvAmt',
+        'DerAmtBal',
+        'UbOpening',
         'CUAM',
         'ACAM',
       ]);
