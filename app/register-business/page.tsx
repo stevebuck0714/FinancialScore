@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 
-export default function RegisterBusinessWelcome() {
+function RegisterBusinessWelcomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialAffiliateCodeFromUrl = String(searchParams.get('affiliate') || '').trim().toUpperCase();
@@ -650,5 +650,13 @@ export default function RegisterBusinessWelcome() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegisterBusinessWelcome() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterBusinessWelcomeContent />
+    </Suspense>
   );
 }
