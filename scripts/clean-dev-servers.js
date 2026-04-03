@@ -30,9 +30,11 @@ function killProcessOnPort(port) {
       for (const line of lines) {
         const parts = line.trim().split(/\s+/);
         if (parts.length < 5) continue;
+        const localAddress = String(parts[1] || '');
         const state = String(parts[3] || '').toUpperCase();
         const pid = String(parts[4] || '').trim();
         const pidAsNumber = Number(pid);
+        if (!localAddress.endsWith(`:${port}`)) continue;
         if (state !== 'LISTENING') continue;
         if (!Number.isFinite(pidAsNumber) || pidAsNumber <= 0) continue;
         pids.add(pidAsNumber);

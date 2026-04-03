@@ -4366,6 +4366,112 @@ export async function syncInforM3OperationalData(
   const debugSync = process.env.SYNC_DEBUG === '1';
   const errors: string[] = [];
   let recordsCreated = 0;
+  const syncStartedAtMs = Date.now();
+  let requestCount = 0;
+  let successRequestCount = 0;
+  let failedRequestCount = 0;
+  let requestDurationTotalMs = 0;
+  let bufferedApiSyncLogWriteFailures = 0;
+  let apiSyncLogFlushCount = 0;
+  let apiSyncLogRowsFlushed = 0;
+  let apiSyncLogBackpressureFlushCount = 0;
+  const adaptivePressureEnabled = process.env.SYNC_ADAPTIVE_PRESSURE === '1';
+  const adaptivePressureWindowRaw = Number(process.env.SYNC_ADAPTIVE_PRESSURE_WINDOW || 25);
+  const adaptivePressureWindow =
+    Number.isFinite(adaptivePressureWindowRaw) && adaptivePressureWindowRaw >= 5
+      ? Math.floor(adaptivePressureWindowRaw)
+      : 25;
+  const adaptiveSlowRequestMsRaw = Number(process.env.SYNC_ADAPTIVE_SLOW_REQUEST_MS || 45000);
+  const adaptiveSlowRequestMs =
+    Number.isFinite(adaptiveSlowRequestMsRaw) && adaptiveSlowRequestMsRaw >= 5000
+      ? Math.floor(adaptiveSlowRequestMsRaw)
+      : 45000;
+  const adaptiveRecoverRequestMsRaw = Number(process.env.SYNC_ADAPTIVE_RECOVER_REQUEST_MS || 20000);
+  const adaptiveRecoverRequestMs =
+    Number.isFinite(adaptiveRecoverRequestMsRaw) && adaptiveRecoverRequestMsRaw >= 2000
+      ? Math.floor(adaptiveRecoverRequestMsRaw)
+      : 20000;
+  const adaptiveHighErrorRateRaw = Number(process.env.SYNC_ADAPTIVE_HIGH_ERROR_RATE || 0.25);
+  const adaptiveHighErrorRate =
+    Number.isFinite(adaptiveHighErrorRateRaw) && adaptiveHighErrorRateRaw > 0 && adaptiveHighErrorRateRaw < 1
+      ? adaptiveHighErrorRateRaw
+      : 0.25;
+  const adaptiveLowErrorRateRaw = Number(process.env.SYNC_ADAPTIVE_LOW_ERROR_RATE || 0.1);
+  const adaptiveLowErrorRate =
+    Number.isFinite(adaptiveLowErrorRateRaw) && adaptiveLowErrorRateRaw >= 0 && adaptiveLowErrorRateRaw < 1
+      ? adaptiveLowErrorRateRaw
+      : 0.1;
+  const adaptiveMinPageScaleRaw = Number(process.env.SYNC_ADAPTIVE_MIN_PAGE_SCALE || 0.25);
+  const adaptiveMinPageScale =
+    Number.isFinite(adaptiveMinPageScaleRaw) && adaptiveMinPageScaleRaw > 0 && adaptiveMinPageScaleRaw <= 1
+      ? adaptiveMinPageScaleRaw
+      : 0.25;
+  const adaptiveMaxTimeoutScaleRaw = Number(process.env.SYNC_ADAPTIVE_MAX_TIMEOUT_SCALE || 1.75);
+  const adaptiveMaxTimeoutScale =
+    Number.isFinite(adaptiveMaxTimeoutScaleRaw) && adaptiveMaxTimeoutScaleRaw >= 1
+      ? adaptiveMaxTimeoutScaleRaw
+      : 1.75;
+  let adaptivePageScale = 1;
+  let adaptiveTimeoutScale = 1;
+  let adaptiveThrottleAdjustments = 0;
+  let adaptiveRecoveryAdjustments = 0;
+  const recentPressureSamples: Array<{ durationMs: number; failed: boolean }> = [];
+  const syncTypeStats = new Map<
+    string,
+    { requestCount: number; successCount: number; errorCount: number; durationMs: number; recordsImported: number }
+  >();
+  const bufferedApiSyncLogs: Prisma.ApiSyncLogCreateManyInput[] = [];
+  const apiSyncLogFlushSizeRaw = Number(process.env.SYNC_API_LOG_FLUSH_SIZE || 20);
+  const apiSyncLogFlushSize = Number.isFinite(apiSyncLogFlushSizeRaw) && apiSyncLogFlushSizeRaw > 0
+    ? Math.floor(apiSyncLogFlushSizeRaw)
+    : 20;
+  const apiSyncLogMaxBufferRaw = Number(process.env.SYNC_API_LOG_MAX_BUFFER || 200);
+  const apiSyncLogMaxBuffer = Number.isFinite(apiSyncLogMaxBufferRaw) && apiSyncLogMaxBufferRaw >= apiSyncLogFlushSize
+    ? Math.floor(apiSyncLogMaxBufferRaw)
+    : Math.max(200, apiSyncLogFlushSize * 4);
+  const apiSyncLogFlushIntervalMsRaw = Number(process.env.SYNC_API_LOG_FLUSH_INTERVAL_MS || 2500);
+  const apiSyncLogFlushIntervalMs = Number.isFinite(apiSyncLogFlushIntervalMsRaw) && apiSyncLogFlushIntervalMsRaw > 0
+    ? Math.floor(apiSyncLogFlushIntervalMsRaw)
+    : 2500;
+  let lastApiSyncLogFlushAtMs = Date.now();
+  const flushBufferedApiSyncLogs = async (
+    force = false,
+    reason: 'size' | 'time' | 'backpressure' | 'final' = 'size'
+  ) => {
+    const nowMs = Date.now();
+    const shouldFlushByTime = nowMs - lastApiSyncLogFlushAtMs >= apiSyncLogFlushIntervalMs;
+    if (!force && bufferedApiSyncLogs.length < apiSyncLogFlushSize && !shouldFlushByTime) return;
+    if (bufferedApiSyncLogs.length === 0) return;
+    const shouldDrainAll = force || reason === 'backpressure';
+    const batch = bufferedApiSyncLogs.splice(
+      0,
+      shouldDrainAll ? bufferedApiSyncLogs.length : Math.min(apiSyncLogFlushSize, bufferedApiSyncLogs.length)
+    );
+    try {
+      await prisma.apiSyncLog.createMany({ data: batch });
+      apiSyncLogFlushCount += 1;
+      apiSyncLogRowsFlushed += batch.length;
+      if (reason === 'backpressure') {
+        apiSyncLogBackpressureFlushCount += 1;
+      }
+      lastApiSyncLogFlushAtMs = Date.now();
+    } catch (error) {
+      // Keep the sync alive if telemetry write fails.
+      const message = error instanceof Error ? error.message : 'Failed to write ApiSyncLog batch';
+      bufferedApiSyncLogWriteFailures += batch.length;
+      errors.push(`apiSyncLog_write_batch: ${message}`);
+      if (debugSync) {
+        console.warn(
+          JSON.stringify({
+            event: 'sync_log_write_batch_failed',
+            syncRunId,
+            batchSize: batch.length,
+            message,
+          })
+        );
+      }
+    }
+  };
   const syncRunId = String(options?.syncRunId || '').trim() || randomUUID();
   // Normalize to a UTC calendar day key so repeated runs do not create
   // mixed local-time snapshot variants (e.g. 00:00 and 07:00).
@@ -4622,20 +4728,26 @@ export async function syncInforM3OperationalData(
       const req = requests[reqIndex];
       const startedAt = Date.now();
       const moduleType = classifyModule(row.module);
+      const syncType = `operational_${moduleType}_${req.transaction}`;
       const programId = resolveCsiProgramId(row, req.endpointPath);
       const isSlCoitemsProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
       const isSlArtransProgram = moduleType === 'ar' && programId === 'SLARTRANS';
       const isHistoricalDailySliceRequest = frequency === 'daily' && Boolean(options?.snapshotDateOverride);
       const isArBackfillWindow = moduleType === 'ar' && syncWindow?.mode === 'backfill';
-      const requestTimeoutMs = moduleType === 'inventory' || isArBackfillWindow ? 120000 : 30000;
+      const baseRequestTimeoutMs = moduleType === 'inventory' || isArBackfillWindow ? 120000 : 30000;
+      const requestTimeoutMs = Math.max(
+        baseRequestTimeoutMs,
+        Math.floor(baseRequestTimeoutMs * adaptiveTimeoutScale)
+      );
       // Keep SLCoitems chunk duration bounded so each sync call returns promptly
       // with a continuation cursor instead of appearing "stuck" on one huge page pull.
-      const maxPagesPerRequest =
+      const baseMaxPagesPerRequest =
         isSlCoitemsProgram
           ? 8
           : isSlArtransProgram && isHistoricalDailySliceRequest
             ? 2
             : MAX_CSI_PAGES_PER_REQUEST;
+      const maxPagesPerRequest = Math.max(1, Math.floor(baseMaxPagesPerRequest * adaptivePageScale));
       const sourceWindowPathResult = applyCsiSourceWindowAndSort(req.endpointPath, row, moduleType, syncWindow);
       if (debugSync) {
         console.log(
@@ -5394,59 +5506,122 @@ export async function syncInforM3OperationalData(
       }
 
       recordsCreated += moduleRecordsCreated;
+      const requestDurationMs = Date.now() - startedAt;
+      requestCount += 1;
+      requestDurationTotalMs += requestDurationMs;
+      if (statusText === 'success') {
+        successRequestCount += 1;
+      } else {
+        failedRequestCount += 1;
+      }
+      const existingSyncTypeStats = syncTypeStats.get(syncType) || {
+        requestCount: 0,
+        successCount: 0,
+        errorCount: 0,
+        durationMs: 0,
+        recordsImported: 0,
+      };
+      existingSyncTypeStats.requestCount += 1;
+      existingSyncTypeStats.durationMs += requestDurationMs;
+      existingSyncTypeStats.recordsImported += moduleRecordsCreated;
+      if (statusText === 'success') {
+        existingSyncTypeStats.successCount += 1;
+      } else {
+        existingSyncTypeStats.errorCount += 1;
+      }
+      syncTypeStats.set(syncType, existingSyncTypeStats);
+      if (adaptivePressureEnabled) {
+        recentPressureSamples.push({
+          durationMs: requestDurationMs,
+          failed: statusText !== 'success',
+        });
+        while (recentPressureSamples.length > adaptivePressureWindow) {
+          recentPressureSamples.shift();
+        }
+        const sampleCount = recentPressureSamples.length;
+        if (sampleCount >= Math.min(8, adaptivePressureWindow)) {
+          const totalDuration = recentPressureSamples.reduce((sum, sample) => sum + sample.durationMs, 0);
+          const failedCount = recentPressureSamples.reduce((sum, sample) => sum + (sample.failed ? 1 : 0), 0);
+          const avgDurationMs = totalDuration / sampleCount;
+          const errorRate = failedCount / sampleCount;
+          const shouldThrottle = avgDurationMs >= adaptiveSlowRequestMs || errorRate >= adaptiveHighErrorRate;
+          const shouldRecover = avgDurationMs <= adaptiveRecoverRequestMs && errorRate <= adaptiveLowErrorRate;
+          if (shouldThrottle) {
+            const nextPageScale = Math.max(adaptiveMinPageScale, Number((adaptivePageScale - 0.1).toFixed(2)));
+            const nextTimeoutScale = Math.min(adaptiveMaxTimeoutScale, Number((adaptiveTimeoutScale + 0.1).toFixed(2)));
+            if (nextPageScale !== adaptivePageScale || nextTimeoutScale !== adaptiveTimeoutScale) {
+              adaptivePageScale = nextPageScale;
+              adaptiveTimeoutScale = nextTimeoutScale;
+              adaptiveThrottleAdjustments += 1;
+            }
+          } else if (shouldRecover) {
+            const nextPageScale = Math.min(1, Number((adaptivePageScale + 0.1).toFixed(2)));
+            const nextTimeoutScale = Math.max(1, Number((adaptiveTimeoutScale - 0.1).toFixed(2)));
+            if (nextPageScale !== adaptivePageScale || nextTimeoutScale !== adaptiveTimeoutScale) {
+              adaptivePageScale = nextPageScale;
+              adaptiveTimeoutScale = nextTimeoutScale;
+              adaptiveRecoveryAdjustments += 1;
+            }
+          }
+        }
+      }
 
       try {
         const responseBodyForLog = isHistoricalDailySliceRequest ? null : response.body;
-        await prisma.apiSyncLog.create({
-          data: {
-            companyId,
-            platform: 'INFOR_M3',
-            syncType: `operational_${moduleType}_${req.transaction}`,
-            status: statusText,
-            recordsImported: moduleRecordsCreated,
-            errorCount: statusText === 'success' ? 0 : 1,
-            duration: Date.now() - startedAt,
-            errorDetails: ({
-              syncRunId,
-              module: row.module,
-              miProgram: row.miProgram || null,
-              resolvedProgramId: programId || null,
-              absoluteProgramOffset,
-              requestIndex: reqIndex,
-              transaction: req.transaction,
-              cono: row.cono || null,
-              divi: row.divi || null,
-              mongooseConfig: row.mongooseConfig || null,
-              endpointPath: effectiveEndpointPath,
-              credentialsSource: credentialSource,
-              responseStatus: response.status,
-              sitePolicy,
-              requestedSite: requestedSite || null,
-              siteDetected,
-              sourceRecordCount: rawRecords.length,
-              postWindowRecordCount: recordsAfterDateWindow.length,
-              persistedRecordCount: records.length,
-              companyRollupApplied: shouldAggregateForRollup,
-              pagesFetched,
-              paginationTruncated,
-              syncWindow: syncWindow
-                ? {
-                    mode: syncWindow.mode,
-                    startDate: syncWindow.startDate.toISOString(),
-                    endDate: syncWindow.endDate.toISOString(),
-                  }
-                : null,
-              optionalProgramSkipped: optionalProgramMissing,
-              optionalProgramSkipReason: optionalProgramMissing ? payloadMsg : null,
-              persistDebug: modulePersistDebug,
-              response: responseBodyForLog,
-            } as unknown as Prisma.InputJsonValue),
-          },
+        bufferedApiSyncLogs.push({
+          companyId,
+          platform: 'INFOR_M3',
+          syncType,
+          status: statusText,
+          recordsImported: moduleRecordsCreated,
+          errorCount: statusText === 'success' ? 0 : 1,
+          duration: requestDurationMs,
+          errorDetails: ({
+            syncRunId,
+            module: row.module,
+            miProgram: row.miProgram || null,
+            resolvedProgramId: programId || null,
+            absoluteProgramOffset,
+            requestIndex: reqIndex,
+            transaction: req.transaction,
+            cono: row.cono || null,
+            divi: row.divi || null,
+            mongooseConfig: row.mongooseConfig || null,
+            endpointPath: effectiveEndpointPath,
+            credentialsSource: credentialSource,
+            responseStatus: response.status,
+            sitePolicy,
+            requestedSite: requestedSite || null,
+            siteDetected,
+            sourceRecordCount: rawRecords.length,
+            postWindowRecordCount: recordsAfterDateWindow.length,
+            persistedRecordCount: records.length,
+            companyRollupApplied: shouldAggregateForRollup,
+            pagesFetched,
+            paginationTruncated,
+            syncWindow: syncWindow
+              ? {
+                  mode: syncWindow.mode,
+                  startDate: syncWindow.startDate.toISOString(),
+                  endDate: syncWindow.endDate.toISOString(),
+                }
+              : null,
+            optionalProgramSkipped: optionalProgramMissing,
+            optionalProgramSkipReason: optionalProgramMissing ? payloadMsg : null,
+            persistDebug: modulePersistDebug,
+            response: responseBodyForLog,
+          } as unknown as Prisma.InputJsonValue),
         });
+        if (bufferedApiSyncLogs.length >= apiSyncLogMaxBuffer) {
+          await flushBufferedApiSyncLogs(false, 'backpressure');
+        } else {
+          await flushBufferedApiSyncLogs(false, 'size');
+          await flushBufferedApiSyncLogs(false, 'time');
+        }
       } catch (logWriteError) {
         // Keep the operational sync moving even if telemetry logging fails.
         const logWriteMessage =
-          logWriteError instanceof Error ? logWriteError.message : 'Failed to write ApiSyncLog';
+          logWriteError instanceof Error ? logWriteError.message : 'Failed to buffer ApiSyncLog';
         errors.push(`apiSyncLog_write: ${logWriteMessage}`);
         if (debugSync) {
           console.warn(
@@ -5535,8 +5710,85 @@ export async function syncInforM3OperationalData(
     }
   }
 
+  while (bufferedApiSyncLogs.length > 0) {
+    await flushBufferedApiSyncLogs(true, 'final');
+  }
+
   if (!options?.skipPrune && !continuation) {
     await pruneCompanyOperationalData(companyId);
+  }
+  const syncTypeBreakdown = Array.from(syncTypeStats.entries())
+    .map(([syncType, stats]) => {
+      const avgDurationMs = stats.requestCount > 0 ? Math.round(stats.durationMs / stats.requestCount) : 0;
+      const recordsPerSecond = stats.durationMs > 0
+        ? Number(((stats.recordsImported * 1000) / stats.durationMs).toFixed(2))
+        : 0;
+      return {
+        syncType,
+        requestCount: stats.requestCount,
+        successCount: stats.successCount,
+        errorCount: stats.errorCount,
+        recordsImported: stats.recordsImported,
+        totalDurationMs: stats.durationMs,
+        avgDurationMs,
+        recordsPerSecond,
+      };
+    })
+    .sort((a, b) => b.recordsImported - a.recordsImported);
+
+  try {
+    await prisma.apiSyncLog.create({
+      data: {
+        companyId,
+        platform: 'INFOR_M3',
+        syncType: 'operational_run_summary',
+        status: errors.length === 0 ? 'success' : 'warning',
+        recordsImported: recordsCreated,
+        errorCount: errors.length,
+        duration: Date.now() - syncStartedAtMs,
+        errorDetails: {
+          syncRunId,
+          frequency,
+          hasMore: continuation !== null,
+          totalProgramRows,
+          requestCount,
+          successRequestCount,
+          failedRequestCount,
+          avgRequestDurationMs: requestCount > 0 ? Math.round(requestDurationTotalMs / requestCount) : 0,
+          apiSyncLogFlushCount,
+          apiSyncLogRowsFlushed,
+          apiSyncLogBackpressureFlushCount,
+          apiSyncLogBufferedWriteFailures: bufferedApiSyncLogWriteFailures,
+          adaptivePressure: {
+            enabled: adaptivePressureEnabled,
+            windowSize: adaptivePressureWindow,
+            slowRequestMs: adaptiveSlowRequestMs,
+            recoverRequestMs: adaptiveRecoverRequestMs,
+            highErrorRate: adaptiveHighErrorRate,
+            lowErrorRate: adaptiveLowErrorRate,
+            minPageScale: adaptiveMinPageScale,
+            maxTimeoutScale: adaptiveMaxTimeoutScale,
+            finalPageScale: adaptivePageScale,
+            finalTimeoutScale: adaptiveTimeoutScale,
+            throttleAdjustments: adaptiveThrottleAdjustments,
+            recoveryAdjustments: adaptiveRecoveryAdjustments,
+            sampledRequests: recentPressureSamples.length,
+          },
+          syncTypeBreakdown,
+          runMode: syncWindow?.mode || null,
+          syncWindow: syncWindow
+            ? {
+                startDate: syncWindow.startDate.toISOString(),
+                endDate: syncWindow.endDate.toISOString(),
+              }
+            : null,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  } catch (summaryLogError) {
+    const message =
+      summaryLogError instanceof Error ? summaryLogError.message : 'Failed to write operational run summary log';
+    errors.push(`apiSyncLog_summary_write: ${message}`);
   }
 
   return {
