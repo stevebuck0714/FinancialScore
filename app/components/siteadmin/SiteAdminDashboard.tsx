@@ -1104,6 +1104,9 @@ export default function SiteAdminDashboard(props: any) {
         backfillMonths: number;
         lookbackDays: number;
         autoSyncWindowDays: number;
+        useCustomMonthRange: boolean;
+        customStartMonth: string;
+        customEndMonth: string;
       }
     >
   >({});
@@ -1123,6 +1126,9 @@ export default function SiteAdminDashboard(props: any) {
       backfillMonths: 36,
       lookbackDays: 30,
       autoSyncWindowDays: 3,
+      useCustomMonthRange: false,
+      customStartMonth: '',
+      customEndMonth: '',
     };
 
   const setCompanyOperationalSettings = (
@@ -1134,6 +1140,9 @@ export default function SiteAdminDashboard(props: any) {
       backfillMonths: number;
       lookbackDays: number;
       autoSyncWindowDays: number;
+      useCustomMonthRange: boolean;
+      customStartMonth: string;
+      customEndMonth: string;
     }>
   ) => {
     setOperationalSyncSettingsByCompany((prev) => ({
@@ -1145,8 +1154,31 @@ export default function SiteAdminDashboard(props: any) {
         backfillMonths: Math.max(1, Number(next.backfillMonths || prev[companyId]?.backfillMonths || 36)),
         lookbackDays: Math.max(1, Number(next.lookbackDays || prev[companyId]?.lookbackDays || 30)),
         autoSyncWindowDays: Math.max(1, Number(next.autoSyncWindowDays || prev[companyId]?.autoSyncWindowDays || 3)),
+        useCustomMonthRange:
+          typeof next.useCustomMonthRange === 'boolean'
+            ? next.useCustomMonthRange
+            : prev[companyId]?.useCustomMonthRange || false,
+        customStartMonth: next.customStartMonth ?? prev[companyId]?.customStartMonth ?? '',
+        customEndMonth: next.customEndMonth ?? prev[companyId]?.customEndMonth ?? '',
       },
     }));
+  };
+
+  const monthToRangeStartIso = (monthToken: string): string | null => {
+    const raw = String(monthToken || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(raw)) return null;
+    return `${raw}-01T00:00:00.000Z`;
+  };
+
+  const monthToRangeEndIso = (monthToken: string): string | null => {
+    const raw = String(monthToken || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(raw)) return null;
+    const [yearRaw, monthRaw] = raw.split('-');
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+    const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+    return end.toISOString();
   };
 
   const resolveCompanyCsiSite = (companyId: string): string => {
@@ -3270,10 +3302,29 @@ export default function SiteAdminDashboard(props: any) {
                                                           const site = requireCompanyCsiSite(company.id);
                                                           if (!site) return;
                                                           const syncSettings = getCompanyOperationalSettings(company.id);
+                                                          const useCustomRange = syncSettings.useCustomMonthRange;
+                                                          const startDate = useCustomRange
+                                                            ? monthToRangeStartIso(syncSettings.customStartMonth)
+                                                            : undefined;
+                                                          const endDate = useCustomRange
+                                                            ? monthToRangeEndIso(syncSettings.customEndMonth)
+                                                            : undefined;
+                                                          if (useCustomRange) {
+                                                            if (!startDate || !endDate) {
+                                                              alert('Set both Start Month and End Month for custom range sync.');
+                                                              return;
+                                                            }
+                                                            if (new Date(startDate).getTime() > new Date(endDate).getTime()) {
+                                                              alert('Custom range is invalid: Start Month must be before End Month.');
+                                                              return;
+                                                            }
+                                                          }
                                                           runInforM3OperationalSync(company.id, syncSettings.frequency, site, {
-                                                            mode: syncSettings.syncMode,
-                                                            backfillMonths: syncSettings.backfillMonths,
-                                                            lookbackDays: syncSettings.lookbackDays,
+                                                            mode: useCustomRange ? 'manual' : syncSettings.syncMode,
+                                                            backfillMonths: useCustomRange ? undefined : syncSettings.backfillMonths,
+                                                            lookbackDays: useCustomRange ? undefined : syncSettings.lookbackDays,
+                                                            startDate,
+                                                            endDate,
                                                           });
                                                         }}
                                                         disabled={inforBusy}
@@ -3374,8 +3425,65 @@ export default function SiteAdminDashboard(props: any) {
                                                             ? 'Use to rebuild historical daily snapshots day-by-day (most reliable for history fixes).'
                                                             : 'Advanced: refreshes a broad transaction window, but may not replay each day discretely.'}
                                                       </div>
+                                                      <label
+                                                        style={{
+                                                          display: 'flex',
+                                                          alignItems: 'center',
+                                                          gap: '8px',
+                                                          fontSize: '12px',
+                                                          color: '#334155',
+                                                          gridColumn: '1 / -1',
+                                                        }}
+                                                      >
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={Boolean(getCompanyOperationalSettings(company.id).useCustomMonthRange)}
+                                                          onChange={(e) =>
+                                                            setCompanyOperationalSettings(company.id, {
+                                                              useCustomMonthRange: e.target.checked,
+                                                            })
+                                                          }
+                                                        />
+                                                        <span style={{ fontWeight: 600 }}>
+                                                          Use Custom Month Range (chunk large history loads)
+                                                        </span>
+                                                      </label>
+                                                      {getCompanyOperationalSettings(company.id).useCustomMonthRange && (
+                                                        <>
+                                                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                            <span style={{ fontWeight: 600 }}>Start Month</span>
+                                                            <input
+                                                              type="month"
+                                                              value={getCompanyOperationalSettings(company.id).customStartMonth}
+                                                              onChange={(e) =>
+                                                                setCompanyOperationalSettings(company.id, {
+                                                                  customStartMonth: e.target.value,
+                                                                })
+                                                              }
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </label>
+                                                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                            <span style={{ fontWeight: 600 }}>End Month</span>
+                                                            <input
+                                                              type="month"
+                                                              value={getCompanyOperationalSettings(company.id).customEndMonth}
+                                                              onChange={(e) =>
+                                                                setCompanyOperationalSettings(company.id, {
+                                                                  customEndMonth: e.target.value,
+                                                                })
+                                                              }
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </label>
+                                                          <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#64748b', lineHeight: 1.35 }}>
+                                                            Runs only the selected month band. Use this to split large 36-month initial loads into smaller chunks.
+                                                          </div>
+                                                        </>
+                                                      )}
                                                       {(getCompanyOperationalSettings(company.id).syncMode === 'business_day_backfill' ||
-                                                        getCompanyOperationalSettings(company.id).syncMode === 'backfill') && (
+                                                        getCompanyOperationalSettings(company.id).syncMode === 'backfill') &&
+                                                        !getCompanyOperationalSettings(company.id).useCustomMonthRange && (
                                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                                           <span style={{ fontWeight: 600 }}>Backfill Months</span>
                                                           <input
@@ -3392,7 +3500,8 @@ export default function SiteAdminDashboard(props: any) {
                                                           />
                                                         </label>
                                                       )}
-                                                      {getCompanyOperationalSettings(company.id).syncMode === 'daily_overlap' && (
+                                                      {getCompanyOperationalSettings(company.id).syncMode === 'daily_overlap' &&
+                                                        !getCompanyOperationalSettings(company.id).useCustomMonthRange && (
                                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                                           <span style={{ fontWeight: 600 }}>Overlap Days</span>
                                                           <input
