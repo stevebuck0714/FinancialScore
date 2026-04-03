@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRequestedCompanyId } from '@/lib/infor-m3/route-guards';
 import { requireSiteAdmin } from '@/lib/tenant-security';
-import { getRunStateFromMetadata } from '@/lib/infor-m3/async-run-state';
+import { getRunStateFromMetadata, withRunStateMetadata } from '@/lib/infor-m3/async-run-state';
 import { getQueueRunById, isInforSyncQueueEnabled, mapQueueRunToLegacy, processQueueTick } from '@/lib/infor-m3/sync-queue';
 
 export const dynamic = 'force-dynamic';
@@ -28,6 +28,21 @@ type DiagnosticRow = {
   staleSourcesJson: string | null;
   sourceDatesJson: string | null;
 };
+
+const DEFAULT_RUN_STALE_MINUTES = 30;
+const DEFAULT_RUN_MAX_AGE_HOURS = 8;
+
+function resolveRunStaleMinutes(): number {
+  const raw = Number(process.env.INFOR_SYNC_RUN_STALE_MINUTES || DEFAULT_RUN_STALE_MINUTES);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_STALE_MINUTES;
+  return Math.min(240, Math.max(5, Math.floor(raw)));
+}
+
+function resolveRunMaxAgeHours(): number {
+  const raw = Number(process.env.INFOR_SYNC_RUN_MAX_AGE_HOURS || DEFAULT_RUN_MAX_AGE_HOURS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_MAX_AGE_HOURS;
+  return Math.min(72, Math.max(1, Math.floor(raw)));
+}
 
 async function buildRunDiagnostics(companyId: string, syncRunId: string) {
   const rows = await prisma.$queryRaw<DiagnosticRow[]>`
@@ -201,11 +216,45 @@ export async function GET(request: NextRequest) {
         },
       },
       select: {
+        id: true,
         connectionMetadata: true,
       },
     });
     const activeRun = getRunStateFromMetadata(connection?.connectionMetadata);
-    const runMatches = activeRun && activeRun.syncRunId === syncRunId ? activeRun : null;
+    let runMatches = activeRun && activeRun.syncRunId === syncRunId ? activeRun : null;
+    if (runMatches?.status === 'running' && connection?.id) {
+      const nowMs = Date.now();
+      const staleMs = resolveRunStaleMinutes() * 60 * 1000;
+      const maxAgeMs = resolveRunMaxAgeHours() * 60 * 60 * 1000;
+      const createdAtMs = new Date(runMatches.createdAt || runMatches.updatedAt).getTime();
+      const progressAt = runMatches.lastChunkAt || runMatches.updatedAt || runMatches.createdAt;
+      const progressAtMs = new Date(progressAt).getTime();
+      const idleMs = nowMs - progressAtMs;
+      const ageMs = nowMs - createdAtMs;
+      const stale = Number.isFinite(idleMs) && idleMs > staleMs;
+      const tooOld = Number.isFinite(ageMs) && ageMs > maxAgeMs;
+      if (stale || tooOld) {
+        const reason = stale
+          ? `Auto-failed stale sync run after ${Math.floor(idleMs / 60000)} minutes without progress.`
+          : `Auto-failed sync run after ${Math.floor(ageMs / 3600000)} hours runtime cap.`;
+        const timedOutRun = {
+          ...runMatches,
+          status: 'failed' as const,
+          updatedAt: new Date().toISOString(),
+          lastError: reason,
+          message: reason,
+        };
+        await prisma.accountingConnection.update({
+          where: { id: connection.id },
+          data: {
+            connectionMetadata: withRunStateMetadata(connection.connectionMetadata, timedOutRun),
+            errorMessage: reason,
+            lastSyncAt: new Date(),
+          },
+        });
+        runMatches = timedOutRun;
+      }
+    }
 
     const rows = await prisma.$queryRaw<StatusRow[]>`
       SELECT

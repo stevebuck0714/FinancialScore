@@ -14,10 +14,13 @@ const DEFAULT_DAILY_OVERLAP_PROGRAM_BATCH_SIZE = 2;
 const DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE = 4;
 const DEFAULT_TICK_CONCURRENCY = 4;
 const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 4;
+const DEFAULT_RUN_STALE_MINUTES = 30;
+const DEFAULT_RUN_MAX_AGE_HOURS = 8;
 
 type QueueRunRecord = {
   id: string;
   companyId: string;
+  platform: string;
   status: string;
   frequency: string;
   site: string | null;
@@ -85,6 +88,18 @@ function resolveMaxInflightPerScope(): number {
   const raw = Number(process.env.INFOR_SYNC_MAX_INFLIGHT_PER_SCOPE || DEFAULT_MAX_INFLIGHT_PER_SCOPE);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_MAX_INFLIGHT_PER_SCOPE;
   return Math.min(12, Math.max(1, Math.floor(raw)));
+}
+
+function resolveRunStaleMinutes(): number {
+  const raw = Number(process.env.INFOR_SYNC_RUN_STALE_MINUTES || DEFAULT_RUN_STALE_MINUTES);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_STALE_MINUTES;
+  return Math.min(240, Math.max(5, Math.floor(raw)));
+}
+
+function resolveRunMaxAgeHours(): number {
+  const raw = Number(process.env.INFOR_SYNC_RUN_MAX_AGE_HOURS || DEFAULT_RUN_MAX_AGE_HOURS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_MAX_AGE_HOURS;
+  return Math.min(72, Math.max(1, Math.floor(raw)));
 }
 
 function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
@@ -273,7 +288,7 @@ export async function startQueueRun(input: {
     },
   });
   return {
-    alreadyRunning: false,
+    alreadyRunning: Boolean(running),
     queued: Boolean(running),
     run: runRecord,
   };
@@ -755,13 +770,97 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
   let promotedRuns = 0;
   let leasedTasks = 0;
   let leaseRounds = 0;
+  let timedOutRuns = 0;
   const tickConcurrency = resolveTickConcurrency();
   const results: Array<Record<string, unknown>> = [];
+
+  const failTimedOutRuns = async (): Promise<number> => {
+    const staleMs = resolveRunStaleMinutes() * 60 * 1000;
+    const maxAgeMs = resolveRunMaxAgeHours() * 60 * 60 * 1000;
+    const now = new Date();
+    const running = (await db().inforSyncRun.findMany({
+      where: { status: 'running' },
+      orderBy: { updatedAt: 'asc' },
+      take: 200,
+      select: {
+        id: true,
+        companyId: true,
+        platform: true,
+        mode: true,
+        createdAt: true,
+        updatedAt: true,
+        lastChunkAt: true,
+      },
+    })) as Array<{
+      id: string;
+      companyId: string;
+      platform: string;
+      mode: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+      lastChunkAt: Date | null;
+    }>;
+
+    let failed = 0;
+    for (const run of running) {
+      const createdAtMs = new Date(run.createdAt).getTime();
+      const progressAt = run.lastChunkAt || run.updatedAt || run.createdAt;
+      const progressAtMs = new Date(progressAt).getTime();
+      const ageMs = Date.now() - createdAtMs;
+      const idleMs = Date.now() - progressAtMs;
+
+      const stale = Number.isFinite(idleMs) && idleMs > staleMs;
+      const tooOld = Number.isFinite(ageMs) && ageMs > maxAgeMs;
+      if (!stale && !tooOld) continue;
+
+      const reason = stale
+        ? `Auto-failed stale queue run after ${Math.floor(idleMs / 60000)} minutes without progress.`
+        : `Auto-failed queue run after ${Math.floor(ageMs / 3600000)} hours runtime cap.`;
+
+      await db().$transaction([
+        db().inforSyncRun.updateMany({
+          where: { id: run.id, status: 'running' },
+          data: {
+            status: 'failed',
+            finishedAt: now,
+            updatedAt: now,
+            lastError: reason,
+            message: reason,
+          },
+        }),
+        db().inforSyncTask.updateMany({
+          where: {
+            runId: run.id,
+            status: { in: ['pending', 'leased'] },
+          },
+          data: {
+            status: 'cancelled',
+            finishedAt: now,
+            updatedAt: now,
+            lastError: reason,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          },
+        }),
+      ]);
+
+      failed += 1;
+      await notifyQueueRunFailure(
+        run.companyId,
+        (String(run.platform || 'INFOR_M3') as AccountingPlatform),
+        'Infor async queue run auto-failed by timeout guard',
+        reason
+      );
+    }
+    return failed;
+  };
+
   while (
     leaseRounds < MAX_LEASE_ROUNDS_PER_TICK &&
     Date.now() - tickStartedAt < TICK_TIME_BUDGET_MS
   ) {
     leaseRounds += 1;
+    timedOutRuns += await failTimedOutRuns();
     promotedRuns += await promoteQueuedRunsForIdleCompanies();
     const leased = await leasePendingTasks(MAX_TASKS_PER_TICK);
     if (leased.length === 0) break;
@@ -789,6 +888,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     queueEnabled: true,
     promotedRuns,
     leasedTasks,
+    timedOutRuns,
     leaseRounds,
     tickConcurrency,
     elapsedMs: Date.now() - tickStartedAt,
