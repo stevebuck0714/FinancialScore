@@ -5982,3 +5982,256 @@ export async function syncInforM3OperationalData(
     totalProgramRows,
   };
 }
+
+type InforRawTransformResult = {
+  success: boolean;
+  daysProcessed: number;
+  rawRecordsRead: number;
+  recordsCreated: number;
+  errors: string[];
+};
+
+function asRawRecordPayload(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+export async function transformInforM3RawRun(options: {
+  companyId: string;
+  syncRunId: string;
+  frequency?: 'daily' | 'weekly' | 'monthly';
+  businessDateIso?: string;
+  maxBusinessDates?: number;
+  batchSize?: number;
+}): Promise<InforRawTransformResult> {
+  const companyId = String(options.companyId || '').trim();
+  const syncRunId = String(options.syncRunId || '').trim();
+  const frequency = options.frequency || 'daily';
+  const errors: string[] = [];
+  if (!companyId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing companyId'] };
+  if (!syncRunId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing syncRunId'] };
+
+  const maxBusinessDatesRaw = Number(options.maxBusinessDates || 0);
+  const maxBusinessDates =
+    Number.isFinite(maxBusinessDatesRaw) && maxBusinessDatesRaw > 0
+      ? Math.min(366, Math.max(1, Math.floor(maxBusinessDatesRaw)))
+      : null;
+  const batchSizeRaw = Number(options.batchSize || 2000);
+  const batchSize =
+    Number.isFinite(batchSizeRaw) && batchSizeRaw > 0
+      ? Math.min(10000, Math.max(250, Math.floor(batchSizeRaw)))
+      : 2000;
+
+  const requestedBusinessDate = String(options.businessDateIso || '').trim();
+  const businessDateFilter =
+    requestedBusinessDate.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(requestedBusinessDate)
+      ? requestedBusinessDate
+      : null;
+
+  const businessDateRows = await prisma.$queryRaw<Array<{ businessDate: Date }>>`
+    SELECT DISTINCT "businessDate"
+    FROM "InforRawBatch"
+    WHERE "companyId" = ${companyId}
+      AND platform = 'INFOR_M3'
+      AND "syncRunId" = ${syncRunId}
+      ${businessDateFilter ? Prisma.sql`AND "businessDate" = ${new Date(`${businessDateFilter}T00:00:00.000Z`)}` : Prisma.sql``}
+    ORDER BY "businessDate" ASC
+    ${maxBusinessDates ? Prisma.sql`LIMIT ${maxBusinessDates}` : Prisma.sql``}
+  `;
+
+  let daysProcessed = 0;
+  let rawRecordsRead = 0;
+  let recordsCreated = 0;
+  for (const businessDateRow of businessDateRows) {
+    const snapshotDate = startOfUtcDay(new Date(businessDateRow.businessDate));
+    const rawByModuleProgram = new Map<string, {
+      moduleType: ReturnType<typeof classifyModule>;
+      module: string;
+      miProgram: string;
+      transaction: string;
+      records: Record<string, unknown>[];
+    }>();
+
+    let cursorId: string | null = null;
+    while (true) {
+      const rows = await (prisma as any).inforRawRecord.findMany({
+        where: {
+          companyId,
+          platform: 'INFOR_M3',
+          syncRunId,
+          businessDate: snapshotDate,
+        },
+        select: {
+          id: true,
+          module: true,
+          miProgram: true,
+          transaction: true,
+          payload: true,
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+        take: batchSize,
+      });
+      if (!rows.length) break;
+      for (const row of rows) {
+        const payload = asRawRecordPayload(row.payload);
+        if (!payload) continue;
+        const module = String(row.module || '').trim();
+        const miProgram = String(row.miProgram || '').trim().toUpperCase();
+        const transaction = String(row.transaction || 'CSI_LOAD').trim() || 'CSI_LOAD';
+        const moduleType = classifyModule(module);
+        const key = `${moduleType}||${miProgram}||${transaction}`;
+        const existing = rawByModuleProgram.get(key);
+        if (existing) {
+          existing.records.push(payload);
+        } else {
+          rawByModuleProgram.set(key, {
+            moduleType,
+            module,
+            miProgram,
+            transaction,
+            records: [payload],
+          });
+        }
+      }
+      rawRecordsRead += rows.length;
+      cursorId = String(rows[rows.length - 1].id);
+    }
+
+    const glAccountMasterById = new Map<string, GlAccountMasterEntry>();
+    for (const item of Array.from(rawByModuleProgram.values())) {
+      if (item.moduleType !== 'gl' || !GL_ACCOUNT_MASTER_PROGRAM_IDS.has(item.miProgram)) continue;
+      for (const record of item.records) {
+        const parsed = parseGlAccountMasterEntry(record);
+        if (!parsed) continue;
+        const key = normalizeGlAccountKey(parsed.accountId);
+        if (!key) continue;
+        const existing = glAccountMasterById.get(key);
+        if (!existing) {
+          glAccountMasterById.set(key, parsed);
+          continue;
+        }
+        glAccountMasterById.set(key, {
+          accountId: existing.accountId || parsed.accountId,
+          accountName: existing.accountName || parsed.accountName,
+          accountType: existing.accountType || parsed.accountType,
+          accountCategory: existing.accountCategory || parsed.accountCategory,
+        });
+      }
+    }
+
+    try {
+      const cashRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'cash')
+        .flatMap((item) => item.records);
+      if (cashRecords.length > 0) {
+        recordsCreated += await saveCash(companyId, snapshotDate, frequency, cashRecords);
+      }
+
+      const arCustDrfts = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'ar' && item.miProgram === 'SLCUSTDRFTS')
+        .flatMap((item) => item.records);
+      const arTrans = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'ar' && item.miProgram === 'SLARTRANS')
+        .flatMap((item) => item.records);
+      const arOpenSource = arCustDrfts.length > 0 ? arCustDrfts : arTrans;
+      if (arOpenSource.length > 0) {
+        recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, arOpenSource, {
+          miProgram: arCustDrfts.length > 0 ? 'SLCUSTDRFTS' : 'SLARTRANS',
+          transaction: 'RAW_REPLAY',
+          resetSnapshot: true,
+        });
+        recordsCreated += await saveARAging(companyId, snapshotDate, frequency, arOpenSource);
+      }
+      if (arTrans.length > 0) {
+        recordsCreated += await saveARPayments(companyId, arTrans, {
+          miProgram: 'SLARTRANS',
+          transaction: 'RAW_REPLAY',
+        });
+        await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+      }
+
+      const apPayments = Array.from(rawByModuleProgram.values())
+        .filter((item) =>
+          item.moduleType === 'ap' &&
+          ['SLAPTRX', 'SLAPTRXS', 'SLAPTRXPS', 'SLAPPMTS', 'SLAPTRXP'].includes(item.miProgram)
+        )
+        .flatMap((item) => item.records);
+      const apOpen = Array.from(rawByModuleProgram.values())
+        .filter((item) =>
+          item.moduleType === 'ap' &&
+          !['SLAPTRX', 'SLAPTRXS', 'SLAPTRXPS', 'SLAPPMTS', 'SLAPTRXP'].includes(item.miProgram)
+        )
+        .flatMap((item) => item.records);
+      if (apOpen.length > 0) {
+        recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, apOpen, {
+          miProgram: 'AP_OPEN',
+          transaction: 'RAW_REPLAY',
+        });
+        recordsCreated += await saveAPAging(companyId, snapshotDate, frequency, apOpen);
+      }
+      if (apPayments.length > 0) {
+        recordsCreated += await saveAPPayments(companyId, apPayments, {
+          miProgram: 'AP_PAYMENTS',
+          transaction: 'RAW_REPLAY',
+        });
+      }
+
+      const glTrans = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'gl' && item.miProgram === 'SLGLTRANS')
+        .flatMap((item) => item.records);
+      if (glTrans.length > 0) {
+        recordsCreated += await saveGLTransactionFacts(
+          companyId,
+          glTrans,
+          { miProgram: 'SLGLTRANS', transaction: 'RAW_REPLAY' },
+          glAccountMasterById
+        );
+        recordsCreated += await saveBalanceMovementsFromGl(companyId, frequency, glTrans, glAccountMasterById);
+      }
+
+      const customerRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'customer')
+        .flatMap((item) => item.records);
+      if (customerRecords.length > 0) {
+        recordsCreated += await saveCustomerSales(companyId, snapshotDate, frequency, customerRecords);
+      }
+
+      const inventoryRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'inventory')
+        .flatMap((item) => item.records);
+      if (inventoryRecords.length > 0) {
+        recordsCreated += await saveInventory(companyId, snapshotDate, frequency, inventoryRecords);
+      }
+
+      const salesRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'sales')
+        .flatMap((item) => item.records);
+      if (salesRecords.length > 0) {
+        recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, salesRecords);
+      }
+
+      await prisma.aROpenInvoiceSnapshot.deleteMany({
+        where: {
+          companyId,
+          frequency,
+          snapshotDate: { gte: snapshotDate, lt: new Date(snapshotDate.getTime() + 24 * 60 * 60 * 1000) },
+          amountDueHome: { lte: 0 },
+        },
+      });
+      await upsertDailyFinancialSnapshotFromOperationalTables(companyId, snapshotDate, frequency);
+      daysProcessed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Raw transform day processing failed';
+      errors.push(`${snapshotDate.toISOString().slice(0, 10)}: ${message}`);
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    daysProcessed,
+    rawRecordsRead,
+    recordsCreated,
+    errors,
+  };
+}
