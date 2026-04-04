@@ -217,7 +217,10 @@ export async function POST(request: NextRequest) {
 
     // Large CSI backfills can exceed per-request limits if run as broad windows.
     // Force resilient business-day chunking for daily CSI history runs.
-    let effectiveBackfillMonths = backfillMonths;
+    const hasCustomWindow = Boolean(startDate && endDate);
+    let effectiveBackfillMonths = hasCustomWindow
+      ? monthsBetweenInclusive(startDate as string, endDate as string)
+      : backfillMonths;
     if (queuePlatform === 'INFOR_M3' && inforSystem === 'INFOR_CSI' && frequency === 'daily') {
       const requestedMode = mode;
       const looksLikeLargeManualWindow =
@@ -225,6 +228,8 @@ export async function POST(request: NextRequest) {
         Boolean(startDate && endDate) &&
         monthsBetweenInclusive(startDate as string, endDate as string) >= 2;
       const isLargeBackfillMode = requestedMode === 'backfill';
+      const isCustomWindowHistory =
+        hasCustomWindow && monthsBetweenInclusive(startDate as string, endDate as string) >= 2;
       const isImplicitHistory = !requestedMode && typeof backfillMonths === 'number' && backfillMonths >= 2;
       if (isLargeBackfillMode || looksLikeLargeManualWindow || isImplicitHistory) {
         mode = 'business_day_backfill';
@@ -234,6 +239,9 @@ export async function POST(request: NextRequest) {
               ? monthsBetweenInclusive(startDate, endDate)
               : 36;
         }
+      }
+      if (isCustomWindowHistory) {
+        mode = 'business_day_backfill';
       }
     }
 

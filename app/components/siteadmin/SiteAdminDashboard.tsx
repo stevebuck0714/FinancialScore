@@ -5786,10 +5786,29 @@ export default function SiteAdminDashboard(props: any) {
                                                   }
                                                   const site = requireCompanyCsiSite(businessCompany.id);
                                                   if (!site) return;
+                                                  const useCustomRange = operationalSettings.useCustomMonthRange;
+                                                  const startDate = useCustomRange
+                                                    ? monthToRangeStartIso(operationalSettings.customStartMonth)
+                                                    : undefined;
+                                                  const endDate = useCustomRange
+                                                    ? monthToRangeEndIso(operationalSettings.customEndMonth)
+                                                    : undefined;
+                                                  if (useCustomRange) {
+                                                    if (!startDate || !endDate) {
+                                                      alert('Set both Start Month and End Month for custom range sync.');
+                                                      return;
+                                                    }
+                                                    if (new Date(startDate).getTime() > new Date(endDate).getTime()) {
+                                                      alert('Custom range is invalid: Start Month must be before End Month.');
+                                                      return;
+                                                    }
+                                                  }
                                                   runInforM3OperationalSync(businessCompany.id, operationalSettings.frequency, site, {
-                                                    mode: operationalSettings.syncMode,
-                                                    backfillMonths: operationalSettings.backfillMonths,
-                                                    lookbackDays: operationalSettings.lookbackDays,
+                                                    mode: useCustomRange ? 'manual' : operationalSettings.syncMode,
+                                                    backfillMonths: useCustomRange ? undefined : operationalSettings.backfillMonths,
+                                                    lookbackDays: useCustomRange ? undefined : operationalSettings.lookbackDays,
+                                                    startDate,
+                                                    endDate,
                                                   });
                                                 }}
                                                 disabled={inforBusy}
