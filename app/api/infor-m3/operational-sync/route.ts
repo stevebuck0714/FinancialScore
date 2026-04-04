@@ -241,10 +241,22 @@ export async function POST(request: NextRequest) {
     }
 
     if (mode === 'business_day_backfill') {
+      const explicitStartDate = parseDate(body.startDate);
+      const explicitEndDate = parseDate(body.endDate);
+      const hasExplicitWindow =
+        Boolean(explicitStartDate) &&
+        Boolean(explicitEndDate) &&
+        (explicitStartDate as Date).getTime() <= (explicitEndDate as Date).getTime();
+
       const months = normalizePositiveInt(body.backfillMonths) ?? 36;
-      const endDate = new Date();
-      const startDate = new Date(endDate);
-      startDate.setMonth(startDate.getMonth() - months);
+      const endDate = hasExplicitWindow ? (explicitEndDate as Date) : new Date();
+      const startDate = hasExplicitWindow
+        ? (explicitStartDate as Date)
+        : (() => {
+            const value = new Date(endDate);
+            value.setMonth(value.getMonth() - months);
+            return value;
+          })();
       const businessDates = enumerateBusinessDates(startDate, endDate);
       const defaultBusinessDateIndex = Math.max(0, businessDates.length - 1);
       const requestedBusinessDateIndex = normalizeNonNegativeInt(body.businessDateIndex);
