@@ -80,6 +80,9 @@ model Company {
   accountMappings            AccountMapping[]
   accountingConnections      AccountingConnection[]
   apiSyncLogs                ApiSyncLog[]
+  inforRawBatches            InforRawBatch[]
+  inforRawRecords            InforRawRecord[]
+  inforRawCompleteness       InforRawCompleteness[]
   assessmentRecords          AssessmentRecord[]
   revenueRecords             RevenueRecord[]
   subscriptionEvents         SubscriptionEvent[]
@@ -573,6 +576,86 @@ model InforSyncTaskAttempt {
   @@index([taskId, attemptNo])
   @@index([runId, startedAt(sort: Desc)])
   @@index([companyId, startedAt(sort: Desc)])
+}
+
+model InforRawBatch {
+  id          String   @id @default(cuid())
+  companyId   String
+  platform    String   @default("INFOR_M3")
+  syncRunId   String?
+  frequency   String?
+  mode        String?
+  windowStart DateTime?
+  windowEnd   DateTime?
+  businessDate DateTime?
+  module      String?
+  miProgram   String?
+  transaction String?
+  endpointPath String?
+  pageNo      Int      @default(1)
+  bookmarkIn  String?
+  bookmarkOut String?
+  recordCount Int      @default(0)
+  httpStatus  Int?
+  durationMs  Int?
+  payloadHash String?
+  status      String   @default("success") // success | retry | failed | skipped
+  errorMessage String?
+  fetchedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  records     InforRawRecord[]
+
+  @@unique([companyId, platform, syncRunId, module, miProgram, transaction, businessDate, pageNo, bookmarkIn])
+  @@index([companyId, platform, fetchedAt(sort: Desc)])
+  @@index([companyId, syncRunId, fetchedAt(sort: Desc)])
+  @@index([companyId, businessDate, module, miProgram])
+  @@index([status, fetchedAt(sort: Desc)])
+}
+
+model InforRawRecord {
+  id               String   @id @default(cuid())
+  batchId          String
+  companyId        String
+  platform         String   @default("INFOR_M3")
+  syncRunId        String?
+  businessDate     DateTime?
+  module           String?
+  miProgram        String?
+  transaction      String?
+  sourceRecordId   String?
+  sourceRecordHash String?
+  payload          Json
+  fetchedAt        DateTime @default(now())
+  createdAt        DateTime @default(now())
+  batch            InforRawBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, platform, syncRunId, businessDate, miProgram, transaction, sourceRecordHash])
+  @@index([batchId, createdAt(sort: Desc)])
+  @@index([companyId, syncRunId, createdAt(sort: Desc)])
+  @@index([companyId, businessDate, module, miProgram, createdAt(sort: Desc)])
+}
+
+model InforRawCompleteness {
+  id            String   @id @default(cuid())
+  companyId     String
+  platform      String   @default("INFOR_M3")
+  syncRunId     String?
+  businessDate  DateTime
+  sourceKey     String // cash | inventory | sales | ar | ap | daily_financial
+  isComplete    Boolean  @default(false)
+  lastBatchId   String?
+  statusMessage String?
+  lastSeenAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, platform, syncRunId, businessDate, sourceKey])
+  @@index([companyId, businessDate, sourceKey])
+  @@index([companyId, syncRunId, businessDate])
+  @@index([isComplete, updatedAt(sort: Desc)])
 }
 
 model AccountMapping {

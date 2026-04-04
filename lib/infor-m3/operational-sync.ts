@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 type InforProgramRow = {
   module: string;
@@ -1268,6 +1268,40 @@ function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' |
   if (m === 'inventory' || m.includes('inventory') || m.includes('item')) return 'inventory';
   if (m === 'gl' || m.includes('ledger') || m.includes('general ledger')) return 'gl';
   return 'other';
+}
+
+function resolveRawCompletenessSourceKey(
+  moduleType: 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'gl' | 'other'
+): 'cash' | 'inventory' | 'sales' | 'ar' | 'ap' | null {
+  if (moduleType === 'cash') return 'cash';
+  if (moduleType === 'inventory') return 'inventory';
+  if (moduleType === 'sales' || moduleType === 'customer') return 'sales';
+  if (moduleType === 'ar') return 'ar';
+  if (moduleType === 'ap') return 'ap';
+  return null;
+}
+
+function resolveRawSourceRecordId(record: Record<string, unknown>): string | null {
+  const candidates = [
+    'RowPointer',
+    'rowPointer',
+    'ID',
+    'id',
+    'TransNum',
+    'transNum',
+    'InvNum',
+    'invNum',
+    'CoNum',
+    'coNum',
+    'Voucher',
+    'voucher',
+  ];
+  for (const key of candidates) {
+    const value = record[key];
+    const token = String(value || '').trim();
+    if (token) return token.slice(0, 255);
+  }
+  return null;
 }
 
 function buildCsiEndpointPath(row: InforProgramRow): string | null {
@@ -4486,6 +4520,15 @@ export async function syncInforM3OperationalData(
     Number.isFinite(fanoutGlPeriodMaxPagesRaw) && fanoutGlPeriodMaxPagesRaw > 0
       ? Math.min(300, Math.max(fanoutMaxPagesPerRequest, Math.floor(fanoutGlPeriodMaxPagesRaw)))
       : 120;
+  const rawIngestEnabled =
+    String(process.env.INFOR_RAW_INGEST_ENABLED || '')
+      .trim()
+      .toLowerCase() === 'true';
+  const rawIngestRecordCapRaw = Number(process.env.INFOR_RAW_INGEST_RECORD_CAP_PER_BATCH || 5000);
+  const rawIngestRecordCap =
+    Number.isFinite(rawIngestRecordCapRaw) && rawIngestRecordCapRaw > 0
+      ? Math.min(25000, Math.max(100, Math.floor(rawIngestRecordCapRaw)))
+      : 5000;
   // Normalize to a UTC calendar day key so repeated runs do not create
   // mixed local-time snapshot variants (e.g. 00:00 and 07:00).
   const snapshotDate = startOfUtcDay(options?.snapshotDateOverride ? new Date(options.snapshotDateOverride) : new Date());
@@ -5603,6 +5646,89 @@ export async function syncInforM3OperationalData(
       }
 
       try {
+        if (rawIngestEnabled) {
+          const ingestedRecords = rawRecords.slice(0, rawIngestRecordCap);
+          const batchId = randomUUID();
+          const syncWindowStartIso = syncWindow?.startDate ? syncWindow.startDate.toISOString() : null;
+          const bookmarkOut =
+            continuation &&
+            continuation.programOffset === absoluteProgramOffset &&
+            continuation.requestOffset === reqIndex
+              ? continuation.bookmark
+              : null;
+          const payloadHash = createHash('sha256')
+            .update(
+              `${companyId}|${syncRunId}|${moduleType}|${programId || ''}|${req.transaction}|${effectiveEndpointPath}|${rawRecords.length}|${requestDurationMs}|${response.status}`
+            )
+            .digest('hex');
+          await (prisma as any).inforRawBatch.create({
+            data: {
+              id: batchId,
+              companyId,
+              platform: 'INFOR_M3',
+              syncRunId,
+              frequency,
+              mode: syncWindow?.mode || null,
+              windowStart: syncWindow?.startDate || null,
+              windowEnd: syncWindow?.endDate || null,
+              businessDate: snapshotDate,
+              module: row.module || null,
+              miProgram: row.miProgram || null,
+              transaction: req.transaction || null,
+              endpointPath: effectiveEndpointPath || null,
+              pageNo: pagesFetched,
+              bookmarkIn: inputBookmark,
+              bookmarkOut,
+              recordCount: ingestedRecords.length,
+              httpStatus: response.status,
+              durationMs: requestDurationMs,
+              payloadHash,
+              status: statusText,
+              errorMessage: statusText === 'success' ? null : payloadMsg || null,
+            },
+          });
+          if (ingestedRecords.length > 0) {
+            const rawRows = ingestedRecords.map((record) => {
+              const payloadJson = JSON.stringify(record);
+              const sourceRecordHash = createHash('sha256').update(payloadJson).digest('hex');
+              return {
+                id: randomUUID(),
+                batchId,
+                companyId,
+                platform: 'INFOR_M3',
+                syncRunId,
+                businessDate: snapshotDate,
+                module: row.module || null,
+                miProgram: row.miProgram || null,
+                transaction: req.transaction || null,
+                sourceRecordId: resolveRawSourceRecordId(record),
+                sourceRecordHash,
+                payload: record as Prisma.InputJsonValue,
+                fetchedAt: new Date(),
+              };
+            });
+            await (prisma as any).inforRawRecord.createMany({
+              data: rawRows,
+              skipDuplicates: true,
+            });
+          }
+          const sourceKey = resolveRawCompletenessSourceKey(moduleType);
+          if (sourceKey && syncWindowStartIso) {
+            await prisma.$executeRaw`
+              INSERT INTO "InforRawCompleteness"
+                ("id","companyId","platform","syncRunId","businessDate","sourceKey","isComplete","lastBatchId","statusMessage","lastSeenAt","createdAt","updatedAt")
+              VALUES
+                (${randomUUID()}, ${companyId}, 'INFOR_M3', ${syncRunId}, ${snapshotDate}, ${sourceKey}, false, ${batchId}, ${`ingested_chunk:${statusText}`}, NOW(), NOW(), NOW())
+              ON CONFLICT ("companyId","platform","syncRunId","businessDate","sourceKey")
+              DO UPDATE SET
+                "lastBatchId" = EXCLUDED."lastBatchId",
+                "statusMessage" = EXCLUDED."statusMessage",
+                "lastSeenAt" = NOW(),
+                "updatedAt" = NOW()
+            `;
+          }
+        }
+
         const responseBodyForLog = isHistoricalDailySliceRequest ? null : response.body;
         bufferedApiSyncLogs.push({
           companyId,
