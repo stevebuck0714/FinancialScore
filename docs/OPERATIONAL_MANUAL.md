@@ -511,7 +511,7 @@ Library: bcryptjs
   algorithm: 'sha1',     // TOTP standard
   digits: 6,             // 6-digit codes
   step: 30,              // 30-second validity
-  window: 1,             // Check ù1 time window
+  window: 1,             // Check ÔøΩ1 time window
   encoding: 'base32',    // Secret encoding
   issuer: 'Corelytics'   // Displayed in app
 }
@@ -1109,7 +1109,7 @@ In each company card inside Site Admin, under Operational Hub Customization:
    - `Company only`: add to current company only
    - `All companies (global)`: add to all current companies
 5. Click Add Report.
-6. Use existing checkboxes to enable/disable visibility in that companyùs configuration.
+6. Use existing checkboxes to enable/disable visibility in that companyÔøΩs configuration.
 7. Click Save to persist section toggle state changes.
 
  How Scope Works
@@ -1189,6 +1189,17 @@ Infor controls emphasize:
 - strict tenant/company isolation
 - controlled onboarding checklist
 - PR review checklist for integration modifications
+
+ 6.2.1 Infor async run safety controls
+
+Current async queue behavior and recovery flow are documented in `SYNC_ARCHITECTURE.md`.
+
+Operational safeguards:
+
+- stale-progress timeout guard: `INFOR_SYNC_RUN_STALE_MINUTES` (default `30`)
+- max runtime age guard: `INFOR_SYNC_RUN_MAX_AGE_HOURS` (default `8`)
+- timeout guard failure transitions run state to `failed` (no indefinite `running`)
+- pending/leased queue tasks are cancelled when a run is auto-failed by timeout
 
  6.3 QBD schema extension direction
 
@@ -1996,7 +2007,7 @@ The Ratios page provides KPI ratios derived from monthly COA data, with optional
 This tab is a visual dashboard of ratio trends. It groups charts by category and plots each ratio over time:
 
 - Liquidity: Current Ratio, Quick Ratio
-- Activity: Inventory Turnover, Receivables Turnover, Payables Turnover, Daysù Inventory, Daysù Receivables, Daysù Payables, Sales/Working Capital
+- Activity: Inventory Turnover, Receivables Turnover, Payables Turnover, DaysÔøΩ Inventory, DaysÔøΩ Receivables, DaysÔøΩ Payables, Sales/Working Capital
 - Coverage: Interest Coverage, Debt Service Coverage, Cash Flow to Debt
 - Leverage: Debt/Net Worth, Fixed Assets/Net Worth, Leverage Ratio
 - Operating: Total Asset Turnover, ROE, ROA, EBITDA Margin, EBIT Margin
@@ -2062,7 +2073,7 @@ This tab focuses on expense-category trends from the master data store.
 
 What it does:
 
-- Pulls dynamic expense categories based on the companyùs mapped COA.
+- Pulls dynamic expense categories based on the companyÔøΩs mapped COA.
 - Adds Total Operating Expenses as a synthesized category.
 - Charts category trends over time for expense management and benchmarking.
 
@@ -2377,7 +2388,7 @@ Operational impact:
 - sector drives default categories and analysis emphasis
 - company-level overrides can refine visibility and behavior
 
- Sector Playbook Library ù Design
+ Sector Playbook Library ÔøΩ Design
 
 This document defines the sector playbook library used to focus Performance Analytics (Focus Board, Trend Explorer, Anomaly Inbox, and future recommendations) by company sector. Playbooks ensure analysis and recommendations are sector-appropriate and scale as COA and operational data expand (e.g. from ERP).
 
@@ -2385,7 +2396,7 @@ This document defines the sector playbook library used to focus Performance Anal
 
 b) Purpose
 
-- Tie analysis to company sector: Use the companyùs `industrySectorCategory` to select one of 11 standard operational flavors (plus DEFAULT when sector is unset).
+- Tie analysis to company sector: Use the companyÔøΩs `industrySectorCategory` to select one of 11 standard operational flavors (plus DEFAULT when sector is unset).
 - Focus the agent: Prioritize which COA categories and ops metrics to analyze, how to triage (Fix now / Investigate / Monitor / Opportunities), and how to interpret anomalies and trends.
 - Support recommendations: Provide sector-specific opportunity themes so COA + ops findings can be turned into actionable recommendations (title, family, when they apply, objective, owner).
 - Scale with data: Playbooks define what to care about and how to interpret; the set of series analyzed comes from actual data. As ERP adds more COA lines and ops metrics, the same pipeline runs with the playbook guiding priority and narrative.
@@ -2433,7 +2444,7 @@ type FocusPriority = {
 // Anomaly context: how to interpret anomalies in this sector.
 type AnomalyContext = {
   seasonalityNote?: string;               // e.g. "Strong Q4 peak; harvest-driven spikes in Q3"
-  typicalVarianceNote?: string;           // e.g. "Month-over-month ù15% common on job completions"
+  typicalVarianceNote?: string;           // e.g. "Month-over-month ÔøΩ15% common on job completions"
   highSeverityTriggers?: string[];        // metric/pattern names that should elevate severity
   narrativeTemplates?: Record<string, string>; // optional: metric key -> "likely cause" template
 };
@@ -2507,9 +2518,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Generic; no sector-specific pattern.
-- Typical variance: Revenue and margin often ù10ù20% MoM for small businesses.
+- Typical variance: Revenue and margin often ÔøΩ10ÔøΩ20% MoM for small businesses.
 - High severity: Large single-period revenue drop, margin collapse, or cash/AR spike.
-- Narrative: Neutral (ùVariance in [metric] relative to recent history.ù).
+- Narrative: Neutral (ÔøΩVariance in [metric] relative to recent history.ÔøΩ).
 
 Recommendation themes
 
@@ -2536,9 +2547,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Harvest and planting cycles; quarterly yield and price spikes are common.
-- Typical variance: Yield and price can swing ù20%+ by season; input costs volatile.
+- Typical variance: Yield and price can swing ÔøΩ20%+ by season; input costs volatile.
 - High severity: Collapse in yield or price, or sharp input-cost spike vs prior period.
-- Narrative: Use ùyield,ù ùprice,ù ùinput cost,ù ùshrinkù in likely-cause text.
+- Narrative: Use ÔøΩyield,ÔøΩ ÔøΩprice,ÔøΩ ÔøΩinput cost,ÔøΩ ÔøΩshrinkÔøΩ in likely-cause text.
 
 Recommendation themes
 
@@ -2565,9 +2576,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Weather and maintenance windows; quarterly production swings possible.
-- Typical variance: Throughput and cost per ton can move ù15% with outages or grade mix.
+- Typical variance: Throughput and cost per ton can move ÔøΩ15% with outages or grade mix.
 - High severity: Sustained downtime spike, cost per ton jump, or recovery rate drop.
-- Narrative: Use ùthroughput,ù ùdowntime,ù ùcost per ton,ù ùrecovery rate.ù
+- Narrative: Use ÔøΩthroughput,ÔøΩ ÔøΩdowntime,ÔøΩ ÔøΩcost per ton,ÔøΩ ÔøΩrecovery rate.ÔøΩ
 
 Recommendation themes
 
@@ -2594,9 +2605,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Peak demand (summer/winter); planned outages often in shoulder seasons.
-- Typical variance: Load and cost per unit can vary ù10ù15% by season.
+- Typical variance: Load and cost per unit can vary ÔøΩ10ÔøΩ15% by season.
 - High severity: Major outage spike, safety/reliability event, or regulatory exposure.
-- Narrative: Use ùuptime,ù ùoutage,ù ùloss %,ù ùload factor.ù
+- Narrative: Use ÔøΩuptime,ÔøΩ ÔøΩoutage,ÔøΩ ÔøΩloss %,ÔøΩ ÔøΩload factor.ÔøΩ
 
 Recommendation themes
 
@@ -2623,9 +2634,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Weather and project phasing; backlog and completions lumpy by quarter.
-- Typical variance: Job margin and schedule often ù10ù15% by job; change orders can spike.
+- Typical variance: Job margin and schedule often ÔøΩ10ÔøΩ15% by job; change orders can spike.
 - High severity: Large schedule slip, margin erosion on a job, or retention/AR stretch.
-- Narrative: Use ùschedule variance,ù ùchange orders,ù ùjob margin,ù ùWIP,ù ùretention.ù
+- Narrative: Use ÔøΩschedule variance,ÔøΩ ÔøΩchange orders,ÔøΩ ÔøΩjob margin,ÔøΩ ÔøΩWIP,ÔøΩ ÔøΩretention.ÔøΩ
 
 Recommendation themes
 
@@ -2652,9 +2663,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Demand peaks by product/season; inventory and fill rate swing.
-- Typical variance: Fill rate and margin often ù5ù10%; inventory turns by category.
+- Typical variance: Fill rate and margin often ÔøΩ5ÔøΩ10%; inventory turns by category.
 - High severity: Fill rate drop, margin compression, or inventory/AR blowout.
-- Narrative: Use ùfill rate,ù ùinventory turns,ù ùfreight,ù ùreturns.ù
+- Narrative: Use ÔøΩfill rate,ÔøΩ ÔøΩinventory turns,ÔøΩ ÔøΩfreight,ÔøΩ ÔøΩreturns.ÔøΩ
 
 Recommendation themes
 
@@ -2681,9 +2692,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Holiday and back-to-school peaks; category-specific seasonality.
-- Typical variance: Conversion and traffic can move ù10ù15%; margin with promo mix.
+- Typical variance: Conversion and traffic can move ÔøΩ10ÔøΩ15%; margin with promo mix.
 - High severity: Conversion collapse, stockout spike, or margin erosion.
-- Narrative: Use ùconversion,ù ùstockout,ù ùsell-through,ù ùpromo,ù ùmarkdown.ù
+- Narrative: Use ÔøΩconversion,ÔøΩ ÔøΩstockout,ÔøΩ ÔøΩsell-through,ÔøΩ ÔøΩpromo,ÔøΩ ÔøΩmarkdown.ÔøΩ
 
 Recommendation themes
 
@@ -2710,9 +2721,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Peak shipping periods; weather and demand cause utilization swings.
-- Typical variance: On-time and utilization often ù5ù10%; cost per mile with fuel.
+- Typical variance: On-time and utilization often ÔøΩ5ÔøΩ10%; cost per mile with fuel.
 - High severity: On-time drop, claims spike, or margin collapse per load.
-- Narrative: Use ùon-time,ù ùutilization,ù ùcost per mile,ù ùclaims,ù ùdamage.ù
+- Narrative: Use ÔøΩon-time,ÔøΩ ÔøΩutilization,ÔøΩ ÔøΩcost per mile,ÔøΩ ÔøΩclaims,ÔøΩ ÔøΩdamage.ÔøΩ
 
 Recommendation themes
 
@@ -2738,9 +2749,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Quarter-end and renewal waves; trial and activation can spike with campaigns.
-- Typical variance: Churn and ARPU often reported monthly; ù5ù10% common.
+- Typical variance: Churn and ARPU often reported monthly; ÔøΩ5ÔøΩ10% common.
 - High severity: Churn spike, activation drop, or significant outage.
-- Narrative: Use ùchurn,ù ùactivation,ù ùARPU,ù ùuptime,ù ùlatency.ù
+- Narrative: Use ÔøΩchurn,ÔøΩ ÔøΩactivation,ÔøΩ ÔøΩARPU,ÔøΩ ÔøΩuptime,ÔøΩ ÔøΩlatency.ÔøΩ
 
 Recommendation themes
 
@@ -2766,9 +2777,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Reporting and underwriting cycles; loss and default can lag.
-- Typical variance: Loss ratio and NIM often ù3ù5%; originations by quarter.
+- Typical variance: Loss ratio and NIM often ÔøΩ3ÔøΩ5%; originations by quarter.
 - High severity: Loss ratio or default rate spike, or capital/regulatory concern.
-- Narrative: Use ùloss ratio,ù ùdefault rate,ù ùNIM,ù ùcapital adequacy.ù
+- Narrative: Use ÔøΩloss ratio,ÔøΩ ÔøΩdefault rate,ÔøΩ ÔøΩNIM,ÔøΩ ÔøΩcapital adequacy.ÔøΩ
 
 Recommendation themes
 
@@ -2797,7 +2808,7 @@ Anomaly context
 - Seasonality: Lease expirations and turnover by quarter; occupancy can step-change.
 - Typical variance: Occupancy and NOI often stable; arrears and turnover can spike.
 - High severity: Occupancy drop, NOI compression, or arrears spike.
-- Narrative: Use ùoccupancy,ù ùNOI,ù ùturnover,ù ùarrears,ù ùrent collection.ù
+- Narrative: Use ÔøΩoccupancy,ÔøΩ ÔøΩNOI,ÔøΩ ÔøΩturnover,ÔøΩ ÔøΩarrears,ÔøΩ ÔøΩrent collection.ÔøΩ
 
 Recommendation themes
 
@@ -2824,9 +2835,9 @@ Focus priorities
 Anomaly context
 
 - Seasonality: Quarter-end and project milestones; utilization and pipeline lumpy.
-- Typical variance: Utilization and realization often ù5ù10%; project margin by engagement.
+- Typical variance: Utilization and realization often ÔøΩ5ÔøΩ10%; project margin by engagement.
 - High severity: Utilization drop, realization erosion, or pipeline gap.
-- Narrative: Use ùutilization,ù ùrealization,ù ùproject margin,ù ùwin rate.ù
+- Narrative: Use ÔøΩutilization,ÔøΩ ÔøΩrealization,ÔøΩ ÔøΩproject margin,ÔøΩ ÔøΩwin rate.ÔøΩ
 
 Recommendation themes
 
@@ -2842,7 +2853,7 @@ g) Implementation notes
 
 - Storage: Implement playbooks as a constant map (e.g. `SECTOR_PLAYBOOKS: Record<string, SectorPlaybook>`) in code or as JSON loaded at runtime. Keys must match normalized `industrySectorCategory` (see `getOpsMetricProfile`).
 - Run integration: In `performance-analytics/run`, after resolving `industrySectorCategory` and `opsProfile`, load the sector playbook. Use `focusPriorities` when scoring and bucketing focus/driver/trend findings; use `anomalyContext` when generating anomaly findings (severity, narrative); use `recommendationThemes` when generating or enriching opportunity/recommendation findings.
-- COA coverage: Ensure run (or a dedicated COA analyzer) produces series for material COA categories (revenue, cogs, labor, etc.) and runs anomaly/focus logic on them; playbookùs `focusPriorities` and `coaCategory` hints determine which categories to emphasize per sector.
+- COA coverage: Ensure run (or a dedicated COA analyzer) produces series for material COA categories (revenue, cogs, labor, etc.) and runs anomaly/focus logic on them; playbookÔøΩs `focusPriorities` and `coaCategory` hints determine which categories to emphasize per sector.
 - Ops coverage: Use existing `getOpsMetricProfile(sector)` for metric names; playbook adds triage and anomaly/recommendation context. As new ops metrics are added (e.g. from ERP), include them in the relevant ops profile; playbook themes stay at category/family level.
 - Future recommendation layer: When turning findings into actionable recommendations, match findings to `recommendationThemes` by sector, attach evidence (COA/ops series), and output title, rationale, suggested owner, and objective (cash/margin/growth/risk) for Opportunity Workspace.
 
@@ -2854,7 +2865,7 @@ h) Summary
 |------|--------------|
 | Schema | `SectorPlaybook`: sector, label, opsProfileRef, focusPriorities, anomalyContext, recommendationThemes. |
 | Selection | From `Company.industrySectorCategory` (normalized); fallback `DEFAULT`. |
-| Sectors | 11 sector playbooks (AGRICULTURE ù PROFESSIONAL_SERVICES) + DEFAULT. |
+| Sectors | 11 sector playbooks (AGRICULTURE ÔøΩ PROFESSIONAL_SERVICES) + DEFAULT. |
 | Use | Run uses playbook for focus bucketing, anomaly narrative/severity, and (later) recommendation themes; Focus Board, Trend Explorer, and Anomaly Inbox consume run output; design supports thorough COA + ops review and scales with expanded ERP
 
 24. Product margin weekly operating detail (`PRODUCT_MARGIN_WEEKLY_REPORTING_IMPLEMENTATION_PLAN.md`)
