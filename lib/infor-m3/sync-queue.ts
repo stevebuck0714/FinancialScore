@@ -12,12 +12,15 @@ const MAX_LEASE_ROUNDS_PER_TICK = 12;
 const TICK_TIME_BUDGET_MS = 55_000;
 const DEFAULT_DAILY_OVERLAP_PROGRAM_BATCH_SIZE = 2;
 const DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE = 4;
-const DEFAULT_TICK_CONCURRENCY = 4;
-const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 4;
+const DEFAULT_TICK_CONCURRENCY = 5;
+const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 5;
+const DEFAULT_RUN_STALE_MINUTES = 30;
+const DEFAULT_RUN_MAX_AGE_HOURS = 8;
 
 type QueueRunRecord = {
   id: string;
   companyId: string;
+  platform: string;
   status: string;
   frequency: string;
   site: string | null;
@@ -49,7 +52,7 @@ type QueueTaskRecord = {
 };
 
 function db() {
-  return prisma as any;
+  return prisma;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -87,11 +90,31 @@ function resolveMaxInflightPerScope(): number {
   return Math.min(12, Math.max(1, Math.floor(raw)));
 }
 
+function resolveRunStaleMinutes(): number {
+  const raw = Number(process.env.INFOR_SYNC_RUN_STALE_MINUTES || DEFAULT_RUN_STALE_MINUTES);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_STALE_MINUTES;
+  return Math.min(240, Math.max(5, Math.floor(raw)));
+}
+
+function resolveRunMaxAgeHours(): number {
+  const raw = Number(process.env.INFOR_SYNC_RUN_MAX_AGE_HOURS || DEFAULT_RUN_MAX_AGE_HOURS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_MAX_AGE_HOURS;
+  return Math.min(72, Math.max(1, Math.floor(raw)));
+}
+
 function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
   if (String(run.platform) !== 'INFOR_M3') return 1;
   const mode = String(run.mode || '');
-  if (mode === 'business_day_backfill' || mode === 'backfill') return resolveBackfillProgramBatchSize();
-  if (mode === 'daily_overlap') return resolveDailyOverlapProgramBatchSize();
+  const retryCount = Math.max(0, Number(run.retryCount || 0));
+  const adjustment = retryCount >= 4 ? -2 : retryCount >= 2 ? -1 : retryCount === 0 ? 1 : 0;
+  if (mode === 'business_day_backfill' || mode === 'backfill') {
+    const base = resolveBackfillProgramBatchSize();
+    return Math.min(8, Math.max(1, base + adjustment));
+  }
+  if (mode === 'daily_overlap') {
+    const base = resolveDailyOverlapProgramBatchSize();
+    return Math.min(6, Math.max(1, base + adjustment));
+  }
   return 1;
 }
 
@@ -198,18 +221,6 @@ function buildSkippedCursorFromPayload(payload: Record<string, unknown>): Record
   return cursor;
 }
 
-export async function getActiveQueueRun(companyId: string, platform: AccountingPlatform = 'INFOR_M3'): Promise<QueueRunRecord | null> {
-  const run = await db().inforSyncRun.findFirst({
-    where: {
-      companyId,
-      platform,
-      status: { in: ['queued', 'running'] },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-  return (run as QueueRunRecord | null) || null;
-}
-
 async function getRunningQueueRun(companyId: string, platform: AccountingPlatform): Promise<QueueRunRecord | null> {
   const run = await db().inforSyncRun.findFirst({
     where: {
@@ -273,7 +284,7 @@ export async function startQueueRun(input: {
     },
   });
   return {
-    alreadyRunning: false,
+    alreadyRunning: Boolean(running),
     queued: Boolean(running),
     run: runRecord,
   };
@@ -505,7 +516,7 @@ async function processTask(
     const backoffMs = Math.min(5 * 60 * 1000, Math.max(10_000, Math.floor(2 ** attemptNo) * 1000));
     const isBusinessDayBackfill = String(task.run.mode || '') === 'business_day_backfill';
     const shouldSkip = reachedMax && isBusinessDayBackfill;
-    await db().$transaction(async (tx: any) => {
+    await db().$transaction(async (tx) => {
       await tx.inforSyncTaskAttempt.create({
         data: {
           taskId: task.id,
@@ -630,7 +641,7 @@ async function processTask(
       ? (data.cursor as Record<string, unknown>)
       : null;
 
-  await db().$transaction(async (tx: any) => {
+  await db().$transaction(async (tx) => {
     await tx.inforSyncTask.update({
       where: { id: task.id },
       data: {
@@ -717,7 +728,7 @@ async function markTaskExecutionFailure(
   message: string
 ): Promise<Record<string, unknown>> {
   const now = new Date();
-  await db().$transaction(async (tx: any) => {
+  await db().$transaction(async (tx) => {
     await tx.inforSyncTask.update({
       where: { id: task.id },
       data: {
@@ -755,31 +766,135 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
   let promotedRuns = 0;
   let leasedTasks = 0;
   let leaseRounds = 0;
+  let timedOutRuns = 0;
   const tickConcurrency = resolveTickConcurrency();
+  let activeTickConcurrency = tickConcurrency;
+  let cleanBatchStreak = 0;
   const results: Array<Record<string, unknown>> = [];
+
+  const failTimedOutRuns = async (): Promise<number> => {
+    const staleMs = resolveRunStaleMinutes() * 60 * 1000;
+    const maxAgeMs = resolveRunMaxAgeHours() * 60 * 60 * 1000;
+    const now = new Date();
+    const nowMs = now.getTime();
+    const running = (await db().inforSyncRun.findMany({
+      where: { status: 'running' },
+      orderBy: { updatedAt: 'asc' },
+      take: 200,
+      select: {
+        id: true,
+        companyId: true,
+        platform: true,
+        mode: true,
+        createdAt: true,
+        updatedAt: true,
+        lastChunkAt: true,
+      },
+    })) as Array<{
+      id: string;
+      companyId: string;
+      platform: string;
+      mode: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+      lastChunkAt: Date | null;
+    }>;
+
+    let failed = 0;
+    for (const run of running) {
+      const createdAtMs = new Date(run.createdAt).getTime();
+      const progressAt = run.lastChunkAt || run.updatedAt || run.createdAt;
+      const progressAtMs = new Date(progressAt).getTime();
+      const ageMs = nowMs - createdAtMs;
+      const idleMs = nowMs - progressAtMs;
+
+      const stale = Number.isFinite(idleMs) && idleMs > staleMs;
+      const tooOld = Number.isFinite(ageMs) && ageMs > maxAgeMs;
+      if (!stale && !tooOld) continue;
+
+      const reason = stale
+        ? `Auto-failed stale queue run after ${Math.floor(idleMs / 60000)} minutes without progress.`
+        : `Auto-failed queue run after ${Math.floor(ageMs / 3600000)} hours runtime cap.`;
+
+      await db().$transaction([
+        db().inforSyncRun.updateMany({
+          where: { id: run.id, status: 'running' },
+          data: {
+            status: 'failed',
+            finishedAt: now,
+            updatedAt: now,
+            lastError: reason,
+            message: reason,
+          },
+        }),
+        db().inforSyncTask.updateMany({
+          where: {
+            runId: run.id,
+            status: { in: ['pending', 'leased'] },
+          },
+          data: {
+            status: 'cancelled',
+            finishedAt: now,
+            updatedAt: now,
+            lastError: reason,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          },
+        }),
+      ]);
+
+      failed += 1;
+      await notifyQueueRunFailure(
+        run.companyId,
+        (String(run.platform || 'INFOR_M3') as AccountingPlatform),
+        'Infor async queue run auto-failed by timeout guard',
+        reason
+      );
+    }
+    return failed;
+  };
+
   while (
     leaseRounds < MAX_LEASE_ROUNDS_PER_TICK &&
     Date.now() - tickStartedAt < TICK_TIME_BUDGET_MS
   ) {
     leaseRounds += 1;
+    if (leaseRounds === 1 || leaseRounds % 3 === 0) {
+      timedOutRuns += await failTimedOutRuns();
+    }
     promotedRuns += await promoteQueuedRunsForIdleCompanies();
     const leased = await leasePendingTasks(MAX_TASKS_PER_TICK);
     if (leased.length === 0) break;
     leasedTasks += leased.length;
-    for (let index = 0; index < leased.length; index += tickConcurrency) {
-      const batch = leased.slice(index, index + tickConcurrency);
+    for (let index = 0; index < leased.length; index += activeTickConcurrency) {
+      const batch = leased.slice(index, index + activeTickConcurrency);
       const settled = await Promise.allSettled(batch.map((task) => processTask(requestUrl, task, workerSecret)));
+      let pressureSignals = 0;
       for (let resultIndex = 0; resultIndex < settled.length; resultIndex += 1) {
         const settledResult = settled[resultIndex];
         const task = batch[resultIndex];
         if (settledResult.status === 'fulfilled') {
           results.push(settledResult.value);
+          if (settledResult.value.status === 'retry' || settledResult.value.status === 'failed') {
+            pressureSignals += 1;
+          }
         } else {
           const message =
             settledResult.reason instanceof Error
               ? settledResult.reason.message
               : 'Unknown queue task error';
           results.push(await markTaskExecutionFailure(task, message));
+          pressureSignals += 1;
+        }
+      }
+      if (pressureSignals > 0) {
+        cleanBatchStreak = 0;
+        activeTickConcurrency = Math.max(1, activeTickConcurrency - 1);
+      } else {
+        cleanBatchStreak += 1;
+        if (cleanBatchStreak >= 2 && activeTickConcurrency < tickConcurrency) {
+          activeTickConcurrency += 1;
+          cleanBatchStreak = 0;
         }
       }
     }
@@ -789,8 +904,10 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     queueEnabled: true,
     promotedRuns,
     leasedTasks,
+    timedOutRuns,
     leaseRounds,
     tickConcurrency,
+    activeTickConcurrency,
     elapsedMs: Date.now() - tickStartedAt,
     results,
   };

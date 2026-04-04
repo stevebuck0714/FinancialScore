@@ -487,6 +487,7 @@ model ApiSyncLog {
   @@index([companyId])
   @@index([platform])
   @@index([createdAt])
+  @@index([companyId, platform, createdAt(sort: Desc)])
 }
 
 model InforSyncRun {
@@ -518,6 +519,8 @@ model InforSyncRun {
   @@index([companyId, status, createdAt(sort: Desc)])
   @@index([companyId, createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
+  @@index([status, updatedAt(sort: Desc)])
+  @@index([companyId, platform, status, updatedAt(sort: Desc)])
 }
 
 model InforSyncTask {
@@ -542,8 +545,11 @@ model InforSyncTask {
 
   @@index([runId, status])
   @@index([runId, status, availableAt])
+  @@index([runId, status, updatedAt(sort: Desc)])
   @@index([status, leaseExpiresAt])
   @@index([status, availableAt, leaseExpiresAt])
+  @@index([status, availableAt, createdAt])
+  @@index([companyId, status, availableAt])
   @@index([companyId, status, createdAt(sort: Desc)])
 }
 
