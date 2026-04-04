@@ -4524,6 +4524,11 @@ export async function syncInforM3OperationalData(
     String(process.env.INFOR_RAW_INGEST_ENABLED || '')
       .trim()
       .toLowerCase() === 'true';
+  const rawIngestOnly =
+    rawIngestEnabled &&
+    String(process.env.INFOR_RAW_INGEST_ONLY || '')
+      .trim()
+      .toLowerCase() === 'true';
   const rawIngestRecordCapRaw = Number(process.env.INFOR_RAW_INGEST_RECORD_CAP_PER_BATCH || 5000);
   const rawIngestRecordCap =
     Number.isFinite(rawIngestRecordCapRaw) && rawIngestRecordCapRaw > 0
@@ -5299,27 +5304,30 @@ export async function syncInforM3OperationalData(
       let moduleRecordsCreated = 0;
       let modulePersistDebug: Record<string, unknown> | null = null;
       if (requestSucceeded) {
-        try {
-          const salesProgramId = programId;
-          if (moduleType === 'sales' && (salesProgramId === 'SLCOS' || salesProgramId === 'SLCOHDRS')) {
-            for (const rec of recordsAfterSiteFilter) {
-              const coNumRaw = pickString(rec, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum']);
-              if (!coNumRaw) continue;
-              const coNum = normalizeOrderJoinKey(coNumRaw);
-              if (!coNum) continue;
-              const composite = pickString(rec, ['DerCustNoName', 'customerComposite', 'CustNumName']);
-              const customerId =
-                pickString(rec, ['CustNum', 'custNum', 'CoCustNum', 'CustNo', ...CUSTOMER_ID_KEYS]) ||
-                parseCustomerIdFromComposite(composite);
-              const customerName =
-                pickCustomerDisplayName(rec) ||
-                pickString(rec, ['BillToName', 'CustName', 'DerCustName', ...CUSTOMER_NAME_KEYS]) ||
-                'Unknown Customer';
-              const orderDate = firstRecordDate(rec, ['OrderDate', 'orderDate']);
-              orderCustomerLookup.set(coNum, { customerId: customerId || null, customerName, orderDate: orderDate || null });
+        if (rawIngestOnly) {
+          moduleRecordsCreated = rawRecords.length;
+        } else {
+          try {
+            const salesProgramId = programId;
+            if (moduleType === 'sales' && (salesProgramId === 'SLCOS' || salesProgramId === 'SLCOHDRS')) {
+              for (const rec of recordsAfterSiteFilter) {
+                const coNumRaw = pickString(rec, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum']);
+                if (!coNumRaw) continue;
+                const coNum = normalizeOrderJoinKey(coNumRaw);
+                if (!coNum) continue;
+                const composite = pickString(rec, ['DerCustNoName', 'customerComposite', 'CustNumName']);
+                const customerId =
+                  pickString(rec, ['CustNum', 'custNum', 'CoCustNum', 'CustNo', ...CUSTOMER_ID_KEYS]) ||
+                  parseCustomerIdFromComposite(composite);
+                const customerName =
+                  pickCustomerDisplayName(rec) ||
+                  pickString(rec, ['BillToName', 'CustName', 'DerCustName', ...CUSTOMER_NAME_KEYS]) ||
+                  'Unknown Customer';
+                const orderDate = firstRecordDate(rec, ['OrderDate', 'orderDate']);
+                orderCustomerLookup.set(coNum, { customerId: customerId || null, customerName, orderDate: orderDate || null });
+              }
             }
-          }
-          switch (moduleType) {
+            switch (moduleType) {
             case 'cash':
               {
                 const isHistoricalDailySlice =
@@ -5572,11 +5580,12 @@ export async function syncInforM3OperationalData(
               })
             );
           }
-        } catch (persistError) {
-          const message = persistError instanceof Error ? persistError.message : 'Failed to persist records';
-          errors.push(
-            `${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${message} (credentials source: ${credentialSource})`
-          );
+          } catch (persistError) {
+            const message = persistError instanceof Error ? persistError.message : 'Failed to persist records';
+            errors.push(
+              `${row.module}/${row.miProgram || row.endpointPath || req.transaction}: ${message} (credentials source: ${credentialSource})`
+            );
+          }
         }
       } else {
         errors.push(
@@ -5761,6 +5770,8 @@ export async function syncInforM3OperationalData(
             companyRollupApplied: shouldAggregateForRollup,
             pagesFetched,
             paginationTruncated,
+            rawIngestEnabled,
+            rawIngestOnly,
             syncWindow: syncWindow
               ? {
                   mode: syncWindow.mode,
@@ -5815,7 +5826,7 @@ export async function syncInforM3OperationalData(
     };
   }
 
-  if (!continuation) {
+  if (!continuation && !rawIngestOnly) {
     // Finalize open-item snapshot after all continuation pages are applied.
     // During continuation accumulation we may temporarily carry zero/negative
     // balances; keep only true open invoices at completion.
@@ -5878,7 +5889,7 @@ export async function syncInforM3OperationalData(
     await flushBufferedApiSyncLogs(true, 'final');
   }
 
-  if (!options?.skipPrune && !continuation) {
+  if (!options?.skipPrune && !continuation && !rawIngestOnly) {
     await pruneCompanyOperationalData(companyId);
   }
   const syncTypeBreakdown = Array.from(syncTypeStats.entries())
@@ -5939,6 +5950,11 @@ export async function syncInforM3OperationalData(
             sampledRequests: recentPressureSamples.length,
           },
           syncTypeBreakdown,
+          rawIngest: {
+            enabled: rawIngestEnabled,
+            ingestOnly: rawIngestOnly,
+            recordCapPerBatch: rawIngestRecordCap,
+          },
           runMode: syncWindow?.mode || null,
           syncWindow: syncWindow
             ? {
