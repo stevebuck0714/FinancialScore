@@ -6220,9 +6220,37 @@ export async function transformInforM3RawRun(options: {
         },
       });
       await upsertDailyFinancialSnapshotFromOperationalTables(companyId, snapshotDate, frequency);
+      await (prisma as any).inforRawCompleteness.updateMany({
+        where: {
+          companyId,
+          platform: 'INFOR_M3',
+          syncRunId,
+          businessDate: snapshotDate,
+        },
+        data: {
+          isComplete: true,
+          statusMessage: 'transformed',
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
       daysProcessed += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Raw transform day processing failed';
+      await (prisma as any).inforRawCompleteness.updateMany({
+        where: {
+          companyId,
+          platform: 'INFOR_M3',
+          syncRunId,
+          businessDate: snapshotDate,
+        },
+        data: {
+          isComplete: false,
+          statusMessage: `transform_failed:${String(message).slice(0, 240)}`,
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
       errors.push(`${snapshotDate.toISOString().slice(0, 10)}: ${message}`);
     }
   }
@@ -6234,4 +6262,73 @@ export async function transformInforM3RawRun(options: {
     recordsCreated,
     errors,
   };
+}
+
+export async function processPendingInforRawTransforms(options?: {
+  maxDaysPerTick?: number;
+}): Promise<{
+  processedDays: number;
+  failedDays: number;
+  results: Array<{ companyId: string; syncRunId: string; businessDateIso: string; ok: boolean; errors: string[] }>;
+}> {
+  const limitRaw = Number(options?.maxDaysPerTick || 1);
+  const maxDaysPerTick =
+    Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(10, Math.max(1, Math.floor(limitRaw)))
+      : 1;
+
+  const pendingDays = await prisma.$queryRaw<Array<{
+    companyId: string;
+    syncRunId: string;
+    businessDate: Date;
+    frequency: string | null;
+    oldestUpdatedAt: Date;
+  }>>`
+    SELECT
+      rc."companyId",
+      rc."syncRunId",
+      rc."businessDate",
+      sr."frequency",
+      MIN(rc."updatedAt") AS "oldestUpdatedAt"
+    FROM "InforRawCompleteness" rc
+    INNER JOIN "InforSyncRun" sr
+      ON sr.id = rc."syncRunId"
+      AND sr.status = 'done'
+    WHERE rc.platform = 'INFOR_M3'
+      AND rc."isComplete" = false
+    GROUP BY rc."companyId", rc."syncRunId", rc."businessDate", sr."frequency"
+    ORDER BY MIN(rc."updatedAt") ASC
+    LIMIT ${maxDaysPerTick}
+  `;
+
+  let processedDays = 0;
+  let failedDays = 0;
+  const results: Array<{ companyId: string; syncRunId: string; businessDateIso: string; ok: boolean; errors: string[] }> = [];
+
+  for (const row of pendingDays) {
+    const businessDateIso = startOfUtcDay(new Date(row.businessDate)).toISOString().slice(0, 10);
+    const frequencyRaw = String(row.frequency || '').trim().toLowerCase();
+    const frequency: 'daily' | 'weekly' | 'monthly' =
+      frequencyRaw === 'weekly' ? 'weekly' : frequencyRaw === 'monthly' ? 'monthly' : 'daily';
+
+    const transformed = await transformInforM3RawRun({
+      companyId: String(row.companyId),
+      syncRunId: String(row.syncRunId),
+      frequency,
+      businessDateIso,
+      maxBusinessDates: 1,
+    });
+    const ok = transformed.success;
+    if (ok) processedDays += 1;
+    else failedDays += 1;
+    results.push({
+      companyId: String(row.companyId),
+      syncRunId: String(row.syncRunId),
+      businessDateIso,
+      ok,
+      errors: transformed.errors,
+    });
+  }
+
+  return { processedDays, failedDays, results };
 }

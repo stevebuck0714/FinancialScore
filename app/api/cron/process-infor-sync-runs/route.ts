@@ -6,12 +6,24 @@ import {
   type InforOperationalAsyncRun,
 } from '@/lib/infor-m3/async-run-state';
 import { isInforSyncQueueEnabled, processQueueTick } from '@/lib/infor-m3/sync-queue';
+import { processPendingInforRawTransforms } from '@/lib/infor-m3/operational-sync';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 const MAX_RUNS_PER_TICK = 8;
 const MAX_RETRIES_PER_RUN = 6;
+
+function envTrue(name: string): boolean {
+  const value = String(process.env[name] || '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+function resolveRawTransformDaysPerTick(): number {
+  const raw = Number(process.env.INFOR_RAW_TRANSFORM_DAYS_PER_TICK || 1);
+  if (!Number.isFinite(raw) || raw <= 0) return 1;
+  return Math.min(10, Math.max(1, Math.floor(raw)));
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -168,7 +180,19 @@ export async function GET(request: NextRequest) {
     const workerSecret = cronSecret || 'dev-worker';
     if (isInforSyncQueueEnabled()) {
       const queued = await processQueueTick(request.url, workerSecret);
-      return NextResponse.json(queued);
+      const autoRunRawTransform =
+        envTrue('INFOR_RAW_TRANSFORM_AUTORUN_ENABLED') ||
+        (envTrue('INFOR_RAW_INGEST_ENABLED') && envTrue('INFOR_RAW_INGEST_ONLY'));
+      if (!autoRunRawTransform) {
+        return NextResponse.json(queued);
+      }
+      const rawTransforms = await processPendingInforRawTransforms({
+        maxDaysPerTick: resolveRawTransformDaysPerTick(),
+      });
+      return NextResponse.json({
+        ...queued,
+        rawTransforms,
+      });
     }
 
     const connections = await prisma.accountingConnection.findMany({
