@@ -105,13 +105,7 @@ LIMIT 1;
 1. **`app/api/xero/sync/route.ts`**
    - Added 36-month chunking logic
    - Integrated operational data fetching
-   - Enhanced progress tracking
-
-2. **`lib/xero-parser.ts`**
-   - Added `parseXeroMonthlyData()` function
-   - Enhanced date parsing
-   - Added column extraction logic
-   - Added duplicate record handling
+   - Includes monthly parsing and duplicate-safe record handling
 
 ### API Call Breakdown:
 ```

@@ -107,7 +107,7 @@ export async function retrieveDocumentChunks(params: {
           expandedQuery,
           documentId,
           keywordLimit,
-        )) as any)
+        )) as Row[])
       : [];
 
   // Secondary keyword pass using anchor phrases if keyword recall is weak.
@@ -135,7 +135,7 @@ export async function retrieveDocumentChunks(params: {
           anchorQuery,
           documentId,
           Math.min(keywordLimit, 15),
-        )) as any)
+        )) as Row[])
       : [];
 
   const vectorRows: Row[] =
@@ -158,7 +158,7 @@ export async function retrieveDocumentChunks(params: {
           vecLit,
           documentId,
           vectorLimit,
-        )) as any)
+        )) as Row[])
       : [];
 
   // Merge by id and compute a combined score.
@@ -249,7 +249,7 @@ export async function retrieveDocumentChunks(params: {
         `,
           documentId,
           indices,
-        )) as any)
+        )) as Row[])
       : [];
 
   // Merge neighbors, preserving the original scores where available.

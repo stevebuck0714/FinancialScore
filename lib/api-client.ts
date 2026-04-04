@@ -7,6 +7,8 @@ export class ApiError extends Error {
   }
 }
 
+type JsonRecord = Record<string, unknown>;
+
 async function fetchApi(url: string, options?: RequestInit) {
   try {
     const response = await fetch(url, {
@@ -18,7 +20,11 @@ async function fetchApi(url: string, options?: RequestInit) {
       },
     });
 
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const data: JsonRecord =
+      contentType.includes('application/json')
+        ? await response.json()
+        : {};
 
     if (!response.ok) {
       const detailText = data?.details ? ` (${data.details})` : '';
@@ -240,9 +246,9 @@ export const financialsApi = {
     companyId: string;
     uploadedByUserId: string;
     fileName: string;
-    rawData: any;
-    columnMapping: any;
-    monthlyData: any[];
+    rawData: unknown;
+    columnMapping: unknown;
+    monthlyData: unknown[];
   }) {
     return fetchApi('/api/financials', {
       method: 'POST',
@@ -271,8 +277,8 @@ export const assessmentsApi = {
   async create(data: {
     userId: string;
     companyId: string;
-    responses: any;
-    notes: any;
+    responses: unknown;
+    notes: unknown;
     overallScore: number;
   }) {
     return fetchApi('/api/assessments', {
@@ -295,7 +301,7 @@ export const profilesApi = {
     return fetchApi(`/api/profiles?companyId=${companyId}`);
   },
 
-  async save(companyId: string, profileData: any) {
+  async save(companyId: string, profileData: JsonRecord) {
     return fetchApi('/api/profiles', {
       method: 'POST',
       body: JSON.stringify({ companyId, ...profileData }),

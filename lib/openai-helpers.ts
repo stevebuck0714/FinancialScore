@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 
-export type OpenAIChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+type OpenAIChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
 function getOpenAiTimeoutMs(): number {
   const raw = process.env.OPENAI_TIMEOUT_MS;
@@ -17,7 +17,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
       promise,
       new Promise<T>((_, reject) => {
         timer = setTimeout(() => {
-          const err: any = new Error(`${label} timed out after ${ms}ms`);
+          const err = new Error(`${label} timed out after ${ms}ms`) as Error & { code?: string };
           err.code = 'ETIMEDOUT';
           reject(err);
         }, ms);
@@ -28,12 +28,14 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-function extractResponsesText(response: any): string {
-  if (typeof response?.output_text === 'string' && response.output_text.trim()) {
-    return response.output_text;
+function extractResponsesText(response: unknown): string {
+  const responseRecord =
+    response && typeof response === 'object' ? (response as Record<string, unknown>) : {};
+  if (typeof responseRecord.output_text === 'string' && responseRecord.output_text.trim()) {
+    return responseRecord.output_text;
   }
 
-  const output = response?.output;
+  const output = responseRecord.output;
   if (Array.isArray(output)) {
     for (const item of output) {
       const content = item?.content;
@@ -52,14 +54,9 @@ function extractResponsesText(response: any): string {
   }
 
   // Some SDK versions expose a "text" field.
-  if (typeof response?.text === 'string' && response.text.trim()) return response.text;
+  if (typeof responseRecord.text === 'string' && responseRecord.text.trim()) return responseRecord.text;
 
   return '';
-}
-
-function looksLikeResponsesOnlyModelError(e: any): boolean {
-  const msg = String(e?.message || '');
-  return msg.includes('only supported in v1/responses') && msg.includes('v1/chat/completions');
 }
 
 function isLikelyResponsesOnlyModel(model: string): boolean {
@@ -81,7 +78,7 @@ async function createResponsesTextViaFetch(params: {
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set in environment');
   const timeoutMs = getOpenAiTimeoutMs();
 
-  const basePayload: any = {
+  const basePayload: Record<string, unknown> = {
     model: params.model,
     ...(params.instructions ? { instructions: params.instructions } : {}),
     input: params.input,
@@ -92,14 +89,7 @@ async function createResponsesTextViaFetch(params: {
     response_format: { type: 'json_object' },
   };
 
-  const minimalPayload: any = {
-    model: params.model,
-    ...(params.instructions ? { instructions: params.instructions } : {}),
-    input: params.input,
-    ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
-  };
-
-  const minimalMessagePayload: any = {
+  const minimalMessagePayload: Record<string, unknown> = {
     model: params.model,
     ...(params.instructions ? { instructions: params.instructions } : {}),
     // Canonical "messages" shape tends to produce more consistent output than a raw string input.
@@ -107,7 +97,7 @@ async function createResponsesTextViaFetch(params: {
     ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
   };
 
-  const doRequest = async (payload: any) => {
+  const doRequest = async (payload: Record<string, unknown>) => {
     let res: Response;
     try {
       res = await withTimeout(
@@ -122,18 +112,18 @@ async function createResponsesTextViaFetch(params: {
         timeoutMs,
         'OpenAI responses request',
       );
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Normalize abort/timeout errors into something actionable.
-      const msg = String(e?.message || '');
-      if (e?.code === 'ETIMEDOUT' || msg.toLowerCase().includes('timed out')) {
-        const err: any = new Error(msg || `OpenAI responses request timed out after ${timeoutMs}ms`);
+      const msg = String((e as { message?: string })?.message || '');
+      if ((e as { code?: string })?.code === 'ETIMEDOUT' || msg.toLowerCase().includes('timed out')) {
+        const err = new Error(msg || `OpenAI responses request timed out after ${timeoutMs}ms`) as Error & { code?: string };
         err.code = 'ETIMEDOUT';
         throw err;
       }
       throw e;
     }
     const raw = await res.text().catch(() => '');
-    let data: any = null;
+    let data: unknown = null;
     try {
       data = raw ? JSON.parse(raw) : null;
     } catch {
@@ -147,15 +137,15 @@ async function createResponsesTextViaFetch(params: {
     return { res, raw, data, requestId };
   };
 
-  const withoutTemperature = (p: any) => {
+  const withoutTemperature = (p: Record<string, unknown>) => {
     const { temperature: _t, ...rest } = p;
     return rest;
   };
-  const withoutResponseFormat = (p: any) => {
+  const withoutResponseFormat = (p: Record<string, unknown>) => {
     const { response_format: _rf, ...rest } = p;
     return rest;
   };
-  const withoutTextFormat = (p: any) => {
+  const withoutTextFormat = (p: Record<string, unknown>) => {
     const { text: _text, ...rest } = p;
     return rest;
   };
@@ -195,7 +185,12 @@ async function createResponsesTextViaFetch(params: {
 
   if (!out.res.ok) {
     const msg = String(out.data?.error?.message || out.raw || `OpenAI responses error (${out.res.status})`);
-    const err: any = new Error(msg);
+    const err = new Error(msg) as Error & {
+      status?: number;
+      code?: string | null;
+      type?: string | null;
+      requestId?: string | null;
+    };
     err.status = out.res.status;
     err.code = out.data?.error?.code ?? null;
     err.type = out.data?.error?.type ?? null;
@@ -207,10 +202,10 @@ async function createResponsesTextViaFetch(params: {
   if (!text.trim()) {
     // Make this debuggable in production without logging sensitive prompt text.
     const output = Array.isArray(out.data?.output) ? out.data.output : [];
-    const outputTypes = output.map((x: any) => String(x?.type || 'unknown'));
+    const outputTypes = output.map((x: unknown) => String((x as { type?: string })?.type || 'unknown'));
     const contentTypes = output
-      .flatMap((x: any) => (Array.isArray(x?.content) ? x.content : []))
-      .map((c: any) => String(c?.type || 'unknown'));
+      .flatMap((x: unknown) => (Array.isArray((x as { content?: unknown[] })?.content) ? (x as { content?: unknown[] }).content! : []))
+      .map((c: unknown) => String((c as { type?: string })?.type || 'unknown'));
 
     // Some models can return a "reasoning-only" output item with no message/text.
     // When that happens, retry once with a minimal payload (no formatting flags) to
@@ -239,11 +234,11 @@ async function createResponsesTextViaFetch(params: {
         }
       }
 
-      const err: any = new Error(
+      const err = new Error(
         `Empty model response (responses). requestId=${out.requestId || 'unknown'} retry1=${retry1.requestId || 'unknown'} retry2=${retry2.requestId || 'unknown'} outputTypes=${JSON.stringify(
           outputTypes.slice(0, 8),
         )} contentTypes=${JSON.stringify(contentTypes.slice(0, 12))}`,
-      );
+      ) as Error & { requestId?: string | null; retryRequestId?: string | null };
       err.requestId = out.requestId;
       err.retryRequestId = retry1.requestId || retry2.requestId || null;
       throw err;
@@ -260,11 +255,11 @@ async function createResponsesTextViaFetch(params: {
       });
     }
 
-    const err: any = new Error(
+    const err = new Error(
       `Empty model response (responses). requestId=${out.requestId || 'unknown'} outputTypes=${JSON.stringify(
         outputTypes.slice(0, 8),
       )} contentTypes=${JSON.stringify(contentTypes.slice(0, 12))}`
-    );
+    ) as Error & { requestId?: string | null };
     err.requestId = out.requestId;
     throw err;
   }
@@ -312,7 +307,7 @@ export async function createModelText(params: {
       maxTokens,
     });
     return { text: r.text, finishReason: r.finishReason ?? null, api: 'responses' };
-  } catch (e: any) {
+  } catch (e: unknown) {
     // If the model is responses-only, do not fall back to chat.
     if (isLikelyResponsesOnlyModel(model)) throw e;
     // Otherwise, try chat completions.
@@ -326,7 +321,7 @@ export async function createModelText(params: {
       ...(typeof maxTokens === 'number' ? { max_tokens: maxTokens } : {}),
       // Helps JSON-heavy prompts; models that don't support it will error, but those
       // should be handled by the Responses path above.
-      response_format: { type: 'json_object' } as any,
+      response_format: { type: 'json_object' } as { type: 'json_object' },
     }),
     timeoutMs,
     'OpenAI chat request',

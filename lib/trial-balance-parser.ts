@@ -52,6 +52,87 @@ export const ACCOUNT_TYPE_CLASSIFICATIONS: { [key: string]: string } = {
   // Expenses
   'CostOfGoodsSold': 'Cost of Goods Sold',
   'Expense': 'Expense',
+  'NonOperatingIncome': 'Non-Operating',
+  'NonOperatingExpense': 'Non-Operating',
+};
+
+// Common Trial Balance exports contain non-QB labels. Normalize them to our canonical types.
+const ACCOUNT_TYPE_ALIASES: { [key: string]: string } = {
+  income: 'Income',
+  revenue: 'Income',
+  sales: 'Income',
+  'income statement': 'Income',
+  'other income': 'Income',
+
+  cogs: 'CostOfGoodsSold',
+  'cost of goods sold': 'CostOfGoodsSold',
+  'cost of sales': 'CostOfGoodsSold',
+
+  expense: 'Expense',
+  expenses: 'Expense',
+  'operating expense': 'Expense',
+  'operating expenses': 'Expense',
+  'non-operating income': 'NonOperatingIncome',
+  'non operating income': 'NonOperatingIncome',
+  'other expense': 'Expense',
+  'other income': 'NonOperatingIncome',
+  'non-operating expense': 'NonOperatingExpense',
+  'non operating expense': 'NonOperatingExpense',
+
+  bank: 'Bank',
+  cash: 'Bank',
+  'accounts receivable': 'AccountsReceivable',
+  'other current asset': 'OtherCurrentAsset',
+  'fixed asset': 'FixedAsset',
+  'other asset': 'OtherAsset',
+
+  'accounts payable': 'AccountsPayable',
+  'credit card': 'CreditCard',
+  'other current liability': 'OtherCurrentLiability',
+  'long term liability': 'LongTermLiability',
+  liability: 'OtherCurrentLiability',
+  liabilities: 'OtherCurrentLiability',
+
+  equity: 'Equity',
+};
+
+// Some exports collapse labels (e.g., "Costofgoodssold", "Accountsreceivable").
+// Normalize those compact variants explicitly.
+const ACCOUNT_TYPE_ALIASES_COMPACT: { [key: string]: string } = {
+  income: 'Income',
+  revenue: 'Income',
+  sales: 'Income',
+  incomestatement: 'Income',
+  otherincome: 'Income',
+
+  cogs: 'CostOfGoodsSold',
+  costofgoodssold: 'CostOfGoodsSold',
+  costofsales: 'CostOfGoodsSold',
+
+  expense: 'Expense',
+  expenses: 'Expense',
+  operatingexpense: 'Expense',
+  operatingexpenses: 'Expense',
+  nonoperatingincome: 'NonOperatingIncome',
+  otherincome: 'NonOperatingIncome',
+  otherexpense: 'Expense',
+  nonoperatingexpense: 'NonOperatingExpense',
+
+  bank: 'Bank',
+  cash: 'Bank',
+  accountsreceivable: 'AccountsReceivable',
+  othercurrentasset: 'OtherCurrentAsset',
+  fixedasset: 'FixedAsset',
+  otherasset: 'OtherAsset',
+
+  accountspayable: 'AccountsPayable',
+  creditcard: 'CreditCard',
+  othercurrentliability: 'OtherCurrentLiability',
+  longtermliability: 'LongTermLiability',
+  liability: 'OtherCurrentLiability',
+  liabilities: 'OtherCurrentLiability',
+
+  equity: 'Equity',
 };
 
 // Map account types to target field categories for auto-mapping
@@ -69,7 +150,188 @@ export const ACCOUNT_TYPE_TO_TARGET_FIELD: { [key: string]: string } = {
   'Income': 'revenue',
   'CostOfGoodsSold': 'cogsTotal',
   'Expense': 'expense',
+  'NonOperatingIncome': 'nonOperatingIncome',
+  'NonOperatingExpense': 'nonOperatingExpense',
 };
+
+function getAccountCode(acctId: string | undefined): number | null {
+  const normalizedId = (acctId || '').trim();
+  const codeMatch = normalizedId.match(/^(\d{4,})/);
+  const accountCode = codeMatch ? Number(codeMatch[1]) : NaN;
+  return Number.isFinite(accountCode) ? accountCode : null;
+}
+
+function is9000Series(acctId: string | undefined): boolean {
+  const accountCode = getAccountCode(acctId);
+  return accountCode !== null && accountCode >= 9000 && accountCode < 10000;
+}
+
+function isLikelyNonOperatingIncome(description: string, rawType?: string): boolean {
+  const d = (description || '').toLowerCase();
+  const t = (rawType || '').toLowerCase();
+  return (
+    d.includes('non-operating income') ||
+    d.includes('non operating income') ||
+    d.includes('other income') ||
+    d.includes('gain') ||
+    d.includes('interest income') ||
+    d.includes('dividend income') ||
+    d.includes('investment income') ||
+    t.includes('income')
+  );
+}
+
+function isLikelyNonOperatingExpense(description: string): boolean {
+  const d = (description || '').toLowerCase();
+  if (
+    d.includes('non-operating expense') ||
+    d.includes('non operating expense') ||
+    d.includes('below the line expense') ||
+    d.includes('other non-operating')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function normalizeAccountType(rawType: string | undefined, description: string, acctId?: string): string {
+  const trimmed = (rawType || '').trim();
+
+  // Company convention: 9000-series is reserved for non-operating items.
+  // Split income vs expense deterministically using labels/type.
+  // Cross-platform convention: 8010 is reserved for Non-Operating Income.
+  const accountCode = getAccountCode(acctId);
+  if (accountCode === 8010) {
+    return 'NonOperatingIncome';
+  }
+  if (is9000Series(acctId)) {
+    return isLikelyNonOperatingIncome(description, rawType) ? 'NonOperatingIncome' : 'NonOperatingExpense';
+  }
+  if (isLikelyNonOperatingIncome(description, rawType)) return 'NonOperatingIncome';
+  if (isLikelyNonOperatingExpense(description)) return 'NonOperatingExpense';
+  if (!trimmed) return inferAccountTypeFromDescription(description);
+
+  // Keep canonical types untouched.
+  if (ACCOUNT_TYPE_CLASSIFICATIONS[trimmed]) return trimmed;
+
+  const normalizedKey = trimmed.toLowerCase().replace(/[_\s-]+/g, ' ');
+  if (ACCOUNT_TYPE_ALIASES[normalizedKey]) {
+    return ACCOUNT_TYPE_ALIASES[normalizedKey];
+  }
+  const compactKey = normalizedKey.replace(/[^a-z0-9]/g, '');
+  if (ACCOUNT_TYPE_ALIASES_COMPACT[compactKey]) {
+    return ACCOUNT_TYPE_ALIASES_COMPACT[compactKey];
+  }
+
+  // Heuristic fallback if CSV type is a verbose label.
+  if (normalizedKey.includes('income') || normalizedKey.includes('revenue') || normalizedKey.includes('sales')) return 'Income';
+  if (
+    normalizedKey.includes('cost of goods') ||
+    normalizedKey === 'cogs' ||
+    normalizedKey.includes('cost of sales') ||
+    compactKey.includes('costofgoods') ||
+    compactKey === 'cogs'
+  ) return 'CostOfGoodsSold';
+  if (normalizedKey.includes('non operating expense') || compactKey.includes('nonoperatingexpense')) return 'NonOperatingExpense';
+  if (normalizedKey.includes('expense')) return 'Expense';
+  if (normalizedKey.includes('asset')) return 'OtherAsset';
+  if (normalizedKey.includes('liabil')) return 'OtherCurrentLiability';
+  if (normalizedKey.includes('equity') || normalizedKey.includes('capital')) return 'Equity';
+
+  // Some exports place account names in Acct Type; infer from description instead of creating unknown pseudo-types.
+  return inferAccountTypeFromDescription(description);
+}
+
+function inferAccountTypeFromDescription(description: string): string {
+  const d = (description || '').toLowerCase();
+  if (
+    d.includes('non-operating income') ||
+    d.includes('non operating income') ||
+    d.includes('other income') ||
+    d.includes('gain') ||
+    d.includes('interest income') ||
+    d.includes('dividend income') ||
+    d.includes('investment income')
+  ) return 'NonOperatingIncome';
+  if (
+    d.includes('non-operating expense') ||
+    d.includes('non operating expense') ||
+    d.includes('below the line expense') ||
+    d.includes('other non-operating')
+  ) return 'NonOperatingExpense';
+  if (d.includes('income') || d.includes('revenue') || d.includes('sales')) return 'Income';
+  if (d.includes('cost of goods') || d.includes('cogs') || d.includes('job material')) return 'CostOfGoodsSold';
+  if (d.includes('accounts receivable')) return 'AccountsReceivable';
+  if (d.includes('accounts payable')) return 'AccountsPayable';
+  if (d.includes('cash') || d.includes('checking') || d.includes('savings')) return 'Bank';
+  if (d.includes('equity') || d.includes('retained earnings') || d.includes('owner')) return 'Equity';
+  if (d.includes('asset')) return 'OtherAsset';
+  if (d.includes('liabil')) return 'OtherCurrentLiability';
+  return 'Expense';
+}
+
+function shouldSkipAccountRow(acctType: string, acctId: string, description: string): boolean {
+  const type = (acctType || '').trim().toLowerCase();
+  const id = (acctId || '').trim().toLowerCase();
+  const desc = (description || '').trim().toLowerCase();
+
+  if (!desc) return true;
+
+  // Ignore summary/subtotal rows that should not be mapped.
+  if (
+    desc.startsWith('total ') ||
+    desc === 'total' ||
+    desc === 'gross profit' ||
+    desc === 'net income' ||
+    desc === 'net profit' ||
+    desc === 'ordinary income/expense'
+  ) {
+    return true;
+  }
+
+  // Skip rows where Acct ID is a known header/summary token.
+  if (id === 'summary' || id === 'header' || id === 'subtotal') {
+    return true;
+  }
+
+  // Skip non-account section rows occasionally exported as data lines.
+  if (
+    type === 'income statement' ||
+    type === 'balance sheet' ||
+    type === 'profit and loss' ||
+    type === 'assets' ||
+    type === 'liabilities'
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isLikelyNumericText(value: string | undefined): boolean {
+  const v = (value || '').trim();
+  if (!v) return false;
+  const cleaned = v.replace(/[$,\s]/g, '');
+  return /^-?\(?\d+(\.\d+)?\)?$/.test(cleaned);
+}
+
+function hasCreditMarker(value: string | undefined): boolean {
+  const raw = (value || '').trim();
+  if (!raw) return false;
+  const upper = raw.toUpperCase();
+  // Ignore generic "credit" wording and only detect accounting credit markers
+  // attached to numeric amounts, e.g. "35,966.13 (CR)" or "35,966.13 CR".
+  if (!/\d/.test(upper)) return false;
+  return /\(\s*CR\s*\)/.test(upper) || /\bCR\b/.test(upper);
+}
+
+function rowHasCreditMarker(values: string[], dateColumnIndexes: number[]): boolean {
+  for (const idx of dateColumnIndexes) {
+    if (hasCreditMarker(values[idx])) return true;
+  }
+  return false;
+}
 
 /**
  * Parse a number from a CSV value (handles commas, quotes, negative numbers, accounting parentheses)
@@ -120,6 +382,14 @@ function parseColumnDate(header: string): Date | null {
     const [, month, day, year] = mdyMatch;
     return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
   }
+
+  // Try MM/DD/YY format
+  const mdyShortMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (mdyShortMatch) {
+    const [, month, day, year2] = mdyShortMatch;
+    const year = parseInt(year2) + (parseInt(year2) >= 70 ? 1900 : 2000);
+    return new Date(year, parseInt(month) - 1, parseInt(day));
+  }
   
   // Try YYYY-MM-DD format
   const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -137,6 +407,19 @@ function parseColumnDate(header: string): Date | null {
       return new Date(parseInt(year), monthIndex, 1);
     }
   }
+
+  // Try "Mon-YY" / "Mon YYYY" / "Mon-YYYY" variants
+  const monthDashYearMatch = trimmed.match(/^([A-Za-z]{3,9})[-\s](\d{2}|\d{4})$/);
+  if (monthDashYearMatch) {
+    const [, monthName, yearToken] = monthDashYearMatch;
+    const year = yearToken.length === 2
+      ? parseInt(yearToken) + (parseInt(yearToken) >= 70 ? 1900 : 2000)
+      : parseInt(yearToken);
+    const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth();
+    if (!isNaN(monthIndex)) {
+      return new Date(year, monthIndex, 1);
+    }
+  }
   
   return null;
 }
@@ -151,41 +434,121 @@ export function parseTrialBalanceCSV(csvContent: string, companyId?: string): Pa
     throw new Error('CSV file must have at least a header row and one data row');
   }
   
-  // Parse header row
-  const headerLine = lines[0];
+  // Find the real header row (some exports include title rows above headers).
+  const detectedHeaderIndex = lines.findIndex((line) => {
+    const cols = parseCSVLine(line);
+    const dateLikeCount = cols.filter((c) => parseColumnDate((c || '').trim()) !== null).length;
+    return cols.length >= 3 && dateLikeCount >= 1;
+  });
+  const headerIndex = detectedHeaderIndex >= 0 ? detectedHeaderIndex : 0;
+  const headerLine = lines[headerIndex];
   const headers = parseCSVLine(headerLine);
-  
-  // Expected format: Acct Type, Acct ID, Description, Date1, Date2, ...
-  if (headers.length < 4) {
-    throw new Error('CSV must have at least 4 columns: Acct Type, Acct ID, Description, and at least one date column');
+
+  const normalizeHeader = (header: string) =>
+    (header || '')
+      .toLowerCase()
+      .trim()
+      .replace(/["']/g, '')
+      .replace(/[\s_-]+/g, ' ');
+
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const findHeaderIndex = (predicates: Array<(header: string) => boolean>): number =>
+    normalizedHeaders.findIndex((header) => predicates.some((predicate) => predicate(header)));
+
+  const acctTypeIndex = findHeaderIndex([
+    (h) => h === 'acct type',
+    (h) => h === 'account type',
+    (h) => h === 'type',
+  ]);
+  const acctIdIndex = findHeaderIndex([
+    (h) => h === 'acct id',
+    (h) => h === 'account id',
+    (h) => h === 'account number',
+    (h) => h === 'account no',
+    (h) => h === 'account #',
+    (h) => h === 'code',
+  ]);
+  const descriptionIndex = findHeaderIndex([
+    (h) => h === 'description',
+    (h) => h === 'account',
+    (h) => h === 'account name',
+    (h) => h === 'name',
+  ]);
+
+  // Detect date columns by parseable date headers instead of fixed positions.
+  const dateColumnIndexes = headers
+    .map((header, idx) => ({ header: header.trim(), idx }))
+    .filter(({ header }) => parseColumnDate(header) !== null)
+    .map(({ idx }) => idx);
+
+  if (dateColumnIndexes.length === 0) {
+    throw new Error('CSV must include at least one date column (e.g., 12/31/2022 or 2024-01-31)');
   }
-  
-  // Extract date columns (columns after the first 3)
-  const dates = headers.slice(3).map(h => h.trim());
+
+  const dates = dateColumnIndexes.map((idx) => headers[idx].trim());
+  const nonDateColumnIndexes = headers.map((_, idx) => idx).filter((idx) => !dateColumnIndexes.includes(idx));
+  const fallbackDescriptionIndex = descriptionIndex !== -1
+    ? descriptionIndex
+    : (nonDateColumnIndexes.find((idx) => idx !== acctTypeIndex && idx !== acctIdIndex) ?? nonDateColumnIndexes[0] ?? 0);
+  const isStructuredTrialBalance = acctTypeIndex !== -1;
   
   const accounts: TrialBalanceAccount[] = [];
   const accountsByType: { [type: string]: TrialBalanceAccount[] } = {};
+  let currentSectionType = '';
   
   // Parse data rows
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIndex + 1; i < lines.length; i++) {
     const line = lines[i];
     const values = parseCSVLine(line);
-    
-    // Skip empty rows or rows without account type
-    const acctType = values[0]?.trim();
-    if (!acctType) continue;
-    
-    const acctId = values[1]?.trim() || '';
-    const description = values[2]?.trim() || '';
-    
-    // Skip if no description (likely a separator row)
-    if (!description) continue;
+    // Per mapping rules, drop any row explicitly tagged as credit in amount cells.
+    if (rowHasCreditMarker(values, dateColumnIndexes)) continue;
+
+    let rawAcctType = '';
+    let acctId = '';
+    let description = '';
+
+    if (isStructuredTrialBalance) {
+      rawAcctType = values[acctTypeIndex]?.trim() || '';
+      acctId = acctIdIndex >= 0 ? (values[acctIdIndex]?.trim() || '') : '';
+      description = values[fallbackDescriptionIndex]?.trim() || '';
+      if (!description || isLikelyNumericText(description)) {
+        const candidateDescription = nonDateColumnIndexes
+          .filter((idx) => idx !== acctTypeIndex && idx !== acctIdIndex)
+          .map((idx) => values[idx]?.trim() || '')
+          .find((val) => val && !isLikelyNumericText(val));
+        description = candidateDescription || '';
+      }
+    } else {
+      // Alternate layout support:
+      // First column contains section headers (Income/Expenses/...) and account names.
+      // Remaining columns are date amounts.
+      const firstNonDateColumnIndex = headers.findIndex((_, idx) => !dateColumnIndexes.includes(idx));
+      const descriptionIdx = firstNonDateColumnIndex >= 0 ? firstNonDateColumnIndex : 0;
+      description = values[descriptionIdx]?.trim() || '';
+      if (!description) continue;
+
+      const rowHasNonZeroAmount = dateColumnIndexes.some((idx) => parseNumber(values[idx]) !== 0);
+      const isLikelySectionRow = !rowHasNonZeroAmount;
+      if (isLikelySectionRow) {
+        currentSectionType = normalizeAccountType(description, description);
+        continue;
+      }
+
+      rawAcctType = currentSectionType || inferAccountTypeFromDescription(description);
+      acctId = '';
+    }
+
+    // Skip separator/subtotal rows and malformed lines.
+    if (shouldSkipAccountRow(rawAcctType, acctId, description)) continue;
+
+    const acctType = normalizeAccountType(rawAcctType, description, acctId);
     
     // Parse values for each date column
     const dateValues: { [date: string]: number } = {};
-    for (let j = 0; j < dates.length; j++) {
+    for (let j = 0; j < dateColumnIndexes.length; j++) {
       const date = dates[j];
-      const value = parseNumber(values[j + 3]);
+      const sourceIndex = dateColumnIndexes[j];
+      const value = parseNumber(values[sourceIndex]);
       dateValues[date] = value;
     }
     
@@ -250,7 +613,7 @@ export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ n
   const accountsForMapping: Array<{ name: string; classification: string; acctType: string; acctId: string }> = [];
   
   for (const account of parsedData.accounts) {
-    const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || 'Unknown';
+    const classification = ACCOUNT_TYPE_CLASSIFICATIONS[account.acctType] || ACCOUNT_TYPE_CLASSIFICATIONS[normalizeAccountType(account.acctType, account.description, account.acctId)] || 'Expense';
     
     accountsForMapping.push({
       name: account.description,
@@ -263,43 +626,50 @@ export function getAccountsForMapping(parsedData: ParsedTrialBalance): Array<{ n
   return accountsForMapping;
 }
 
+function normalizeMappingTargetField(value: string | undefined): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  const normalized = raw.toLowerCase();
+  if (normalized === 'nonopertingincome') return 'nonOperatingIncome';
+  if (normalized === 'nonopertingexpense') return 'nonOperatingExpense';
+  return raw;
+}
+
 /**
  * Process mapped trial balance data into monthly financial records
  */
 export function processTrialBalanceToMonthly(
   parsedData: ParsedTrialBalance,
-  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: any }>
-): any[] {
-  const monthlyRecords: any[] = [];
+  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: unknown }>
+): Array<Record<string, unknown>> {
+  const monthlyRecords: Array<Record<string, unknown>> = [];
   
-  const isSectorRevenueField = (field: string) => field.startsWith('rev_');
-  const isSectorCogsField = (field: string) => field.startsWith('cogs_');
-
   // Normalize account names for better matching (trim, lowercase, normalize whitespace)
   const normalizeAccountName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
   
-  // Count mappings with LOB allocations for validation
-  const mappingsWithLOB = accountMappings.filter(m => 
-    m.lobAllocations && typeof m.lobAllocations === 'object' && Object.keys(m.lobAllocations).length > 0
-  );
-  
   // Create a mapping lookup with normalized keys for better matching
-  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
+  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: unknown } } = {};
+
+  const addNumericField = (record: Record<string, unknown>, field: string, amount: number): boolean => {
+    const current = record[field];
+    if (typeof current !== 'number') return false;
+    record[field] = current + amount;
+    return true;
+  };
   
   for (const mapping of accountMappings) {
+    const normalizedTargetField = normalizeMappingTargetField(mapping.targetField);
     const normalizedKey = normalizeAccountName(mapping.qbAccount);
     mappingLookup[normalizedKey] = {
-      targetField: mapping.targetField,
+      targetField: normalizedTargetField,
       lobAllocations: mapping.lobAllocations,
     };
     // Also keep the original key for backwards compatibility
     mappingLookup[mapping.qbAccount] = {
-      targetField: mapping.targetField,
+      targetField: normalizedTargetField,
       lobAllocations: mapping.lobAllocations,
     };
   }
-  
-  console.log('📋 Mapping lookup keys:', Object.keys(mappingLookup));
   
   // Process each date column
   for (const dateStr of parsedData.dates) {
@@ -308,14 +678,13 @@ export function processTrialBalanceToMonthly(
     
     // Initialize monthly record with all fields at 0
     // Must include ALL fields that users can map to in the UI
-    const monthlyRecord: any = {
+    const monthlyRecord: Record<string, unknown> = {
       monthDate: parsedDate.toISOString(), // ISO string for JSON serialization
       date: parsedDate,
       month: parsedDate.toISOString().substring(0, 7), // YYYY-MM format
       
       // Income Statement - Revenue
       revenue: 0,
-      revenueBreakdown: {},
       
       // COGS fields
       cogsPayroll: 0,
@@ -325,7 +694,6 @@ export function processTrialBalanceToMonthly(
       cogsCommissions: 0,
       cogsOther: 0,
       cogsTotal: 0,
-      cogsBreakdown: {},
       
       // Operating Expenses - use database field names
       payroll: 0,
@@ -353,6 +721,7 @@ export function processTrialBalanceToMonthly(
       
       // Other Income/Expense
       nonOperatingIncome: 0,
+      nonOperatingExpense: 0,
       extraordinaryItems: 0,
       
       // Balance Sheet - Assets
@@ -367,7 +736,6 @@ export function processTrialBalanceToMonthly(
       
       // Balance Sheet - Liabilities
       ap: 0,
-      loc: 0,
       otherCL: 0,
       tcl: 0,
       ltd: 0,
@@ -384,6 +752,8 @@ export function processTrialBalanceToMonthly(
       totalEquity: 0,
       totalLAndE: 0,
     };
+    const sectorRevenueBreakdown: Record<string, number> = {};
+    const sectorCogsBreakdown: Record<string, number> = {};
     
     // Build account values for LOB allocation processing
     const accountValues: Array<{ accountName: string; accountId: string; value: number }> = [];
@@ -395,30 +765,21 @@ export function processTrialBalanceToMonthly(
       if (!mapping) {
         const normalizedName = normalizeAccountName(account.description);
         mapping = mappingLookup[normalizedName];
-        if (mapping) {
-          console.log(`✅ Mapped via normalized key: "${account.description}" → "${normalizedName}" → ${mapping.targetField}`);
-        }
       }
       
       const value = account.values[dateStr] || 0;
 
       if (mapping && mapping.targetField && value !== 0) {
-        // Add to the target field
-        if (monthlyRecord[mapping.targetField] === undefined) {
-          monthlyRecord[mapping.targetField] = 0;
-        }
-        monthlyRecord[mapping.targetField] += value;
-        if (mapping.targetField === 'additionalPaidInCapital') {
-          console.log(`💰 Added ${value} to additionalPaidInCapital for ${dateStr}`);
-        }
-        if (isSectorRevenueField(mapping.targetField)) {
+        // Add to mapped target field. Sector-specific rev_/cogs_ mappings roll up to report totals.
+        if (addNumericField(monthlyRecord, mapping.targetField, value)) {
+        } else if (mapping.targetField.startsWith('rev_')) {
           monthlyRecord.revenue += value;
-          monthlyRecord.revenueBreakdown[mapping.targetField] =
-            (Number(monthlyRecord.revenueBreakdown[mapping.targetField]) || 0) + value;
-        }
-        if (isSectorCogsField(mapping.targetField)) {
-          monthlyRecord.cogsBreakdown[mapping.targetField] =
-            (Number(monthlyRecord.cogsBreakdown[mapping.targetField]) || 0) + value;
+          sectorRevenueBreakdown[mapping.targetField] = (sectorRevenueBreakdown[mapping.targetField] || 0) + value;
+        } else if (mapping.targetField.startsWith('cogs_')) {
+          monthlyRecord.cogsTotal += value;
+          sectorCogsBreakdown[mapping.targetField] = (sectorCogsBreakdown[mapping.targetField] || 0) + value;
+        } else if (mapping.targetField === 'nonOperatingExpense') {
+          monthlyRecord.nonOperatingExpense += value;
         }
 
         // Collect account value for LOB allocation
@@ -430,44 +791,38 @@ export function processTrialBalanceToMonthly(
       } else if (!mapping) {
         // Use default mapping based on account type
         const defaultField = ACCOUNT_TYPE_TO_TARGET_FIELD[account.acctType];
-        if (defaultField && monthlyRecord[defaultField] !== undefined) {
-          monthlyRecord[defaultField] += value;
-        }
-      } else if (mapping && value === 0) {
-        // Log when we have a mapping but the value is zero
-        if (mapping.targetField === 'additionalPaidInCapital') {
-          console.log(`⚠️ Skipping "${account.description}" → additionalPaidInCapital because value is 0 for ${dateStr}`);
+        if (defaultField) {
+          addNumericField(monthlyRecord, defaultField, value);
         }
       }
     }
     
     // Calculate totals
-    // COGS total (only add cogsTotal if it wasn't directly mapped)
-    const cogsFromComponents = monthlyRecord.cogsPayroll + monthlyRecord.cogsOwnerPay +
-      monthlyRecord.cogsContractors + monthlyRecord.cogsMaterials +
-      monthlyRecord.cogsCommissions + monthlyRecord.cogsOther;
-    const cogsFromSectorFields = Object.keys(monthlyRecord)
-      .filter((key) => isSectorCogsField(key))
-      .reduce((sum, key) => sum + (Number(monthlyRecord[key]) || 0), 0);
-    monthlyRecord.cogsTotal = cogsFromComponents + cogsFromSectorFields;
+    // Keep sector cogs_* as authoritative when they are present.
+    const cogsFromComponents = Number(monthlyRecord.cogsPayroll || 0) + Number(monthlyRecord.cogsOwnerPay || 0) +
+      Number(monthlyRecord.cogsContractors || 0) + Number(monthlyRecord.cogsMaterials || 0) +
+      Number(monthlyRecord.cogsCommissions || 0) + Number(monthlyRecord.cogsOther || 0);
+    if (Object.keys(sectorCogsBreakdown).length === 0 && cogsFromComponents > 0) {
+      monthlyRecord.cogsTotal = cogsFromComponents;
+    }
     
     // Current Assets total
-    monthlyRecord.tca = monthlyRecord.cash + monthlyRecord.ar + monthlyRecord.inventory + monthlyRecord.otherCA;
-    monthlyRecord.totalAssets = monthlyRecord.tca + monthlyRecord.fixedAssets + monthlyRecord.otherAssets;
+    monthlyRecord.tca = Number(monthlyRecord.cash || 0) + Number(monthlyRecord.ar || 0) + Number(monthlyRecord.inventory || 0) + Number(monthlyRecord.otherCA || 0);
+    monthlyRecord.totalAssets = Number(monthlyRecord.tca || 0) + Number(monthlyRecord.fixedAssets || 0) + Number(monthlyRecord.otherAssets || 0);
     
     // Liabilities total
-    monthlyRecord.tcl = monthlyRecord.ap + monthlyRecord.loc + monthlyRecord.otherCL;
-    monthlyRecord.totalLiab = monthlyRecord.tcl + monthlyRecord.ltd;
+    monthlyRecord.tcl = Number(monthlyRecord.ap || 0) + Number(monthlyRecord.otherCL || 0);
+    monthlyRecord.totalLiab = Number(monthlyRecord.tcl || 0) + Number(monthlyRecord.ltd || 0);
     
     // Equity total (sum of detailed equity fields if not directly mapped)
-    const equityFromComponents = monthlyRecord.ownersCapital + monthlyRecord.commonStock + 
-      monthlyRecord.preferredStock + monthlyRecord.retainedEarnings + 
-      monthlyRecord.additionalPaidInCapital - monthlyRecord.treasuryStock - monthlyRecord.ownersDraw;
-    if (equityFromComponents !== 0 && monthlyRecord.totalEquity === 0) {
+    const equityFromComponents = Number(monthlyRecord.ownersCapital || 0) + Number(monthlyRecord.commonStock || 0) +
+      Number(monthlyRecord.preferredStock || 0) + Number(monthlyRecord.retainedEarnings || 0) +
+      Number(monthlyRecord.additionalPaidInCapital || 0) - Number(monthlyRecord.treasuryStock || 0) - Number(monthlyRecord.ownersDraw || 0);
+    if (equityFromComponents !== 0 && Number(monthlyRecord.totalEquity || 0) === 0) {
       monthlyRecord.totalEquity = equityFromComponents;
     }
     
-    monthlyRecord.totalLAndE = monthlyRecord.totalLiab + monthlyRecord.totalEquity;
+    monthlyRecord.totalLAndE = Number(monthlyRecord.totalLiab || 0) + Number(monthlyRecord.totalEquity || 0);
     
     // Apply LOB allocations if we have account mappings with LOB data
     if (accountValues.length > 0 && accountMappings.length > 0) {
@@ -481,6 +836,24 @@ export function processTrialBalanceToMonthly(
       monthlyRecord.expenseBreakdown = lobData.expenseBreakdown || null;
       monthlyRecord.cogsBreakdown = lobData.cogsBreakdown || null;
     }
+    if (Object.keys(sectorRevenueBreakdown).length > 0) {
+      monthlyRecord.revenueBreakdown = {
+        ...(monthlyRecord.revenueBreakdown || {}),
+        ...sectorRevenueBreakdown,
+      };
+    }
+    if (Object.keys(sectorCogsBreakdown).length > 0) {
+      monthlyRecord.cogsBreakdown = {
+        ...(monthlyRecord.cogsBreakdown || {}),
+        ...sectorCogsBreakdown,
+      };
+    }
+    if ((monthlyRecord.nonOperatingExpense || 0) !== 0) {
+      monthlyRecord.expenseBreakdown = {
+        ...(monthlyRecord.expenseBreakdown || {}),
+        nonOperatingExpense: Number(monthlyRecord.nonOperatingExpense) || 0,
+      };
+    }
     
     monthlyRecords.push(monthlyRecord);
   }
@@ -493,9 +866,9 @@ export function processTrialBalanceToMonthly(
 
 export function processTrialBalanceToDailySnapshotsAndLines(
   parsedData: ParsedTrialBalance,
-  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: any }>
+  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: unknown }>
 ): {
-  dailySnapshots: any[];
+  dailySnapshots: Array<Record<string, unknown>>;
   mappedLines: Array<{
     snapshotDate: string;
     frequency: 'daily';
@@ -506,10 +879,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
     amount: number;
   }>;
 } {
-  const isSectorRevenueField = (field: string) => field.startsWith('rev_');
-  const isSectorCogsField = (field: string) => field.startsWith('cogs_');
-
-  const dailySnapshots: any[] = [];
+  const dailySnapshots: Array<Record<string, unknown>> = [];
   const mappedLines: Array<{
     snapshotDate: string;
     frequency: 'daily';
@@ -521,12 +891,20 @@ export function processTrialBalanceToDailySnapshotsAndLines(
   }> = [];
 
   const normalizeAccountName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
-  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
+  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: unknown } } = {};
+
+  const addNumericField = (record: Record<string, unknown>, field: string, amount: number): boolean => {
+    const current = record[field];
+    if (typeof current !== 'number') return false;
+    record[field] = current + amount;
+    return true;
+  };
 
   for (const mapping of accountMappings) {
+    const normalizedTargetField = normalizeMappingTargetField(mapping.targetField);
     const normalizedKey = normalizeAccountName(mapping.qbAccount);
-    mappingLookup[normalizedKey] = { targetField: mapping.targetField, lobAllocations: mapping.lobAllocations };
-    mappingLookup[mapping.qbAccount] = { targetField: mapping.targetField, lobAllocations: mapping.lobAllocations };
+    mappingLookup[normalizedKey] = { targetField: normalizedTargetField, lobAllocations: mapping.lobAllocations };
+    mappingLookup[mapping.qbAccount] = { targetField: normalizedTargetField, lobAllocations: mapping.lobAllocations };
   }
 
   for (const dateStr of parsedData.dates) {
@@ -534,7 +912,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
     if (!parsedDate) continue;
     const snapshotDate = parsedDate.toISOString();
 
-    const dailyRecord: any = {
+    const dailyRecord: Record<string, unknown> = {
       snapshotDate,
       frequency: 'daily',
       revenue: 0,
@@ -567,6 +945,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       depreciationAmortization: 0,
       otherExpense: 0,
       nonOperatingIncome: 0,
+      nonOperatingExpense: 0,
       extraordinaryItems: 0,
       cash: 0,
       ar: 0,
@@ -577,7 +956,6 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       otherAssets: 0,
       totalAssets: 0,
       ap: 0,
-      loc: 0,
       otherCL: 0,
       tcl: 0,
       ltd: 0,
@@ -592,6 +970,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       totalEquity: 0,
       totalLAndE: 0,
     };
+    let hasSectorCogsMapping = false;
 
     for (const account of parsedData.accounts) {
       let mapping = mappingLookup[account.description];
@@ -611,12 +990,12 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       }
       if (!targetField) continue;
 
-      if (dailyRecord[targetField] === undefined) {
-        dailyRecord[targetField] = 0;
-      }
-      dailyRecord[targetField] += value;
-      if (isSectorRevenueField(targetField)) {
-        dailyRecord.revenue += value;
+      if (addNumericField(dailyRecord, targetField, value)) {
+      } else if (targetField.startsWith('rev_')) {
+        dailyRecord.revenue = Number(dailyRecord.revenue || 0) + value;
+      } else if (targetField.startsWith('cogs_')) {
+        dailyRecord.cogsTotal = Number(dailyRecord.cogsTotal || 0) + value;
+        hasSectorCogsMapping = true;
       }
 
       mappedLines.push({
@@ -630,25 +1009,22 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       });
     }
 
-    const cogsFromComponents = dailyRecord.cogsPayroll + dailyRecord.cogsOwnerPay +
-      dailyRecord.cogsContractors + dailyRecord.cogsMaterials +
-      dailyRecord.cogsCommissions + dailyRecord.cogsOther;
-    const cogsFromSectorFields = Object.keys(dailyRecord)
-      .filter((key) => isSectorCogsField(key))
-      .reduce((sum, key) => sum + (Number(dailyRecord[key]) || 0), 0);
-    dailyRecord.cogsTotal = cogsFromComponents + cogsFromSectorFields;
+    const cogsFromComponents = Number(dailyRecord.cogsPayroll || 0) + Number(dailyRecord.cogsOwnerPay || 0) +
+      Number(dailyRecord.cogsContractors || 0) + Number(dailyRecord.cogsMaterials || 0) +
+      Number(dailyRecord.cogsCommissions || 0) + Number(dailyRecord.cogsOther || 0);
+    if (!hasSectorCogsMapping && cogsFromComponents > 0) dailyRecord.cogsTotal = cogsFromComponents;
 
-    dailyRecord.tca = dailyRecord.cash + dailyRecord.ar + dailyRecord.inventory + dailyRecord.otherCA;
-    dailyRecord.totalAssets = dailyRecord.tca + dailyRecord.fixedAssets + dailyRecord.otherAssets;
-    dailyRecord.tcl = dailyRecord.ap + dailyRecord.loc + dailyRecord.otherCL;
-    dailyRecord.totalLiab = dailyRecord.tcl + dailyRecord.ltd;
-    const equityFromComponents = dailyRecord.ownersCapital + dailyRecord.commonStock +
-      dailyRecord.preferredStock + dailyRecord.retainedEarnings +
-      dailyRecord.additionalPaidInCapital - dailyRecord.treasuryStock - dailyRecord.ownersDraw;
-    if (equityFromComponents !== 0 && dailyRecord.totalEquity === 0) {
+    dailyRecord.tca = Number(dailyRecord.cash || 0) + Number(dailyRecord.ar || 0) + Number(dailyRecord.inventory || 0) + Number(dailyRecord.otherCA || 0);
+    dailyRecord.totalAssets = Number(dailyRecord.tca || 0) + Number(dailyRecord.fixedAssets || 0) + Number(dailyRecord.otherAssets || 0);
+    dailyRecord.tcl = Number(dailyRecord.ap || 0) + Number(dailyRecord.otherCL || 0);
+    dailyRecord.totalLiab = Number(dailyRecord.tcl || 0) + Number(dailyRecord.ltd || 0);
+    const equityFromComponents = Number(dailyRecord.ownersCapital || 0) + Number(dailyRecord.commonStock || 0) +
+      Number(dailyRecord.preferredStock || 0) + Number(dailyRecord.retainedEarnings || 0) +
+      Number(dailyRecord.additionalPaidInCapital || 0) - Number(dailyRecord.treasuryStock || 0) - Number(dailyRecord.ownersDraw || 0);
+    if (equityFromComponents !== 0 && Number(dailyRecord.totalEquity || 0) === 0) {
       dailyRecord.totalEquity = equityFromComponents;
     }
-    dailyRecord.totalLAndE = dailyRecord.totalLiab + dailyRecord.totalEquity;
+    dailyRecord.totalLAndE = Number(dailyRecord.totalLiab || 0) + Number(dailyRecord.totalEquity || 0);
 
     dailySnapshots.push(dailyRecord);
   }

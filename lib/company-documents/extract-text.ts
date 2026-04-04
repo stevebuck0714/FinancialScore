@@ -21,6 +21,14 @@ function clampText(raw: string): string {
   return s.slice(0, MAX_EXTRACTED_CHARS);
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error || 'Unknown error');
+}
+
 export async function extractTextFromArrayBuffer(params: {
   arrayBuffer: ArrayBuffer;
   contentType?: string | null;
@@ -48,15 +56,20 @@ export async function extractTextFromArrayBuffer(params: {
       // We intentionally pin `pdf-parse` to the v1.x CJS API because pdfjs-dist v5 (used by v2)
       // has caused Next/webpack runtime issues in this repo (Object.defineProperty called on non-object).
       // v1.x exposes the classic function form: `pdfParse(buffer) -> { text }`.
-      const mod: any = await import('pdf-parse');
-      const pdfParse: any = mod?.default || mod;
+      const mod: unknown = await import('pdf-parse');
+      const modRecord = asRecord(mod);
+      const pdfParse = (typeof modRecord.default === 'function'
+        ? modRecord.default
+        : typeof mod === 'function'
+          ? mod
+          : null) as ((buffer: Buffer) => Promise<unknown>) | null;
       if (typeof pdfParse !== 'function') {
         throw new Error('PDF parser not available (pdf-parse function export missing)');
       }
 
       // Best-effort extraction from PDF content stream (no OCR).
-      const parsed: any = await pdfParse(buf);
-      const text = clampText(parsed?.text || '');
+      const parsed: unknown = await pdfParse(buf);
+      const text = clampText(String(asRecord(parsed).text || ''));
       if (!text) return { status: 'NO_TEXT', text: '' };
       return { status: 'DONE', text };
     }
@@ -66,17 +79,17 @@ export async function extractTextFromArrayBuffer(params: {
       text: '',
       error: `Unsupported document type. Only PDF and DOCX are supported. (contentType=${contentType || 'n/a'})`,
     };
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Helpful in dev when PDF parsing fails inside pdf.js/pdf-parse.
     // (The caller stores only the message in DB; the stack is useful in logs.)
     console.warn('❌ Document text extraction failed', {
-      message: e?.message || String(e),
-      stack: e?.stack,
+      message: errorMessage(e),
+      stack: e instanceof Error ? e.stack : undefined,
     });
     return {
       status: 'FAILED',
       text: '',
-      error: e?.message || 'Failed to extract text from document',
+      error: errorMessage(e) || 'Failed to extract text from document',
     };
   }
 }

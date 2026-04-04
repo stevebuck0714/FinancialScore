@@ -15,7 +15,7 @@ export interface AccountMapping {
   qbAccount: string;
   qbAccountId?: string | null;
   targetField: string;
-  lobAllocations?: any; // { "LOB Name": percentage, ... }
+  lobAllocations?: Record<string, number> | null;
   allocationMethod?: string; // 'manual', 'headcount', etc.
 }
 
@@ -58,6 +58,16 @@ export function applyLOBAllocations(
   accountMappings: AccountMapping[],
   companyLOBs: CompanyLOB[] = [],
 ): MonthlyLOBData {
+  const asLobAllocations = (value: unknown): Record<string, number> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const source = value as Record<string, unknown>;
+    const normalized: Record<string, number> = {};
+    for (const [key, raw] of Object.entries(source)) {
+      const pct = Number(raw);
+      if (Number.isFinite(pct)) normalized[key] = pct;
+    }
+    return normalized;
+  };
   // Initialize result structure
   const totals: { [fieldName: string]: number } = {};
   const breakdowns: FieldBreakdowns = {};
@@ -127,9 +137,7 @@ export function applyLOBAllocations(
       typeof mapping.lobAllocations === "object"
     ) {
       // Use manual LOB allocations
-      const lobAllocations = mapping.lobAllocations as {
-        [lob: string]: number;
-      };
+      const lobAllocations = asLobAllocations(mapping.lobAllocations);
 
       // Validate and normalize percentages to ensure they sum to 100
       let totalPercentage = Object.values(lobAllocations).reduce(

@@ -24,6 +24,74 @@ export type OperationalSyncResult = {
   errors: string[];
 };
 
+type InforSyncWindow = {
+  startDate: Date;
+  endDate: Date;
+  mode: 'manual';
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function errorMessage(error: unknown, fallback = 'Connection test failed'): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function parsePositiveInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const normalized = Math.floor(value);
+    return normalized >= 1 ? normalized : null;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(parsed) && parsed >= 1) return parsed;
+  }
+  return null;
+}
+
+function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function endOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
+function defaultAutoSyncWindowDays(frequency: SyncFrequency): number {
+  if (frequency === 'weekly') return 7;
+  if (frequency === 'monthly') return 31;
+  return 1;
+}
+
+function readConfiguredAutoSyncWindowDays(metadata: unknown): number | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const source = asRecord(metadata);
+  return parsePositiveInt(source.operationalAutoSyncWindowDays);
+}
+
+function buildBoundedAutoSyncWindow(
+  frequency: SyncFrequency,
+  metadata: unknown
+): InforSyncWindow {
+  // Nightly automation should use a deterministic bounded window, not an unbounded pull.
+  // Allow per-company override to support wider overlap (ex: 3-day or 7-day pulls).
+  // Use the prior fully-complete UTC day as the end bound.
+  const priorDay = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const endDate = endOfUtcDay(priorDay);
+  const startDate = startOfUtcDay(endDate);
+  const configuredDays = readConfiguredAutoSyncWindowDays(metadata);
+  const windowDays = configuredDays ?? defaultAutoSyncWindowDays(frequency);
+  const inclusiveBackstep = Math.max(0, windowDays - 1);
+  if (inclusiveBackstep > 0) {
+    startDate.setUTCDate(startDate.getUTCDate() - inclusiveBackstep);
+  }
+
+  return { startDate, endDate, mode: 'manual' };
+}
+
 function normalizeFrequency(value: unknown): SyncFrequency {
   if (typeof value !== 'string') return 'daily';
   const normalized = value.trim().toLowerCase();
@@ -65,22 +133,51 @@ export async function runOperationalSyncForConnection(
   const frequency = normalizeFrequency(frequencyInput);
 
   if (connection.platform === 'INFOR_M3') {
-    const result = await syncInforM3OperationalData(connection.companyId, frequency);
+    const aggregatedErrors: string[] = [];
+    let aggregatedRecordsCreated = 0;
+    const maxContinuationBatches = 250;
+    let continuationBatches = 0;
+
+    const syncWindow = buildBoundedAutoSyncWindow(frequency, connection.connectionMetadata);
+    let result = await syncInforM3OperationalData(connection.companyId, frequency, undefined, syncWindow);
+    aggregatedRecordsCreated += result.recordsCreated;
+    aggregatedErrors.push(...normalizeErrors(result.errors));
+
+    while (result.hasMore && result.continuation) {
+      continuationBatches += 1;
+      if (continuationBatches > maxContinuationBatches) {
+        aggregatedErrors.push(
+          `Infor operational sync exceeded ${maxContinuationBatches} continuation batches; stopping early to avoid runaway processing.`
+        );
+        break;
+      }
+
+      result = await syncInforM3OperationalData(connection.companyId, frequency, undefined, syncWindow, {
+        programOffset: result.continuation.programOffset,
+        requestOffset: result.continuation.requestOffset,
+        bookmark: result.continuation.bookmark,
+      });
+      aggregatedRecordsCreated += result.recordsCreated;
+      aggregatedErrors.push(...normalizeErrors(result.errors));
+    }
+
+    if (result.hasMore) {
+      aggregatedErrors.push('Infor operational sync ended before cursor drain completed (hasMore remained true).');
+    }
+
     await pruneCompanyOperationalData(connection.companyId);
     return {
-      success: result.success,
-      recordsCreated: result.recordsCreated,
+      success: aggregatedErrors.length === 0 && !result.hasMore,
+      recordsCreated: aggregatedRecordsCreated,
       moduleCounts: result.moduleCounts,
-      errors: normalizeErrors(result.errors),
+      errors: Array.from(new Set(aggregatedErrors)),
     };
   }
 
   if (connection.platform === 'QUICKBOOKS') {
     if (!connection.accessToken) {
       const metadata =
-        connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-          ? (connection.connectionMetadata as Record<string, unknown>)
-          : {};
+        asRecord(connection.connectionMetadata);
       const payload =
         metadata.quickbooksDesktopOperationalPayload && typeof metadata.quickbooksDesktopOperationalPayload === 'object'
           ? (metadata.quickbooksDesktopOperationalPayload as QbDesktopOperationalPayload)
@@ -100,8 +197,8 @@ export async function runOperationalSyncForConnection(
     let isConnected = false;
     try {
       isConnected = await adapter.testConnection();
-    } catch (error: any) {
-      const message = error?.message || 'Connection test failed';
+    } catch (error: unknown) {
+      const message = errorMessage(error, 'Connection test failed');
       return { success: false, recordsCreated: 0, errors: [message] };
     }
     if (!isConnected) {
@@ -118,9 +215,7 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'DYNAMICS365') {
     const metadata =
-      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+      asRecord(connection.connectionMetadata);
     const payload =
       metadata.dynamicsOperationalPayload && typeof metadata.dynamicsOperationalPayload === 'object'
         ? (metadata.dynamicsOperationalPayload as DynamicsOperationalPayload)
@@ -137,9 +232,7 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'ACUMATICA') {
     const metadata =
-      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+      asRecord(connection.connectionMetadata);
     const payload =
       metadata.acumaticaOperationalPayload && typeof metadata.acumaticaOperationalPayload === 'object'
         ? (metadata.acumaticaOperationalPayload as AcumaticaOperationalPayload)
@@ -156,9 +249,7 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'ODOO') {
     const metadata =
-      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+      asRecord(connection.connectionMetadata);
     const payload =
       metadata.odooOperationalPayload && typeof metadata.odooOperationalPayload === 'object'
         ? (metadata.odooOperationalPayload as OdooOperationalPayload)
@@ -175,9 +266,7 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'SAGE_INTACCT') {
     const metadata =
-      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+      asRecord(connection.connectionMetadata);
     const payload =
       metadata.sageIntacctOperationalPayload && typeof metadata.sageIntacctOperationalPayload === 'object'
         ? (metadata.sageIntacctOperationalPayload as SageIntacctOperationalPayload)

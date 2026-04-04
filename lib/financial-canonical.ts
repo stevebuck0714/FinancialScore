@@ -1,4 +1,5 @@
 type JsonObject = Record<string, unknown> | null;
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export const MONTHLY_FINANCIAL_NUMERIC_FIELDS = [
   'revenue',
@@ -87,6 +88,10 @@ function toJsonObject(value: unknown): JsonObject {
   return value as Record<string, unknown>;
 }
 
+function toJsonValue(value: JsonObject): JsonValue {
+  return (value ?? null) as JsonValue;
+}
+
 export function toCanonicalMonthlyFinancial(input: {
   monthDate: Date;
   revenueBreakdown?: unknown;
@@ -120,9 +125,9 @@ export function toMonthlyFinancialCreateInput(
     financialRecordId,
     monthDate: row.monthDate,
     revenue: row.revenue,
-    revenueBreakdown: row.revenueBreakdown as any,
+    revenueBreakdown: toJsonValue(row.revenueBreakdown),
     expense: row.expense,
-    expenseBreakdown: row.expenseBreakdown as any,
+    expenseBreakdown: toJsonValue(row.expenseBreakdown),
     cogsPayroll: row.cogsPayroll,
     cogsOwnerPay: row.cogsOwnerPay,
     cogsContractors: row.cogsContractors,
@@ -130,7 +135,7 @@ export function toMonthlyFinancialCreateInput(
     cogsCommissions: row.cogsCommissions,
     cogsOther: row.cogsOther,
     cogsTotal: row.cogsTotal,
-    cogsBreakdown: row.cogsBreakdown as any,
+    cogsBreakdown: toJsonValue(row.cogsBreakdown),
     payroll: row.payroll,
     ownerBasePay: row.ownerBasePay,
     benefits: row.benefits,
@@ -153,7 +158,7 @@ export function toMonthlyFinancialCreateInput(
     otherExpense: row.otherExpense,
     nonOperatingIncome: row.nonOperatingIncome,
     extraordinaryItems: row.extraordinaryItems,
-    lobBreakdowns: row.lobBreakdowns as any,
+    lobBreakdowns: toJsonValue(row.lobBreakdowns),
     cash: row.cash,
     ar: row.ar,
     inventory: row.inventory,

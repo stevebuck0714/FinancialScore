@@ -62,7 +62,7 @@ export async function processPayment(paymentDetails: PaymentDetails): Promise<Pa
     const expiration = `${paymentDetails.expirationMonth.padStart(2, '0')}${paymentDetails.expirationYear.slice(-2)}`;
 
     // Build the transaction request (matching USAePay API format)
-    const transactionData: any = {
+    const transactionData: Record<string, unknown> = {
       command: 'cc:sale',
       amount: paymentDetails.amount.toFixed(2),
       creditcard: {
@@ -291,7 +291,7 @@ function createAuthHash(): string {
 /**
  * Make authenticated request to USAePay API
  */
-async function usaepayRequest(endpoint: string, method: string = 'GET', data?: any) {
+async function usaepayRequest(endpoint: string, method: string = 'GET', data?: unknown) {
   try {
     if (!USAEPAY_SOURCE_KEY || !USAEPAY_PIN) {
       throw new Error('USAePay credentials not configured');
@@ -472,7 +472,7 @@ export async function updateCustomerVault(
   customerData: Partial<CustomerVaultData>
 ): Promise<CustomerVaultResponse> {
   try {
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
 
     if (customerData.cardNumber) {
       const expiration = `${customerData.expirationMonth?.padStart(2, '0')}${customerData.expirationYear?.slice(-2)}`;
@@ -630,9 +630,9 @@ export async function createRecurringBilling(billingData: RecurringBillingData):
     try {
       // Try customer-specific endpoint first: /customers/:custkey:/billing_schedules
       result = await usaepayRequest(`/customers/${billingData.customerId}/billing_schedules`, 'POST', recurringData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.warn('⚠️ Customer-specific billing_schedules endpoint failed, trying legacy /recurring endpoint');
-      console.warn('Error:', error.message);
+      console.warn('Error:', error instanceof Error ? error.message : String(error));
       // Fall back to legacy /recurring endpoint
       result = await usaepayRequest('/recurring', 'POST', legacyRecurringData);
     }
@@ -665,7 +665,7 @@ export async function updateRecurringBilling(
   updates: Partial<RecurringBillingData>
 ): Promise<RecurringBillingResponse> {
   try {
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
 
     if (updates.amount !== undefined) {
       updateData.amount = updates.amount.toFixed(2);
@@ -794,7 +794,7 @@ export function getUsaepayStatus() {
  * USAePay sends a signature in the webhook for security verification
  */
 export function verifyWebhookSignature(
-  payload: any,
+  payload: unknown,
   signature?: string,
   webhookSecret?: string
 ): boolean {

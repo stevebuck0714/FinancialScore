@@ -45,46 +45,12 @@ export function calculateBillingPeriod(
 }
 
 /**
- * Calculates the next billing date based on plan type
- */
-export function calculateNextBillingDate(
-  lastBillingDate: Date,
-  planType: 'monthly' | 'quarterly' | 'annual'
-): Date {
-  const nextDate = new Date(lastBillingDate);
-  
-  switch (planType) {
-    case 'monthly':
-      nextDate.setMonth(nextDate.getMonth() + 1);
-      break;
-    case 'quarterly':
-      nextDate.setMonth(nextDate.getMonth() + 3);
-      break;
-    case 'annual':
-      nextDate.setFullYear(nextDate.getFullYear() + 1);
-      break;
-  }
-  
-  return nextDate;
-}
-
-/**
  * Calculates due date (typically 7 days after invoice creation)
  */
 export function calculateDueDate(invoiceDate: Date, daysUntilDue: number = 7): Date {
   const dueDate = new Date(invoiceDate);
   dueDate.setDate(dueDate.getDate() + daysUntilDue);
   return dueDate;
-}
-
-/**
- * Checks if an invoice is overdue
- */
-export function isInvoiceOverdue(dueDate: Date, status: string): boolean {
-  if (status === 'paid' || status === 'cancelled') {
-    return false;
-  }
-  return new Date() > new Date(dueDate);
 }
 
 /**

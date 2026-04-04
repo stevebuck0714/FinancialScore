@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
     console.log('✅ Login successful');
     
     // AUDIT: Log successful login
-    await auditLoginSuccess(user.id, user.email);
+    await auditLoginSuccess(user.id);
     
     // Auto-fix: Set userType for existing business users who don't have it set
     // Business users are: role='USER', have companyId, and company has no consultantId (standalone business)

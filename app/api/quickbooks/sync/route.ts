@@ -539,7 +539,7 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Found ${companyLOBs.length} company LOBs with headcount data`);
 
     // Parse monthly financial records with LOB allocations.
-    const parsedRecords = createMonthlyRecords(plData, bsData, 'PENDING_FINANCIAL_RECORD', 36, accountMappings as any, companyLOBs);
+    const parsedRecords = createMonthlyRecords(plData, bsData, accountMappings as any, companyLOBs);
     const canonicalRecords = parsedRecords.map((row) =>
       toCanonicalMonthlyFinancial({
         ...row,

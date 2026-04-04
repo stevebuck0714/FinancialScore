@@ -6,7 +6,7 @@ export interface MasterDataMonthly {
   month?: Date | string;
   revenue: number;
   // Flat structure with COGS and expense fields
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface MasterDataResponse {
@@ -252,8 +252,12 @@ export class MasterDataStore {
     });
   }
 
-  private getNestedValue(obj: any, path: string): number {
-    return path.split('.').reduce((current, key) => current?.[key], obj) || 0;
+  private getNestedValue(obj: unknown, path: string): number {
+    const value = path.split('.').reduce<unknown>((current, key) => {
+      if (!current || typeof current !== 'object') return undefined;
+      return (current as Record<string, unknown>)[key];
+    }, obj);
+    return Number(value || 0);
   }
 
   clearCache(): void {

@@ -58,15 +58,9 @@ export const BS_LAST_DAY_FIELDS = [
   'totalLAndE',
 ] as const;
 
-export type PublishNumericField = (typeof PNL_SUM_FIELDS)[number] | (typeof BS_LAST_DAY_FIELDS)[number];
-
 export function safeNumber(input: unknown): number {
   const value = Number(input ?? 0);
   return Number.isFinite(value) ? value : 0;
-}
-
-export function startOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
 export function endOfMonth(date: Date): Date {

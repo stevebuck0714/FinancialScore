@@ -4,6 +4,51 @@ import { BS_LAST_DAY_FIELDS, PNL_SUM_FIELDS, safeNumber } from '@/lib/financial/
 const NUMERIC_FIELDS = [...PNL_SUM_FIELDS, ...BS_LAST_DAY_FIELDS];
 
 type RawRecord = Record<string, unknown>;
+type RawMappedLine = {
+  snapshotDate: string | Date;
+  frequency?: string;
+  sourceAccountName: string;
+  sourceAccountId?: string | null;
+  sourceAccountType?: string | null;
+  targetField: string;
+  amount: number;
+};
+
+type DailySnapshotDelegate = {
+  upsert: (args: unknown) => Promise<unknown>;
+};
+
+type ImportRunDelegate = {
+  create: (args: unknown) => Promise<unknown>;
+};
+
+type MappedLineDelegate = {
+  upsert: (args: unknown) => Promise<unknown>;
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function getDailySnapshotDelegate(): DailySnapshotDelegate | null {
+  const delegate = (prisma as unknown as Record<string, unknown>).dailyFinancialSnapshot as Record<string, unknown> | undefined;
+  if (!delegate || typeof delegate.upsert !== 'function') return null;
+  return delegate as unknown as DailySnapshotDelegate;
+}
+
+function getImportRunDelegate(): ImportRunDelegate | null {
+  const delegate = (prisma as unknown as Record<string, unknown>).dailyFinancialImportRun as Record<string, unknown> | undefined;
+  if (!delegate || typeof delegate.create !== 'function') return null;
+  return delegate as unknown as ImportRunDelegate;
+}
+
+function getMappedLineDelegate(): MappedLineDelegate | null {
+  const delegate = (prisma as unknown as Record<string, unknown>).dailyFinancialMappedLine as Record<string, unknown> | undefined;
+  if (!delegate || typeof delegate.upsert !== 'function') return null;
+  return delegate as unknown as MappedLineDelegate;
+}
 
 export type DailyFinancialIngestParams = {
   companyId: string;
@@ -28,8 +73,7 @@ function toDate(value: unknown): Date | null {
 }
 
 export function extractDailyFinancialRecordsFromMetadata(metadata: unknown): RawRecord[] {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return [];
-  const source = metadata as Record<string, unknown>;
+  const source = asRecord(metadata);
   const candidates = [
     source.dailyFinancialSnapshots,
     source.dailyFinancialRecords,
@@ -51,15 +95,14 @@ export function extractDailyFinancialMappedLinesFromMetadata(metadata: unknown):
   targetField: string;
   amount: number;
 }> {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return [];
-  const source = metadata as Record<string, unknown>;
+  const source = asRecord(metadata);
   const candidates = [
     source.dailyFinancialMappedLines,
     source.dailyTrialBalanceMappedLines,
     source.mappedDailyFinancialLines,
   ];
   for (const candidate of candidates) {
-    if (Array.isArray(candidate)) return candidate as any[];
+    if (Array.isArray(candidate)) return candidate as RawMappedLine[];
   }
   return [];
 }
@@ -81,9 +124,9 @@ export async function ingestDailyFinancialSnapshots(params: DailyFinancialIngest
     return { success: false, ingested: 0, skipped: inputRecords.length, error: 'companyId is required' };
   }
 
-  const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
-  const importRunDelegate = (prisma as any).dailyFinancialImportRun;
-  const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+  const dailySnapshotDelegate = getDailySnapshotDelegate();
+  const importRunDelegate = getImportRunDelegate();
+  const mappedLineDelegate = getMappedLineDelegate();
   if (!dailySnapshotDelegate || !importRunDelegate) {
     return {
       success: false,

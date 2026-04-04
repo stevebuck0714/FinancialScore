@@ -20,7 +20,7 @@ The Xero integration now matches QuickBooks functionality with **full 36-month h
 
 ### 2. **Monthly Financial Records**
 - **Status**: ✅ Complete
-- **Implementation**: `lib/xero-parser.ts` (lines 263-510)
+- **Implementation**: `app/api/xero/sync/route.ts` (monthly parsing + record creation)
 - **Details**:
   - Parses monthly columns from Xero P&L reports
   - Creates individual `FinancialRecord` for each month
@@ -126,8 +126,8 @@ Update Connection Status & Last Sync Time
    - Added operational data fetch (lines 332-417)
    - Fixed operationalData storage (lines 394-411)
 
-2. **`lib/xero-parser.ts`**
-   - Existing monthly parser (lines 263-510)
+2. **`app/api/xero/sync/route.ts`**
+   - Contains monthly parsing and record creation logic
    - Handles monthly column extraction
    - Creates individual records per month
 

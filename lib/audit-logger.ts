@@ -128,7 +128,7 @@ export async function auditLog(entry: AuditLogEntry): Promise<void> {
 /**
  * Log successful authentication
  */
-export async function auditLoginSuccess(userId: string, email: string): Promise<void> {
+export async function auditLoginSuccess(userId: string): Promise<void> {
   await auditLog({
     action: 'LOGIN_SUCCESS',
     entityType: 'User',
@@ -166,42 +166,6 @@ export async function auditFinancialAccess(
     changes,
     metadata: { companyId },
     success: true,
-  })
-}
-
-/**
- * Log payment transaction
- */
-export async function auditPayment(
-  success: boolean,
-  amount: number,
-  companyId: string,
-  transactionId?: string,
-  errorMessage?: string
-): Promise<void> {
-  await auditLog({
-    action: success ? 'PAYMENT_PROCESSED' : 'PAYMENT_FAILED',
-    entityType: 'Payment',
-    entityId: transactionId,
-    metadata: { companyId, amount },
-    success,
-    errorMessage,
-  })
-}
-
-/**
- * Log unauthorized access attempt
- */
-export async function auditUnauthorizedAccess(
-  resource: string,
-  attemptedAction: string
-): Promise<void> {
-  await auditLog({
-    action: 'UNAUTHORIZED_ACCESS_ATTEMPT',
-    entityType: resource,
-    metadata: { attemptedAction },
-    success: false,
-    errorMessage: 'Unauthorized access attempt',
   })
 }
 
@@ -254,22 +218,6 @@ export async function auditUserOperation(
     entityId: userId,
     changes,
     success: true,
-  })
-}
-
-/**
- * Log QuickBooks integration events
- */
-export async function auditQuickBooksOperation(
-  action: 'QUICKBOOKS_CONNECTED' | 'QUICKBOOKS_DISCONNECTED' | 'QUICKBOOKS_SYNC_STARTED' | 'QUICKBOOKS_SYNC_COMPLETED' | 'QUICKBOOKS_SYNC_FAILED',
-  companyId: string,
-  metadata?: Record<string, any>
-): Promise<void> {
-  await auditLog({
-    action,
-    entityType: 'QuickBooksConnection',
-    metadata: { companyId, ...metadata },
-    success: !action.includes('FAILED'),
   })
 }
 

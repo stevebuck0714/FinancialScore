@@ -31,6 +31,10 @@ const ID_KEYS = [
   'account_id',
   'acctId',
   'acctID',
+  'acct',
+  'Acct',
+  'account',
+  'Account',
   'ACID',
   'Ait1',
   'Ait2',
@@ -50,6 +54,10 @@ const CODE_KEYS = [
   'accountNumber',
   'accountNo',
   'acctNo',
+  'acct',
+  'Acct',
+  'account',
+  'Account',
   'ACNO',
   'GLAccount',
   'glAccount',
@@ -59,6 +67,9 @@ const NAME_KEYS = [
   'accountName',
   'name',
   'description',
+  'Description',
+  'ChaDescription',
+  'FRDerDescription',
   'accountDescription',
   'accountDesc',
   'ACNM',
@@ -69,7 +80,10 @@ const CLASS_KEYS = [
   'classification',
   'accountClassification',
   'accountType',
+  'AcctType',
+  'AccountType',
   'type',
+  'Type',
   'normalBalance',
   'category',
 ];
@@ -78,6 +92,21 @@ function normalizeText(value: unknown): string {
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number' || typeof value === 'bigint') return String(value);
   return '';
+}
+
+function normalizeIdentityToken(value: unknown): string {
+  return normalizeText(value).toLowerCase();
+}
+
+function buildAccountIdentityKey(account: {
+  accountId?: string | null;
+  accountCode?: string | null;
+  accountName?: string | null;
+}): string {
+  const idOrCode = normalizeIdentityToken(account.accountId) || normalizeIdentityToken(account.accountCode);
+  const name = normalizeIdentityToken(account.accountName);
+  if (idOrCode && name) return `${idOrCode}|${name}`;
+  return idOrCode || name;
 }
 
 function getCaseInsensitiveValue(record: Record<string, unknown>, keys: string[]): string {
@@ -108,12 +137,30 @@ function inferClassification(raw: string): string | null {
   return raw;
 }
 
+function getInforCoaRoots(payload: unknown): unknown[] {
+  const root = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
+  if (!root) return [payload];
+
+  const glResponses = Array.isArray(root.glResponses) ? root.glResponses : [];
+  const chartRoots: unknown[] = [];
+  for (const entry of glResponses) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    const program = String(row.miProgram || row.program || '').trim().toUpperCase();
+    if (program === 'SLCHARTS') {
+      chartRoots.push(row.response ?? row);
+    }
+  }
+  if (chartRoots.length > 0) return chartRoots;
+  return [payload];
+}
+
 function tryExtractAccount(record: Record<string, unknown>): SourceAccount | null {
   const accountId = getCaseInsensitiveValue(record, ID_KEYS);
   const accountCode = getCaseInsensitiveValue(record, CODE_KEYS) || null;
-  const accountName =
-    getCaseInsensitiveValue(record, NAME_KEYS) ||
-    (accountCode ? `Account ${accountCode}` : '');
+  const accountName = getCaseInsensitiveValue(record, NAME_KEYS);
   const classRaw = getCaseInsensitiveValue(record, CLASS_KEYS);
   const classification = inferClassification(classRaw);
 
@@ -129,11 +176,11 @@ function tryExtractAccount(record: Record<string, unknown>): SourceAccount | nul
 }
 
 function extractAccountsFromPayload(payload: unknown): SourceAccount[] {
-  const queue: unknown[] = [payload];
+  const queue: unknown[] = getInforCoaRoots(payload);
   const extracted: SourceAccount[] = [];
   let guard = 0;
 
-  while (queue.length > 0 && guard < 100000) {
+  while (queue.length > 0 && guard < 25000) {
     guard += 1;
     const node = queue.shift();
     if (!node) continue;
@@ -171,7 +218,41 @@ function extractAccountsFromPayload(payload: unknown): SourceAccount[] {
     if (!existing.classification && account.classification) existing.classification = account.classification;
   }
 
-  return Array.from(deduped.values());
+  // Second-pass dedupe by account identity (account number/id + name),
+  // not name alone. Two distinct IDs can legitimately share a label.
+  const dedupedByIdentity = new Map<string, SourceAccount>();
+  for (const account of deduped.values()) {
+    const identityKey = buildAccountIdentityKey(account);
+    if (!identityKey) continue;
+    const existing = dedupedByIdentity.get(identityKey);
+    if (!existing) {
+      dedupedByIdentity.set(identityKey, account);
+      continue;
+    }
+    if (!existing.accountCode && account.accountCode) existing.accountCode = account.accountCode;
+    if (!existing.classification && account.classification) existing.classification = account.classification;
+    // Prefer a more explicit ID token over a fallback name-derived ID.
+    if (
+      existing.accountId.trim().toLowerCase() === existing.accountName.trim().toLowerCase() &&
+      account.accountId.trim().toLowerCase() !== account.accountName.trim().toLowerCase()
+    ) {
+      existing.accountId = account.accountId;
+    }
+  }
+
+  return Array.from(dedupedByIdentity.values());
+}
+
+function isManualClassification(value: unknown): boolean {
+  return String(value || '').trim().toLowerCase().startsWith('manual:');
+}
+
+async function runInChunks<T>(items: T[], chunkSize: number, worker: (item: T) => Promise<void>): Promise<void> {
+  const safeChunkSize = Math.max(1, Math.floor(chunkSize));
+  for (let i = 0; i < items.length; i += safeChunkSize) {
+    const chunk = items.slice(i, i + safeChunkSize);
+    await Promise.all(chunk.map(worker));
+  }
 }
 
 export async function seedInforAccountMappings(companyId: string, payload: unknown): Promise<SeedSummary> {
@@ -204,10 +285,19 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   });
 
   const byId = new Map<string, (typeof existing)[number]>();
-  const byName = new Map<string, (typeof existing)[number]>();
+  const byCode = new Map<string, (typeof existing)[number]>();
+  const byIdentity = new Map<string, (typeof existing)[number]>();
   for (const row of existing) {
-    if (row.qbAccountId) byId.set(row.qbAccountId.trim().toLowerCase(), row);
-    byName.set(row.qbAccount.trim().toLowerCase(), row);
+    const idKey = normalizeIdentityToken(row.qbAccountId);
+    const codeKey = normalizeIdentityToken(row.qbAccountCode);
+    const identityKey = buildAccountIdentityKey({
+      accountId: row.qbAccountId,
+      accountCode: row.qbAccountCode,
+      accountName: row.qbAccount,
+    });
+    if (idKey) byId.set(idKey, row);
+    if (codeKey) byCode.set(codeKey, row);
+    if (identityKey) byIdentity.set(identityKey, row);
   }
 
   let created = 0;
@@ -215,29 +305,54 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   let unchanged = 0;
   const newAccounts: string[] = [];
   const changedAccounts: string[] = [];
+  const rowsToCreate: Array<{
+    companyId: string;
+    qbAccount: string;
+    qbAccountId: string;
+    qbAccountCode: string | null;
+    qbAccountClassification: string | null;
+    targetField: string;
+    allocationMethod: string;
+    confidence: string;
+  }> = [];
+  const rowsToUpdate: Array<{
+    id: string;
+    data: {
+      qbAccount: string;
+      qbAccountId: string;
+      qbAccountCode: string | null;
+      qbAccountClassification: string | null;
+    };
+  }> = [];
   const sourceIdSet = new Set(sourceAccounts.map((a) => a.accountId.trim().toLowerCase()));
-  const sourceNameSet = new Set(sourceAccounts.map((a) => a.accountName.trim().toLowerCase()));
+  const sourceIdentitySet = new Set(sourceAccounts.map((a) => buildAccountIdentityKey(a)).filter(Boolean));
+  const pendingCreateIdentitySet = new Set<string>();
 
   for (const source of sourceAccounts) {
     const idKey = source.accountId.trim().toLowerCase();
-    const nameKey = source.accountName.trim().toLowerCase();
+    const codeKey = normalizeIdentityToken(source.accountCode);
+    const identityKey = buildAccountIdentityKey(source);
     const existingById = byId.get(idKey);
-    const existingByName = byName.get(nameKey);
-    const existingRow = existingById || existingByName;
+    const existingByCode = codeKey ? byCode.get(codeKey) : undefined;
+    const existingByIdentity = identityKey ? byIdentity.get(identityKey) : undefined;
+    const existingRow = existingById || existingByCode || existingByIdentity;
 
     if (!existingRow) {
-      await prisma.accountMapping.create({
-        data: {
-          companyId,
-          qbAccount: source.accountName,
-          qbAccountId: source.accountId,
-          qbAccountCode: source.accountCode,
-          qbAccountClassification: source.classification,
-          targetField: 'unmapped',
-          allocationMethod: 'manual',
-          confidence: 'low',
-        },
+      if (identityKey && pendingCreateIdentitySet.has(identityKey)) {
+        unchanged += 1;
+        continue;
+      }
+      rowsToCreate.push({
+        companyId,
+        qbAccount: source.accountName,
+        qbAccountId: source.accountId,
+        qbAccountCode: source.accountCode,
+        qbAccountClassification: source.classification,
+        targetField: 'unmapped',
+        allocationMethod: 'manual',
+        confidence: 'low',
       });
+      if (identityKey) pendingCreateIdentitySet.add(identityKey);
       created += 1;
       newAccounts.push(source.accountName);
       continue;
@@ -247,7 +362,9 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
       qbAccount: source.accountName,
       qbAccountId: source.accountId,
       qbAccountCode: source.accountCode,
-      qbAccountClassification: source.classification,
+      qbAccountClassification: isManualClassification(existingRow.qbAccountClassification)
+        ? existingRow.qbAccountClassification
+        : source.classification,
     };
     const changed =
       (existingRow.qbAccount || '') !== (next.qbAccount || '') ||
@@ -260,20 +377,36 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
       continue;
     }
 
-    await prisma.accountMapping.update({
-      where: { id: existingRow.id },
+    rowsToUpdate.push({
+      id: existingRow.id,
       data: next,
     });
     updated += 1;
     changedAccounts.push(source.accountName);
   }
 
+  if (rowsToCreate.length > 0) {
+    await prisma.accountMapping.createMany({ data: rowsToCreate });
+  }
+  if (rowsToUpdate.length > 0) {
+    await runInChunks(rowsToUpdate, 25, async (row) => {
+      await prisma.accountMapping.update({
+        where: { id: row.id },
+        data: row.data,
+      });
+    });
+  }
+
   const inactiveAccounts = existing
     .filter((row) => {
       const idKey = row.qbAccountId ? row.qbAccountId.trim().toLowerCase() : '';
-      const nameKey = row.qbAccount.trim().toLowerCase();
+      const identityKey = buildAccountIdentityKey({
+        accountId: row.qbAccountId,
+        accountCode: row.qbAccountCode,
+        accountName: row.qbAccount,
+      });
       if (idKey && sourceIdSet.has(idKey)) return false;
-      if (sourceNameSet.has(nameKey)) return false;
+      if (identityKey && sourceIdentitySet.has(identityKey)) return false;
       return true;
     })
     .map((row) => row.qbAccount);

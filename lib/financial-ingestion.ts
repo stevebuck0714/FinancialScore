@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { AccountingPlatform } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import {
   findZeroRevenueAnomalies,
   toCanonicalMonthlyFinancial,
@@ -147,7 +148,7 @@ export async function ingestFinancialPayload(params: {
       const merged = new Map<string, CanonicalMonthlyFinancial>();
       for (const row of latestFinancialRecord.monthlyData) {
         const canonical = toCanonicalMonthlyFinancial({
-          ...(row as any),
+          ...(row as unknown as Record<string, unknown>),
           monthDate: row.monthDate,
         });
         merged.set(monthKey(canonical.monthDate), canonical);
@@ -215,7 +216,7 @@ export async function ingestFinancialPayload(params: {
             }
           : null,
         validation: { latestMonthWarnings },
-      } as any,
+      } as Prisma.InputJsonValue,
       columnMapping: {
         source: params.source,
         method: 'push_payload',
@@ -242,7 +243,7 @@ export async function ingestFinancialPayload(params: {
         monthsTouched: touchedMonths,
         latestMonthWarnings,
         metadata: normalized.metadata,
-      } as any,
+      } as Prisma.InputJsonValue,
       duration: Date.now() - startedAt,
     },
   });
