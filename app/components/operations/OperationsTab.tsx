@@ -48,6 +48,11 @@ const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a'
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const BUSINESS_TZ_OFFSET_MS = -4 * 60 * 60 * 1000;
+const asList = <T = any,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+const firstListItem = <T = any,>(value: unknown): T | null => {
+  const list = asList<T>(value);
+  return list.length > 0 ? list[0] : null;
+};
 const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
   if (!percent || percent < 0.04) return null;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -430,11 +435,9 @@ export default function OperationsTab({
   }, [endDate, todayLocalInputDate, maxSelectableEndDate]);
 
   const orderedDashboardDataTypes: OpsDataType[] = ['customers', 'ar-aging', 'ap-aging', 'products', 'inventory', 'cash', 'daily-financials'];
-  const layoutModules: string[] = Array.isArray(opsSectorLayoutConfig?.modules)
-    ? opsSectorLayoutConfig.modules
-        .map((module: unknown) => resolveModuleKey(String(module || '').trim()))
-        .filter((module: string) => module && module.toLowerCase() !== 'ops-default')
-    : [];
+  const layoutModules: string[] = asList(opsSectorLayoutConfig?.modules)
+    .map((module: unknown) => resolveModuleKey(String(module || '').trim()))
+    .filter((module: string) => module && module.toLowerCase() !== 'ops-default');
   const sectorModules = getTopLineBucketsForSector(industrySectorCategory).map((bucket) => resolveModuleKey(bucket.key));
   const moduleSource: 'layout-config' | 'sector-default' = layoutModules.length > 0 ? 'layout-config' : 'sector-default';
   const resolvedModules = moduleSource === 'layout-config' ? layoutModules : sectorModules;
@@ -579,7 +582,7 @@ export default function OperationsTab({
     fetch(`/api/companies?companyId=${encodeURIComponent(selectedCompanyId)}`, { signal: controller.signal })
       .then((response) => response.json())
       .then((data) => {
-        const company = Array.isArray(data?.companies) ? data.companies[0] : null;
+        const company = firstListItem<any>(data?.companies);
         const uda =
           company?.userDefinedAllocations &&
           typeof company.userDefinedAllocations === 'object' &&
@@ -603,7 +606,7 @@ export default function OperationsTab({
   }, [selectedCompanyId]);
 
   useEffect(() => {
-    const records = Array.isArray(dailyFinancialData?.records) ? dailyFinancialData.records : [];
+    const records = asList(dailyFinancialData?.records);
     const maxStart = Math.max(0, records.length - 30);
     if (dailyFinancialWindowStart > maxStart) {
       setDailyFinancialWindowStart(maxStart);
@@ -725,9 +728,9 @@ export default function OperationsTab({
     const response = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
     if (!response.ok) throw new Error('Failed to load cash conversion financial data');
     const payload = await response.json();
-    const records = Array.isArray(payload?.records) ? payload.records : [];
+    const records = asList(payload?.records);
     const latestRecord = records[0];
-    const monthlyData = Array.isArray(latestRecord?.monthlyData) ? latestRecord.monthlyData : [];
+    const monthlyData = asList(latestRecord?.monthlyData);
     const normalizedRecords = monthlyData
       .map((row: any) => ({
         ...row,
@@ -811,7 +814,7 @@ export default function OperationsTab({
                 : type === 'products'
                   ? productData
                   : null;
-    return Array.isArray(dataset?.records) && dataset.records.length > 0;
+    return asList(dataset?.records).length > 0;
   };
 
   const getMonitorInsight = (card: MonitorCard): { headline: string; detail: string; severity: CardSeverity } => {
@@ -826,8 +829,8 @@ export default function OperationsTab({
     const arSummary = arData.summary || {};
     const apSummary = apData.summary || {};
     const cashSummary = cashData.summary || {};
-    const arRecords = Array.isArray(arData.records) ? arData.records : [];
-    const apRecords = Array.isArray(apData.records) ? apData.records : [];
+    const arRecords = asList(arData.records);
+    const apRecords = asList(apData.records);
     const inventorySummary = inventoryData?.summary || {};
 
     if (card.title === 'DSO Drift') {
@@ -950,7 +953,7 @@ export default function OperationsTab({
       };
     }
     if (card.dataType === 'products') {
-      const products = Array.isArray(productData?.summary?.topProducts) ? productData.summary.topProducts : [];
+      const products = asList(productData?.summary?.topProducts);
       const avgMargin = products.length
         ? products.reduce((sum: number, row: any) => sum + Number(row.grossMarginPct || 0), 0) / products.length
         : 0;
@@ -961,7 +964,7 @@ export default function OperationsTab({
       };
     }
     if (card.dataType === 'customers') {
-      const customers = Array.isArray(customerData?.summary?.topCustomers) ? customerData.summary.topCustomers : [];
+      const customers = asList(customerData?.summary?.topCustomers);
       const totalRevenue = customers.reduce((sum: number, row: any) => sum + Number(row.totalRevenue || 0), 0);
       return {
         headline: `${customers.length} customers with sales`,
@@ -999,13 +1002,13 @@ export default function OperationsTab({
     const productsSummary = productData?.summary || {};
     const customersSummary = customerData?.summary || {};
 
-    const arDrivers = (Array.isArray(arSummary.unpaidByCustomer) ? arSummary.unpaidByCustomer : [])
+    const arDrivers = asList(arSummary.unpaidByCustomer)
       .map((row: any) => ({
         name: row.customerName,
         overdue: Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0),
       }))
       .sort((a: any, b: any) => b.overdue - a.overdue);
-    const apDrivers = (Array.isArray(apSummary.unpaidByVendor) ? apSummary.unpaidByVendor : [])
+    const apDrivers = asList(apSummary.unpaidByVendor)
       .map((row: any) => ({
         name: row.vendorName,
         overdue: Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0),
@@ -1066,7 +1069,7 @@ export default function OperationsTab({
       const totalCash = Number(cashSummary.totalCash || 0);
       const changeAmt = Number(cashSummary.changeAmount || 0);
       const changePct = Number(cashSummary.changePercent || 0);
-      const accounts = Array.isArray(cashSummary.accounts) ? cashSummary.accounts : [];
+      const accounts = asList(cashSummary.accounts);
       const drivers = accounts
         .sort((a: any, b: any) => Math.abs(Number(b.currentBalance || 0) - Number(b.avgBalance || 0)) - Math.abs(Number(a.currentBalance || 0) - Number(a.avgBalance || 0)))
         .slice(0, 3)
@@ -1086,7 +1089,7 @@ export default function OperationsTab({
     }
 
     if (playbook.title === 'Why did margin shrink?') {
-      const products = Array.isArray(productsSummary.topProducts) ? productsSummary.topProducts : [];
+      const products = asList(productsSummary.topProducts);
       const lowestMargin = [...products]
         .sort((a: any, b: any) => Number(a.grossMarginPct || 0) - Number(b.grossMarginPct || 0))
         .slice(0, 3);
@@ -1133,7 +1136,7 @@ export default function OperationsTab({
     }
 
     if (playbook.title === 'What should we do next?') {
-      const topCustomers = (Array.isArray(customersSummary.topCustomers) ? customersSummary.topCustomers : []).slice(0, 3);
+      const topCustomers = asList(customersSummary.topCustomers).slice(0, 3);
       const over30 = Number(arSummary.over30Pct || 0);
       const changePct = Number(cashSummary.changePercent || 0);
       const severity: CardSeverity = over30 > 30 || changePct < -8 ? 'warning' : 'normal';
@@ -1151,7 +1154,7 @@ export default function OperationsTab({
     }
 
     if (playbook.dataType === 'products') {
-      const products = Array.isArray(productsSummary.topProducts) ? productsSummary.topProducts : [];
+      const products = asList(productsSummary.topProducts);
       const avgMargin = products.length
         ? products.reduce((sum: number, row: any) => sum + Number(row.grossMarginPct || 0), 0) / products.length
         : 0;
@@ -1183,7 +1186,7 @@ export default function OperationsTab({
       };
     }
     if (playbook.dataType === 'customers') {
-      const topCustomers = (Array.isArray(customersSummary.topCustomers) ? customersSummary.topCustomers : []).slice(0, 3);
+      const topCustomers = asList(customersSummary.topCustomers).slice(0, 3);
       return {
         whyNow: `Customer sales rows present for ${topCustomers.length} leading accounts`,
         impact: playbook.outcome,
@@ -1214,10 +1217,6 @@ export default function OperationsTab({
     if (playbook.dataType === 'ar-aging' && insight.focusCustomer) {
       setSelectedInvoiceCustomer(insight.focusCustomer);
       setCustomerInvoicePage(1);
-    }
-    if (playbook.dataType === 'ap-aging' && insight.focusVendor) {
-      setSelectedVendorBill(insight.focusVendor);
-      setVendorBillsPage(1);
     }
     if (playbook.dataType === 'customers') {
       setDemandSortKey('backlogTotal');
@@ -1727,7 +1726,8 @@ export default function OperationsTab({
       acc[name].totalInvoices += Number(record?.invoiceCount || 0);
       return acc;
     }, {});
-    const rankedCustomers = Object.values(customerTotalsFromRecords).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
+    const rankedCustomers = (Object.values(customerTotalsFromRecords) as Array<{ name: string; totalRevenue: number; totalInvoices: number }>)
+      .sort((a, b) => b.totalRevenue - a.totalRevenue);
 
     // Aggregate data by period for trend chart
     const periodTrend = recordsInSelectedDateRange.reduce((acc: any, record: any) => {
@@ -1813,14 +1813,13 @@ export default function OperationsTab({
       acc[name].totalInvoices += Number(record?.invoiceCount || 0);
       return acc;
     }, {});
-    const rankedCustomersForTable = Object.values(tableCustomerTotals).sort((a: any, b: any) => b.totalRevenue - a.totalRevenue);
-    const summaryTopCustomers = Array.isArray(summary?.topCustomers)
-      ? (summary.topCustomers as Array<any>).map((row) => ({
+    const rankedCustomersForTable = (Object.values(tableCustomerTotals) as Array<{ name: string; totalRevenue: number; totalInvoices: number }>)
+      .sort((a, b) => b.totalRevenue - a.totalRevenue);
+    const summaryTopCustomers = asList<any>(summary?.topCustomers).map((row) => ({
           name: String(row?.name || row?.customerName || 'Unknown Customer'),
           totalRevenue: Number(row?.totalRevenue || row?.revenue || 0),
           totalInvoices: Number(row?.totalInvoices || row?.invoiceCount || 0),
-        }))
-      : [];
+        }));
     const rankedCustomersForTableEffective =
       rankedCustomersForTable.length > 0 ? rankedCustomersForTable : summaryTopCustomers;
     const selectedPeriodLabel =
@@ -1865,7 +1864,7 @@ export default function OperationsTab({
         {(() => {
           const topTenRaw = rankedCustomersForTableEffective.slice(0, 10);
           const tableCustomers = topTenRaw.map((customer) => ({
-            ...customer,
+            ...(customer as { name: string; totalRevenue: number; totalInvoices?: number }),
             totalInvoices: Math.max(1, Math.round(customer.totalInvoices || customer.totalRevenue / 10000)),
           }));
           const chartCustomers = tableCustomers;
@@ -1881,7 +1880,7 @@ export default function OperationsTab({
             qtd: Number(bookingsSummary?.top5?.qtd || 0),
             ytd: Number(bookingsSummary?.top5?.ytd || 0),
           };
-          const bookingsTopRows = (Array.isArray(bookingsSummary?.topCustomers) ? bookingsSummary.topCustomers : [])
+          const bookingsTopRows = asList(bookingsSummary?.topCustomers)
             .map((row: any) => ({
               customerName: String(row?.customerName || 'Unknown Customer'),
               mtd: Number(row?.mtd || 0),
@@ -2393,13 +2392,14 @@ export default function OperationsTab({
     const paidByCustomerMap = new Map(paidByCustomerAll.map((row: any) => [row.customerName, row]));
     const contractAndCashFlowRows = arCustomers
       .map((row: any) => {
-        const paid = paidByCustomerMap.get(row.customerName);
+        const paidRecord = (paidByCustomerMap.get(row.customerName) || {}) as Record<string, unknown>;
+        const rowRecord = row as Record<string, unknown>;
         const contractValueTotal = Number(row.contractValueTotal || 0);
         const remainingToInvoice = Number(row.remainingToInvoice || 0);
         const accruedRevenueUnbilled = Number(row.accruedRevenueUnbilled || 0);
         const invoicedRevenue = Number(row.invoicedRevenue || row.totalDue || 0);
         const arOutstanding = Number(row.totalDue || 0);
-        const cashCollectedToDate = Number(row.cashCollectedToDate || paid?.cashCollectedToDate || 0);
+        const cashCollectedToDate = Number(rowRecord.cashCollectedToDate || paidRecord.cashCollectedToDate || 0);
         const totalBilledRevenue = invoicedRevenue;
         const totalExposure = arOutstanding + remainingToInvoice;
         const billingProgressPct = contractValueTotal > 0 ? (invoicedRevenue / contractValueTotal) * 100 : 0;
@@ -2417,7 +2417,7 @@ export default function OperationsTab({
           ar61to90: Number(row.days61to90 || 0),
           ar90plus: Number(row.days90plus || 0),
           cashCollectedToDate,
-          lastPaymentDate: row.lastPaymentDate || paid?.lastPaymentDate || '-',
+          lastPaymentDate: String(rowRecord.lastPaymentDate || paidRecord.lastPaymentDate || '-'),
           totalBilledRevenue,
           totalExposure,
           billingProgressPct,
@@ -2430,7 +2430,9 @@ export default function OperationsTab({
         b.arOutstanding - a.arOutstanding ||
         b.ar90plus + b.ar61to90 + b.ar31to60 - (a.ar90plus + a.ar61to90 + a.ar31to60)
     );
-    const customerOptions = Array.from(new Set(customerInvoiceRows.map((row) => row.customerName))).sort();
+    const customerOptions: string[] = Array.from(new Set<string>(customerInvoiceRows.map((row: any) => String(row.customerName || ''))))
+      .filter(Boolean)
+      .sort();
     const filteredCustomerInvoices =
       selectedInvoiceCustomer === 'All'
         ? customerInvoiceRows
@@ -2461,14 +2463,14 @@ export default function OperationsTab({
       : [];
 
     const formatArTrendDate = (value: string | Date) => {
-      const parsed = parseDateValue(value);
+      const parsed = parseDateValue(typeof value === 'string' ? value : value.toISOString());
       if (!parsed) return String(value || '');
       // AR trend period keys are canonical UTC day anchors; render labels in UTC
       // so bars map to the exact requested day without -1 day timezone drift.
       return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     };
     const toUtcDay = (value: string | Date) => {
-      const parsed = parseDateValue(value);
+      const parsed = parseDateValue(typeof value === 'string' ? value : value.toISOString());
       if (!parsed) return null;
       return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
     };
@@ -3084,7 +3086,7 @@ export default function OperationsTab({
             >
               <option value="All">All Customers</option>
               {customerOptions.map((customer) => (
-                <option key={customer} value={customer}>
+                <option key={String(customer)} value={String(customer)}>
                   {customer}
                 </option>
               ))}
@@ -3899,8 +3901,8 @@ export default function OperationsTab({
 
     const { records, summary } = productData;
     const weeklyMarginModel = buildWeeklyProductMarginModel({
-      records: Array.isArray(records) ? records : [],
-      topProducts: Array.isArray(summary?.topProducts) ? summary.topProducts : [],
+      records: asList(records),
+      topProducts: asList(summary?.topProducts),
       rangeStart: startDate,
       rangeEnd: endDate,
     });
@@ -4497,7 +4499,7 @@ export default function OperationsTab({
     // Inventory API already returns latest snapshot rows (aggregated to unique SKU),
     // but keep a UI-side guard against accidental duplicate SKU variants.
     const latestRecords = (() => {
-      const base = Array.isArray(records) ? records : [];
+      const base = asList(records);
       const bySku = new Map<string, any>();
       for (const row of base) {
         const key =
@@ -4562,7 +4564,7 @@ export default function OperationsTab({
     };
     const inventorySortLabel = (key: string) =>
       inventorySortKey === key ? (inventorySortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const inventoryAgingRows = Array.isArray(agingReport) ? agingReport.slice(0, 100) : [];
+    const inventoryAgingRows = asList(agingReport).slice(0, 100);
     const top10InventoryByValue = [...latestRecords]
       .sort((a: any, b: any) => Number(b?.assetValue || 0) - Number(a?.assetValue || 0))
       .slice(0, 10);
@@ -4579,7 +4581,7 @@ export default function OperationsTab({
       return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + diffToMonday));
     };
 
-    const trendRows = Array.isArray(trend) ? trend : [];
+    const trendRows = asList(trend);
     const trendRowsSorted = trendRows
       .map((point: any) => {
         const parsed = parseDateValue(point.snapshotDate);
@@ -4793,7 +4795,7 @@ export default function OperationsTab({
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={(entry) => `${entry.itemName}: ${formatCurrency(entry.assetValue)}`}
+                label={(entry: any) => `${String(entry?.itemName || 'Item')}: ${formatCurrency(Number(entry?.assetValue || 0))}`}
                 outerRadius={100}
                 fill="#8884d8"
                 dataKey="assetValue"
@@ -4894,15 +4896,12 @@ export default function OperationsTab({
 
     const { records, summary } = cashData;
 
-    const cashTrendAccountOptions = [
+    const accountNames = (summary.accounts || [])
+      .map((account: any) => String(account.accountName || '').trim())
+      .filter(Boolean);
+    const cashTrendAccountOptions: string[] = [
       '__TOTAL__',
-      ...Array.from(
-        new Set(
-          (summary.accounts || [])
-            .map((account: any) => String(account.accountName || '').trim())
-            .filter(Boolean)
-        )
-      ),
+      ...Array.from(new Set<string>(accountNames)),
     ];
     const effectiveCashTrendAccount = cashTrendAccountOptions.includes(selectedCashTrendAccount)
       ? selectedCashTrendAccount
@@ -5071,7 +5070,7 @@ export default function OperationsTab({
               }}
             >
               {cashTrendAccountOptions.map((accountName) => (
-                <option key={accountName} value={accountName}>
+                <option key={String(accountName)} value={String(accountName)}>
                   {accountName === '__TOTAL__' ? 'Total Cash' : accountName}
                 </option>
               ))}
@@ -5296,7 +5295,7 @@ export default function OperationsTab({
     }
     if (!dailyFinancialData) return null;
 
-    const records = Array.isArray(dailyFinancialData.records) ? dailyFinancialData.records : [];
+    const records = asList(dailyFinancialData.records);
     const summary = dailyFinancialData.summary || {};
     const sortedRecordsRaw = [...records].sort(
       (a: any, b: any) => new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime()
@@ -5406,7 +5405,7 @@ export default function OperationsTab({
     const marginPctMax = marginPctValues.length > 0 ? Math.max(...marginPctValues) : 50;
     const marginPctDomain: [number, number] = [Math.floor((Math.min(0, marginPctMin) - 5) / 5) * 5, Math.ceil((Math.max(0, marginPctMax) + 5) / 5) * 5];
 
-    const mappedLines = Array.isArray(dailyFinancialData?.mappedLines) ? dailyFinancialData.mappedLines : [];
+    const mappedLines = asList(dailyFinancialData?.mappedLines);
     const lineIndex: Record<string, Record<string, number>> = {};
     const normalizeTargetField = (field: string): string =>
       String(field || '')
@@ -6162,8 +6161,8 @@ export default function OperationsTab({
 
   const renderForecast = () => {
     const renderCashConversionAnalysis = () => {
-      const financialRecords = Array.isArray(cashConversionFinancialData?.records) ? cashConversionFinancialData.records : [];
-      const mappedLines = Array.isArray(cashConversionFinancialData?.mappedLines) ? cashConversionFinancialData.mappedLines : [];
+      const financialRecords = asList(cashConversionFinancialData?.records);
+      const mappedLines = asList(cashConversionFinancialData?.mappedLines);
       const inferredFrequency = String(financialRecords[0]?.frequency || 'monthly').toLowerCase();
       const requiredPeriods = inferredFrequency === 'daily' ? 365 : 12;
       const trailingRecords = financialRecords.slice(0, requiredPeriods);

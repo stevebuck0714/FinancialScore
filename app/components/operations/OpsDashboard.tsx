@@ -29,15 +29,19 @@ const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a'
 const AGING_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CUSTOMER_CHART_COLOR = COLORS[2];
 const CASH_CHART_COLOR = COLORS[4];
+const asList = <T = any,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+type Frequency = 'daily' | 'weekly' | 'monthly';
+const asFrequency = (value: unknown): Frequency =>
+  value === 'weekly' || value === 'monthly' ? value : 'daily';
 
 export default function OpsDashboard({ selectedCompanyId, companyName, industrySectorCategory, activeModules, moduleTitlesByType }: OpsDashboardProps) {
   // Individual frequency state for each widget
-  const [customerFreq, setCustomerFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [arFreq, setArFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [apFreq, setApFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [productFreq, setProductFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [inventoryFreq, setInventoryFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [cashFreq, setCashFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [customerFreq, setCustomerFreq] = useState<Frequency>('daily');
+  const [arFreq, setArFreq] = useState<Frequency>('daily');
+  const [apFreq, setApFreq] = useState<Frequency>('daily');
+  const [productFreq, setProductFreq] = useState<Frequency>('daily');
+  const [inventoryFreq, setInventoryFreq] = useState<Frequency>('daily');
+  const [cashFreq, setCashFreq] = useState<Frequency>('daily');
 
   // Data state for each widget
   const [customerData, setCustomerData] = useState<any>(null);
@@ -63,7 +67,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
 
   // Helper to get date range based on frequency
-  const getDateRange = (frequency: string) => {
+  const getDateRange = (frequency: Frequency) => {
     const end = new Date();
     const start = new Date();
     
@@ -92,7 +96,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   };
 
   // Format date based on frequency
-  const formatDate = (dateString: string, frequency: string) => {
+  const formatDate = (dateString: string, frequency: Frequency) => {
     const date = parseDateSafeUtc(dateString);
     if (!date) return 'N/A';
     if (frequency === 'daily') {
@@ -276,9 +280,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
           setProductFreq('daily');
           setInventoryFreq('daily');
           setCashFreq('daily');
-          if (Array.isArray(data.preferences.widgetOrder)) {
-            setWidgetOrder(data.preferences.widgetOrder.filter((id: unknown) => typeof id === 'string'));
-          }
+          setWidgetOrder(asList(data?.preferences?.widgetOrder).filter((id: unknown) => typeof id === 'string'));
         }
       }
     } catch (error) {
@@ -339,10 +341,10 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   useEffect(() => { loadCashData(); }, [selectedCompanyId, industrySectorCategory, cashFreq]);
 
   // Frequency selector component
-  const FrequencySelector = ({ value, onChange }: { value: string, onChange: (v: any) => void }) => (
+  const FrequencySelector = ({ value, onChange }: { value: Frequency, onChange: (v: Frequency) => void }) => (
     <select
       value={value}
-      onChange={(e) => onChange(e.target.value as any)}
+      onChange={(e) => onChange(asFrequency(e.target.value))}
       style={{
         padding: '6px 12px',
         border: '1px solid #e2e8f0',
@@ -445,6 +447,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     products: [],
     inventory: [],
     cash: [],
+    'daily-financials': [],
   };
 
   configuredModules.forEach((module) => {
@@ -475,6 +478,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     products: productLabels[0] || 'Product Sales',
     inventory: inventoryLabels[0] || 'Inventory',
     cash: cashLabels[0] || 'Cash Balance',
+    'daily-financials': 'Daily Financials',
   };
 
   const extraWidgets: Array<{ type: OpsDataType; label: string }> = [

@@ -7,15 +7,94 @@ export type AccessibleCompany = {
   sidebarAccess: unknown;
 };
 
+type UserCompanyAccessDelegate = {
+  findMany: (...args: unknown[]) => Promise<unknown[]>;
+  upsert: (...args: unknown[]) => Promise<unknown>;
+  findUnique: (...args: unknown[]) => Promise<unknown>;
+  create: (...args: unknown[]) => Promise<unknown>;
+};
+
+type MembershipRow = {
+  companyId: string;
+  companyRole: string | null;
+  sidebarAccess: unknown;
+  company: {
+    name: string;
+  };
+};
+
+function asSidebarAccess(value: unknown): unknown {
+  return value === undefined ? undefined : value;
+}
+
+function asMembershipRows(rows: unknown[]): MembershipRow[] {
+  return rows
+    .map((row) => {
+      if (!row || typeof row !== 'object') return null;
+      const value = row as Record<string, unknown>;
+      const company = (value.company && typeof value.company === 'object'
+        ? value.company
+        : {}) as Record<string, unknown>;
+      const companyId = String(value.companyId || '').trim();
+      const companyName = String(company.name || '').trim();
+      if (!companyId || !companyName) return null;
+      return {
+        companyId,
+        companyRole: value.companyRole ? String(value.companyRole) : null,
+        sidebarAccess: value.sidebarAccess,
+        company: { name: companyName },
+      };
+    })
+    .filter((row): row is MembershipRow => Boolean(row));
+}
+
+async function fetchAllCompanies() {
+  return prisma.company.findMany({
+    select: { id: true, name: true },
+    orderBy: { createdAt: 'asc' },
+  });
+}
+
+const USER_CONTEXT_SELECT = {
+  role: true,
+  companyRole: true,
+  sidebarAccess: true,
+} as const;
+
+const FALLBACK_USER_SELECT = {
+  companyId: true,
+  companyRole: true,
+  sidebarAccess: true,
+  consultantId: true,
+  role: true,
+  consultantFirm: {
+    select: {
+      companies: {
+        select: { id: true, name: true },
+        orderBy: { createdAt: 'asc' as const },
+      },
+    },
+  },
+  primaryConsultant: {
+    select: {
+      companies: {
+        select: { id: true, name: true },
+        orderBy: { createdAt: 'asc' as const },
+      },
+    },
+  },
+} as const;
+
+const LEGACY_USER_ACCESS_SELECT = {
+  companyId: true,
+  companyRole: true,
+  sidebarAccess: true,
+} as const;
+
 function getUserCompanyAccessDelegate():
-  | {
-      findMany: (...args: any[]) => Promise<any[]>;
-      upsert: (...args: any[]) => Promise<any>;
-      findUnique: (...args: any[]) => Promise<any>;
-      create: (...args: any[]) => Promise<any>;
-    }
+  | UserCompanyAccessDelegate
   | null {
-  const delegate = (prisma as any).userCompanyAccess;
+  const delegate = (prisma as unknown as Record<string, unknown>).userCompanyAccess as Record<string, unknown> | undefined;
   if (!delegate) return null;
   if (
     typeof delegate.findMany !== 'function' ||
@@ -25,23 +104,19 @@ function getUserCompanyAccessDelegate():
   ) {
     return null;
   }
-  return delegate;
+  return delegate as unknown as UserCompanyAccessDelegate;
 }
 
 export async function listAccessibleCompaniesForUser(userId: string): Promise<AccessibleCompany[]> {
   const userContext = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      role: true,
-      companyRole: true,
-      sidebarAccess: true,
-    },
+    select: USER_CONTEXT_SELECT,
   });
   if (!userContext) return [];
 
   const userCompanyAccess = getUserCompanyAccessDelegate();
   if (userCompanyAccess) {
-    const memberships = await userCompanyAccess.findMany({
+    const membershipsRaw = await userCompanyAccess.findMany({
       where: { userId },
       select: {
         companyId: true,
@@ -57,6 +132,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
         createdAt: 'asc',
       },
     });
+    const memberships = asMembershipRows(membershipsRaw);
 
     if (userContext.role === 'SITEADMIN') {
       const membershipByCompanyId = new Map(
@@ -69,10 +145,7 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
         ])
       );
 
-      const allCompanies = await prisma.company.findMany({
-        select: { id: true, name: true },
-        orderBy: { createdAt: 'asc' },
-      });
+      const allCompanies = await fetchAllCompanies();
 
       return allCompanies.map((company) => {
         const membership = membershipByCompanyId.get(company.id);
@@ -97,37 +170,12 @@ export async function listAccessibleCompaniesForUser(userId: string): Promise<Ac
   // before UserCompanyAccess model existed.
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      companyId: true,
-      companyRole: true,
-      sidebarAccess: true,
-      consultantId: true,
-      role: true,
-      consultantFirm: {
-        select: {
-          companies: {
-            select: { id: true, name: true },
-            orderBy: { createdAt: 'asc' },
-          },
-        },
-      },
-      primaryConsultant: {
-        select: {
-          companies: {
-            select: { id: true, name: true },
-            orderBy: { createdAt: 'asc' },
-          },
-        },
-      },
-    },
+    select: FALLBACK_USER_SELECT,
   });
   if (!user) return [];
 
   if (user.role === 'SITEADMIN') {
-    const allCompanies = await prisma.company.findMany({
-      select: { id: true, name: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    const allCompanies = await fetchAllCompanies();
     return allCompanies.map((company) => ({
       companyId: company.id,
       name: company.name,
@@ -171,11 +219,7 @@ export async function ensureLegacyCompanyAccess(userId: string): Promise<void> {
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      companyId: true,
-      companyRole: true,
-      sidebarAccess: true,
-    },
+    select: LEGACY_USER_ACCESS_SELECT,
   });
 
   if (!user?.companyId) return;
@@ -227,8 +271,7 @@ export async function grantUserCompanyAccess(params: {
       userId: params.userId,
       companyId: params.companyId,
       companyRole: params.companyRole || 'user',
-      sidebarAccess:
-        params.sidebarAccess === undefined ? undefined : (params.sidebarAccess as any),
+      sidebarAccess: asSidebarAccess(params.sidebarAccess),
     },
   });
 

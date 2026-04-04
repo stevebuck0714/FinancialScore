@@ -144,6 +144,26 @@ function asNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function asList<T = any>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function normalizeAlertStatus(value: unknown): AlertItem['status'] {
+  const status = String(value || '').trim().toLowerCase();
+  if (status === 'acknowledged' || status === 'snoozed' || status === 'resolved') return status;
+  return 'new';
+}
+
 function dayOverDayPct(current: number, previous: number): number {
   if (!previous) return 0;
   return ((current - previous) / previous) * 100;
@@ -166,8 +186,10 @@ function daysSince(isoDate?: string): number {
   return Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
 }
 
-function extractPriorityFocusTerms(goals: any): string[] {
-  const raw = goals?.[OPERATIONAL_FOCUS_KEY];
+function extractPriorityFocusTerms(goals: unknown): string[] {
+  if (!goals || typeof goals !== 'object') return [];
+  const goalRecord = goals as Record<string, unknown>;
+  const raw = goalRecord[OPERATIONAL_FOCUS_KEY];
   if (!raw || typeof raw !== 'object') return [];
   const terms = Object.values(raw)
     .map((v) => String(v || '').trim().toLowerCase())
@@ -304,7 +326,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
   const [error, setError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [industrySectorCategory, setIndustrySectorCategory] = useState<string | null>(null);
-  const [goalsSnapshot, setGoalsSnapshot] = useState<Record<string, any>>({});
+  const [goalsSnapshot, setGoalsSnapshot] = useState<Record<string, unknown>>({});
   const [policyOverrides, setPolicyOverrides] = useState<Partial<PulsePolicyValues>>({});
   const [policySaving, setPolicySaving] = useState(false);
   const [policyStatus, setPolicyStatus] = useState<string | null>(null);
@@ -362,7 +384,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           for (const cadence of cadenceOrder) {
             try {
               const payload = await fetchOps(type, cadence);
-              const records = Array.isArray(payload?.records) ? payload.records : [];
+              const records = asList(payload?.records);
               if (records.length > bestCount) {
                 bestPayload = payload;
                 bestCount = records.length;
@@ -487,7 +509,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
 
         const built: AlertItem[] = [];
 
-        const arRecords = Array.isArray(arData?.records) ? arData.records : [];
+        const arRecords = asList(arData?.records);
         if (arRecords.length >= 2) {
           const latest = arRecords[0];
           const prev = arRecords[1];
@@ -497,15 +519,15 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           const materialOverdueThreshold = asNumber(
             pulsePolicy['ar_daily_change.min_top_customer_overdue_amount']
           );
-          const rankedCustomers = (Array.isArray(arData?.summary?.unpaidByCustomer) ? arData.summary.unpaidByCustomer : [])
-            .map((row: any) => ({
-              customerName: row.customerName,
+          const rankedCustomers = asList<Record<string, unknown>>(arData?.summary?.unpaidByCustomer)
+            .map((row) => ({
+              customerName: String(row.customerName || ''),
               overdue: asNumber(row.days31to60) + asNumber(row.days61to90) + asNumber(row.days90plus),
             }))
-            .sort((a: any, b: any) => b.overdue - a.overdue);
+            .sort((a, b) => b.overdue - a.overdue);
           const scannedTopCustomers = rankedCustomers.slice(0, AR_TOP_CUSTOMER_MATERIALITY_LIMIT);
           const materialTopCustomers = scannedTopCustomers.filter(
-            (customer: any) => customer.overdue >= materialOverdueThreshold
+            (customer) => customer.overdue >= materialOverdueThreshold
           );
           const topCustomer = rankedCustomers[0];
           if (
@@ -516,7 +538,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             const topMaterialCustomer = materialTopCustomers[0];
             const materialCustomerNames = materialTopCustomers
               .slice(0, 3)
-              .map((customer: any) => customer.customerName)
+              .map((customer) => customer.customerName)
               .filter(Boolean);
             built.push({
               id: `daily-ar-${latest.snapshotDate}`,
@@ -542,19 +564,19 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
         }
 
-        const apRecords = Array.isArray(apData?.records) ? apData.records : [];
+        const apRecords = asList(apData?.records);
         if (apRecords.length >= 2) {
           const latest = apRecords[0];
           const prev = apRecords[1];
           const latestOver30 = ((asNumber(latest.days1to30) + asNumber(latest.days31to60) + asNumber(latest.days61to90) + asNumber(latest.days90plus)) / Math.max(asNumber(latest.totalAP), 1)) * 100;
           const prevOver30 = ((asNumber(prev.days1to30) + asNumber(prev.days31to60) + asNumber(prev.days61to90) + asNumber(prev.days90plus)) / Math.max(asNumber(prev.totalAP), 1)) * 100;
           const deltaPts = latestOver30 - prevOver30;
-          const topVendor = (Array.isArray(apData?.summary?.unpaidByVendor) ? apData.summary.unpaidByVendor : [])
-            .map((row: any) => ({
-              vendorName: row.vendorName,
+          const topVendor = asList<Record<string, unknown>>(apData?.summary?.unpaidByVendor)
+            .map((row) => ({
+              vendorName: String(row.vendorName || ''),
               overdue: asNumber(row.days31to60) + asNumber(row.days61to90) + asNumber(row.days90plus),
             }))
-            .sort((a: any, b: any) => b.overdue - a.overdue)[0];
+            .sort((a, b) => b.overdue - a.overdue)[0];
           if (
             latestOver30 >= pulsePolicy['ap_daily_change.min_over30_pct'] &&
             deltaPts >= pulsePolicy['ap_daily_change.min_delta_pts']
@@ -583,9 +605,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
         }
 
-        const cashRecords = Array.isArray(cashData?.records) ? cashData.records : [];
+        const cashRecords = asList(cashData?.records);
         if (cashRecords.length >= 2) {
-          const byDate = cashRecords.reduce((acc: Record<string, number>, row: any) => {
+          const byDate = cashRecords.reduce((acc: Record<string, number>, row: Record<string, unknown>) => {
             const key = String(row.snapshotDate || '');
             acc[key] = (acc[key] || 0) + asNumber(row.cashBalance);
             return acc;
@@ -619,12 +641,12 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             }
 
             // Account-level deterioration (daily) for visibility into specific accounts/items.
-            const latestRows = cashRecords.filter((r: any) => String(r.snapshotDate) === orderedDates[0]);
-            const prevRows = cashRecords.filter((r: any) => String(r.snapshotDate) === orderedDates[1]);
+            const latestRows = cashRecords.filter((r: Record<string, unknown>) => String(r.snapshotDate) === orderedDates[0]);
+            const prevRows = cashRecords.filter((r: Record<string, unknown>) => String(r.snapshotDate) === orderedDates[1]);
             const prevByAccount = new Map<string, number>(
-              prevRows.map((row: any) => [String(row.accountName || ''), asNumber(row.cashBalance)])
+              prevRows.map((row: Record<string, unknown>) => [String(row.accountName || ''), asNumber(row.cashBalance)])
             );
-            latestRows.forEach((row: any) => {
+            latestRows.forEach((row: Record<string, unknown>) => {
               const accountName = String(row.accountName || '').trim();
               if (!accountName) return;
               const latestBal = asNumber(row.cashBalance);
@@ -666,7 +688,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const apOver30 = asNumber(apSummary.over30Pct);
         const dso = asNumber(arSummary.dso);
         const cashChangePct = asNumber(cashSummary.changePercent);
-        const explicitRunwayRaw = (cashSummary as any)?.runwayWeeks;
+        const explicitRunwayRaw = (cashSummary as Record<string, unknown>)?.runwayWeeks;
         const explicitRunwayWeeks = Number(explicitRunwayRaw);
         const hasCashBasis =
           cashRecords.length > 0 &&
@@ -698,10 +720,14 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const hasRunwaySignal = runwayWeeks !== null && Number.isFinite(runwayWeeks);
         const arCriticalMinDays = Math.max(1, Math.floor(asNumber(pulsePolicy['ar_open_critical.min_consecutive_days']) || 1));
         const apCriticalMinDays = Math.max(1, Math.floor(asNumber(pulsePolicy['ap_open_critical.min_consecutive_days']) || 1));
-        const computeTrailingCriticalDays = (rows: any[], isCritical: (row: any) => boolean): number => {
-          if (!Array.isArray(rows) || rows.length === 0) return 0;
+        const computeTrailingCriticalDays = (rows: unknown[], isCritical: (row: unknown) => boolean): number => {
+          if (rows.length === 0) return 0;
           const sorted = [...rows].sort(
-            (a, b) => new Date(b?.snapshotDate || 0).getTime() - new Date(a?.snapshotDate || 0).getTime()
+            (a, b) => {
+              const left = asRecord(a);
+              const right = asRecord(b);
+              return new Date(String(right.snapshotDate || 0)).getTime() - new Date(String(left.snapshotDate || 0)).getTime();
+            }
           );
           let streak = 0;
           for (const row of sorted) {
@@ -710,27 +736,30 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
           return streak;
         };
-        const arRowOver30Pct = (row: any): number => {
-          const total = asNumber(row?.totalAR);
+        const arRowOver30Pct = (row: unknown): number => {
+          const record = (row && typeof row === 'object') ? (row as Record<string, unknown>) : {};
+          const total = asNumber(record.totalAR);
           if (total <= 0) return 0;
-          const over30Amt = asNumber(row?.days31to60) + asNumber(row?.days61to90) + asNumber(row?.days90plus);
+          const over30Amt = asNumber(record.days31to60) + asNumber(record.days61to90) + asNumber(record.days90plus);
           return (over30Amt / total) * 100;
         };
-        const arRowDso = (row: any): number => {
-          const direct = asNumber((row as any)?.dso);
+        const arRowDso = (row: unknown): number => {
+          const record = (row && typeof row === 'object') ? (row as Record<string, unknown>) : {};
+          const direct = asNumber(record.dso);
           if (Number.isFinite(direct) && direct > 0) return direct;
-          const days90plus = asNumber(row?.days90plus);
+          const days90plus = asNumber(record.days90plus);
           if (days90plus > 0) return 90;
-          const days61to90 = asNumber(row?.days61to90);
+          const days61to90 = asNumber(record.days61to90);
           if (days61to90 > 0) return 75;
-          const days31to60 = asNumber(row?.days31to60);
+          const days31to60 = asNumber(record.days31to60);
           if (days31to60 > 0) return 45;
           return 20;
         };
-        const apRowOver30Pct = (row: any): number => {
-          const total = asNumber(row?.totalAP);
+        const apRowOver30Pct = (row: unknown): number => {
+          const record = (row && typeof row === 'object') ? (row as Record<string, unknown>) : {};
+          const total = asNumber(record.totalAP);
           if (total <= 0) return 0;
-          const over30Amt = asNumber(row?.days31to60) + asNumber(row?.days61to90) + asNumber(row?.days90plus);
+          const over30Amt = asNumber(record.days31to60) + asNumber(record.days61to90) + asNumber(record.days90plus);
           return (over30Amt / total) * 100;
         };
         const arCriticalStreakDays = computeTrailingCriticalDays(
@@ -743,14 +772,24 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           apRecords,
           (row) => apRowOver30Pct(row) >= pulsePolicy['ap_open_critical.min_over30_pct']
         );
-        const latestDateFrom = (rows: any[]): string | undefined => {
-          if (!Array.isArray(rows) || rows.length === 0) return undefined;
+        const latestDateFrom = (rows: unknown[]): string | undefined => {
+          if (rows.length === 0) return undefined;
           const dates = rows
-            .map((r: any) => String(r?.snapshotDate || '').trim())
+            .map((r: unknown) => {
+              const record = (r && typeof r === 'object') ? (r as Record<string, unknown>) : {};
+              return String(record.snapshotDate || '').trim();
+            })
             .filter((v: string) => v.length > 0)
             .sort((a: string, b: string) => new Date(b).getTime() - new Date(a).getTime());
           return dates[0];
         };
+        const customerRecords = asList(customerData?.records);
+        const productRecords = asList(productData?.records);
+        const inventoryRecords = asList(inventoryData?.records);
+        const inventoryTrend = asList(inventoryData?.trend);
+        const dailyFinancialRecords = asList(dailyFinancialData?.records);
+        const expertFindings = asList(expertFindingsData?.findings);
+        const covenantAlerts = asList(covenantAlertsData?.alerts);
         const readinessSnapshot: ReadinessItem[] = [
           {
             key: 'ar',
@@ -797,67 +836,70 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             key: 'customers',
             label: 'Customer operational data',
             status:
-              Array.isArray(customerData?.records) && customerData.records.length >= 2
+              customerRecords.length >= 2
                 ? 'ready'
-                : Array.isArray(customerData?.records) && customerData.records.length > 0
+                : customerRecords.length > 0
                   ? 'partial'
                   : 'missing',
             reason:
-              Array.isArray(customerData?.records) && customerData.records.length >= 2
+              customerRecords.length >= 2
                 ? 'Customer sales data is available for multi-day trend checks.'
                 : 'Customer sales records are sparse for trend-level coverage.',
-            lastUpdated: latestDateFrom(Array.isArray(customerData?.records) ? customerData.records : []),
+            lastUpdated: latestDateFrom(customerRecords),
           },
           {
             key: 'products',
             label: 'Product operational data',
-            status: Array.isArray(productData?.records) && productData.records.length > 0 ? 'ready' : 'missing',
+            status: productRecords.length > 0 ? 'ready' : 'missing',
             reason:
-              Array.isArray(productData?.records) && productData.records.length > 0
+              productRecords.length > 0
                 ? 'Product-level operational records are available.'
                 : 'No product operational rows available in the selected window.',
-            lastUpdated: latestDateFrom(Array.isArray(productData?.records) ? productData.records : []),
+            lastUpdated: latestDateFrom(productRecords),
           },
           {
             key: 'inventory',
             label: 'Inventory operational data',
-            status: Array.isArray(inventoryData?.records) && inventoryData.records.length > 0 ? 'ready' : 'missing',
+            status: inventoryRecords.length > 0 ? 'ready' : 'missing',
             reason:
-              Array.isArray(inventoryData?.records) && inventoryData.records.length > 0
+              inventoryRecords.length > 0
                 ? 'Inventory snapshots are available for operational monitoring.'
                 : 'No inventory snapshots available in the selected window.',
-            lastUpdated: latestDateFrom(Array.isArray(inventoryData?.trend) ? inventoryData.trend : []),
+            lastUpdated: latestDateFrom(inventoryTrend),
           },
           {
             key: 'financial',
             label: 'Financial trend data',
             status:
-              Array.isArray(dailyFinancialData?.records) && dailyFinancialData.records.length >= 2
+              dailyFinancialRecords.length >= 2
                 ? 'ready'
-                : Array.isArray(dailyFinancialData?.records) && dailyFinancialData.records.length > 0
+                : dailyFinancialRecords.length > 0
                   ? 'partial'
                   : 'missing',
             reason:
-              Array.isArray(dailyFinancialData?.records) && dailyFinancialData.records.length >= 2
+              dailyFinancialRecords.length >= 2
                 ? 'Daily financial snapshots are available for trend and margin signals.'
                 : 'Need at least 2 daily financial snapshots for full financial trend checks.',
-            lastUpdated: latestDateFrom(Array.isArray(dailyFinancialData?.records) ? dailyFinancialData.records : []),
+            lastUpdated: latestDateFrom(dailyFinancialRecords),
           },
           {
             key: 'expert-analysis',
             label: 'Expert analysis feed',
             status:
-              Array.isArray(expertFindingsData?.findings) && expertFindingsData.findings.length > 0
+              expertFindings.length > 0
                 ? 'ready'
                 : 'missing',
             reason:
-              Array.isArray(expertFindingsData?.findings) && expertFindingsData.findings.length > 0
+              expertFindings.length > 0
                 ? 'Expert findings are available for cross-signal scoring.'
                 : 'No expert findings currently available for this company.',
             lastUpdated: latestDateFrom(
-              (Array.isArray(expertFindingsData?.findings) ? expertFindingsData.findings : []).map((f: any) => ({
-                snapshotDate: f?.updatedAt,
-              }))
+              expertFindings.map((f: unknown) => {
+                const row = asRecord(f);
+                return {
+                snapshotDate: row.updatedAt,
+                };
+              })
             ),
           },
           {
@@ -871,21 +913,19 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             key: 'covenants',
             label: 'Loan covenant warnings',
             status:
-              Array.isArray(covenantAlertsData?.alerts) && covenantAlertsData.alerts.length > 0
+              covenantAlerts.length > 0
                 ? 'ready'
                 : 'missing',
             reason:
-              Array.isArray(covenantAlertsData?.alerts) && covenantAlertsData.alerts.length > 0
+              covenantAlerts.length > 0
                 ? 'Covenant monitoring feed has active warning/breach signals.'
                 : 'No covenant alerts returned (no active warning/breach or no configured covenants).',
             lastUpdated:
-              Array.isArray(covenantAlertsData?.alerts) && covenantAlertsData.alerts.length > 0
-                ? String(covenantAlertsData.alerts[0]?.timestamp || endDate)
+              covenantAlerts.length > 0
+                ? String(covenantAlerts[0]?.timestamp || endDate)
                 : endDate,
           },
         ];
-
-        const dailyFinancialRecords = Array.isArray(dailyFinancialData?.records) ? dailyFinancialData.records : [];
         if (dailyFinancialRecords.length >= 2) {
           const latest = dailyFinancialRecords[0];
           const prev = dailyFinancialRecords[1];
@@ -944,38 +984,36 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
         }
 
-        const customerRecords = Array.isArray(customerData?.records) ? customerData.records : [];
-        const customerSummaryTop = Array.isArray((customerData as any)?.summary?.topCustomers)
-          ? (customerData as any).summary.topCustomers
-          : [];
-        const bookingSummaryTop = Array.isArray((customerData as any)?.summary?.bookings?.topCustomers)
-          ? (customerData as any).summary.bookings.topCustomers
-          : [];
+        const customerDataRecord = asRecord(customerData);
+        const customerSummary = asRecord(customerDataRecord.summary);
+        const bookingSummary = asRecord(customerSummary.bookings);
+        const customerSummaryTop = asList<Record<string, unknown>>(customerSummary.topCustomers);
+        const bookingSummaryTop = asList<Record<string, unknown>>(bookingSummary.topCustomers);
         const customerBasis =
-          customerSummaryTop.some((row: any) => asNumber(row?.totalRevenue) > 0)
-            ? customerSummaryTop.map((row: any) => ({
-                customerName: String(row?.customerName || row?.name || 'Unknown Customer'),
-                value: asNumber(row?.totalRevenue),
+          customerSummaryTop.some((row) => asNumber(row.totalRevenue) > 0)
+            ? customerSummaryTop.map((row) => ({
+                customerName: String(row.customerName || row.name || 'Unknown Customer'),
+                value: asNumber(row.totalRevenue),
               }))
             : bookingSummaryTop
-                .map((row: any) => ({
-                  customerName: String(row?.name || row?.customerName || 'Unknown Customer'),
-                  value: asNumber(row?.ytd || row?.currentMonth || row?.last12Months || 0),
+                .map((row) => ({
+                  customerName: String(row.name || row.customerName || 'Unknown Customer'),
+                  value: asNumber(row.ytd || row.currentMonth || row.last12Months || 0),
                 }))
-                .filter((row: any) => row.value > 0);
+                .filter((row) => row.value > 0);
         if (customerBasis.length > 0 || customerRecords.length > 0) {
           const latestSnapshotDate = String(customerRecords[0]?.snapshotDate || endDate);
           const latestRows =
             customerBasis.length > 0
               ? customerBasis
               : customerRecords
-                  .filter((row: any) => String(row?.snapshotDate || '') === latestSnapshotDate)
-                  .map((row: any) => ({
-                    customerName: String(row?.customerName || 'Unknown Customer'),
-                    value: asNumber(row?.revenue),
+                  .filter((row: Record<string, unknown>) => String(row.snapshotDate || '') === latestSnapshotDate)
+                  .map((row: Record<string, unknown>) => ({
+                    customerName: String(row.customerName || 'Unknown Customer'),
+                    value: asNumber(row.revenue),
                   }));
-          const totalRevenue = latestRows.reduce((sum: number, row: any) => sum + asNumber(row?.value), 0);
-          const topCustomer = [...latestRows].sort((a: any, b: any) => asNumber(b?.value) - asNumber(a?.value))[0];
+          const totalRevenue = latestRows.reduce((sum: number, row) => sum + asNumber(row.value), 0);
+          const topCustomer = [...latestRows].sort((a, b) => asNumber(b.value) - asNumber(a.value))[0];
           const topShare = totalRevenue > 0 ? (asNumber(topCustomer?.value) / totalRevenue) * 100 : 0;
           if (topShare >= 35) {
             built.push({
@@ -1001,7 +1039,6 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
         }
 
-        const inventoryTrend = Array.isArray(inventoryData?.trend) ? inventoryData.trend : [];
         if (inventoryTrend.length >= 2) {
           const latest = inventoryTrend[inventoryTrend.length - 1];
           const prev = inventoryTrend[inventoryTrend.length - 2];
@@ -1032,9 +1069,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
         }
 
-        const productTop = Array.isArray(productData?.summary?.topProducts) ? productData.summary.topProducts : [];
+        const productTop = asList(productData?.summary?.topProducts);
         const weakMarginProduct = productTop.find(
-          (row: any) => asNumber(row?.grossMarginPct) < 10 && asNumber(row?.totalRevenue) > 0
+          (row: Record<string, unknown>) => asNumber(row.grossMarginPct) < 10 && asNumber(row.totalRevenue) > 0
         );
         if (weakMarginProduct) {
           built.push({
@@ -1179,80 +1216,82 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           });
         }
 
-        const findings = Array.isArray(findingsData?.findings) ? findingsData.findings : [];
+        const findings = asList(findingsData?.findings);
         findings
-          .filter((finding: any) => {
-            const status = String(finding?.payload?.status || '').trim().toLowerCase();
+          .filter((finding: unknown) => {
+            const row = asRecord(finding);
+            const payload = asRecord(row.payload);
+            const status = String(payload.status || '').trim().toLowerCase();
             return !status || !RESOLVED_STATUSES.has(status);
           })
-          .forEach((finding: any) => {
+          .forEach((finding: unknown) => {
+            const row = asRecord(finding);
+            const payload = asRecord(row.payload);
             built.push({
-              id: `open-${finding.id}`,
-              fingerprint: `finding-${finding.id}`,
+              id: `open-${row.id}`,
+              fingerprint: `finding-${row.id}`,
               source: 'unresolved',
-              title: finding?.payload?.title || finding?.metric || 'Open Critical Finding',
-              detail: finding?.payload?.summary || finding?.payload?.likelyCause || 'Previously flagged critical item remains unresolved.',
-              owner: finding?.payload?.owner || 'Ops/Finance Owner',
-              drillView: finding?.type === 'anomaly' ? 'pa-anomaly-inbox' : 'pa-critical-issues',
-              updatedAt: finding?.updatedAt,
-              itemLabel: finding?.metric || undefined,
+              title: String(payload.title || row.metric || 'Open Critical Finding'),
+              detail: String(payload.summary || payload.likelyCause || 'Previously flagged critical item remains unresolved.'),
+              owner: String(payload.owner || 'Ops/Finance Owner'),
+              drillView: row.type === 'anomaly' ? 'pa-anomaly-inbox' : 'pa-critical-issues',
+              updatedAt: String(row.updatedAt || ''),
+              itemLabel: typeof row.metric === 'string' ? row.metric : undefined,
               explainability: {
                 triggerName: 'Unresolved Critical Finding',
                 formula: 'Include unresolved critical findings from performance analytics feed',
                 threshold: 'status not in resolved/realized/closed/done/complete/completed',
-                reasonNow: `Finding remains unresolved (${finding?.type || 'critical'})`,
+                reasonNow: `Finding remains unresolved (${String(row.type || 'critical')})`,
                 policySource: 'Findings ingestion rule + Pulse priority policy',
                 dataRefs: ['/api/performance-analytics/findings?severity=critical'],
-                sourceTimestamp: finding?.updatedAt,
+                sourceTimestamp: String(row.updatedAt || ''),
               },
             });
           });
 
-        const criticalFindingIds = new Set(findings.map((finding: any) => String(finding?.id || '')));
-        const expertFindings = Array.isArray(expertFindingsData?.findings) ? expertFindingsData.findings : [];
+        const criticalFindingIds = new Set(findings.map((finding: unknown) => String(asRecord(finding).id || '')));
         expertFindings
-          .filter((finding: any) => {
-            const id = String(finding?.id || '');
+          .filter((finding: unknown) => {
+            const row = asRecord(finding);
+            const payload = asRecord(row.payload);
+            const id = String(row.id || '');
             if (!id || criticalFindingIds.has(id)) return false;
-            const status = String(finding?.payload?.status || '').trim().toLowerCase();
+            const status = String(payload.status || '').trim().toLowerCase();
             if (status && RESOLVED_STATUSES.has(status)) return false;
             return true;
           })
-          .forEach((finding: any) => {
+          .forEach((finding: unknown) => {
+            const row = asRecord(finding);
+            const payload = asRecord(row.payload);
             built.push({
-              id: `expert-${finding.id}`,
-              fingerprint: `expert-finding-${finding.id}`,
+              id: `expert-${row.id}`,
+              fingerprint: `expert-finding-${row.id}`,
               source: 'unresolved',
-              title: finding?.payload?.title || finding?.metric || 'Expert Analysis Signal',
-              detail:
-                finding?.payload?.summary ||
-                finding?.payload?.likelyCause ||
-                'Expert analytics identified a notable operating/financial signal.',
-              owner: finding?.payload?.owner || 'Ops/Finance Owner',
+              title: String(payload.title || row.metric || 'Expert Analysis Signal'),
+              detail: payload.summary || payload.likelyCause
+                ? String(payload.summary || payload.likelyCause)
+                : 'Expert analytics identified a notable operating/financial signal.',
+              owner: String(payload.owner || 'Ops/Finance Owner'),
               drillView: 'pa-overview',
-              updatedAt: finding?.updatedAt,
-              itemLabel: finding?.metric || undefined,
+              updatedAt: String(row.updatedAt || ''),
+              itemLabel: typeof row.metric === 'string' ? row.metric : undefined,
               explainability: {
                 triggerName: 'Expert Analysis Signal',
                 formula: 'Include unresolved expert findings (non-critical tiers) in pulse monitoring',
                 threshold: 'finding unresolved AND severity in {high, medium} (or unspecified)',
-                reasonNow: `Expert finding remains open (${String(finding?.type || 'analysis')})`,
+                reasonNow: `Expert finding remains open (${String(row.type || 'analysis')})`,
                 policySource: 'Expert findings ingestion rule + Pulse priority policy',
                 dataRefs: ['/api/performance-analytics/findings'],
-                sourceTimestamp: finding?.updatedAt,
+                sourceTimestamp: String(row.updatedAt || ''),
               },
             });
           });
 
-        const monthlyFinancialCount = Array.isArray(performanceContextData?.data?.monthlyFinancials)
-          ? performanceContextData.data.monthlyFinancials.length
-          : 0;
-        const monthlyFinancialRows = Array.isArray(performanceContextData?.data?.monthlyFinancials)
-          ? [...performanceContextData.data.monthlyFinancials]
-          : [];
-        const latestMonthlyFinancial = monthlyFinancialRows
-          .filter((row: any) => row && typeof row === 'object')
-          .sort((a: any, b: any) => new Date(b?.monthDate || 0).getTime() - new Date(a?.monthDate || 0).getTime())[0];
+        const monthlyFinancialRows = asList<Record<string, unknown>>(performanceContextData?.data?.monthlyFinancials);
+        const monthlyFinancialCount = monthlyFinancialRows.length;
+        const monthlyFinancialRowsSorted = [...monthlyFinancialRows];
+        const latestMonthlyFinancial = monthlyFinancialRowsSorted
+          .sort((a, b) => new Date(String(b.monthDate || 0)).getTime() - new Date(String(a.monthDate || 0)).getTime())[0];
         const latestLiabilities = latestMonthlyFinancial
           ? Math.max(
               0,
@@ -1305,9 +1344,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           }
         }
 
-        const contextBenchmarks = Array.isArray(performanceContextData?.benchmarks?.items)
-          ? performanceContextData.benchmarks.items
-          : [];
+        const contextBenchmarks = asList(performanceContextData?.benchmarks?.items);
         const grossMarginRatio =
           latestMonthlyFinancial && asNumber(latestMonthlyFinancial.revenue) > 0
             ? asNumber(
@@ -1454,21 +1491,21 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           });
         }
 
-        const covenantAlerts = Array.isArray(covenantAlertsData?.alerts) ? covenantAlertsData.alerts : [];
         covenantAlerts
-          .filter((alert: any) => String(alert?.status || '').toLowerCase() === 'active')
-          .forEach((alert: any) => {
-            const severity = String(alert?.severity || '').toLowerCase();
-            const covenantName = String(alert?.covenantName || alert?.title || 'Covenant').trim();
+          .filter((alert: unknown) => String(asRecord(alert).status || '').toLowerCase() === 'active')
+          .forEach((alert: unknown) => {
+            const alertRow = asRecord(alert);
+            const severity = String(alertRow.severity || '').toLowerCase();
+            const covenantName = String(alertRow.covenantName || alertRow.title || 'Covenant').trim();
             built.push({
-              id: `covenant-${String(alert?.id || Math.random().toString(36).slice(2))}`,
-              fingerprint: `covenant-${String(alert?.id || '').trim() || String(alert?.title || '').trim()}`,
+              id: `covenant-${String(alertRow.id || Math.random().toString(36).slice(2))}`,
+              fingerprint: `covenant-${String(alertRow.id || '').trim() || String(alertRow.title || '').trim()}`,
               source: severity === 'critical' ? 'open-critical' : 'unresolved',
               title: `Loan Covenant ${severity === 'critical' ? 'Breach Risk' : 'Warning'}: ${covenantName}`,
-              detail: String(alert?.description || alert?.title || 'Covenant outside allowed range'),
+              detail: String(alertRow.description || alertRow.title || 'Covenant outside allowed range'),
               owner: 'Covenant Manager',
               drillView: 'covenants',
-              updatedAt: String(alert?.timestamp || endDate),
+              updatedAt: String(alertRow.timestamp || endDate),
               explainability: {
                 triggerName: 'Loan Covenant Warning/Breach',
                 formula: 'Ingest active covenant warnings and breach-level statuses from covenant monitor',
@@ -1476,7 +1513,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
                 reasonNow: `${covenantName} is active at ${severity || 'warning'} severity`,
                 policySource: 'Covenant monitoring feed',
                 dataRefs: ['/api/covenants/alerts'],
-                sourceTimestamp: String(alert?.timestamp || endDate),
+                sourceTimestamp: String(alertRow.timestamp || endDate),
               },
             });
           });
@@ -1591,40 +1628,45 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           });
           if (syncResponse.ok) {
             const syncData = await syncResponse.json();
-            if (Array.isArray(syncData?.alerts)) {
-              persistedAlerts = syncData.alerts.map((row: any) => ({
-                id: String(row.id),
-                fingerprint: String(row.fingerprint || ''),
-                source: row.source as AlertItem['source'],
-                title: row.title,
-                detail: row.detail,
-                owner: row.owner || 'Ops/Finance Owner',
-                drillView: row.drillView || 'pa-overview',
-                deltaText: row.deltaText || undefined,
-                updatedAt: row.updatedAt || undefined,
-                itemLabel: row.itemLabel || undefined,
-                priorityScore: Number(row.priorityScore || 0),
-                bucket: row.bucket === 'attention' ? 'attention' : 'monitoring',
-                priorityFocusTerm: row.priorityFocusTerm || undefined,
-                status: row.status || 'new',
-                dueAt: row.dueAt || null,
-                snoozedUntil: row.snoozedUntil || null,
-                notes: Array.isArray(row.notes) ? row.notes : [],
-                isActive: Boolean(row.isActive),
-                modifiedAt: row.modifiedAt || undefined,
+            const hasSyncAlertsArray = Array.isArray(syncData?.alerts);
+            const syncAlerts = asList(syncData?.alerts);
+            if (hasSyncAlertsArray) {
+              persistedAlerts = syncAlerts.map((row: unknown) => {
+                const record = (row && typeof row === 'object') ? (row as Record<string, unknown>) : {};
+                return {
+                id: String(record.id || ''),
+                fingerprint: String(record.fingerprint || ''),
+                source: record.source as AlertItem['source'],
+                title: String(record.title || ''),
+                detail: String(record.detail || ''),
+                owner: String(record.owner || 'Ops/Finance Owner'),
+                drillView: String(record.drillView || 'pa-overview'),
+                deltaText: record.deltaText ? String(record.deltaText) : undefined,
+                updatedAt: record.updatedAt ? String(record.updatedAt) : undefined,
+                itemLabel: record.itemLabel ? String(record.itemLabel) : undefined,
+                priorityScore: Number(record.priorityScore || 0),
+                bucket: record.bucket === 'attention' ? 'attention' : 'monitoring',
+                priorityFocusTerm: record.priorityFocusTerm ? String(record.priorityFocusTerm) : undefined,
+                status: normalizeAlertStatus(record.status),
+                dueAt: record.dueAt == null ? null : String(record.dueAt),
+                snoozedUntil: record.snoozedUntil == null ? null : String(record.snoozedUntil),
+                notes: asList(record.notes),
+                isActive: Boolean(record.isActive),
+                modifiedAt: record.modifiedAt ? String(record.modifiedAt) : undefined,
                 explainability:
-                  row && typeof row.explainability === 'object'
-                    ? row.explainability
+                  record && typeof record.explainability === 'object'
+                    ? record.explainability
                     : {
-                        triggerName: row?.title || 'Pulse Alert',
+                        triggerName: String(record.title || 'Pulse Alert'),
                         formula: 'Derived from Company Pulse rule set for this alert source',
                         threshold: 'See policy settings and source-specific trigger thresholds',
-                        reasonNow: row?.detail || 'Condition met in latest run',
+                        reasonNow: String(record.detail || 'Condition met in latest run'),
                         policySource: 'Company Pulse policy (company override + sector default fallback)',
-                        dataRefs: [row?.source || 'pulse-source'],
-                        sourceTimestamp: row?.updatedAt || undefined,
+                        dataRefs: [String(record.source || 'pulse-source')],
+                        sourceTimestamp: record.updatedAt ? String(record.updatedAt) : undefined,
                       },
-              }));
+                } as AlertItem;
+              });
             }
           }
         } catch {
@@ -1638,10 +1680,10 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
           setReadinessItems(readinessSnapshot);
           setAlerts(persistedAlerts);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!cancelled) {
-          const isAbort = err?.name === 'AbortError';
-          setError(isAbort ? 'Daily alerts request timed out. Please retry.' : (err.message || 'Failed to load daily alerts'));
+          const isAbort = err instanceof Error && err.name === 'AbortError';
+          setError(isAbort ? 'Daily alerts request timed out. Please retry.' : errorMessage(err, 'Failed to load daily alerts'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -1666,13 +1708,16 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
         const response = await fetch(`/api/users?${params}`, { cache: 'no-store' });
         if (!response.ok) return;
         const data = await response.json();
-        const users = Array.isArray(data?.users) ? data.users : [];
+        const users = asList(data?.users);
         const mapped = users
-          .map((user: any) => ({
-            id: String(user?.id || '').trim(),
-            name: String(user?.name || '').trim() || String(user?.email || '').trim(),
-            email: String(user?.email || '').trim(),
-          }))
+          .map((user: unknown) => {
+            const row = (user && typeof user === 'object') ? (user as Record<string, unknown>) : {};
+            return {
+              id: String(row.id || '').trim(),
+              name: String(row.name || '').trim() || String(row.email || '').trim(),
+              email: String(row.email || '').trim(),
+            };
+          })
           .filter((user: AssignableUser) => user.id && user.email);
         if (!cancelled) {
           setAssignableUsers(mapped);
@@ -1807,28 +1852,31 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       setGoalsSnapshot(nextGoals);
       setPolicyOverrides(cleanedOverrides);
       setPolicyStatus('Policy settings saved. Company overrides are now active.');
-    } catch (err: any) {
-      setPolicyStatus(err?.message || 'Failed to save policy settings');
+    } catch (err: unknown) {
+      setPolicyStatus(err instanceof Error ? err.message : 'Failed to save policy settings');
     } finally {
       setPolicySaving(false);
     }
   };
 
-  const mergeUpdatedAlert = (updated: any) => {
-    if (!updated?.id) return;
+  const mergeUpdatedAlert = (updated: unknown) => {
+    if (!updated || typeof updated !== 'object') return;
+    const patch = updated as Record<string, unknown>;
+    const patchId = String(patch.id || '').trim();
+    if (!patchId) return;
     setAlerts((prev) =>
       prev.map((alert) =>
-        alert.id === updated.id
-          ? {
+        alert.id === patchId
+          ? ({
               ...alert,
-              owner: updated.owner || alert.owner,
-              status: updated.status || alert.status,
-              dueAt: updated.dueAt ?? alert.dueAt ?? null,
-              snoozedUntil: updated.snoozedUntil ?? alert.snoozedUntil ?? null,
-              notes: Array.isArray(updated.notes) ? updated.notes : alert.notes,
-              isActive: typeof updated.isActive === 'boolean' ? updated.isActive : alert.isActive,
-              modifiedAt: updated.modifiedAt || alert.modifiedAt,
-            }
+              owner: String(patch.owner || '').trim() || alert.owner,
+              status: patch.status == null ? alert.status : normalizeAlertStatus(patch.status),
+              dueAt: patch.dueAt == null ? (alert.dueAt ?? null) : String(patch.dueAt),
+              snoozedUntil: patch.snoozedUntil == null ? (alert.snoozedUntil ?? null) : String(patch.snoozedUntil),
+              notes: Array.isArray(patch.notes) ? asList(patch.notes) : alert.notes,
+              isActive: typeof patch.isActive === 'boolean' ? patch.isActive : alert.isActive,
+              modifiedAt: String(patch.modifiedAt || '').trim() || alert.modifiedAt,
+            } as AlertItem)
           : alert
       )
     );
@@ -1845,8 +1893,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       if (!response.ok) throw new Error('Failed to update alert');
       const data = await response.json();
       mergeUpdatedAlert(data?.alert);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to update alert');
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to update alert'));
     } finally {
       setTransitionLoadingId(null);
     }
@@ -1863,9 +1911,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
       });
       if (!response.ok) throw new Error('Failed to load alert history');
       const data = await response.json();
-      setAlertEvents(Array.isArray(data?.events) ? data.events : []);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load alert history');
+      setAlertEvents(asList(data?.events));
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to load alert history'));
     } finally {
       setEventsLoading(false);
     }
@@ -1885,18 +1933,18 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     const response = await fetch(`/api/operational-data?${params}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Failed to load ${type} trend preview`);
     const data = await response.json();
-    return Array.isArray(data?.records) ? data.records : [];
+    return asList(data?.records);
   };
 
-  const byDateTotals = (rows: any[], field: string): Array<{ date: string; value: number }> => {
-    const map = rows.reduce((acc: Record<string, number>, row: any) => {
+  const byDateTotals = (rows: Record<string, unknown>[], field: string): Array<{ date: string; value: number }> => {
+    const map = rows.reduce((acc: Record<string, number>, row: Record<string, unknown>) => {
       const date = String(row.snapshotDate || '');
       if (!date) return acc;
       acc[date] = (acc[date] || 0) + asNumber(row[field]);
       return acc;
     }, {});
     return Object.entries(map)
-      .map(([date, value]) => ({ date, value }))
+      .map(([date, value]) => ({ date, value: Number(value || 0) }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
@@ -1904,7 +1952,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     if (spec.metric.startsWith('ar-')) {
       const rows = await fetchOpsRecords('ar-aging');
       const normalized = rows
-        .map((row: any) => {
+        .map((row: Record<string, unknown>) => {
           const totalAR = asNumber(row.totalAR);
           const over30Amt =
             asNumber(row.days1to30) +
@@ -1918,22 +1966,22 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             dso: asNumber(row.dso),
           };
         })
-        .filter((row: any) => row.date)
-        .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        .filter((row) => row.date)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       if (spec.metric === 'ar-over30-pct') {
-        return normalized.map((row: any) => ({ date: row.date, value: row.over30Pct }));
+        return normalized.map((row) => ({ date: row.date, value: row.over30Pct }));
       }
       if (spec.metric === 'ar-dso') {
-        return normalized.map((row: any) => ({ date: row.date, value: row.dso }));
+        return normalized.map((row) => ({ date: row.date, value: row.dso }));
       }
-      return normalized.map((row: any) => ({ date: row.date, value: row.totalAR }));
+      return normalized.map((row) => ({ date: row.date, value: row.totalAR }));
     }
 
     if (spec.metric.startsWith('ap-')) {
       const rows = await fetchOpsRecords('ap-aging');
       const normalized = rows
-        .map((row: any) => {
+        .map((row: Record<string, unknown>) => {
           const totalAP = asNumber(row.totalAP);
           const over30Amt =
             asNumber(row.days1to30) +
@@ -1946,19 +1994,19 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             over30Pct: totalAP > 0 ? (over30Amt / totalAP) * 100 : 0,
           };
         })
-        .filter((row: any) => row.date)
-        .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        .filter((row) => row.date)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       if (spec.metric === 'ap-over30-pct') {
-        return normalized.map((row: any) => ({ date: row.date, value: row.over30Pct }));
+        return normalized.map((row) => ({ date: row.date, value: row.over30Pct }));
       }
-      return normalized.map((row: any) => ({ date: row.date, value: row.totalAP }));
+      return normalized.map((row) => ({ date: row.date, value: row.totalAP }));
     }
 
     const cashRows = await fetchOpsRecords('cash');
     if (spec.metric === 'cash-account-balance' && spec.accountName) {
       const filtered = cashRows.filter(
-        (row: any) => String(row.accountName || '').trim() === spec.accountName
+        (row: Record<string, unknown>) => String(row.accountName || '').trim() === spec.accountName
       );
       return byDateTotals(filtered, 'cashBalance').map((row) => ({
         date: row.date,
@@ -1973,7 +2021,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
 
     // cash-runway-weeks: sourced runway only (no proxy inference).
     const byDate = new Map<string, number>();
-    cashRows.forEach((row: any) => {
+    cashRows.forEach((row: Record<string, unknown>) => {
       const date = String(row.snapshotDate || '');
       if (!date) return;
       const runway = asNumber(row.runwayWeeks);
@@ -1994,8 +2042,8 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
     try {
       const trend = await buildTrend(spec);
       setPreviewTrend(trend);
-    } catch (err: any) {
-      setPreviewError(err?.message || 'Failed to load KPI preview');
+    } catch (err: unknown) {
+      setPreviewError(errorMessage(err, 'Failed to load KPI preview'));
     } finally {
       setPreviewLoading(false);
     }
@@ -2791,7 +2839,7 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Source Records & Time</div>
                 <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '4px' }}>
-                  {Array.isArray(explainabilityAlert.explainability?.dataRefs) && explainabilityAlert.explainability?.dataRefs?.length
+                  {asList(explainabilityAlert.explainability?.dataRefs).length
                     ? explainabilityAlert.explainability?.dataRefs.join(' | ')
                     : 'Operational data + findings feeds'}
                 </div>

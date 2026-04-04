@@ -146,7 +146,15 @@ async function saveCash(companyId: string, snapshotDate: Date, frequency: Freque
 }
 
 async function saveARAging(companyId: string, snapshotDate: Date, frequency: Frequency, rows: ARAgingRow[]): Promise<number> {
-  const total = rows.reduce(
+  type ArTotals = {
+    totalAR: number;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+  };
+  const total = rows.reduce<ArTotals>(
     (acc, row) => ({
       totalAR: acc.totalAR + toNumber(row.totalAR),
       current: acc.current + toNumber(row.current),
@@ -164,14 +172,39 @@ async function saveARAging(companyId: string, snapshotDate: Date, frequency: Fre
 
   await prisma.aRAgingSnapshot.upsert({
     where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
-    update: total,
-    create: { companyId, snapshotDate, frequency, ...total },
+    update: {
+      totalAR: total.totalAR,
+      current: total.current,
+      days1to30: total.days1to30,
+      days31to60: total.days31to60,
+      days61to90: total.days61to90,
+      days90plus: total.days90plus,
+    },
+    create: {
+      companyId,
+      snapshotDate,
+      frequency,
+      totalAR: total.totalAR,
+      current: total.current,
+      days1to30: total.days1to30,
+      days31to60: total.days31to60,
+      days61to90: total.days61to90,
+      days90plus: total.days90plus,
+    },
   });
   return 1;
 }
 
 async function saveAPAging(companyId: string, snapshotDate: Date, frequency: Frequency, rows: APAgingRow[]): Promise<number> {
-  const total = rows.reduce(
+  type ApTotals = {
+    totalAP: number;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+  };
+  const total = rows.reduce<ApTotals>(
     (acc, row) => ({
       totalAP: acc.totalAP + toNumber(row.totalAP),
       current: acc.current + toNumber(row.current),
@@ -189,8 +222,25 @@ async function saveAPAging(companyId: string, snapshotDate: Date, frequency: Fre
 
   await prisma.aPAgingSnapshot.upsert({
     where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
-    update: total,
-    create: { companyId, snapshotDate, frequency, ...total },
+    update: {
+      totalAP: total.totalAP,
+      current: total.current,
+      days1to30: total.days1to30,
+      days31to60: total.days31to60,
+      days61to90: total.days61to90,
+      days90plus: total.days90plus,
+    },
+    create: {
+      companyId,
+      snapshotDate,
+      frequency,
+      totalAP: total.totalAP,
+      current: total.current,
+      days1to30: total.days1to30,
+      days31to60: total.days31to60,
+      days61to90: total.days61to90,
+      days90plus: total.days90plus,
+    },
   });
   return 1;
 }

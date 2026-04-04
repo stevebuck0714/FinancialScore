@@ -1,14 +1,4 @@
-SYNC ACTIONS
-Sync Status: Done
-Run ID: 88fa7505-8220-4c99-baa4-251d74efbed1
-Chunks: 1
-Records: 21,108
-Last Chunk: 11:38:11 AM
-Background sync completed.
-COVERAGE & GAPS
-Failed Chunks: 0
-Skipped Chunks: 0
-Programs Affected: 0import prisma from '@/lib/prisma';
+import prisma from '@/lib/prisma';
 import { syncInforM3OperationalData } from '@/lib/infor-m3/operational-sync';
 
 const companyId = 'cmmnwyofv000fqhp4z8lebbny';

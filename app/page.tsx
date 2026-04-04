@@ -26,6 +26,7 @@ const LineChart = dynamic(() => import('./components/charts/Charts').then(mod =>
 const ProjectionChart = dynamic(() => import('./components/charts/Charts').then(mod => mod.ProjectionChart), { ssr: false });
 const CompanyDetailsModal = dynamic(() => import('./components/modals/CompanyDetailsModal'), { ssr: false });
 const AddCompanyModal = dynamic(() => import('./components/modals/AddCompanyModal'), { ssr: false });
+const UpgradeRequestModal = dynamic(() => import('./components/modals/UpgradeRequestModal'), { ssr: false });
 const DataReviewTab = dynamic(() => import('./components/dashboard/DataReviewTab'), { ssr: false });
 const TeamManagementTab = dynamic(() => import('./components/dashboard/TeamManagementTab'), { ssr: false });
 const ProfileTab = dynamic(() => import('./components/dashboard/ProfileTab'), { ssr: false });
@@ -822,6 +823,7 @@ function FinancialScorePage() {
   // State - Company Details
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false);
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
+  const [showUpgradeRequestModal, setShowUpgradeRequestModal] = useState(false);
   const [editingCompanyId, setEditingCompanyId] = useState('');
   const [companyAddressStreet, setCompanyAddressStreet] = useState('');
   const [companyAddressCity, setCompanyAddressCity] = useState('');
@@ -12976,6 +12978,15 @@ function FinancialScorePage() {
           })()}
         </div>
       )}
+
+      <UpgradeRequestModal
+        show={showUpgradeRequestModal}
+        onClose={() => setShowUpgradeRequestModal(false)}
+        companyId={selectedCompanyId || (currentUser as any)?.companyId || undefined}
+        defaultCompanyName={(selectedCompany as any)?.name || ''}
+        defaultContactName={(currentUser as any)?.name || ''}
+        defaultContactEmail={(currentUser as any)?.email || ''}
+      />
 
       {/* Company Details Modal */}
       <CompanyDetailsModal

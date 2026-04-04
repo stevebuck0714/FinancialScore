@@ -12,6 +12,36 @@ const envLocal = dotenv.config({ path: '.env.local', override: true });
 // Fallback to .env for any missing vars, but DO NOT override .env.local
 dotenv.config({ path: '.env', override: false });
 
+function parseProjectList(value, fallback) {
+  return String(value || fallback || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function findMatchedProject(databaseUrl, projects) {
+  return projects.find((project) => String(databaseUrl || '').includes(project)) || null;
+}
+
+function isDatabaseInProjects(databaseUrl, projects) {
+  return projects.some((project) => String(databaseUrl || '').includes(project));
+}
+
+function getDatabaseLabel(databaseUrl, productionProjects, stagingProjects) {
+  if (isDatabaseInProjects(databaseUrl, stagingProjects)) {
+    const stagingName = findMatchedProject(databaseUrl, stagingProjects) || 'staging';
+    return `STAGING (${stagingName})`;
+  }
+  if (isDatabaseInProjects(databaseUrl, productionProjects)) {
+    const prodName = findMatchedProject(databaseUrl, productionProjects) || 'production';
+    return `PRODUCTION (${prodName}) ⚠️`;
+  }
+  if (String(databaseUrl || '').includes('file:')) {
+    return 'SQLITE (file)';
+  }
+  return 'OTHER';
+}
+
 // Hard pin database vars from .env.local in local/dev runtime.
 // This prevents .env or inherited shell vars from accidentally switching DB targets.
 if (envLocal?.parsed?.DATABASE_URL) {
@@ -45,17 +75,11 @@ console.log('🔐 ENV loaded:', {
 // CRITICAL: Even if NODE_ENV is "production" locally, this must be blocked.
 // Production databases are only allowed on Vercel production runtime: VERCEL=1 and VERCEL_ENV=production.
 
-const productionProjects = (process.env.PRODUCTION_DB_PROJECTS || 'orange-poetry,aged-snow')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean);
-const stagingProjects = (process.env.STAGING_DB_PROJECTS || 'cold-frost')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean);
+const productionProjects = parseProjectList(process.env.PRODUCTION_DB_PROJECTS, 'orange-poetry,aged-snow');
+const stagingProjects = parseProjectList(process.env.STAGING_DB_PROJECTS, 'cold-frost');
 
-const isProductionDatabase = productionProjects.some((project) => process.env.DATABASE_URL?.includes(project));
-const isStagingDatabase = stagingProjects.some((project) => process.env.DATABASE_URL?.includes(project));
+const isProductionDatabase = isDatabaseInProjects(process.env.DATABASE_URL, productionProjects);
+const isStagingDatabase = isDatabaseInProjects(process.env.DATABASE_URL, stagingProjects);
 const isVercelProductionRuntime = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
 
 // CRITICAL: Block production database everywhere except Vercel production runtime
@@ -72,18 +96,9 @@ if (isProductionDatabase && !isVercelProductionRuntime) {
 // is per-project; some non-prod projects may deploy with --prod while correctly using cold-frost.
 
 // Log which database we're connecting to
-let dbLabel = 'UNKNOWN';
-if (isStagingDatabase) {
-  const stagingName = stagingProjects.find((project) => process.env.DATABASE_URL?.includes(project)) || 'staging';
-  dbLabel = `STAGING (${stagingName})`;
-} else if (isProductionDatabase) {
-  const prodName = productionProjects.find((project) => process.env.DATABASE_URL?.includes(project)) || 'production';
-  dbLabel = `PRODUCTION (${prodName}) ⚠️`;
+const dbLabel = getDatabaseLabel(process.env.DATABASE_URL, productionProjects, stagingProjects);
+if (dbLabel.startsWith('PRODUCTION')) {
   console.warn('⚠️  WARNING: Connected to PRODUCTION database!');
-} else if (process.env.DATABASE_URL?.includes('file:')) {
-  dbLabel = 'SQLITE (file)';
-} else {
-  dbLabel = 'OTHER';
 }
 console.log('🔗 DATABASE:', dbLabel);
 

@@ -8,7 +8,7 @@ type Finding = {
    metric?: string | null;
    severity?: string | null;
    confidence?: number | null;
-   payload?: any;
+   payload?: Record<string, any>;
    updatedAt?: string;
  };
  
@@ -17,6 +17,42 @@ type Finding = {
  }
  
 const OPPORTUNITY_STATUSES = ['Discover', 'Validate', 'Plan', 'Execute', 'Realized'] as const;
+const OBJECTIVE_FILTERS = ['All', 'Cash', 'Margin', 'Growth', 'Risk'] as const;
+const TIME_FILTERS = ['All', '0–30 days', '30–90 days', '90–180+ days'] as const;
+const OWNER_FILTERS = ['All', 'Sales', 'Ops', 'Finance', 'Marketing'] as const;
+const EVIDENCE_FILTERS = ['All', 'Strong', 'Medium', 'Weak'] as const;
+type ObjectiveFilter = (typeof OBJECTIVE_FILTERS)[number];
+type TimeFilter = (typeof TIME_FILTERS)[number];
+type OwnerFilter = (typeof OWNER_FILTERS)[number];
+type EvidenceFilter = (typeof EVIDENCE_FILTERS)[number];
+
+const asList = <T = any,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+const errorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
+const parseFilterValue = <T extends readonly string[]>(value: string, allowed: T, fallback: T[number]): T[number] =>
+  (allowed.includes(value as T[number]) ? (value as T[number]) : fallback);
+
+const fetchFindingsPayload = async (companyId: string): Promise<{ findings: Finding[] }> => {
+  const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`, {
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    let message = 'Failed to load opportunities';
+    try {
+      const payload = await response.json();
+      if (payload?.error) {
+        message = payload.error;
+        if (payload.details) message += ` (${payload.details})`;
+      }
+    } catch {
+      // ignore parse errors
+    }
+    message += ` [${response.status}]`;
+    throw new Error(message);
+  }
+  const data = await response.json();
+  return { findings: asList<Finding>(data?.findings) };
+};
 
  const severityLabel = (value?: string | null) => {
    if (!value) return 'Unrated';
@@ -51,10 +87,10 @@ const evidenceLevel = (confidence?: number | null) => {
    const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [runMessage, setRunMessage] = useState<string | null>(null);
-  const [objectiveFilter, setObjectiveFilter] = useState<'All' | 'Cash' | 'Margin' | 'Growth' | 'Risk'>('All');
-  const [timeFilter, setTimeFilter] = useState<'All' | '0–30 days' | '30–90 days' | '90–180+ days'>('All');
-  const [ownerFilter, setOwnerFilter] = useState<'All' | 'Sales' | 'Ops' | 'Finance' | 'Marketing'>('All');
-  const [evidenceFilter, setEvidenceFilter] = useState<'All' | 'Strong' | 'Medium' | 'Weak'>('All');
+  const [objectiveFilter, setObjectiveFilter] = useState<ObjectiveFilter>('All');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('All');
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('All');
+  const [evidenceFilter, setEvidenceFilter] = useState<EvidenceFilter>('All');
  
    useEffect(() => {
      let isMounted = true;
@@ -62,32 +98,15 @@ const evidenceLevel = (confidence?: number | null) => {
        setLoading(true);
        setError(null);
        try {
-        const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`, {
-          cache: 'no-store',
-        });
-         if (!response.ok) {
-           let message = 'Failed to load opportunities';
-           try {
-             const payload = await response.json();
-             if (payload?.error) {
-               message = payload.error;
-               if (payload.details) message += ` (${payload.details})`;
-             }
-           } catch {
-             // ignore parse errors
-           }
-           message += ` [${response.status}]`;
-           throw new Error(message);
-         }
-         const data = await response.json();
+        const data = await fetchFindingsPayload(companyId);
          if (isMounted) {
-           setFindings(data.findings || []);
-           if (!selectedId && data.findings?.length) {
+          setFindings(data.findings);
+          if (!selectedId && data.findings.length) {
              setSelectedId(data.findings[0].id);
            }
          }
-       } catch (err: any) {
-         if (isMounted) setError(err.message || 'Failed to load opportunities');
+      } catch (err: unknown) {
+        if (isMounted) setError(errorMessage(err, 'Failed to load opportunities'));
        } finally {
          if (isMounted) setLoading(false);
        }
@@ -106,30 +125,13 @@ const evidenceLevel = (confidence?: number | null) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/performance-analytics/findings?companyId=${companyId}&type=opportunity`, {
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        let message = 'Failed to load opportunities';
-        try {
-          const payload = await response.json();
-          if (payload?.error) {
-            message = payload.error;
-            if (payload.details) message += ` (${payload.details})`;
-          }
-        } catch {
-          // ignore parse errors
-        }
-        message += ` [${response.status}]`;
-        throw new Error(message);
-      }
-      const data = await response.json();
-      setFindings(data.findings || []);
-      if (!selectedId && data.findings?.length) {
+      const data = await fetchFindingsPayload(companyId);
+      setFindings(data.findings);
+      if (!selectedId && data.findings.length) {
         setSelectedId(data.findings[0].id);
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load opportunities');
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to load opportunities'));
     } finally {
       setLoading(false);
     }
@@ -162,9 +164,9 @@ const evidenceLevel = (confidence?: number | null) => {
       setRunMessage(`Generated ${data.inserted ?? 0} findings.`);
       setRunStatus('done');
       await refreshFindings();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setRunStatus('error');
-      setRunMessage(err.message || 'Failed to run agents');
+      setRunMessage(errorMessage(err, 'Failed to run agents'));
     }
   };
  
@@ -193,6 +195,17 @@ const evidenceLevel = (confidence?: number | null) => {
   }, [rankedFindings, objectiveFilter, timeFilter, ownerFilter, evidenceFilter]);
  
   const selectedFinding = filteredFindings.find((finding) => finding.id === selectedId) || filteredFindings[0] || null;
+  const selectedPayload = selectedFinding?.payload || {};
+  const selectedEvidence = selectedPayload?.evidence || {};
+  const evidenceColumns = asList<Record<string, any>>(selectedEvidence?.columns);
+  const evidenceRows = asList<Record<string, any>>(selectedEvidence?.rows);
+  const evidenceTopItems = asList<Record<string, any>>(selectedEvidence?.topItems);
+  const whyItems = asList<string>(selectedPayload?.why);
+  const dependencyItems = asList<string>(selectedPayload?.dependencies);
+  const validationTests = asList<string>(selectedPayload?.validationTests);
+  const guardrails = asList<string>(selectedPayload?.guardrails);
+  const nextActions = asList<{ description: string; owner?: string; dueHorizon: string; dataReference?: string }>(selectedPayload?.nextActions);
+  const monitoringLeadingIndicators = asList<string>(selectedPayload?.monitoring?.leadingIndicators);
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     OPPORTUNITY_STATUSES.forEach((status) => {
@@ -263,7 +276,7 @@ const evidenceLevel = (confidence?: number | null) => {
       <div style={{ marginTop: '18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
         <label style={{ fontSize: '12px', color: '#475569' }}>
           Objective
-          <select value={objectiveFilter} onChange={(e) => setObjectiveFilter(e.target.value as any)} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <select value={objectiveFilter} onChange={(e) => setObjectiveFilter(parseFilterValue(e.target.value, OBJECTIVE_FILTERS, 'All'))} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <option>All</option>
             <option>Cash</option>
             <option>Margin</option>
@@ -273,7 +286,7 @@ const evidenceLevel = (confidence?: number | null) => {
         </label>
         <label style={{ fontSize: '12px', color: '#475569' }}>
           Time-to-impact
-          <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value as any)} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <select value={timeFilter} onChange={(e) => setTimeFilter(parseFilterValue(e.target.value, TIME_FILTERS, 'All'))} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <option>All</option>
             <option>0–30 days</option>
             <option>30–90 days</option>
@@ -282,7 +295,7 @@ const evidenceLevel = (confidence?: number | null) => {
         </label>
         <label style={{ fontSize: '12px', color: '#475569' }}>
           Owner
-          <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value as any)} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <select value={ownerFilter} onChange={(e) => setOwnerFilter(parseFilterValue(e.target.value, OWNER_FILTERS, 'All'))} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <option>All</option>
             <option>Sales</option>
             <option>Ops</option>
@@ -292,7 +305,7 @@ const evidenceLevel = (confidence?: number | null) => {
         </label>
         <label style={{ fontSize: '12px', color: '#475569' }}>
           Evidence
-          <select value={evidenceFilter} onChange={(e) => setEvidenceFilter(e.target.value as any)} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <select value={evidenceFilter} onChange={(e) => setEvidenceFilter(parseFilterValue(e.target.value, EVIDENCE_FILTERS, 'All'))} style={{ width: '100%', marginTop: '6px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <option>All</option>
             <option>Strong</option>
             <option>Medium</option>
@@ -366,26 +379,26 @@ const evidenceLevel = (confidence?: number | null) => {
                <div style={{ marginTop: '12px', fontSize: '13px', color: '#475569' }}>
                 {selectedFinding.payload?.summary || selectedFinding.payload?.why?.join(' ') || 'No summary available yet.'}
                </div>
-              {selectedFinding.payload?.evidence?.columns?.length > 0 && Array.isArray(selectedFinding.payload?.evidence?.rows) && selectedFinding.payload.evidence.rows.length > 0 && (
+              {evidenceColumns.length > 0 && evidenceRows.length > 0 && (
                 <div style={{ marginTop: '14px', padding: '12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 700, color: '#9a3412', marginBottom: '8px' }}>
-                    {selectedFinding.payload.evidence.title || 'Top drivers'}
+                    {selectedEvidence.title || 'Top drivers'}
                   </div>
                   <div style={{ fontSize: '11px', color: '#9a3412', marginBottom: '10px' }}>
-                    {selectedFinding.payload.evidence.methodology}
+                    {selectedEvidence.methodology}
                   </div>
 
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: `minmax(180px, 1.6fr) repeat(${Math.max(0, selectedFinding.payload.evidence.columns.length - 1)}, minmax(90px, 0.8fr))`,
+                      gridTemplateColumns: `minmax(180px, 1.6fr) repeat(${Math.max(0, evidenceColumns.length - 1)}, minmax(90px, 0.8fr))`,
                       gap: '8px',
                       fontSize: '11px',
                       color: '#7c2d12',
                       fontWeight: 700,
                     }}
                   >
-                    {selectedFinding.payload.evidence.columns.map((c: any) => (
+                    {evidenceColumns.map((c) => (
                       <div key={c.key} style={{ textAlign: c.align || 'left' }}>
                         {c.label}
                       </div>
@@ -393,18 +406,18 @@ const evidenceLevel = (confidence?: number | null) => {
                   </div>
 
                   <div style={{ marginTop: '6px', display: 'grid', gap: '6px' }}>
-                    {selectedFinding.payload.evidence.rows.slice(0, 10).map((row: any, idx: number) => (
+                    {evidenceRows.slice(0, 10).map((row, idx: number) => (
                       <div
                         key={idx}
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: `minmax(180px, 1.6fr) repeat(${Math.max(0, selectedFinding.payload.evidence.columns.length - 1)}, minmax(90px, 0.8fr))`,
+                          gridTemplateColumns: `minmax(180px, 1.6fr) repeat(${Math.max(0, evidenceColumns.length - 1)}, minmax(90px, 0.8fr))`,
                           gap: '8px',
                           fontSize: '11px',
                           color: '#7c2d12',
                         }}
                       >
-                        {selectedFinding.payload.evidence.columns.map((c: any) => {
+                        {evidenceColumns.map((c) => {
                           const v = row?.[c.key];
                           const fmt = String(c.format || 'text');
                           const align = c.align || (fmt === 'text' ? 'left' : 'right');
@@ -430,13 +443,13 @@ const evidenceLevel = (confidence?: number | null) => {
                   </div>
                 </div>
               )}
-              {selectedFinding.payload?.evidence?.topItems?.length > 0 && (
+              {evidenceTopItems.length > 0 && (
                 <div style={{ marginTop: '14px', padding: '12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 700, color: '#9a3412', marginBottom: '8px' }}>
                     Top drivers (item-level)
                   </div>
                   <div style={{ fontSize: '11px', color: '#9a3412', marginBottom: '10px' }}>
-                    {selectedFinding.payload.evidence.methodology}
+                    {selectedEvidence.methodology}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.7fr 0.7fr 0.7fr 0.7fr', gap: '8px', fontSize: '11px', color: '#7c2d12', fontWeight: 700 }}>
                     <div>Item</div>
@@ -446,7 +459,7 @@ const evidenceLevel = (confidence?: number | null) => {
                     <div style={{ textAlign: 'right' }}>GM%</div>
                   </div>
                   <div style={{ marginTop: '6px', display: 'grid', gap: '6px' }}>
-                    {selectedFinding.payload.evidence.topItems.slice(0, 8).map((it: any, idx: number) => (
+                    {evidenceTopItems.slice(0, 8).map((it, idx: number) => (
                       <div key={`${it.itemId || it.itemName}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.7fr 0.7fr 0.7fr 0.7fr', gap: '8px', fontSize: '11px', color: '#7c2d12' }}>
                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {it.itemName}{it.sku ? ` (${it.sku})` : ''}
@@ -472,11 +485,11 @@ const evidenceLevel = (confidence?: number | null) => {
                   {selectedFinding.payload.timeToImpact.runRateDays} days)
                 </div>
               )}
-              {Array.isArray(selectedFinding.payload?.why) && selectedFinding.payload.why.length > 0 && (
+              {whyItems.length > 0 && (
                  <div style={{ marginTop: '12px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Why it surfaced</div>
                    <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#64748b' }}>
-                    {selectedFinding.payload.why.map((item: string) => (
+                    {whyItems.map((item: string) => (
                        <li key={item} style={{ marginBottom: '4px' }}>
                          {item}
                        </li>
@@ -484,11 +497,11 @@ const evidenceLevel = (confidence?: number | null) => {
                    </ul>
                  </div>
                )}
-              {Array.isArray(selectedFinding.payload?.dependencies) && selectedFinding.payload.dependencies.length > 0 && (
+              {dependencyItems.length > 0 && (
                 <div style={{ marginTop: '12px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Dependencies</div>
                   <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#64748b' }}>
-                    {selectedFinding.payload.dependencies.map((item: string) => (
+                    {dependencyItems.map((item: string) => (
                       <li key={item} style={{ marginBottom: '4px' }}>
                         {item}
                       </li>
@@ -501,11 +514,11 @@ const evidenceLevel = (confidence?: number | null) => {
                   <strong>Peer evidence:</strong> {selectedFinding.payload.peerEvidence}
                 </div>
               )}
-              {Array.isArray(selectedFinding.payload?.validationTests) && selectedFinding.payload.validationTests.length > 0 && (
+              {validationTests.length > 0 && (
                 <div style={{ marginTop: '12px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Validation tests</div>
                   <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#64748b' }}>
-                    {selectedFinding.payload.validationTests.map((item: string) => (
+                    {validationTests.map((item: string) => (
                       <li key={item} style={{ marginBottom: '4px' }}>
                         {item}
                       </li>
@@ -513,11 +526,11 @@ const evidenceLevel = (confidence?: number | null) => {
                   </ul>
                 </div>
               )}
-              {Array.isArray(selectedFinding.payload?.guardrails) && selectedFinding.payload.guardrails.length > 0 && (
+              {guardrails.length > 0 && (
                 <div style={{ marginTop: '12px' }}>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: '#b45309' }}>Risks & guardrails</div>
                   <ul style={{ marginTop: '6px', paddingLeft: '18px', fontSize: '12px', color: '#b45309' }}>
-                    {selectedFinding.payload.guardrails.map((item: string) => (
+                    {guardrails.map((item: string) => (
                       <li key={item} style={{ marginBottom: '4px' }}>
                         {item}
                       </li>
@@ -525,11 +538,11 @@ const evidenceLevel = (confidence?: number | null) => {
                   </ul>
                 </div>
               )}
-              {Array.isArray(selectedFinding.payload?.nextActions) && selectedFinding.payload.nextActions.length > 0 && (
+              {nextActions.length > 0 && (
                 <div style={{ marginTop: '16px', padding: '12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px' }}>
                   <div style={{ fontSize: '13px', fontWeight: 700, color: '#166534', marginBottom: '10px' }}>Next 3 Actions</div>
                   <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#14532d' }}>
-                    {selectedFinding.payload.nextActions.map((task: { description: string; owner?: string; dueHorizon: string; dataReference?: string }, idx: number) => (
+                    {nextActions.map((task, idx: number) => (
                       <li key={idx} style={{ marginBottom: '10px' }}>
                         <span style={{ fontWeight: 600 }}>{task.description}</span>
                         <div style={{ fontSize: '11px', color: '#15803d', marginTop: '4px' }}>
@@ -547,8 +560,8 @@ const evidenceLevel = (confidence?: number | null) => {
                   <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e40af', marginBottom: '10px' }}>Monitoring — when is this done?</div>
                   <div style={{ fontSize: '12px', color: '#1e3a8a' }}>
                     <div><strong>Primary KPI:</strong> {selectedFinding.payload.monitoring.primaryKpi}</div>
-                    {Array.isArray(selectedFinding.payload.monitoring.leadingIndicators) && selectedFinding.payload.monitoring.leadingIndicators.length > 0 && (
-                      <div style={{ marginTop: '6px' }}><strong>Leading indicators:</strong> {selectedFinding.payload.monitoring.leadingIndicators.join(', ')}</div>
+                    {monitoringLeadingIndicators.length > 0 && (
+                      <div style={{ marginTop: '6px' }}><strong>Leading indicators:</strong> {monitoringLeadingIndicators.join(', ')}</div>
                     )}
                     <div style={{ marginTop: '6px' }}><strong>Time window:</strong> {selectedFinding.payload.monitoring.timeWindowDays} days</div>
                     <div style={{ marginTop: '6px' }}><strong>Stop / continue rule:</strong> {selectedFinding.payload.monitoring.stopContinueRule}</div>

@@ -7,9 +7,32 @@
 
 const { execSync } = require('child_process');
 const os = require('os');
+const DEV_PORTS = [3000, 3001, 3002, 3003, 3004, 3005];
 
 function isWindows() {
   return os.platform() === 'win32';
+}
+
+function parseWindowsListeningPids(netstatOutput, port) {
+  const lines = String(netstatOutput || '')
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const pids = new Set();
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 5) continue;
+    const localAddress = String(parts[1] || '');
+    const state = String(parts[3] || '').toUpperCase();
+    const pid = String(parts[4] || '').trim();
+    const pidAsNumber = Number(pid);
+    if (!localAddress.endsWith(`:${port}`)) continue;
+    if (state !== 'LISTENING') continue;
+    if (!Number.isFinite(pidAsNumber) || pidAsNumber <= 0) continue;
+    pids.add(pidAsNumber);
+  }
+  return pids;
 }
 
 function killProcessOnPort(port) {
@@ -20,25 +43,7 @@ function killProcessOnPort(port) {
         encoding: 'utf8',
         timeout: 15000,
       });
-      const lines = output
-        .trim()
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const pids = new Set();
-
-      for (const line of lines) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length < 5) continue;
-        const localAddress = String(parts[1] || '');
-        const state = String(parts[3] || '').toUpperCase();
-        const pid = String(parts[4] || '').trim();
-        const pidAsNumber = Number(pid);
-        if (!localAddress.endsWith(`:${port}`)) continue;
-        if (state !== 'LISTENING') continue;
-        if (!Number.isFinite(pidAsNumber) || pidAsNumber <= 0) continue;
-        pids.add(pidAsNumber);
-      }
+      const pids = parseWindowsListeningPids(output, port);
 
       for (const pid of pids) {
         if (killPidWindows(pid)) {
@@ -104,8 +109,7 @@ function main() {
   console.log('🧹 Cleaning development servers...\n');
 
   // Kill specific ports that dev servers commonly use
-  const ports = [3000, 3001, 3002, 3003, 3004, 3005];
-  ports.forEach(port => killProcessOnPort(port));
+  DEV_PORTS.forEach((port) => killProcessOnPort(port));
 
   console.log('\n✅ Development environment cleaned!');
   console.log('💡 Safe to run: npm run dev:vercel');

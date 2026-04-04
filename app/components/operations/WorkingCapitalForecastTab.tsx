@@ -167,6 +167,11 @@ const parsePercentInput = (rawValue: string): number => {
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
 };
+const asList = <T = any,>(raw: unknown): T[] => (Array.isArray(raw) ? (raw as T[]) : []);
+const asRecord = (raw: unknown): Record<string, unknown> =>
+  raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+const errorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
 
 const inputStyle: React.CSSProperties = {
   width: '70%',
@@ -219,7 +224,7 @@ const normalizeWeeklyDriver = (raw: any, fallback: WeeklyDriver): WeeklyDriver =
   grossMarginPct: clampNumber(toRoundedPercent(raw?.grossMarginPct, fallback.grossMarginPct), 1, 99),
 });
 const normalizeWeeklyDriverList = (raw: any, fallback: WeeklyDriver): WeeklyDriver[] => {
-  const list = Array.isArray(raw) ? raw : [];
+  const list = asList(raw);
   return Array.from({ length: FORECAST_WEEKS }, (_, idx) => normalizeWeeklyDriver(list[idx], fallback));
 };
 const addDays = (date: Date, days: number): Date => {
@@ -242,8 +247,9 @@ const getWeekendAnchorDate = (baseDate: Date): Date => {
 };
 const daysInMonth = (year: number, month: number): number => new Date(year, month + 1, 0).getDate();
 const normalizeMonthRefs = (rawMonthRefs: any, fallbackLength: number): MonthlyBaseRef[] => {
-  if (Array.isArray(rawMonthRefs) && rawMonthRefs.length >= fallbackLength) {
-    return rawMonthRefs.slice(0, fallbackLength).map((item: any, idx: number) => {
+  const monthRefs = asList(rawMonthRefs);
+  if (monthRefs.length >= fallbackLength) {
+    return monthRefs.slice(0, fallbackLength).map((item: any, idx: number) => {
       const year = Number(item?.year);
       const month = Number(item?.month);
       if (Number.isFinite(year) && Number.isFinite(month)) {
@@ -280,9 +286,12 @@ const applyMonthlyBaseCalendarToWeeklyDrivers = (
   marginMonthPcts: number[],
   monthRefs: MonthlyBaseRef[],
 ): WeeklyDriver[] => {
-  if (!Array.isArray(monthTotals) || monthTotals.length < 3) return drivers;
+  const monthTotalsList = asList<number>(monthTotals);
+  if (monthTotalsList.length < 3) return drivers;
+  const opexMonthTotalsList = asList<number>(opexMonthTotals);
+  const marginMonthPctsList = asList<number>(marginMonthPcts);
   const next = drivers.map((driver) => ({ ...driver }));
-  const refs = normalizeMonthRefs(monthRefs, Math.min(monthTotals.length, 3));
+  const refs = normalizeMonthRefs(monthRefs, Math.min(monthTotalsList.length, 3));
   const anchor = getWeekendAnchorDate(new Date());
   for (let idx = 0; idx < Math.min(12, FORECAST_WEEKS); idx += 1) {
     const weekStart = addDays(anchor, idx * 7);
@@ -294,9 +303,9 @@ const applyMonthlyBaseCalendarToWeeklyDrivers = (
       const monthIdx = resolveMonthIndexForDate(dayDate, refs);
       const ref = refs[monthIdx];
       const dim = Math.max(1, daysInMonth(ref.year, ref.month));
-      const dailySales = (Number(monthTotals[monthIdx]) || 0) / dim;
-      const dailyOpex = (Number(opexMonthTotals[monthIdx]) || 0) / dim;
-      const dailyMargin = clampNumber(Number(marginMonthPcts[monthIdx]) || 0, 1, 99);
+      const dailySales = (Number(monthTotalsList[monthIdx]) || 0) / dim;
+      const dailyOpex = (Number(opexMonthTotalsList[monthIdx]) || 0) / dim;
+      const dailyMargin = clampNumber(Number(marginMonthPctsList[monthIdx]) || 0, 1, 99);
       salesTotal += dailySales;
       opexTotal += dailyOpex;
       marginWeighted += dailyMargin;
@@ -366,7 +375,7 @@ const normalizeScheduledExpenseRule = (raw: any, fallback: ScheduledExpenseRule)
   };
 };
 const normalizeScheduledExpenseRules = (raw: any): ScheduledExpenseRule[] => {
-  const rows = Array.isArray(raw) ? raw : [];
+  const rows = asList(raw);
   return DEFAULT_SCHEDULED_EXPENSE_RULES.map((fallback, idx) =>
     normalizeScheduledExpenseRule(rows[idx], fallback)
   );
@@ -533,7 +542,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             const response = await fetch(buildUrl(type, frequency));
             if (!response.ok) continue;
             const data = await response.json();
-            if (Array.isArray(data?.records) && data.records.length > 0) {
+            if (asList(data?.records).length > 0) {
               return { data, frequency };
             }
           }
@@ -548,7 +557,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             const response = await fetch(buildUrl(type, frequency, 180));
             if (!response.ok) continue;
             const data = await response.json();
-            if (Array.isArray(data?.records) && data.records.length > 0) {
+            if (asList(data?.records).length > 0) {
               return { data, frequency };
             }
           }
@@ -581,7 +590,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         );
         const savedSettings = savedPayload?.settings || null;
         const loansPayload = loansResponse.ok ? await loansResponse.json() : null;
-        const loans = Array.isArray(loansPayload?.loans) ? loansPayload.loans : [];
+        const loans = asList(loansPayload?.loans);
         const activeLocLoan =
           loans.find((loan: any) => loan?.loanType === 'LINE_OF_CREDIT' && loan?.status === 'ACTIVE') ||
           loans.find((loan: any) => loan?.loanType === 'LINE_OF_CREDIT') ||
@@ -596,7 +605,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             const data = await response.json();
             const summaryCash = Number(data?.summary?.latestCash || 0);
             if (summaryCash !== 0) return summaryCash;
-            if (Array.isArray(data?.records) && data.records.length > 0) {
+            if (asList(data?.records).length > 0) {
               const latest = data.records[0];
               const recordCash = Number(latest?.cash || 0);
               if (recordCash !== 0) return recordCash;
@@ -615,10 +624,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           const response = await fetch(buildUrl('daily-financials', 'daily', 60));
           if (!response.ok) return null;
           const data = await response.json();
-          if (!Array.isArray(data?.records) || data.records.length === 0) return null;
+          if (asList(data?.records).length === 0) return null;
           let latest: any = null;
           let latestTs = Number.NEGATIVE_INFINITY;
-          for (const row of data.records) {
+          for (const row of asList(data?.records)) {
             const ts = row?.snapshotDate ? new Date(row.snapshotDate).getTime() : Number.NEGATIVE_INFINITY;
             if (Number.isFinite(ts) && ts >= latestTs) {
               latestTs = ts;
@@ -646,8 +655,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         let hasImportedInventoryBalance = latestInventory !== null && latestInventory > 0;
         const latestLocBalance = latestDailySnapshot?.loc ?? null;
         const hasImportedLocBalance = latestLocBalance !== null;
-        const latestArSnapshot = Array.isArray(arResult?.data?.records) ? arResult?.data?.records?.[0] : null;
-        const latestApSnapshot = Array.isArray(apResult?.data?.records) ? apResult?.data?.records?.[0] : null;
+        const latestArSnapshot = asList(arResult?.data?.records)?.[0] || null;
+        const latestApSnapshot = asList(apResult?.data?.records)?.[0] || null;
         const derivedArBuckets = mapSnapshotToBuckets(latestArSnapshot, latestAr);
         const derivedApBuckets = mapSnapshotToBuckets(latestApSnapshot, latestAp);
 
@@ -728,10 +737,10 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
         let recentHistoricalSales: number[] = [];
         if (dailyFinancialResponse.ok) {
           const dailyFinancial = await dailyFinancialResponse.json();
-          if (Array.isArray(dailyFinancial?.records) && dailyFinancial.records.length > 0) {
+          if (asList(dailyFinancial?.records).length > 0) {
             const weekly = new Map<string, { revenue: number; expense: number; ar: number; ap: number; latestTs: number }>();
             const inventoryRatioSamples: number[] = [];
-            for (const row of dailyFinancial.records) {
+            for (const row of asList(dailyFinancial?.records)) {
               const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
               if (!snapshot || Number.isNaN(snapshot.getTime())) continue;
               const day = snapshot.getUTCDay();
@@ -853,21 +862,20 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               localStorage.getItem(scopedBaseKey) ||
               (basisMode === 'cash' ? localStorage.getItem(legacyCashBaseKey) : null);
             const parsedBase = rawBase ? JSON.parse(rawBase) : null;
-            revenueMonthlyBase = Array.isArray(parsedBase?.monthTotals)
-              ? parsedBase.monthTotals.map((value: unknown) => Number(value) || 0)
-              : [];
-            opexMonthlyBase = Array.isArray(parsedBase?.opexMonthTotals)
-              ? parsedBase.opexMonthTotals.map((value: unknown) => Number(value) || 0)
-              : [];
-            marginMonthlyBase = Array.isArray(parsedBase?.grossMarginMonthPcts)
-              ? parsedBase.grossMarginMonthPcts.map((value: unknown) => Number(value) || 0)
-              : [];
-            monthRefsBase = Array.isArray(parsedBase?.monthRefs)
-              ? parsedBase.monthRefs.map((row: any) => ({
-                  year: Number(row?.year),
-                  month: Number(row?.month),
-                }))
-              : [];
+            revenueMonthlyBase = asList(parsedBase?.monthTotals)
+              .map((value: unknown) => Number(value) || 0);
+            opexMonthlyBase = asList(parsedBase?.opexMonthTotals)
+              .map((value: unknown) => Number(value) || 0);
+            marginMonthlyBase = asList(parsedBase?.grossMarginMonthPcts)
+              .map((value: unknown) => Number(value) || 0);
+            monthRefsBase = asList(parsedBase?.monthRefs)
+              .map((row: unknown) => {
+                const record = asRecord(row);
+                return {
+                  year: Number(record.year),
+                  month: Number(record.month),
+                };
+              });
           } catch {
             revenueMonthlyBase = [];
             opexMonthlyBase = [];
@@ -887,11 +895,11 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               ...derivedStartingBalances,
               ...(savedSettings?.startingBalances && typeof savedSettings.startingBalances === 'object'
                 ? {
-                    cash: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).cash, derivedStartingBalances.cash)),
-                    ar: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).ar, derivedStartingBalances.ar)),
-                    ap: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).ap, derivedStartingBalances.ap)),
-                    inventory: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).inventory, derivedStartingBalances.inventory)),
-                    loc: Math.max(0, toRoundedCurrency((savedSettings.startingBalances as any).loc, derivedStartingBalances.loc)),
+                    cash: Math.max(0, toRoundedCurrency(asRecord(savedSettings.startingBalances).cash, derivedStartingBalances.cash)),
+                    ar: Math.max(0, toRoundedCurrency(asRecord(savedSettings.startingBalances).ar, derivedStartingBalances.ar)),
+                    ap: Math.max(0, toRoundedCurrency(asRecord(savedSettings.startingBalances).ap, derivedStartingBalances.ap)),
+                    inventory: Math.max(0, toRoundedCurrency(asRecord(savedSettings.startingBalances).inventory, derivedStartingBalances.inventory)),
+                    loc: Math.max(0, toRoundedCurrency(asRecord(savedSettings.startingBalances).loc, derivedStartingBalances.loc)),
                   }
                 : {}),
             };
@@ -944,9 +952,9 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
           });
           setSaveMessage(null);
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (!cancelled) {
-          setBalancesError(error?.message || 'Unable to load latest operational balances');
+          setBalancesError(errorMessage(error, 'Unable to load latest operational balances'));
           setStartingBalances(DEFAULT_STARTING_BALANCES);
           setInventoryBalanceFromImportedData(false);
           setLocBalanceFromImportedData(false);
@@ -1068,8 +1076,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
     const opexViaApByWeek = Array.from({ length: weeks }, () => 0);
     ACCRUAL_OPEX_LINE_ITEMS.forEach(({ key }) => {
       const treatment = accrualOpexPaymentTreatmentByKey?.[key] === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full';
-      const amounts = Array.isArray(accrualOpexAmountByRow[key]) ? accrualOpexAmountByRow[key] : [];
-      const pcts = Array.isArray(accrualOpexPctByRow[key]) ? accrualOpexPctByRow[key] : [];
+      const amounts = asList(accrualOpexAmountByRow[key]);
+      const pcts = asList(accrualOpexPctByRow[key]);
       for (let i = 0; i < weeks; i += 1) {
         const explicitAmount = Number(amounts[i] || 0);
         const pct = Number(pcts[i] || 0);
@@ -1312,8 +1320,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
       }
       setLastSavedAt(String(data?.updatedAt || new Date().toISOString()));
       setSaveMessage('Saved');
-    } catch (error: any) {
-      setSaveMessage(`Save failed: ${error?.message || 'Unknown error'}`);
+    } catch (error: unknown) {
+      setSaveMessage(`Save failed: ${errorMessage(error, 'Unknown error')}`);
     } finally {
       setIsSaving(false);
     }

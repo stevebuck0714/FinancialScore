@@ -516,14 +516,15 @@ function aggregateForCompanyRollup(
   return Array.from(grouped.values());
 }
 
-function normalizeTransactions(row: any): string[] {
-  const fromArray = Array.isArray(row?.transactions)
-    ? row.transactions
+function normalizeTransactions(row: unknown): string[] {
+  const record = asObject(row) || {};
+  const fromArray = Array.isArray(record.transactions)
+    ? record.transactions
         .map((value: unknown) => (typeof value === 'string' ? value.trim() : ''))
         .filter(Boolean)
     : [];
   if (fromArray.length > 0) return Array.from(new Set(fromArray));
-  const legacy = typeof row?.transaction === 'string' ? row.transaction.trim() : '';
+  const legacy = typeof record.transaction === 'string' ? record.transaction.trim() : '';
   return legacy ? [legacy] : [];
 }
 
@@ -531,27 +532,28 @@ function parsePrograms(value: unknown): InforProgramRow[] {
   if (!Array.isArray(value)) return [];
   const rows: InforProgramRow[] = [];
   for (const row of value) {
-    const module = typeof row?.module === 'string' ? row.module.trim() : '';
-    const miProgramRaw = typeof row?.miProgram === 'string' ? row.miProgram.trim() : '';
+    const record = asObject(row) || {};
+    const moduleName = typeof record.module === 'string' ? record.module.trim() : '';
+    const miProgramRaw = typeof record.miProgram === 'string' ? record.miProgram.trim() : '';
     const miProgram = miProgramRaw;
-    const transactions = normalizeTransactions(row);
-    const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
-    const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
-    const endpointPathRaw = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
+    const transactions = normalizeTransactions(record);
+    const cono = typeof record.cono === 'string' ? record.cono.trim() : '';
+    const divi = typeof record.divi === 'string' ? record.divi.trim() : '';
+    const endpointPathRaw = typeof record.endpointPath === 'string' ? record.endpointPath.trim() : '';
     const endpointPath = endpointPathRaw;
-    const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
-    const site = typeof row?.site === 'string' ? row.site.trim() : '';
-    const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
-    const properties = Array.isArray(row?.properties)
-      ? row.properties
+    const mongooseConfig = typeof record.mongooseConfig === 'string' ? record.mongooseConfig.trim() : '';
+    const site = typeof record.site === 'string' ? record.site.trim() : '';
+    const recordCap = Number.isFinite(Number(record.recordCap)) ? Number(record.recordCap) : undefined;
+    const properties = Array.isArray(record.properties)
+      ? record.properties
           .map((value: unknown) => (typeof value === 'string' ? value.trim() : ''))
           .filter(Boolean)
       : [];
-    const enabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
-    if (!enabled || !module) continue;
+    const enabled = typeof record.enabled === 'boolean' ? record.enabled : true;
+    if (!enabled || !moduleName) continue;
     if (!endpointPath && !miProgram) continue;
     rows.push({
-      module,
+      module: moduleName,
       miProgram: miProgram || undefined,
       endpointPath: endpointPath || undefined,
       transactions,
@@ -1303,6 +1305,34 @@ function asString(value: unknown): string | null {
   return null;
 }
 
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asList<T = unknown>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+type DelegateMethod = (...args: unknown[]) => Promise<unknown>;
+type GenericDelegate = Partial<Record<string, DelegateMethod>>;
+
+function getPrismaDelegate(modelName: string): GenericDelegate | null {
+  const client = prisma as unknown as Record<string, unknown>;
+  const delegate = client[modelName];
+  if (!delegate || typeof delegate !== 'object') return null;
+  return delegate as GenericDelegate;
+}
+
+function parseMappedLineRow(value: unknown): { targetField: string; amount: number } | null {
+  const row = asObject(value);
+  if (!row) return null;
+  const targetField = String(row.targetField || '').trim().toLowerCase();
+  const amount = Number(row.amount || 0);
+  if (!targetField || !Number.isFinite(amount)) return null;
+  return { targetField, amount };
+}
+
 function toNumber(value: unknown): number {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const wrapped = value as Record<string, unknown>;
@@ -1325,10 +1355,10 @@ function lookupRecordValue(record: Record<string, unknown>, key: string): unknow
   if (directKey) return record[directKey];
   // Some IDO payloads can return name/value property arrays.
   const propsCandidate =
-    (record as any).Properties ||
-    (record as any).properties ||
-    (record as any).PropertyValues ||
-    (record as any).propertyValues;
+    record.Properties ||
+    record.properties ||
+    record.PropertyValues ||
+    record.propertyValues;
   if (Array.isArray(propsCandidate)) {
     for (const prop of propsCandidate) {
       if (!prop || typeof prop !== 'object') continue;
@@ -1796,7 +1826,9 @@ function isOpenAgingRecord(
 export async function pruneCompanyOperationalData(companyId: string): Promise<void> {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 3);
-  const glFactDelegate = (prisma as any).gLTransactionFact;
+  const glFactDelegate = getPrismaDelegate('gLTransactionFact');
+  const apOpenBillDelegate = getPrismaDelegate('aPOpenBillSnapshot');
+  const apPaymentFactDelegate = getPrismaDelegate('aPPaymentFact');
 
   await Promise.all([
     prisma.cashSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
@@ -1807,8 +1839,8 @@ export async function pruneCompanyOperationalData(companyId: string): Promise<vo
     prisma.inventorySnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     prisma.aROpenInvoiceSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     prisma.aRPaymentFact.deleteMany({ where: { companyId, paymentDate: { lt: cutoff } } }),
-    (prisma as any).aPOpenBillSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
-    (prisma as any).aPPaymentFact.deleteMany({ where: { companyId, paymentDate: { lt: cutoff } } }),
+    apOpenBillDelegate?.deleteMany ? apOpenBillDelegate.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }) : Promise.resolve(),
+    apPaymentFactDelegate?.deleteMany ? apPaymentFactDelegate.deleteMany({ where: { companyId, paymentDate: { lt: cutoff } } }) : Promise.resolve(),
     glFactDelegate?.deleteMany ? glFactDelegate.deleteMany({ where: { companyId, transDate: { lt: cutoff } } }) : Promise.resolve(),
   ]);
 }
@@ -2078,7 +2110,7 @@ async function saveBalanceMovementsFromGl(
     }
   >
 ): Promise<number> {
-  const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+  const mappedLineDelegate = getPrismaDelegate('dailyFinancialMappedLine');
   if (!mappedLineDelegate || records.length === 0) return 0;
 
   let accountMappings: Array<{
@@ -2347,7 +2379,15 @@ async function saveARAging(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
-  const fromBuckets = records.reduce(
+  type AgingTotals = {
+    totalAR: number;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+  };
+  const fromBuckets = records.reduce<AgingTotals>(
     (acc, record) => {
       acc.totalAR += pickNumber(record, ['totalAR', 'total', 'TOTAR']);
       acc.current += pickNumber(record, ['current', 'CURAR', 'currentAmount']);
@@ -2357,7 +2397,7 @@ async function saveARAging(
       acc.days90plus += pickNumber(record, ['days90plus', 'AR90P', 'bucket4']);
       return acc;
     },
-    { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+    { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 } as AgingTotals
   );
 
   const derived = calculateAgingTotalsFromTransactions(records, {
@@ -2371,28 +2411,40 @@ async function saveARAging(
     asOfDate: snapshotDate,
   });
 
-  const totals =
+  const totals: AgingTotals =
     fromBuckets.totalAR !== 0
       ? fromBuckets
       : {
-          totalAR: derived.total,
-          current: derived.current,
-          days1to30: derived.days1to30,
-          days31to60: derived.days31to60,
-          days61to90: derived.days61to90,
-          days90plus: derived.days90plus,
+          totalAR: Number(derived.total || 0),
+          current: Number(derived.current || 0),
+          days1to30: Number(derived.days1to30 || 0),
+          days31to60: Number(derived.days31to60 || 0),
+          days61to90: Number(derived.days61to90 || 0),
+          days90plus: Number(derived.days90plus || 0),
         };
 
   if (totals.totalAR === 0) return 0;
 
   await prisma.aRAgingSnapshot.upsert({
     where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
-    update: totals,
+    update: {
+      totalAR: totals.totalAR,
+      current: totals.current,
+      days1to30: totals.days1to30,
+      days31to60: totals.days31to60,
+      days61to90: totals.days61to90,
+      days90plus: totals.days90plus,
+    },
     create: {
       companyId,
       snapshotDate,
       frequency,
-      ...totals,
+      totalAR: totals.totalAR,
+      current: totals.current,
+      days1to30: totals.days1to30,
+      days31to60: totals.days31to60,
+      days61to90: totals.days61to90,
+      days90plus: totals.days90plus,
     },
   });
 
@@ -2908,7 +2960,7 @@ async function saveCustomerOrderLines(
     debug.rowsSkipped += 1;
     debug.skipReasons[reason] = (debug.skipReasons[reason] || 0) + 1;
   };
-  const delegate = (prisma as any).customerOrderLineSnapshot;
+  const delegate = getPrismaDelegate('customerOrderLineSnapshot');
   if (!delegate?.deleteMany || !delegate?.createMany) {
     skip('missing_delegate');
     return { persisted: 0, debug };
@@ -3075,8 +3127,8 @@ async function saveCustomerOrderLines(
   const dataToPersist = supportsOrderDateColumn
     ? finalRows
     : finalRows.map(({ orderDate: _orderDate, ...rest }) => rest);
-  const batch = await delegate.createMany({ data: dataToPersist, skipDuplicates: true });
-  debug.rowsPersisted = Number(batch?.count || 0);
+  const batchResult = asObject(await delegate.createMany({ data: dataToPersist, skipDuplicates: true }));
+  debug.rowsPersisted = Number(batchResult?.count || 0);
   return { persisted: debug.rowsPersisted || finalRows.length, debug };
 }
 
@@ -3093,7 +3145,7 @@ async function saveSalesInvoiceHeaders(
     resetSnapshot?: boolean;
   }
 ): Promise<number> {
-  const delegate = (prisma as any).salesInvoiceHeaderSnapshot;
+  const delegate = getPrismaDelegate('salesInvoiceHeaderSnapshot');
   if (!delegate?.createMany || !delegate?.deleteMany) return 0;
 
   if (context.resetSnapshot) {
@@ -3182,9 +3234,9 @@ async function upsertArInvoiceOriginMapFromOrderLines(
   frequency: 'daily' | 'weekly' | 'monthly',
   invoiceRows: Array<{ invoiceId: string; customerId: string | null; invoiceAmount: number; remainingBalance: number }>
 ): Promise<void> {
-  const originMapDelegate = (prisma as any).aRInvoiceOriginMap;
-  const orderLineDelegate = (prisma as any).customerOrderLineSnapshot;
-  const invoiceHeaderDelegate = (prisma as any).salesInvoiceHeaderSnapshot;
+  const originMapDelegate = getPrismaDelegate('aRInvoiceOriginMap');
+  const orderLineDelegate = getPrismaDelegate('customerOrderLineSnapshot');
+  const invoiceHeaderDelegate = getPrismaDelegate('salesInvoiceHeaderSnapshot');
   if (
     !originMapDelegate?.createMany ||
     !orderLineDelegate?.findFirst ||
@@ -3203,7 +3255,7 @@ async function upsertArInvoiceOriginMapFromOrderLines(
   }
   if (openInvoiceKeys.size === 0) return;
 
-  const latestOrderSnapshot = await orderLineDelegate.findFirst({
+  const latestOrderSnapshot = asObject(await orderLineDelegate.findFirst({
     where: {
       companyId,
       frequency,
@@ -3211,14 +3263,15 @@ async function upsertArInvoiceOriginMapFromOrderLines(
     },
     orderBy: [{ snapshotDate: 'desc' }],
     select: { snapshotDate: true },
-  });
-  if (!latestOrderSnapshot?.snapshotDate) return;
+  })) || {};
+  const latestOrderSnapshotDate = latestOrderSnapshot.snapshotDate as Date | null | undefined;
+  if (!latestOrderSnapshotDate) return;
 
   const orderRows = await orderLineDelegate.findMany({
     where: {
       companyId,
       frequency,
-      snapshotDate: latestOrderSnapshot.snapshotDate,
+      snapshotDate: latestOrderSnapshotDate,
     },
     select: {
       customerId: true,
@@ -3227,15 +3280,15 @@ async function upsertArInvoiceOriginMapFromOrderLines(
     take: 100000,
   });
   const contractOrderKeys = new Set<string>();
-  for (const row of orderRows as any[]) {
-    const orderId = normalizeOrderJoinKey(String(row.orderId || ''));
+  for (const rawRow of asList<Record<string, unknown>>(orderRows)) {
+    const orderId = normalizeOrderJoinKey(String(rawRow.orderId || ''));
     if (!orderId) continue;
-    const customerId = String(row.customerId || '').trim();
+    const customerId = String(rawRow.customerId || '').trim();
     contractOrderKeys.add(`${customerId}|${orderId}`);
   }
   if (contractOrderKeys.size === 0) return;
 
-  const latestInvoiceHeaderSnapshot = await invoiceHeaderDelegate.findFirst({
+  const latestInvoiceHeaderSnapshot = asObject(await invoiceHeaderDelegate.findFirst({
     where: {
       companyId,
       frequency,
@@ -3243,14 +3296,15 @@ async function upsertArInvoiceOriginMapFromOrderLines(
     },
     orderBy: [{ snapshotDate: 'desc' }],
     select: { snapshotDate: true },
-  });
-  if (!latestInvoiceHeaderSnapshot?.snapshotDate) return;
+  })) || {};
+  const latestInvoiceHeaderSnapshotDate = latestInvoiceHeaderSnapshot.snapshotDate as Date | null | undefined;
+  if (!latestInvoiceHeaderSnapshotDate) return;
 
   const invoiceHeaderRows = await invoiceHeaderDelegate.findMany({
     where: {
       companyId,
       frequency,
-      snapshotDate: latestInvoiceHeaderSnapshot.snapshotDate,
+      snapshotDate: latestInvoiceHeaderSnapshotDate,
     },
     select: {
       customerId: true,
@@ -3262,12 +3316,12 @@ async function upsertArInvoiceOriginMapFromOrderLines(
 
   const now = new Date();
   const rowsToCreate = new Map<string, Record<string, unknown>>();
-  for (const row of invoiceHeaderRows as any[]) {
-    const orderId = normalizeOrderJoinKey(String(row.orderId || ''));
+  for (const rawRow of asList<Record<string, unknown>>(invoiceHeaderRows)) {
+    const orderId = normalizeOrderJoinKey(String(rawRow.orderId || ''));
     if (!orderId) continue;
-    const invoiceNoNormalized = normalizeInvoiceKeyForOrigin(row.invoiceNo);
+    const invoiceNoNormalized = normalizeInvoiceKeyForOrigin(String(rawRow.invoiceNo || ''));
     if (!invoiceNoNormalized) continue;
-    const customerId = String(row.customerId || '').trim() || null;
+    const customerId = String(rawRow.customerId || '').trim() || null;
     const contractOrderKey = `${customerId || ''}|${orderId}`;
     if (!contractOrderKeys.has(contractOrderKey)) continue;
     const joinKey = `${customerId || ''}|${invoiceNoNormalized}`;
@@ -3280,8 +3334,8 @@ async function upsertArInvoiceOriginMapFromOrderLines(
       customerKey: String(customerId || '').trim(),
       sourceClass: 'CONTRACT',
       sourceSystem: 'CSI_ORDER_INVOICE_HEADER',
-      sourceDocId: `${orderId}:${String(row.invoiceNo || '')}`,
-      sourceInvoiceNoRaw: row.invoiceNo || null,
+      sourceDocId: `${orderId}:${String(rawRow.invoiceNo || '')}`,
+      sourceInvoiceNoRaw: rawRow.invoiceNo || null,
       matchConfidence: 'HIGH',
       matchedBy: 'ORDER_ID_TO_INVOICE_NO_AND_CUSTOMER',
       firstSeenAt: now,
@@ -3390,9 +3444,9 @@ async function upsertArContractSupportTables(
 
   await upsertArInvoiceOriginMapFromOrderLines(companyId, snapshotDate, frequency, invoiceRows);
 
-  const originMapDelegate = (prisma as any).aRInvoiceOriginMap;
-  const originByInvoiceAndCustomer = new Map<string, any>();
-  const originByInvoiceOnly = new Map<string, any>();
+  const originMapDelegate = getPrismaDelegate('aRInvoiceOriginMap');
+  const originByInvoiceAndCustomer = new Map<string, Record<string, unknown>>();
+  const originByInvoiceOnly = new Map<string, Record<string, unknown>>();
   if (originMapDelegate?.findMany && invoiceRows.length > 0) {
     const invoiceNos = Array.from(
       new Set(invoiceRows.map((row) => normalizeInvoiceKeyForOrigin(row.invoiceId)).filter(Boolean))
@@ -3417,8 +3471,8 @@ async function upsertArContractSupportTables(
         orderBy: [{ lastSeenAt: 'desc' }],
         take: Math.max(invoiceNos.length * 4, 2000),
       });
-      for (const row of originRows as any[]) {
-        const invoiceNo = normalizeInvoiceKeyForOrigin(row.invoiceNoNormalized);
+      for (const row of asList<Record<string, unknown>>(originRows)) {
+        const invoiceNo = normalizeInvoiceKeyForOrigin(String(row.invoiceNoNormalized || ''));
         const customerId = String(row.customerId || '').trim();
         const byCustomerKey = `${invoiceNo}|${customerId}`;
         if (invoiceNo && customerId && !originByInvoiceAndCustomer.has(byCustomerKey)) {
@@ -3448,7 +3502,7 @@ async function upsertArContractSupportTables(
     };
   });
 
-  const arInvoiceDetailDelegate = (prisma as any).aRInvoiceDetail;
+  const arInvoiceDetailDelegate = getPrismaDelegate('aRInvoiceDetail');
   if (arInvoiceDetailDelegate?.deleteMany && arInvoiceDetailDelegate?.createMany) {
     const supportsSourceColumns = await arInvoiceDetailSupportsSourceColumns();
     const invoiceRowsForPersist = supportsSourceColumns
@@ -3482,7 +3536,7 @@ async function upsertArContractSupportTables(
   });
 
   const minCashFlowDate = new Date(snapshotDate.getTime() - 365 * 24 * 60 * 60 * 1000);
-  const customerCashFlowDelegate = (prisma as any).customerCashFlow;
+  const customerCashFlowDelegate = getPrismaDelegate('customerCashFlow');
   if (customerCashFlowDelegate?.deleteMany && customerCashFlowDelegate?.createMany) {
     const cashFlowByDay = new Map<string, { customerId: string | null; customerName: string; date: Date; cashInflow: number }>();
     for (const row of paymentRows) {
@@ -3540,7 +3594,7 @@ async function upsertArContractSupportTables(
     if (!acc.lastPaymentDate || dt.getTime() > acc.lastPaymentDate.getTime()) acc.lastPaymentDate = dt;
   }
 
-  const orderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+  const orderLineDelegate = getPrismaDelegate('customerOrderLineSnapshot');
   const orderLineRows = orderLineDelegate?.findMany
     ? await orderLineDelegate.findMany({
         where: { companyId, frequency, snapshotDate },
@@ -3568,12 +3622,15 @@ async function upsertArContractSupportTables(
       arOutstanding: number;
     }
   >();
-  for (const row of orderLineRows as any[]) {
-    const key = toCustomerKey(row.customerId, row.customerName);
+  for (const row of asList<Record<string, unknown>>(orderLineRows)) {
+    const key = toCustomerKey(
+      typeof row.customerId === 'string' ? row.customerId : null,
+      String(row.customerName || '')
+    );
     if (!contractByCustomer.has(key)) {
       contractByCustomer.set(key, {
-        customerId: row.customerId || null,
-        customerName: row.customerName,
+        customerId: typeof row.customerId === 'string' ? row.customerId : null,
+        customerName: String(row.customerName || ''),
         contractValue: 0,
         invoicedToDate: 0,
         remainingValue: 0,
@@ -3586,7 +3643,9 @@ async function upsertArContractSupportTables(
     acc.invoicedToDate += Number(row.invoicedAmount || 0);
     acc.remainingValue += Number(row.remainingAmount || 0);
     acc.accruedRevenueUnbilled += Number(row.unbilledAccrual || 0);
-    if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
+    if (!acc.customerId && typeof row.customerId === 'string' && row.customerId.trim()) {
+      acc.customerId = row.customerId;
+    }
   }
   for (const row of invoiceRows) {
     const key = toCustomerKey(row.customerId, row.customerName);
@@ -3606,12 +3665,15 @@ async function upsertArContractSupportTables(
     if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
   }
 
-  for (const [key, cash] of cashByCustomer.entries()) {
+  for (const [key, cash] of Array.from(cashByCustomer.entries())) {
     if (!contractByCustomer.has(key)) {
       contractByCustomer.set(key, {
         customerId: cash.customerId,
         customerName: cash.customerName,
+        contractValue: 0,
         invoicedToDate: 0,
+        remainingValue: 0,
+        accruedRevenueUnbilled: 0,
         arOutstanding: 0,
       });
     }
@@ -3663,7 +3725,7 @@ async function upsertArContractSupportTables(
   }
   const contractRows = Array.from(contractRowsByUniqueKey.values());
 
-  const contractStatusDelegate = (prisma as any).customerContractStatus;
+  const contractStatusDelegate = getPrismaDelegate('customerContractStatus');
   if (contractStatusDelegate?.deleteMany && contractStatusDelegate?.createMany) {
     await contractStatusDelegate.deleteMany({ where: { companyId, asOfDate: snapshotDate } });
     if (contractRows.length > 0) {
@@ -3678,7 +3740,15 @@ async function saveAPAging(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
-  const fromBuckets = records.reduce(
+  type AgingTotals = {
+    totalAP: number;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+  };
+  const fromBuckets = records.reduce<AgingTotals>(
     (acc, record) => {
       acc.totalAP += pickNumber(record, ['totalAP', 'total', 'TOTAP']);
       acc.current += pickNumber(record, ['current', 'CURAP', 'currentAmount']);
@@ -3688,7 +3758,7 @@ async function saveAPAging(
       acc.days90plus += pickNumber(record, ['days90plus', 'AP90P', 'bucket4']);
       return acc;
     },
-    { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+    { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 } as AgingTotals
   );
 
   const derived = calculateAgingTotalsFromTransactions(records, {
@@ -3700,28 +3770,40 @@ async function saveAPAging(
     asOfDate: snapshotDate,
   });
 
-  const totals =
+  const totals: AgingTotals =
     fromBuckets.totalAP !== 0
       ? fromBuckets
       : {
-          totalAP: derived.total,
-          current: derived.current,
-          days1to30: derived.days1to30,
-          days31to60: derived.days31to60,
-          days61to90: derived.days61to90,
-          days90plus: derived.days90plus,
+          totalAP: Number(derived.total || 0),
+          current: Number(derived.current || 0),
+          days1to30: Number(derived.days1to30 || 0),
+          days31to60: Number(derived.days31to60 || 0),
+          days61to90: Number(derived.days61to90 || 0),
+          days90plus: Number(derived.days90plus || 0),
         };
 
   if (totals.totalAP === 0) return 0;
 
   await prisma.aPAgingSnapshot.upsert({
     where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
-    update: totals,
+    update: {
+      totalAP: totals.totalAP,
+      current: totals.current,
+      days1to30: totals.days1to30,
+      days31to60: totals.days31to60,
+      days61to90: totals.days61to90,
+      days90plus: totals.days90plus,
+    },
     create: {
       companyId,
       snapshotDate,
       frequency,
-      ...totals,
+      totalAP: totals.totalAP,
+      current: totals.current,
+      days1to30: totals.days1to30,
+      days31to60: totals.days31to60,
+      days61to90: totals.days61to90,
+      days90plus: totals.days90plus,
     },
   });
 
@@ -3735,7 +3817,9 @@ async function saveAPOpenBills(
   records: Record<string, unknown>[],
   context: { miProgram: string; transaction: string; cono?: string; divi?: string }
 ): Promise<number> {
-  await (prisma as any).aPOpenBillSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
+  const apOpenBillDelegate = getPrismaDelegate('aPOpenBillSnapshot');
+  if (!apOpenBillDelegate?.deleteMany || !apOpenBillDelegate?.createMany) return 0;
+  await apOpenBillDelegate.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
   const rows = records
     .map((record, idx) => {
@@ -3813,7 +3897,7 @@ async function saveAPOpenBills(
   const BATCH_SIZE = 2000;
   for (let i = 0; i < finalRows.length; i += BATCH_SIZE) {
     const batch = finalRows.slice(i, i + BATCH_SIZE);
-    await (prisma as any).aPOpenBillSnapshot.createMany({ data: batch });
+    await apOpenBillDelegate.createMany({ data: batch });
   }
   return finalRows.length;
 }
@@ -3864,7 +3948,9 @@ async function saveAPPayments(
     .filter((row): row is NonNullable<typeof row> => !!row && Number.isFinite(row.paidAmountHome));
 
   if (!rows.length) return 0;
-  await (prisma as any).aPPaymentFact.createMany({ data: rows });
+  const apPaymentFactDelegate = getPrismaDelegate('aPPaymentFact');
+  if (!apPaymentFactDelegate?.createMany) return 0;
+  await apPaymentFactDelegate.createMany({ data: rows });
   return rows.length;
 }
 
@@ -4023,7 +4109,7 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly'
 ): Promise<DailyFinancialSnapshotHydrationOutcome> {
-  const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
+  const dailySnapshotDelegate = getPrismaDelegate('dailyFinancialSnapshot');
   const targetSnapshotDate = toIsoDayOrNull(snapshotDate) || String(snapshotDate);
   const dayStart = startOfUtcDay(snapshotDate);
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -4037,7 +4123,7 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     };
   }
 
-  const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+  const mappedLineDelegate = getPrismaDelegate('dailyFinancialMappedLine');
   const [cashAgg, inventoryRows, productAgg, arSnapshot, apSnapshot, glBalanceMovementRows, glBalanceMovementRowsToDate] = await Promise.all([
     prisma.cashSnapshot.aggregate({
       where: { companyId, frequency, snapshotDate: { gte: dayStart, lt: dayEnd } },
@@ -4098,7 +4184,7 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
 
   const sourceDates = {
     cash: Number(cashAgg?._count?._all || 0) > 0 ? targetSnapshotDate : null,
-    inventory: Array.isArray(inventoryRows) && inventoryRows.length > 0 ? targetSnapshotDate : null,
+    inventory: inventoryRows.length > 0 ? targetSnapshotDate : null,
     sales: Number(productAgg?._count?._all || 0) > 0 ? targetSnapshotDate : null,
     ar: arSnapshot ? targetSnapshotDate : null,
     ap: apSnapshot ? targetSnapshotDate : null,
@@ -4152,24 +4238,24 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
     }
     return deduped;
   };
-  const dedupedInventoryRows = dedupeInventoryRowsExact(inventoryRows as any);
+  const dedupedInventoryRows = dedupeInventoryRowsExact(inventoryRows);
   const inventoryBySku = new Map<string, number>();
   for (const row of dedupedInventoryRows) {
     const skuKey =
-      String((row as any).sku || '').trim() ||
-      String((row as any).itemId || '').trim() ||
-      String((row as any).itemName || '').trim();
-    inventoryBySku.set(skuKey, Number(inventoryBySku.get(skuKey) || 0) + Number((row as any).assetValue || 0));
+      String(row.sku || '').trim() ||
+      String(row.itemId || '').trim() ||
+      String(row.itemName || '').trim();
+    inventoryBySku.set(skuKey, Number(inventoryBySku.get(skuKey) || 0) + Number(row.assetValue || 0));
   }
 
   const glMovementTotals = new Map<string, number>();
   for (const row of Array.isArray(glBalanceMovementRows) ? glBalanceMovementRows : []) {
-    const rawTargetField = String((row as any).targetField || '').trim().toLowerCase();
-    const amount = Number((row as any).amount || 0);
-    if (!rawTargetField.startsWith('balance_movement:') || !Number.isFinite(amount)) continue;
-    const field = rawTargetField.replace('balance_movement:', '').trim();
+    const mapped = parseMappedLineRow(row);
+    if (!mapped) continue;
+    if (!mapped.targetField.startsWith('balance_movement:')) continue;
+    const field = mapped.targetField.replace('balance_movement:', '').trim();
     if (!field) continue;
-    glMovementTotals.set(field, Number(glMovementTotals.get(field) || 0) + Math.abs(amount));
+    glMovementTotals.set(field, Number(glMovementTotals.get(field) || 0) + Math.abs(mapped.amount));
   }
 
   const sumGlByPredicate = (predicate: (field: string) => boolean): number => {
@@ -4182,12 +4268,12 @@ async function upsertDailyFinancialSnapshotFromOperationalTables(
   };
   const cumulativeBalanceTotals = new Map<string, number>();
   for (const row of Array.isArray(glBalanceMovementRowsToDate) ? glBalanceMovementRowsToDate : []) {
-    const rawTargetField = String((row as any).targetField || '').trim().toLowerCase();
-    const amount = Number((row as any).amount || 0);
-    if (!rawTargetField.startsWith('balance_movement:') || !Number.isFinite(amount)) continue;
-    const field = rawTargetField.replace('balance_movement:', '').trim();
+    const mapped = parseMappedLineRow(row);
+    if (!mapped) continue;
+    if (!mapped.targetField.startsWith('balance_movement:')) continue;
+    const field = mapped.targetField.replace('balance_movement:', '').trim();
     if (!field) continue;
-    cumulativeBalanceTotals.set(field, Number(cumulativeBalanceTotals.get(field) || 0) + amount);
+    cumulativeBalanceTotals.set(field, Number(cumulativeBalanceTotals.get(field) || 0) + mapped.amount);
   }
   const normalizeGlTargetKey = (value: string): string => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const getGlTargetTotal = (aliases: string[]): number => {
@@ -5444,7 +5530,7 @@ export async function syncInforM3OperationalData(
                         resetSnapshot: !options?.bookmark,
                         orderCustomerLookup,
                       })
-                    : { persisted: 0, debug: null as any };
+                    : { persisted: 0, debug: null as unknown };
                 if (debugSync) {
                   console.log(
                     JSON.stringify({
