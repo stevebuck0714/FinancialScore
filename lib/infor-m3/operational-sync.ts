@@ -2727,7 +2727,7 @@ async function saveAROpenInvoices(
             snapshotDate: { gte: snapshotDayStart, lt: snapshotDayEnd },
           },
         });
-      }, { maxWait: 10000, timeout: 30000 })
+      }, { maxWait: 10000, timeout: 120000 })
     );
   }
 
@@ -2869,7 +2869,7 @@ async function saveARPayments(
         },
       });
       await tx.aRPaymentFact.createMany({ data: finalRows });
-    }, { maxWait: 10000, timeout: 30000 })
+    }, { maxWait: 10000, timeout: 120000 })
   );
   return finalRows.length;
 }
