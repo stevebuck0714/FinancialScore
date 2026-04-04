@@ -53,9 +53,8 @@ for (const chunk of chunks) {
 Instead of creating single-period records, the sync now creates individual monthly financial records for all 36 months.
 
 **Implementation:**
-- **File:** `lib/xero-parser.ts`
-- **Function:** `parseXeroMonthlyData()`
-- **Lines:** 322-471
+- **File:** `app/api/xero/sync/route.ts`
+- **Scope:** Monthly parsing + per-month `FinancialRecord` upsert flow
 - **How it works:**
   1. Extracts monthly column headers from Xero P&L report
   2. Parses each month's revenue, COGS, and expenses individually
@@ -237,7 +236,6 @@ To test the full implementation:
 ## 📚 Files Changed/Created
 
 ### New Files:
-- `lib/xero-parser.ts` - Complete parser for monthly data
 - `lib/accounting-adapters/xero-adapter.ts` - Full adapter with operational methods
 - `app/api/xero/sync/route.ts` - Complete sync implementation
 
@@ -246,7 +244,7 @@ To test the full implementation:
 - `app/api/xero/auth/route.ts` - OAuth initiation
 - `app/api/xero/disconnect/route.ts` - Disconnect handling
 - `lib/accounting-adapters/adapter-factory.ts` - Added Xero case
-- `lib/accounting-adapters/index.ts` - Export XeroAdapter
+- `lib/accounting-adapters/index.ts` - Export AdapterFactory (current public entrypoint)
 - `prisma/schema.prisma` - Added XERO to platform enum
 - `app/page.tsx` - Xero UI integration
 
