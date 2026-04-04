@@ -134,7 +134,7 @@ await auditLog({
 });
 
 // Log specific events
-await auditLoginSuccess(userId, email);
+await auditLoginSuccess(userId);
 await auditLoginFailed(email, 'Invalid password');
 await auditForbiddenAccess('Resource', resourceId, 'READ');
 ```

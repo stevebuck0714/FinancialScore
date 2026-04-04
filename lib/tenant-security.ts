@@ -32,14 +32,27 @@ function normalizeRole(value: string | null): UserContext['role'] | null {
 
 function getUserCompanyAccessDelegate():
   | {
-      findUnique: (...args: any[]) => Promise<any>;
-      findMany: (...args: any[]) => Promise<any[]>;
+      findUnique: (...args: unknown[]) => Promise<unknown>;
+      findMany: (...args: unknown[]) => Promise<unknown[]>;
     }
   | null {
-  const delegate = (prisma as any).userCompanyAccess
+  const delegate = (prisma as unknown as Record<string, unknown>).userCompanyAccess as Record<string, unknown> | undefined
   if (!delegate) return null
   if (typeof delegate.findUnique !== 'function' || typeof delegate.findMany !== 'function') return null
-  return delegate
+  return delegate as unknown as {
+    findUnique: (...args: unknown[]) => Promise<unknown>;
+    findMany: (...args: unknown[]) => Promise<unknown[]>;
+  }
+}
+
+function membershipCompanyIds(rows: unknown[]): string[] {
+  return rows
+    .map((row) => {
+      if (!row || typeof row !== 'object') return ''
+      const companyId = (row as Record<string, unknown>).companyId
+      return String(companyId || '').trim()
+    })
+    .filter(Boolean)
 }
 
 /**
@@ -123,14 +136,6 @@ export async function requireAuth(): Promise<UserContext> {
 export async function isSiteAdmin(): Promise<boolean> {
   const context = await getUserContext()
   return context?.role === 'SITEADMIN'
-}
-
-/**
- * Check if user has consultant role
- */
-export async function isConsultant(): Promise<boolean> {
-  const context = await getUserContext()
-  return context?.role === 'CONSULTANT'
 }
 
 /**
@@ -274,7 +279,7 @@ export async function validateUserAccess(targetUserId: string): Promise<boolean>
           select: { companyId: true },
         })
       : []
-    const myCompanyIds = new Set(myMemberships.map((m) => m.companyId))
+    const myCompanyIds = new Set(membershipCompanyIds(myMemberships))
     if (context.companyId) myCompanyIds.add(context.companyId)
 
     const targetUser = await prisma.user.findUnique({
@@ -289,7 +294,7 @@ export async function validateUserAccess(targetUserId: string): Promise<boolean>
           select: { companyId: true },
         })
       : []
-    const targetCompanyIds = new Set(targetMemberships.map((m) => m.companyId))
+    const targetCompanyIds = new Set(membershipCompanyIds(targetMemberships))
     if (targetUser.companyId) targetCompanyIds.add(targetUser.companyId)
 
     for (const companyId of myCompanyIds) {
@@ -330,36 +335,6 @@ export async function requireCompanyAccess(companyId: string): Promise<UserConte
 }
 
 /**
- * Require consultant access or throw 403
- */
-export async function requireConsultantAccess(consultantId: string): Promise<UserContext> {
-  const context = await requireAuth()
-  
-  const hasAccess = await validateConsultantAccess(consultantId)
-  
-  if (!hasAccess) {
-    throw new Error('Forbidden: Access to this consultant denied')
-  }
-  
-  return context
-}
-
-/**
- * Require user access or throw 403
- */
-export async function requireUserAccess(userId: string): Promise<UserContext> {
-  const context = await requireAuth()
-  
-  const hasAccess = await validateUserAccess(userId)
-  
-  if (!hasAccess) {
-    throw new Error('Forbidden: Access to this user denied')
-  }
-  
-  return context
-}
-
-/**
  * Get companies that the current user has access to (for filtering queries)
  */
 export async function getAccessibleCompanyIds(): Promise<string[]> {
@@ -393,7 +368,7 @@ export async function getAccessibleCompanyIds(): Promise<string[]> {
       : []
     const idSet = new Set([
       ...consultantCompanies.map(c => c.id),
-      ...memberships.map(m => m.companyId),
+      ...membershipCompanyIds(memberships),
     ])
     return Array.from(idSet)
   }
@@ -408,7 +383,7 @@ export async function getAccessibleCompanyIds(): Promise<string[]> {
           select: { companyId: true },
         })
       : []
-    const ids = memberships.map((m) => m.companyId)
+    const ids = membershipCompanyIds(memberships)
     if (ids.length > 0) return ids
     if (context.companyId) return [context.companyId]
   }

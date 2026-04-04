@@ -15,6 +15,10 @@ function toVectorLiteral(vec: number[]): string {
   return `[${body}]`;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'Indexing failed';
+}
+
 export async function indexCompanyDocument(params: {
   documentId: string;
   // If true, re-index even if status is DONE.
@@ -92,7 +96,7 @@ export async function indexCompanyDocument(params: {
         // Use $executeRawUnsafe because we need to CAST a dynamic vector literal.
         // Values are still parameterized except the vector cast, which is built from numeric arrays.
         const valuesSql: string[] = [];
-        const params: any[] = [];
+        const params: unknown[] = [];
         let p = 1;
 
         for (let j = 0; j < slice.length; j += 1) {
@@ -142,8 +146,8 @@ export async function indexCompanyDocument(params: {
     });
 
     return { ok: true, indexedChunks: chunks.length, embeddingModel: model, embeddingDim };
-  } catch (e: any) {
-    const message = sanitizeTextForPostgres(e?.message || 'Indexing failed');
+  } catch (e: unknown) {
+    const message = sanitizeTextForPostgres(errorMessage(e));
     await prisma.companyDocument.update({
       where: { id: doc.id },
       data: { indexStatus: 'FAILED', indexedAt: null, indexError: message },

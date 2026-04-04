@@ -16,6 +16,9 @@ function isSpreadsheetExtension(ext: string): boolean {
   return ext === '.xls' || ext === '.xlsx' || ext === '.csv';
 }
 
+const ALLOWED_EXTENSIONS = DATAROOM_ALLOWED_EXTENSIONS as readonly string[];
+const ALLOWED_CONTENT_TYPES = DATAROOM_ALLOWED_CONTENT_TYPES as readonly string[];
+
 export function validateDataRoomFilePolicy(params: {
   fileName: string;
   contentType?: string | null;
@@ -25,14 +28,14 @@ export function validateDataRoomFilePolicy(params: {
   const ct = String(params.contentType || '').toLowerCase();
   const size = typeof params.sizeBytes === 'number' ? params.sizeBytes : null;
 
-  if (!DATAROOM_ALLOWED_EXTENSIONS.includes(ext as any)) {
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
     return {
       valid: false,
       error: `Unsupported file extension (${ext || 'unknown'}).`,
     };
   }
 
-  if (ct && !DATAROOM_ALLOWED_CONTENT_TYPES.includes(ct as any)) {
+  if (ct && !ALLOWED_CONTENT_TYPES.includes(ct)) {
     return {
       valid: false,
       error: `Unsupported content type (${ct}).`,

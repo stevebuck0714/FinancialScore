@@ -41,11 +41,11 @@ export type PulseAlertRow = {
   priorityScore: number | null;
   bucket: string | null;
   priorityFocusTerm: string | null;
-  explainability: any;
+  explainability: Record<string, unknown>;
   status: PulseAlertStatus;
   dueAt: Date | null;
   snoozedUntil: Date | null;
-  notes: any;
+  notes: unknown[];
   isActive: boolean;
   resolvedAt: Date | null;
   lastSeenAt: Date | null;

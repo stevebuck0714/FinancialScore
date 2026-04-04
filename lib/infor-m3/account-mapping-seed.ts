@@ -386,7 +386,7 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   }
 
   if (rowsToCreate.length > 0) {
-    await prisma.accountMapping.createMany({ data: rowsToCreate as any });
+    await prisma.accountMapping.createMany({ data: rowsToCreate });
   }
   if (rowsToUpdate.length > 0) {
     await runInChunks(rowsToUpdate, 25, async (row) => {

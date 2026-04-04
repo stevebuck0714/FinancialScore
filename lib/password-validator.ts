@@ -9,7 +9,7 @@
  * - At least one special character
  */
 
-export interface PasswordValidationResult {
+interface PasswordValidationResult {
   isValid: boolean;
   errors: string[];
 }
@@ -41,13 +41,5 @@ export function validatePassword(password: string): PasswordValidationResult {
     isValid: errors.length === 0,
     errors
   };
-}
-
-export function getPasswordRequirementsText(): string {
-  return `Password must be at least 8 characters and include:
-• One uppercase letter (A-Z)
-• One lowercase letter (a-z)
-• One number (0-9)
-• One special character (!@#$%^&*()_+-=[]{};':"\\|,.<>/?)`;
 }
 

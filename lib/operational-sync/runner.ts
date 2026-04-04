@@ -30,6 +30,16 @@ type InforSyncWindow = {
   mode: 'manual';
 };
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function errorMessage(error: unknown, fallback = 'Connection test failed'): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 function parsePositiveInt(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const normalized = Math.floor(value);
@@ -58,7 +68,7 @@ function defaultAutoSyncWindowDays(frequency: SyncFrequency): number {
 
 function readConfiguredAutoSyncWindowDays(metadata: unknown): number | null {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
-  const source = metadata as Record<string, unknown>;
+  const source = asRecord(metadata);
   return parsePositiveInt(source.operationalAutoSyncWindowDays);
 }
 
@@ -167,9 +177,7 @@ export async function runOperationalSyncForConnection(
   if (connection.platform === 'QUICKBOOKS') {
     if (!connection.accessToken) {
       const metadata =
-        connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-          ? (connection.connectionMetadata as Record<string, unknown>)
-          : {};
+        asRecord(connection.connectionMetadata);
       const payload =
         metadata.quickbooksDesktopOperationalPayload && typeof metadata.quickbooksDesktopOperationalPayload === 'object'
           ? (metadata.quickbooksDesktopOperationalPayload as QbDesktopOperationalPayload)
@@ -189,8 +197,8 @@ export async function runOperationalSyncForConnection(
     let isConnected = false;
     try {
       isConnected = await adapter.testConnection();
-    } catch (error: any) {
-      const message = error?.message || 'Connection test failed';
+    } catch (error: unknown) {
+      const message = errorMessage(error, 'Connection test failed');
       return { success: false, recordsCreated: 0, errors: [message] };
     }
     if (!isConnected) {
@@ -207,9 +215,7 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'DYNAMICS365') {
     const metadata =
-      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+      asRecord(connection.connectionMetadata);
     const payload =
       metadata.dynamicsOperationalPayload && typeof metadata.dynamicsOperationalPayload === 'object'
         ? (metadata.dynamicsOperationalPayload as DynamicsOperationalPayload)
@@ -226,9 +232,7 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'ACUMATICA') {
     const metadata =
-      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+      asRecord(connection.connectionMetadata);
     const payload =
       metadata.acumaticaOperationalPayload && typeof metadata.acumaticaOperationalPayload === 'object'
         ? (metadata.acumaticaOperationalPayload as AcumaticaOperationalPayload)
@@ -245,9 +249,7 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'ODOO') {
     const metadata =
-      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+      asRecord(connection.connectionMetadata);
     const payload =
       metadata.odooOperationalPayload && typeof metadata.odooOperationalPayload === 'object'
         ? (metadata.odooOperationalPayload as OdooOperationalPayload)
@@ -264,9 +266,7 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'SAGE_INTACCT') {
     const metadata =
-      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
-        ? (connection.connectionMetadata as Record<string, unknown>)
-        : {};
+      asRecord(connection.connectionMetadata);
     const payload =
       metadata.sageIntacctOperationalPayload && typeof metadata.sageIntacctOperationalPayload === 'object'
         ? (metadata.sageIntacctOperationalPayload as SageIntacctOperationalPayload)

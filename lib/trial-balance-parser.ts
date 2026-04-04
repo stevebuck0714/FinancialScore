@@ -640,20 +640,22 @@ function normalizeMappingTargetField(value: string | undefined): string {
  */
 export function processTrialBalanceToMonthly(
   parsedData: ParsedTrialBalance,
-  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: any }>
-): any[] {
-  const monthlyRecords: any[] = [];
+  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: unknown }>
+): Array<Record<string, unknown>> {
+  const monthlyRecords: Array<Record<string, unknown>> = [];
   
   // Normalize account names for better matching (trim, lowercase, normalize whitespace)
   const normalizeAccountName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
   
-  // Count mappings with LOB allocations for validation
-  const mappingsWithLOB = accountMappings.filter(m => 
-    m.lobAllocations && typeof m.lobAllocations === 'object' && Object.keys(m.lobAllocations).length > 0
-  );
-  
   // Create a mapping lookup with normalized keys for better matching
-  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
+  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: unknown } } = {};
+
+  const addNumericField = (record: Record<string, unknown>, field: string, amount: number): boolean => {
+    const current = record[field];
+    if (typeof current !== 'number') return false;
+    record[field] = current + amount;
+    return true;
+  };
   
   for (const mapping of accountMappings) {
     const normalizedTargetField = normalizeMappingTargetField(mapping.targetField);
@@ -669,8 +671,6 @@ export function processTrialBalanceToMonthly(
     };
   }
   
-  console.log('📋 Mapping lookup keys:', Object.keys(mappingLookup));
-  
   // Process each date column
   for (const dateStr of parsedData.dates) {
     const parsedDate = parseColumnDate(dateStr);
@@ -678,7 +678,7 @@ export function processTrialBalanceToMonthly(
     
     // Initialize monthly record with all fields at 0
     // Must include ALL fields that users can map to in the UI
-    const monthlyRecord: any = {
+    const monthlyRecord: Record<string, unknown> = {
       monthDate: parsedDate.toISOString(), // ISO string for JSON serialization
       date: parsedDate,
       month: parsedDate.toISOString().substring(0, 7), // YYYY-MM format
@@ -765,20 +765,13 @@ export function processTrialBalanceToMonthly(
       if (!mapping) {
         const normalizedName = normalizeAccountName(account.description);
         mapping = mappingLookup[normalizedName];
-        if (mapping) {
-          console.log(`✅ Mapped via normalized key: "${account.description}" → "${normalizedName}" → ${mapping.targetField}`);
-        }
       }
       
       const value = account.values[dateStr] || 0;
 
       if (mapping && mapping.targetField && value !== 0) {
         // Add to mapped target field. Sector-specific rev_/cogs_ mappings roll up to report totals.
-        if (monthlyRecord[mapping.targetField] !== undefined) {
-          monthlyRecord[mapping.targetField] += value;
-          if (mapping.targetField === 'additionalPaidInCapital') {
-            console.log(`💰 Added ${value} to additionalPaidInCapital for ${dateStr}`);
-          }
+        if (addNumericField(monthlyRecord, mapping.targetField, value)) {
         } else if (mapping.targetField.startsWith('rev_')) {
           monthlyRecord.revenue += value;
           sectorRevenueBreakdown[mapping.targetField] = (sectorRevenueBreakdown[mapping.targetField] || 0) + value;
@@ -798,43 +791,38 @@ export function processTrialBalanceToMonthly(
       } else if (!mapping) {
         // Use default mapping based on account type
         const defaultField = ACCOUNT_TYPE_TO_TARGET_FIELD[account.acctType];
-        if (defaultField && monthlyRecord[defaultField] !== undefined) {
-          monthlyRecord[defaultField] += value;
-        }
-      } else if (mapping && value === 0) {
-        // Log when we have a mapping but the value is zero
-        if (mapping.targetField === 'additionalPaidInCapital') {
-          console.log(`⚠️ Skipping "${account.description}" → additionalPaidInCapital because value is 0 for ${dateStr}`);
+        if (defaultField) {
+          addNumericField(monthlyRecord, defaultField, value);
         }
       }
     }
     
     // Calculate totals
     // Keep sector cogs_* as authoritative when they are present.
-    const cogsFromComponents = monthlyRecord.cogsPayroll + monthlyRecord.cogsOwnerPay +
-      monthlyRecord.cogsContractors + monthlyRecord.cogsMaterials +
-      monthlyRecord.cogsCommissions + monthlyRecord.cogsOther;
+    const cogsFromComponents = Number(monthlyRecord.cogsPayroll || 0) + Number(monthlyRecord.cogsOwnerPay || 0) +
+      Number(monthlyRecord.cogsContractors || 0) + Number(monthlyRecord.cogsMaterials || 0) +
+      Number(monthlyRecord.cogsCommissions || 0) + Number(monthlyRecord.cogsOther || 0);
     if (Object.keys(sectorCogsBreakdown).length === 0 && cogsFromComponents > 0) {
       monthlyRecord.cogsTotal = cogsFromComponents;
     }
     
     // Current Assets total
-    monthlyRecord.tca = monthlyRecord.cash + monthlyRecord.ar + monthlyRecord.inventory + monthlyRecord.otherCA;
-    monthlyRecord.totalAssets = monthlyRecord.tca + monthlyRecord.fixedAssets + monthlyRecord.otherAssets;
+    monthlyRecord.tca = Number(monthlyRecord.cash || 0) + Number(monthlyRecord.ar || 0) + Number(monthlyRecord.inventory || 0) + Number(monthlyRecord.otherCA || 0);
+    monthlyRecord.totalAssets = Number(monthlyRecord.tca || 0) + Number(monthlyRecord.fixedAssets || 0) + Number(monthlyRecord.otherAssets || 0);
     
     // Liabilities total
-    monthlyRecord.tcl = monthlyRecord.ap + monthlyRecord.otherCL;
-    monthlyRecord.totalLiab = monthlyRecord.tcl + monthlyRecord.ltd;
+    monthlyRecord.tcl = Number(monthlyRecord.ap || 0) + Number(monthlyRecord.otherCL || 0);
+    monthlyRecord.totalLiab = Number(monthlyRecord.tcl || 0) + Number(monthlyRecord.ltd || 0);
     
     // Equity total (sum of detailed equity fields if not directly mapped)
-    const equityFromComponents = monthlyRecord.ownersCapital + monthlyRecord.commonStock + 
-      monthlyRecord.preferredStock + monthlyRecord.retainedEarnings + 
-      monthlyRecord.additionalPaidInCapital - monthlyRecord.treasuryStock - monthlyRecord.ownersDraw;
-    if (equityFromComponents !== 0 && monthlyRecord.totalEquity === 0) {
+    const equityFromComponents = Number(monthlyRecord.ownersCapital || 0) + Number(monthlyRecord.commonStock || 0) +
+      Number(monthlyRecord.preferredStock || 0) + Number(monthlyRecord.retainedEarnings || 0) +
+      Number(monthlyRecord.additionalPaidInCapital || 0) - Number(monthlyRecord.treasuryStock || 0) - Number(monthlyRecord.ownersDraw || 0);
+    if (equityFromComponents !== 0 && Number(monthlyRecord.totalEquity || 0) === 0) {
       monthlyRecord.totalEquity = equityFromComponents;
     }
     
-    monthlyRecord.totalLAndE = monthlyRecord.totalLiab + monthlyRecord.totalEquity;
+    monthlyRecord.totalLAndE = Number(monthlyRecord.totalLiab || 0) + Number(monthlyRecord.totalEquity || 0);
     
     // Apply LOB allocations if we have account mappings with LOB data
     if (accountValues.length > 0 && accountMappings.length > 0) {
@@ -878,9 +866,9 @@ export function processTrialBalanceToMonthly(
 
 export function processTrialBalanceToDailySnapshotsAndLines(
   parsedData: ParsedTrialBalance,
-  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: any }>
+  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: unknown }>
 ): {
-  dailySnapshots: any[];
+  dailySnapshots: Array<Record<string, unknown>>;
   mappedLines: Array<{
     snapshotDate: string;
     frequency: 'daily';
@@ -891,7 +879,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
     amount: number;
   }>;
 } {
-  const dailySnapshots: any[] = [];
+  const dailySnapshots: Array<Record<string, unknown>> = [];
   const mappedLines: Array<{
     snapshotDate: string;
     frequency: 'daily';
@@ -903,7 +891,14 @@ export function processTrialBalanceToDailySnapshotsAndLines(
   }> = [];
 
   const normalizeAccountName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
-  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: any } } = {};
+  const mappingLookup: { [accountName: string]: { targetField: string; lobAllocations?: unknown } } = {};
+
+  const addNumericField = (record: Record<string, unknown>, field: string, amount: number): boolean => {
+    const current = record[field];
+    if (typeof current !== 'number') return false;
+    record[field] = current + amount;
+    return true;
+  };
 
   for (const mapping of accountMappings) {
     const normalizedTargetField = normalizeMappingTargetField(mapping.targetField);
@@ -917,7 +912,7 @@ export function processTrialBalanceToDailySnapshotsAndLines(
     if (!parsedDate) continue;
     const snapshotDate = parsedDate.toISOString();
 
-    const dailyRecord: any = {
+    const dailyRecord: Record<string, unknown> = {
       snapshotDate,
       frequency: 'daily',
       revenue: 0,
@@ -995,12 +990,11 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       }
       if (!targetField) continue;
 
-      if (dailyRecord[targetField] !== undefined) {
-        dailyRecord[targetField] += value;
+      if (addNumericField(dailyRecord, targetField, value)) {
       } else if (targetField.startsWith('rev_')) {
-        dailyRecord.revenue += value;
+        dailyRecord.revenue = Number(dailyRecord.revenue || 0) + value;
       } else if (targetField.startsWith('cogs_')) {
-        dailyRecord.cogsTotal += value;
+        dailyRecord.cogsTotal = Number(dailyRecord.cogsTotal || 0) + value;
         hasSectorCogsMapping = true;
       }
 
@@ -1015,22 +1009,22 @@ export function processTrialBalanceToDailySnapshotsAndLines(
       });
     }
 
-    const cogsFromComponents = dailyRecord.cogsPayroll + dailyRecord.cogsOwnerPay +
-      dailyRecord.cogsContractors + dailyRecord.cogsMaterials +
-      dailyRecord.cogsCommissions + dailyRecord.cogsOther;
+    const cogsFromComponents = Number(dailyRecord.cogsPayroll || 0) + Number(dailyRecord.cogsOwnerPay || 0) +
+      Number(dailyRecord.cogsContractors || 0) + Number(dailyRecord.cogsMaterials || 0) +
+      Number(dailyRecord.cogsCommissions || 0) + Number(dailyRecord.cogsOther || 0);
     if (!hasSectorCogsMapping && cogsFromComponents > 0) dailyRecord.cogsTotal = cogsFromComponents;
 
-    dailyRecord.tca = dailyRecord.cash + dailyRecord.ar + dailyRecord.inventory + dailyRecord.otherCA;
-    dailyRecord.totalAssets = dailyRecord.tca + dailyRecord.fixedAssets + dailyRecord.otherAssets;
-    dailyRecord.tcl = dailyRecord.ap + dailyRecord.otherCL;
-    dailyRecord.totalLiab = dailyRecord.tcl + dailyRecord.ltd;
-    const equityFromComponents = dailyRecord.ownersCapital + dailyRecord.commonStock +
-      dailyRecord.preferredStock + dailyRecord.retainedEarnings +
-      dailyRecord.additionalPaidInCapital - dailyRecord.treasuryStock - dailyRecord.ownersDraw;
-    if (equityFromComponents !== 0 && dailyRecord.totalEquity === 0) {
+    dailyRecord.tca = Number(dailyRecord.cash || 0) + Number(dailyRecord.ar || 0) + Number(dailyRecord.inventory || 0) + Number(dailyRecord.otherCA || 0);
+    dailyRecord.totalAssets = Number(dailyRecord.tca || 0) + Number(dailyRecord.fixedAssets || 0) + Number(dailyRecord.otherAssets || 0);
+    dailyRecord.tcl = Number(dailyRecord.ap || 0) + Number(dailyRecord.otherCL || 0);
+    dailyRecord.totalLiab = Number(dailyRecord.tcl || 0) + Number(dailyRecord.ltd || 0);
+    const equityFromComponents = Number(dailyRecord.ownersCapital || 0) + Number(dailyRecord.commonStock || 0) +
+      Number(dailyRecord.preferredStock || 0) + Number(dailyRecord.retainedEarnings || 0) +
+      Number(dailyRecord.additionalPaidInCapital || 0) - Number(dailyRecord.treasuryStock || 0) - Number(dailyRecord.ownersDraw || 0);
+    if (equityFromComponents !== 0 && Number(dailyRecord.totalEquity || 0) === 0) {
       dailyRecord.totalEquity = equityFromComponents;
     }
-    dailyRecord.totalLAndE = dailyRecord.totalLiab + dailyRecord.totalEquity;
+    dailyRecord.totalLAndE = Number(dailyRecord.totalLiab || 0) + Number(dailyRecord.totalEquity || 0);
 
     dailySnapshots.push(dailyRecord);
   }

@@ -50,6 +50,10 @@ export class XeroAdapter implements AccountingAdapter {
       token_type: 'Bearer',
     });
   }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error && error.message ? error.message : 'Unknown error';
+  }
   
   /**
    * Test if the connection is valid
@@ -407,8 +411,8 @@ export class XeroAdapter implements AccountingAdapter {
           recordsCreated++;
           moduleCounts.cash++;
         }
-      } catch (error: any) {
-        errors.push(`Cash sync failed: ${error.message}`);
+      } catch (error: unknown) {
+        errors.push(`Cash sync failed: ${this.errorMessage(error)}`);
       }
       
       // 2. Sync AR Aging
@@ -444,8 +448,8 @@ export class XeroAdapter implements AccountingAdapter {
         });
         recordsCreated++;
         moduleCounts.arAging++;
-      } catch (error: any) {
-        errors.push(`AR Aging sync failed: ${error.message}`);
+      } catch (error: unknown) {
+        errors.push(`AR Aging sync failed: ${this.errorMessage(error)}`);
       }
       
       // 3. Sync AP Aging
@@ -481,8 +485,8 @@ export class XeroAdapter implements AccountingAdapter {
         });
         recordsCreated++;
         moduleCounts.apAging++;
-      } catch (error: any) {
-        errors.push(`AP Aging sync failed: ${error.message}`);
+      } catch (error: unknown) {
+        errors.push(`AP Aging sync failed: ${this.errorMessage(error)}`);
       }
       
       // 4. Sync Customer Sales (yesterday's data)
@@ -507,8 +511,8 @@ export class XeroAdapter implements AccountingAdapter {
           recordsCreated++;
           moduleCounts.customers++;
         }
-      } catch (error: any) {
-        errors.push(`Customer sales sync failed: ${error.message}`);
+      } catch (error: unknown) {
+        errors.push(`Customer sales sync failed: ${this.errorMessage(error)}`);
       }
       
       // 5. Sync Product Sales (yesterday's data)
@@ -536,8 +540,8 @@ export class XeroAdapter implements AccountingAdapter {
           recordsCreated++;
           moduleCounts.products++;
         }
-      } catch (error: any) {
-        errors.push(`Product sales sync failed: ${error.message}`);
+      } catch (error: unknown) {
+        errors.push(`Product sales sync failed: ${this.errorMessage(error)}`);
       }
       
       // 6. Sync Inventory
@@ -560,8 +564,8 @@ export class XeroAdapter implements AccountingAdapter {
           recordsCreated++;
           moduleCounts.inventory++;
         }
-      } catch (error: any) {
-        errors.push(`Inventory sync failed: ${error.message}`);
+      } catch (error: unknown) {
+        errors.push(`Inventory sync failed: ${this.errorMessage(error)}`);
       }
       
       return {
@@ -571,12 +575,12 @@ export class XeroAdapter implements AccountingAdapter {
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date()
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
         recordsCreated,
         moduleCounts,
-        errors: [error.message],
+        errors: [this.errorMessage(error)],
         timestamp: new Date()
       };
     }
@@ -585,13 +589,16 @@ export class XeroAdapter implements AccountingAdapter {
   /**
    * Helper to parse aging report rows recursively
    */
-  private parseAgingRows(rows: any[], callback: (cells: any[]) => void): void {
+  private parseAgingRows(rows: Array<{ rowType?: string; cells?: unknown[]; rows?: unknown[] }>, callback: (cells: unknown[]) => void): void {
     rows.forEach((row) => {
       if (row.rowType === 'Row' && row.cells) {
         callback(row.cells);
       }
-      if (row.rows) {
-        this.parseAgingRows(row.rows, callback);
+      if (Array.isArray(row.rows)) {
+        this.parseAgingRows(
+          row.rows.filter((child) => child && typeof child === 'object') as Array<{ rowType?: string; cells?: unknown[]; rows?: unknown[] }>,
+          callback
+        );
       }
     });
   }

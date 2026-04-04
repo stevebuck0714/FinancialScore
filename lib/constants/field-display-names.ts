@@ -125,14 +125,3 @@ export function getFieldDisplayName(fieldName: string): string {
   return fieldName;
 }
 
-/**
- * Get display names for multiple fields.
- */
-export function getFieldDisplayNames(fieldNames: string[]): Record<string, string> {
-  const result: Record<string, string> = {};
-  fieldNames.forEach(field => {
-    result[field] = getFieldDisplayName(field);
-  });
-  return result;
-}
-

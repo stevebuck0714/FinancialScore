@@ -10,6 +10,7 @@ import {
   SyncResult
 } from './types';
 import prisma from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import OAuthClient from 'intuit-oauth';
 import { encryptOAuthToken } from '@/lib/encryption';
 
@@ -31,6 +32,52 @@ export class QuickBooksAdapter implements AccountingAdapter {
     // QuickBooks sandbox vs production
     this.baseUrl = process.env.QUICKBOOKS_API_BASE_URL || 
                    'https://quickbooks.api.intuit.com/v3/company';
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error && error.message ? error.message : String(error || 'Unknown error');
+  }
+
+  private getAPOpenBillSnapshotDelegate(): {
+    deleteMany: (args: { where: unknown }) => Promise<unknown>;
+    createMany: (args: { data: unknown }) => Promise<unknown>;
+    count: (args: { where: unknown }) => Promise<number>;
+  } {
+    const delegate = this.asRecord(prisma).aPOpenBillSnapshot;
+    const delegateRecord = this.asRecord(delegate);
+    if (
+      typeof delegateRecord.deleteMany !== 'function' ||
+      typeof delegateRecord.createMany !== 'function' ||
+      typeof delegateRecord.count !== 'function'
+    ) {
+      throw new Error('Prisma aPOpenBillSnapshot delegate is unavailable.');
+    }
+    return delegate as {
+      deleteMany: (args: { where: unknown }) => Promise<unknown>;
+      createMany: (args: { data: unknown }) => Promise<unknown>;
+      count: (args: { where: unknown }) => Promise<number>;
+    };
+  }
+
+  private getAPPaymentFactDelegate(): {
+    deleteMany: (args: { where: unknown }) => Promise<unknown>;
+    createMany: (args: { data: unknown }) => Promise<unknown>;
+  } {
+    const delegate = this.asRecord(prisma).aPPaymentFact;
+    const delegateRecord = this.asRecord(delegate);
+    if (typeof delegateRecord.deleteMany !== 'function' || typeof delegateRecord.createMany !== 'function') {
+      throw new Error('Prisma aPPaymentFact delegate is unavailable.');
+    }
+    return delegate as {
+      deleteMany: (args: { where: unknown }) => Promise<unknown>;
+      createMany: (args: { data: unknown }) => Promise<unknown>;
+    };
   }
 
   private parseRetryAfterMs(value: string | null): number | null {
@@ -74,7 +121,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
         process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:3000/api/quickbooks/callback',
     });
 
-    (oauthClient as any).token = {
+    (
+      oauthClient as OAuthClient & {
+        token?: { access_token: string; refresh_token: string; token_type: string; expires_in: number };
+      }
+    ).token = {
       access_token: this.config.accessToken,
       refresh_token: this.config.refreshToken,
       token_type: 'bearer',
@@ -102,15 +153,15 @@ export class QuickBooksAdapter implements AccountingAdapter {
           errorMessage: null,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       await prisma.accountingConnection.update({
         where: { id: this.config.connectionId },
         data: {
           status: 'EXPIRED',
-          errorMessage: `Token refresh failed: ${error?.message || 'Unknown error'}`.slice(0, 900),
+          errorMessage: `Token refresh failed: ${this.errorMessage(error)}`.slice(0, 900),
         },
       });
-      throw new Error(`QuickBooks token refresh failed: ${error?.message || 'Unknown error'}`);
+      throw new Error(`QuickBooks token refresh failed: ${this.errorMessage(error)}`);
     }
   }
   
@@ -128,8 +179,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
     try {
       await this.makeRequest(`/companyinfo/${this.config.realmId}?minorversion=65`);
       return true;
-    } catch (error: any) {
-      const message = error?.message || 'Unknown QuickBooks connection error';
+    } catch (error: unknown) {
+      const message = this.errorMessage(error) || 'Unknown QuickBooks connection error';
       console.error('QuickBooks connection test failed:', message);
       throw new Error(`QuickBooks connection test failed: ${message}`);
     }
@@ -147,14 +198,18 @@ export class QuickBooksAdapter implements AccountingAdapter {
       
       const accounts = data.QueryResponse?.Account || [];
       
-      return accounts.map((account: any) => ({
-        accountId: account.Id,
-        accountName: account.Name,
-        accountNumber: account.AcctNum,
-        balance: account.CurrentBalance || 0,
-        currency: account.CurrencyRef?.value || 'USD',
+      return accounts.map((account: unknown) => {
+        const accountRecord = this.asRecord(account);
+        const currencyRef = this.asRecord(accountRecord.CurrencyRef);
+        return ({
+        accountId: String(accountRecord.Id || ''),
+        accountName: String(accountRecord.Name || ''),
+        accountNumber: typeof accountRecord.AcctNum === 'string' ? accountRecord.AcctNum : undefined,
+        balance: Number(accountRecord.CurrentBalance || 0),
+        currency: typeof currencyRef.value === 'string' ? currencyRef.value : 'USD',
         asOfDate: new Date()
-      }));
+      });
+      });
     } catch (error) {
       console.error('Error fetching cash balances from QuickBooks:', error);
       throw error;
@@ -190,10 +245,10 @@ export class QuickBooksAdapter implements AccountingAdapter {
     if (!programs.length) return true;
 
     const normalizedTarget = dataDomain.trim().toLowerCase();
-    const match = programs.find((entry: any) => {
-      const entryDomain = String(entry?.dataDomain || '').trim().toLowerCase();
+    const match = programs.find((entry: unknown) => {
+      const entryDomain = String(this.asRecord(entry).dataDomain || '').trim().toLowerCase();
       return entryDomain === normalizedTarget;
-    }) as any;
+    }) as Record<string, unknown> | undefined;
 
     if (!match) return true;
     return match.enabled !== false;
@@ -242,14 +297,14 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
-  private extractNumericColumns(colData: any[]): number[] {
+  private extractNumericColumns(colData: unknown[]): number[] {
     if (!Array.isArray(colData)) return [];
     return colData
-      .map((col: any) => this.parseOptionalMoney(col?.value))
+      .map((col: unknown) => this.parseOptionalMoney(this.asRecord(col).value))
       .filter((value): value is number => value !== null);
   }
 
-  private parseAgingBucketsFromColData(colData: any[]): {
+  private parseAgingBucketsFromColData(colData: unknown[]): {
     current: number;
     days1to30: number;
     days31to60: number;
@@ -273,7 +328,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return { current, days1to30, days31to60, days61to90, days90plus, total };
   }
 
-  private extractAgingTotals(rows: any[]): {
+  private extractAgingTotals(rows: unknown[]): {
     total: number;
     current: number;
     days1to30: number;
@@ -299,12 +354,12 @@ export class QuickBooksAdapter implements AccountingAdapter {
       days90plus: number;
     }> = [];
 
-    const walk = (inputRows: any[]) => {
+    const walk = (inputRows: unknown[]) => {
       for (const row of inputRows || []) {
-        if (!row || typeof row !== 'object') continue;
+        const rowRecord = this.asRecord(row);
 
-        if (Array.isArray(row.ColData) && row.type === 'Data') {
-          const parsed = this.parseAgingBucketsFromColData(row.ColData);
+        if (Array.isArray(rowRecord.ColData) && rowRecord.type === 'Data') {
+          const parsed = this.parseAgingBucketsFromColData(rowRecord.ColData as unknown[]);
           if (parsed) {
             hasDataRows = true;
             summedFromData.total += parsed.total;
@@ -316,8 +371,9 @@ export class QuickBooksAdapter implements AccountingAdapter {
           }
         }
 
-        if (Array.isArray(row.Summary?.ColData)) {
-          const summaryParsed = this.parseAgingBucketsFromColData(row.Summary.ColData);
+        const summary = this.asRecord(rowRecord.Summary);
+        if (Array.isArray(summary.ColData)) {
+          const summaryParsed = this.parseAgingBucketsFromColData(summary.ColData as unknown[]);
           if (summaryParsed) {
             summaryCandidates.push({
               total: summaryParsed.total,
@@ -330,7 +386,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
           }
         }
 
-        const nestedRows = Array.isArray(row.Rows?.Row) ? row.Rows.Row : [];
+        const nestedRowsSource = this.asRecord(rowRecord.Rows).Row;
+        const nestedRows = Array.isArray(nestedRowsSource) ? nestedRowsSource : [];
         if (nestedRows.length) walk(nestedRows);
       }
     };
@@ -373,25 +430,26 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return null;
   }
 
-  private extractColumnDate(column: any): Date | null {
-    if (!column || typeof column !== 'object') return null;
+  private extractColumnDate(column: unknown): Date | null {
+    const columnRecord = this.asRecord(column);
 
     const directCandidates: string[] = [];
-    if (typeof column.ColTitle === 'string') directCandidates.push(column.ColTitle);
-    if (typeof column.value === 'string') directCandidates.push(column.value);
+    if (typeof columnRecord.ColTitle === 'string') directCandidates.push(columnRecord.ColTitle);
+    if (typeof columnRecord.value === 'string') directCandidates.push(columnRecord.value);
 
-    const meta = column.MetaData;
+    const meta = columnRecord.MetaData;
     if (Array.isArray(meta)) {
       for (const entry of meta) {
-        if (entry && typeof entry === 'object') {
-          if (typeof (entry as any).value === 'string') directCandidates.push((entry as any).value);
-          if (typeof (entry as any).Name === 'string') directCandidates.push((entry as any).Name);
+        const entryRecord = this.asRecord(entry);
+        if (Object.keys(entryRecord).length > 0) {
+          if (typeof entryRecord.value === 'string') directCandidates.push(entryRecord.value);
+          if (typeof entryRecord.Name === 'string') directCandidates.push(entryRecord.Name);
         } else if (typeof entry === 'string') {
           directCandidates.push(entry);
         }
       }
-    } else if (meta && typeof meta === 'object' && typeof (meta as any).value === 'string') {
-      directCandidates.push((meta as any).value);
+    } else if (typeof this.asRecord(meta).value === 'string') {
+      directCandidates.push(this.asRecord(meta).value as string);
     }
 
     for (const candidate of directCandidates) {
@@ -399,7 +457,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       if (parsed) return parsed;
     }
 
-    const json = JSON.stringify(column);
+    const json = JSON.stringify(columnRecord);
     const isoMatch = json.match(/\b\d{4}-\d{2}-\d{2}\b/);
     if (isoMatch?.[0]) {
       const parsedIso = this.tryParseDateString(isoMatch[0]);
@@ -484,7 +542,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       );
       const report = await response.json();
 
-      const columns: any[] = Array.isArray(report?.Columns?.Column) ? report.Columns.Column : [];
+      const columns: unknown[] = Array.isArray(report?.Columns?.Column) ? report.Columns.Column : [];
       const dateColumns = columns
         .map((column, index) => ({ column, index }))
         .filter((entry) => entry.index > 0)
@@ -496,7 +554,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
         .filter((entry): entry is { index: number; date: Date } => Boolean(entry));
 
       const rows = Array.isArray(report?.Rows?.Row) ? report.Rows.Row : [];
-      const stack: any[] = [...rows];
+      const stack: unknown[] = [...rows];
       while (stack.length) {
         const row = stack.pop();
         if (!row || typeof row !== 'object') continue;
@@ -632,10 +690,12 @@ export class QuickBooksAdapter implements AccountingAdapter {
       // Group by customer
       const customerMap = new Map<string, CustomerSalesData>();
       
-      salesDocuments.forEach((saleDoc: any) => {
-        const customerId = saleDoc.CustomerRef?.value;
-        const customerName = saleDoc.CustomerRef?.name || 'Unknown';
-        const amount = saleDoc.TotalAmt || 0;
+      salesDocuments.forEach((saleDoc: unknown) => {
+        const saleDocRecord = this.asRecord(saleDoc);
+        const customerRef = this.asRecord(saleDocRecord.CustomerRef);
+        const customerId = String(customerRef.value || 'unknown');
+        const customerName = String(customerRef.name || 'Unknown');
+        const amount = Number(saleDocRecord.TotalAmt || 0);
         
         if (!customerMap.has(customerId)) {
           customerMap.set(customerId, {
@@ -733,18 +793,19 @@ export class QuickBooksAdapter implements AccountingAdapter {
     return results;
   }
 
-  private extractQueryRows(responseJson: any, entity: string): any[] {
-    const queryResponse = responseJson?.QueryResponse;
+  private extractQueryRows(responseJson: unknown, entity: string): unknown[] {
+    const queryResponse = this.asRecord(responseJson).QueryResponse;
     if (!queryResponse || typeof queryResponse !== 'object') return [];
-    const direct = queryResponse[entity];
+    const queryRecord = this.asRecord(queryResponse);
+    const direct = queryRecord[entity];
     if (Array.isArray(direct)) return direct;
     if (direct && typeof direct === 'object') return [direct];
-    const firstArray = Object.values(queryResponse).find((value) => Array.isArray(value));
+    const firstArray = Object.values(queryRecord).find((value) => Array.isArray(value));
     return Array.isArray(firstArray) ? firstArray : [];
   }
 
-  private async runPagedEntityQuery(entity: string, whereClause: string): Promise<any[]> {
-    const allRows: any[] = [];
+  private async runPagedEntityQuery(entity: string, whereClause: string): Promise<unknown[]> {
+    const allRows: unknown[] = [];
     const pageSize = 1000;
     let startPosition = 1;
 
@@ -788,29 +849,32 @@ export class QuickBooksAdapter implements AccountingAdapter {
     const startStr = this.formatDate(startDate);
     const endStr = this.formatDate(asOfDate);
     const invoices = await this.runPagedEntityQuery('Invoice', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`);
-    const openInvoices = invoices.filter((invoice: any) => Number(invoice?.Balance || 0) > 0);
+    const openInvoices = invoices.filter((invoice: unknown) => Number(this.asRecord(invoice).Balance || 0) > 0);
 
     await prisma.aROpenInvoiceSnapshot.deleteMany({
       where: { companyId: this.config.companyId, frequency, snapshotDate: asOfDate },
     });
 
-    const openRows = openInvoices.map((invoice: any, index: number) => {
-      const amountDueHome = Number(invoice?.Balance || 0);
-      const dueDate = this.tryParseDateString(String(invoice?.DueDate || invoice?.TxnDate || ''));
+    const openRows = openInvoices.map((invoice: unknown, index: number) => {
+      const invoiceRecord = this.asRecord(invoice);
+      const customerRef = this.asRecord(invoiceRecord.CustomerRef);
+      const currencyRef = this.asRecord(invoiceRecord.CurrencyRef);
+      const amountDueHome = Number(invoiceRecord.Balance || 0);
+      const dueDate = this.tryParseDateString(String(invoiceRecord.DueDate || invoiceRecord.TxnDate || ''));
       const buckets = this.computeAgingBuckets(amountDueHome, dueDate, asOfDate);
       return {
         companyId: this.config.companyId,
         snapshotDate: asOfDate,
         frequency,
-        customerId: invoice?.CustomerRef?.value ? String(invoice.CustomerRef.value) : null,
-        customerName: invoice?.CustomerRef?.name ? String(invoice.CustomerRef.name) : `Unknown Customer ${index + 1}`,
-        invoiceNo: String(invoice?.DocNumber || invoice?.Id || `INV-${index + 1}`),
-        invoiceDate: this.tryParseDateString(String(invoice?.TxnDate || '')),
+        customerId: customerRef.value ? String(customerRef.value) : null,
+        customerName: customerRef.name ? String(customerRef.name) : `Unknown Customer ${index + 1}`,
+        invoiceNo: String(invoiceRecord.DocNumber || invoiceRecord.Id || `INV-${index + 1}`),
+        invoiceDate: this.tryParseDateString(String(invoiceRecord.TxnDate || '')),
         dueDate,
         status: amountDueHome > 0 ? 'OPEN' : 'CLOSED',
-        currencyCode: invoice?.CurrencyRef?.value ? String(invoice.CurrencyRef.value) : null,
-        amountCurrency: Number(invoice?.TotalAmt || amountDueHome || 0),
-        amountHome: Number(invoice?.TotalAmt || amountDueHome || 0),
+        currencyCode: currencyRef.value ? String(currencyRef.value) : null,
+        amountCurrency: Number(invoiceRecord.TotalAmt || amountDueHome || 0),
+        amountHome: Number(invoiceRecord.TotalAmt || amountDueHome || 0),
         amountDueHome,
         current: buckets.current,
         days1to30: buckets.days1to30,
@@ -844,22 +908,29 @@ export class QuickBooksAdapter implements AccountingAdapter {
       where: { companyId: this.config.companyId, paymentDate: { gte: startDate, lte: asOfDate } },
     });
     const paymentRows = payments
-      .map((payment: any, index: number) => {
-        const paymentDate = this.tryParseDateString(String(payment?.TxnDate || ''));
+      .map((payment: unknown, index: number) => {
+        const paymentRecord = this.asRecord(payment);
+        const customerRef = this.asRecord(paymentRecord.CustomerRef);
+        const currencyRef = this.asRecord(paymentRecord.CurrencyRef);
+        const paymentDate = this.tryParseDateString(String(paymentRecord.TxnDate || ''));
         if (!paymentDate) return null;
-        const linked = Array.isArray(payment?.Line)
-          ? payment.Line.flatMap((line: any) => (Array.isArray(line?.LinkedTxn) ? line.LinkedTxn : []))
+        const linked = Array.isArray(paymentRecord.Line)
+          ? paymentRecord.Line.flatMap((line: unknown) => {
+              const lineRecord = this.asRecord(line);
+              return Array.isArray(lineRecord.LinkedTxn) ? lineRecord.LinkedTxn : [];
+            })
           : [];
-        const linkedInvoice = linked.find((tx: any) => String(tx?.TxnType || '').toLowerCase() === 'invoice');
+        const linkedInvoice = linked.find((tx: unknown) => String(this.asRecord(tx).TxnType || '').toLowerCase() === 'invoice');
+        const linkedInvoiceRecord = linkedInvoice ? this.asRecord(linkedInvoice) : {};
         return {
           companyId: this.config.companyId,
           paymentDate,
-          customerId: payment?.CustomerRef?.value ? String(payment.CustomerRef.value) : null,
-          customerName: payment?.CustomerRef?.name ? String(payment.CustomerRef.name) : `Unknown Customer ${index + 1}`,
-          invoiceNo: linkedInvoice?.TxnId ? String(linkedInvoice.TxnId) : null,
-          currencyCode: payment?.CurrencyRef?.value ? String(payment.CurrencyRef.value) : null,
-          paidAmountCurrency: Number(payment?.TotalAmt || 0),
-          paidAmountHome: Number(payment?.TotalAmt || 0),
+          customerId: customerRef.value ? String(customerRef.value) : null,
+          customerName: customerRef.name ? String(customerRef.name) : `Unknown Customer ${index + 1}`,
+          invoiceNo: linkedInvoiceRecord.TxnId ? String(linkedInvoiceRecord.TxnId) : null,
+          currencyCode: currencyRef.value ? String(currencyRef.value) : null,
+          paidAmountCurrency: Number(paymentRecord.TotalAmt || 0),
+          paidAmountHome: Number(paymentRecord.TotalAmt || 0),
           sourcePlatform: 'QUICKBOOKS',
           sourceProgram: 'QBO_QUERY',
           sourceTransaction: 'RECEIVE_PAYMENT',
@@ -872,22 +943,29 @@ export class QuickBooksAdapter implements AccountingAdapter {
       await prisma.aRPaymentFact.createMany({ data: paymentRows });
     }
     const creditMemoRows = creditMemos
-      .map((creditMemo: any, index: number) => {
-        const paymentDate = this.tryParseDateString(String(creditMemo?.TxnDate || ''));
+      .map((creditMemo: unknown, index: number) => {
+        const creditMemoRecord = this.asRecord(creditMemo);
+        const customerRef = this.asRecord(creditMemoRecord.CustomerRef);
+        const currencyRef = this.asRecord(creditMemoRecord.CurrencyRef);
+        const paymentDate = this.tryParseDateString(String(creditMemoRecord.TxnDate || ''));
         if (!paymentDate) return null;
-        const linked = Array.isArray(creditMemo?.Line)
-          ? creditMemo.Line.flatMap((line: any) => (Array.isArray(line?.LinkedTxn) ? line.LinkedTxn : []))
+        const linked = Array.isArray(creditMemoRecord.Line)
+          ? creditMemoRecord.Line.flatMap((line: unknown) => {
+              const lineRecord = this.asRecord(line);
+              return Array.isArray(lineRecord.LinkedTxn) ? lineRecord.LinkedTxn : [];
+            })
           : [];
-        const linkedInvoice = linked.find((tx: any) => String(tx?.TxnType || '').toLowerCase() === 'invoice');
+        const linkedInvoice = linked.find((tx: unknown) => String(this.asRecord(tx).TxnType || '').toLowerCase() === 'invoice');
+        const linkedInvoiceRecord = linkedInvoice ? this.asRecord(linkedInvoice) : {};
         return {
           companyId: this.config.companyId,
           paymentDate,
-          customerId: creditMemo?.CustomerRef?.value ? String(creditMemo.CustomerRef.value) : null,
-          customerName: creditMemo?.CustomerRef?.name ? String(creditMemo.CustomerRef.name) : `Unknown Customer ${index + 1}`,
-          invoiceNo: linkedInvoice?.TxnId ? String(linkedInvoice.TxnId) : null,
-          currencyCode: creditMemo?.CurrencyRef?.value ? String(creditMemo.CurrencyRef.value) : null,
-          paidAmountCurrency: Number(creditMemo?.TotalAmt || 0),
-          paidAmountHome: Number(creditMemo?.TotalAmt || 0),
+          customerId: customerRef.value ? String(customerRef.value) : null,
+          customerName: customerRef.name ? String(customerRef.name) : `Unknown Customer ${index + 1}`,
+          invoiceNo: linkedInvoiceRecord.TxnId ? String(linkedInvoiceRecord.TxnId) : null,
+          currencyCode: currencyRef.value ? String(currencyRef.value) : null,
+          paidAmountCurrency: Number(creditMemoRecord.TotalAmt || 0),
+          paidAmountHome: Number(creditMemoRecord.TotalAmt || 0),
           sourcePlatform: 'QUICKBOOKS',
           sourceProgram: 'QBO_QUERY',
           sourceTransaction: 'CREDIT_MEMO',
@@ -900,18 +978,21 @@ export class QuickBooksAdapter implements AccountingAdapter {
       await prisma.aRPaymentFact.createMany({ data: creditMemoRows });
     }
     const refundRows = refundReceipts
-      .map((refund: any, index: number) => {
-        const paymentDate = this.tryParseDateString(String(refund?.TxnDate || ''));
+      .map((refund: unknown, index: number) => {
+        const refundRecord = this.asRecord(refund);
+        const customerRef = this.asRecord(refundRecord.CustomerRef);
+        const currencyRef = this.asRecord(refundRecord.CurrencyRef);
+        const paymentDate = this.tryParseDateString(String(refundRecord.TxnDate || ''));
         if (!paymentDate) return null;
         return {
           companyId: this.config.companyId,
           paymentDate,
-          customerId: refund?.CustomerRef?.value ? String(refund.CustomerRef.value) : null,
-          customerName: refund?.CustomerRef?.name ? String(refund.CustomerRef.name) : `Unknown Customer ${index + 1}`,
+          customerId: customerRef.value ? String(customerRef.value) : null,
+          customerName: customerRef.name ? String(customerRef.name) : `Unknown Customer ${index + 1}`,
           invoiceNo: null,
-          currencyCode: refund?.CurrencyRef?.value ? String(refund.CurrencyRef.value) : null,
-          paidAmountCurrency: Number(refund?.TotalAmt || 0),
-          paidAmountHome: Number(refund?.TotalAmt || 0),
+          currencyCode: currencyRef.value ? String(currencyRef.value) : null,
+          paidAmountCurrency: Number(refundRecord.TotalAmt || 0),
+          paidAmountHome: Number(refundRecord.TotalAmt || 0),
           sourcePlatform: 'QUICKBOOKS',
           sourceProgram: 'QBO_QUERY',
           sourceTransaction: 'REFUND_RECEIPT',
@@ -933,33 +1014,38 @@ export class QuickBooksAdapter implements AccountingAdapter {
     frequency: 'daily' | 'weekly' | 'monthly',
     options?: { includePayments?: boolean }
   ): Promise<number> {
+    const apOpenBillSnapshot = this.getAPOpenBillSnapshotDelegate();
+    const apPaymentFact = this.getAPPaymentFactDelegate();
     const includePayments = options?.includePayments !== false;
     const startStr = this.formatDate(startDate);
     const endStr = this.formatDate(asOfDate);
     const bills = await this.runPagedEntityQuery('Bill', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`);
-    const openBills = bills.filter((bill: any) => Number(bill?.Balance || 0) > 0);
+    const openBills = bills.filter((bill: unknown) => Number(this.asRecord(bill).Balance || 0) > 0);
 
-    await (prisma as any).aPOpenBillSnapshot.deleteMany({
+    await apOpenBillSnapshot.deleteMany({
       where: { companyId: this.config.companyId, frequency, snapshotDate: asOfDate },
     });
 
-    const openRows = openBills.map((bill: any, index: number) => {
-      const amountDueHome = Number(bill?.Balance || 0);
-      const dueDate = this.tryParseDateString(String(bill?.DueDate || bill?.TxnDate || ''));
+    const openRows = openBills.map((bill: unknown, index: number) => {
+      const billRecord = this.asRecord(bill);
+      const vendorRef = this.asRecord(billRecord.VendorRef);
+      const currencyRef = this.asRecord(billRecord.CurrencyRef);
+      const amountDueHome = Number(billRecord.Balance || 0);
+      const dueDate = this.tryParseDateString(String(billRecord.DueDate || billRecord.TxnDate || ''));
       const buckets = this.computeAgingBuckets(amountDueHome, dueDate, asOfDate);
       return {
         companyId: this.config.companyId,
         snapshotDate: asOfDate,
         frequency,
-        vendorId: bill?.VendorRef?.value ? String(bill.VendorRef.value) : null,
-        vendorName: bill?.VendorRef?.name ? String(bill.VendorRef.name) : `Unknown Vendor ${index + 1}`,
-        billNo: String(bill?.DocNumber || bill?.Id || `BILL-${index + 1}`),
-        billDate: this.tryParseDateString(String(bill?.TxnDate || '')),
+        vendorId: vendorRef.value ? String(vendorRef.value) : null,
+        vendorName: vendorRef.name ? String(vendorRef.name) : `Unknown Vendor ${index + 1}`,
+        billNo: String(billRecord.DocNumber || billRecord.Id || `BILL-${index + 1}`),
+        billDate: this.tryParseDateString(String(billRecord.TxnDate || '')),
         dueDate,
         status: amountDueHome > 0 ? 'OPEN' : 'CLOSED',
-        currencyCode: bill?.CurrencyRef?.value ? String(bill.CurrencyRef.value) : null,
-        amountCurrency: Number(bill?.TotalAmt || amountDueHome || 0),
-        amountHome: Number(bill?.TotalAmt || amountDueHome || 0),
+        currencyCode: currencyRef.value ? String(currencyRef.value) : null,
+        amountCurrency: Number(billRecord.TotalAmt || amountDueHome || 0),
+        amountHome: Number(billRecord.TotalAmt || amountDueHome || 0),
         amountDueHome,
         current: buckets.current,
         days1to30: buckets.days1to30,
@@ -974,11 +1060,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
       };
     });
     if (openRows.length) {
-      await (prisma as any).aPOpenBillSnapshot.createMany({ data: openRows });
+      await apOpenBillSnapshot.createMany({ data: openRows });
     }
 
     if (!includePayments) {
-      await (prisma as any).aPPaymentFact.deleteMany({
+      await apPaymentFact.deleteMany({
         where: { companyId: this.config.companyId, paymentDate: { gte: startDate, lte: asOfDate } },
       });
       return openRows.length;
@@ -988,27 +1074,33 @@ export class QuickBooksAdapter implements AccountingAdapter {
       this.runPagedEntityQuery('BillPayment', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`),
       this.runPagedEntityQuery('VendorCredit', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`),
     ]);
-    await (prisma as any).aPPaymentFact.deleteMany({
+    await apPaymentFact.deleteMany({
       where: { companyId: this.config.companyId, paymentDate: { gte: startDate, lte: asOfDate } },
     });
     const paymentRows = billPayments
-      .map((payment: any, index: number) => {
-        const paymentDate = this.tryParseDateString(String(payment?.TxnDate || ''));
+      .map((payment: unknown, index: number) => {
+        const paymentRecord = this.asRecord(payment);
+        const currencyRef = this.asRecord(paymentRecord.CurrencyRef);
+        const paymentDate = this.tryParseDateString(String(paymentRecord.TxnDate || ''));
         if (!paymentDate) return null;
-        const linked = Array.isArray(payment?.Line)
-          ? payment.Line.flatMap((line: any) => (Array.isArray(line?.LinkedTxn) ? line.LinkedTxn : []))
+        const linked = Array.isArray(paymentRecord.Line)
+          ? paymentRecord.Line.flatMap((line: unknown) => {
+              const lineRecord = this.asRecord(line);
+              return Array.isArray(lineRecord.LinkedTxn) ? lineRecord.LinkedTxn : [];
+            })
           : [];
-        const linkedBill = linked.find((tx: any) => String(tx?.TxnType || '').toLowerCase() === 'bill');
-        const vendorRef = payment?.VendorRef || payment?.PayeeRef;
+        const linkedBill = linked.find((tx: unknown) => String(this.asRecord(tx).TxnType || '').toLowerCase() === 'bill');
+        const linkedBillRecord = linkedBill ? this.asRecord(linkedBill) : {};
+        const vendorRef = this.asRecord(paymentRecord.VendorRef || paymentRecord.PayeeRef);
         return {
           companyId: this.config.companyId,
           paymentDate,
           vendorId: vendorRef?.value ? String(vendorRef.value) : null,
           vendorName: vendorRef?.name ? String(vendorRef.name) : `Unknown Vendor ${index + 1}`,
-          billNo: linkedBill?.TxnId ? String(linkedBill.TxnId) : null,
-          currencyCode: payment?.CurrencyRef?.value ? String(payment.CurrencyRef.value) : null,
-          paidAmountCurrency: Number(payment?.TotalAmt || 0),
-          paidAmountHome: Number(payment?.TotalAmt || 0),
+          billNo: linkedBillRecord.TxnId ? String(linkedBillRecord.TxnId) : null,
+          currencyCode: currencyRef.value ? String(currencyRef.value) : null,
+          paidAmountCurrency: Number(paymentRecord.TotalAmt || 0),
+          paidAmountHome: Number(paymentRecord.TotalAmt || 0),
           sourcePlatform: 'QUICKBOOKS',
           sourceProgram: 'QBO_QUERY',
           sourceTransaction: 'BILL_PAYMENT',
@@ -1018,25 +1110,32 @@ export class QuickBooksAdapter implements AccountingAdapter {
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row) && Number.isFinite(row.paidAmountHome));
     if (paymentRows.length) {
-      await (prisma as any).aPPaymentFact.createMany({ data: paymentRows });
+      await apPaymentFact.createMany({ data: paymentRows });
     }
     const vendorCreditRows = vendorCredits
-      .map((credit: any, index: number) => {
-        const paymentDate = this.tryParseDateString(String(credit?.TxnDate || ''));
+      .map((credit: unknown, index: number) => {
+        const creditRecord = this.asRecord(credit);
+        const vendorRef = this.asRecord(creditRecord.VendorRef);
+        const currencyRef = this.asRecord(creditRecord.CurrencyRef);
+        const paymentDate = this.tryParseDateString(String(creditRecord.TxnDate || ''));
         if (!paymentDate) return null;
-        const linked = Array.isArray(credit?.Line)
-          ? credit.Line.flatMap((line: any) => (Array.isArray(line?.LinkedTxn) ? line.LinkedTxn : []))
+        const linked = Array.isArray(creditRecord.Line)
+          ? creditRecord.Line.flatMap((line: unknown) => {
+              const lineRecord = this.asRecord(line);
+              return Array.isArray(lineRecord.LinkedTxn) ? lineRecord.LinkedTxn : [];
+            })
           : [];
-        const linkedBill = linked.find((tx: any) => String(tx?.TxnType || '').toLowerCase() === 'bill');
+        const linkedBill = linked.find((tx: unknown) => String(this.asRecord(tx).TxnType || '').toLowerCase() === 'bill');
+        const linkedBillRecord = linkedBill ? this.asRecord(linkedBill) : {};
         return {
           companyId: this.config.companyId,
           paymentDate,
-          vendorId: credit?.VendorRef?.value ? String(credit.VendorRef.value) : null,
-          vendorName: credit?.VendorRef?.name ? String(credit.VendorRef.name) : `Unknown Vendor ${index + 1}`,
-          billNo: linkedBill?.TxnId ? String(linkedBill.TxnId) : null,
-          currencyCode: credit?.CurrencyRef?.value ? String(credit.CurrencyRef.value) : null,
-          paidAmountCurrency: Number(credit?.TotalAmt || 0),
-          paidAmountHome: Number(credit?.TotalAmt || 0),
+          vendorId: vendorRef.value ? String(vendorRef.value) : null,
+          vendorName: vendorRef.name ? String(vendorRef.name) : `Unknown Vendor ${index + 1}`,
+          billNo: linkedBillRecord.TxnId ? String(linkedBillRecord.TxnId) : null,
+          currencyCode: currencyRef.value ? String(currencyRef.value) : null,
+          paidAmountCurrency: Number(creditRecord.TotalAmt || 0),
+          paidAmountHome: Number(creditRecord.TotalAmt || 0),
           sourcePlatform: 'QUICKBOOKS',
           sourceProgram: 'QBO_QUERY',
           sourceTransaction: 'VENDOR_CREDIT',
@@ -1046,7 +1145,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row) && Number.isFinite(row.paidAmountHome));
     if (vendorCreditRows.length) {
-      await (prisma as any).aPPaymentFact.createMany({ data: vendorCreditRows });
+      await apPaymentFact.createMany({ data: vendorCreditRows });
     }
 
     return openRows.length + paymentRows.length + vendorCreditRows.length;
@@ -1069,9 +1168,10 @@ export class QuickBooksAdapter implements AccountingAdapter {
       const rows = data.Rows?.Row || [];
       const products: ProductSalesData[] = [];
       
-      rows.forEach((row: any) => {
-        if (row.type === 'Data' && row.ColData) {
-          const cols = row.ColData;
+      rows.forEach((row: unknown) => {
+        const rowRecord = this.asRecord(row);
+        if (rowRecord.type === 'Data' && Array.isArray(rowRecord.ColData)) {
+          const cols = rowRecord.ColData as Array<Record<string, unknown>>;
           if (cols.length >= 2) {
             const itemName = cols[0]?.value || 'Unknown';
             const revenue = parseFloat(cols[1]?.value || '0');
@@ -1111,15 +1211,20 @@ export class QuickBooksAdapter implements AccountingAdapter {
       
       const items = data.QueryResponse?.Item || [];
       
-      return items.map((item: any) => ({
-        itemId: item.Id,
-        itemName: item.Name,
-        sku: item.Sku,
-        qtyOnHand: item.QtyOnHand || 0,
-        assetValue: (item.QtyOnHand || 0) * (item.PurchaseCost || 0),
-        avgCost: item.PurchaseCost || 0,
+      return items.map((item: unknown) => {
+        const itemRecord = this.asRecord(item);
+        const qtyOnHand = Number(itemRecord.QtyOnHand || 0);
+        const purchaseCost = Number(itemRecord.PurchaseCost || 0);
+        return ({
+        itemId: String(itemRecord.Id || ''),
+        itemName: String(itemRecord.Name || ''),
+        sku: typeof itemRecord.Sku === 'string' ? itemRecord.Sku : undefined,
+        qtyOnHand,
+        assetValue: qtyOnHand * purchaseCost,
+        avgCost: purchaseCost,
         asOfDate: new Date()
-      }));
+      });
+      });
     } catch (error) {
       console.error('Error fetching inventory from QuickBooks:', error);
       throw error;
@@ -1228,8 +1333,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
             moduleCounts.cash++;
           }
         }
-      } catch (error: any) {
-        errors.push(`Cash sync failed: ${error.message}`);
+      } catch (error: unknown) {
+        errors.push(`Cash sync failed: ${this.errorMessage(error)}`);
       }
       
       // 2. Sync AR Aging
@@ -1267,8 +1372,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
           recordsCreated++;
           moduleCounts.arAging++;
           arAgingSaved = true;
-        } catch (error: any) {
-          errors.push(`AR Aging sync failed: ${error.message}`);
+        } catch (error: unknown) {
+          errors.push(`AR Aging sync failed: ${this.errorMessage(error)}`);
         }
       } else {
         await prisma.aRAgingSnapshot.deleteMany({
@@ -1315,8 +1420,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
           recordsCreated++;
           moduleCounts.apAging++;
           apAgingSaved = true;
-        } catch (error: any) {
-          errors.push(`AP Aging sync failed: ${error.message}`);
+        } catch (error: unknown) {
+          errors.push(`AP Aging sync failed: ${this.errorMessage(error)}`);
         }
       } else {
         await prisma.aPAgingSnapshot.deleteMany({
@@ -1343,8 +1448,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
               snapshotDate: asOfDate,
             },
           });
-        } catch (error: any) {
-          errors.push(`AR transaction sync failed: ${error.message}`);
+        } catch (error: unknown) {
+          errors.push(`AR transaction sync failed: ${this.errorMessage(error)}`);
         }
       } else {
         await prisma.aROpenInvoiceSnapshot.deleteMany({
@@ -1368,25 +1473,25 @@ export class QuickBooksAdapter implements AccountingAdapter {
           });
           recordsCreated += apDetailCount;
           moduleCounts.apAging += apDetailCount;
-          apOpenItemRows = await (prisma as any).aPOpenBillSnapshot.count({
+          apOpenItemRows = await this.getAPOpenBillSnapshotDelegate().count({
             where: {
               companyId: this.config.companyId,
               frequency,
               snapshotDate: asOfDate,
             },
           });
-        } catch (error: any) {
-          errors.push(`AP transaction sync failed: ${error.message}`);
+        } catch (error: unknown) {
+          errors.push(`AP transaction sync failed: ${this.errorMessage(error)}`);
         }
       } else {
-        await (prisma as any).aPOpenBillSnapshot.deleteMany({
+        await this.getAPOpenBillSnapshotDelegate().deleteMany({
           where: {
             companyId: this.config.companyId,
             frequency,
             snapshotDate: asOfDate,
           },
         });
-        await (prisma as any).aPPaymentFact.deleteMany({
+        await this.getAPPaymentFactDelegate().deleteMany({
           where: {
             companyId: this.config.companyId,
             paymentDate: { gte: detailsStartDate, lte: asOfDate },
@@ -1399,15 +1504,15 @@ export class QuickBooksAdapter implements AccountingAdapter {
         if (customersEnabled) {
           try {
             customerMasterCount = await this.getEntityMasterCount('Customer');
-          } catch (error: any) {
-            errors.push(`Customer master sync failed: ${error.message}`);
+          } catch (error: unknown) {
+            errors.push(`Customer master sync failed: ${this.errorMessage(error)}`);
           }
         }
         if (vendorsEnabled) {
           try {
             vendorMasterCount = await this.getEntityMasterCount('Vendor');
-          } catch (error: any) {
-            errors.push(`Vendor master sync failed: ${error.message}`);
+          } catch (error: unknown) {
+            errors.push(`Vendor master sync failed: ${this.errorMessage(error)}`);
           }
         }
       }
@@ -1471,8 +1576,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
             moduleCounts.customers += customerSales.length;
           }
         }
-        } catch (error: any) {
-          errors.push(`Customer sales sync failed: ${error.message}`);
+        } catch (error: unknown) {
+          errors.push(`Customer sales sync failed: ${this.errorMessage(error)}`);
         }
       } else {
         await prisma.customerSalesSnapshot.deleteMany({
@@ -1517,11 +1622,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
             recordsCreated += productSales.length;
             moduleCounts.products += productSales.length;
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
           if (this.isOptionalProductSalesError(error)) {
-            console.warn('Skipping product sales sync (optional program or QBO permission):', error?.message || error);
+            console.warn('Skipping product sales sync (optional program or QBO permission):', this.errorMessage(error));
           } else {
-            errors.push(`Product sales sync failed: ${error.message}`);
+            errors.push(`Product sales sync failed: ${this.errorMessage(error)}`);
           }
         }
       } else {
@@ -1555,8 +1660,8 @@ export class QuickBooksAdapter implements AccountingAdapter {
           recordsCreated += inventory.length;
           moduleCounts.inventory += inventory.length;
         }
-      } catch (error: any) {
-        errors.push(`Inventory sync failed: ${error.message}`);
+      } catch (error: unknown) {
+        errors.push(`Inventory sync failed: ${this.errorMessage(error)}`);
       }
 
       if (isMonthly) {
@@ -1600,7 +1705,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
             connectionMetadata: {
               ...existingMetadata,
               quickbooksMonthlyOperationalCoverage: monthlyCoverage,
-            } as any,
+            } as Prisma.InputJsonValue,
           },
         });
       }
@@ -1612,12 +1717,12 @@ export class QuickBooksAdapter implements AccountingAdapter {
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date()
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
         recordsCreated,
         moduleCounts,
-        errors: [error.message],
+        errors: [this.errorMessage(error)],
         timestamp: new Date()
       };
     }
@@ -1672,7 +1777,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
   }
 
   private isOptionalProductSalesError(error: unknown): boolean {
-    const message = String((error as any)?.message || '').toLowerCase();
+    const message = this.errorMessage(error).toLowerCase();
     return (
       message.includes('salesbyproduct') ||
       message.includes('product') ||

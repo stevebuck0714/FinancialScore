@@ -134,13 +134,15 @@ export function getDateRangeForPeriod(
 /**
  * Exports data to CSV format
  */
-export function exportToCSV(data: any[], filename: string): void {
+export function exportToCSV(data: unknown[], filename: string): void {
   if (data.length === 0) return;
-  
-  const headers = Object.keys(data[0]);
+  const rows = data.filter((row) => row && typeof row === 'object') as Array<Record<string, unknown>>;
+  if (rows.length === 0) return;
+
+  const headers = Object.keys(rows[0]);
   const csvContent = [
     headers.join(','),
-    ...data.map(row => 
+    ...rows.map(row =>
       headers.map(header => {
         const value = row[header];
         // Escape commas and quotes in values
@@ -161,13 +163,5 @@ export function exportToCSV(data: any[], filename: string): void {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-}
-
-/**
- * Validates email address
- */
-export function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
 }
 

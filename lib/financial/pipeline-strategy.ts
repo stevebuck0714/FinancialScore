@@ -33,10 +33,6 @@ export function resolveFinancialPipelineLane(accountingSystem: unknown): Financi
   return 'LIGHTWEIGHT_PAYLOAD';
 }
 
-export function isErpLedgerSystem(accountingSystem: unknown): boolean {
-  return resolveFinancialPipelineLane(accountingSystem) === 'ERP_LEDGER';
-}
-
 export function supportsPublishFromDailySnapshots(accountingSystem: unknown): boolean {
   const lane = resolveFinancialPipelineLane(accountingSystem);
   return lane === 'ERP_LEDGER' || lane === 'CSV_TRIAL_BALANCE';

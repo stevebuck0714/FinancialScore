@@ -3,6 +3,34 @@
 
 import { applyLOBAllocations, AccountValue, AccountMapping, CompanyLOB, roundAllBreakdowns, MonthlyLOBData } from './lob-allocator';
 
+type QBColData = { value?: unknown; id?: string };
+type QBRow = {
+  type?: string;
+  Header?: { ColData?: QBColData[] };
+  Summary?: { ColData?: QBColData[] };
+  Rows?: { Row?: QBRow[] } | QBRow[];
+  ColData?: QBColData[];
+};
+type QBReport = { Rows?: { Row?: QBRow[] } | QBRow[]; Columns?: { Column?: Array<{ ColTitle?: string }> } };
+
+function asQBRows(value: unknown): QBRow[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((row) => row && typeof row === 'object') as QBRow[];
+}
+
+function nestedQBRows(row: QBRow): QBRow[] {
+  if (Array.isArray(row.Rows)) return asQBRows(row.Rows);
+  if (row.Rows && typeof row.Rows === 'object' && Array.isArray((row.Rows as { Row?: unknown }).Row)) {
+    return asQBRows((row.Rows as { Row?: unknown }).Row);
+  }
+  return [];
+}
+
+function asQBCols(value: unknown): QBColData[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((cell) => cell && typeof cell === 'object') as QBColData[];
+}
+
 export interface ParsedFinancialData {
   monthDate: Date;
   revenue: number;
@@ -24,167 +52,18 @@ export interface ParsedFinancialData {
   totalEquity: number;
   totalLAndE: number;
   // LOB breakdowns
-  revenueBreakdown?: any;
-  expenseBreakdown?: any;
-  cogsBreakdown?: any;
-  lobBreakdowns?: any;
-  [key: string]: any;
-}
-
-/**
- * Parse QuickBooks Profit & Loss Report
- */
-export function parseProfitAndLoss(plData: any): {
-  revenue: number;
-  cogs: number;
-  expense: number;
-  netIncome: number;
-} {
-  try {
-    // Handle both array and nested Row structure
-    const rows = Array.isArray(plData?.Rows) ? plData.Rows : (plData?.Rows?.Row || []);
-    
-    let revenue = 0;
-    let cogs = 0;
-    let expense = 0;
-    let netIncome = 0;
-
-    // Recursively find values in the nested structure
-    function findValue(rows: any[], targetName: string): number {
-      for (const row of rows) {
-        if (row.type === 'Section' && row.Header) {
-          const headerValue = row.Header.ColData?.[0]?.value || '';
-          
-          // Check if this section matches what we're looking for
-          if (headerValue.toLowerCase().includes(targetName.toLowerCase())) {
-            // Get the summary value (usually the last ColData in Summary)
-            const summaryRow = row.Summary;
-            if (summaryRow && summaryRow.ColData) {
-              const valueCol = summaryRow.ColData.find((col: any) => col.value && !isNaN(parseFloat(col.value)));
-              if (valueCol) {
-                return Math.abs(parseFloat(valueCol.value));
-              }
-            }
-          }
-          
-          // Recursively search nested rows
-          if (row.Rows && row.Rows.Row) {
-            const nestedValue = findValue(row.Rows.Row, targetName);
-            if (nestedValue > 0) return nestedValue;
-          }
-        }
-      }
-      return 0;
-    }
-
-    revenue = findValue(rows, 'Income') || findValue(rows, 'Total Income') || findValue(rows, 'Total Revenue') || 0;
-    cogs = findValue(rows, 'Cost of Goods Sold') || findValue(rows, 'COGS') || 0;
-    expense = findValue(rows, 'Expenses') || findValue(rows, 'Total Expenses') || findValue(rows, 'Operating Expenses') || 0;
-    netIncome = findValue(rows, 'Net Income') || (revenue - cogs - expense);
-
-    return { revenue, cogs, expense, netIncome };
-  } catch (error) {
-    console.error('Error parsing P&L:', error);
-    return { revenue: 0, cogs: 0, expense: 0, netIncome: 0 };
-  }
-}
-
-/**
- * Parse QuickBooks Balance Sheet Report
- */
-export function parseBalanceSheet(bsData: any): {
-  cash: number;
-  ar: number;
-  inventory: number;
-  currentAssets: number;
-  fixedAssets: number;
-  totalAssets: number;
-  ap: number;
-  currentLiabilities: number;
-  longTermDebt: number;
-  totalLiabilities: number;
-  equity: number;
-} {
-  try {
-    // Handle both array and nested Row structure
-    const rows = Array.isArray(bsData?.Rows) ? bsData.Rows : (bsData?.Rows?.Row || []);
-
-    function findValue(rows: any[], targetName: string): number {
-      for (const row of rows) {
-        if (row.type === 'Section' && row.Header) {
-          const headerValue = row.Header.ColData?.[0]?.value || '';
-          
-          if (headerValue.toLowerCase().includes(targetName.toLowerCase())) {
-            const summaryRow = row.Summary;
-            if (summaryRow && summaryRow.ColData) {
-              const valueCol = summaryRow.ColData.find((col: any) => col.value && !isNaN(parseFloat(col.value)));
-              if (valueCol) {
-                return Math.abs(parseFloat(valueCol.value));
-              }
-            }
-          }
-          
-          if (row.Rows && row.Rows.Row) {
-            const nestedValue = findValue(row.Rows.Row, targetName);
-            if (nestedValue > 0) return nestedValue;
-          }
-        }
-      }
-      return 0;
-    }
-
-    const cash = findValue(rows, 'Bank Accounts') || findValue(rows, 'Cash') || findValue(rows, 'Bank') || 0;
-    const ar = findValue(rows, 'Accounts Receivable') || findValue(rows, 'A/R') || 0;
-    const inventory = findValue(rows, 'Inventory') || 0;
-    const currentAssets = findValue(rows, 'Current Assets') || findValue(rows, 'Total Current Assets') || 0;
-    const fixedAssets = findValue(rows, 'Fixed Assets') || findValue(rows, 'Property and Equipment') || 0;
-    const totalAssets = findValue(rows, 'ASSETS') || findValue(rows, 'Total Assets') || 0;
-    const ap = findValue(rows, 'Accounts Payable') || findValue(rows, 'A/P') || 0;
-    const currentLiabilities = findValue(rows, 'Current Liabilities') || findValue(rows, 'Total Current Liabilities') || 0;
-    const longTermDebt = findValue(rows, 'Long-Term Liabilities') || findValue(rows, 'Long Term Debt') || 0;
-    
-    // Calculate total liabilities from components to avoid matching parent section
-    const totalLiabilities = currentLiabilities + longTermDebt;
-    
-    // Equity can be calculated from the accounting equation: Assets = Liabilities + Equity
-    const equity = totalAssets - totalLiabilities;
-
-    return {
-      cash,
-      ar,
-      inventory,
-      currentAssets,
-      fixedAssets,
-      totalAssets,
-      ap,
-      currentLiabilities,
-      longTermDebt,
-      totalLiabilities,
-      equity,
-    };
-  } catch (error) {
-    console.error('Error parsing Balance Sheet:', error);
-    return {
-      cash: 0,
-      ar: 0,
-      inventory: 0,
-      currentAssets: 0,
-      fixedAssets: 0,
-      totalAssets: 0,
-      ap: 0,
-      currentLiabilities: 0,
-      longTermDebt: 0,
-      totalLiabilities: 0,
-      equity: 0,
-    };
-  }
+  revenueBreakdown?: Record<string, number> | null;
+  expenseBreakdown?: Record<string, number> | null;
+  cogsBreakdown?: Record<string, number> | null;
+  lobBreakdowns?: Record<string, Record<string, number>> | null;
+  [key: string]: unknown;
 }
 
 /**
  * Extract all Data rows (individual accounts) from a QB report recursively
  */
-function extractAccountRows(rows: any[]): any[] {
-  const accountRows: any[] = [];
+function extractAccountRows(rows: QBRow[]): QBRow[] {
+  const accountRows: QBRow[] = [];
   
   if (!rows || !Array.isArray(rows)) {
     return accountRows;
@@ -196,8 +75,8 @@ function extractAccountRows(rows: any[]): any[] {
       accountRows.push(row);
     } else if (row.type === 'Section' && row.Rows) {
       // Recursively extract from nested rows
-      const nestedRows = Array.isArray(row.Rows) ? row.Rows : (row.Rows.Row || []);
-      const nestedAccounts = extractAccountRows(Array.isArray(nestedRows) ? nestedRows : [nestedRows]);
+      const nestedRows = nestedQBRows(row);
+      const nestedAccounts = extractAccountRows(nestedRows);
       accountRows.push(...nestedAccounts);
     }
   }
@@ -209,16 +88,17 @@ function extractAccountRows(rows: any[]): any[] {
  * Extract account values for a specific month column
  */
 function extractAccountValuesForMonth(
-  accountRows: any[],
+  accountRows: QBRow[],
   columnIndex: number
 ): AccountValue[] {
   const accountValues: AccountValue[] = [];
   
   for (const row of accountRows) {
-    if (row.ColData && row.ColData.length > columnIndex) {
-      const accountName = row.ColData[0]?.value || '';
-      const accountId = row.ColData[0]?.id || '';
-      const valueStr = row.ColData[columnIndex]?.value || '';
+    const colData = asQBCols(row.ColData);
+    if (colData.length > columnIndex) {
+      const accountName = String(colData[0]?.value || '');
+      const accountId = String(colData[0]?.id || '');
+      const valueStr = String(colData[columnIndex]?.value || '');
       
       // Parse the value (could be empty string, number, or formatted string)
       let value = 0;
@@ -247,10 +127,8 @@ function extractAccountValuesForMonth(
  * Extracts actual monthly column data from QuickBooks reports
  */
 export function createMonthlyRecords(
-  plData: any,
-  bsData: any,
-  financialRecordId: string,
-  monthsCount: number = 36,
+  plData: unknown,
+  bsData: unknown,
   accountMappings?: AccountMapping[],
   companyLOBs?: CompanyLOB[]
 ): ParsedFinancialData[] {
@@ -270,18 +148,13 @@ export function createMonthlyRecords(
   };
   
   // Extract column headers (dates) from P&L report
-  const plColumns = plData?.Columns?.Column || [];
-  const bsColumns = bsData?.Columns?.Column || [];
-  
-  console.log(`📊 QB Parser: P&L has ${plColumns.length} columns, BS has ${bsColumns.length} columns`);
-  
+  const plColumns = (((plData || {}) as QBReport).Columns?.Column || []);
   // Skip the first column (account names) and process the rest as monthly data
   const monthlyColumns = plColumns.slice(1); // Skip column 0 (account names)
   
-  console.log(`Processing ${monthlyColumns.length} months of QB data`);
   
   // Helper function to extract value from a row by column index
-  function collectDataRowSum(inputRows: any[], colIndex: number): number {
+  function collectDataRowSum(inputRows: QBRow[], colIndex: number): number {
     let total = 0;
     const rowsToWalk = Array.isArray(inputRows) ? inputRows : [];
     for (const row of rowsToWalk) {
@@ -289,7 +162,7 @@ export function createMonthlyRecords(
       if (row.type === 'Data' && Array.isArray(row.ColData) && row.ColData[colIndex]) {
         total += Math.abs(parseQbNumber(row.ColData[colIndex].value));
       }
-      const nested = Array.isArray(row.Rows?.Row) ? row.Rows.Row : [];
+      const nested = nestedQBRows(row);
       if (nested.length > 0) {
         total += collectDataRowSum(nested, colIndex);
       }
@@ -297,24 +170,24 @@ export function createMonthlyRecords(
     return total;
   }
 
-  function getSectionAmount(sectionRow: any, colIndex: number): number {
+  function getSectionAmount(sectionRow: QBRow, colIndex: number): number {
     const summaryValue =
       sectionRow?.Summary?.ColData && sectionRow.Summary.ColData[colIndex]
         ? Math.abs(parseQbNumber(sectionRow.Summary.ColData[colIndex].value))
         : 0;
-    const nestedRows = Array.isArray(sectionRow?.Rows?.Row) ? sectionRow.Rows.Row : [];
+    const nestedRows = nestedQBRows(sectionRow);
     const detailSum = collectDataRowSum(nestedRows, colIndex);
     // Prefer explicit summary if present; otherwise use rolled-up detail rows.
     return summaryValue > 0 ? summaryValue : detailSum;
   }
 
-  function getRowValue(rows: any[], sectionName: string, colIndex: number, logMatches: boolean = false): number {
+  function getRowValue(rows: QBRow[], sectionName: string, colIndex: number): number {
     let bestValue = 0;
     for (const row of rows) {
       if (row?.type === 'Data' && Array.isArray(row.ColData)) {
-        const rowLabel = String(row.ColData[0]?.value || '');
+          const rowLabel = String(asQBCols(row.ColData)[0]?.value || '');
         if (rowLabel.toLowerCase().includes(sectionName.toLowerCase())) {
-          const raw = row.ColData[colIndex]?.value;
+          const raw = asQBCols(row.ColData)[colIndex]?.value;
           const dataValue = Math.abs(parseQbNumber(raw));
           if (dataValue > bestValue) {
             bestValue = dataValue;
@@ -323,24 +196,18 @@ export function createMonthlyRecords(
       }
 
       if (row.type === 'Section' && row.Header) {
-        const headerValue = row.Header.ColData?.[0]?.value || '';
-        
-        if (logMatches && colIndex === 1) {
-          console.log(`  Checking section: "${headerValue}"`);
-        }
+        const headerValue = String(row.Header.ColData?.[0]?.value || '');
         
         if (headerValue.toLowerCase().includes(sectionName.toLowerCase())) {
           const numValue = getSectionAmount(row, colIndex);
-          if (logMatches && colIndex === 1) {
-            console.log(`  ✓ MATCHED "${sectionName}" in "${headerValue}" - Value: ${numValue}`);
-          }
           if (numValue > bestValue) {
             bestValue = numValue;
           }
         }
         // Recursively search nested rows
-        if (row.Rows && row.Rows.Row) {
-          const nestedValue = getRowValue(row.Rows.Row, sectionName, colIndex, logMatches);
+        const nested = nestedQBRows(row);
+        if (nested.length > 0) {
+          const nestedValue = getRowValue(nested, sectionName, colIndex);
           if (nestedValue > bestValue) bestValue = nestedValue;
         }
       }
@@ -348,14 +215,15 @@ export function createMonthlyRecords(
     return bestValue;
   }
   
-  const plRows = Array.isArray(plData?.Rows) ? plData.Rows : (plData?.Rows?.Row || []);
-  const bsRows = Array.isArray(bsData?.Rows) ? bsData.Rows : (bsData?.Rows?.Row || []);
+  const plReport = (plData || {}) as QBReport;
+  const bsReport = (bsData || {}) as QBReport;
+  const plRows = Array.isArray(plReport.Rows) ? asQBRows(plReport.Rows) : asQBRows(plReport.Rows?.Row);
+  const bsRows = Array.isArray(bsReport.Rows) ? asQBRows(bsReport.Rows) : asQBRows(bsReport.Rows?.Row);
   
   // Extract all account-level data rows for LOB allocation
   const plAccountRows = extractAccountRows(plRows);
   const bsAccountRows = extractAccountRows(bsRows);
   
-  console.log(`📊 Extracted ${plAccountRows.length} P&L accounts and ${bsAccountRows.length} BS accounts`);
   
   // Process each monthly column
   for (let colIndex = 1; colIndex < monthlyColumns.length + 1; colIndex++) {
@@ -372,25 +240,19 @@ export function createMonthlyRecords(
       }
     }
     
-    // Extract P&L data for this month (log sections for first month only)
-    const logSections = colIndex === 1;
-    
-    if (logSections) {
-      console.log(`\n🔍 P&L Sections for Month ${colIndex} (${colHeader}):`);
-    }
-    
-    let revenue = getRowValue(plRows, 'Total Income', colIndex, logSections) || 
-                  getRowValue(plRows, 'Income', colIndex, logSections) || 
-                  getRowValue(plRows, 'Revenue', colIndex, logSections) ||
-                  getRowValue(plRows, 'Sales', colIndex, logSections);
-    
-    let cogs = getRowValue(plRows, 'Total Cost of Goods Sold', colIndex, logSections) || 
-               getRowValue(plRows, 'Cost of Goods Sold', colIndex, logSections) || 
-               getRowValue(plRows, 'COGS', colIndex, logSections);
-    
-    let expense = getRowValue(plRows, 'Total Expenses', colIndex, logSections) || 
-                  getRowValue(plRows, 'Expenses', colIndex, logSections) || 
-                  getRowValue(plRows, 'Operating Expenses', colIndex, logSections);
+    // Extract P&L data for this month
+    let revenue = getRowValue(plRows, 'Total Income', colIndex) ||
+                  getRowValue(plRows, 'Income', colIndex) ||
+                  getRowValue(plRows, 'Revenue', colIndex) ||
+                  getRowValue(plRows, 'Sales', colIndex);
+
+    let cogs = getRowValue(plRows, 'Total Cost of Goods Sold', colIndex) ||
+               getRowValue(plRows, 'Cost of Goods Sold', colIndex) ||
+               getRowValue(plRows, 'COGS', colIndex);
+
+    let expense = getRowValue(plRows, 'Total Expenses', colIndex) ||
+                  getRowValue(plRows, 'Expenses', colIndex) ||
+                  getRowValue(plRows, 'Operating Expenses', colIndex);
     
     // Extract Balance Sheet data for this month
     const cash = getRowValue(bsRows, 'Cash', colIndex) || getRowValue(bsRows, 'Checking', colIndex);
@@ -405,8 +267,6 @@ export function createMonthlyRecords(
     const totalLiabilities = getRowValue(bsRows, 'Total Liabilities', colIndex) || getRowValue(bsRows, 'TOTAL LIABILITIES', colIndex);
     const equity = getRowValue(bsRows, 'Equity', colIndex) || getRowValue(bsRows, 'Total Equity', colIndex);
     
-    console.log(`Month ${colIndex}: ${colHeader} - Rev: ${revenue}, Exp: ${expense}, Assets: ${totalAssets}`);
-    
     // Apply LOB allocations if account mappings are provided
     let lobData: MonthlyLOBData | null = null;
     if (accountMappings && accountMappings.length > 0) {
@@ -418,14 +278,6 @@ export function createMonthlyRecords(
       // Apply LOB allocations
       lobData = applyLOBAllocations(allAccountValues, accountMappings, companyLOBs || []);
       
-      if (colIndex === 1) {
-        console.log(`📊 LOB Allocation sample for first month:`);
-        console.log(`  Total accounts processed: ${allAccountValues.length}`);
-        console.log(`  Fields with breakdowns: ${Object.keys(lobData.breakdowns).length}`);
-        if (lobData.revenueBreakdown) {
-          console.log(`  Revenue breakdown:`, lobData.revenueBreakdown);
-        }
-      }
     }
 
     const RESERVED_BALANCE_SHEET_FIELDS = new Set([

@@ -9,6 +9,41 @@ export type PublishMonthParams = {
   backfillMonths?: number;
 };
 
+type DailySnapshotRow = {
+  snapshotDate: Date;
+  sourceRunId?: string | null;
+  [key: string]: unknown;
+};
+
+type DailySnapshotDelegate = {
+  findMany: (args: unknown) => Promise<DailySnapshotRow[]>;
+};
+
+type FinancialMonthPublishDelegate = {
+  findUnique: (args: unknown) => Promise<{ status?: string | null } | null>;
+  upsert: (args: unknown) => Promise<unknown>;
+  count: (args: unknown) => Promise<number>;
+};
+
+function getDailySnapshotDelegate(): DailySnapshotDelegate | null {
+  const delegate = (prisma as unknown as Record<string, unknown>).dailyFinancialSnapshot as Record<string, unknown> | undefined;
+  if (!delegate || typeof delegate.findMany !== 'function') return null;
+  return delegate as unknown as DailySnapshotDelegate;
+}
+
+function getFinancialMonthPublishDelegate(): FinancialMonthPublishDelegate | null {
+  const delegate = (prisma as unknown as Record<string, unknown>).financialMonthPublish as Record<string, unknown> | undefined;
+  if (
+    !delegate ||
+    typeof delegate.findUnique !== 'function' ||
+    typeof delegate.upsert !== 'function' ||
+    typeof delegate.count !== 'function'
+  ) {
+    return null;
+  }
+  return delegate as unknown as FinancialMonthPublishDelegate;
+}
+
 export async function publishMonthFromDailySnapshots(params: PublishMonthParams): Promise<{
   success: boolean;
   companyId: string;
@@ -59,8 +94,8 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
   }
 
   const { monthStart, monthEnd } = parsed;
-  const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
-  const publishDelegate = (prisma as any).financialMonthPublish;
+  const dailySnapshotDelegate = getDailySnapshotDelegate();
+  const publishDelegate = getFinancialMonthPublishDelegate();
   if (!dailySnapshotDelegate || !publishDelegate) {
     return {
       success: false,
@@ -129,7 +164,7 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
 
     const pnlTotals: Record<string, number> = {};
     for (const field of PNL_SUM_FIELDS) {
-      pnlTotals[field] = snapshots.reduce((sum: number, row: any) => sum + safeNumber(row[field]), 0);
+      pnlTotals[field] = snapshots.reduce((sum: number, row) => sum + safeNumber(row[field]), 0);
     }
     const monthEndSnapshot = snapshots[snapshots.length - 1];
     const balanceValues: Record<string, number> = {};
@@ -226,7 +261,7 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
     const sourceRunIds = Array.from(
       new Set(
         snapshots
-          .map((row: any) => String(row.sourceRunId || '').trim())
+          .map((row) => String(row.sourceRunId || '').trim())
           .filter((value: string) => value.length > 0)
       )
     );

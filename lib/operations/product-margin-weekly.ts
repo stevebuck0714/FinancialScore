@@ -159,6 +159,7 @@ const toDate = (value: unknown): Date | null => {
 };
 
 const MIN_UNITS_FOR_UNIT_METRICS = 3;
+const notNull = <T,>(value: T | null): value is T => value !== null;
 
 export function buildWeeklyProductMarginModel(params: {
   records?: InputRecord[];
@@ -470,9 +471,9 @@ export function buildWeeklyProductMarginModel(params: {
         revenue: current.netRevenue,
       };
     })
-    .filter(Boolean)
-    .sort((a: any, b: any) => Math.abs(b.deltaPts) - Math.abs(a.deltaPts))
-    .slice(0, 8) as WeeklyMarginModel['movers'];
+    .filter(notNull)
+    .sort((a, b) => Math.abs(b.deltaPts) - Math.abs(a.deltaPts))
+    .slice(0, 8);
 
   const negativeMargins = itemRows
     .filter((row) => (row.marginPct ?? 0) < 0)
@@ -577,8 +578,8 @@ export function buildWeeklyProductMarginModel(params: {
         status: computedStatus,
       };
     })
-    .filter(Boolean)
-    .sort((a: any, b: any) => (a.spreadDelta ?? 0) - (b.spreadDelta ?? 0));
+    .filter(notNull)
+    .sort((a, b) => (a.spreadDelta ?? 0) - (b.spreadDelta ?? 0));
 
   return {
     weeks: weekly,
@@ -600,6 +601,6 @@ export function buildWeeklyProductMarginModel(params: {
       variancePct,
       status,
     },
-    comparisonRows: comparisonRows as WeeklyMarginModel['comparisonRows'],
+    comparisonRows,
   };
 }

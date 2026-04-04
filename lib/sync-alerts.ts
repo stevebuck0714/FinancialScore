@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import type { AccountingPlatform } from '@prisma/client';
+import type { AccountingPlatform, Prisma } from '@prisma/client';
 import { sendSyncFailureNotification } from '@/lib/email';
 
 const DEFAULT_SYNC_ALERT_RECIPIENT = 'support@corelytics.com';
@@ -12,6 +12,16 @@ type NotifySyncFailureParams = {
   errorDetails?: string;
   dedupeHours?: number;
 };
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'Unknown error';
+}
 
 function buildAlertKey(params: NotifySyncFailureParams): string {
   const summary = (params.errorSummary || '').trim().toLowerCase().slice(0, 180);
@@ -88,6 +98,8 @@ export async function notifyAdminsOfSyncFailure(params: NotifySyncFailureParams)
       errorDetails: params.errorDetails,
       actionUrl,
     });
+    const resultMeta = asRecord(result);
+    const resultReason = typeof resultMeta.reason === 'string' ? resultMeta.reason : null;
 
     await prisma.apiSyncLog.create({
       data: {
@@ -104,14 +116,14 @@ export async function notifyAdminsOfSyncFailure(params: NotifySyncFailureParams)
           errorDetails: params.errorDetails || null,
           recipientsCount: recipients.length,
           emailSent: Boolean(result.success),
-          reason: (result as any).reason || null,
-        } as any,
+          reason: resultReason,
+        } as Prisma.InputJsonValue,
       },
     });
 
-    return { notified: Boolean(result.success), deduped: false, reason: (result as any).reason };
-  } catch (error: any) {
+    return { notified: Boolean(result.success), deduped: false, reason: resultReason || undefined };
+  } catch (error: unknown) {
     console.error('❌ Failed to notify admins of sync failure:', error);
-    return { notified: false, deduped: false, reason: error?.message || 'Unknown error' };
+    return { notified: false, deduped: false, reason: errorMessage(error) };
   }
 }

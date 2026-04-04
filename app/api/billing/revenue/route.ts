@@ -1,9 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import {
-  calculateTotalMRR,
-  calculateTotalARR
-} from '@/lib/billing/revenueCalculator';
 import {
   getCurrentMonthRange,
   getPreviousMonthRange,
@@ -11,7 +7,7 @@ import {
 } from '@/lib/billing/billingHelpers';
 
 // GET - Get revenue dashboard data (revenue sharing model)
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Get current month revenue (actual payments received)
     const currentMonthRange = getCurrentMonthRange();

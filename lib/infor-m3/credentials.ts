@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
 import { shouldAllowInforM3EnvFallback } from '@/lib/infor-m3/security-config';
 import { normalizeInforSystem, type InforSystem } from '@/lib/infor-m3/system';
@@ -147,7 +148,7 @@ export async function saveInforM3CredentialsForCompany(
       tenantId: credentials.tenantId,
       platformVersion: 'ionapi-1.0',
       errorMessage: null,
-      connectionMetadata: mergedMetadata as any,
+      connectionMetadata: mergedMetadata as Prisma.InputJsonValue,
       accessToken: null,
       refreshToken: null,
       tokenExpiresAt: null,
@@ -160,7 +161,7 @@ export async function saveInforM3CredentialsForCompany(
       platformVersion: 'ionapi-1.0',
       autoSync: false,
       syncFrequency: 'manual',
-      connectionMetadata: mergedMetadata as any,
+      connectionMetadata: mergedMetadata as Prisma.InputJsonValue,
     },
   });
 }
@@ -228,7 +229,7 @@ export async function clearInforM3CredentialsForCompany(companyId: string, syste
       },
     },
     data: {
-      connectionMetadata: metadata as any,
+      connectionMetadata: metadata as Prisma.InputJsonValue,
       status: 'ACTIVE',
       errorMessage: null,
     },

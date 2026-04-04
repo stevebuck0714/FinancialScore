@@ -21,12 +21,12 @@ const NO_ACCESS: DataRoomCapabilities = {
   manage: false,
 };
 
-function asObject(value: unknown): Record<string, any> {
+function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value as Record<string, any>;
+  return value as Record<string, unknown>;
 }
 
-function applyBooleanOverrides(base: DataRoomCapabilities, source: Record<string, any>) {
+function applyBooleanOverrides(base: DataRoomCapabilities, source: Record<string, unknown>) {
   const next = { ...base };
   const keys: DataRoomCapability[] = ['view', 'download', 'upload', 'share', 'manage'];
   for (const key of keys) {
@@ -35,12 +35,24 @@ function applyBooleanOverrides(base: DataRoomCapabilities, source: Record<string
   return next;
 }
 
+function getUserCompanyAccessDelegate():
+  | { findUnique: (...args: unknown[]) => Promise<unknown> }
+  | null {
+  const delegate = (prisma as unknown as Record<string, unknown>).userCompanyAccess as Record<string, unknown> | undefined;
+  if (!delegate || typeof delegate.findUnique !== 'function') return null;
+  return delegate as unknown as { findUnique: (...args: unknown[]) => Promise<unknown> };
+}
+
 export async function isCompanyAdminForDataRoom(userId: string, companyId: string) {
-  const membership = await (prisma as any).userCompanyAccess?.findUnique?.({
-    where: { userId_companyId: { userId, companyId } },
-    select: { companyRole: true },
-  });
-  if (String(membership?.companyRole || '').toLowerCase() === 'admin') return true;
+  const delegate = getUserCompanyAccessDelegate();
+  const membership = delegate
+    ? await delegate.findUnique({
+        where: { userId_companyId: { userId, companyId } },
+        select: { companyRole: true },
+      })
+    : null;
+  const membershipRecord = asObject(membership);
+  if (String(membershipRecord.companyRole || '').toLowerCase() === 'admin') return true;
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -72,7 +84,7 @@ export async function resolveDataRoomCapabilities(params: {
   // Backward-compatible behavior: if no permissions are configured, allow full access.
   if (users.length === 0) return FULL_ACCESS;
 
-  const userRule = users.find((u: any) => String(u?.userId || '') === userId);
+  const userRule = users.find((u) => String(asObject(u).userId || '') === userId);
   if (!userRule) return NO_ACCESS;
 
   let effective = applyBooleanOverrides(NO_ACCESS, asObject(userRule.default));

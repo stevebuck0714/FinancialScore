@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'crypto';
 import prisma from './prisma';
 import { NextRequest } from 'next/server';
+import type { TrustedDevice } from '@prisma/client';
 
 // Configuration
 const TRUST_DURATION_DAYS = parseInt(process.env.MFA_TRUST_DURATION_DAYS || '180', 10);
@@ -9,21 +10,21 @@ const MAX_TRUSTED_DEVICES = parseInt(process.env.MFA_MAX_TRUSTED_DEVICES_PER_USE
 /**
  * Generate a secure random device token
  */
-export function generateDeviceToken(): string {
+function generateDeviceToken(): string {
   return randomBytes(32).toString('hex');
 }
 
 /**
  * Hash a device token for storage (one-way hash)
  */
-export function hashDeviceToken(token: string): string {
+function hashDeviceToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
 /**
  * Extract device information from request
  */
-export function extractDeviceInfo(request: NextRequest) {
+function extractDeviceInfo(request: NextRequest) {
   const userAgent = request.headers.get('user-agent') || 'Unknown';
   const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
                     request.headers.get('x-real-ip') || 
@@ -76,7 +77,7 @@ export async function createTrustedDevice(
   userId: string,
   request: NextRequest,
   requestedDurationDays?: number
-): Promise<{ token: string; device: any; trustDurationDays: number }> {
+): Promise<{ token: string; device: TrustedDevice; trustDurationDays: number }> {
   const deviceInfo = extractDeviceInfo(request);
   const trustDurationDays = resolveTrustDurationDays(requestedDurationDays);
   
@@ -128,7 +129,7 @@ export async function validateTrustedDevice(
   userId: string,
   token: string,
   request: NextRequest
-): Promise<{ valid: boolean; device?: any; reason?: string }> {
+): Promise<{ valid: boolean; device?: TrustedDevice; reason?: string }> {
   if (!token) {
     return { valid: false, reason: 'No token provided' };
   }
@@ -251,12 +252,5 @@ export async function cleanupExpiredDevices() {
  */
 export function getTrustDurationDays(): number {
   return TRUST_DURATION_DAYS;
-}
-
-/**
- * Get max trusted devices per user
- */
-export function getMaxTrustedDevices(): number {
-  return MAX_TRUSTED_DEVICES;
 }
 

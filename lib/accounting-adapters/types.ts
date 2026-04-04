@@ -117,6 +117,6 @@ export interface AdapterConfig {
   realmId?: string; // QuickBooks
   tenantId?: string; // Xero
   organizationId?: string; // Sage
-  [key: string]: any; // Allow platform-specific config
+  [key: string]: unknown; // Allow platform-specific config
 }
 

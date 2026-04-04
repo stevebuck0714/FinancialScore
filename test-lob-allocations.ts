@@ -66,8 +66,6 @@ async function main() {
   const parsedRecords = createMonthlyRecords(
     plData,
     bsData,
-    financialRecord.id,
-    36,
     accountMappings as any
   );
 
