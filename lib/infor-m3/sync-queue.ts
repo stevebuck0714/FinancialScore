@@ -64,6 +64,71 @@ function asIso(value: Date | null | undefined): string | null {
   return value ? new Date(value).toISOString() : null;
 }
 
+function atUtcMidnight(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function buildUsFederalHolidaySet(fromDate: Date, toDate: Date): Set<string> {
+  const fromYear = fromDate.getUTCFullYear();
+  const toYear = toDate.getUTCFullYear();
+  const keys = new Set<string>();
+
+  const key = (d: Date): string => d.toISOString().slice(0, 10);
+  const add = (d: Date) => keys.add(key(d));
+
+  const nthWeekdayOfMonthUtc = (year: number, monthZeroBased: number, weekday: number, n: number): Date => {
+    const first = new Date(Date.UTC(year, monthZeroBased, 1));
+    const dayOffset = (weekday - first.getUTCDay() + 7) % 7;
+    return new Date(Date.UTC(year, monthZeroBased, 1 + dayOffset + (n - 1) * 7));
+  };
+
+  const lastWeekdayOfMonthUtc = (year: number, monthZeroBased: number, weekday: number): Date => {
+    const lastDay = new Date(Date.UTC(year, monthZeroBased + 1, 0));
+    const dayOffset = (lastDay.getUTCDay() - weekday + 7) % 7;
+    return new Date(Date.UTC(year, monthZeroBased, lastDay.getUTCDate() - dayOffset));
+  };
+
+  const observed = (year: number, monthZeroBased: number, dayOfMonth: number): Date => {
+    const actual = new Date(Date.UTC(year, monthZeroBased, dayOfMonth));
+    const dow = actual.getUTCDay();
+    if (dow === 0) return new Date(Date.UTC(year, monthZeroBased, dayOfMonth + 1));
+    if (dow === 6) return new Date(Date.UTC(year, monthZeroBased, dayOfMonth - 1));
+    return actual;
+  };
+
+  for (let year = fromYear - 1; year <= toYear + 1; year += 1) {
+    add(observed(year, 0, 1));
+    add(nthWeekdayOfMonthUtc(year, 0, 1, 3));
+    add(nthWeekdayOfMonthUtc(year, 1, 1, 3));
+    add(lastWeekdayOfMonthUtc(year, 4, 1));
+    add(observed(year, 5, 19));
+    add(observed(year, 6, 4));
+    add(nthWeekdayOfMonthUtc(year, 8, 1, 1));
+    add(nthWeekdayOfMonthUtc(year, 9, 1, 2));
+    add(observed(year, 10, 11));
+    add(nthWeekdayOfMonthUtc(year, 10, 4, 4));
+    add(observed(year, 11, 25));
+  }
+
+  return keys;
+}
+
+function enumerateBusinessDates(startDate: Date, endDate: Date): Date[] {
+  const start = atUtcMidnight(startDate);
+  const end = atUtcMidnight(endDate);
+  if (end < start) return [];
+  const federalHolidays = buildUsFederalHolidaySet(start, end);
+  const dates: Date[] = [];
+  for (let cursor = new Date(start); cursor.getTime() <= end.getTime(); cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    const dow = cursor.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    const k = cursor.toISOString().slice(0, 10);
+    if (federalHolidays.has(k)) continue;
+    dates.push(new Date(cursor));
+  }
+  return dates;
+}
+
 function resolveBackfillProgramBatchSize(): number {
   const raw = Number(process.env.INFOR_SYNC_BACKFILL_PROGRAM_BATCH_SIZE || DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE;
@@ -218,6 +283,13 @@ function buildSkippedCursorFromPayload(payload: Record<string, unknown>): Record
   if (Number.isFinite(Number(payload.businessDateIndex))) {
     cursor.businessDateIndex = Math.max(0, Math.floor(Number(payload.businessDateIndex)));
   }
+  if (payload.businessDayFanout === true) {
+    cursor.businessDayFanout = true;
+  }
+  const businessDateIso = String(payload.businessDateIso || '').trim();
+  if (businessDateIso) {
+    cursor.businessDateIso = businessDateIso;
+  }
   return cursor;
 }
 
@@ -274,15 +346,65 @@ export async function startQueueRun(input: {
     },
   });
   const runRecord = run as QueueRunRecord;
-  await db().inforSyncTask.create({
-    data: {
-      runId: id,
-      companyId: input.companyId,
-      status: 'pending',
-      maxAttempts: DEFAULT_MAX_ATTEMPTS,
-      payload: buildTaskPayload(runRecord, null),
-    },
-  });
+  const isBusinessDayFanout =
+    input.platform === 'INFOR_M3' &&
+    input.mode === 'business_day_backfill' &&
+    typeof input.startDate === 'string' &&
+    typeof input.endDate === 'string';
+
+  if (isBusinessDayFanout) {
+    const startDate = new Date(String(input.startDate));
+    const endDate = new Date(String(input.endDate));
+    const businessDates = enumerateBusinessDates(startDate, endDate);
+    const programBatchSize = resolveInitialProgramBatchSize(runRecord);
+    if (businessDates.length > 0) {
+      const rows = businessDates.map((businessDate, index) => ({
+        runId: id,
+        companyId: input.companyId,
+        status: 'pending' as const,
+        maxAttempts: DEFAULT_MAX_ATTEMPTS,
+        payload: buildTaskPayload(runRecord, {
+          businessDayFanout: true,
+          businessDateIso: businessDate.toISOString().slice(0, 10),
+          businessDateIndex: index,
+          programOffset: 0,
+          programBatchSize,
+          requestOffset: 0,
+          bookmark: null,
+          stagnantCursorCount: 0,
+        }),
+      }));
+      await db().inforSyncTask.createMany({ data: rows });
+      if (!running) {
+        await db().inforSyncRun.update({
+          where: { id },
+          data: {
+            message: `Queued ${businessDates.length} business-day slices for background processing.`,
+          },
+        });
+      }
+    } else {
+      await db().inforSyncTask.create({
+        data: {
+          runId: id,
+          companyId: input.companyId,
+          status: 'pending',
+          maxAttempts: DEFAULT_MAX_ATTEMPTS,
+          payload: buildTaskPayload(runRecord, null),
+        },
+      });
+    }
+  } else {
+    await db().inforSyncTask.create({
+      data: {
+        runId: id,
+        companyId: input.companyId,
+        status: 'pending',
+        maxAttempts: DEFAULT_MAX_ATTEMPTS,
+        payload: buildTaskPayload(runRecord, null),
+      },
+    });
+  }
   return {
     alreadyRunning: Boolean(running),
     queued: Boolean(running),

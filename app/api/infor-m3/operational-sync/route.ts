@@ -14,6 +14,8 @@ type SyncCursor = {
   mode: SyncMode;
   syncRunId: string;
   salesOnly?: boolean;
+  businessDayFanout?: boolean;
+  businessDateIso?: string;
   programOffset: number;
   programBatchSize: number;
   requestOffset?: number;
@@ -99,6 +101,16 @@ function parseDate(value: unknown): Date | null {
   if (typeof value !== 'string') return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseBusinessDate(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  const normalized = raw.length === 10 ? `${raw}T00:00:00.000Z` : raw;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return atUtcMidnight(parsed);
 }
 
 function buildSyncWindow(body: Record<string, unknown>, frequency: Frequency): SyncWindow {
@@ -241,6 +253,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (mode === 'business_day_backfill') {
+      const requestedBusinessDate = parseBusinessDate(body.businessDateIso);
+      const businessDayFanout = body.businessDayFanout === true || Boolean(requestedBusinessDate);
       const explicitStartDate = parseDate(body.startDate);
       const explicitEndDate = parseDate(body.endDate);
       const hasExplicitWindow =
@@ -260,14 +274,35 @@ export async function POST(request: NextRequest) {
       const businessDates = enumerateBusinessDates(startDate, endDate);
       const defaultBusinessDateIndex = Math.max(0, businessDates.length - 1);
       const requestedBusinessDateIndex = normalizeNonNegativeInt(body.businessDateIndex);
-      const businessDateIndex = Math.min(
+      let businessDateIndex = Math.min(
         requestedBusinessDateIndex ?? defaultBusinessDateIndex,
         Math.max(0, businessDates.length - 1)
       );
-      const businessDate = businessDates[businessDateIndex];
+      let businessDate = businessDates[businessDateIndex];
+      if (requestedBusinessDate) {
+        const requestedIso = requestedBusinessDate.toISOString().slice(0, 10);
+        const matchedIndex = businessDates.findIndex((entry) => entry.toISOString().slice(0, 10) === requestedIso);
+        if (matchedIndex < 0) {
+          return NextResponse.json(
+            {
+              error: 'Requested businessDateIso is outside configured backfill window.',
+              details: {
+                businessDateIso: requestedIso,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString(),
+              },
+            },
+            { status: 400 }
+          );
+        }
+        businessDateIndex = matchedIndex;
+        businessDate = businessDates[businessDateIndex];
+      }
 
       if (!businessDate) {
-        await pruneCompanyOperationalData(companyId);
+        if (!businessDayFanout) {
+          await pruneCompanyOperationalData(companyId);
+        }
         return NextResponse.json({
           ok: true,
           companyId,
@@ -323,6 +358,8 @@ export async function POST(request: NextRequest) {
           mode,
           syncRunId: effectiveSyncRunId,
           salesOnly: salesOnly || undefined,
+          businessDayFanout: businessDayFanout || undefined,
+          businessDateIso: businessDate.toISOString().slice(0, 10),
           backfillMonths: months,
           businessDateIndex,
           programOffset: dayResult.continuation?.programOffset ?? dayResult.nextProgramOffset,
@@ -331,7 +368,7 @@ export async function POST(request: NextRequest) {
           bookmark: dayResult.continuation?.bookmark ?? null,
           stagnantCursorCount: effectiveStagnantCursorCount,
         };
-      } else if (businessDateIndex > 0) {
+      } else if (!businessDayFanout && businessDateIndex > 0) {
         hasMore = true;
         cursor = {
           mode,
@@ -343,7 +380,7 @@ export async function POST(request: NextRequest) {
           programBatchSize,
           stagnantCursorCount: 0,
         };
-      } else {
+      } else if (!businessDayFanout) {
         await pruneCompanyOperationalData(companyId);
       }
       if (hasMore && cursor) {
@@ -367,6 +404,8 @@ export async function POST(request: NextRequest) {
           mode,
           syncRunId: effectiveSyncRunId,
           salesOnly: salesOnly || undefined,
+          businessDayFanout: businessDayFanout || undefined,
+          businessDateIso: businessDate.toISOString().slice(0, 10),
           backfillMonths: months,
           businessDateIndex,
           programOffset: effectiveProgramOffset,
@@ -403,7 +442,9 @@ export async function POST(request: NextRequest) {
         },
         businessDayBackfill: {
           holidayCalendar: 'US_FEDERAL',
-          businessDaysProcessed: businessDates.length - businessDateIndex + (dayResult.nextProgramOffset === null ? 0 : -1),
+          businessDaysProcessed: businessDayFanout
+            ? 1
+            : businessDates.length - businessDateIndex + (dayResult.nextProgramOffset === null ? 0 : -1),
           businessDaysTotal: businessDates.length,
           currentBusinessDate: businessDate.toISOString().slice(0, 10),
         },
