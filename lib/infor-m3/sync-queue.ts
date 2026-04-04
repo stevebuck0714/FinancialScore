@@ -5,7 +5,6 @@ import type { InforOperationalAsyncRun } from '@/lib/infor-m3/async-run-state';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { runOperationalSyncForCompany } from '@/lib/operational-sync/runner';
 
-const MAX_TASKS_PER_TICK = 10;
 const LEASE_SECONDS = 120;
 const DEFAULT_MAX_ATTEMPTS = 6;
 const MAX_LEASE_ROUNDS_PER_TICK = 12;
@@ -13,6 +12,8 @@ const TICK_TIME_BUDGET_MS = 55_000;
 const DEFAULT_DAILY_OVERLAP_PROGRAM_BATCH_SIZE = 2;
 const DEFAULT_BACKFILL_PROGRAM_BATCH_SIZE = 4;
 const DEFAULT_TICK_CONCURRENCY = 5;
+const DEFAULT_MAX_TASKS_PER_TICK = 48;
+const MAX_TASKS_PER_TICK_LIMIT = 200;
 const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 5;
 const DEFAULT_RUN_STALE_MINUTES = 30;
 const DEFAULT_RUN_MAX_AGE_HOURS = 8;
@@ -146,7 +147,13 @@ function resolveDailyOverlapProgramBatchSize(): number {
 function resolveTickConcurrency(): number {
   const raw = Number(process.env.INFOR_SYNC_TICK_CONCURRENCY || DEFAULT_TICK_CONCURRENCY);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TICK_CONCURRENCY;
-  return Math.min(MAX_TASKS_PER_TICK, Math.max(1, Math.floor(raw)));
+  return Math.min(64, Math.max(1, Math.floor(raw)));
+}
+
+function resolveMaxTasksPerTick(): number {
+  const raw = Number(process.env.INFOR_SYNC_MAX_TASKS_PER_TICK || DEFAULT_MAX_TASKS_PER_TICK);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_MAX_TASKS_PER_TICK;
+  return Math.min(MAX_TASKS_PER_TICK_LIMIT, Math.max(1, Math.floor(raw)));
 }
 
 function resolveMaxInflightPerScope(): number {
@@ -174,9 +181,9 @@ function resolveFanoutDayProgramShardSize(): number {
 }
 
 function resolveFanoutProgramHint(): number {
-  const raw = Number(process.env.INFOR_SYNC_FANOUT_PROGRAM_HINT || 8);
-  if (!Number.isFinite(raw) || raw <= 0) return 8;
-  return Math.min(120, Math.max(4, Math.floor(raw)));
+  const raw = Number(process.env.INFOR_SYNC_FANOUT_PROGRAM_HINT || 120);
+  if (!Number.isFinite(raw) || raw <= 0) return 120;
+  return Math.min(240, Math.max(8, Math.floor(raw)));
 }
 
 function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
@@ -309,15 +316,65 @@ function buildSkippedCursorFromPayload(payload: Record<string, unknown>): Record
 }
 
 async function getRunningQueueRun(companyId: string, platform: AccountingPlatform): Promise<QueueRunRecord | null> {
-  const run = await db().inforSyncRun.findFirst({
-    where: {
-      companyId,
-      platform,
-      status: 'running',
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-  return (run as QueueRunRecord | null) || null;
+  const staleMs = resolveRunStaleMinutes() * 60 * 1000;
+  const maxAgeMs = resolveRunMaxAgeHours() * 60 * 60 * 1000;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const run = (await db().inforSyncRun.findFirst({
+      where: {
+        companyId,
+        platform,
+        status: 'running',
+      },
+      orderBy: { createdAt: 'desc' },
+    })) as QueueRunRecord | null;
+    if (!run) return null;
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    const progressAt = run.lastChunkAt || run.updatedAt || run.createdAt;
+    const ageMs = nowMs - new Date(run.createdAt).getTime();
+    const idleMs = nowMs - new Date(progressAt).getTime();
+    const stale = Number.isFinite(idleMs) && idleMs > staleMs;
+    const tooOld = Number.isFinite(ageMs) && ageMs > maxAgeMs;
+    if (!stale && !tooOld) return run;
+
+    const reason = stale
+      ? `Auto-failed stale queue run after ${Math.floor(idleMs / 60000)} minutes without progress.`
+      : `Auto-failed queue run after ${Math.floor(ageMs / 3600000)} hours runtime cap.`;
+    await db().$transaction([
+      db().inforSyncRun.updateMany({
+        where: { id: run.id, status: 'running' },
+        data: {
+          status: 'failed',
+          finishedAt: now,
+          updatedAt: now,
+          lastError: reason,
+          message: reason,
+        },
+      }),
+      db().inforSyncTask.updateMany({
+        where: {
+          runId: run.id,
+          status: { in: ['pending', 'leased'] },
+        },
+        data: {
+          status: 'cancelled',
+          finishedAt: now,
+          updatedAt: now,
+          lastError: reason,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        },
+      }),
+    ]);
+    await notifyQueueRunFailure(
+      run.companyId,
+      (String(run.platform || 'INFOR_M3') as AccountingPlatform),
+      'Infor async queue run auto-failed by start admission guard',
+      reason
+    );
+  }
+  return null;
 }
 
 export async function getQueueRunById(companyId: string, runId: string): Promise<QueueRunRecord | null> {
@@ -374,12 +431,10 @@ export async function startQueueRun(input: {
     const shardSize = resolveFanoutDayProgramShardSize();
     const programHint = resolveFanoutProgramHint();
     if (businessDates.length > 0) {
-      const shardRanges: Array<{ start: number; end: number | null }> = [];
+      const shardRanges: Array<{ start: number; end: number }> = [];
       for (let offset = 0; offset < programHint; offset += shardSize) {
         shardRanges.push({ start: offset, end: Math.min(programHint, offset + shardSize) });
       }
-      // Tail shard catches any configured program rows beyond the hint.
-      shardRanges.push({ start: programHint, end: null });
       const rows = businessDates.flatMap((businessDate, index) =>
         shardRanges.map((range) => ({
           runId: id,
@@ -391,7 +446,7 @@ export async function startQueueRun(input: {
             businessDateIso: businessDate.toISOString().slice(0, 10),
             businessDateIndex: index,
             programOffset: range.start,
-            ...(range.end !== null ? { programEndOffset: range.end } : {}),
+            programEndOffset: range.end,
             programBatchSize: shardSize,
             requestOffset: 0,
             bookmark: null,
@@ -946,7 +1001,8 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
   let leasedTasks = 0;
   let leaseRounds = 0;
   let timedOutRuns = 0;
-  const tickConcurrency = resolveTickConcurrency();
+  const maxTasksPerTick = resolveMaxTasksPerTick();
+  const tickConcurrency = Math.min(maxTasksPerTick, resolveTickConcurrency());
   let activeTickConcurrency = tickConcurrency;
   let cleanBatchStreak = 0;
   const results: Array<Record<string, unknown>> = [];
@@ -1042,7 +1098,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
       timedOutRuns += await failTimedOutRuns();
     }
     promotedRuns += await promoteQueuedRunsForIdleCompanies();
-    const leased = await leasePendingTasks(MAX_TASKS_PER_TICK);
+    const leased = await leasePendingTasks(maxTasksPerTick);
     if (leased.length === 0) break;
     leasedTasks += leased.length;
     for (let index = 0; index < leased.length; index += activeTickConcurrency) {
@@ -1086,6 +1142,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     timedOutRuns,
     leaseRounds,
     tickConcurrency,
+    maxTasksPerTick,
     activeTickConcurrency,
     elapsedMs: Date.now() - tickStartedAt,
     results,
