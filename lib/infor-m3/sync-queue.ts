@@ -168,15 +168,15 @@ function resolveRunMaxAgeHours(): number {
 }
 
 function resolveFanoutDayProgramShardSize(): number {
-  const raw = Number(process.env.INFOR_SYNC_FANOUT_DAY_PROGRAM_SHARD_SIZE || 4);
-  if (!Number.isFinite(raw) || raw <= 0) return 4;
+  const raw = Number(process.env.INFOR_SYNC_FANOUT_DAY_PROGRAM_SHARD_SIZE || 8);
+  if (!Number.isFinite(raw) || raw <= 0) return 8;
   return Math.min(12, Math.max(1, Math.floor(raw)));
 }
 
 function resolveFanoutProgramHint(): number {
-  const raw = Number(process.env.INFOR_SYNC_FANOUT_PROGRAM_HINT || 24);
-  if (!Number.isFinite(raw) || raw <= 0) return 24;
-  return Math.min(120, Math.max(8, Math.floor(raw)));
+  const raw = Number(process.env.INFOR_SYNC_FANOUT_PROGRAM_HINT || 8);
+  if (!Number.isFinite(raw) || raw <= 0) return 8;
+  return Math.min(120, Math.max(4, Math.floor(raw)));
 }
 
 function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
@@ -663,7 +663,20 @@ async function processTask(
     const backoffMs = Math.min(5 * 60 * 1000, Math.max(10_000, Math.floor(2 ** attemptNo) * 1000));
     const isBusinessDayBackfill = String(task.run.mode || '') === 'business_day_backfill';
     const shouldSkip = reachedMax && isBusinessDayBackfill;
+    let processed = false;
     await db().$transaction(async (tx) => {
+      const leaseConsumed = await tx.inforSyncTask.updateMany({
+        where: { id: task.id, status: 'leased' },
+        data: {
+          attemptCount: attemptNo,
+          updatedAt: now,
+        },
+      });
+      if (Number(leaseConsumed?.count || 0) !== 1) {
+        return;
+      }
+      processed = true;
+
       await tx.inforSyncTaskAttempt.create({
         data: {
           taskId: task.id,
@@ -683,11 +696,10 @@ async function processTask(
 
       if (shouldSkip) {
         const nextPayload = buildTaskPayload(task.run, buildSkippedCursorFromPayload(taskPayload));
-        await tx.inforSyncTask.update({
+        await tx.inforSyncTask.updateMany({
           where: { id: task.id },
           data: {
             status: 'done',
-            attemptCount: attemptNo,
             finishedAt: now,
             updatedAt: now,
             lastError: String(details).slice(0, 1200),
@@ -696,17 +708,8 @@ async function processTask(
             leaseExpiresAt: null,
           },
         });
-        await tx.inforSyncTask.create({
-          data: {
-            runId: task.runId,
-            companyId: task.companyId,
-            status: 'pending',
-            maxAttempts: Math.max(1, Number(task.maxAttempts || DEFAULT_MAX_ATTEMPTS)),
-            payload: nextPayload,
-          },
-        });
-        await tx.inforSyncRun.update({
-          where: { id: task.runId },
+        const runUpdated = await tx.inforSyncRun.updateMany({
+          where: { id: task.runId, status: 'running' },
           data: {
             warningCount: { increment: 1 },
             retryCount: 0,
@@ -715,15 +718,25 @@ async function processTask(
             message: `Skipped stuck chunk after ${attemptNo} retries; continuing backfill.`,
           },
         });
+        if (Number(runUpdated?.count || 0) === 1) {
+          await tx.inforSyncTask.create({
+            data: {
+              runId: task.runId,
+              companyId: task.companyId,
+              status: 'pending',
+              maxAttempts: Math.max(1, Number(task.maxAttempts || DEFAULT_MAX_ATTEMPTS)),
+              payload: nextPayload,
+            },
+          });
+        }
         return;
       }
 
       if (reachedMax) {
-        await tx.inforSyncTask.update({
+        await tx.inforSyncTask.updateMany({
           where: { id: task.id },
           data: {
             status: 'failed',
-            attemptCount: attemptNo,
             finishedAt: now,
             updatedAt: now,
             lastError: String(details).slice(0, 1200),
@@ -732,8 +745,8 @@ async function processTask(
             leaseExpiresAt: null,
           },
         });
-        await tx.inforSyncRun.update({
-          where: { id: task.runId },
+        await tx.inforSyncRun.updateMany({
+          where: { id: task.runId, status: 'running' },
           data: {
             status: 'failed',
             retryCount: { increment: 1 },
@@ -746,11 +759,10 @@ async function processTask(
         return;
       }
 
-      await tx.inforSyncTask.update({
+      await tx.inforSyncTask.updateMany({
         where: { id: task.id },
         data: {
           status: 'pending',
-          attemptCount: attemptNo,
           availableAt: new Date(Date.now() + backoffMs),
           updatedAt: now,
           lastError: String(details).slice(0, 1200),
@@ -759,8 +771,8 @@ async function processTask(
           leaseExpiresAt: null,
         },
       });
-      await tx.inforSyncRun.update({
-        where: { id: task.runId },
+      await tx.inforSyncRun.updateMany({
+        where: { id: task.runId, status: 'running' },
         data: {
           retryCount: { increment: 1 },
           updatedAt: now,
@@ -769,6 +781,9 @@ async function processTask(
         },
       });
     });
+    if (!processed) {
+      return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
+    }
     if (reachedMax && !shouldSkip) {
       await notifyQueueRunFailure(
         task.companyId,
@@ -788,9 +803,10 @@ async function processTask(
       ? (data.cursor as Record<string, unknown>)
       : null;
 
+  let processed = false;
   await db().$transaction(async (tx) => {
-    await tx.inforSyncTask.update({
-      where: { id: task.id },
+    const leaseConsumed = await tx.inforSyncTask.updateMany({
+      where: { id: task.id, status: 'leased' },
       data: {
         status: 'done',
         attemptCount: attemptNo,
@@ -802,6 +818,10 @@ async function processTask(
         leaseExpiresAt: null,
       },
     });
+    if (Number(leaseConsumed?.count || 0) !== 1) {
+      return;
+    }
+    processed = true;
     await tx.inforSyncTaskAttempt.create({
       data: {
         taskId: task.id,
@@ -819,7 +839,23 @@ async function processTask(
       },
     });
 
-    if (hasMore && cursor) {
+    const runUpdated = await tx.inforSyncRun.updateMany({
+      where: { id: task.runId, status: 'running' },
+      data: {
+        status: 'running',
+        chunkCount: { increment: 1 },
+        recordsCreated: { increment: recordsCreated },
+        warningCount: { increment: warnings },
+        retryCount: 0,
+        updatedAt: now,
+        lastChunkAt: now,
+        lastError: null,
+        // Completion message is written only by terminal transition when no tasks remain.
+        message: null,
+      },
+    });
+
+    if (Number(runUpdated?.count || 0) === 1 && hasMore && cursor) {
       await tx.inforSyncTask.create({
         data: {
           runId: task.runId,
@@ -831,22 +867,7 @@ async function processTask(
       });
     }
 
-    await tx.inforSyncRun.update({
-      where: { id: task.runId },
-      data: {
-        status: 'running',
-        chunkCount: { increment: 1 },
-        recordsCreated: { increment: recordsCreated },
-        warningCount: { increment: warnings },
-        retryCount: 0,
-        updatedAt: now,
-        lastChunkAt: now,
-        lastError: null,
-        message: hasMore ? null : 'Background sync completed.',
-      },
-    });
-
-    if (!hasMore) {
+    if (Number(runUpdated?.count || 0) === 1 && !hasMore) {
       const remaining = await tx.inforSyncTask.count({
         where: {
           runId: task.runId,
@@ -854,8 +875,8 @@ async function processTask(
         },
       });
       if (remaining === 0) {
-        await tx.inforSyncRun.update({
-          where: { id: task.runId },
+        await tx.inforSyncRun.updateMany({
+          where: { id: task.runId, status: 'running' },
           data: {
             status: 'done',
             finishedAt: now,
@@ -867,6 +888,9 @@ async function processTask(
     }
   });
 
+  if (!processed) {
+    return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
+  }
   return { runId: task.runId, taskId: task.id, status: 'success' };
 }
 
@@ -875,9 +899,10 @@ async function markTaskExecutionFailure(
   message: string
 ): Promise<Record<string, unknown>> {
   const now = new Date();
+  let processed = false;
   await db().$transaction(async (tx) => {
-    await tx.inforSyncTask.update({
-      where: { id: task.id },
+    const leaseConsumed = await tx.inforSyncTask.updateMany({
+      where: { id: task.id, status: 'leased' },
       data: {
         status: 'failed',
         attemptCount: Math.max(0, Number(task.attemptCount || 0)) + 1,
@@ -888,8 +913,12 @@ async function markTaskExecutionFailure(
         leaseExpiresAt: null,
       },
     });
-    await tx.inforSyncRun.update({
-      where: { id: task.runId },
+    if (Number(leaseConsumed?.count || 0) !== 1) {
+      return;
+    }
+    processed = true;
+    await tx.inforSyncRun.updateMany({
+      where: { id: task.runId, status: 'running' },
       data: {
         status: 'failed',
         updatedAt: now,
@@ -899,6 +928,9 @@ async function markTaskExecutionFailure(
       },
     });
   });
+  if (!processed) {
+    return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
+  }
   await notifyQueueRunFailure(
     task.companyId,
     (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
