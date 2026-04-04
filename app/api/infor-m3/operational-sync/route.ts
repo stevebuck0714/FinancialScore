@@ -341,6 +341,7 @@ export async function POST(request: NextRequest) {
           snapshotDateOverride: businessDate,
           preserveCashSnapshot: shouldPreserveCashSnapshotForSlice,
           skipPrune: true,
+          businessDayFanout,
           programOffset: effectiveProgramOffset,
           programLimit: programBatchSize,
           requestOffset: effectiveRequestOffset,

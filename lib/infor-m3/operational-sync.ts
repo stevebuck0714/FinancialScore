@@ -46,6 +46,7 @@ type SyncOptions = {
   skipPrune?: boolean;
   syncRunId?: string;
   salesOnly?: boolean;
+  businessDayFanout?: boolean;
   arOnlyBackfill?: boolean;
   skipDailySnapshotHydration?: boolean;
   programOffset?: number;
@@ -4473,6 +4474,16 @@ export async function syncInforM3OperationalData(
     }
   };
   const syncRunId = String(options?.syncRunId || '').trim() || randomUUID();
+  const fanoutMaxPagesRaw = Number(process.env.SYNC_FANOUT_MAX_PAGES_PER_REQUEST || 60);
+  const fanoutMaxPagesPerRequest =
+    Number.isFinite(fanoutMaxPagesRaw) && fanoutMaxPagesRaw > 0
+      ? Math.min(240, Math.max(MAX_CSI_PAGES_PER_REQUEST, Math.floor(fanoutMaxPagesRaw)))
+      : 60;
+  const fanoutGlPeriodMaxPagesRaw = Number(process.env.SYNC_FANOUT_GL_PERIOD_MAX_PAGES_PER_REQUEST || 120);
+  const fanoutGlPeriodMaxPagesPerRequest =
+    Number.isFinite(fanoutGlPeriodMaxPagesRaw) && fanoutGlPeriodMaxPagesRaw > 0
+      ? Math.min(300, Math.max(fanoutMaxPagesPerRequest, Math.floor(fanoutGlPeriodMaxPagesRaw)))
+      : 120;
   // Normalize to a UTC calendar day key so repeated runs do not create
   // mixed local-time snapshot variants (e.g. 00:00 and 07:00).
   const snapshotDate = startOfUtcDay(options?.snapshotDateOverride ? new Date(options.snapshotDateOverride) : new Date());
@@ -4732,7 +4743,9 @@ export async function syncInforM3OperationalData(
       const programId = resolveCsiProgramId(row, req.endpointPath);
       const isSlCoitemsProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
       const isSlArtransProgram = moduleType === 'ar' && programId === 'SLARTRANS';
+      const isGlAcctPeriodBalancesProgram = moduleType === 'gl' && programId === 'GLACCTPERIODBALANCES';
       const isHistoricalDailySliceRequest = frequency === 'daily' && Boolean(options?.snapshotDateOverride);
+      const isFanoutHistoricalDailySlice = isHistoricalDailySliceRequest && options?.businessDayFanout === true;
       const isArBackfillWindow = moduleType === 'ar' && syncWindow?.mode === 'backfill';
       const baseRequestTimeoutMs = moduleType === 'inventory' || isArBackfillWindow ? 120000 : 30000;
       const requestTimeoutMs = Math.max(
@@ -4744,6 +4757,10 @@ export async function syncInforM3OperationalData(
       const baseMaxPagesPerRequest =
         isSlCoitemsProgram
           ? 8
+          : isGlAcctPeriodBalancesProgram && isFanoutHistoricalDailySlice
+            ? fanoutGlPeriodMaxPagesPerRequest
+            : isFanoutHistoricalDailySlice
+              ? fanoutMaxPagesPerRequest
           : isSlArtransProgram && isHistoricalDailySliceRequest
             ? 2
             : MAX_CSI_PAGES_PER_REQUEST;
