@@ -30,6 +30,7 @@ type InforOperationalSyncResult = {
     programOffset: number;
     requestOffset: number;
     bookmark: string | null;
+    programEndOffset?: number;
   } | null;
   totalProgramRows: number;
 };
@@ -51,6 +52,7 @@ type SyncOptions = {
   skipDailySnapshotHydration?: boolean;
   programOffset?: number;
   programLimit?: number;
+  programEndOffset?: number;
   requestOffset?: number;
   bookmark?: string | null;
 };
@@ -4593,9 +4595,22 @@ export async function syncInforM3OperationalData(
     options?.programLimit && Number.isFinite(options.programLimit) && Number(options.programLimit) > 0
       ? Math.floor(Number(options.programLimit))
       : totalProgramRows;
-  const programRowsToProcess = programRows.slice(programOffset, programOffset + requestedLimit);
+  const requestedProgramEndOffset =
+    options?.programEndOffset !== undefined &&
+    options?.programEndOffset !== null &&
+    Number.isFinite(Number(options.programEndOffset))
+      ? Math.floor(Number(options.programEndOffset))
+      : null;
+  const effectiveProgramEndOffset =
+    requestedProgramEndOffset === null
+      ? totalProgramRows
+      : Math.min(totalProgramRows, Math.max(programOffset, requestedProgramEndOffset));
+  const programRowsToProcess = programRows.slice(
+    programOffset,
+    Math.min(programOffset + requestedLimit, effectiveProgramEndOffset)
+  );
   const nextProgramOffset =
-    programOffset + programRowsToProcess.length < totalProgramRows
+    programOffset + programRowsToProcess.length < effectiveProgramEndOffset
       ? programOffset + programRowsToProcess.length
       : null;
 
@@ -5144,6 +5159,8 @@ export async function syncInforM3OperationalData(
                 programOffset: nextProgramOffset,
                 requestOffset: 0,
                 bookmark: null,
+                programEndOffset:
+                  effectiveProgramEndOffset < totalProgramRows ? effectiveProgramEndOffset : undefined,
               };
             } else {
               continuation = null;
@@ -5156,6 +5173,8 @@ export async function syncInforM3OperationalData(
               programOffset: absoluteProgramOffset,
               requestOffset: reqIndex,
               bookmark: continuationBookmark,
+              programEndOffset:
+                effectiveProgramEndOffset < totalProgramRows ? effectiveProgramEndOffset : undefined,
             };
           }
         }
@@ -5665,6 +5684,8 @@ export async function syncInforM3OperationalData(
       programOffset: nextProgramOffset,
       requestOffset: 0,
       bookmark: null,
+      programEndOffset:
+        effectiveProgramEndOffset < totalProgramRows ? effectiveProgramEndOffset : undefined,
     };
   }
 

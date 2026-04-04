@@ -167,6 +167,18 @@ function resolveRunMaxAgeHours(): number {
   return Math.min(72, Math.max(1, Math.floor(raw)));
 }
 
+function resolveFanoutDayProgramShardSize(): number {
+  const raw = Number(process.env.INFOR_SYNC_FANOUT_DAY_PROGRAM_SHARD_SIZE || 4);
+  if (!Number.isFinite(raw) || raw <= 0) return 4;
+  return Math.min(12, Math.max(1, Math.floor(raw)));
+}
+
+function resolveFanoutProgramHint(): number {
+  const raw = Number(process.env.INFOR_SYNC_FANOUT_PROGRAM_HINT || 24);
+  if (!Number.isFinite(raw) || raw <= 0) return 24;
+  return Math.min(120, Math.max(8, Math.floor(raw)));
+}
+
 function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
   if (String(run.platform) !== 'INFOR_M3') return 1;
   const mode = String(run.mode || '');
@@ -283,6 +295,9 @@ function buildSkippedCursorFromPayload(payload: Record<string, unknown>): Record
   if (Number.isFinite(Number(payload.businessDateIndex))) {
     cursor.businessDateIndex = Math.max(0, Math.floor(Number(payload.businessDateIndex)));
   }
+  if (Number.isFinite(Number(payload.programEndOffset))) {
+    cursor.programEndOffset = Math.max(0, Math.floor(Number(payload.programEndOffset)));
+  }
   if (payload.businessDayFanout === true) {
     cursor.businessDayFanout = true;
   }
@@ -356,30 +371,40 @@ export async function startQueueRun(input: {
     const startDate = new Date(String(input.startDate));
     const endDate = new Date(String(input.endDate));
     const businessDates = enumerateBusinessDates(startDate, endDate);
-    const programBatchSize = resolveInitialProgramBatchSize(runRecord);
+    const shardSize = resolveFanoutDayProgramShardSize();
+    const programHint = resolveFanoutProgramHint();
     if (businessDates.length > 0) {
-      const rows = businessDates.map((businessDate, index) => ({
-        runId: id,
-        companyId: input.companyId,
-        status: 'pending' as const,
-        maxAttempts: DEFAULT_MAX_ATTEMPTS,
-        payload: buildTaskPayload(runRecord, {
-          businessDayFanout: true,
-          businessDateIso: businessDate.toISOString().slice(0, 10),
-          businessDateIndex: index,
-          programOffset: 0,
-          programBatchSize,
-          requestOffset: 0,
-          bookmark: null,
-          stagnantCursorCount: 0,
-        }),
-      }));
+      const shardRanges: Array<{ start: number; end: number | null }> = [];
+      for (let offset = 0; offset < programHint; offset += shardSize) {
+        shardRanges.push({ start: offset, end: Math.min(programHint, offset + shardSize) });
+      }
+      // Tail shard catches any configured program rows beyond the hint.
+      shardRanges.push({ start: programHint, end: null });
+      const rows = businessDates.flatMap((businessDate, index) =>
+        shardRanges.map((range) => ({
+          runId: id,
+          companyId: input.companyId,
+          status: 'pending' as const,
+          maxAttempts: DEFAULT_MAX_ATTEMPTS,
+          payload: buildTaskPayload(runRecord, {
+            businessDayFanout: true,
+            businessDateIso: businessDate.toISOString().slice(0, 10),
+            businessDateIndex: index,
+            programOffset: range.start,
+            ...(range.end !== null ? { programEndOffset: range.end } : {}),
+            programBatchSize: shardSize,
+            requestOffset: 0,
+            bookmark: null,
+            stagnantCursorCount: 0,
+          }),
+        }))
+      );
       await db().inforSyncTask.createMany({ data: rows });
       if (!running) {
         await db().inforSyncRun.update({
           where: { id },
           data: {
-            message: `Queued ${businessDates.length} business-day slices for background processing.`,
+            message: `Queued ${businessDates.length} business-day slices across ${shardRanges.length} program shards.`,
           },
         });
       }

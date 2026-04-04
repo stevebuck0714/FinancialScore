@@ -17,6 +17,7 @@ type SyncCursor = {
   businessDayFanout?: boolean;
   businessDateIso?: string;
   programOffset: number;
+  programEndOffset?: number;
   programBatchSize: number;
   requestOffset?: number;
   bookmark?: string | null;
@@ -223,6 +224,7 @@ export async function POST(request: NextRequest) {
     const syncWindow = buildSyncWindow(body, frequency);
     const programBatchSize = Math.min(normalizePositiveInt(body.programBatchSize) ?? 1, 10);
     const requestedProgramOffset = normalizeNonNegativeInt(body.programOffset) ?? 0;
+    const requestedProgramEndOffset = normalizeNonNegativeInt(body.programEndOffset);
     const requestedRequestOffset = normalizeNonNegativeInt(body.requestOffset) ?? 0;
     const requestedBookmark =
       typeof body.bookmark === 'string' && body.bookmark.trim().length > 0 ? body.bookmark.trim() : null;
@@ -234,6 +236,7 @@ export async function POST(request: NextRequest) {
     const resetContinuationForMissingRunId = hasContinuationCursor && !requestedSyncRunId;
     const effectiveSyncRunId = requestedSyncRunId || randomUUID();
     const effectiveProgramOffset = resetContinuationForMissingRunId ? 0 : requestedProgramOffset;
+    const effectiveProgramEndOffset = resetContinuationForMissingRunId ? null : requestedProgramEndOffset;
     const effectiveRequestOffset = resetContinuationForMissingRunId ? 0 : requestedRequestOffset;
     const effectiveBookmark = resetContinuationForMissingRunId ? null : requestedBookmark;
     const effectiveStagnantCursorCount = resetContinuationForMissingRunId ? 0 : requestedStagnantCursorCount;
@@ -343,6 +346,7 @@ export async function POST(request: NextRequest) {
           skipPrune: true,
           businessDayFanout,
           programOffset: effectiveProgramOffset,
+          programEndOffset: effectiveProgramEndOffset ?? undefined,
           programLimit: programBatchSize,
           requestOffset: effectiveRequestOffset,
           bookmark: effectiveBookmark,
@@ -364,6 +368,7 @@ export async function POST(request: NextRequest) {
           backfillMonths: months,
           businessDateIndex,
           programOffset: dayResult.continuation?.programOffset ?? dayResult.nextProgramOffset,
+          programEndOffset: dayResult.continuation?.programEndOffset ?? effectiveProgramEndOffset ?? undefined,
           programBatchSize,
           requestOffset: dayResult.continuation?.requestOffset ?? 0,
           bookmark: dayResult.continuation?.bookmark ?? null,
@@ -378,6 +383,7 @@ export async function POST(request: NextRequest) {
           backfillMonths: months,
           businessDateIndex: businessDateIndex - 1,
           programOffset: 0,
+          programEndOffset: undefined,
           programBatchSize,
           stagnantCursorCount: 0,
         };
@@ -410,6 +416,7 @@ export async function POST(request: NextRequest) {
           backfillMonths: months,
           businessDateIndex,
           programOffset: effectiveProgramOffset,
+          programEndOffset: effectiveProgramEndOffset ?? undefined,
           programBatchSize,
           requestOffset: effectiveRequestOffset,
           bookmark: effectiveBookmark,
@@ -461,6 +468,7 @@ export async function POST(request: NextRequest) {
 
     const result = await syncInforM3OperationalData(companyId, frequency, site, syncWindow || undefined, {
       programOffset: effectiveProgramOffset,
+      programEndOffset: effectiveProgramEndOffset ?? undefined,
       programLimit: programBatchSize,
       requestOffset: effectiveRequestOffset,
       bookmark: effectiveBookmark,
@@ -473,6 +481,7 @@ export async function POST(request: NextRequest) {
           syncRunId: effectiveSyncRunId,
           salesOnly: salesOnly || undefined,
           programOffset: (result.continuation?.programOffset ?? result.nextProgramOffset) || 0,
+          programEndOffset: result.continuation?.programEndOffset ?? effectiveProgramEndOffset ?? undefined,
           programBatchSize,
           requestOffset: result.continuation?.requestOffset ?? 0,
           bookmark: result.continuation?.bookmark ?? null,
@@ -498,6 +507,7 @@ export async function POST(request: NextRequest) {
         syncRunId: effectiveSyncRunId,
         salesOnly: salesOnly || undefined,
         programOffset: effectiveProgramOffset,
+        programEndOffset: effectiveProgramEndOffset ?? undefined,
         programBatchSize,
         requestOffset: effectiveRequestOffset,
         bookmark: effectiveBookmark,
