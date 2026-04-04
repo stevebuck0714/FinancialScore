@@ -338,6 +338,7 @@ model MonthlyFinancial {
   depreciationAmortization Float           @default(0)
   otherExpense             Float           @default(0)
   nonOperatingIncome       Float           @default(0)
+  nonOperatingExpense      Float           @default(0)
   extraordinaryItems       Float           @default(0)
   lobBreakdowns            Json?           // Comprehensive LOB breakdowns for all fields
   cash                     Float           @default(0)
@@ -486,6 +487,92 @@ model ApiSyncLog {
   @@index([companyId])
   @@index([platform])
   @@index([createdAt])
+  @@index([companyId, platform, createdAt(sort: Desc)])
+}
+
+model InforSyncRun {
+  id             String   @id
+  companyId      String
+  platform       String   @default("INFOR_M3")
+  status         String   @default("running") // queued | running | done | failed | cancelled
+  frequency      String   @default("daily")
+  site           String?
+  mode           String?
+  backfillMonths Int?
+  lookbackDays   Int?
+  startDate      DateTime?
+  endDate        DateTime?
+  salesOnly      Boolean  @default(false)
+  chunkCount     Int      @default(0)
+  recordsCreated Int      @default(0)
+  warningCount   Int      @default(0)
+  retryCount     Int      @default(0)
+  message        String?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+  lastChunkAt    DateTime?
+  tasks          InforSyncTask[]
+
+  @@index([companyId, status, createdAt(sort: Desc)])
+  @@index([companyId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([status, updatedAt(sort: Desc)])
+  @@index([companyId, platform, status, updatedAt(sort: Desc)])
+}
+
+model InforSyncTask {
+  id            String                @id @default(cuid())
+  runId         String
+  companyId     String
+  status        String                @default("pending") // pending | leased | done | failed | cancelled
+  attemptCount  Int                   @default(0)
+  maxAttempts   Int                   @default(6)
+  availableAt   DateTime              @default(now())
+  leaseOwner    String?
+  leaseExpiresAt DateTime?
+  payload       Json
+  lastError     String?
+  lastResponse  Json?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  run           InforSyncRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  attempts      InforSyncTaskAttempt[]
+
+  @@index([runId, status])
+  @@index([runId, status, availableAt])
+  @@index([runId, status, updatedAt(sort: Desc)])
+  @@index([status, leaseExpiresAt])
+  @@index([status, availableAt, leaseExpiresAt])
+  @@index([status, availableAt, createdAt])
+  @@index([companyId, status, availableAt])
+  @@index([companyId, status, createdAt(sort: Desc)])
+}
+
+model InforSyncTaskAttempt {
+  id              String        @id @default(cuid())
+  taskId           String
+  runId            String
+  companyId        String
+  attemptNo        Int
+  status           String       // success | retry | failed | skipped
+  httpStatus       Int?
+  errorMessage     String?
+  responseSnippet  String?
+  recordsCreated   Int          @default(0)
+  warningCount     Int          @default(0)
+  durationMs       Int?
+  startedAt        DateTime     @default(now())
+  finishedAt       DateTime?
+  task             InforSyncTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, attemptNo])
+  @@index([runId, startedAt(sort: Desc)])
+  @@index([companyId, startedAt(sort: Desc)])
 }
 
 model AccountMapping {
@@ -503,7 +590,8 @@ model AccountMapping {
   lobAllocations          Json?
   company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@unique([companyId, qbAccount])
+  @@unique([companyId, qbAccountId])
+  @@index([companyId, qbAccount])
   @@index([companyId])
 }
 
@@ -987,6 +1075,188 @@ model ARPaymentFact {
   @@index([companyId, invoiceNo])
 }
 
+model GLTransactionFact {
+  id                String   @id @default(cuid())
+  companyId         String
+  transDate         DateTime
+  accountId         String
+  accountName       String?
+  accountType       String?
+  accountCategory   String?
+  signedAmount      Float
+  debitAmount       Float?
+  creditAmount      Float?
+  drCr              String?
+  transNum          String?
+  ref               String?
+  description       String?
+  site              String?
+  sourcePlatform    String?  @default("INFOR_M3")
+  sourceProgram     String?
+  sourceTransaction String?
+  cono              String?
+  divi              String?
+  createdAt         DateTime @default(now())
+
+  @@index([companyId, transDate(sort: Desc)])
+  @@index([companyId, accountId, transDate(sort: Desc)])
+  @@index([companyId, transNum])
+  @@index([companyId, ref])
+  @@unique([companyId, transDate, accountId, transNum, ref, description])
+}
+
+model ARInvoiceDetail {
+  id               String   @id @default(cuid())
+  companyId        String
+  asOfDate         DateTime
+  snapshotFrequency String  @default("daily")
+  customerId       String?
+  customerName     String
+  invoiceId        String
+  invoiceDate      DateTime?
+  dueDate          DateTime?
+  invoiceAmount    Float
+  amountPaid       Float
+  remainingBalance Float
+  sourceClass      String?  @default("UNKNOWN")
+  sourceSystem     String?
+  sourceDocId      String?
+  sourceMatchConfidence String?
+  sourceMatchedBy  String?
+  daysOutstanding  Int?
+  agingBucket      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([companyId, asOfDate(sort: Desc)])
+  @@index([companyId, customerId, asOfDate(sort: Desc)])
+  @@index([companyId, invoiceId])
+  @@index([companyId, sourceClass, asOfDate(sort: Desc)])
+  @@unique([companyId, asOfDate, snapshotFrequency, invoiceId, customerName])
+}
+
+model ARInvoiceOriginMap {
+  id                 String   @id @default(cuid())
+  companyId          String
+  invoiceNoNormalized String
+  customerId         String?
+  customerKey        String   @default("")
+  sourceClass        String   @default("UNKNOWN")
+  sourceSystem       String
+  sourceDocId        String?
+  sourceInvoiceNoRaw String?
+  matchConfidence    String   @default("LOW")
+  matchedBy          String   @default("INVOICE_NO")
+  firstSeenAt        DateTime @default(now())
+  lastSeenAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([companyId, sourceClass])
+  @@index([companyId, lastSeenAt(sort: Desc)])
+  @@index([companyId, invoiceNoNormalized])
+  @@unique([companyId, invoiceNoNormalized, customerKey, sourceSystem])
+}
+
+model CustomerContractStatus {
+  id                    String   @id @default(cuid())
+  companyId             String
+  asOfDate              DateTime
+  customerId            String?
+  customerName          String
+  contractId            String
+  contractValue         Float
+  earnedToDate          Float
+  invoicedToDate        Float
+  remainingValue        Float
+  accruedRevenueUnbilled Float   @default(0)
+  arOutstanding         Float    @default(0)
+  cashCollectedToDate   Float    @default(0)
+  lastPaymentDate       DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([companyId, asOfDate(sort: Desc)])
+  @@index([companyId, customerId, asOfDate(sort: Desc)])
+  @@unique([companyId, asOfDate, customerName, contractId])
+}
+
+model CustomerCashFlow {
+  id          String   @id @default(cuid())
+  companyId   String
+  customerId  String?
+  customerName String
+  date        DateTime
+  cashInflow  Float
+  source      String
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, date(sort: Desc)])
+  @@index([companyId, customerId, date(sort: Desc)])
+}
+
+model CustomerOrderLineSnapshot {
+  id               String   @id @default(cuid())
+  companyId        String
+  snapshotDate     DateTime
+  frequency        String   @default("daily")
+  customerId       String?
+  customerName     String
+  orderId          String
+  lineId           String
+  orderDate        DateTime?
+  itemId           String?
+  itemName         String?
+  sku              String?
+  qtyOrdered       Float
+  qtyInvoiced      Float
+  unitPrice        Float
+  contractValue    Float
+  invoicedAmount   Float
+  remainingAmount  Float
+  unbilledAccrual  Float    @default(0)
+  sourcePlatform   String?  @default("INFOR_M3")
+  sourceProgram    String?
+  sourceTransaction String?
+  cono             String?
+  divi             String?
+  createdAt        DateTime @default(now())
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, customerId, snapshotDate(sort: Desc)])
+  @@index([companyId, orderDate])
+  @@index([companyId, orderId])
+  @@index([companyId, itemId])
+  @@index([companyId, sku])
+  @@unique([companyId, frequency, snapshotDate, orderId, lineId, customerName])
+}
+
+model SalesInvoiceHeaderSnapshot {
+  id               String   @id @default(cuid())
+  companyId        String
+  snapshotDate     DateTime
+  frequency        String   @default("daily")
+  orderId          String
+  invoiceNo        String
+  customerId       String?
+  customerName     String?
+  invoiceDate      DateTime?
+  sourcePlatform   String?  @default("INFOR_M3")
+  sourceProgram    String?
+  sourceTransaction String?
+  cono             String?
+  divi             String?
+  createdAt        DateTime @default(now())
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, orderId])
+  @@index([companyId, invoiceNo])
+  @@index([companyId, customerId])
+  @@unique([companyId, frequency, snapshotDate, orderId, invoiceNo, customerId])
+}
+
 model APOpenBillSnapshot {
   id                String   @id @default(cuid())
   companyId         String
@@ -1091,6 +1361,9 @@ model InventorySnapshot {
   itemId       String?  // QuickBooks item ID
   itemName     String
   sku          String?
+  warehouse    String?
+  bin          String?
+  lot          String?
   qtyOnHand    Float
   assetValue   Float
   avgCost      Float?
@@ -1156,6 +1429,7 @@ model DailyFinancialSnapshot {
   depreciationAmortization Float   @default(0)
   otherExpense            Float    @default(0)
   nonOperatingIncome      Float    @default(0)
+  nonOperatingExpense     Float    @default(0)
   extraordinaryItems      Float    @default(0)
 
   // Balance sheet snapshot fields (point-in-time)
