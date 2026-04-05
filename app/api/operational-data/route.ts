@@ -3966,11 +3966,12 @@ export async function GET(request: NextRequest) {
               accountNumber: string | null;
             }
           ): string => {
-            const nameKey = normalizeAccountNameForKey(String(row.accountName || ''));
-            if (nameKey) return `name:${nameKey}`;
             return (
               accountKeyFromParts(row.accountId, row.accountNumber, row.accountName) ||
-              String(row.accountName || '').trim().toLowerCase()
+              (() => {
+                const nameKey = normalizeAccountNameForKey(String(row.accountName || ''));
+                return nameKey ? `name:${nameKey}` : String(row.accountName || '').trim().toLowerCase();
+              })()
             );
           };
 
@@ -4088,6 +4089,61 @@ export async function GET(request: NextRequest) {
             return { ...record, cashBalance: Math.abs(balance) };
           });
         }
+
+        const isGenericCashName = (name: string): boolean =>
+          /^cash account \d+$/i.test(name) || /^account \d+$/i.test(name);
+        const canonicalizedByDayAccount = new Map<
+          string,
+          {
+            snapshotDate: Date;
+            accountName: string;
+            cashBalance: number;
+            accountId: string | null;
+            accountNumber: string | null;
+          }
+        >();
+        const scoreCashRecord = (record: {
+          accountName: string;
+          cashBalance: number;
+          accountId?: string | null;
+          accountNumber?: string | null;
+        }): number => {
+          const hasStructuredId = Boolean(String(record.accountNumber || '').trim() || String(record.accountId || '').trim());
+          const hasSpecificName = !isGenericCashName(String(record.accountName || '').trim());
+          const hasNonZeroBalance = Math.abs(Number(record.cashBalance || 0)) > 0;
+          return (hasStructuredId ? 4 : 0) + (hasSpecificName ? 2 : 0) + (hasNonZeroBalance ? 1 : 0);
+        };
+        for (const record of data) {
+          const accountKey =
+            accountKeyFromParts(record.accountId, record.accountNumber, record.accountName) ||
+            normalizeAccountNameForKey(String(record.accountName || ''));
+          if (!accountKey) continue;
+          const dayKey = dateKeyUtc(new Date(record.snapshotDate));
+          const compositeKey = `${dayKey}|${accountKey}`;
+          const existing = canonicalizedByDayAccount.get(compositeKey);
+          if (!existing) {
+            canonicalizedByDayAccount.set(compositeKey, record);
+            continue;
+          }
+          const existingScore = scoreCashRecord(existing);
+          const currentScore = scoreCashRecord(record);
+          if (currentScore > existingScore) {
+            canonicalizedByDayAccount.set(compositeKey, record);
+            continue;
+          }
+          if (currentScore === existingScore) {
+            const currentAbs = Math.abs(Number(record.cashBalance || 0));
+            const existingAbs = Math.abs(Number(existing.cashBalance || 0));
+            if (currentAbs > existingAbs) {
+              canonicalizedByDayAccount.set(compositeKey, record);
+            }
+          }
+        }
+        data = Array.from(canonicalizedByDayAccount.values()).sort(
+          (a, b) =>
+            new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime() ||
+            String(a.accountName || '').localeCompare(String(b.accountName || ''))
+        );
 
         console.log(`💰 Cash API - frequency: ${frequency}, records returned: ${data.length}`);
 
