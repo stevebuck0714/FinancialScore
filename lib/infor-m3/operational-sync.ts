@@ -709,6 +709,31 @@ function buildSlGlTransWindowFilter(window?: SyncWindow, site?: string): string 
   return `(${clauses.join(' and ')})`;
 }
 
+function buildGlAcctPeriodBalancesWindowFilter(window?: SyncWindow, site?: string): string | null {
+  if (!window) return null;
+  const startYear = window.startDate.getUTCFullYear();
+  const startPeriod = window.startDate.getUTCMonth() + 1;
+  const endYear = window.endDate.getUTCFullYear();
+  const endPeriod = window.endDate.getUTCMonth() + 1;
+
+  const periodClauses: string[] = [];
+  for (let year = startYear; year <= endYear; year += 1) {
+    const periodStart = year === startYear ? startPeriod : 1;
+    const periodEnd = year === endYear ? endPeriod : 12;
+    for (let period = periodStart; period <= periodEnd; period += 1) {
+      periodClauses.push(`(FiscalYear='${year}' and FiscalPeriod='${period}')`);
+    }
+  }
+  if (periodClauses.length === 0) return null;
+  const clauses: string[] = [`(${periodClauses.join(' or ')})`];
+  const siteValue = String(site || '').trim();
+  if (siteValue) {
+    const safeSite = siteValue.replace(/'/g, "''");
+    clauses.unshift(`Site='${safeSite}'`);
+  }
+  return `(${clauses.join(' and ')})`;
+}
+
 function buildSlArtransWindowFilter(window?: SyncWindow, site?: string): string | null {
   if (!window) return null;
   const start = formatCsiDateLiteral(window.startDate);
@@ -807,6 +832,15 @@ function applyCsiSourceWindowAndSort(
     params.set('filter', filter);
     params.set('recordCap', '500');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'TransDate desc, RecordDate desc');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+  }
+  if (moduleType === 'gl' && ido === 'GLACCTPERIODBALANCES') {
+    const filter = buildGlAcctPeriodBalancesWindowFilter(window, row.site);
+    if (!filter) return { endpointPath, applied: false };
+    params.set('filter', filter);
+    params.set('recordCap', '1000');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'FiscalYear desc, FiscalPeriod desc, Acct asc');
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true };
   }
@@ -5291,11 +5325,13 @@ export async function syncInforM3OperationalData(
         isApOpenSnapshotProgram ||
         isApOpenSupportProgram ||
         (isArApOpenFlow && syncWindow?.mode === 'daily_overlap');
-      // Contract/backlog math from SLCoitems also requires full line populations; clipping
-      // to overlap windows can zero out Contract Total for customers with older open orders.
+      // Contract/backlog math from SLCoitems requires full line populations for rolling
+      // daily-overlap runs. For backfill/manual slices, date-window filtering is required
+      // to avoid replaying the same historical order lines into every business date.
       const isOrderLineProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
+      const keepFullOrderLinePopulation = isOrderLineProgram && syncWindow?.mode === 'daily_overlap';
       const shouldApplyDateWindow =
-        !keepFullArApPopulation && !isOrderLineProgram;
+        !keepFullArApPopulation && !keepFullOrderLinePopulation;
       const recordsAfterDateWindow = shouldApplyDateWindow
         ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
         : recordsAfterSiteFilter;

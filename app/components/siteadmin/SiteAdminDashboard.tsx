@@ -1247,6 +1247,9 @@ export default function SiteAdminDashboard(props: any) {
         useCustomMonthRange: boolean;
         customStartMonth: string;
         customEndMonth: string;
+        useCustomDateRange: boolean;
+        customStartDate: string;
+        customEndDate: string;
       }
     >
   >({});
@@ -1269,6 +1272,9 @@ export default function SiteAdminDashboard(props: any) {
       useCustomMonthRange: false,
       customStartMonth: '',
       customEndMonth: '',
+      useCustomDateRange: false,
+      customStartDate: '',
+      customEndDate: '',
     };
 
   const setCompanyOperationalSettings = (
@@ -1283,6 +1289,9 @@ export default function SiteAdminDashboard(props: any) {
       useCustomMonthRange: boolean;
       customStartMonth: string;
       customEndMonth: string;
+      useCustomDateRange: boolean;
+      customStartDate: string;
+      customEndDate: string;
     }>
   ) => {
     setOperationalSyncSettingsByCompany((prev) => ({
@@ -1300,6 +1309,12 @@ export default function SiteAdminDashboard(props: any) {
             : prev[companyId]?.useCustomMonthRange || false,
         customStartMonth: next.customStartMonth ?? prev[companyId]?.customStartMonth ?? '',
         customEndMonth: next.customEndMonth ?? prev[companyId]?.customEndMonth ?? '',
+        useCustomDateRange:
+          typeof next.useCustomDateRange === 'boolean'
+            ? next.useCustomDateRange
+            : prev[companyId]?.useCustomDateRange || false,
+        customStartDate: next.customStartDate ?? prev[companyId]?.customStartDate ?? '',
+        customEndDate: next.customEndDate ?? prev[companyId]?.customEndDate ?? '',
       },
     }));
   };
@@ -1319,6 +1334,18 @@ export default function SiteAdminDashboard(props: any) {
     if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
     const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
     return end.toISOString();
+  };
+
+  const dayToRangeStartIso = (dayToken: string): string | null => {
+    const raw = String(dayToken || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+    return `${raw}T00:00:00.000Z`;
+  };
+
+  const dayToRangeEndIso = (dayToken: string): string | null => {
+    const raw = String(dayToken || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+    return `${raw}T23:59:59.999Z`;
   };
 
   const resolveCompanyCsiSite = (companyId: string): string => {
@@ -3442,27 +3469,51 @@ export default function SiteAdminDashboard(props: any) {
                                                           const site = requireCompanyCsiSite(company.id);
                                                           if (!site) return;
                                                           const syncSettings = getCompanyOperationalSettings(company.id);
-                                                          const useCustomRange = syncSettings.useCustomMonthRange;
-                                                          const startDate = useCustomRange
-                                                            ? monthToRangeStartIso(syncSettings.customStartMonth)
-                                                            : undefined;
-                                                          const endDate = useCustomRange
-                                                            ? monthToRangeEndIso(syncSettings.customEndMonth)
-                                                            : undefined;
-                                                          if (useCustomRange) {
+                                                          const useCustomDayRange = Boolean(syncSettings.useCustomDateRange);
+                                                          const useCustomMonthRange = Boolean(syncSettings.useCustomMonthRange);
+                                                          const startDate = useCustomDayRange
+                                                            ? dayToRangeStartIso(syncSettings.customStartDate)
+                                                            : useCustomMonthRange
+                                                              ? monthToRangeStartIso(syncSettings.customStartMonth)
+                                                              : undefined;
+                                                          const endDate = useCustomDayRange
+                                                            ? dayToRangeEndIso(syncSettings.customEndDate)
+                                                            : useCustomMonthRange
+                                                              ? monthToRangeEndIso(syncSettings.customEndMonth)
+                                                              : undefined;
+                                                          if (syncSettings.syncMode === 'business_day_backfill' && !useCustomDayRange) {
+                                                            alert('Historical Daily Backfill requires explicit Start Date and End Date (day-level).');
+                                                            return;
+                                                          }
+                                                          if (useCustomDayRange || useCustomMonthRange) {
                                                             if (!startDate || !endDate) {
-                                                              alert('Set both Start Month and End Month for custom range sync.');
+                                                              alert(
+                                                                useCustomDayRange
+                                                                  ? 'Set both Start Date and End Date for custom range sync.'
+                                                                  : 'Set both Start Month and End Month for custom range sync.'
+                                                              );
                                                               return;
                                                             }
                                                             if (new Date(startDate).getTime() > new Date(endDate).getTime()) {
-                                                              alert('Custom range is invalid: Start Month must be before End Month.');
+                                                              alert(
+                                                                useCustomDayRange
+                                                                  ? 'Custom range is invalid: Start Date must be before End Date.'
+                                                                  : 'Custom range is invalid: Start Month must be before End Month.'
+                                                              );
                                                               return;
                                                             }
                                                           }
                                                           runInforM3OperationalSync(company.id, syncSettings.frequency, site, {
-                                                            mode: useCustomRange ? 'manual' : syncSettings.syncMode,
-                                                            backfillMonths: useCustomRange ? undefined : syncSettings.backfillMonths,
-                                                            lookbackDays: useCustomRange ? undefined : syncSettings.lookbackDays,
+                                                            mode:
+                                                              useCustomDayRange || useCustomMonthRange
+                                                                ? (syncSettings.syncMode === 'business_day_backfill'
+                                                                  ? 'business_day_backfill'
+                                                                  : 'manual')
+                                                                : syncSettings.syncMode,
+                                                            backfillMonths:
+                                                              useCustomDayRange || useCustomMonthRange ? undefined : syncSettings.backfillMonths,
+                                                            lookbackDays:
+                                                              useCustomDayRange || useCustomMonthRange ? undefined : syncSettings.lookbackDays,
                                                             startDate,
                                                             endDate,
                                                           });
@@ -3588,6 +3639,62 @@ export default function SiteAdminDashboard(props: any) {
                                                           Use Custom Month Range (chunk large history loads)
                                                         </span>
                                                       </label>
+                                                      <label
+                                                        style={{
+                                                          display: 'flex',
+                                                          alignItems: 'center',
+                                                          gap: '8px',
+                                                          fontSize: '12px',
+                                                          color: '#334155',
+                                                          gridColumn: '1 / -1',
+                                                        }}
+                                                      >
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={Boolean(getCompanyOperationalSettings(company.id).useCustomDateRange)}
+                                                          onChange={(e) =>
+                                                            setCompanyOperationalSettings(company.id, {
+                                                              useCustomDateRange: e.target.checked,
+                                                            })
+                                                          }
+                                                        />
+                                                        <span style={{ fontWeight: 600 }}>
+                                                          Use Explicit Date Range (day-level, recommended for historical backfill)
+                                                        </span>
+                                                      </label>
+                                                      {getCompanyOperationalSettings(company.id).useCustomDateRange && (
+                                                        <>
+                                                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                            <span style={{ fontWeight: 600 }}>Start Date</span>
+                                                            <input
+                                                              type="date"
+                                                              value={getCompanyOperationalSettings(company.id).customStartDate}
+                                                              onChange={(e) =>
+                                                                setCompanyOperationalSettings(company.id, {
+                                                                  customStartDate: e.target.value,
+                                                                })
+                                                              }
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </label>
+                                                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                            <span style={{ fontWeight: 600 }}>End Date</span>
+                                                            <input
+                                                              type="date"
+                                                              value={getCompanyOperationalSettings(company.id).customEndDate}
+                                                              onChange={(e) =>
+                                                                setCompanyOperationalSettings(company.id, {
+                                                                  customEndDate: e.target.value,
+                                                                })
+                                                              }
+                                                              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                            />
+                                                          </label>
+                                                          <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#64748b', lineHeight: 1.35 }}>
+                                                            Historical Daily Backfill now requires explicit day-level Start/End dates.
+                                                          </div>
+                                                        </>
+                                                      )}
                                                       {getCompanyOperationalSettings(company.id).useCustomMonthRange && (
                                                         <>
                                                           <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
@@ -6048,27 +6155,51 @@ export default function SiteAdminDashboard(props: any) {
                                                   }
                                                   const site = requireCompanyCsiSite(businessCompany.id);
                                                   if (!site) return;
-                                                  const useCustomRange = operationalSettings.useCustomMonthRange;
-                                                  const startDate = useCustomRange
-                                                    ? monthToRangeStartIso(operationalSettings.customStartMonth)
-                                                    : undefined;
-                                                  const endDate = useCustomRange
-                                                    ? monthToRangeEndIso(operationalSettings.customEndMonth)
-                                                    : undefined;
-                                                  if (useCustomRange) {
+                                                  const useCustomDayRange = Boolean(operationalSettings.useCustomDateRange);
+                                                  const useCustomMonthRange = Boolean(operationalSettings.useCustomMonthRange);
+                                                  const startDate = useCustomDayRange
+                                                    ? dayToRangeStartIso(operationalSettings.customStartDate)
+                                                    : useCustomMonthRange
+                                                      ? monthToRangeStartIso(operationalSettings.customStartMonth)
+                                                      : undefined;
+                                                  const endDate = useCustomDayRange
+                                                    ? dayToRangeEndIso(operationalSettings.customEndDate)
+                                                    : useCustomMonthRange
+                                                      ? monthToRangeEndIso(operationalSettings.customEndMonth)
+                                                      : undefined;
+                                                  if (operationalSettings.syncMode === 'business_day_backfill' && !useCustomDayRange) {
+                                                    alert('Historical Daily Backfill requires explicit Start Date and End Date (day-level).');
+                                                    return;
+                                                  }
+                                                  if (useCustomDayRange || useCustomMonthRange) {
                                                     if (!startDate || !endDate) {
-                                                      alert('Set both Start Month and End Month for custom range sync.');
+                                                      alert(
+                                                        useCustomDayRange
+                                                          ? 'Set both Start Date and End Date for custom range sync.'
+                                                          : 'Set both Start Month and End Month for custom range sync.'
+                                                      );
                                                       return;
                                                     }
                                                     if (new Date(startDate).getTime() > new Date(endDate).getTime()) {
-                                                      alert('Custom range is invalid: Start Month must be before End Month.');
+                                                      alert(
+                                                        useCustomDayRange
+                                                          ? 'Custom range is invalid: Start Date must be before End Date.'
+                                                          : 'Custom range is invalid: Start Month must be before End Month.'
+                                                      );
                                                       return;
                                                     }
                                                   }
                                                   runInforM3OperationalSync(businessCompany.id, operationalSettings.frequency, site, {
-                                                    mode: useCustomRange ? 'manual' : operationalSettings.syncMode,
-                                                    backfillMonths: useCustomRange ? undefined : operationalSettings.backfillMonths,
-                                                    lookbackDays: useCustomRange ? undefined : operationalSettings.lookbackDays,
+                                                    mode:
+                                                      useCustomDayRange || useCustomMonthRange
+                                                        ? (operationalSettings.syncMode === 'business_day_backfill'
+                                                          ? 'business_day_backfill'
+                                                          : 'manual')
+                                                        : operationalSettings.syncMode,
+                                                    backfillMonths:
+                                                      useCustomDayRange || useCustomMonthRange ? undefined : operationalSettings.backfillMonths,
+                                                    lookbackDays:
+                                                      useCustomDayRange || useCustomMonthRange ? undefined : operationalSettings.lookbackDays,
                                                     startDate,
                                                     endDate,
                                                   });
@@ -6194,6 +6325,62 @@ export default function SiteAdminDashboard(props: any) {
                                                   Use Custom Month Range (chunk large history loads)
                                                 </span>
                                               </label>
+                                              <label
+                                                style={{
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  gap: '8px',
+                                                  fontSize: '12px',
+                                                  color: '#334155',
+                                                  gridColumn: '1 / -1',
+                                                }}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={Boolean(operationalSettings.useCustomDateRange)}
+                                                  onChange={(e) =>
+                                                    setCompanyOperationalSettings(businessCompany.id, {
+                                                      useCustomDateRange: e.target.checked,
+                                                    })
+                                                  }
+                                                />
+                                                <span style={{ fontWeight: 600 }}>
+                                                  Use Explicit Date Range (day-level, recommended for historical backfill)
+                                                </span>
+                                              </label>
+                                              {operationalSettings.useCustomDateRange && (
+                                                <>
+                                                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                    <span style={{ fontWeight: 600 }}>Start Date</span>
+                                                    <input
+                                                      type="date"
+                                                      value={operationalSettings.customStartDate}
+                                                      onChange={(e) =>
+                                                        setCompanyOperationalSettings(businessCompany.id, {
+                                                          customStartDate: e.target.value,
+                                                        })
+                                                      }
+                                                      style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                    />
+                                                  </label>
+                                                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
+                                                    <span style={{ fontWeight: 600 }}>End Date</span>
+                                                    <input
+                                                      type="date"
+                                                      value={operationalSettings.customEndDate}
+                                                      onChange={(e) =>
+                                                        setCompanyOperationalSettings(businessCompany.id, {
+                                                          customEndDate: e.target.value,
+                                                        })
+                                                      }
+                                                      style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
+                                                    />
+                                                  </label>
+                                                  <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: '#64748b', lineHeight: 1.35 }}>
+                                                    Historical Daily Backfill now requires explicit day-level Start/End dates.
+                                                  </div>
+                                                </>
+                                              )}
                                               {operationalSettings.useCustomMonthRange && (
                                                 <>
                                                   <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>

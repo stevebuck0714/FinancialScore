@@ -900,6 +900,7 @@ export async function GET(request: NextRequest) {
                 orderId: true,
                 lineId: true,
                 contractValue: true,
+                invoicedAmount: true,
               },
               orderBy: [{ snapshotDate: 'desc' }],
               take: 300000,
@@ -912,6 +913,7 @@ export async function GET(request: NextRequest) {
                 customerId: string | null;
                 customerName: string;
                 contractValue: number;
+                invoicedAmount: number;
               }
             >();
 
@@ -933,11 +935,15 @@ export async function GET(request: NextRequest) {
                 customerId,
                 customerName,
                 contractValue: Math.max(Number(row.contractValue || 0), 0),
+                invoicedAmount: Math.max(Number(row.invoicedAmount || 0), 0),
               });
             }
 
             for (const line of latestLineAsOfEnd.values()) {
-              const bookingValue = Number(line.contractValue || 0);
+              const bookingValue =
+                Number(line.contractValue || 0) > 0
+                  ? Number(line.contractValue || 0)
+                  : Number(line.invoicedAmount || 0);
               if (bookingValue <= 0) continue;
               const orderDate = new Date(line.orderDate);
               if (orderDate > endDate) continue;
@@ -975,6 +981,7 @@ export async function GET(request: NextRequest) {
                 orderId: true,
                 lineId: true,
                 contractValue: true,
+                invoicedAmount: true,
               },
               orderBy: [{ snapshotDate: 'asc' }],
               take: 250000,
@@ -1027,7 +1034,10 @@ export async function GET(request: NextRequest) {
               ) {
                 state.customerName = customerName;
               }
-              const value = Number(row.contractValue || 0);
+              const value =
+                Number(row.contractValue || 0) > 0
+                  ? Number(row.contractValue || 0)
+                  : Number(row.invoicedAmount || 0);
               if (!state.hasBaseline) {
                 state.lastValue = value;
                 state.hasBaseline = true;
@@ -1072,7 +1082,9 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        const bookingsCustomers = Array.from(bookingsByCustomer.values()).sort((a, b) => b.ytd - a.ytd);
+        const bookingsCustomers = Array.from(bookingsByCustomer.values())
+          .filter((row) => Number(row.mtd || 0) > 0 || Number(row.qtd || 0) > 0 || Number(row.ytd || 0) > 0)
+          .sort((a, b) => b.ytd - a.ytd);
         const bookingsTop5 = bookingsCustomers.slice(0, 5).reduce(
           (acc, row) => {
             acc.mtd += row.mtd;

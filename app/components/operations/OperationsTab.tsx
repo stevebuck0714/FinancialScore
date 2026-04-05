@@ -1933,6 +1933,7 @@ export default function OperationsTab({
               qtd: Number(row?.qtd || 0),
               ytd: Number(row?.ytd || 0),
             }))
+            .filter((row: any) => row.mtd > 0 || row.qtd > 0 || row.ytd > 0)
             .sort((a: any, b: any) => b.ytd - a.ytd)
             .slice(0, 10);
           const atRiskRows: any[] = [];

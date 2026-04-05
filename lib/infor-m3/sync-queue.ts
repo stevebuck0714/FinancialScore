@@ -65,6 +65,30 @@ function asIso(value: Date | null | undefined): string | null {
   return value ? new Date(value).toISOString() : null;
 }
 
+function describeTaskPayload(payload: Record<string, unknown>): string {
+  const mode = String(payload.mode || '').trim() || 'unknown';
+  const businessDateIso = String(payload.businessDateIso || '').trim() || 'n/a';
+  const programOffset = Math.max(0, Math.floor(Number(payload.programOffset || 0)));
+  const programEndOffset = Number.isFinite(Number(payload.programEndOffset))
+    ? Math.max(programOffset, Math.floor(Number(payload.programEndOffset || 0)))
+    : null;
+  const requestOffset = Math.max(0, Math.floor(Number(payload.requestOffset || 0)));
+  return `mode=${mode} businessDate=${businessDateIso} programOffset=${programOffset}` +
+    `${programEndOffset !== null ? `..${programEndOffset}` : ''} requestOffset=${requestOffset}`;
+}
+
+async function getGlRawMaxBusinessDate(companyId: string): Promise<Date | null> {
+  const rows = await db().$queryRaw<Array<{ maxDate: Date | null }>>`
+    SELECT MAX("businessDate") AS "maxDate"
+    FROM "InforRawRecord"
+    WHERE "companyId" = ${companyId}
+      AND platform = 'INFOR_M3'
+      AND UPPER(COALESCE("miProgram", '')) IN ('GLACCTPERIODBALANCES', 'SLGLTRANS')
+  `;
+  const value = rows?.[0]?.maxDate || null;
+  return value ? new Date(value) : null;
+}
+
 function atUtcMidnight(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
@@ -658,6 +682,11 @@ async function processTask(
     companyId: task.run.companyId,
   };
   const start = Date.now();
+  const isGlBackfillGuardEnabled =
+    String(task.run.platform || '') === 'INFOR_M3' &&
+    String(task.run.mode || '') === 'business_day_backfill' &&
+    taskPayload.salesOnly !== true;
+  const glMaxBefore = isGlBackfillGuardEnabled ? await getGlRawMaxBusinessDate(task.companyId) : null;
   let data: Record<string, unknown> = {};
   let rawText = '';
   let responseStatus = 200;
@@ -857,6 +886,73 @@ async function processTask(
     hasMore && data?.cursor && typeof data.cursor === 'object' && !Array.isArray(data.cursor)
       ? (data.cursor as Record<string, unknown>)
       : null;
+  const glMaxAfter = isGlBackfillGuardEnabled ? await getGlRawMaxBusinessDate(task.companyId) : null;
+  const advancedGlCoverage = Boolean(
+    glMaxAfter &&
+      (!glMaxBefore || glMaxAfter.getTime() > glMaxBefore.getTime())
+  );
+  const previousNoProgressCount = Math.max(0, Math.floor(Number(payload.glNoForwardProgressCount || 0)));
+  const nextNoProgressCount = advancedGlCoverage ? 0 : previousNoProgressCount + 1;
+  const noProgressThreshold = 40;
+  const noForwardProgressDetected = isGlBackfillGuardEnabled && !advancedGlCoverage && nextNoProgressCount >= noProgressThreshold;
+
+  if (noForwardProgressDetected) {
+    const now = new Date();
+    const details = `No GL forward-date progress after ${nextNoProgressCount} chunks (${describeTaskPayload(taskPayload)}).`;
+    await db().$transaction(async (tx) => {
+      await tx.inforSyncTask.updateMany({
+        where: { id: task.id, status: 'leased' },
+        data: {
+          status: 'failed',
+          attemptCount: attemptNo,
+          finishedAt: now,
+          updatedAt: now,
+          lastError: details,
+          lastResponse: {
+            ...data,
+            noForwardProgressCount: nextNoProgressCount,
+            glMaxBefore: glMaxBefore ? glMaxBefore.toISOString() : null,
+            glMaxAfter: glMaxAfter ? glMaxAfter.toISOString() : null,
+          },
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        },
+      });
+      await tx.inforSyncRun.updateMany({
+        where: { id: task.runId, status: 'running' },
+        data: {
+          status: 'failed',
+          updatedAt: now,
+          finishedAt: now,
+          lastError: details,
+          message: 'Guardrail: halted run due to no GL date-range progress.',
+        },
+      });
+      await tx.inforSyncTaskAttempt.create({
+        data: {
+          taskId: task.id,
+          runId: task.runId,
+          companyId: task.companyId,
+          attemptNo,
+          status: 'failed',
+          httpStatus: responseStatus || null,
+          errorMessage: details,
+          responseSnippet: describeTaskPayload(taskPayload).slice(0, 280),
+          recordsCreated,
+          warningCount: warnings,
+          durationMs,
+          finishedAt: now,
+        },
+      });
+    });
+    await notifyQueueRunFailure(
+      task.companyId,
+      (String(task.run.platform || 'INFOR_M3') as AccountingPlatform),
+      'Infor async queue run failed guardrail: no GL forward-date progress',
+      details
+    );
+    return { runId: task.runId, taskId: task.id, status: 'failed', details };
+  }
 
   let processed = false;
   await db().$transaction(async (tx) => {
@@ -886,7 +982,7 @@ async function processTask(
         status: 'success',
         httpStatus: responseStatus || null,
         errorMessage: null,
-        responseSnippet: null,
+        responseSnippet: describeTaskPayload(taskPayload).slice(0, 280),
         recordsCreated,
         warningCount: warnings,
         durationMs,
@@ -911,13 +1007,18 @@ async function processTask(
     });
 
     if (Number(runUpdated?.count || 0) === 1 && hasMore && cursor) {
+      const nextPayload = buildTaskPayload(task.run, {
+        ...cursor,
+        glNoForwardProgressCount: nextNoProgressCount,
+        glLastObservedMaxBusinessDate: glMaxAfter ? glMaxAfter.toISOString() : (glMaxBefore ? glMaxBefore.toISOString() : null),
+      });
       await tx.inforSyncTask.create({
         data: {
           runId: task.runId,
           companyId: task.companyId,
           status: 'pending',
           maxAttempts: Math.max(1, Number(task.maxAttempts || DEFAULT_MAX_ATTEMPTS)),
-          payload: buildTaskPayload(task.run, cursor),
+          payload: nextPayload,
         },
       });
     }
