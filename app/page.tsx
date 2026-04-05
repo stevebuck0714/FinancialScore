@@ -114,6 +114,7 @@ const NAVIGABLE_VIEWS = new Set([
   'financial-forecast',
   'projections',
   'working-capital',
+  'valuation-reports',
   'valuation',
   'cash-flow',
   'financial-statements',
@@ -874,7 +875,8 @@ function FinancialScorePage() {
   const [isManagementAssessmentExpanded, setIsManagementAssessmentExpanded] = useState(false);
   const [isExpertAnalysisExpanded, setIsExpertAnalysisExpanded] = useState(false);
   const [isValuationExpanded, setIsValuationExpanded] = useState(false);
-  // const [isFinancialScoreExpanded, setIsFinancialScoreExpanded] = useState(false); // Financial Score section removed from sidebar
+  const [isReportsExpanded, setIsReportsExpanded] = useState(true);
+  // const [isFinancialHealthExpanded, setIsFinancialHealthExpanded] = useState(false); // Legacy section removed from sidebar
   
   // State - Default Pricing
   const [defaultBusinessMonthlyPrice, setDefaultBusinessMonthlyPrice] = useState(195);
@@ -912,7 +914,77 @@ function FinancialScorePage() {
   const [error, setError] = useState<string | null>(null);
   const [isFreshUpload, setIsFreshUpload] = useState<boolean>(false);
   const [loadedMonthlyData, setLoadedMonthlyData] = useState<MonthlyDataRow[]>([]);
-  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'admin' | 'consultant-dashboard' | 'siteadmin' | 'upload' | 'results' | 'kpis' | 'mda' | 'ai-analysis' | 'daily-alerts' | 'financial-forecast' | 'projections' | 'working-capital' | 'valuation-reports' | 'valuation' | 'cash-flow' | 'financial-statements' | 'trend-analysis' | 'profile' | 'goals' | 'fs-intro' | 'fs-score' | 'ma-welcome' | 'ma-questionnaire' | 'ma-your-results' | 'ma-scores-summary' | 'ma-scoring-guide' | 'ma-charts' | 'custom-print' | 'dashboard' | 'covenants' | 'operations' | 'pa-overview' | 'pa-critical-issues' | 'pa-focus-board' | 'pa-trend-explorer' | 'pa-anomaly-inbox' | 'pa-opportunity-workspace' | 'dataroom'>('login');
+  const [valuationBuilderSelections, setValuationBuilderSelections] = useState<Record<string, boolean>>({
+    es_enterpriseValueRange: true,
+    es_primaryValuationMethod: true,
+    es_normalizedEarnings: true,
+    es_keyValueDrivers: true,
+    es_keyRisks: true,
+    bo_companyProfile: true,
+    bo_companyDisclosures: true,
+    bo_revenueModel: true,
+    bo_customerConcentration: true,
+    hfs_revenue: true,
+    hfs_cogsByAccount: true,
+    hfs_ebitda: true,
+    hfs_margins: true,
+    hfs_keyRatios: true,
+    hfs_mda: true,
+    qoe_adjustments: true,
+    qoe_revenueQuality: true,
+    qoe_costStructure: true,
+    qoe_score: true,
+    wc_normalizedWorkingCapital: true,
+    wc_arapAnalysis: true,
+    wc_cashConversion: true,
+    vm_sdeValuation: true,
+    vm_ebitdaValuation: true,
+    vm_dcfValuation: true,
+    vs_methodComparison: true,
+    vs_finalValueRange: true,
+    ra_keyRisks: true,
+    ra_mitigation: true,
+    go_expansionOpportunities: true,
+    go_operationalImprovements: true,
+    dr_documentsByCategory: true,
+    ap_detailedFinancials: true,
+  });
+  const [valuationSelectionSaveStatus, setValuationSelectionSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [valuationSectionPreview, setValuationSectionPreview] = useState<{ id: string; title: string; content: string } | null>(null);
+  const [valuationSectionExpanded, setValuationSectionExpanded] = useState<Record<string, boolean>>({
+    '1': false,
+    '2': false,
+    '3': false,
+    '4': false,
+    '5': false,
+    '6': false,
+    '7': false,
+    '9': false,
+    '10': false,
+    '11': false,
+    '12': false,
+  });
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    try {
+      const storageKey = `valuationReportSelections_${selectedCompanyId}`;
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return;
+      setValuationBuilderSelections((prev) => ({
+        ...prev,
+        ...Object.fromEntries(
+          Object.entries(parsed).filter(
+            ([key, value]) => key in prev && typeof value === 'boolean'
+          )
+        ),
+      }));
+    } catch (error) {
+      console.warn('Failed to load saved valuation report selections:', error);
+    }
+  }, [selectedCompanyId]);
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -963,6 +1035,7 @@ function FinancialScorePage() {
     if (view === 'working-capital') return 'financial-reports';
     if (view === 'covenants') return 'financial-reports';
     if (view === 'financial-statements') return 'financial-statements';
+    if (view === 'valuation-reports') return 'valuation';
     if (view === 'valuation') return 'valuation';
     if (view.startsWith('pa-')) return 'expert-analysis';
     if (view === 'mda') return 'mda';
@@ -989,6 +1062,13 @@ function FinancialScorePage() {
   useEffect(() => {
     if (currentView === 'valuation') {
       setIsValuationExpanded(true);
+    }
+  }, [currentView]);
+
+  useEffect(() => {
+    const reportViews = ['custom-print', 'valuation-reports'];
+    if (reportViews.includes(currentView)) {
+      setIsReportsExpanded(true);
     }
   }, [currentView]);
 
@@ -1189,6 +1269,11 @@ function FinancialScorePage() {
         return;
       }
       setCurrentView('dataroom');
+      return;
+    }
+
+    if (view === 'valuation-reports' && !selectedCompanyId) {
+      alert('Please select a company first.');
       return;
     }
 
@@ -7804,11 +7889,11 @@ function FinancialScorePage() {
     const weaknesses: string[] = [];
     const insights: string[] = [];
     
-    if (finalScore >= 70) strengths.push(`Strong overall financial score of ${finalScore.toFixed(1)}, indicating robust financial health.`);
-    else if (finalScore < 50) weaknesses.push(`Financial score of ${finalScore.toFixed(1)} suggests significant areas for improvement.`);
+    if (finalScore >= 70) strengths.push('Overall financial performance indicates robust financial health.');
+    else if (finalScore < 50) weaknesses.push('Overall financial performance indicators suggest significant areas for improvement.');
     
-    if (profitabilityScore >= 70) strengths.push(`Profitability score of ${profitabilityScore.toFixed(1)} demonstrates solid revenue growth and expense management.`);
-    else if (profitabilityScore < 50) weaknesses.push(`Profitability score of ${profitabilityScore.toFixed(1)} indicates challenges in revenue growth or expense control.`);
+    if (profitabilityScore >= 70) strengths.push('Profitability trends demonstrate solid revenue growth and expense management.');
+    else if (profitabilityScore < 50) weaknesses.push('Profitability trends indicate challenges in revenue growth or expense control.');
     
     if (growth_24mo > 10) strengths.push(`24-month revenue growth of ${growth_24mo.toFixed(1)}% shows strong market expansion.`);
     else if (growth_24mo < 0) weaknesses.push(`Negative 24-month revenue growth of ${growth_24mo.toFixed(1)}% requires immediate strategic attention.`);
@@ -7816,8 +7901,8 @@ function FinancialScorePage() {
     if (expenseAdjustment > 0) strengths.push(`Expense management is outperforming revenue growth by ${revExpSpread.toFixed(1)}%, adding ${expenseAdjustment} points to profitability.`);
     else if (expenseAdjustment < 0) weaknesses.push(`Expenses are growing faster than revenue by ${Math.abs(revExpSpread).toFixed(1)}%, reducing profitability by ${Math.abs(expenseAdjustment)} points.`);
     
-    if (assetDevScore >= 70) strengths.push(`Asset Development Score of ${assetDevScore.toFixed(1)} reflects a healthy asset-to-liability ratio and positive asset growth.`);
-    else if (assetDevScore < 50) weaknesses.push(`Asset Development Score of ${assetDevScore.toFixed(1)} suggests concerning leverage and asset composition.`);
+    if (assetDevScore >= 70) strengths.push(`Asset base health indicator of ${assetDevScore.toFixed(1)} reflects a healthy asset-to-liability ratio and positive asset growth.`);
+    else if (assetDevScore < 50) weaknesses.push(`Asset base health indicator of ${assetDevScore.toFixed(1)} suggests concerning leverage and asset composition.`);
     
     if (last.currentRatio >= 1.5) strengths.push(`Current ratio of ${last.currentRatio.toFixed(1)} indicates strong short-term liquidity.`);
     else if (last.currentRatio < 1.0) weaknesses.push(`Current ratio of ${last.currentRatio.toFixed(1)} may indicate potential liquidity challenges.`);
@@ -8037,8 +8122,8 @@ function FinancialScorePage() {
     }
     
     // Add strategic insights based on comprehensive data
-    insights.push(`Monitor the trend in Financial Score over time to identify patterns and early warning signs of performance changes.`);
-    insights.push(`Focus improvement initiatives on components with the lowest scores for maximum impact on overall financial health.`);
+    insights.push('Monitor the overall financial performance trend over time to identify patterns and early warning signs of change.');
+    insights.push('Focus improvement initiatives on the weakest operating and financial metrics for maximum impact on overall financial health.');
     
     if (growth_6mo < growth_24mo) {
       insights.push(`Recent 6-month growth (${growth_6mo.toFixed(1)}%) is slower than 24-month trend (${growth_24mo.toFixed(1)}%), suggesting momentum is decelerating - consider market expansion strategies.`);
@@ -8286,6 +8371,1319 @@ function FinancialScorePage() {
   // Main Logged-In View with Header
   const company = getCurrentCompany();
   const companyName = company ? company.name : '';
+  const selectedCompanyProfile = useMemo(
+    () => companyProfiles.find((p) => p.companyId === selectedCompanyId) || null,
+    [companyProfiles, selectedCompanyId]
+  );
+  const businessOverviewProfileItems = useMemo(() => {
+    if (!selectedCompanyProfile) {
+      return [
+        { label: 'Legal Structure', value: 'N/A' },
+        { label: 'Business Status', value: 'N/A' },
+        { label: 'Ownership', value: 'N/A' },
+        { label: 'Workforce', value: 'N/A' },
+        { label: 'Key Advisors', value: 'N/A' },
+        { label: 'Special Notes', value: 'N/A' },
+        { label: 'QoE Notes', value: 'N/A' },
+      ];
+    }
+    const keyEmployees = Array.isArray(selectedCompanyProfile.keyEmployees) && selectedCompanyProfile.keyEmployees.length > 0
+      ? selectedCompanyProfile.keyEmployees
+          .map((emp) => {
+            const name = String(emp?.name || '').trim() || 'Unnamed';
+            const title = String(emp?.title || '').trim() || 'No title';
+            const year = String(emp?.yearEmployed || '').trim();
+            return `${name} (${title}${year ? `, since ${year}` : ''})`;
+          })
+          .join('; ')
+      : 'N/A';
+    return [
+      { label: 'Legal Structure', value: selectedCompanyProfile.legalStructure || 'N/A' },
+      { label: 'Business Status', value: selectedCompanyProfile.businessStatus || 'N/A' },
+      { label: 'Ownership', value: selectedCompanyProfile.ownership || 'N/A' },
+      { label: 'Workforce', value: selectedCompanyProfile.workforce || 'N/A' },
+      { label: 'Key Advisors', value: selectedCompanyProfile.keyAdvisors || 'N/A' },
+      { label: 'Key Employees', value: keyEmployees },
+      { label: 'Special Notes', value: selectedCompanyProfile.specialNotes || 'N/A' },
+      { label: 'QoE Notes', value: selectedCompanyProfile.qoeNotes || 'N/A' },
+    ];
+  }, [selectedCompanyProfile]);
+  const businessOverviewDisclosuresSummary = useMemo(() => {
+    const disclosures = selectedCompanyProfile?.disclosures;
+    if (!disclosures || typeof disclosures !== 'object') return 'No disclosures have been saved.';
+    const labelMap: Record<string, string> = {
+      bankruptcies: 'Bankruptcies',
+      liens: 'Liens',
+      contracts: 'Contracts',
+      lawsuits: 'Lawsuits',
+      mostFavoredNation: 'Most Favored Nation',
+      equityControl: 'Equity Control',
+      rightOfFirstRefusal: 'Right of First Refusal',
+      shareholderProtections: 'Shareholder Protections',
+      changeInControl: 'Change in Control',
+      regulatoryApprovals: 'Regulatory Approvals',
+      auditedFinancials: 'Audited Financials',
+    };
+    const allResponses = Object.entries(disclosures as Record<string, unknown>)
+      .map(([key, value]) => `${labelMap[key] || key}: ${String(value ?? '').trim() || 'N/A'}`);
+    return allResponses.length > 0 ? allResponses.join(' | ') : 'No disclosures have been saved.';
+  }, [selectedCompanyProfile]);
+  const businessOverviewDisclosureItems = useMemo(() => {
+    const disclosures = selectedCompanyProfile?.disclosures;
+    if (!disclosures || typeof disclosures !== 'object') return [] as Array<{ label: string; value: string }>;
+    const labelMap: Record<string, string> = {
+      bankruptcies: 'Bankruptcies',
+      liens: 'Liens',
+      contracts: 'Contracts',
+      lawsuits: 'Lawsuits',
+      mostFavoredNation: 'Most Favored Nation',
+      equityControl: 'Equity Control',
+      rightOfFirstRefusal: 'Right of First Refusal',
+      shareholderProtections: 'Shareholder Protections',
+      changeInControl: 'Change in Control',
+      regulatoryApprovals: 'Regulatory Approvals',
+      auditedFinancials: 'Audited Financials',
+    };
+    return Object.entries(disclosures as Record<string, unknown>)
+      .map(([key, raw]) => ({
+        label: labelMap[key] || key,
+        value: String(raw ?? '').trim() || 'N/A',
+      }));
+  }, [selectedCompanyProfile]);
+  const businessOverviewRevenueMix = useMemo(() => {
+    const totals = {
+      recurring: 0,
+      contracted: 0,
+      projectBased: 0,
+      transactional: 0,
+      total: 0,
+    };
+    const classify = (bucketName: string): 'recurring' | 'contracted' | 'projectBased' | 'transactional' => {
+      const key = bucketName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (/(subscription|recurring|renewal|maintenance|support|mrr|arr)/.test(key)) return 'recurring';
+      if (/(contract|retainer|agreement)/.test(key)) return 'contracted';
+      if (/(project|implementation|install|consult|professionalservice|job)/.test(key)) return 'projectBased';
+      return 'transactional';
+    };
+    for (const row of monthly.slice(-12)) {
+      const breakdown = (row as any)?.revenueBreakdown;
+      if (!breakdown || typeof breakdown !== 'object') continue;
+      for (const [bucketName, raw] of Object.entries(breakdown as Record<string, unknown>)) {
+        const amount = Number(raw) || 0;
+        if (amount <= 0) continue;
+        const category = classify(bucketName);
+        totals[category] += amount;
+        totals.total += amount;
+      }
+    }
+    if (totals.total <= 0) {
+      return { recurring: null, contracted: null, projectBased: null, transactional: null };
+    }
+    return {
+      recurring: (totals.recurring / totals.total) * 100,
+      contracted: (totals.contracted / totals.total) * 100,
+      projectBased: (totals.projectBased / totals.total) * 100,
+      transactional: (totals.transactional / totals.total) * 100,
+    };
+  }, [monthly]);
+  const businessOverviewCustomerConcentration = useMemo(() => {
+    const normalized = customerQualityRecords
+      .map((r) => ({
+        month: monthKey((r as any).snapshotDate),
+        customerName: String((r as any).customerName || '').trim(),
+        revenue: Number((r as any).revenue) || 0,
+      }))
+      .filter((r) => !!r.month && !!r.customerName && r.revenue !== 0);
+    if (normalized.length === 0) return null;
+    const perCustomer = new Map<string, number>();
+    for (const row of normalized.slice(-2500)) {
+      perCustomer.set(row.customerName, (perCustomer.get(row.customerName) || 0) + row.revenue);
+    }
+    const totalRevenue = Array.from(perCustomer.values()).reduce((s, v) => s + v, 0);
+    if (totalRevenue <= 0) return null;
+    const sorted = Array.from(perCustomer.values()).sort((a, b) => b - a);
+    const top1 = sorted[0] || 0;
+    const top5 = sorted.slice(0, 5).reduce((s, v) => s + v, 0);
+    return {
+      top1Pct: (top1 / totalRevenue) * 100,
+      top5Pct: (top5 / totalRevenue) * 100,
+      customerCount: perCustomer.size,
+    };
+  }, [customerQualityRecords]);
+  const valuationExecutiveOverview = useMemo(() => {
+    const rows = Array.isArray(monthly) ? monthly : [];
+    const last12 = rows.slice(-12);
+    const asNumber = (value: unknown): number => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    };
+    if (last12.length === 0) {
+      return {
+        valuationDateLabel: 'N/A',
+        ttmEbitda: Number.NaN,
+        ttmSde: Number.NaN,
+        ttmFreeCashFlow: Number.NaN,
+        sdeEstimatedValue: Number.NaN,
+        ebitdaEstimatedValue: Number.NaN,
+        dcfEstimatedValue: Number.NaN,
+        enterpriseValueLow: Number.NaN,
+        enterpriseValueHigh: Number.NaN,
+        primaryMethod: 'N/A',
+      };
+    }
+
+    const ttmRevenue = last12.reduce((sum, m) => sum + asNumber((m as any).revenue), 0);
+    const ttmCogs = last12.reduce((sum, m) => sum + asNumber((m as any).cogsTotal), 0);
+    const ttmExpense = last12.reduce((sum, m) => sum + asNumber((m as any).expense), 0);
+    const ttmDepreciation = last12.reduce((sum, m) => sum + asNumber((m as any).depreciationAmortization), 0);
+    const ttmInterest = last12.reduce((sum, m) => sum + asNumber((m as any).interestExpense), 0);
+    const ttmNetIncome = ttmRevenue - ttmCogs - ttmExpense;
+    const ttmEbitda = ttmNetIncome + ttmDepreciation + ttmInterest;
+    const ttmSdeFromSaved = asNumber((sdeAnalysisTotalsState as any).qualityOfEarnings);
+    const ttmSde = ttmSdeFromSaved !== 0 ? ttmSdeFromSaved : ttmEbitda;
+
+    const last12CashFlowRows = last12.map((curr, idx) => {
+      const prev = idx === 0 && rows.length > 12
+        ? rows[rows.length - 13]
+        : idx > 0
+          ? last12[idx - 1]
+          : curr;
+      const netIncome = asNumber((curr as any).revenue) - asNumber((curr as any).cogsTotal) - asNumber((curr as any).expense);
+      const depreciation = asNumber((curr as any).depreciationAmortization);
+      const changeInAr = asNumber((curr as any).ar) - asNumber((prev as any).ar);
+      const changeInInventory = asNumber((curr as any).inventory) - asNumber((prev as any).inventory);
+      const changeInAp = asNumber((curr as any).ap) - asNumber((prev as any).ap);
+      const changeInWorkingCapital = -(changeInAr + changeInInventory - changeInAp);
+      const operatingCashFlow = netIncome + depreciation + changeInWorkingCapital;
+      const changeInFixedAssets = asNumber((curr as any).fixedAssets) - asNumber((prev as any).fixedAssets);
+      const capitalExpenditures = changeInFixedAssets + depreciation;
+      return {
+        operatingCashFlow,
+        capitalExpenditures,
+      };
+    });
+    const ttmOperatingCashFlow = last12CashFlowRows.reduce((sum, row) => sum + row.operatingCashFlow, 0);
+    const ttmCapEx = last12CashFlowRows.reduce((sum, row) => sum + Math.max(0, row.capitalExpenditures), 0);
+    const ttmFreeCashFlow = ttmOperatingCashFlow - ttmCapEx;
+
+    const growthPct = asNumber(growth_24mo);
+    const discountPct = asNumber(dcfDiscountRate);
+    const terminalGrowthPct = asNumber(dcfTerminalGrowth);
+    const growthRateRaw = Number.isFinite(growthPct) ? growthPct / 100 : 0;
+    const discountRate = Number.isFinite(discountPct) ? Math.max(0.01, discountPct / 100) : 0.1;
+    const terminalGrowthRate = Number.isFinite(terminalGrowthPct) ? terminalGrowthPct / 100 : 0.02;
+    const projectionGrowthRates = Array.from({ length: 5 }, (_, idx) => {
+      const fadeFactor = idx / 4;
+      return growthRateRaw + (terminalGrowthRate - growthRateRaw) * fadeFactor;
+    });
+    let dcfEstimatedValue = 0;
+    let projectedFcf = ttmFreeCashFlow;
+    for (let year = 1; year <= 5; year++) {
+      projectedFcf = projectedFcf * (1 + projectionGrowthRates[year - 1]);
+      dcfEstimatedValue += projectedFcf / Math.pow(1 + discountRate, year);
+    }
+    const safeTerminalGrowthRate = Math.min(terminalGrowthRate, discountRate - 0.005);
+    const discountSpread = Math.max(0.005, discountRate - safeTerminalGrowthRate);
+    const terminalValue = (projectedFcf * (1 + safeTerminalGrowthRate)) / discountSpread;
+    dcfEstimatedValue += terminalValue / Math.pow(1 + discountRate, 5);
+
+    const sdeEstimatedValue = ttmSde * asNumber(sdeMultiplier);
+    const ebitdaEstimatedValue = ttmEbitda * asNumber(ebitdaMultiplier);
+    const estimates = [
+      { method: 'SDE', value: Number.isFinite(sdeEstimatedValue) ? sdeEstimatedValue : 0 },
+      { method: 'EBITDA Multiple', value: Number.isFinite(ebitdaEstimatedValue) ? ebitdaEstimatedValue : 0 },
+      { method: 'DCF', value: Number.isFinite(dcfEstimatedValue) ? dcfEstimatedValue : 0 },
+    ].filter((item) => Number.isFinite(item.value));
+    const enterpriseValueLow = estimates.length > 0 ? Math.min(...estimates.map((i) => i.value)) : Number.NaN;
+    const enterpriseValueHigh = estimates.length > 0 ? Math.max(...estimates.map((i) => i.value)) : Number.NaN;
+    const primaryMethod = estimates.length > 0 ? [...estimates].sort((a, b) => b.value - a.value)[0]?.method : 'N/A';
+
+    const latestRow = last12[last12.length - 1] as any;
+    const rawDate = latestRow?.month || latestRow?.date || latestRow?.snapshotDate;
+    const parsedDate = rawDate ? new Date(String(rawDate)) : new Date();
+    const valuationDateLabel = Number.isNaN(parsedDate.getTime())
+      ? new Date().toLocaleDateString('en-US')
+      : parsedDate.toLocaleDateString('en-US');
+
+    return {
+      valuationDateLabel,
+      ttmEbitda,
+      ttmSde,
+      ttmFreeCashFlow,
+      sdeEstimatedValue: Number.isFinite(sdeEstimatedValue) ? sdeEstimatedValue : 0,
+      ebitdaEstimatedValue: Number.isFinite(ebitdaEstimatedValue) ? ebitdaEstimatedValue : 0,
+      dcfEstimatedValue: Number.isFinite(dcfEstimatedValue) ? dcfEstimatedValue : 0,
+      enterpriseValueLow,
+      enterpriseValueHigh,
+      primaryMethod,
+    };
+  }, [monthly, sdeAnalysisTotalsState, sdeMultiplier, ebitdaMultiplier, growth_24mo, dcfDiscountRate, dcfTerminalGrowth]);
+  const indexToLetterLabel = useCallback((index: number): string => {
+    let n = index;
+    let result = '';
+    do {
+      result = String.fromCharCode(97 + (n % 26)) + result;
+      n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return `${result}.`;
+  }, []);
+  const buildExecutiveSummaryReportText = useCallback((): string => {
+    const executiveRows = [
+      { key: 'es_enterpriseValueRange', label: 'Enterprise Value Range' },
+      { key: 'es_primaryValuationMethod', label: 'Primary Valuation Method' },
+      { key: 'es_normalizedEarnings', label: 'Normalized Earnings (SDE/EBITDA)' },
+      { key: 'es_keyValueDrivers', label: 'Key Value Drivers' },
+      { key: 'es_keyRisks', label: 'Key Risks' },
+    ];
+    const rowLabel = (key: string, fallback: string) => {
+      const idx = executiveRows.findIndex((r) => r.key === key);
+      return idx >= 0 ? `${indexToLetterLabel(idx)} ${fallback}` : fallback;
+    };
+    const money = (value: number) => {
+      const safe = Number(value);
+      return Number.isFinite(safe) ? `$${Math.round(safe).toLocaleString()}` : 'N/A';
+    };
+    const lines: string[] = ['1. Executive Summary', ''];
+    if (valuationBuilderSelections.es_enterpriseValueRange) {
+      lines.push(`${rowLabel('es_enterpriseValueRange', 'Enterprise Value Range')}:`);
+      lines.push(`- Valuation Date: ${valuationExecutiveOverview.valuationDateLabel}`);
+      lines.push(`- Enterprise Value Range: ${money(valuationExecutiveOverview.enterpriseValueLow)} to ${money(valuationExecutiveOverview.enterpriseValueHigh)}`);
+      lines.push('');
+      lines.push('SDE Method:');
+      lines.push('- Uses Seller Discretionary Earnings to value owner-operated cash-flow potential.');
+      lines.push(`- SDE Value: ${money(valuationExecutiveOverview.ttmSde)}`);
+      lines.push(`- EBITDA Value: ${money(valuationExecutiveOverview.ttmEbitda)}`);
+      lines.push(`- SDE Multiple: ${Number(sdeMultiplier).toFixed(1)}x`);
+      lines.push(`- Estimated Business Valuation: ${money(valuationExecutiveOverview.sdeEstimatedValue)}`);
+      lines.push('');
+      lines.push('EBITDA Multiple Method:');
+      lines.push('- Applies a market multiple to normalized EBITDA for scalable earnings valuation.');
+      lines.push(`- EBITDA Value: ${money(valuationExecutiveOverview.ttmEbitda)}`);
+      lines.push(`- EBITDA Multiple: ${Number(ebitdaMultiplier).toFixed(1)}x`);
+      lines.push(`- Estimated Business Valuation: ${money(valuationExecutiveOverview.ebitdaEstimatedValue)}`);
+      lines.push('');
+      lines.push('DCF Method:');
+      lines.push('- Projects free cash flow and discounts it to present value plus terminal value.');
+      lines.push(`- Free Cash Flow (TTM): ${money(valuationExecutiveOverview.ttmFreeCashFlow)}`);
+      lines.push(`- Estimated Business Value: ${money(valuationExecutiveOverview.dcfEstimatedValue)}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.es_primaryValuationMethod) {
+      lines.push(`${rowLabel('es_primaryValuationMethod', 'Primary Valuation Method')}:`);
+      lines.push(`- ${valuationExecutiveOverview.primaryMethod}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.es_normalizedEarnings) {
+      lines.push(`${rowLabel('es_normalizedEarnings', 'Normalized Earnings (SDE/EBITDA)')}:`);
+      lines.push(`- SDE ${money(valuationExecutiveOverview.ttmSde)} | EBITDA ${money(valuationExecutiveOverview.ttmEbitda)}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.es_keyValueDrivers) {
+      lines.push(`${rowLabel('es_keyValueDrivers', 'Key Value Drivers')}:`);
+      lines.push(`- Revenue growth (${growth_24mo.toFixed(1)}%), EBITDA level (${money(valuationExecutiveOverview.ttmEbitda)}), and free cash flow generation (${money(valuationExecutiveOverview.ttmFreeCashFlow)}).`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.es_keyRisks) {
+      const concentrationRisk = businessOverviewCustomerConcentration
+        ? `Top customer concentration at ${businessOverviewCustomerConcentration.top1Pct.toFixed(1)}%.`
+        : 'Customer concentration data unavailable.';
+      lines.push(`${rowLabel('es_keyRisks', 'Key Risks')}:`);
+      lines.push(`- ${concentrationRisk} DCF sensitivity to discount and terminal assumptions.`);
+    }
+    return lines.join('\n');
+  }, [
+    valuationBuilderSelections,
+    indexToLetterLabel,
+    valuationExecutiveOverview,
+    sdeMultiplier,
+    ebitdaMultiplier,
+    growth_24mo,
+    businessOverviewCustomerConcentration,
+  ]);
+  const valuationSectionDefinitions = useMemo(() => ([
+    {
+      id: '1',
+      title: '1. Executive Summary',
+      rows: [
+        { key: 'es_enterpriseValueRange', label: 'Enterprise Value Range' },
+        { key: 'es_primaryValuationMethod', label: 'Primary Valuation Method' },
+        { key: 'es_normalizedEarnings', label: 'Normalized Earnings (SDE/EBITDA)' },
+        { key: 'es_keyValueDrivers', label: 'Key Value Drivers' },
+        { key: 'es_keyRisks', label: 'Key Risks' },
+      ],
+    },
+    {
+      id: '2',
+      title: '2. Business Overview',
+      rows: [
+        { key: 'bo_companyProfile', label: 'Company Profile' },
+        { key: 'bo_companyDisclosures', label: 'Company Disclosures' },
+        { key: 'bo_revenueModel', label: 'Revenue Model' },
+        { key: 'bo_customerConcentration', label: 'Customer Concentration' },
+      ],
+    },
+    {
+      id: '3',
+      title: '3. Historical Financial Summary',
+      rows: [
+        { key: 'hfs_revenue', label: 'Revenue (3-5 Years)' },
+        { key: 'hfs_cogsByAccount', label: 'COGS by Account' },
+        { key: 'hfs_margins', label: 'Margins' },
+        { key: 'hfs_ebitda', label: 'EBITDA' },
+        { key: 'hfs_keyRatios', label: 'Key Ratios' },
+        { key: 'hfs_mda', label: 'Management Discussion and Analysis' },
+      ],
+    },
+    {
+      id: '4',
+      title: '4. Quality of Earnings',
+      rows: [
+        { key: 'qoe_adjustments', label: 'EBITDA/SDE Adjustments' },
+        { key: 'qoe_revenueQuality', label: 'Revenue Quality' },
+        { key: 'qoe_costStructure', label: 'Cost Structure' },
+        { key: 'qoe_score', label: 'QoE Score' },
+      ],
+    },
+    {
+      id: '5',
+      title: '5. Working Capital Analysis',
+      rows: [
+        { key: 'wc_normalizedWorkingCapital', label: 'Normalized Working Capital' },
+        { key: 'wc_arapAnalysis', label: 'AR/AP Analysis' },
+        { key: 'wc_cashConversion', label: 'Cash Conversion' },
+      ],
+    },
+    {
+      id: '6',
+      title: '6. Valuation Methodologies',
+      rows: [
+        { key: 'vm_sdeValuation', label: 'SDE Valuation (+/- 10%)' },
+        { key: 'vm_ebitdaValuation', label: 'EBITDA Valuation (+/- 10%)' },
+        { key: 'vm_dcfValuation', label: 'DCF Valuation (Inputs +/- 10%)' },
+      ],
+    },
+    {
+      id: '7',
+      title: '7. Valuation Summary',
+      rows: [
+        { key: 'vs_methodComparison', label: 'Method Comparison (SDE/EBITDA/DCF)' },
+        { key: 'vs_finalValueRange', label: 'Final Value Range' },
+      ],
+    },
+    {
+      id: '9',
+      title: '9. Risk Analysis',
+      rows: [
+        { key: 'ra_keyRisks', label: 'Key Risks' },
+        { key: 'ra_mitigation', label: 'Mitigation' },
+      ],
+    },
+    {
+      id: '10',
+      title: '10. Growth Opportunities',
+      rows: [
+        { key: 'go_expansionOpportunities', label: 'Expansion Opportunities' },
+        { key: 'go_operationalImprovements', label: 'Operational Improvements' },
+      ],
+    },
+    {
+      id: '11',
+      title: '11. Data Room & Supporting Documents',
+      rows: [{ key: 'dr_documentsByCategory', label: 'Documents by Category' }],
+    },
+    {
+      id: '12',
+      title: '12. Appendix',
+      rows: [{ key: 'ap_detailedFinancials', label: 'Detailed Financials' }],
+    },
+  ]), []);
+  const buildBusinessOverviewReportText = useCallback((): string => {
+    const businessRows = [
+      { key: 'bo_companyProfile', label: 'Company Profile' },
+      { key: 'bo_companyDisclosures', label: 'Company Disclosures' },
+      { key: 'bo_revenueModel', label: 'Revenue Model' },
+      { key: 'bo_customerConcentration', label: 'Customer Concentration' },
+    ];
+    const rowLabel = (key: string, fallback: string) => {
+      const idx = businessRows.findIndex((r) => r.key === key);
+      return idx >= 0 ? `${indexToLetterLabel(idx)} ${fallback}` : fallback;
+    };
+    const pctOrNA = (value: number | null | undefined) =>
+      Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : 'N/A';
+    const lines: string[] = ['2. Business Overview', ''];
+    if (valuationBuilderSelections.bo_companyProfile) {
+      lines.push(`${rowLabel('bo_companyProfile', 'Company Profile')}:`);
+      for (const item of businessOverviewProfileItems) {
+        lines.push(`- ${item.label}: ${item.value}`);
+      }
+      lines.push('');
+    }
+    if (valuationBuilderSelections.bo_companyDisclosures) {
+      lines.push(`${rowLabel('bo_companyDisclosures', 'Company Disclosures')}:`);
+      lines.push(`- ${businessOverviewDisclosuresSummary}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.bo_revenueModel) {
+      lines.push(`${rowLabel('bo_revenueModel', 'Revenue Model')}:`);
+      lines.push(`- Recurring revenue: ${pctOrNA(businessOverviewRevenueMix.recurring)}`);
+      lines.push(`- Contracted revenue: ${pctOrNA(businessOverviewRevenueMix.contracted)}`);
+      lines.push(`- Project-based revenue: ${pctOrNA(businessOverviewRevenueMix.projectBased)}`);
+      lines.push(`- Transactional / one-time revenue: ${pctOrNA(businessOverviewRevenueMix.transactional)}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.bo_customerConcentration) {
+      lines.push(`${rowLabel('bo_customerConcentration', 'Customer Concentration')}:`);
+      lines.push(
+        `- ${
+          businessOverviewCustomerConcentration
+            ? `Top 1 ${businessOverviewCustomerConcentration.top1Pct.toFixed(1)}%, Top 5 ${businessOverviewCustomerConcentration.top5Pct.toFixed(1)}%, across ${businessOverviewCustomerConcentration.customerCount} customers.`
+            : 'Customer concentration details are currently unavailable.'
+        }`
+      );
+      lines.push('');
+    }
+    return lines.join('\n');
+  }, [
+    valuationBuilderSelections,
+    indexToLetterLabel,
+    businessOverviewProfileItems,
+    businessOverviewDisclosuresSummary,
+    businessOverviewRevenueMix,
+    businessOverviewCustomerConcentration,
+  ]);
+  const historicalFinancialSummaryData = useMemo(() => {
+    const asNumber = (value: unknown): number => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const parseRowDate = (row: any): Date | null => {
+      const raw = row?.monthDate || row?.month || row?.date || row?.snapshotDate;
+      if (!raw) return null;
+      if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw;
+      const rawStr = String(raw).trim();
+      if (!rawStr) return null;
+
+      const mmYYYY = rawStr.match(/^(\d{1,2})[-/](\d{4})$/);
+      if (mmYYYY) {
+        const month = Number(mmYYYY[1]);
+        const year = Number(mmYYYY[2]);
+        if (month >= 1 && month <= 12 && year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, 1);
+        }
+      }
+
+      const yyyyMM = rawStr.match(/^(\d{4})[-/](\d{1,2})$/);
+      if (yyyyMM) {
+        const year = Number(yyyyMM[1]);
+        const month = Number(yyyyMM[2]);
+        if (month >= 1 && month <= 12 && year >= 1900 && year <= 2100) {
+          return new Date(year, month - 1, 1);
+        }
+      }
+
+      const d = new Date(rawStr);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    type QuarterBucket = {
+      year: number;
+      quarter: number;
+      label: string;
+      revenueTotal: number;
+      cogsTotal: number;
+      expenseTotal: number;
+      interestTotal: number;
+      daTotal: number;
+      revenueAccounts: Record<string, number>;
+      cogsAccounts: Record<string, number>;
+    };
+    const quarterAgg = new Map<string, QuarterBucket>();
+
+    for (const row of monthly) {
+      const d = parseRowDate(row);
+      if (!d) continue;
+      const year = d.getFullYear();
+      const quarter = Math.floor(d.getMonth() / 3) + 1;
+      const key = `${year}-Q${quarter}`;
+      const base = quarterAgg.get(key) || {
+        year,
+        quarter,
+        label: `Q${quarter} ${year}`,
+        revenueTotal: 0,
+        cogsTotal: 0,
+        expenseTotal: 0,
+        interestTotal: 0,
+        daTotal: 0,
+        revenueAccounts: {},
+        cogsAccounts: {},
+      };
+
+      base.revenueTotal += asNumber((row as any).revenue);
+      base.cogsTotal += asNumber((row as any).cogsTotal);
+      base.expenseTotal += asNumber((row as any).expense);
+      base.interestTotal += asNumber((row as any).interestExpense);
+      base.daTotal += asNumber((row as any).depreciationAmortization);
+
+      const revBreakdown = (row as any)?.revenueBreakdown;
+      if (revBreakdown && typeof revBreakdown === 'object') {
+        Object.entries(revBreakdown as Record<string, unknown>).forEach(([name, value]) => {
+          const keyName = String(name || '').trim() || 'Uncategorized Revenue';
+          base.revenueAccounts[keyName] = (base.revenueAccounts[keyName] || 0) + asNumber(value);
+        });
+      }
+
+      const cogsBreakdown = (row as any)?.cogsBreakdown;
+      if (cogsBreakdown && typeof cogsBreakdown === 'object') {
+        Object.entries(cogsBreakdown as Record<string, unknown>).forEach(([name, value]) => {
+          const keyName = String(name || '').trim() || 'Uncategorized COGS';
+          base.cogsAccounts[keyName] = (base.cogsAccounts[keyName] || 0) + asNumber(value);
+        });
+      }
+
+      quarterAgg.set(key, base);
+    }
+
+    let quarters = Array.from(quarterAgg.values())
+      .sort((a, b) => (a.year - b.year) || (a.quarter - b.quarter))
+      .slice(-12);
+    if (quarters.length < 12 && monthly.length >= 12) {
+      const recentRows = monthly.slice(-36);
+      const sequentialBuckets: QuarterBucket[] = [];
+      for (let i = 0; i < recentRows.length; i += 3) {
+        const chunk = recentRows.slice(i, i + 3);
+        if (chunk.length === 0) continue;
+        const lastRow = chunk[chunk.length - 1] as any;
+        const d = parseRowDate(lastRow) || parseRowDate(chunk[0] as any);
+        const year = d ? d.getFullYear() : 2000 + sequentialBuckets.length;
+        const quarter = d ? Math.floor(d.getMonth() / 3) + 1 : ((sequentialBuckets.length % 4) + 1);
+        const bucket: QuarterBucket = {
+          year,
+          quarter,
+          label: d ? `Q${quarter} ${year}` : `Q${quarter}`,
+          revenueTotal: 0,
+          cogsTotal: 0,
+          expenseTotal: 0,
+          interestTotal: 0,
+          daTotal: 0,
+          revenueAccounts: {},
+          cogsAccounts: {},
+        };
+        chunk.forEach((row: any) => {
+          bucket.revenueTotal += asNumber(row?.revenue);
+          bucket.cogsTotal += asNumber(row?.cogsTotal);
+          bucket.expenseTotal += asNumber(row?.expense);
+          bucket.interestTotal += asNumber(row?.interestExpense);
+          bucket.daTotal += asNumber(row?.depreciationAmortization);
+          const revBreakdown = row?.revenueBreakdown;
+          if (revBreakdown && typeof revBreakdown === 'object') {
+            Object.entries(revBreakdown as Record<string, unknown>).forEach(([name, value]) => {
+              const keyName = String(name || '').trim() || 'Uncategorized Revenue';
+              bucket.revenueAccounts[keyName] = (bucket.revenueAccounts[keyName] || 0) + asNumber(value);
+            });
+          }
+          const cogsBreakdown = row?.cogsBreakdown;
+          if (cogsBreakdown && typeof cogsBreakdown === 'object') {
+            Object.entries(cogsBreakdown as Record<string, unknown>).forEach(([name, value]) => {
+              const keyName = String(name || '').trim() || 'Uncategorized COGS';
+              bucket.cogsAccounts[keyName] = (bucket.cogsAccounts[keyName] || 0) + asNumber(value);
+            });
+          }
+        });
+        sequentialBuckets.push(bucket);
+      }
+      quarters = sequentialBuckets.slice(-12);
+    }
+
+    const revenueAccountNames = Array.from(
+      new Set(quarters.flatMap((q) => Object.keys(q.revenueAccounts)))
+    ).sort((a, b) => a.localeCompare(b));
+    const cogsAccountNames = Array.from(
+      new Set(quarters.flatMap((q) => Object.keys(q.cogsAccounts)))
+    ).sort((a, b) => a.localeCompare(b));
+
+    const totalRevenueByQuarter = quarters.map((q) => q.revenueTotal);
+    const ebitdaByQuarter = quarters.map(
+      (q) => q.revenueTotal - q.cogsTotal - q.expenseTotal + q.interestTotal + q.daTotal
+    );
+    const grossMarginByQuarter = quarters.map((q) =>
+      q.revenueTotal !== 0 ? ((q.revenueTotal - q.cogsTotal) / q.revenueTotal) * 100 : 0
+    );
+    const ebitdaMarginByQuarter = quarters.map((q, idx) =>
+      q.revenueTotal !== 0 ? (ebitdaByQuarter[idx] / q.revenueTotal) * 100 : 0
+    );
+
+    type RatioSnapshot = {
+      dateMs: number;
+      currentRatio: number | null;
+      quickRatio: number | null;
+      debtToNW: number | null;
+      interestCov: number | null;
+      roe: number | null;
+      roa: number | null;
+    };
+    const quarterRatioMap = new Map<string, RatioSnapshot>();
+    for (const row of trendData) {
+      const d = parseRowDate(row as any);
+      if (!d) continue;
+      const year = d.getFullYear();
+      const quarter = Math.floor(d.getMonth() / 3) + 1;
+      const key = `${year}-Q${quarter}`;
+      const dateMs = d.getTime();
+      const current = quarterRatioMap.get(key);
+      if (!current || dateMs > current.dateMs) {
+        const n = (value: unknown): number | null => {
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? parsed : null;
+        };
+        quarterRatioMap.set(key, {
+          dateMs,
+          currentRatio: n((row as any).currentRatio),
+          quickRatio: n((row as any).quickRatio),
+          debtToNW: n((row as any).debtToNW),
+          interestCov: n((row as any).interestCov),
+          roe: n((row as any).roe),
+          roa: n((row as any).roa),
+        });
+      }
+    }
+    const formatRatio = (value: number | null, decimals: number, asPercent = false) => {
+      if (value === null) return 'N/A';
+      const base = asPercent ? value * 100 : value;
+      return `${base.toFixed(decimals)}${asPercent ? '%' : ''}`;
+    };
+    const keyRatioSeries = [
+      {
+        label: 'Current Ratio',
+        values: quarters.map((q) =>
+          formatRatio(quarterRatioMap.get(`${q.year}-Q${q.quarter}`)?.currentRatio ?? null, 2)
+        ),
+      },
+      {
+        label: 'Quick Ratio',
+        values: quarters.map((q) =>
+          formatRatio(quarterRatioMap.get(`${q.year}-Q${q.quarter}`)?.quickRatio ?? null, 2)
+        ),
+      },
+      {
+        label: 'Debt to Net Worth',
+        values: quarters.map((q) =>
+          formatRatio(quarterRatioMap.get(`${q.year}-Q${q.quarter}`)?.debtToNW ?? null, 2)
+        ),
+      },
+      {
+        label: 'Interest Coverage',
+        values: quarters.map((q) =>
+          formatRatio(quarterRatioMap.get(`${q.year}-Q${q.quarter}`)?.interestCov ?? null, 2)
+        ),
+      },
+      {
+        label: 'ROE',
+        values: quarters.map((q) =>
+          formatRatio(quarterRatioMap.get(`${q.year}-Q${q.quarter}`)?.roe ?? null, 1, true)
+        ),
+      },
+      {
+        label: 'ROA',
+        values: quarters.map((q) =>
+          formatRatio(quarterRatioMap.get(`${q.year}-Q${q.quarter}`)?.roa ?? null, 1, true)
+        ),
+      },
+    ];
+
+    return {
+      quarters,
+      revenueAccountNames,
+      cogsAccountNames,
+      totalRevenueByQuarter,
+      ebitdaByQuarter,
+      grossMarginByQuarter,
+      ebitdaMarginByQuarter,
+      keyRatioSeries,
+      mdaStrengths: (mdaAnalysis?.strengths || []).slice(0, 4),
+      mdaWeaknesses: (mdaAnalysis?.weaknesses || []).slice(0, 4),
+      mdaInsights: (mdaAnalysis?.insights || []).slice(0, 4),
+    };
+  }, [monthly, trendData, mdaAnalysis]);
+  const buildHistoricalFinancialSummaryReportText = useCallback((): string => {
+    const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
+    const fmtPct = (value: number) => `${value.toFixed(1)}%`;
+    const lines: string[] = ['3. Historical Financial Summary', ''];
+    if (valuationBuilderSelections.hfs_revenue) {
+      lines.push('a. Revenue (3-Year Quarterly):');
+      lines.push(`- Quarters included: ${historicalFinancialSummaryData.quarters.map((q) => q.label).join(', ') || 'N/A'}`);
+      lines.push(`- Quarterly totals: ${historicalFinancialSummaryData.totalRevenueByQuarter.map(money).join(' | ') || 'N/A'}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.hfs_cogsByAccount) {
+      lines.push('b. COGS by Account:');
+      lines.push(`- Accounts: ${historicalFinancialSummaryData.cogsAccountNames.join(', ') || 'N/A'}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.hfs_margins) {
+      lines.push('c. Margins:');
+      lines.push(`- Gross Margin by Quarter: ${historicalFinancialSummaryData.grossMarginByQuarter.map(fmtPct).join(' | ') || 'N/A'}`);
+      lines.push(`- EBITDA Margin by Quarter: ${historicalFinancialSummaryData.ebitdaMarginByQuarter.map(fmtPct).join(' | ') || 'N/A'}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.hfs_ebitda) {
+      lines.push('d. EBITDA:');
+      lines.push(`- EBITDA by Quarter: ${historicalFinancialSummaryData.ebitdaByQuarter.map(money).join(' | ') || 'N/A'}`);
+      lines.push('');
+    }
+    if (valuationBuilderSelections.hfs_keyRatios) {
+      lines.push('e. Key Ratios:');
+      historicalFinancialSummaryData.keyRatioSeries.forEach((row) =>
+        lines.push(`- ${row.label}: ${row.values.join(' | ') || 'N/A'}`)
+      );
+      lines.push('');
+    }
+    if (valuationBuilderSelections.hfs_mda) {
+      lines.push('f. Management Discussion and Analysis:');
+      historicalFinancialSummaryData.mdaStrengths.forEach((item) => lines.push(`- Strength: ${item}`));
+      historicalFinancialSummaryData.mdaWeaknesses.forEach((item) => lines.push(`- Watch Item: ${item}`));
+      historicalFinancialSummaryData.mdaInsights.forEach((item) => lines.push(`- Insight: ${item}`));
+    }
+    return lines.join('\n');
+  }, [valuationBuilderSelections, historicalFinancialSummaryData]);
+  const buildHistoricalFinancialSummaryReportHtml = useCallback((): string => {
+    const esc = (value: string) =>
+      String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
+    const pct = (value: number) => `${value.toFixed(1)}%`;
+    const quarters = historicalFinancialSummaryData.quarters;
+    const chartValues = historicalFinancialSummaryData.totalRevenueByQuarter;
+    const maxChart = Math.max(1, ...chartValues.map((v) => Math.abs(v)));
+    const chartW = 920;
+    const chartH = 240;
+    const stepX = chartValues.length > 1 ? chartW / (chartValues.length - 1) : chartW;
+    const chartPoints = chartValues
+      .map((value, idx) => {
+        const x = idx * stepX;
+        const y = chartH - ((Math.max(0, value) / maxChart) * (chartH - 24)) - 12;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+    const ebitdaChartValues = historicalFinancialSummaryData.ebitdaByQuarter;
+    const rawEbitdaMin = Math.min(...ebitdaChartValues, 0);
+    const rawEbitdaMax = Math.max(...ebitdaChartValues, 0);
+    const ebitdaRange = Math.max(1, rawEbitdaMax - rawEbitdaMin);
+    const ebitdaMin = rawEbitdaMin - ebitdaRange * 0.06;
+    const ebitdaMax = rawEbitdaMax + ebitdaRange * 0.06;
+    const ebitdaDenominator = Math.max(1, ebitdaMax - ebitdaMin);
+    const ebitdaY = (value: number) =>
+      chartH - (((value - ebitdaMin) / ebitdaDenominator) * (chartH - 24)) - 12;
+    const ebitdaZeroY = ebitdaY(0);
+    const ebitdaChartPoints = ebitdaChartValues
+      .map((value, idx) => {
+        const x = idx * stepX;
+        const y = ebitdaY(value);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+
+    const buildQuarterTable = (
+      title: string,
+      accountNames: string[],
+      perQuarterValue: (account: string, quarter: typeof quarters[number]) => number
+    ) => `
+      <div style="margin: 20px 0 8px 0; font-size: 20px; font-weight: 800; color: #1e293b;">${esc(title)}</div>
+      <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px;">
+        <table style="width: 100%; border-collapse: collapse; min-width: 1080px; font-size: 13px;">
+          <thead>
+            <tr style="background: #f8fafc;">
+              <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e2e8f0;">Account</th>
+              ${quarters.map((q) => `<th style="text-align: left; padding: 10px; border-bottom: 1px solid #e2e8f0;">${esc(q.label)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${accountNames.map((account) => {
+              const values = quarters.map((q) => perQuarterValue(account, q));
+              return `<tr>
+                <td style="padding: 9px 10px; border-bottom: 1px solid #f1f5f9; font-weight: 600; color: #1e293b;">${esc(account)}</td>
+                ${values.map((v) => `<td style="padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: #334155;">${money(v)}</td>`).join('')}
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const sections: string[] = [];
+    if (valuationBuilderSelections.hfs_revenue) {
+      sections.push(`
+        <div style="margin-top: 16px;">
+          <div style="font-size: 24px; font-weight: 800; color: #1e293b;">a. Revenue</div>
+          ${buildQuarterTable(
+            '3-Year Quarterly Revenue by Account',
+            historicalFinancialSummaryData.revenueAccountNames,
+            (account, q) => q.revenueAccounts[account] || 0
+          )}
+          <div style="margin: 18px 0 8px 0; font-size: 18px; font-weight: 800; color: #1e293b;">12-Quarter Revenue Trend</div>
+          <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 12px 2px 12px; overflow-x: auto;">
+            <svg width="${chartW}" height="${chartH + 34}" viewBox="0 0 ${chartW} ${chartH + 34}" role="img" aria-label="12 quarter revenue line chart">
+              <rect x="0" y="0" width="${chartW}" height="${chartH}" fill="#ffffff" />
+              <line x1="0" y1="${chartH - 1}" x2="${chartW}" y2="${chartH - 1}" stroke="#cbd5e1" stroke-width="1" />
+              <polyline points="${chartPoints}" fill="none" stroke="#1f70c1" stroke-width="3" />
+              ${chartValues.map((value, idx) => {
+                const x = idx * stepX;
+                const y = chartH - ((Math.max(0, value) / maxChart) * (chartH - 24)) - 12;
+                const label = quarters[idx]?.label || '';
+                return `
+                  <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.8" fill="#1f70c1" />
+                  <text x="${x.toFixed(1)}" y="${chartH + 18}" text-anchor="middle" font-size="10" fill="#64748b">${esc(label)}</text>
+                `;
+              }).join('')}
+            </svg>
+          </div>
+        </div>
+      `);
+    }
+    if (valuationBuilderSelections.hfs_cogsByAccount) {
+      sections.push(`
+        <div style="margin-top: 20px;">
+          <div style="font-size: 24px; font-weight: 800; color: #1e293b;">b. COGS by Account</div>
+          ${buildQuarterTable(
+            'Quarterly COGS by Account',
+            historicalFinancialSummaryData.cogsAccountNames,
+            (account, q) => q.cogsAccounts[account] || 0
+          )}
+        </div>
+      `);
+    }
+    if (valuationBuilderSelections.hfs_margins) {
+      sections.push(`
+        <div style="margin-top: 20px;">
+          <div style="font-size: 24px; font-weight: 800; color: #1e293b;">c. Margins</div>
+          <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px;">
+            <table style="width: 100%; border-collapse: collapse; min-width: 860px; font-size: 13px;">
+              <thead><tr style="background:#f8fafc;"><th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">Metric</th>${quarters.map((q) => `<th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">${esc(q.label)}</th>`).join('')}</tr></thead>
+              <tbody>
+                <tr><td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;font-weight:700;">Gross Margin</td>${historicalFinancialSummaryData.grossMarginByQuarter.map((v) => `<td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;">${pct(v)}</td>`).join('')}</tr>
+                <tr><td style="padding:9px 10px;font-weight:700;">EBITDA Margin</td>${historicalFinancialSummaryData.ebitdaMarginByQuarter.map((v) => `<td style="padding:9px 10px;">${pct(v)}</td>`).join('')}</tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `);
+    }
+    if (valuationBuilderSelections.hfs_ebitda) {
+      sections.push(`
+        <div style="margin-top: 20px;">
+          <div style="font-size: 24px; font-weight: 800; color: #1e293b;">d. EBITDA</div>
+          <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px;">
+            <table style="width: 100%; border-collapse: collapse; min-width: 860px; font-size: 13px;">
+              <thead><tr style="background:#f8fafc;"><th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">Metric</th>${quarters.map((q) => `<th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">${esc(q.label)}</th>`).join('')}</tr></thead>
+              <tbody>
+                <tr><td style="padding:9px 10px;font-weight:700;">EBITDA</td>${historicalFinancialSummaryData.ebitdaByQuarter.map((v) => `<td style="padding:9px 10px;">${money(v)}</td>`).join('')}</tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="margin: 18px 0 8px 0; font-size: 18px; font-weight: 800; color: #1e293b;">12-Quarter EBITDA Trend</div>
+          <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 12px 2px 12px; overflow-x: auto;">
+            <svg width="${chartW}" height="${chartH + 34}" viewBox="0 0 ${chartW} ${chartH + 34}" role="img" aria-label="12 quarter EBITDA line chart">
+              <rect x="0" y="0" width="${chartW}" height="${chartH}" fill="#ffffff" />
+              <line x1="0" y1="${chartH - 1}" x2="${chartW}" y2="${chartH - 1}" stroke="#cbd5e1" stroke-width="1" />
+              <line x1="0" y1="${ebitdaZeroY.toFixed(1)}" x2="${chartW}" y2="${ebitdaZeroY.toFixed(1)}" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,3" />
+              <polyline points="${ebitdaChartPoints}" fill="none" stroke="#0f766e" stroke-width="3" />
+              ${ebitdaChartValues.map((value, idx) => {
+                const x = idx * stepX;
+                const y = ebitdaY(value);
+                const label = quarters[idx]?.label || '';
+                return `
+                  <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.8" fill="#0f766e" />
+                  <text x="${x.toFixed(1)}" y="${chartH + 18}" text-anchor="middle" font-size="10" fill="#64748b">${esc(label)}</text>
+                `;
+              }).join('')}
+            </svg>
+          </div>
+        </div>
+      `);
+    }
+    if (valuationBuilderSelections.hfs_keyRatios) {
+      sections.push(`
+        <div style="margin-top: 20px;">
+          <div style="font-size: 24px; font-weight: 800; color: #1e293b;">e. Key Ratios</div>
+          <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px;">
+            <table style="width: 100%; border-collapse: collapse; min-width: 1080px; font-size: 13px;">
+              <thead>
+                <tr style="background:#f8fafc;">
+                  <th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">Metric</th>
+                  ${quarters.map((q) => `<th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">${esc(q.label)}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${historicalFinancialSummaryData.keyRatioSeries.map((row) => `
+                  <tr>
+                    <td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;font-weight:700;color:#1e293b;">${esc(row.label)}</td>
+                    ${row.values.map((value) => `<td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;color:#334155;">${esc(value)}</td>`).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `);
+    }
+    if (valuationBuilderSelections.hfs_mda) {
+      sections.push(`
+        <div style="margin-top: 20px;">
+          <div style="font-size: 24px; font-weight: 800; color: #1e293b;">f. Management Discussion and Analysis</div>
+          <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; display:grid; gap:10px;">
+            <div><div style="font-size:15px;font-weight:800;color:#1e293b;margin-bottom:4px;">Strengths</div>${historicalFinancialSummaryData.mdaStrengths.length ? `<ul style="margin:0;padding-left:18px;color:#334155;font-size:14px;line-height:1.5;">${historicalFinancialSummaryData.mdaStrengths.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : `<div style="font-size:14px;color:#64748b;">No strengths available.</div>`}</div>
+            <div><div style="font-size:15px;font-weight:800;color:#1e293b;margin-bottom:4px;">Watch Items</div>${historicalFinancialSummaryData.mdaWeaknesses.length ? `<ul style="margin:0;padding-left:18px;color:#334155;font-size:14px;line-height:1.5;">${historicalFinancialSummaryData.mdaWeaknesses.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : `<div style="font-size:14px;color:#64748b;">No watch items available.</div>`}</div>
+            <div><div style="font-size:15px;font-weight:800;color:#1e293b;margin-bottom:4px;">Insights</div>${historicalFinancialSummaryData.mdaInsights.length ? `<ul style="margin:0;padding-left:18px;color:#334155;font-size:14px;line-height:1.5;">${historicalFinancialSummaryData.mdaInsights.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : `<div style="font-size:14px;color:#64748b;">No insights available.</div>`}</div>
+          </div>
+        </div>
+      `);
+    }
+
+    return `
+      <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #fff;">
+        <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+          <div style="font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Corelytics Valuation Report</div>
+          <div style="font-size: 30px; color: #1e293b; font-weight: 800; margin-top: 4px;">3. Historical Financial Summary</div>
+          <div style="font-size: 13px; color: #475569; margin-top: 4px;">Company: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))}</div>
+        </div>
+        <div style="padding: 16px 18px;">
+          ${sections.join('')}
+        </div>
+      </div>
+    `;
+  }, [historicalFinancialSummaryData, valuationBuilderSelections, companyName]);
+  const buildValuationSectionReportText = useCallback((sectionId: string, sectionTitle: string): string => {
+    if (sectionId === '1') return buildExecutiveSummaryReportText();
+    if (sectionId === '2') return buildBusinessOverviewReportText();
+    if (sectionId === '3') return buildHistoricalFinancialSummaryReportText();
+    const section = valuationSectionDefinitions.find((item) => item.id === sectionId);
+    if (!section) {
+      return `${sectionTitle}\n\nNo section definition found.`;
+    }
+    const selectedRows = section.rows.filter((row) => valuationBuilderSelections[row.key]);
+    const lines: string[] = [section.title, ''];
+    if (selectedRows.length === 0) {
+      lines.push('No rows selected for this section.');
+      return lines.join('\n');
+    }
+
+    const money = (value: number) => {
+      const safe = Number(value);
+      return Number.isFinite(safe) ? `$${Math.round(safe).toLocaleString()}` : 'N/A';
+    };
+    const pct = (value: number | null | undefined) =>
+      Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : 'N/A';
+    const rowLabel = (key: string, fallback: string) => {
+      const idx = selectedRows.findIndex((r) => r.key === key);
+      return idx >= 0 ? `${indexToLetterLabel(idx)} ${fallback}` : fallback;
+    };
+
+    if (sectionId === '4') {
+      const adjustments =
+        Number((sdeAnalysisTotalsState as any).totalAdjustments) ||
+        Number((sdeAnalysisTotalsState as any).qoeTotalAdjustments) ||
+        (valuationExecutiveOverview.ttmSde - valuationExecutiveOverview.ttmEbitda);
+      if (valuationBuilderSelections.qoe_adjustments) {
+        lines.push(`${rowLabel('qoe_adjustments', 'EBITDA/SDE Adjustments')}:`);
+        lines.push(`- Reported EBITDA baseline: ${money(valuationExecutiveOverview.ttmEbitda)}.`);
+        lines.push(`- Net normalization adjustments: ${money(adjustments)}.`);
+        lines.push(`- Normalized SDE proxy: ${money(valuationExecutiveOverview.ttmSde)}.`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.qoe_revenueQuality) {
+        const concentrationText = businessOverviewCustomerConcentration
+          ? `Top 1 concentration ${pct(businessOverviewCustomerConcentration.top1Pct)} and Top 5 concentration ${pct(businessOverviewCustomerConcentration.top5Pct)} indicate current customer dependency levels.`
+          : 'Customer concentration feed is unavailable, so revenue quality concentration could not be quantified in this export.';
+        lines.push(`${rowLabel('qoe_revenueQuality', 'Revenue Quality')}:`);
+        lines.push(`- ${concentrationText}`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.qoe_costStructure) {
+        const latestGrossMargin = historicalFinancialSummaryData.grossMarginByQuarter.at(-1) || 0;
+        const latestEbitdaMargin = historicalFinancialSummaryData.ebitdaMarginByQuarter.at(-1) || 0;
+        lines.push(`${rowLabel('qoe_costStructure', 'Cost Structure')}:`);
+        lines.push(`- Latest gross margin: ${pct(latestGrossMargin)}.`);
+        lines.push(`- Latest EBITDA margin: ${pct(latestEbitdaMargin)}.`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.qoe_score) {
+        const score = valuationExecutiveOverview.ttmEbitda !== 0
+          ? (valuationExecutiveOverview.ttmSde / valuationExecutiveOverview.ttmEbitda) * 100
+          : 0;
+        lines.push(`${rowLabel('qoe_score', 'QoE Score')}:`);
+        lines.push(`- Normalized earnings conversion ratio: ${pct(score)} (SDE / EBITDA).`);
+      }
+      return lines.join('\n');
+    }
+
+    if (sectionId === '5') {
+      const recent12 = monthly.slice(-12);
+      const avg = (arr: number[]) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
+      const hasWcData = recent12.length > 0;
+      const avgAr = hasWcData ? avg(recent12.map((m: any) => Number(m?.ar) || 0)) : Number.NaN;
+      const avgInventory = hasWcData ? avg(recent12.map((m: any) => Number(m?.inventory) || 0)) : Number.NaN;
+      const avgAp = hasWcData ? avg(recent12.map((m: any) => Number(m?.ap) || 0)) : Number.NaN;
+      const normalizedWorkingCapital = hasWcData ? (avgAr + avgInventory - avgAp) : Number.NaN;
+      const latest = recent12.at(-1) as any;
+      const currentWorkingCapital = hasWcData
+        ? (Number(latest?.ar) || 0) + (Number(latest?.inventory) || 0) - (Number(latest?.ap) || 0)
+        : Number.NaN;
+      const wcAdjustment = Number.isFinite(currentWorkingCapital) && Number.isFinite(normalizedWorkingCapital)
+        ? currentWorkingCapital - normalizedWorkingCapital
+        : Number.NaN;
+      const latestTrend = trendData.at(-1);
+      const ccc = latestTrend
+        ? (Number(latestTrend.daysInv) || 0) + (Number(latestTrend.daysAR) || 0) - (Number(latestTrend.daysAP) || 0)
+        : Number.NaN;
+      if (valuationBuilderSelections.wc_normalizedWorkingCapital) {
+        lines.push(`${rowLabel('wc_normalizedWorkingCapital', 'Normalized Working Capital')}:`);
+        lines.push(`- 12-month normalized operating working capital: ${money(normalizedWorkingCapital)}.`);
+        lines.push(`- Current operating working capital: ${money(currentWorkingCapital)}.`);
+        lines.push(`- Purchase-price style adjustment vs normalized target: ${Number.isFinite(wcAdjustment) && wcAdjustment >= 0 ? '+' : ''}${money(wcAdjustment)}.`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.wc_arapAnalysis) {
+        lines.push(`${rowLabel('wc_arapAnalysis', 'AR/AP Analysis')}:`);
+        lines.push(`- 12-month average AR: ${money(avgAr)}.`);
+        lines.push(`- 12-month average Inventory: ${money(avgInventory)}.`);
+        lines.push(`- 12-month average AP: ${money(avgAp)}.`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.wc_cashConversion) {
+        lines.push(`${rowLabel('wc_cashConversion', 'Cash Conversion')}:`);
+        lines.push(`- Estimated cash conversion cycle (DSO + DIO - DPO): ${Number.isFinite(ccc) ? `${Number(ccc).toFixed(1)} days` : 'N/A'}.`);
+        lines.push(`- TTM free cash flow reference: ${money(valuationExecutiveOverview.ttmFreeCashFlow)}.`);
+      }
+      return lines.join('\n');
+    }
+
+    if (sectionId === '6') {
+      const sensitivity = (base: number) => ({
+        low: base * 0.9,
+        high: base * 1.1,
+      });
+      if (valuationBuilderSelections.vm_sdeValuation) {
+        const range = sensitivity(valuationExecutiveOverview.sdeEstimatedValue);
+        lines.push(`${rowLabel('vm_sdeValuation', 'SDE Valuation (+/- 10%)')}:`);
+        lines.push(`- Base SDE valuation: ${money(valuationExecutiveOverview.sdeEstimatedValue)} at ${Number(sdeMultiplier).toFixed(2)}x.`);
+        lines.push(`- Sensitivity range: ${money(range.low)} to ${money(range.high)}.`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.vm_ebitdaValuation) {
+        const range = sensitivity(valuationExecutiveOverview.ebitdaEstimatedValue);
+        lines.push(`${rowLabel('vm_ebitdaValuation', 'EBITDA Valuation (+/- 10%)')}:`);
+        lines.push(`- Base EBITDA valuation: ${money(valuationExecutiveOverview.ebitdaEstimatedValue)} at ${Number(ebitdaMultiplier).toFixed(2)}x.`);
+        lines.push(`- Sensitivity range: ${money(range.low)} to ${money(range.high)}.`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.vm_dcfValuation) {
+        const range = sensitivity(valuationExecutiveOverview.dcfEstimatedValue);
+        lines.push(`${rowLabel('vm_dcfValuation', 'DCF Valuation (Inputs +/- 10%)')}:`);
+        lines.push(`- Base DCF valuation: ${money(valuationExecutiveOverview.dcfEstimatedValue)} using discount ${Number(dcfDiscountRate).toFixed(2)}% and terminal growth ${Number(dcfTerminalGrowth).toFixed(2)}%.`);
+        lines.push(`- Sensitivity range: ${money(range.low)} to ${money(range.high)}.`);
+      }
+      return lines.join('\n');
+    }
+
+    if (sectionId === '7') {
+      const methods = [
+        { label: 'SDE', value: valuationExecutiveOverview.sdeEstimatedValue },
+        { label: 'EBITDA Multiple', value: valuationExecutiveOverview.ebitdaEstimatedValue },
+        { label: 'DCF', value: valuationExecutiveOverview.dcfEstimatedValue },
+      ].filter((m) => Number.isFinite(m.value)).sort((a, b) => b.value - a.value);
+      if (valuationBuilderSelections.vs_methodComparison) {
+        lines.push(`${rowLabel('vs_methodComparison', 'Method Comparison (SDE/EBITDA/DCF)')}:`);
+        if (methods.length === 0) {
+          lines.push('- N/A');
+        } else {
+          methods.forEach((method) => lines.push(`- ${method.label}: ${money(method.value)}.`));
+        }
+        lines.push('');
+      }
+      if (valuationBuilderSelections.vs_finalValueRange) {
+        lines.push(`${rowLabel('vs_finalValueRange', 'Final Value Range')}:`);
+        lines.push(`- Enterprise value range: ${money(valuationExecutiveOverview.enterpriseValueLow)} to ${money(valuationExecutiveOverview.enterpriseValueHigh)}.`);
+        lines.push(`- Primary indication by highest method output: ${valuationExecutiveOverview.primaryMethod}.`);
+      }
+      return lines.join('\n');
+    }
+
+    if (sectionId === '9') {
+      if (valuationBuilderSelections.ra_keyRisks) {
+        const riskItems: string[] = [];
+        if (businessOverviewCustomerConcentration) {
+          riskItems.push(`Customer concentration remains elevated at Top 1 ${pct(businessOverviewCustomerConcentration.top1Pct)} and Top 5 ${pct(businessOverviewCustomerConcentration.top5Pct)}.`);
+        }
+        riskItems.push(`Valuation sensitivity is meaningful to DCF assumptions (discount ${Number(dcfDiscountRate).toFixed(2)}%, terminal ${Number(dcfTerminalGrowth).toFixed(2)}%).`);
+        lines.push(`${rowLabel('ra_keyRisks', 'Key Risks')}:`);
+        riskItems.forEach((item) => lines.push(`- ${item}`));
+        lines.push('');
+      }
+      if (valuationBuilderSelections.ra_mitigation) {
+        lines.push(`${rowLabel('ra_mitigation', 'Mitigation')}:`);
+        lines.push('- Diversify revenue concentration, tighten customer retention metrics, and document renewal visibility for major accounts.');
+        lines.push('- Run diligence-ready valuation sensitivities quarterly using the current SDE/EBITDA/DCF assumptions.');
+      }
+      return lines.join('\n');
+    }
+
+    if (sectionId === '10') {
+      const growthPct = Number(growth_24mo) || 0;
+      const latestEbitdaMargin = historicalFinancialSummaryData.ebitdaMarginByQuarter.at(-1) || 0;
+      if (valuationBuilderSelections.go_expansionOpportunities) {
+        lines.push(`${rowLabel('go_expansionOpportunities', 'Expansion Opportunities')}:`);
+        lines.push(`- 24-month growth trend currently tracks ${pct(growthPct)}; prioritize highest-margin accounts and recurring revenue offers.`);
+        lines.push('- Evaluate pricing and cross-sell opportunities within existing customer cohorts to lift value-driver stability.');
+        lines.push('');
+      }
+      if (valuationBuilderSelections.go_operationalImprovements) {
+        lines.push(`${rowLabel('go_operationalImprovements', 'Operational Improvements')}:`);
+        lines.push(`- Current trailing EBITDA margin is ${pct(latestEbitdaMargin)}; margin expansion roadmap should focus on COGS mix and operating leverage.`);
+        lines.push('- Working-capital release opportunities should be documented as a post-close value creation plan.');
+      }
+      return lines.join('\n');
+    }
+
+    if (sectionId === '11') {
+      if (valuationBuilderSelections.dr_documentsByCategory) {
+        lines.push(`${rowLabel('dr_documentsByCategory', 'Documents by Category')}:`);
+        lines.push('- Financials: monthly/quarterly statements, trial balance exports, and normalization workpapers.');
+        lines.push('- Commercial: major customer contracts, pricing schedules, and concentration analyses.');
+        lines.push('- Legal/Corporate: disclosures, ownership documents, and governance records.');
+        lines.push('- Supporting profile records available in this workspace are reflected in the Business Overview section.');
+      }
+      return lines.join('\n');
+    }
+
+    if (sectionId === '12') {
+      if (valuationBuilderSelections.ap_detailedFinancials) {
+        lines.push(`${rowLabel('ap_detailedFinancials', 'Detailed Financials')}:`);
+        lines.push(`- Quarters included: ${historicalFinancialSummaryData.quarters.map((q) => q.label).join(', ') || 'No quarter labels available'}.`);
+        lines.push(`- Revenue accounts mapped: ${historicalFinancialSummaryData.revenueAccountNames.length}.`);
+        lines.push(`- COGS accounts mapped: ${historicalFinancialSummaryData.cogsAccountNames.length}.`);
+      }
+      return lines.join('\n');
+    }
+
+    return lines.join('\n');
+  }, [buildExecutiveSummaryReportText, buildBusinessOverviewReportText, buildHistoricalFinancialSummaryReportText, valuationSectionDefinitions, valuationBuilderSelections, indexToLetterLabel, sdeAnalysisTotalsState, valuationExecutiveOverview, businessOverviewCustomerConcentration, monthly, trendData, sdeMultiplier, ebitdaMultiplier, dcfDiscountRate, dcfTerminalGrowth, growth_24mo, historicalFinancialSummaryData]);
+  const buildStyledValuationReportHtml = useCallback((content: string): string => {
+    const escapeHtml = (value: string) =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    const lines = String(content || '').split('\n');
+    let headingRendered = false;
+    const blocks: string[] = [];
+
+    const buildLabelValueRow = (label: string, value: string, margin: string) =>
+      `<div style="display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; margin: ${margin};">` +
+        `<div style="font-size: 16px; font-weight: 800; color: #1e293b; line-height: 1.6;">${escapeHtml(label)}:</div>` +
+        `<div style="font-size: 16px; color: #334155; line-height: 1.6; text-align: left;">${escapeHtml(value)}</div>` +
+      `</div>`;
+
+    for (const rawLine of lines) {
+      const line = rawLine || '';
+      const trimmed = line.trim();
+      if (!trimmed) {
+        blocks.push('<div style="height: 10px;"></div>');
+        continue;
+      }
+
+      if (!headingRendered) {
+        headingRendered = true;
+        blocks.push(`<div style="font-size: 34px; font-weight: 800; color: #0f172a; line-height: 1.2; margin: 0 0 16px 0;">${escapeHtml(trimmed)}</div>`);
+        continue;
+      }
+
+      if (/^[^-].*:\s*$/.test(trimmed)) {
+        blocks.push(`<div style="font-size: 20px; font-weight: 800; color: #1e293b; line-height: 1.35; margin: 18px 0 8px 0;">${escapeHtml(trimmed)}</div>`);
+        continue;
+      }
+
+      if (/^- /.test(trimmed)) {
+        const itemText = trimmed.slice(2).trim();
+        const colonIndex = itemText.indexOf(':');
+        if (colonIndex > 0) {
+          const label = itemText.slice(0, colonIndex).trim();
+          const value = itemText.slice(colonIndex + 1).trim();
+          blocks.push(buildLabelValueRow(label, value, '4px 0'));
+        } else {
+          blocks.push(`<div style="font-size: 16px; color: #334155; line-height: 1.65; margin: 4px 0;">${escapeHtml(itemText)}</div>`);
+        }
+        continue;
+      }
+
+      const colonIndex = trimmed.indexOf(':');
+      if (colonIndex > 0) {
+        const label = trimmed.slice(0, colonIndex).trim();
+        const value = trimmed.slice(colonIndex + 1).trim();
+        blocks.push(buildLabelValueRow(label, value, '6px 0'));
+      } else {
+        blocks.push(`<div style="font-size: 16px; color: #334155; line-height: 1.65; margin: 6px 0;">${escapeHtml(trimmed)}</div>`);
+      }
+    }
+
+    return `
+      <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #ffffff;">
+        <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+          <div style="font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Corelytics Valuation Report</div>
+          <div style="font-size: 13px; color: #475569; margin-top: 4px;">Company: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))}</div>
+        </div>
+        <div style="padding: 20px 22px;">${blocks.join('')}</div>
+      </div>
+    `;
+  }, [companyName]);
+  const handleValuationSectionView = useCallback((sectionId: string, sectionTitle: string) => {
+    const content = buildValuationSectionReportText(sectionId, sectionTitle);
+    setValuationSectionPreview({ id: sectionId, title: sectionTitle, content });
+  }, [buildValuationSectionReportText]);
+  const handleValuationSectionPrint = useCallback((sectionId: string, sectionTitle: string) => {
+    const content = buildValuationSectionReportText(sectionId, sectionTitle);
+    const popup = window.open('', '_blank', 'width=900,height=700');
+    if (!popup) {
+      alert('Please allow pop-ups to print this section.');
+      return;
+    }
+    const styledHtml = sectionId === '3'
+      ? buildHistoricalFinancialSummaryReportHtml()
+      : buildStyledValuationReportHtml(content);
+    popup.document.write(`<html><head><title>${sectionTitle}</title></head><body style="font-family: Arial, sans-serif; padding: 24px; background: #ffffff;">${styledHtml}</body></html>`);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+  }, [buildValuationSectionReportText, buildStyledValuationReportHtml, buildHistoricalFinancialSummaryReportHtml]);
+  const handleValuationSectionDownload = useCallback((sectionId: string, sectionTitle: string) => {
+    const content = buildValuationSectionReportText(sectionId, sectionTitle);
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    const safeName = sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    anchor.download = `${safeName || 'valuation-section'}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, [buildValuationSectionReportText]);
+  const handleSaveValuationSelections = useCallback(() => {
+    if (!selectedCompanyId) {
+      alert('Please select a company first.');
+      return;
+    }
+    setValuationSelectionSaveStatus('saving');
+    try {
+      const storageKey = `valuationReportSelections_${selectedCompanyId}`;
+      localStorage.setItem(storageKey, JSON.stringify(valuationBuilderSelections));
+      setValuationSelectionSaveStatus('saved');
+      setTimeout(() => setValuationSelectionSaveStatus('idle'), 2500);
+    } catch (error) {
+      console.error('Failed to save valuation report selections:', error);
+      setValuationSelectionSaveStatus('error');
+      setTimeout(() => setValuationSelectionSaveStatus('idle'), 3000);
+    }
+  }, [selectedCompanyId, valuationBuilderSelections]);
   const selectedAccountingSystem = company?.accountingSystem || '';
   const selectedCompanyCsvTrialBalanceData =
     csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId
@@ -8914,6 +10312,7 @@ function FinancialScorePage() {
                   {currentView === 'mda' && '› '}MANAGEMENT DISCUSSION AND ANALYSIS
                 </h3>
               )}
+
               {hasCompanySectionAccess('valuation') && (
                 <>
                   <h3
@@ -8984,9 +10383,99 @@ function FinancialScorePage() {
                   )}
                 </>
               )}
+
+              {(hasCompanySectionAccess('financial-reports') || hasCompanySectionAccess('valuation')) && (
+                <div style={{ marginTop: '16px' }}>
+                  <h3
+                    onClick={() => setIsReportsExpanded((prev) => !prev)}
+                    style={{
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      color: '#334155',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      padding: '1px 32px',
+                      margin: isReportsExpanded ? '0 0 8px 0' : '0',
+                      cursor: 'pointer',
+                      transition: 'color 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#1F70C1';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = '#334155';
+                    }}
+                  >
+                    PRINT REPORTS {isReportsExpanded ? '▾' : '▸'}
+                  </h3>
+                  {isReportsExpanded && (
+                    <div style={{ paddingLeft: '36px' }}>
+                      <div
+                        onClick={() => handleNavigation('custom-print')}
+                        style={{
+                          fontSize: '13px',
+                          color: currentView === 'custom-print' ? '#1F70C1' : '#475569',
+                          padding: '5px 12px',
+                          cursor: 'pointer',
+                          borderRadius: '6px',
+                          marginBottom: '4px',
+                          background: currentView === 'custom-print' ? '#e0f2fe' : 'transparent',
+                          fontWeight: currentView === 'custom-print' ? '600' : '400',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (currentView !== 'custom-print') {
+                            e.currentTarget.style.background = '#f8fafc';
+                            e.currentTarget.style.color = '#1F70C1';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (currentView !== 'custom-print') {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.color = '#475569';
+                          }
+                        }}
+                      >
+                        {currentView === 'custom-print' && '› '}STANDARD REPORTS
+                      </div>
+                      {hasCompanySectionAccess('valuation') && (
+                        <div
+                          onClick={() => handleNavigation('valuation-reports')}
+                          style={{
+                            fontSize: '13px',
+                            color: currentView === 'valuation-reports' ? '#1F70C1' : '#475569',
+                            padding: '5px 12px',
+                            cursor: 'pointer',
+                            borderRadius: '6px',
+                            marginTop: '6px',
+                            marginBottom: '4px',
+                            background: currentView === 'valuation-reports' ? '#e0f2fe' : 'transparent',
+                            fontWeight: currentView === 'valuation-reports' ? '600' : '400',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (currentView !== 'valuation-reports') {
+                              e.currentTarget.style.background = '#f8fafc';
+                              e.currentTarget.style.color = '#1F70C1';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (currentView !== 'valuation-reports') {
+                              e.currentTarget.style.background = 'transparent';
+                              e.currentTarget.style.color = '#475569';
+                            }
+                          }}
+                        >
+                          {currentView === 'valuation-reports' && '› '}VALUATION REPORTS
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Financial Score Section - removed from sidebar; functionality commented out below */}
+            {/* Legacy financial health section removed from sidebar; functionality commented out below */}
 
             {/* Team Assessment - moved to Support page; link there goes to /?view=ma-welcome */}
 
@@ -12417,8 +13906,27 @@ function FinancialScorePage() {
                                     const end = new Date(`${endYm}-01T00:00:00Z`);
                                     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return out;
                                     const cursor = new Date(start);
+                                    const safeYear = (value: unknown): number | null => {
+                                      if (!value || typeof value !== 'object') return null;
+                                      const utcGetter = (value as any).getUTCFullYear;
+                                      const localGetter = (value as any).getFullYear;
+                                      if (typeof utcGetter === 'function') return Number(utcGetter.call(value));
+                                      if (typeof localGetter === 'function') return Number(localGetter.call(value));
+                                      return null;
+                                    };
+                                    const safeMonth = (value: unknown): number | null => {
+                                      if (!value || typeof value !== 'object') return null;
+                                      const utcGetter = (value as any).getUTCMonth;
+                                      const localGetter = (value as any).getMonth;
+                                      if (typeof utcGetter === 'function') return Number(utcGetter.call(value));
+                                      if (typeof localGetter === 'function') return Number(localGetter.call(value));
+                                      return null;
+                                    };
                                     while (cursor <= end) {
-                                      out.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
+                                      const y = safeYear(cursor);
+                                      const m = safeMonth(cursor);
+                                      if (y === null || m === null || !Number.isFinite(y) || !Number.isFinite(m)) break;
+                                      out.push(`${Math.trunc(y)}-${String(Math.trunc(m) + 1).padStart(2, '0')}`);
                                       cursor.setUTCMonth(cursor.getUTCMonth() + 1);
                                     }
                                     return out;
@@ -12811,7 +14319,16 @@ function FinancialScorePage() {
                               if (compact) return `${compact[1]}-${compact[2]}`;
                               const parsed = new Date(raw);
                               if (Number.isNaN(parsed.getTime())) return null;
-                              return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+                              const year =
+                                typeof (parsed as any).getUTCFullYear === 'function'
+                                  ? Number((parsed as any).getUTCFullYear())
+                                  : Number((parsed as any).getFullYear?.());
+                              const month =
+                                typeof (parsed as any).getUTCMonth === 'function'
+                                  ? Number((parsed as any).getUTCMonth())
+                                  : Number((parsed as any).getMonth?.());
+                              if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+                              return `${Math.trunc(year)}-${String(Math.trunc(month) + 1).padStart(2, '0')}`;
                             };
                             const targetMonth = (() => {
                               const picked = String(apiFinancialTargetMonth || '').trim();
@@ -13203,17 +14720,17 @@ function FinancialScorePage() {
         />
       )}
 
-      {/* Financial Score - Introduction View - DISABLED (commented out) */}
+      {/* Legacy Introduction View - DISABLED (commented out) */}
       {/* {currentView === 'fs-intro' && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px' }}>
           <div style={{ background: 'white', borderRadius: '12px', padding: '40px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '32px', textAlign: 'center' }}>Introduction to the Corelytics Financial Score</h1>
+            <h1 style={{ fontSize: '36px', fontWeight: '700', color: '#1e293b', marginBottom: '32px', textAlign: 'center' }}>Introduction to Corelytics Financial Performance</h1>
             ...
           </div>
         </div>
       )} */}
 
-      {/* Financial Score Trends View - DISABLED (commented out) */}
+      {/* Legacy Trends View - DISABLED (commented out) */}
       {/* {currentView === 'fs-score' && selectedCompanyId && trendData.length > 0 && (
         <FinancialScoreView
           monthly={monthly}
@@ -13508,6 +15025,253 @@ function FinancialScorePage() {
 
       {currentView === 'pa-opportunity-workspace' && selectedCompanyId && (
         <OpportunityWorkspace companyId={selectedCompanyId} />
+      )}
+
+      {currentView === 'valuation-reports' && selectedCompanyId && (
+        <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '24px 20px 36px 20px' }}>
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
+            <div style={{ padding: '26px 28px', background: 'linear-gradient(135deg, #0f4c81 0%, #1f70c1 55%, #63a8e8 100%)' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '1.1px', color: 'rgba(255,255,255,0.88)', textTransform: 'uppercase' }}>
+                Professional Report Outline
+              </div>
+              <h1 style={{ fontSize: '34px', fontWeight: '800', color: '#ffffff', margin: '10px 0 6px 0', letterSpacing: '-0.3px' }}>
+                Corelytics Valuation Report
+              </h1>
+              <p style={{ margin: 0, fontSize: '14px', color: 'rgba(255,255,255,0.92)' }}>
+                Company: <strong>{companyName || 'Selected Company'}</strong>
+              </p>
+            </div>
+
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', color: '#334155', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span>
+                This page defines the report sections and required content for build-out. It is structured to be viewable and print-ready.
+              </span>
+              <button
+                onClick={handleSaveValuationSelections}
+                disabled={valuationSelectionSaveStatus === 'saving'}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: valuationSelectionSaveStatus === 'saved'
+                    ? '1px solid #86efac'
+                    : valuationSelectionSaveStatus === 'error'
+                      ? '1px solid #fecaca'
+                      : '1px solid #1f70c1',
+                  background: valuationSelectionSaveStatus === 'saved'
+                    ? '#ecfdf5'
+                    : valuationSelectionSaveStatus === 'error'
+                      ? '#fef2f2'
+                      : '#1f70c1',
+                  color: valuationSelectionSaveStatus === 'saved'
+                    ? '#166534'
+                    : valuationSelectionSaveStatus === 'error'
+                      ? '#991b1b'
+                      : '#ffffff',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: valuationSelectionSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                  opacity: valuationSelectionSaveStatus === 'saving' ? 0.75 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {valuationSelectionSaveStatus === 'saving'
+                  ? 'Saving...'
+                  : valuationSelectionSaveStatus === 'saved'
+                    ? 'Saved'
+                    : valuationSelectionSaveStatus === 'error'
+                      ? 'Retry Save'
+                      : 'Save Selections'}
+              </button>
+            </div>
+
+            <div style={{ padding: '20px', display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+              {valuationSectionDefinitions.map((section) => (
+                <div
+                  key={section.id}
+                  style={{
+                    border: '1px solid #dbe5ef',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    background: '#ffffff',
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.05)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#1e293b' }}>{section.title}</div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => setValuationSectionExpanded((prev) => ({ ...prev, [section.id]: !prev[section.id] }))}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        {valuationSectionExpanded[section.id] ? 'Collapse' : 'Expand'}
+                      </button>
+                      <button
+                        onClick={() => handleValuationSectionView(section.id, section.title)}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => handleValuationSectionPrint(section.id, section.title)}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Print
+                      </button>
+                      <button
+                        onClick={() => handleValuationSectionDownload(section.id, section.title)}
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #1f70c1', background: '#eff6ff', color: '#1f70c1', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Download
+                      </button>
+                    </div>
+                  </div>
+
+                  {valuationSectionExpanded[section.id] && (
+                    <div style={{ marginTop: '10px', display: 'grid', gap: '10px' }}>
+                      <div style={{ fontSize: '13px', color: '#64748b' }}>
+                        Select Reports
+                      </div>
+                      <div style={{ display: 'grid', gap: '8px' }}>
+                        {section.rows.map((row, rowIdx) => (
+                          <label key={row.key} style={{ display: 'grid', gridTemplateColumns: '26px 1fr', gap: '10px', alignItems: 'start', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!valuationBuilderSelections[row.key]}
+                              onChange={(e) => setValuationBuilderSelections((prev) => ({ ...prev, [row.key]: e.target.checked }))}
+                              style={{ marginTop: '3px' }}
+                            />
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{indexToLetterLabel(rowIdx)} {row.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {valuationSectionPreview && (
+        <div
+          onClick={() => setValuationSectionPreview(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.5)',
+            zIndex: 3000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(1200px, 96vw)',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              background: '#ffffff',
+              borderRadius: '12px',
+              border: '1px solid #cbd5e1',
+              boxShadow: '0 20px 40px rgba(15,23,42,0.25)',
+              padding: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>Section Preview: {valuationSectionPreview.title}</div>
+              <button
+                onClick={() => setValuationSectionPreview(null)}
+                style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+            {valuationSectionPreview.id === '2' ? (
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
+                <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Corelytics Valuation Report</div>
+                  <div style={{ fontSize: '24px', color: '#1e293b', fontWeight: 800, marginTop: '4px' }}>Business Overview</div>
+                  <div style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>
+                    Company: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')}
+                  </div>
+                </div>
+                <div style={{ padding: '16px 18px', display: 'grid', gap: '12px' }}>
+                  {valuationBuilderSelections.bo_companyProfile && (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Company Profile</div>
+                      <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#334155', lineHeight: 1.6 }}>
+                        {businessOverviewProfileItems.map((item) => (
+                          <li key={item.label}><strong>{item.label}:</strong> {item.value}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {valuationBuilderSelections.bo_companyDisclosures && (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Company Disclosures</div>
+                      {businessOverviewDisclosureItems.length > 0 ? (
+                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#334155', lineHeight: 1.6 }}>
+                          {businessOverviewDisclosureItems.map((item) => (
+                            <li key={item.label}><strong>{item.label}:</strong> {item.value}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div style={{ fontSize: '13px', color: '#64748b' }}>No material disclosures reported.</div>
+                      )}
+                    </div>
+                  )}
+                  {valuationBuilderSelections.bo_revenueModel && (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Revenue Model</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: '6px 10px', fontSize: '13px', color: '#334155' }}>
+                        <div>Recurring revenue</div><div style={{ textAlign: 'right', fontWeight: 700 }}>{Number.isFinite(Number(businessOverviewRevenueMix.recurring)) ? `${Number(businessOverviewRevenueMix.recurring).toFixed(1)}%` : 'N/A'}</div>
+                        <div>Contracted revenue</div><div style={{ textAlign: 'right', fontWeight: 700 }}>{Number.isFinite(Number(businessOverviewRevenueMix.contracted)) ? `${Number(businessOverviewRevenueMix.contracted).toFixed(1)}%` : 'N/A'}</div>
+                        <div>Project-based revenue</div><div style={{ textAlign: 'right', fontWeight: 700 }}>{Number.isFinite(Number(businessOverviewRevenueMix.projectBased)) ? `${Number(businessOverviewRevenueMix.projectBased).toFixed(1)}%` : 'N/A'}</div>
+                        <div>Transactional / one-time revenue</div><div style={{ textAlign: 'right', fontWeight: 700 }}>{Number.isFinite(Number(businessOverviewRevenueMix.transactional)) ? `${Number(businessOverviewRevenueMix.transactional).toFixed(1)}%` : 'N/A'}</div>
+                      </div>
+                    </div>
+                  )}
+                  {valuationBuilderSelections.bo_customerConcentration && (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Customer Concentration</div>
+                      {businessOverviewCustomerConcentration ? (
+                        <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6 }}>
+                          <div><strong>Top 1 Customer:</strong> {businessOverviewCustomerConcentration.top1Pct.toFixed(1)}%</div>
+                          <div><strong>Top 5 Customers:</strong> {businessOverviewCustomerConcentration.top5Pct.toFixed(1)}%</div>
+                          <div><strong>Total Customers:</strong> {businessOverviewCustomerConcentration.customerCount}</div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '13px', color: '#64748b' }}>Customer concentration details are currently unavailable.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : valuationSectionPreview.id === '3' ? (
+              <div
+                style={{ marginTop: '10px' }}
+                dangerouslySetInnerHTML={{ __html: buildHistoricalFinancialSummaryReportHtml() }}
+              />
+            ) : (
+              <div
+                style={{ marginTop: '10px' }}
+                dangerouslySetInnerHTML={{ __html: buildStyledValuationReportHtml(valuationSectionPreview.content) }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {currentView === 'valuation-reports' && !selectedCompanyId && (
+        <div style={{ maxWidth: '900px', margin: '0 auto', padding: '24px 20px' }}>
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', color: '#334155' }}>
+            Please select a company first to access Valuation Reports.
+          </div>
+        </div>
       )}
 
       {/* Valuation View */}

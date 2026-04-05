@@ -139,6 +139,11 @@ export default function SiteAdminDashboard(props: any) {
     Record<string, { monthly: number; quarterly: number; annual: number }>
   >({});
   const [savingDataRoomPricingCompanyId, setSavingDataRoomPricingCompanyId] = React.useState<string | null>(null);
+  const [savingValuationCompanyId, setSavingValuationCompanyId] = React.useState<string | null>(null);
+  const [editingValuationPricingByCompany, setEditingValuationPricingByCompany] = React.useState<
+    Record<string, { monthly: number; quarterly: number; annual: number }>
+  >({});
+  const [savingValuationPricingCompanyId, setSavingValuationPricingCompanyId] = React.useState<string | null>(null);
   const [runningFinancialImportByCompany, setRunningFinancialImportByCompany] = React.useState<Record<string, boolean>>({});
 
   const getAccountingSystemLabel = (value: unknown): string => {
@@ -979,7 +984,11 @@ export default function SiteAdminDashboard(props: any) {
       !Array.isArray(uda.dataRoom)
         ? uda.dataRoom
         : {};
-    return Boolean(dataRoom.enabledByAdmin);
+    if (typeof dataRoom.enabledByAdmin === 'boolean') {
+      return dataRoom.enabledByAdmin;
+    }
+    // Default new/unspecified companies to enabled for DataRoom controls.
+    return true;
   };
 
   const getDataRoomSubscriptionStatus = (company: any) => {
@@ -1019,9 +1028,15 @@ export default function SiteAdminDashboard(props: any) {
         : {};
 
     const isBusinessCompany = company?.consultantId === null;
-    const defaultMonthly = isBusinessCompany ? Number(defaultDataRoomBusinessMonthlyPrice ?? 195) : Number(defaultDataRoomConsultantMonthlyPrice ?? 195);
-    const defaultQuarterly = isBusinessCompany ? Number(defaultDataRoomBusinessQuarterlyPrice ?? 500) : Number(defaultDataRoomConsultantQuarterlyPrice ?? 500);
-    const defaultAnnual = isBusinessCompany ? Number(defaultDataRoomBusinessAnnualPrice ?? 1750) : Number(defaultDataRoomConsultantAnnualPrice ?? 1750);
+    const defaultMonthly = isBusinessCompany
+      ? Number(defaultDataRoomBusinessMonthlyPrice ?? 0)
+      : Number(defaultDataRoomConsultantMonthlyPrice ?? 0);
+    const defaultQuarterly = isBusinessCompany
+      ? Number(defaultDataRoomBusinessQuarterlyPrice ?? 0)
+      : Number(defaultDataRoomConsultantQuarterlyPrice ?? 0);
+    const defaultAnnual = isBusinessCompany
+      ? Number(defaultDataRoomBusinessAnnualPrice ?? 0)
+      : Number(defaultDataRoomConsultantAnnualPrice ?? 0);
 
     return {
       monthly: Number(pricing?.monthly ?? defaultMonthly),
@@ -1092,6 +1107,131 @@ export default function SiteAdminDashboard(props: any) {
       alert(error?.message || 'Failed to update DataRoom setting');
     } finally {
       setSavingDataRoomCompanyId(null);
+    }
+  };
+  const getValuationEnabledByAdmin = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const valuation =
+      uda?.valuation &&
+      typeof uda.valuation === 'object' &&
+      !Array.isArray(uda.valuation)
+        ? uda.valuation
+        : {};
+    if (typeof valuation.enabledByAdmin === 'boolean') {
+      return valuation.enabledByAdmin;
+    }
+    return true;
+  };
+
+  const getValuationSubscriptionStatus = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const valuation =
+      uda?.valuation &&
+      typeof uda.valuation === 'object' &&
+      !Array.isArray(uda.valuation)
+        ? uda.valuation
+        : {};
+    return String(valuation?.subscription?.status || 'inactive').toLowerCase();
+  };
+
+  const getValuationPricing = (company: any) => {
+    const uda =
+      company?.userDefinedAllocations &&
+      typeof company.userDefinedAllocations === 'object' &&
+      !Array.isArray(company.userDefinedAllocations)
+        ? company.userDefinedAllocations
+        : {};
+    const valuation =
+      uda?.valuation &&
+      typeof uda.valuation === 'object' &&
+      !Array.isArray(uda.valuation)
+        ? uda.valuation
+        : {};
+    const pricing =
+      valuation?.pricing &&
+      typeof valuation.pricing === 'object' &&
+      !Array.isArray(valuation.pricing)
+        ? valuation.pricing
+        : {};
+    return {
+      monthly: Number(pricing?.monthly ?? 0),
+      quarterly: Number(pricing?.quarterly ?? 0),
+      annual: Number(pricing?.annual ?? 0),
+    };
+  };
+
+  const saveValuationPricing = async (companyId: string, pricing: { monthly: number; quarterly: number; annual: number }) => {
+    setSavingValuationPricingCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          valuationMonthlyPrice: Number(pricing.monthly || 0),
+          valuationQuarterlyPrice: Number(pricing.quarterly || 0),
+          valuationAnnualPrice: Number(pricing.annual || 0),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save Valuation pricing');
+      }
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((c: any) => (c.id === companyId ? { ...c, ...(data?.company || {}) } : c))
+          : prev
+      );
+      setEditingValuationPricingByCompany((prev) => {
+        const next = { ...prev };
+        delete next[companyId];
+        return next;
+      });
+      alert('Valuation pricing saved.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to save Valuation pricing');
+    } finally {
+      setSavingValuationPricingCompanyId(null);
+    }
+  };
+
+  const saveValuationEnabledByAdmin = async (companyId: string, enabled: boolean) => {
+    setSavingValuationCompanyId(companyId);
+    try {
+      const response = await fetch('/api/companies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: companyId,
+          valuationEnabledByAdmin: enabled,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to update Valuation setting');
+      }
+
+      setCompanies((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((c: any) => (c.id === companyId ? { ...c, ...(data?.company || {}) } : c))
+          : prev
+      );
+
+      alert(enabled ? 'Valuation enabled for this company.' : 'Valuation disabled for this company.');
+    } catch (error: any) {
+      alert(error?.message || 'Failed to update Valuation setting');
+    } finally {
+      setSavingValuationCompanyId(null);
     }
   };
   const [operationalSyncSettingsByCompany, setOperationalSyncSettingsByCompany] = React.useState<
@@ -4908,7 +5048,7 @@ export default function SiteAdminDashboard(props: any) {
                                             </div>
                                           </div>
                                           
-                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))', gap: '10px', marginBottom: companyUsers.length > 0 ? '8px' : '0' }}>
+                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))', gap: '10px', marginBottom: companyUsers.length > 0 ? '8px' : '0' }}>
                                             {/* Subscription Pricing */}
                                             <div style={{ padding: '4px 10px 10px 10px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h6>
@@ -5127,6 +5267,128 @@ export default function SiteAdminDashboard(props: any) {
                                                       onClick={() => {
                                                         const pricing = getDataRoomPricing(company);
                                                         setEditingDataRoomPricingByCompany((prev) => ({
+                                                          ...prev,
+                                                          [company.id]: pricing,
+                                                        }));
+                                                      }}
+                                                      style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                                                    >
+                                                      Edit Pricing
+                                                    </button>
+                                                  </div>
+                                                </>
+                                              )}
+                                            </div>
+                                            <div style={{ padding: '4px 10px 10px 10px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
+                                              <h6 style={{ fontSize: '14px', fontWeight: '700', color: '#5b21b6', marginBottom: '8px' }}>Valuation Pricing</h6>
+                                              {editingValuationPricingByCompany[company.id] ? (
+                                                <div>
+                                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
+                                                    <div>
+                                                      <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
+                                                      <input
+                                                        type="number"
+                                                        value={editingValuationPricingByCompany[company.id].monthly}
+                                                        onChange={(e) =>
+                                                          setEditingValuationPricingByCompany((prev) => ({
+                                                            ...prev,
+                                                            [company.id]: {
+                                                              ...prev[company.id],
+                                                              monthly: parseFloat(e.target.value) || 0,
+                                                            },
+                                                          }))
+                                                        }
+                                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Quarterly ($)</label>
+                                                      <input
+                                                        type="number"
+                                                        value={editingValuationPricingByCompany[company.id].quarterly}
+                                                        onChange={(e) =>
+                                                          setEditingValuationPricingByCompany((prev) => ({
+                                                            ...prev,
+                                                            [company.id]: {
+                                                              ...prev[company.id],
+                                                              quarterly: parseFloat(e.target.value) || 0,
+                                                            },
+                                                          }))
+                                                        }
+                                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                      />
+                                                    </div>
+                                                    <div>
+                                                      <label style={{ fontSize: '10px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Annual ($)</label>
+                                                      <input
+                                                        type="number"
+                                                        value={editingValuationPricingByCompany[company.id].annual}
+                                                        onChange={(e) =>
+                                                          setEditingValuationPricingByCompany((prev) => ({
+                                                            ...prev,
+                                                            [company.id]: {
+                                                              ...prev[company.id],
+                                                              annual: parseFloat(e.target.value) || 0,
+                                                            },
+                                                          }))
+                                                        }
+                                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '11px' }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                    <button
+                                                      onClick={() => saveValuationPricing(company.id, editingValuationPricingByCompany[company.id])}
+                                                      disabled={savingValuationPricingCompanyId === company.id}
+                                                      style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: savingValuationPricingCompanyId === company.id ? 'not-allowed' : 'pointer' }}
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      onClick={() => {
+                                                        setEditingValuationPricingByCompany((prev) => {
+                                                          const next = { ...prev };
+                                                          delete next[company.id];
+                                                          return next;
+                                                        });
+                                                      }}
+                                                      style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                                                    >
+                                                      Cancel
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <>
+                                                  <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.7', marginBottom: '8px' }}>
+                                                    <div><strong>Monthly:</strong> ${getValuationPricing(company).monthly.toFixed(2)}</div>
+                                                    <div><strong>Quarterly:</strong> ${getValuationPricing(company).quarterly.toFixed(2)}</div>
+                                                    <div><strong>Annual:</strong> ${getValuationPricing(company).annual.toFixed(2)}</div>
+                                                  </div>
+                                                  <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                                    Status: {getValuationEnabledByAdmin(company) ? 'Enabled' : 'Disabled'} | Subscription: {getValuationSubscriptionStatus(company)}
+                                                  </div>
+                                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                    <button
+                                                      onClick={() => saveValuationEnabledByAdmin(company.id, !getValuationEnabledByAdmin(company))}
+                                                      disabled={savingValuationCompanyId === company.id}
+                                                      style={{
+                                                        padding: '6px 12px',
+                                                        background: getValuationEnabledByAdmin(company) ? '#dc2626' : '#2563eb',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '4px',
+                                                        fontSize: '12px',
+                                                        fontWeight: '700',
+                                                        cursor: savingValuationCompanyId === company.id ? 'not-allowed' : 'pointer',
+                                                      }}
+                                                    >
+                                                      {getValuationEnabledByAdmin(company) ? 'Disable Valuation' : 'Enable Valuation'}
+                                                    </button>
+                                                    <button
+                                                      onClick={() => {
+                                                        const pricing = getValuationPricing(company);
+                                                        setEditingValuationPricingByCompany((prev) => ({
                                                           ...prev,
                                                           [company.id]: pricing,
                                                         }));
@@ -7647,7 +7909,7 @@ export default function SiteAdminDashboard(props: any) {
                                   </div>
                                 ) : null}
 
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))', gap: '10px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))', gap: '10px' }}>
                                   {/* Subscription Pricing */}
                                   <div style={{ padding: '4px 12px 12px 12px', background: '#fef3c7', borderRadius: '6px' }}>
                                     <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>Subscription Pricing</h4>
@@ -7866,6 +8128,128 @@ export default function SiteAdminDashboard(props: any) {
                                             onClick={() => {
                                               const pricing = getDataRoomPricing(businessCompany);
                                               setEditingDataRoomPricingByCompany((prev) => ({
+                                                ...prev,
+                                                [businessCompany.id]: pricing,
+                                              }));
+                                            }}
+                                            style={{ padding: '6px 12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Edit Pricing
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                  <div style={{ padding: '4px 12px 12px 12px', background: '#f5f3ff', borderRadius: '6px', border: '1px solid #ddd6fe' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#5b21b6', marginBottom: '8px' }}>Valuation Pricing</h4>
+                                    {editingValuationPricingByCompany[businessCompany.id] ? (
+                                      <div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
+                                          <div>
+                                            <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Monthly ($)</label>
+                                            <input
+                                              type="number"
+                                              value={editingValuationPricingByCompany[businessCompany.id].monthly}
+                                              onChange={(e) =>
+                                                setEditingValuationPricingByCompany((prev) => ({
+                                                  ...prev,
+                                                  [businessCompany.id]: {
+                                                    ...prev[businessCompany.id],
+                                                    monthly: parseFloat(e.target.value) || 0,
+                                                  },
+                                                }))
+                                              }
+                                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Quarterly ($)</label>
+                                            <input
+                                              type="number"
+                                              value={editingValuationPricingByCompany[businessCompany.id].quarterly}
+                                              onChange={(e) =>
+                                                setEditingValuationPricingByCompany((prev) => ({
+                                                  ...prev,
+                                                  [businessCompany.id]: {
+                                                    ...prev[businessCompany.id],
+                                                    quarterly: parseFloat(e.target.value) || 0,
+                                                  },
+                                                }))
+                                              }
+                                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '2px' }}>Annual ($)</label>
+                                            <input
+                                              type="number"
+                                              value={editingValuationPricingByCompany[businessCompany.id].annual}
+                                              onChange={(e) =>
+                                                setEditingValuationPricingByCompany((prev) => ({
+                                                  ...prev,
+                                                  [businessCompany.id]: {
+                                                    ...prev[businessCompany.id],
+                                                    annual: parseFloat(e.target.value) || 0,
+                                                  },
+                                                }))
+                                              }
+                                              style={{ width: '100%', padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '12px' }}
+                                            />
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                          <button
+                                            onClick={() => saveValuationPricing(businessCompany.id, editingValuationPricingByCompany[businessCompany.id])}
+                                            disabled={savingValuationPricingCompanyId === businessCompany.id}
+                                            style={{ padding: '6px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: savingValuationPricingCompanyId === businessCompany.id ? 'not-allowed' : 'pointer' }}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setEditingValuationPricingByCompany((prev) => {
+                                                const next = { ...prev };
+                                                delete next[businessCompany.id];
+                                                return next;
+                                              });
+                                            }}
+                                            style={{ padding: '6px 12px', background: '#94a3b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <div style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6', marginBottom: '8px' }}>
+                                          <div><strong>Monthly:</strong> ${getValuationPricing(businessCompany).monthly.toFixed(2)}</div>
+                                          <div><strong>Quarterly:</strong> ${getValuationPricing(businessCompany).quarterly.toFixed(2)}</div>
+                                          <div><strong>Annual:</strong> ${getValuationPricing(businessCompany).annual.toFixed(2)}</div>
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: '#475569', marginBottom: '8px' }}>
+                                          Status: {getValuationEnabledByAdmin(businessCompany) ? 'Enabled' : 'Disabled'} | Subscription: {getValuationSubscriptionStatus(businessCompany)}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                          <button
+                                            onClick={() => saveValuationEnabledByAdmin(businessCompany.id, !getValuationEnabledByAdmin(businessCompany))}
+                                            disabled={savingValuationCompanyId === businessCompany.id}
+                                            style={{
+                                              padding: '6px 12px',
+                                              background: getValuationEnabledByAdmin(businessCompany) ? '#dc2626' : '#2563eb',
+                                              color: 'white',
+                                              border: 'none',
+                                              borderRadius: '4px',
+                                              fontSize: '12px',
+                                              fontWeight: '600',
+                                              cursor: savingValuationCompanyId === businessCompany.id ? 'not-allowed' : 'pointer',
+                                            }}
+                                          >
+                                            {getValuationEnabledByAdmin(businessCompany) ? 'Disable Valuation' : 'Enable Valuation'}
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const pricing = getValuationPricing(businessCompany);
+                                              setEditingValuationPricingByCompany((prev) => ({
                                                 ...prev,
                                                 [businessCompany.id]: pricing,
                                               }));

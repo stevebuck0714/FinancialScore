@@ -26,8 +26,20 @@ export function parseDateLike(v: any): Date | null {
 /**
  * Convert a Date to a month key string (YYYY-MM format)
  */
-export function monthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+export function monthKey(d: Date | string | number | null | undefined): string {
+  if (d == null) return '';
+  const parsed = d instanceof Date ? d : new Date(d as any);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const year =
+    typeof (parsed as any).getUTCFullYear === 'function'
+      ? Number((parsed as any).getUTCFullYear())
+      : Number((parsed as any).getFullYear?.());
+  const month =
+    typeof (parsed as any).getUTCMonth === 'function'
+      ? Number((parsed as any).getUTCMonth())
+      : Number((parsed as any).getMonth?.());
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return '';
+  return `${Math.trunc(year)}-${String(Math.trunc(month) + 1).padStart(2, '0')}`;
 }
 
 /**

@@ -1237,6 +1237,80 @@ export async function PATCH(request: NextRequest) {
       };
     }
 
+    // Valuation settings (stored in userDefinedAllocations.valuation)
+    const hasValuationSettingsUpdate =
+      updateFields.valuationEnabledByAdmin !== undefined ||
+      updateFields.valuationMonthlyPrice !== undefined ||
+      updateFields.valuationQuarterlyPrice !== undefined ||
+      updateFields.valuationAnnualPrice !== undefined;
+    if (hasValuationSettingsUpdate) {
+      const currentUDA =
+        updateData.userDefinedAllocations &&
+        typeof updateData.userDefinedAllocations === 'object' &&
+        !Array.isArray(updateData.userDefinedAllocations)
+          ? (updateData.userDefinedAllocations as Record<string, any>)
+          : (
+              existingCompany?.userDefinedAllocations &&
+              typeof existingCompany.userDefinedAllocations === 'object' &&
+              !Array.isArray(existingCompany.userDefinedAllocations)
+                ? (existingCompany.userDefinedAllocations as Record<string, any>)
+                : {}
+            );
+      const currentValuation =
+        currentUDA.valuation &&
+        typeof currentUDA.valuation === 'object' &&
+        !Array.isArray(currentUDA.valuation)
+          ? (currentUDA.valuation as Record<string, any>)
+          : {};
+      const currentPricing =
+        currentValuation.pricing &&
+        typeof currentValuation.pricing === 'object' &&
+        !Array.isArray(currentValuation.pricing)
+          ? (currentValuation.pricing as Record<string, any>)
+          : {};
+      const currentSubscription =
+        currentValuation.subscription &&
+        typeof currentValuation.subscription === 'object' &&
+        !Array.isArray(currentValuation.subscription)
+          ? (currentValuation.subscription as Record<string, any>)
+          : {};
+
+      const nextEnabled =
+        updateFields.valuationEnabledByAdmin !== undefined
+          ? Boolean(updateFields.valuationEnabledByAdmin)
+          : (typeof currentValuation.enabledByAdmin === 'boolean' ? currentValuation.enabledByAdmin : true);
+      const nextMonthly =
+        updateFields.valuationMonthlyPrice !== undefined
+          ? Number(updateFields.valuationMonthlyPrice)
+          : Number(currentPricing.monthly ?? 0);
+      const nextQuarterly =
+        updateFields.valuationQuarterlyPrice !== undefined
+          ? Number(updateFields.valuationQuarterlyPrice)
+          : Number(currentPricing.quarterly ?? 0);
+      const nextAnnual =
+        updateFields.valuationAnnualPrice !== undefined
+          ? Number(updateFields.valuationAnnualPrice)
+          : Number(currentPricing.annual ?? 0);
+
+      updateData.userDefinedAllocations = {
+        ...currentUDA,
+        valuation: {
+          ...currentValuation,
+          enabledByAdmin: nextEnabled,
+          pricing: {
+            ...currentPricing,
+            monthly: Number.isFinite(nextMonthly) ? nextMonthly : 0,
+            quarterly: Number.isFinite(nextQuarterly) ? nextQuarterly : 0,
+            annual: Number.isFinite(nextAnnual) ? nextAnnual : 0,
+          },
+          subscription: {
+            status: String(currentSubscription.status || 'inactive').toLowerCase(),
+            ...currentSubscription,
+          },
+        },
+      };
+    }
+
     const hasOperationalHubConfigUpdate = updateFields.operationalHubConfig !== undefined;
     if (hasOperationalHubConfigUpdate) {
       if (context.role !== 'SITEADMIN') {

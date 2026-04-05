@@ -49,16 +49,18 @@ export default function Header({
   };
 
   const financialReportsViews = [
-    { id: 'kpis', label: 'Key Ratios' },
-    { id: 'trend-analysis', label: 'Performance Trends' },
-    { id: 'goals', label: 'Targets and Goals' },
-    { id: 'projections', label: 'Projections' },
-    { id: 'cash-flow', label: 'Cash Flow' },
-    { id: 'working-capital', label: 'Working Capital' },
-    { id: 'covenants', label: 'Loan Covenants' },
-    { id: 'financial-statements', label: 'Financial Statements' }
+    { id: 'kpis', label: 'Key Ratios', section: 'financial-reports' },
+    { id: 'trend-analysis', label: 'Performance Trends', section: 'financial-reports' },
+    { id: 'goals', label: 'Targets and Goals', section: 'financial-reports' },
+    { id: 'projections', label: 'Projections', section: 'financial-reports' },
+    { id: 'cash-flow', label: 'Cash Flow', section: 'financial-reports' },
+    { id: 'working-capital', label: 'Working Capital', section: 'financial-reports' },
+    { id: 'covenants', label: 'Loan Covenants', section: 'covenants' },
+    { id: 'financial-statements', label: 'Financial Statements', section: 'financial-statements' },
+    { id: 'custom-print', label: 'Standard Reports', section: 'financial-reports' },
+    { id: 'valuation-reports', label: 'Valuation Reports', section: 'valuation' }
   ];
-  const isFinancialReportsView = ['kpis', 'trend-analysis', 'goals', 'projections', 'cash-flow', 'working-capital', 'covenants', 'financial-statements'].includes(currentView);
+  const isFinancialReportsView = financialReportsViews.some((item) => item.id === currentView);
 
   if (!currentUser) return null;
 
@@ -278,11 +280,11 @@ export default function Header({
                     <button
                       key={item.id}
                       onClick={() => {
-                        if (item.id === 'financial-statements' && !canAccess('financial-statements')) return;
+                        if (!canAccess(item.section)) return;
                         handleNavigation(item.id);
                         setShowFinancialReportsMenu(false);
                       }}
-                      title={item.id === 'financial-statements' && !canAccess('financial-statements') ? 'Access restricted' : undefined}
+                      title={!canAccess(item.section) ? 'Access restricted' : undefined}
                       style={{
                         width: '100%',
                         textAlign: 'left',
@@ -293,11 +295,11 @@ export default function Header({
                         color: '#000',
                         padding: '8px 10px',
                         borderRadius: '6px',
-                        cursor: item.id === 'financial-statements' && !canAccess('financial-statements') ? 'not-allowed' : 'pointer',
-                        opacity: item.id === 'financial-statements' && !canAccess('financial-statements') ? 0.4 : 1
+                        cursor: !canAccess(item.section) ? 'not-allowed' : 'pointer',
+                        opacity: !canAccess(item.section) ? 0.4 : 1
                       }}
                       onMouseEnter={(e) => {
-                        if (item.id === 'financial-statements' && !canAccess('financial-statements')) return;
+                        if (!canAccess(item.section)) return;
                         e.currentTarget.style.background = '#f1f5f9';
                       }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
