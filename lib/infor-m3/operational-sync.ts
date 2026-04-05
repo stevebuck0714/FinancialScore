@@ -6288,13 +6288,15 @@ export async function processPendingInforRawTransforms(options?: {
     businessDate: Date;
     frequency: string | null;
     oldestUpdatedAt: Date;
+    runPriorityAt: Date | null;
   }>>`
     SELECT
       rc."companyId",
       rc."syncRunId",
       rc."businessDate",
       sr."frequency",
-      MIN(rc."updatedAt") AS "oldestUpdatedAt"
+      MIN(rc."updatedAt") AS "oldestUpdatedAt",
+      MAX(COALESCE(sr."finishedAt", sr."updatedAt", sr."createdAt")) AS "runPriorityAt"
     FROM "InforRawCompleteness" rc
     INNER JOIN "InforSyncRun" sr
       ON sr.id = rc."syncRunId"
@@ -6302,7 +6304,9 @@ export async function processPendingInforRawTransforms(options?: {
     WHERE rc.platform = 'INFOR_M3'
       AND rc."isComplete" = false
     GROUP BY rc."companyId", rc."syncRunId", rc."businessDate", sr."frequency"
-    ORDER BY MIN(rc."updatedAt") ASC
+    ORDER BY
+      MAX(COALESCE(sr."finishedAt", sr."updatedAt", sr."createdAt")) DESC NULLS LAST,
+      MIN(rc."updatedAt") ASC
     LIMIT ${maxDaysPerTick}
   `;
 
