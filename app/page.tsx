@@ -1130,6 +1130,15 @@ function FinancialScorePage() {
   }, [companies, selectedCompanyId]);
 
   const isDataRoomEnabledByAdmin = dataRoomState.enabledByAdmin;
+  const isValuationReportsEnabledByAdmin = useMemo(() => {
+    if (!selectedCompanyId || !Array.isArray(companies)) return true;
+    const selectedCompany = companies.find((c) => c.id === selectedCompanyId) as any;
+    const valuation = selectedCompany?.userDefinedAllocations?.valuation || {};
+    if (typeof valuation?.enabledByAdmin === 'boolean') {
+      return valuation.enabledByAdmin;
+    }
+    return true;
+  }, [companies, selectedCompanyId]);
   const dataRoomSubscriptionStatus = dataRoomState.subscriptionStatus;
   const isDataRoomActive = dataRoomSubscriptionStatus === 'active';
   const dataRoomPricing = useMemo(() => {
@@ -1274,6 +1283,10 @@ function FinancialScorePage() {
 
     if (view === 'valuation-reports' && !selectedCompanyId) {
       alert('Please select a company first.');
+      return;
+    }
+    if (view === 'valuation-reports' && !isValuationReportsEnabledByAdmin) {
+      alert('Valuation Reports are disabled for this company.');
       return;
     }
 
@@ -10438,7 +10451,7 @@ function FinancialScorePage() {
                       >
                         {currentView === 'custom-print' && '› '}STANDARD REPORTS
                       </div>
-                      {hasCompanySectionAccess('valuation') && (
+                      {hasCompanySectionAccess('valuation') && isValuationReportsEnabledByAdmin && (
                         <div
                           onClick={() => handleNavigation('valuation-reports')}
                           style={{
