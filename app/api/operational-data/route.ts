@@ -166,8 +166,10 @@ async function getHydratedInforBusinessDates(
   startDate: Date,
   endDate: Date
 ): Promise<Date[]> {
-  const normalizedStart = startOfUtcDay(startDate);
-  const normalizedEnd = endOfUtcDay(endDate);
+  const startDayKey = dateKeyUtc(startDate);
+  const endDayKey = dateKeyUtc(endDate);
+  const normalizedStart = new Date(`${startDayKey}T00:00:00.000Z`);
+  const normalizedEnd = new Date(`${endDayKey}T23:59:59.999Z`);
   const rows = await prisma.$queryRaw<Array<{ businessDate: Date }>>`
     SELECT DISTINCT "businessDate"
     FROM "InforRawCompleteness"
@@ -179,7 +181,11 @@ async function getHydratedInforBusinessDates(
     ORDER BY "businessDate" ASC
   `;
   return rows
-    .map((row) => (row?.businessDate ? startOfUtcDay(new Date(row.businessDate)) : null))
+    .map((row) => {
+      if (!row?.businessDate) return null;
+      const dayKey = new Date(row.businessDate).toISOString().slice(0, 10);
+      return new Date(`${dayKey}T00:00:00.000Z`);
+    })
     .filter((value): value is Date => Boolean(value));
 }
 
