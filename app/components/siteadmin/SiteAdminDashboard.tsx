@@ -3750,7 +3750,8 @@ export default function SiteAdminDashboard(props: any) {
                                                       )}
                                                       {(getCompanyOperationalSettings(company.id).syncMode === 'business_day_backfill' ||
                                                         getCompanyOperationalSettings(company.id).syncMode === 'backfill') &&
-                                                        !getCompanyOperationalSettings(company.id).useCustomMonthRange && (
+                                                        !getCompanyOperationalSettings(company.id).useCustomMonthRange &&
+                                                        !getCompanyOperationalSettings(company.id).useCustomDateRange && (
                                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                                           <span style={{ fontWeight: 600 }}>Backfill Months</span>
                                                           <input
@@ -6435,7 +6436,8 @@ export default function SiteAdminDashboard(props: any) {
                                                 </>
                                               )}
                                               {(operationalSettings.syncMode === 'business_day_backfill' || operationalSettings.syncMode === 'backfill') &&
-                                                !operationalSettings.useCustomMonthRange && (
+                                                !operationalSettings.useCustomMonthRange &&
+                                                !operationalSettings.useCustomDateRange && (
                                                 <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
                                                   <span style={{ fontWeight: 600 }}>Backfill Months</span>
                                                   <input
