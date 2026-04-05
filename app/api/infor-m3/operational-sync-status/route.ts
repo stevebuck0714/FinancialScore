@@ -204,44 +204,64 @@ export async function GET(request: NextRequest) {
       if (queueRun) {
         const mapped = mapQueueRunToLegacy(queueRun);
         const diagnostics = await buildRunDiagnostics(companyId, syncRunId);
-        const queueTasks = await prisma.inforSyncTask.findMany({
-          where: {
-            runId: syncRunId,
-            status: { in: ['pending', 'leased', 'done', 'failed'] },
-          },
-          select: {
-            id: true,
-            status: true,
-            attemptCount: true,
-            maxAttempts: true,
-            updatedAt: true,
-            payload: true,
-          },
-          orderBy: { updatedAt: 'desc' },
-          take: 30,
-        }) as unknown as QueueTaskPreview[];
-        const queueTaskPreview = queueTasks.map((row) => {
-          const payload = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
-            ? (row.payload as Record<string, unknown>)
-            : {};
-          return {
-            id: row.id,
-            status: row.status,
-            attemptCount: row.attemptCount,
-            maxAttempts: row.maxAttempts,
-            updatedAt: new Date(row.updatedAt).toISOString(),
-            mode: String(payload.mode || '').trim() || null,
-            businessDateIso: String(payload.businessDateIso || '').trim() || null,
-            programOffset: Number.isFinite(Number(payload.programOffset)) ? Number(payload.programOffset) : null,
-            programEndOffset: Number.isFinite(Number(payload.programEndOffset)) ? Number(payload.programEndOffset) : null,
-            requestOffset: Number.isFinite(Number(payload.requestOffset)) ? Number(payload.requestOffset) : null,
-            salesOnly: payload.salesOnly === true,
-            noForwardProgressCount: Number.isFinite(Number(payload.glNoForwardProgressCount))
-              ? Number(payload.glNoForwardProgressCount)
-              : 0,
-            glLastObservedMaxBusinessDate: String(payload.glLastObservedMaxBusinessDate || '').trim() || null,
-          };
-        });
+        let queueTaskPreview: Array<{
+          id: string;
+          status: string;
+          attemptCount: number;
+          maxAttempts: number;
+          updatedAt: string;
+          mode: string | null;
+          businessDateIso: string | null;
+          programOffset: number | null;
+          programEndOffset: number | null;
+          requestOffset: number | null;
+          salesOnly: boolean;
+          noForwardProgressCount: number;
+          glLastObservedMaxBusinessDate: string | null;
+        }> = [];
+        try {
+          const queueTasks = await prisma.inforSyncTask.findMany({
+            where: {
+              runId: syncRunId,
+              status: { in: ['pending', 'leased', 'done', 'failed'] },
+            },
+            select: {
+              id: true,
+              status: true,
+              attemptCount: true,
+              maxAttempts: true,
+              updatedAt: true,
+              payload: true,
+            },
+            orderBy: { updatedAt: 'desc' },
+            take: 30,
+          }) as unknown as QueueTaskPreview[];
+          queueTaskPreview = queueTasks.map((row) => {
+            const payload = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+              ? (row.payload as Record<string, unknown>)
+              : {};
+            return {
+              id: row.id,
+              status: row.status,
+              attemptCount: row.attemptCount,
+              maxAttempts: row.maxAttempts,
+              updatedAt: new Date(row.updatedAt).toISOString(),
+              mode: String(payload.mode || '').trim() || null,
+              businessDateIso: String(payload.businessDateIso || '').trim() || null,
+              programOffset: Number.isFinite(Number(payload.programOffset)) ? Number(payload.programOffset) : null,
+              programEndOffset: Number.isFinite(Number(payload.programEndOffset)) ? Number(payload.programEndOffset) : null,
+              requestOffset: Number.isFinite(Number(payload.requestOffset)) ? Number(payload.requestOffset) : null,
+              salesOnly: payload.salesOnly === true,
+              noForwardProgressCount: Number.isFinite(Number(payload.glNoForwardProgressCount))
+                ? Number(payload.glNoForwardProgressCount)
+                : 0,
+              glLastObservedMaxBusinessDate: String(payload.glLastObservedMaxBusinessDate || '').trim() || null,
+            };
+          });
+        } catch {
+          // Do not fail status endpoint when task preview inspection fails.
+          queueTaskPreview = [];
+        }
         const recentlyActive =
           mapped.status === 'running' &&
           (ageMs(mapped.updatedAt) <= 15 * 60 * 1000 ||
