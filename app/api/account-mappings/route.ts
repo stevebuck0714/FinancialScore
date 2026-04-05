@@ -83,36 +83,51 @@ function isManualClassification(value: unknown): boolean {
 
 function parseAccountSnapshot(value: unknown): AccountSnapshotRow[] {
   if (!Array.isArray(value)) return [];
+  const pickFirstString = (record: Record<string, unknown>, keys: string[]): string => {
+    for (const key of keys) {
+      const raw = record[key];
+      if (typeof raw === "string" && raw.trim()) return raw.trim();
+      if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+    }
+    return "";
+  };
   return value
     .map((row) => {
       if (!row || typeof row !== "object") return null;
       const record = row as Record<string, unknown>;
-      const accountId =
-        typeof record.accountId === "string" ? record.accountId.trim()
-          : typeof record.accountCode === "string" ? record.accountCode.trim()
-          : typeof record.acct === "string" ? record.acct.trim()
-          : typeof record.Acct === "string" ? record.Acct.trim()
-          : typeof record.account === "string" ? record.account.trim()
-          : typeof record.Account === "string" ? record.Account.trim()
-          : "";
-      const accountName =
-        typeof record.accountName === "string" ? record.accountName.trim()
-          : typeof record.description === "string" ? record.description.trim()
-          : typeof record.Description === "string" ? record.Description.trim()
-          : typeof record.ChaDescription === "string" ? record.ChaDescription.trim()
-          : typeof record.FRDerDescription === "string" ? record.FRDerDescription.trim()
-          : "";
+      // CSI payloads can emit class/account identifiers as ClassId/classId.
+      const accountId = pickFirstString(record, [
+        "accountId",
+        "classId",
+        "ClassId",
+        "accountCode",
+        "acct",
+        "Acct",
+        "account",
+        "Account",
+      ]);
+      const accountName = pickFirstString(record, [
+        "accountName",
+        "name",
+        "Name",
+        "description",
+        "Description",
+        "ChaDescription",
+        "FRDerDescription",
+      ]);
       if (!accountId || !accountName) return null;
       return {
         accountId,
         accountName,
-        accountCode:
-          typeof record.accountCode === "string" ? record.accountCode.trim()
-            : typeof record.acct === "string" ? record.acct.trim()
-            : typeof record.Acct === "string" ? record.Acct.trim()
-            : typeof record.account === "string" ? record.account.trim()
-            : typeof record.Account === "string" ? record.Account.trim()
-            : null,
+        accountCode: pickFirstString(record, [
+          "accountCode",
+          "classId",
+          "ClassId",
+          "acct",
+          "Acct",
+          "account",
+          "Account",
+        ]) || null,
         classification:
           typeof record.classification === "string" ? record.classification.trim() : null,
       } as AccountSnapshotRow;
@@ -476,24 +491,6 @@ export async function GET(request: NextRequest) {
         );
       return invalidForSector || semanticallyInvalid;
     });
-    const invalidMappingIds = invalidMappings
-      .map((m: any) => m.id)
-      .filter((id: unknown): id is string => typeof id === "string" && id.trim().length > 0);
-    if (invalidMappingIds.length > 0) {
-      try {
-        await prisma.accountMapping.updateMany({
-          where: {
-            id: { in: invalidMappingIds },
-            companyId,
-          },
-          data: {
-            targetField: "unmapped",
-          },
-        });
-      } catch (repairError) {
-        console.warn("Account mappings auto-repair failed for invalid target fields", repairError);
-      }
-    }
     const statusCounts = {
       total: mappings.length,
       new: 0,
@@ -516,7 +513,7 @@ export async function GET(request: NextRequest) {
           m.qbAccount,
           m.qbAccountCode || m.qbAccountId,
         );
-      const effectiveTargetField = semanticallyInvalid ? "unmapped" : normalizedTargetField;
+      const effectiveTargetField = normalizedTargetField;
       const isUnmapped =
         !effectiveTargetField || effectiveTargetField === "unmapped";
       let sourceStatus: "mapped" | "new" | "changed" | "inactive" = isUnmapped ? "new" : "mapped";
@@ -550,6 +547,7 @@ export async function GET(request: NextRequest) {
         qbAccountClassification: effectiveClassification,
         invalidTargetField: m.targetField,
         targetField: "",
+        validationWarning: semanticallyInvalid ? "classification_mismatch" : "invalid_target_field",
         sourceStatus,
       };
     });
@@ -581,9 +579,7 @@ export async function GET(request: NextRequest) {
         invalidTargetField: m.targetField,
         qbAccountClassification: m.qbAccountClassification,
       })),
-      // Avoid repeating the same warning after auto-repair has converted
-      // stale invalid target fields to "unmapped" in persistent storage.
-      invalidMappingsCount: 0,
+      invalidMappingsCount: invalidMappings.length,
       sourceSummary: {
         ...statusCounts,
         lastSeedAt: seedLastRunAt,
@@ -658,16 +654,18 @@ export async function POST(request: NextRequest) {
           m.qbAccountCode || m.qbAccountId,
         );
       const isExplicitlyMapped = normalizedTargetField && normalizedTargetField !== "unmapped";
-      if ((isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) || semanticallyInvalid) {
+      if (isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) {
         return {
           ...m,
           invalidTargetField: m.targetField,
           targetField: "unmapped",
+          validationWarning: semanticallyInvalid ? "classification_mismatch" : "invalid_target_field",
         };
       }
       return {
         ...m,
         targetField: normalizedTargetField || "unmapped",
+        ...(semanticallyInvalid ? { validationWarning: "classification_mismatch" } : {}),
       };
     });
     const mappedRows = sanitizedUniqueMappings.filter(
@@ -696,6 +694,19 @@ export async function POST(request: NextRequest) {
 
     let created = 0;
     let updated = 0;
+    const existingMappingsAll = await prisma.accountMapping.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        qbAccount: true,
+        qbAccountId: true,
+        qbAccountCode: true,
+        qbAccountClassification: true,
+      },
+    });
+    const existingByComparableName = new Map(
+      existingMappingsAll.map((row) => [normalizeForCompare(String(row.qbAccount || "")), row]),
+    );
     for (const m of sanitizedUniqueMappings) {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const targetField =
@@ -714,13 +725,19 @@ export async function POST(request: NextRequest) {
         },
         select: {
           id: true,
+          qbAccount: true,
           qbAccountId: true,
           qbAccountCode: true,
           qbAccountClassification: true,
         },
       });
-      const existingAccountId = String(existing?.qbAccountId || "").trim() || null;
-      const existingAccountCode = String(existing?.qbAccountCode || "").trim() || null;
+      const nameFallbackExisting =
+        !existing && incomingAccountName
+          ? existingByComparableName.get(normalizeForCompare(incomingAccountName))
+          : null;
+      const matchedExisting = existing || nameFallbackExisting || null;
+      const existingAccountId = String(matchedExisting?.qbAccountId || "").trim() || null;
+      const existingAccountCode = String(matchedExisting?.qbAccountCode || "").trim() || null;
       const sourceMatch = quickBooksByName.get(normalize(m.qbAccount));
       const sourceAccountId = sourceMatch?.accountId ? String(sourceMatch.accountId).trim() : null;
       const sourceAccountCode = sourceMatch?.accountCode ? String(sourceMatch.accountCode).trim() : null;
@@ -729,7 +746,7 @@ export async function POST(request: NextRequest) {
         qbAccountCode:
           incomingAccountCode || existingAccountCode || sourceAccountCode || incomingAccountId || existingAccountId || sourceAccountId,
         qbAccountClassification:
-          m.qbAccountClassification || existing?.qbAccountClassification || null,
+          m.qbAccountClassification || matchedExisting?.qbAccountClassification || null,
         targetField,
       };
       const extendedMappingData = {
@@ -738,7 +755,7 @@ export async function POST(request: NextRequest) {
         confidence: m.confidence || "medium",
         lobAllocations: m.lobAllocations || null,
       };
-      if (!existing) {
+      if (!matchedExisting) {
         try {
           await prisma.accountMapping.create({
             data: {
@@ -769,7 +786,7 @@ export async function POST(request: NextRequest) {
       } else {
         try {
           await prisma.accountMapping.update({
-            where: { id: existing.id },
+            where: { id: matchedExisting.id },
             data: extendedMappingData,
           });
         } catch (updateError: any) {
@@ -783,7 +800,7 @@ export async function POST(request: NextRequest) {
             "AccountMapping update fallback: schema/client does not support extended mapping fields in this environment.",
           );
           await prisma.accountMapping.update({
-            where: { id: existing.id },
+            where: { id: matchedExisting.id },
             data: baseMappingData,
           });
         }

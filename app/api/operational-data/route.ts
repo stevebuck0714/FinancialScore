@@ -2322,8 +2322,24 @@ export async function GET(request: NextRequest) {
           },
           { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
         );
-        const summaryTotals =
-          latestOpenTotals.totalAR > 0
+        const latestSnapshotTotals = data.length
+          ? {
+              totalAR: Number(data[0].totalAR || 0),
+              current: Number(data[0].current || 0),
+              days1to30: Number(data[0].days1to30 || 0),
+              days31to60: Number(data[0].days31to60 || 0),
+              days61to90: Number(data[0].days61to90 || 0),
+              days90plus: Number(data[0].days90plus || 0),
+              dsoWeightedDaysNumerator: 0,
+              dsoWeightedDaysDenominator: 0,
+            }
+          : null;
+        // Keep AR summary aligned with the trend source:
+        // - snapshot-first when ARAgingSnapshot rows exist,
+        // - otherwise invoice/open-row reconstruction.
+        const summaryTotals = useArSnapshotFirstResponse && latestSnapshotTotals && latestSnapshotTotals.totalAR > 0
+          ? latestSnapshotTotals
+          : latestOpenTotals.totalAR > 0
             ? latestOpenTotals
             : {
                 totalAR: Number(derivedTotals.totalAR || 0),
@@ -2377,8 +2393,6 @@ export async function GET(request: NextRequest) {
         const apFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isQuickBooksCompany && frequency !== 'monthly' ? 'monthly' : frequency;
         const apOpenRowCap = Math.max(limit * 50, 5000);
-        const apPaymentRowCap = Math.max(limit * 200, 20000);
-        const apPaymentLookbackStart = addMonths(startDate, -24);
         data = await prisma.aPAgingSnapshot.findMany({
           where: {
             companyId,
@@ -2514,81 +2528,94 @@ export async function GET(request: NextRequest) {
         });
 
         if (latestOpenBillsSnapshotDate?.snapshotDate) {
-          const apOpenItemSignalRows: Array<{ vendorName: string | null; billNo: string | null; paymentDate: Date | null }> = [];
-          const normalizeVendorBillKey = (vendorName: unknown, billNo: unknown) =>
-            `${String(vendorName || 'Unknown Vendor').trim().toUpperCase()}|${String(billNo || '').trim().toUpperCase()}`;
-          const openItemFirstSeenByBill = new Map<string, Date>();
-          const openItemLastSeenByBill = new Map<string, Date>();
-          for (const signalRow of apOpenItemSignalRows) {
-            const billNo = String(signalRow.billNo || '').trim();
-            if (!billNo) continue;
-            const signalDate = signalRow.paymentDate ? new Date(signalRow.paymentDate) : null;
-            if (!signalDate || Number.isNaN(signalDate.getTime())) continue;
-            const billKey = normalizeVendorBillKey(signalRow.vendorName, billNo);
-            const existing = openItemFirstSeenByBill.get(billKey);
-            if (!existing || signalDate.getTime() < existing.getTime()) {
-              openItemFirstSeenByBill.set(billKey, signalDate);
-            }
-            const existingLast = openItemLastSeenByBill.get(billKey);
-            if (!existingLast || signalDate.getTime() > existingLast.getTime()) {
-              openItemLastSeenByBill.set(billKey, signalDate);
-            }
-          }
-          const useOpenItemFilter = false;
+          const OPEN_AMOUNT_EPSILON = 1;
+          const asOfDateForBuckets = startOfUtcDay(new Date(latestOpenBillsSnapshotDate.snapshotDate));
 
-          const openBillRows = await (prisma as any).aPOpenBillSnapshot.findMany({
+          // Display list rows (top exposure only) remain capped.
+          const openBillRowsTop = await (prisma as any).aPOpenBillSnapshot.findMany({
             where: {
               companyId,
               frequency: apFrequencyForQuery,
               snapshotDate: latestOpenBillsSnapshotDate.snapshotDate,
+              amountDueHome: { gt: OPEN_AMOUNT_EPSILON },
             },
             orderBy: [{ amountDueHome: 'desc' }],
-            take: apOpenRowCap,
+            take: Math.max(limit, 500),
           });
-          const nettedOpenBillRows = openBillRows.map((row: any) => {
-            const grossAmount = Number(row.amountDueHome || 0);
-            const netAmount = Math.max(grossAmount, 0);
-            const openSignalDate = null;
-            const openItemEligible = true;
-            return {
-              ...row,
-              netAmountDueHome: netAmount,
-              openItemEligible,
-              openSignalDate,
-            };
-          });
+          const summaryAndUnpaidRows = openBillRowsTop.map((row: any) => ({
+            ...row,
+            netAmountDueHome: Math.max(Number(row.amountDueHome || 0), 0),
+          }));
 
-          const positiveNettedRowsSorted = nettedOpenBillRows
-            .filter((row: any) => Number(row.netAmountDueHome || 0) > 0)
-            .sort((a: any, b: any) => Number(b.netAmountDueHome || 0) - Number(a.netAmountDueHome || 0));
-          const OPEN_AMOUNT_EPSILON = 1;
-          const allOpenRows = positiveNettedRowsSorted.filter((row: any) => Number(row.netAmountDueHome || 0) > OPEN_AMOUNT_EPSILON);
-          const summaryAndUnpaidRows = allOpenRows;
-          const asOfDateForBuckets = startOfUtcDay(new Date(latestOpenBillsSnapshotDate.snapshotDate));
-          computedApFromOpen = allOpenRows.reduce(
-            (acc: any, row: any) => {
-              const openAmount = Number(row.netAmountDueHome || 0);
-              if (!Number.isFinite(openAmount) || openAmount <= 0) return acc;
-              const ageCandidates = [row.dueDate, row.billDate, row.openSignalDate]
-                .map((value: any) => (value ? new Date(value) : null))
-                .filter((dt: Date | null): dt is Date => Boolean(dt) && !Number.isNaN(dt.getTime()));
-              const ageBasis = ageCandidates.length
-                ? new Date(Math.max(...ageCandidates.map((dt) => dt.getTime())))
-                : null;
-              const ageDays =
-                ageBasis && !Number.isNaN(ageBasis.getTime())
-                  ? Math.floor((asOfDateForBuckets.getTime() - startOfUtcDay(ageBasis).getTime()) / (24 * 60 * 60 * 1000))
-                  : 99999;
-              acc.totalAP += openAmount;
-              if (ageDays <= 0) acc.current += openAmount;
-              else if (ageDays <= 30) acc.days1to30 += openAmount;
-              else if (ageDays <= 60) acc.days31to60 += openAmount;
-              else if (ageDays <= 90) acc.days61to90 += openAmount;
-              else acc.days90plus += openAmount;
-              return acc;
-            },
-            { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
-          );
+          // Full-day vendor aggregation for correctness (not row-capped).
+          const vendorAgingRows = await prisma.$queryRaw<
+            Array<{
+              vendorName: string;
+              current: number;
+              days1to30: number;
+              days31to60: number;
+              days61to90: number;
+              days90plus: number;
+              totalDue: number;
+            }>
+          >`
+            WITH bills AS (
+              SELECT
+                COALESCE(NULLIF(TRIM("vendorName"), ''), 'Unknown Vendor') AS "vendorName",
+                COALESCE("amountDueHome", 0)::double precision AS "amountDueHome",
+                COALESCE("dueDate"::date, "billDate"::date) AS "ageBasisDate"
+              FROM "APOpenBillSnapshot"
+              WHERE "companyId" = ${companyId}
+                AND "frequency" = ${apFrequencyForQuery}
+                AND "snapshotDate" = ${latestOpenBillsSnapshotDate.snapshotDate}
+                AND COALESCE("amountDueHome", 0) > ${OPEN_AMOUNT_EPSILON}
+            ),
+            aged AS (
+              SELECT
+                "vendorName",
+                "amountDueHome",
+                CASE
+                  WHEN "ageBasisDate" IS NULL THEN 99999
+                  ELSE GREATEST(0, (${asOfDateForBuckets}::date - "ageBasisDate"))
+                END::int AS age_days
+              FROM bills
+            )
+            SELECT
+              "vendorName",
+              SUM(CASE WHEN age_days <= 0 THEN "amountDueHome" ELSE 0 END)::double precision AS "current",
+              SUM(CASE WHEN age_days BETWEEN 1 AND 30 THEN "amountDueHome" ELSE 0 END)::double precision AS "days1to30",
+              SUM(CASE WHEN age_days BETWEEN 31 AND 60 THEN "amountDueHome" ELSE 0 END)::double precision AS "days31to60",
+              SUM(CASE WHEN age_days BETWEEN 61 AND 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days61to90",
+              SUM(CASE WHEN age_days > 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days90plus",
+              SUM("amountDueHome")::double precision AS "totalDue"
+            FROM aged
+            GROUP BY 1
+            ORDER BY "totalDue" DESC
+            LIMIT 25
+          `;
+          unpaidByVendor = vendorAgingRows.map((row) => ({
+            vendorName: String(row.vendorName || 'Unknown Vendor'),
+            current: Number(row.current || 0),
+            days1to30: Number(row.days1to30 || 0),
+            days31to60: Number(row.days31to60 || 0),
+            days61to90: Number(row.days61to90 || 0),
+            days90plus: Number(row.days90plus || 0),
+            totalDue: Number(row.totalDue || 0),
+          }));
+          if (unpaidByVendor.length) {
+            computedApFromOpen = unpaidByVendor.reduce(
+              (acc, row) => {
+                acc.totalAP += Number(row.totalDue || 0);
+                acc.current += Number(row.current || 0);
+                acc.days1to30 += Number(row.days1to30 || 0);
+                acc.days31to60 += Number(row.days31to60 || 0);
+                acc.days61to90 += Number(row.days61to90 || 0);
+                acc.days90plus += Number(row.days90plus || 0);
+                return acc;
+              },
+              { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+            );
+          }
 
           // Canonical AP trend replay from open vouchers is expensive on large tenants.
           // When AP aging snapshots already exist, prefer those records for trend speed.
@@ -2613,8 +2640,6 @@ export async function GET(request: NextRequest) {
               })
             : [];
           if (trendOpenRows.length) {
-            const trendPayments: Array<{ billKey: string; paymentDate: Date; amount: number }> = [];
-
             const rowsBySnapshot = new Map<string, Array<any>>();
             for (const row of trendOpenRows) {
               const dayKey = startOfUtcDay(new Date(row.snapshotDate)).toISOString();
@@ -2637,16 +2662,9 @@ export async function GET(request: NextRequest) {
               snapshotKeysAsc.length > 0
                 ? rowsBySnapshot.get(snapshotKeysAsc[snapshotKeysAsc.length - 1]) || []
                 : [];
-            const cumulativeAppliedByBill = new Map<string, number>();
-            let paymentPtr = 0;
             const trendRowsAsc: Array<any> = [];
             for (const snapshotKey of expandedSnapshotKeysAsc) {
               const snapshotDate = new Date(snapshotKey);
-              while (paymentPtr < trendPayments.length && trendPayments[paymentPtr].paymentDate.getTime() <= snapshotDate.getTime()) {
-                const p = trendPayments[paymentPtr];
-                cumulativeAppliedByBill.set(p.billKey, Number(cumulativeAppliedByBill.get(p.billKey) || 0) + p.amount);
-                paymentPtr += 1;
-              }
               const rows = rowsBySnapshot.get(snapshotKey) || trendTemplateRows;
               const bucket = {
                 snapshotDate,
@@ -2661,11 +2679,9 @@ export async function GET(request: NextRequest) {
               for (const row of rows) {
                 const grossAmount = Number(row.amountDueHome || 0);
                 if (!Number.isFinite(grossAmount) || grossAmount <= 0) continue;
-                const billKey = normalizeVendorBillKey(row.vendorName, row.billNo);
-                const firstSeen = openItemFirstSeenByBill.get(billKey) || null;
                 const openAmount = Math.max(grossAmount, 0);
                 if (openAmount <= OPEN_AMOUNT_EPSILON) continue;
-                const ageCandidates = [row.dueDate, row.billDate, firstSeen]
+                const ageCandidates = [row.dueDate, row.billDate]
                   .map((value: any) => (value ? new Date(value) : null))
                   .filter((dt: Date | null): dt is Date => Boolean(dt) && !Number.isNaN(dt.getTime()));
                 const ageBasis = ageCandidates.length
@@ -2688,60 +2704,6 @@ export async function GET(request: NextRequest) {
               .sort((a, b) => new Date(b.snapshotDate).getTime() - new Date(a.snapshotDate).getTime())
               .slice(0, limit) as any;
           }
-
-          const vendorAging = summaryAndUnpaidRows.reduce((acc: Record<string, any>, row: any) => {
-            const name = row.vendorName || 'Unknown Vendor';
-            if (!acc[name]) {
-              acc[name] = {
-                vendorName: name,
-                current: 0,
-                days1to30: 0,
-                days31to60: 0,
-                days61to90: 0,
-                days90plus: 0,
-                totalDue: 0,
-              };
-            }
-            let bucketCurrent = 0;
-            let bucket1to30 = 0;
-            let bucket31to60 = 0;
-            let bucket61to90 = 0;
-            let bucket90plus = 0;
-            const openAmount = Number(row.netAmountDueHome || 0);
-            if (openAmount > 0) {
-              const asOfDate = startOfUtcDay(new Date(latestOpenBillsSnapshotDate.snapshotDate));
-              const ageCandidates = [row.dueDate, row.billDate, row.openSignalDate]
-                .map((value: any) => (value ? new Date(value) : null))
-                .filter((dt: Date | null): dt is Date => Boolean(dt) && !Number.isNaN(dt.getTime()));
-              const ageBasis = ageCandidates.length
-                ? new Date(Math.max(...ageCandidates.map((dt) => dt.getTime())))
-                : null;
-              if (ageBasis && !Number.isNaN(ageBasis.getTime())) {
-                const ageDays = Math.floor((asOfDate.getTime() - startOfUtcDay(ageBasis).getTime()) / (24 * 60 * 60 * 1000));
-                if (ageDays <= 0) bucketCurrent = openAmount;
-                else if (ageDays <= 30) bucket1to30 = openAmount;
-                else if (ageDays <= 60) bucket31to60 = openAmount;
-                else if (ageDays <= 90) bucket61to90 = openAmount;
-                else bucket90plus = openAmount;
-              } else {
-                bucket90plus = openAmount;
-              }
-            }
-            acc[name].current += bucketCurrent;
-            acc[name].days1to30 += bucket1to30;
-            acc[name].days31to60 += bucket31to60;
-            acc[name].days61to90 += bucket61to90;
-            acc[name].days90plus += bucket90plus;
-            acc[name].totalDue +=
-              bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus > 0
-                ? bucketCurrent + bucket1to30 + bucket31to60 + bucket61to90 + bucket90plus
-                : openAmount;
-            return acc;
-          }, {});
-
-          unpaidByVendor = Object.values(vendorAging)
-            .sort((a: any, b: any) => b.totalDue - a.totalDue)
-            .slice(0, 25) as any[];
 
           unpaidBills = summaryAndUnpaidRows
             .map((row: any) => ({
@@ -3385,6 +3347,26 @@ export async function GET(request: NextRequest) {
         };
         const aggregateInventoryBySku = (rows: any[]): any[] => {
           const deduped = dedupeInventoryRowsExact(rows);
+          const inventoryNameQualityScore = (
+            candidateName: string,
+            candidateSku: string | null,
+            candidateItemId: string | null
+          ): number => {
+            const name = normalizeInventoryText(candidateName);
+            if (!name || name === 'Unknown Item') return 0;
+            const normalizedName = canonicalInventoryKey(name);
+            const normalizedSku = canonicalInventoryKey(candidateSku || '');
+            const normalizedItemId = canonicalInventoryKey(candidateItemId || '');
+            const looksCodeLike = /^[A-Z0-9\-_.\/]+$/.test(name);
+            let score = 1;
+            // Exact code mirrors are lowest quality labels for the Item Name column.
+            if (normalizedName && (normalizedName === normalizedSku || normalizedName === normalizedItemId)) {
+              score -= 2;
+            }
+            if (!looksCodeLike) score += 2;
+            if (name.includes(' ')) score += 1;
+            return score;
+          };
           const grouped = new Map<
             string,
             {
@@ -3418,7 +3400,13 @@ export async function GET(request: NextRequest) {
             const acc = grouped.get(key)!;
             if (!acc.sku && sku) acc.sku = sku;
             if (!acc.itemId && itemId) acc.itemId = itemId;
-            if ((!acc.itemName || acc.itemName === 'Unknown Item') && itemName) acc.itemName = itemName;
+            if (itemName) {
+              const existingScore = inventoryNameQualityScore(acc.itemName, acc.sku, acc.itemId);
+              const incomingScore = inventoryNameQualityScore(itemName, sku || acc.sku, itemId || acc.itemId);
+              if (!acc.itemName || acc.itemName === 'Unknown Item' || incomingScore > existingScore) {
+                acc.itemName = itemName;
+              }
+            }
             acc.qtyOnHand += Number(row.qtyOnHand || 0);
             acc.assetValue += Number(row.assetValue || 0);
             const warehouse = normalizeInventoryText((row as any).warehouse);
@@ -3931,6 +3919,21 @@ export async function GET(request: NextRequest) {
             return values.size;
           };
 
+          const mergeKeyForCashRow = (
+            row: {
+              accountName: string;
+              accountId: string | null;
+              accountNumber: string | null;
+            }
+          ): string => {
+            const nameKey = normalizeAccountNameForKey(String(row.accountName || ''));
+            if (nameKey) return `name:${nameKey}`;
+            return (
+              accountKeyFromParts(row.accountId, row.accountNumber, row.accountName) ||
+              String(row.accountName || '').trim().toLowerCase()
+            );
+          };
+
           const observedByAccount = new Map<string, typeof observedDaily>();
           for (const row of observedDaily) {
             const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
@@ -3946,15 +3949,34 @@ export async function GET(request: NextRequest) {
             syntheticByAccount.get(accountKey)!.push(row);
           }
 
+          // Merge by normalized account name so movement-derived rows can replace
+          // stale observed rows even when account IDs are inconsistent/missing.
+          const observedByMergeKey = new Map<string, typeof observedDaily>();
+          for (const rows of observedByAccount.values()) {
+            for (const row of rows) {
+              const mergeKey = mergeKeyForCashRow(row);
+              if (!observedByMergeKey.has(mergeKey)) observedByMergeKey.set(mergeKey, []);
+              observedByMergeKey.get(mergeKey)!.push(row);
+            }
+          }
+          const syntheticByMergeKey = new Map<string, typeof syntheticDaily>();
+          for (const rows of syntheticByAccount.values()) {
+            for (const row of rows) {
+              const mergeKey = mergeKeyForCashRow(row);
+              if (!syntheticByMergeKey.has(mergeKey)) syntheticByMergeKey.set(mergeKey, []);
+              syntheticByMergeKey.get(mergeKey)!.push(row);
+            }
+          }
+
           const allAccountKeys = new Set<string>([
-            ...Array.from(observedByAccount.keys()),
-            ...Array.from(syntheticByAccount.keys()),
+            ...Array.from(observedByMergeKey.keys()),
+            ...Array.from(syntheticByMergeKey.keys()),
           ]);
           const chosenRows: typeof observedDaily = [];
 
           for (const accountKey of allAccountKeys) {
-            const observedRows = observedByAccount.get(accountKey) || [];
-            const syntheticRows = syntheticByAccount.get(accountKey) || [];
+            const observedRows = observedByMergeKey.get(accountKey) || [];
+            const syntheticRows = syntheticByMergeKey.get(accountKey) || [];
 
             let selectedRows = observedRows;
             if (observedRows.length === 0) {
@@ -3976,7 +3998,10 @@ export async function GET(request: NextRequest) {
               }
             }
 
-            const identityRow = observedRows[0] || syntheticRows[0];
+            const identityRow =
+              [...observedRows, ...syntheticRows].find((row) => row.accountId || row.accountNumber) ||
+              observedRows[0] ||
+              syntheticRows[0];
             for (const row of selectedRows) {
               chosenRows.push({
                 snapshotDate: row.snapshotDate,
@@ -3999,7 +4024,7 @@ export async function GET(request: NextRequest) {
             }
           >();
           for (const row of chosenRows) {
-            const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
+            const accountKey = mergeKeyForCashRow(row);
             if (!accountKey) continue;
             const dayKey = dateKeyUtc(new Date(row.snapshotDate));
             dedupedByDateAccount.set(`${dayKey}|${accountKey}`, row);

@@ -433,7 +433,7 @@ export default function AccountMappingTable({
                 border: '1px solid #cbd5e1',
                 borderRadius: '4px',
                 fontSize: '13px',
-                background: canonicalizeTargetField(mapping.targetField) ? '#f0fdf4' : '#fef3c7',
+                background: canonicalizeTargetField(mapping.targetField) ? '#f0fdf4' : '#fef2f2',
                 cursor: 'pointer',
                 textAlign: 'left',
                 display: 'flex',
