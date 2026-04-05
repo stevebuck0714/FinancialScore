@@ -22,7 +22,7 @@ function envTrue(name: string): boolean {
 function resolveRawTransformDaysPerTick(): number {
   const raw = Number(process.env.INFOR_RAW_TRANSFORM_DAYS_PER_TICK || 1);
   if (!Number.isFinite(raw) || raw <= 0) return 1;
-  return Math.min(10, Math.max(1, Math.floor(raw)));
+  return Math.min(50, Math.max(1, Math.floor(raw)));
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

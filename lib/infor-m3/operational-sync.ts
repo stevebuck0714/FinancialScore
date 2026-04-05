@@ -6279,7 +6279,7 @@ export async function processPendingInforRawTransforms(options?: {
   const limitRaw = Number(options?.maxDaysPerTick || 1);
   const maxDaysPerTick =
     Number.isFinite(limitRaw) && limitRaw > 0
-      ? Math.min(10, Math.max(1, Math.floor(limitRaw)))
+      ? Math.min(50, Math.max(1, Math.floor(limitRaw)))
       : 1;
 
   const pendingDays = await prisma.$queryRaw<Array<{
