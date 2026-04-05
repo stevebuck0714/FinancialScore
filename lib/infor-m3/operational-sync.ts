@@ -715,23 +715,14 @@ function buildGlAcctPeriodBalancesWindowFilter(window?: SyncWindow, site?: strin
   const startPeriod = window.startDate.getUTCMonth() + 1;
   const endYear = window.endDate.getUTCFullYear();
   const endPeriod = window.endDate.getUTCMonth() + 1;
-
-  const periodClauses: string[] = [];
-  for (let year = startYear; year <= endYear; year += 1) {
-    const periodStart = year === startYear ? startPeriod : 1;
-    const periodEnd = year === endYear ? endPeriod : 12;
-    for (let period = periodStart; period <= periodEnd; period += 1) {
-      periodClauses.push(`(FiscalYear='${year}' and FiscalPeriod='${period}')`);
-    }
-  }
-  if (periodClauses.length === 0) return null;
-  const clauses: string[] = [`(${periodClauses.join(' or ')})`];
-  const siteValue = String(site || '').trim();
-  if (siteValue) {
-    const safeSite = siteValue.replace(/'/g, "''");
-    clauses.unshift(`Site='${safeSite}'`);
-  }
-  return `(${clauses.join(' and ')})`;
+  if (endYear < startYear || (endYear === startYear && endPeriod < startPeriod)) return null;
+  // Keep this filter compact and numeric-only; some CSI tenants reject long
+  // OR chains and quoted numeric period operands with IllegalFilterException.
+  return `(
+    (FiscalYear > ${startYear} or (FiscalYear = ${startYear} and FiscalPeriod >= ${startPeriod}))
+    and
+    (FiscalYear < ${endYear} or (FiscalYear = ${endYear} and FiscalPeriod <= ${endPeriod}))
+  )`;
 }
 
 function buildSlArtransWindowFilter(window?: SyncWindow, site?: string): string | null {
@@ -1290,6 +1281,17 @@ function isOptionalCsiGlSummaryIdoMissing(params: {
   }
 
   return false;
+}
+
+function isOptionalCsiGlPeriodBalancesFilterUnsupported(params: {
+  moduleType: ReturnType<typeof classifyModule>;
+  programId: string | null;
+  payloadMessage: string;
+}): boolean {
+  if (params.moduleType !== 'gl') return false;
+  if (String(params.programId || '').trim().toUpperCase() !== 'GLACCTPERIODBALANCES') return false;
+  const msg = params.payloadMessage.trim().toLowerCase();
+  return msg.includes('illegalfilterexception') || (msg.includes('loadcollection') && msg.includes('filter'));
 }
 
 function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'gl' | 'other' {
@@ -5372,7 +5374,14 @@ export async function syncInforM3OperationalData(
             payloadMessage: payloadMsg,
           })
         : false;
-      const requestSucceeded = payloadOk || optionalProgramMissing;
+      const optionalProgramFilterUnsupported = !payloadOk
+        ? isOptionalCsiGlPeriodBalancesFilterUnsupported({
+            moduleType,
+            programId,
+            payloadMessage: payloadMsg,
+          })
+        : false;
+      const requestSucceeded = payloadOk || optionalProgramMissing || optionalProgramFilterUnsupported;
       const statusText = requestSucceeded ? 'success' : 'error';
 
       let moduleRecordsCreated = 0;
@@ -5855,7 +5864,8 @@ export async function syncInforM3OperationalData(
                 }
               : null,
             optionalProgramSkipped: optionalProgramMissing,
-            optionalProgramSkipReason: optionalProgramMissing ? payloadMsg : null,
+            optionalProgramSkipReason:
+              optionalProgramMissing || optionalProgramFilterUnsupported ? payloadMsg : null,
             persistDebug: modulePersistDebug,
             response: responseBodyForLog,
           } as unknown as Prisma.InputJsonValue),
