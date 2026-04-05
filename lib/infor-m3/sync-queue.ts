@@ -731,10 +731,12 @@ async function processTask(
     companyId: task.run.companyId,
   };
   const start = Date.now();
+  const isBusinessDayFanoutTask = taskPayload.businessDayFanout === true;
   const isGlBackfillGuardEnabled =
     String(task.run.platform || '') === 'INFOR_M3' &&
     String(task.run.mode || '') === 'business_day_backfill' &&
-    taskPayload.salesOnly !== true;
+    taskPayload.salesOnly !== true &&
+    !isBusinessDayFanoutTask;
   const glMaxBefore = isGlBackfillGuardEnabled ? await getGlRawMaxBusinessDate(task.companyId) : null;
   let data: Record<string, unknown> = {};
   let rawText = '';
