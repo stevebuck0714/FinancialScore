@@ -17,6 +17,7 @@ const MAX_TASKS_PER_TICK_LIMIT = 200;
 const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 5;
 const DEFAULT_RUN_STALE_MINUTES = 30;
 const DEFAULT_RUN_MAX_AGE_HOURS = 8;
+const DEFAULT_TASK_FETCH_TIMEOUT_MS = 90_000;
 
 type QueueRunRecord = {
   id: string;
@@ -196,6 +197,12 @@ function resolveRunMaxAgeHours(): number {
   const raw = Number(process.env.INFOR_SYNC_RUN_MAX_AGE_HOURS || DEFAULT_RUN_MAX_AGE_HOURS);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_MAX_AGE_HOURS;
   return Math.min(72, Math.max(1, Math.floor(raw)));
+}
+
+function resolveTaskFetchTimeoutMs(): number {
+  const raw = Number(process.env.INFOR_SYNC_TASK_FETCH_TIMEOUT_MS || DEFAULT_TASK_FETCH_TIMEOUT_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TASK_FETCH_TIMEOUT_MS;
+  return Math.min(300_000, Math.max(10_000, Math.floor(raw)));
 }
 
 function resolveFanoutDayProgramShardSize(): number {
@@ -644,6 +651,26 @@ async function leasePendingTasks(limit: number): Promise<Array<QueueTaskRecord &
   return leased;
 }
 
+async function requeueExpiredLeasedTasks(): Promise<number> {
+  const now = new Date();
+  const updated = await db().inforSyncTask.updateMany({
+    where: {
+      status: 'leased',
+      leaseExpiresAt: { lt: now },
+      run: { status: 'running' },
+    },
+    data: {
+      status: 'pending',
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      availableAt: now,
+      updatedAt: now,
+      lastError: 'Auto-requeued expired lease.',
+    },
+  });
+  return Number(updated?.count || 0);
+}
+
 async function promoteQueuedRunsForIdleCompanies(): Promise<number> {
   const runningRuns = (await db().inforSyncRun.findMany({
     where: { status: 'running' },
@@ -704,22 +731,39 @@ async function processTask(
   if (String(task.run.platform) === 'INFOR_M3') {
     const url = new URL('/api/infor-m3/operational-sync', baseUrl);
     const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-infor-sync-worker-secret': workerSecret,
-        ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
-      },
-      body: JSON.stringify(taskPayload),
-      cache: 'no-store',
-    });
-    responseStatus = response.status;
-    rawText = await response.text().catch(() => '');
+    const timeoutMs = resolveTaskFetchTimeoutMs();
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
-    } catch {
-      data = {};
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-infor-sync-worker-secret': workerSecret,
+          ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
+        },
+        body: JSON.stringify(taskPayload),
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      responseStatus = response.status;
+      rawText = await response.text().catch(() => '');
+      try {
+        data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+      } catch {
+        data = {};
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Worker fetch failed while processing queue task';
+      responseStatus = 504;
+      rawText = message;
+      data = {
+        ok: false,
+        error: `Queue worker request failed or timed out after ${timeoutMs}ms: ${message}`,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
     }
   } else if (String(task.run.platform) === 'QUICKBOOKS') {
     const qbResult = await runOperationalSyncForCompany(task.run.companyId, 'QUICKBOOKS', task.run.frequency);
@@ -1112,6 +1156,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
   let promotedRuns = 0;
   let leasedTasks = 0;
   let leaseRounds = 0;
+  let reclaimedExpiredLeases = 0;
   let timedOutRuns = 0;
   const maxTasksPerTick = resolveMaxTasksPerTick();
   const tickConcurrency = Math.min(maxTasksPerTick, resolveTickConcurrency());
@@ -1206,6 +1251,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     Date.now() - tickStartedAt < TICK_TIME_BUDGET_MS
   ) {
     leaseRounds += 1;
+    reclaimedExpiredLeases += await requeueExpiredLeasedTasks();
     if (leaseRounds === 1 || leaseRounds % 3 === 0) {
       timedOutRuns += await failTimedOutRuns();
     }
@@ -1250,6 +1296,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     ok: true,
     queueEnabled: true,
     promotedRuns,
+    reclaimedExpiredLeases,
     leasedTasks,
     timedOutRuns,
     leaseRounds,
