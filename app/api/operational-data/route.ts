@@ -1122,44 +1122,26 @@ export async function GET(request: NextRequest) {
           };
         });
 
-        // Calculate top customers
-        const customerTotals = data.reduce((acc, record: any) => {
-          if (!acc[record.customerName]) {
-            acc[record.customerName] = {
-              name: record.customerName,
+        // Calculate top customers from the same in-memory dataset used for records.
+        // This keeps summary metrics consistent with fallback/derived customer rows.
+        const customerTotals = (data as any[]).reduce((acc, record: any) => {
+          const customerId = String(record?.customerId || '').trim();
+          const customerName = String(record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+          const key = customerId ? `id:${customerId}` : `name:${customerName.toLowerCase().replace(/\s+/g, ' ')}`;
+          if (!acc[key]) {
+            acc[key] = {
+              name: customerName,
               totalRevenue: 0,
               totalInvoices: 0,
             };
           }
-          acc[record.customerName].totalRevenue += record.revenue;
-          acc[record.customerName].totalInvoices += record.invoiceCount;
+          acc[key].totalRevenue += Number(record?.revenue || 0);
+          acc[key].totalInvoices += Number(record?.invoiceCount || 0);
           return acc;
-        }, {} as Record<string, any>);
-        const fullWindowTopCustomers = await prisma.$queryRaw<
-          Array<{ name: string; totalRevenue: number; totalInvoices: number }>
-        >`
-          SELECT
-            COALESCE(NULLIF(TRIM("customerName"), ''), 'Unknown Customer') AS name,
-            SUM(COALESCE("revenue", 0))::double precision AS "totalRevenue",
-            SUM(COALESCE("invoiceCount", 0))::double precision AS "totalInvoices"
-          FROM "CustomerSalesSnapshot"
-          WHERE "companyId" = ${companyId}
-            AND "frequency" = ${frequency}
-            AND "snapshotDate" >= ${startDate}
-            AND "snapshotDate" <= ${endDate}
-          GROUP BY 1
-          ORDER BY "totalRevenue" DESC
-          LIMIT 10
-        `;
-        const topCustomersSummary = fullWindowTopCustomers.length
-          ? fullWindowTopCustomers.map((row) => ({
-              name: String(row.name || 'Unknown Customer'),
-              totalRevenue: Number(row.totalRevenue || 0),
-              totalInvoices: Number(row.totalInvoices || 0),
-            }))
-          : Object.values(customerTotals)
-              .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
-              .slice(0, 10);
+        }, {} as Record<string, { name: string; totalRevenue: number; totalInvoices: number }>);
+        const topCustomersSummary = Object.values(customerTotals)
+          .sort((a, b) => b.totalRevenue - a.totalRevenue)
+          .slice(0, 10);
 
         if (!data.length && shouldUseMockData) {
           return NextResponse.json(
@@ -4019,25 +4001,9 @@ export async function GET(request: NextRequest) {
             const observedRows = observedByMergeKey.get(accountKey) || [];
             const syntheticRows = syntheticByMergeKey.get(accountKey) || [];
 
-            let selectedRows = observedRows;
-            if (observedRows.length === 0) {
-              selectedRows = syntheticRows;
-            } else if (syntheticRows.length > 0) {
-              const observedVariation = uniqueBalanceCount(observedRows);
-              const syntheticVariation = uniqueBalanceCount(syntheticRows);
-              const observedLooksFlat = observedVariation <= 1;
-              const observedDays = uniqueDayCount(observedRows);
-              const syntheticDays = uniqueDayCount(syntheticRows);
-              const observedCoverageRatio = observedDays / expectedWindowDays;
-              // Some CSI accounts only appear in sparse spot snapshots (e.g. a few days)
-              // while synthetic series can provide full-period continuity from anchors.
-              const observedLooksSparse = observedCoverageRatio < 0.5 && syntheticDays > observedDays;
-              // Flat observed account balances are often stale carry-forward artifacts in
-              // historical windows. Prefer movement-based reconstruction whenever present.
-              if (observedLooksFlat || observedLooksSparse || syntheticVariation > observedVariation) {
-                selectedRows = syntheticRows;
-              }
-            }
+            // Prefer GL movement-derived history when available. Snapshot-only balances
+            // from CSI bank headers can be flat/static across long ranges.
+            const selectedRows = syntheticRows.length > 0 ? syntheticRows : observedRows;
 
             const identityRow =
               [...observedRows, ...syntheticRows].find((row) => row.accountId || row.accountNumber) ||

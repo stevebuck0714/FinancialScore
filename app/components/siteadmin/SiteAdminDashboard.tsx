@@ -6268,7 +6268,7 @@ export default function SiteAdminDashboard(props: any) {
                                       </div>
                                     </div>
                                   </div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '8px' }}>
                                     <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                       <div>
@@ -6615,16 +6615,16 @@ export default function SiteAdminDashboard(props: any) {
                                         Programs called by the CSI integration
                                       </div>
                                       <div style={{ overflowX: 'auto' }}>
-                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', tableLayout: 'fixed' }}>
                                           <thead>
                                             <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Module</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CSI IDO</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>CSI Endpoint Path</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Mongoose Config</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569' }}>Site</th>
-                                              <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '80px' }}>Enabled</th>
-                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '70px' }}>Action</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '11%' }}>Module</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '21%' }}>CSI IDO</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '33%' }}>CSI Endpoint Path</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '14%' }}>Mongoose Config</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '8%' }}>Site</th>
+                                              <th style={{ textAlign: 'center', padding: '6px', color: '#475569', width: '7%' }}>Enabled</th>
+                                              <th style={{ textAlign: 'left', padding: '6px', color: '#475569', width: '6%' }}>Action</th>
                                             </tr>
                                           </thead>
                                           <tbody>
