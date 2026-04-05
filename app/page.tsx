@@ -4245,9 +4245,9 @@ function FinancialScorePage() {
               invalidMappingsCount,
             } = await mappingsResponse.json();
             if (invalidMappingsCount > 0) {
-              alert(
-                `We found ${invalidMappingsCount} saved mapping(s) that do not match this company's selected sector. ` +
-                `Those mappings were set to Unmapped. Please review and remap Revenue/COGS fields before saving.`,
+              console.log(
+                `Loaded ${invalidMappingsCount} invalid mapping(s) during company data refresh; ` +
+                `user-facing remap alert is shown only on the Data Mapping tab.`,
               );
             }
             if (mappings && mappings.length > 0) {

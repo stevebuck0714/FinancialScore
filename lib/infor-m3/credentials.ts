@@ -240,13 +240,15 @@ export async function getInforM3CredentialsForCompany(
   companyId: string,
   system?: InforSystem
 ): Promise<InforM3Credentials | null> {
-  await resolveInforSystemForCompany(companyId, system);
+  const resolvedSystem = await resolveInforSystemForCompany(companyId, system);
   // Performance: avoid loading entire connectionMetadata (which can contain
   // large CSI payload snapshots). Read only credential-related paths.
   const rows = await prisma.$queryRaw<
     Array<{
       status: string | null;
       legacy: unknown;
+      profileInforM3: unknown;
+      profileInforCsi: unknown;
     }>
   >`
     SELECT
@@ -263,7 +265,9 @@ export async function getInforM3CredentialsForCompany(
         'oauthRevokePath', "connectionMetadata"->>'oauthRevokePath',
         'serviceAccountAccessKeyEncrypted', "connectionMetadata"->>'serviceAccountAccessKeyEncrypted',
         'serviceAccountSecretKeyEncrypted', "connectionMetadata"->>'serviceAccountSecretKeyEncrypted'
-      ) AS legacy
+      ) AS legacy,
+      "connectionMetadata"->'inforProfiles'->'INFOR_M3' AS "profileInforM3",
+      "connectionMetadata"->'inforProfiles'->'INFOR_CSI' AS "profileInforCsi"
     FROM "AccountingConnection"
     WHERE "companyId" = ${companyId}
       AND platform = 'INFOR_M3'
@@ -279,6 +283,16 @@ export async function getInforM3CredentialsForCompany(
     connection.legacy && typeof connection.legacy === 'object' && !Array.isArray(connection.legacy)
       ? (connection.legacy as Partial<InforM3ConnectionMetadata>)
       : undefined;
+  const profileMetadataRaw =
+    resolvedSystem === 'INFOR_CSI' ? connection.profileInforCsi : connection.profileInforM3;
+  const profileMetadata =
+    profileMetadataRaw && typeof profileMetadataRaw === 'object' && !Array.isArray(profileMetadataRaw)
+      ? (profileMetadataRaw as Partial<InforM3ConnectionMetadata>)
+      : undefined;
+
+  if (isCompleteMetadata(profileMetadata)) {
+    return fromMetadata(profileMetadata);
+  }
 
   if (isCompleteMetadata(legacyMetadata)) {
     return fromMetadata(legacyMetadata);

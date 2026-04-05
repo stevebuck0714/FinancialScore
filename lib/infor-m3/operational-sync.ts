@@ -4716,7 +4716,10 @@ export async function syncInforM3OperationalData(
     if (!slcosBaseEndpoint) return { loaded: 0, message: 'slcos_endpoint_missing' };
 
     let endpoint = ensureCsiProperties(slcosBaseEndpoint, ['CoNum', 'CustNum', 'DerCustNoName', 'Stat', 'OrderDate', 'DueDate']);
-    const headers = slcosRow.mongooseConfig ? { 'X-Infor-MongooseConfig': slcosRow.mongooseConfig } : undefined;
+    const slcosRequestedSite = String(slcosRow.site || siteOverride || '').trim();
+    const headers: Record<string, string> = {};
+    if (slcosRow.mongooseConfig) headers['X-Infor-MongooseConfig'] = slcosRow.mongooseConfig;
+    if (slcosRequestedSite) headers['X-Infor-Site'] = slcosRequestedSite;
     let response = await callInforIonApi(credentials, endpoint, {
       timeoutMs: 30000,
       headers,
@@ -4775,14 +4778,18 @@ export async function syncInforM3OperationalData(
     const row = programRowsToProcess[rowIndex];
     const absoluteProgramOffset = programOffset + rowIndex;
     const requests: Array<{ transaction: string; endpointPath: string; headers?: Record<string, string> }> = [];
+    const requestedSite = String(row.site || siteOverride || '').trim();
 
     if (row.endpointPath || (row.miProgram && row.miProgram.toUpperCase().startsWith('SL'))) {
       const endpointPath = buildCsiEndpointPath(row);
       if (endpointPath) {
+        const requestHeaders: Record<string, string> = {};
+        if (row.mongooseConfig) requestHeaders['X-Infor-MongooseConfig'] = row.mongooseConfig;
+        if (requestedSite) requestHeaders['X-Infor-Site'] = requestedSite;
         requests.push({
           transaction: row.endpointPath ? 'CSI_LOAD' : 'CSI_AUTO',
           endpointPath,
-          headers: row.mongooseConfig ? { 'X-Infor-MongooseConfig': row.mongooseConfig } : undefined,
+          headers: Object.keys(requestHeaders).length > 0 ? requestHeaders : undefined,
         });
       }
     } else if (row.miProgram) {
@@ -5292,7 +5299,6 @@ export async function syncInforM3OperationalData(
       const recordsAfterDateWindow = shouldApplyDateWindow
         ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
         : recordsAfterSiteFilter;
-      const requestedSite = String(row.site || siteOverride || '').trim();
       const shouldAggregateForRollup =
         !isOrderLineProgram && !requestedSite && siteDetected && (sitePolicy === 'required' || sitePolicy === 'optional');
       const records = shouldAggregateForRollup
