@@ -720,6 +720,12 @@ export async function GET(request: NextRequest) {
 
     switch (type) {
       case 'customers':
+        const isInforCompany =
+          normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
+        const customerFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
+          isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
+        const orderLineFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
+          isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
         // Get customer sales data for the full requested date window.
         // Guardrail: extremely large tenants can return hundreds of thousands of
         // rows and time out the request in production.
@@ -727,7 +733,7 @@ export async function GET(request: NextRequest) {
         data = await prisma.customerSalesSnapshot.findMany({
           where: {
             companyId,
-            frequency,
+            frequency: customerFrequencyForQuery,
             snapshotDate: dateFilter,
           },
           orderBy: [{ snapshotDate: 'desc' }, { customerName: 'asc' }],
@@ -753,7 +759,7 @@ export async function GET(request: NextRequest) {
             const orderRows = await orderLineDelegate.findMany({
               where: {
                 companyId,
-                frequency,
+                frequency: orderLineFrequencyForQuery,
                 snapshotDate: { lte: endDate },
               },
               select: {
@@ -882,7 +888,7 @@ export async function GET(request: NextRequest) {
             const orderRows = await bookingsOrderLineDelegate.findMany({
               where: {
                 companyId,
-                frequency,
+                frequency: orderLineFrequencyForQuery,
                 snapshotDate: { lte: endDate },
                 orderDate: { lte: endDate },
               },
@@ -959,7 +965,7 @@ export async function GET(request: NextRequest) {
             const orderRows = await bookingsOrderLineDelegate.findMany({
               where: {
                 companyId,
-                frequency,
+                frequency: orderLineFrequencyForQuery,
                 snapshotDate: { lte: endDate },
               },
               select: {
