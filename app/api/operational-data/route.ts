@@ -2468,20 +2468,18 @@ export async function GET(request: NextRequest) {
           days61to90: number;
           days90plus: number;
         } | null = null;
-        const useSnapshotOnlyApResponse = data.length > 0;
 
-        if (!useSnapshotOnlyApResponse) {
-          const latestOpenBillsSnapshotDate = await (prisma as any).aPOpenBillSnapshot.findFirst({
-            where: {
-              companyId,
-              frequency: apFrequencyForQuery,
-              snapshotDate: dateFilter,
-            },
-            select: { snapshotDate: true },
-            orderBy: { snapshotDate: 'desc' },
-          });
+        const latestOpenBillsSnapshotDate = await (prisma as any).aPOpenBillSnapshot.findFirst({
+          where: {
+            companyId,
+            frequency: apFrequencyForQuery,
+            snapshotDate: dateFilter,
+          },
+          select: { snapshotDate: true },
+          orderBy: { snapshotDate: 'desc' },
+        });
 
-          if (latestOpenBillsSnapshotDate?.snapshotDate) {
+        if (latestOpenBillsSnapshotDate?.snapshotDate) {
           const apPaymentsForNetting = await (prisma as any).aPPaymentFact.findMany({
             where: {
               companyId,
@@ -2831,105 +2829,104 @@ export async function GET(request: NextRequest) {
             }))
             .sort((a: any, b: any) => b.amountDueHome - a.amountDueHome)
             .slice(0, 500);
-          }
+        }
 
-          const apMonthStart = startOfMonth(endDate);
-          const apLastMonthStart = addMonths(apMonthStart, -1);
-          const apTrailing12Start = addMonths(apMonthStart, -11);
-          const apPaymentRows = await (prisma as any).aPPaymentFact.findMany({
-            where: {
-              companyId,
-              paymentDate: {
-                gte: apTrailing12Start,
-                lte: endDate,
-              },
+        const apMonthStart = startOfMonth(endDate);
+        const apLastMonthStart = addMonths(apMonthStart, -1);
+        const apTrailing12Start = addMonths(apMonthStart, -11);
+        const apPaymentRows = await (prisma as any).aPPaymentFact.findMany({
+          where: {
+            companyId,
+            paymentDate: {
+              gte: apTrailing12Start,
+              lte: endDate,
             },
-            orderBy: [{ paymentDate: 'desc' }],
-            take: Math.max(limit * 5, 2000),
-          });
+          },
+          orderBy: [{ paymentDate: 'desc' }],
+          take: Math.max(limit * 5, 2000),
+        });
 
-          if (apPaymentRows.length) {
-            const grouped = apPaymentRows.reduce((acc: Record<string, any>, row: any) => {
-              const name = row.vendorName || 'Unknown Vendor';
-              if (!acc[name]) {
-                acc[name] = {
-                  vendorName: name,
-                  currentMonth: 0,
-                  lastMonth: 0,
-                  last12Months: 0,
-                };
-              }
-              const dt = new Date(row.paymentDate);
-              const amount = Number(row.paidAmountHome || 0);
-              if (dt >= apMonthStart && dt <= endDate) acc[name].currentMonth += amount;
-              if (dt >= apLastMonthStart && dt < apMonthStart) acc[name].lastMonth += amount;
-              if (dt >= apTrailing12Start && dt <= endDate) acc[name].last12Months += amount;
-              return acc;
-            }, {});
-            paidBills = Object.values(grouped)
-              .sort((a: any, b: any) => b.last12Months - a.last12Months)
-              .slice(0, 25) as any[];
-          }
+        if (apPaymentRows.length) {
+          const grouped = apPaymentRows.reduce((acc: Record<string, any>, row: any) => {
+            const name = row.vendorName || 'Unknown Vendor';
+            if (!acc[name]) {
+              acc[name] = {
+                vendorName: name,
+                currentMonth: 0,
+                lastMonth: 0,
+                last12Months: 0,
+              };
+            }
+            const dt = new Date(row.paymentDate);
+            const amount = Number(row.paidAmountHome || 0);
+            if (dt >= apMonthStart && dt <= endDate) acc[name].currentMonth += amount;
+            if (dt >= apLastMonthStart && dt < apMonthStart) acc[name].lastMonth += amount;
+            if (dt >= apTrailing12Start && dt <= endDate) acc[name].last12Months += amount;
+            return acc;
+          }, {});
+          paidBills = Object.values(grouped)
+            .sort((a: any, b: any) => b.last12Months - a.last12Months)
+            .slice(0, 25) as any[];
+        }
 
-          // Fallback vendor/AP detail from mapped AP lines when AP open-bill/payment facts are unavailable.
-          if ((!unpaidByVendor.length || !vendorBills.length) && !isQuickBooksCompany) {
-            const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
-            const latestMappedDate = mappedLineDelegate
-              ? await mappedLineDelegate.findFirst({
-                  where: {
-                    companyId,
-                    frequency: 'daily',
-                    targetField: 'ap',
-                    snapshotDate: dateFilter,
-                  },
-                  select: { snapshotDate: true },
-                  orderBy: { snapshotDate: 'desc' },
-                })
-              : null;
-            if (latestMappedDate?.snapshotDate && mappedLineDelegate) {
-              const mappedLines = await mappedLineDelegate.findMany({
+        // Fallback vendor/AP detail from mapped AP lines when AP open-bill/payment facts are unavailable.
+        if ((!unpaidByVendor.length || !vendorBills.length) && !isQuickBooksCompany) {
+          const mappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+          const latestMappedDate = mappedLineDelegate
+            ? await mappedLineDelegate.findFirst({
                 where: {
                   companyId,
                   frequency: 'daily',
                   targetField: 'ap',
-                  snapshotDate: latestMappedDate.snapshotDate,
+                  snapshotDate: dateFilter,
                 },
-                orderBy: [{ amount: 'desc' }],
-                take: Math.max(limit, 500),
-              });
-              const grouped = new Map<string, number>();
-              for (const row of mappedLines) {
-                const vendorName = String(row.sourceAccountName || 'Unknown Vendor').trim() || 'Unknown Vendor';
-                const amount = Number(row.amount || 0);
-                grouped.set(vendorName, Number(grouped.get(vendorName) || 0) + amount);
-              }
-              const derived = Array.from(grouped.entries())
-                .map(([vendorName, totalDue]) => ({
-                  vendorName,
-                  current: totalDue,
-                  days1to30: 0,
-                  days31to60: 0,
-                  days61to90: 0,
-                  days90plus: 0,
-                  totalDue,
-                }))
-                .sort((a, b) => b.totalDue - a.totalDue);
-              if (!unpaidByVendor.length) unpaidByVendor = derived.slice(0, 25);
-              if (!vendorBills.length) {
-                vendorBills = derived.slice(0, 500).map((row, idx) => ({
-                  vendorName: row.vendorName,
-                  billNo: `AP-${idx + 1}`,
-                  date: latestMappedDate.snapshotDate.toISOString().slice(0, 10),
-                  dueDate: null,
-                  currency: 'USD',
-                  amountCurrency: Number(row.totalDue || 0),
-                  amountHome: Number(row.totalDue || 0),
-                  amountDueHome: Number(row.totalDue || 0),
-                }));
-              }
-              // Do not synthesize unpaid bill rows from vendor totals.
-              // The Unpaid Bills table must remain true bill-level open items only.
+                select: { snapshotDate: true },
+                orderBy: { snapshotDate: 'desc' },
+              })
+            : null;
+          if (latestMappedDate?.snapshotDate && mappedLineDelegate) {
+            const mappedLines = await mappedLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                targetField: 'ap',
+                snapshotDate: latestMappedDate.snapshotDate,
+              },
+              orderBy: [{ amount: 'desc' }],
+              take: Math.max(limit, 500),
+            });
+            const grouped = new Map<string, number>();
+            for (const row of mappedLines) {
+              const vendorName = String(row.sourceAccountName || 'Unknown Vendor').trim() || 'Unknown Vendor';
+              const amount = Number(row.amount || 0);
+              grouped.set(vendorName, Number(grouped.get(vendorName) || 0) + amount);
             }
+            const derived = Array.from(grouped.entries())
+              .map(([vendorName, totalDue]) => ({
+                vendorName,
+                current: totalDue,
+                days1to30: 0,
+                days31to60: 0,
+                days61to90: 0,
+                days90plus: 0,
+                totalDue,
+              }))
+              .sort((a, b) => b.totalDue - a.totalDue);
+            if (!unpaidByVendor.length) unpaidByVendor = derived.slice(0, 25);
+            if (!vendorBills.length) {
+              vendorBills = derived.slice(0, 500).map((row, idx) => ({
+                vendorName: row.vendorName,
+                billNo: `AP-${idx + 1}`,
+                date: latestMappedDate.snapshotDate.toISOString().slice(0, 10),
+                dueDate: null,
+                currency: 'USD',
+                amountCurrency: Number(row.totalDue || 0),
+                amountHome: Number(row.totalDue || 0),
+                amountDueHome: Number(row.totalDue || 0),
+              }));
+            }
+            // Do not synthesize unpaid bill rows from vendor totals.
+            // The Unpaid Bills table must remain true bill-level open items only.
           }
         }
 
