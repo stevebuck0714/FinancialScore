@@ -657,7 +657,7 @@ export default function OperationsTab({
 
     let cancelled = false;
     setSmartCardsLoading(true);
-    Promise.all([
+    Promise.allSettled([
       arData ? Promise.resolve(arData) : fetchOperationalType('ar-aging'),
       apData ? Promise.resolve(apData) : fetchOperationalType('ap-aging'),
       cashData ? Promise.resolve(cashData) : fetchOperationalType('cash'),
@@ -665,18 +665,28 @@ export default function OperationsTab({
       customerData ? Promise.resolve(customerData) : fetchOperationalType('customers'),
       productData ? Promise.resolve(productData) : fetchOperationalType('products'),
     ])
-      .then(([nextAr, nextAp, nextCash, nextInventory, nextCustomers, nextProducts]) => {
+      .then((results) => {
         if (cancelled) return;
-        if (!arData && nextAr) setArData(nextAr);
-        if (!apData && nextAp) setApData(nextAp);
-        if (!cashData && nextCash) setCashData(nextCash);
-        if (!inventoryData && nextInventory) setInventoryData(nextInventory);
-        if (!customerData && nextCustomers) setCustomerData(nextCustomers);
-        if (!productData && nextProducts) setProductData(nextProducts);
-      })
-      .catch((err: any) => {
-        if (!cancelled) {
-          console.error('Failed to preload smart card data:', err);
+        const [nextAr, nextAp, nextCash, nextInventory, nextCustomers, nextProducts] = results;
+        if (!arData && nextAr.status === 'fulfilled' && nextAr.value) setArData(nextAr.value);
+        if (!apData && nextAp.status === 'fulfilled' && nextAp.value) setApData(nextAp.value);
+        if (!cashData && nextCash.status === 'fulfilled' && nextCash.value) setCashData(nextCash.value);
+        if (!inventoryData && nextInventory.status === 'fulfilled' && nextInventory.value) setInventoryData(nextInventory.value);
+        if (!customerData && nextCustomers.status === 'fulfilled' && nextCustomers.value) setCustomerData(nextCustomers.value);
+        if (!productData && nextProducts.status === 'fulfilled' && nextProducts.value) setProductData(nextProducts.value);
+
+        const failedModules = [
+          ['ar-aging', nextAr],
+          ['ap-aging', nextAp],
+          ['cash', nextCash],
+          ['inventory', nextInventory],
+          ['customers', nextCustomers],
+          ['products', nextProducts],
+        ]
+          .filter(([, result]) => result.status === 'rejected')
+          .map(([name]) => name);
+        if (failedModules.length) {
+          console.warn('Smart card preload partial failures:', failedModules.join(', '));
         }
       })
       .finally(() => {
@@ -708,17 +718,36 @@ export default function OperationsTab({
   };
 
   const fetchOperationalType = async (type: OpsDataType) => {
+    const typeLimit = type === 'customers' || type === 'products' ? 500 : 1000;
+    const timeoutMs = type === 'customers' || type === 'products' ? 45000 : 25000;
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       type,
       frequency,
       startDate,
       endDate,
+      limit: String(typeLimit),
       ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
     });
-    const response = await fetch(`/api/operational-data?${params}`);
-    if (!response.ok) throw new Error(`Failed to load ${type} data`);
-    return response.json();
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`/api/operational-data?${params}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load ${type} data`);
+      }
+      return response.json();
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw new Error(`Timed out loading ${type} data`);
+      }
+      throw err;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
   };
 
   const fetchCashConversionFinancialData = async () => {

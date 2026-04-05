@@ -5268,10 +5268,14 @@ export async function syncInforM3OperationalData(
       const isApOpenSupportProgram =
         moduleType === 'ap' &&
         ['SLAPTRXPS', 'SLAPPMTS', 'SLAPTRXP', 'SLAPTRXS'].includes(String(row.miProgram || '').trim().toUpperCase());
+      const isApOpenSnapshotProgram =
+        moduleType === 'ap' &&
+        ['SLVCHHDRS'].includes(String(row.miProgram || '').trim().toUpperCase());
       const isArApOpenFlow =
         ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
       const keepFullArApPopulation =
         isArOpenSnapshotProgram ||
+        isApOpenSnapshotProgram ||
         isApOpenSupportProgram ||
         (isArApOpenFlow && syncWindow?.mode === 'daily_overlap');
       // Contract/backlog math from SLCoitems also requires full line populations; clipping

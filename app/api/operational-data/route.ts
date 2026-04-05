@@ -607,6 +607,7 @@ export async function GET(request: NextRequest) {
     const endDateParam = searchParams.get('endDate');
     const frequency = (searchParams.get('frequency') || 'monthly') as 'daily' | 'weekly' | 'monthly';
     const limit = parseInt(searchParams.get('limit') || '1000');
+    const boundedLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 100), 5000) : 1000;
     const sectorCategoryParam = searchParams.get('sectorCategory');
 
     if (!companyId) {
@@ -680,16 +681,23 @@ export async function GET(request: NextRequest) {
     switch (type) {
       case 'customers':
         // Get customer sales data for the full requested date window.
-        // Do not cap with `take` here; KPI totals and coverage must reflect the
-        // selected From/To range, not only the newest N customer rows.
+        // Guardrail: extremely large tenants can return hundreds of thousands of
+        // rows and time out the request in production.
+        const customerRowCap = Math.max(Math.min(boundedLimit * 40, 50000), 10000);
         data = await prisma.customerSalesSnapshot.findMany({
           where: {
             companyId,
             frequency,
             snapshotDate: dateFilter,
           },
-          orderBy: [{ snapshotDate: 'asc' }, { customerName: 'asc' }],
+          orderBy: [{ snapshotDate: 'desc' }, { customerName: 'asc' }],
+          take: customerRowCap,
         });
+        data = data.sort(
+          (a, b) =>
+            new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime() ||
+            String(a.customerName || '').localeCompare(String(b.customerName || ''))
+        );
 
         const hasNonZeroCustomerSales = data.some(
           (record) => Number(record.revenue || 0) !== 0 || Number(record.invoiceCount || 0) !== 0
@@ -2962,14 +2970,22 @@ export async function GET(request: NextRequest) {
 
       case 'products':
         // Get product sales data
+        const productRowCap = Math.max(Math.min(boundedLimit * 30, 30000), 8000);
         data = await prisma.productSalesSnapshot.findMany({
           where: {
             companyId,
             frequency,
             snapshotDate: dateFilter,
           },
-          orderBy: [{ snapshotDate: 'asc' }, { itemName: 'asc' }],
+          orderBy: [{ snapshotDate: 'desc' }, { itemName: 'asc' }],
+          take: productRowCap,
         });
+        data = data.sort(
+          (a, b) =>
+            new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime() ||
+            String(a.itemName || '').localeCompare(String(b.itemName || ''))
+        );
+        const productWindowTruncated = data.length >= productRowCap;
 
         // Use the full selected window for product analytics. If we have any
         // meaningful rows, drop pure placeholder rows (Unknown Item + zero metrics)
@@ -3026,7 +3042,7 @@ export async function GET(request: NextRequest) {
 
         // Quantity fallback from order-line snapshots when product quantity is missing/zero.
         const productOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
-        if (productOrderLineDelegate?.findMany) {
+        if (!productWindowTruncated && productOrderLineDelegate?.findMany) {
           const qtyRows = await productOrderLineDelegate.findMany({
             where: {
               companyId,
@@ -3080,20 +3096,22 @@ export async function GET(request: NextRequest) {
         }
 
         // Cost proxy fallback from inventory avg cost when transactional cogs is missing/zero.
-        const inventoryRows = await prisma.inventorySnapshot.findMany({
-          where: {
-            companyId,
-            snapshotDate: dateFilter,
-            frequency: { in: ['daily', frequency] },
-          },
-          select: {
-            snapshotDate: true,
-            itemId: true,
-            itemName: true,
-            sku: true,
-            avgCost: true,
-          },
-        });
+        const inventoryRows = productWindowTruncated
+          ? []
+          : await prisma.inventorySnapshot.findMany({
+              where: {
+                companyId,
+                snapshotDate: dateFilter,
+                frequency: { in: ['daily', frequency] },
+              },
+              select: {
+                snapshotDate: true,
+                itemId: true,
+                itemName: true,
+                sku: true,
+                avgCost: true,
+              },
+            });
         const avgCostByDayAndKey = new Map<string, number>();
         const descriptionByKey = new Map<string, string>();
         const looksLikeCode = (value: string): boolean => /^[A-Z0-9\-_.\/]+$/.test(value.trim());
@@ -3158,7 +3176,7 @@ export async function GET(request: NextRequest) {
 
         // GL allocation bridge for freight and other-revenue proxy lines.
         const productMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
-        if (productMappedLineDelegate?.findMany) {
+        if (!productWindowTruncated && productMappedLineDelegate?.findMany) {
           const mappedRows = await productMappedLineDelegate.findMany({
             where: {
               companyId,
