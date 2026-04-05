@@ -211,6 +211,17 @@ function resolveFanoutDayProgramShardSize(): number {
   return Math.min(12, Math.max(1, Math.floor(raw)));
 }
 
+function resolveAdaptiveFanoutDayProgramShardSize(businessDayCount: number): number {
+  const configured = resolveFanoutDayProgramShardSize();
+  // Long explicit historical windows can exceed route wall-time when one task
+  // pulls too many programs for a day. Split large windows into smaller shards
+  // so each leased task can complete within one queue tick.
+  if (businessDayCount >= 500) return Math.min(configured, 1);
+  if (businessDayCount >= 180) return Math.min(configured, 2);
+  if (businessDayCount >= 90) return Math.min(configured, 4);
+  return configured;
+}
+
 function resolveFanoutProgramHint(): number {
   const raw = Number(process.env.INFOR_SYNC_FANOUT_PROGRAM_HINT || 120);
   if (!Number.isFinite(raw) || raw <= 0) return 120;
@@ -470,7 +481,7 @@ export async function startQueueRun(input: {
     const startDate = new Date(String(input.startDate));
     const endDate = new Date(String(input.endDate));
     const businessDates = enumerateBusinessDates(startDate, endDate);
-    const shardSize = resolveFanoutDayProgramShardSize();
+    const shardSize = resolveAdaptiveFanoutDayProgramShardSize(businessDates.length);
     const programHint = resolveFanoutProgramHint();
     if (businessDates.length > 0) {
       const shardRanges: Array<{ start: number; end: number }> = [];
