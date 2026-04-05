@@ -18,6 +18,7 @@ const DEFAULT_MAX_INFLIGHT_PER_SCOPE = 5;
 const DEFAULT_RUN_STALE_MINUTES = 30;
 const DEFAULT_RUN_MAX_AGE_HOURS = 8;
 const DEFAULT_TASK_FETCH_TIMEOUT_MS = 90_000;
+const DEFAULT_TASK_EXECUTION_TIMEOUT_MS = 110_000;
 
 type QueueRunRecord = {
   id: string;
@@ -203,6 +204,12 @@ function resolveTaskFetchTimeoutMs(): number {
   const raw = Number(process.env.INFOR_SYNC_TASK_FETCH_TIMEOUT_MS || DEFAULT_TASK_FETCH_TIMEOUT_MS);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TASK_FETCH_TIMEOUT_MS;
   return Math.min(300_000, Math.max(10_000, Math.floor(raw)));
+}
+
+function resolveTaskExecutionTimeoutMs(): number {
+  const raw = Number(process.env.INFOR_SYNC_TASK_EXECUTION_TIMEOUT_MS || DEFAULT_TASK_EXECUTION_TIMEOUT_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_TASK_EXECUTION_TIMEOUT_MS;
+  return Math.min(600_000, Math.max(30_000, Math.floor(raw)));
 }
 
 function resolveFanoutDayProgramShardSize(): number {
@@ -1173,6 +1180,7 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
   let timedOutRuns = 0;
   const maxTasksPerTick = resolveMaxTasksPerTick();
   const tickConcurrency = Math.min(maxTasksPerTick, resolveTickConcurrency());
+  const taskExecutionTimeoutMs = resolveTaskExecutionTimeoutMs();
   let activeTickConcurrency = tickConcurrency;
   let cleanBatchStreak = 0;
   const results: Array<Record<string, unknown>> = [];
@@ -1274,14 +1282,37 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     leasedTasks += leased.length;
     for (let index = 0; index < leased.length; index += activeTickConcurrency) {
       const batch = leased.slice(index, index + activeTickConcurrency);
-      const settled = await Promise.allSettled(batch.map((task) => processTask(requestUrl, task, workerSecret)));
+      const settled = await Promise.allSettled(
+        batch.map((task) => {
+          const taskPromise = processTask(requestUrl, task, workerSecret);
+          // Avoid unhandled rejection if the timeout wins the race.
+          taskPromise.catch(() => undefined);
+          return Promise.race([
+            taskPromise,
+            new Promise<{ runId: string; taskId: string; status: string; details?: string }>((resolve) => {
+              setTimeout(() => {
+                resolve({
+                  runId: task.runId,
+                  taskId: task.id,
+                  status: 'timeout',
+                  details: `Queue task exceeded ${taskExecutionTimeoutMs}ms and was left for lease recovery.`,
+                });
+              }, taskExecutionTimeoutMs);
+            }),
+          ]);
+        })
+      );
       let pressureSignals = 0;
       for (let resultIndex = 0; resultIndex < settled.length; resultIndex += 1) {
         const settledResult = settled[resultIndex];
         const task = batch[resultIndex];
         if (settledResult.status === 'fulfilled') {
           results.push(settledResult.value);
-          if (settledResult.value.status === 'retry' || settledResult.value.status === 'failed') {
+          if (
+            settledResult.value.status === 'retry' ||
+            settledResult.value.status === 'failed' ||
+            settledResult.value.status === 'timeout'
+          ) {
             pressureSignals += 1;
           }
         } else {

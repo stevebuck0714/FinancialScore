@@ -3501,8 +3501,10 @@ export default function SiteAdminDashboard(props: any) {
                                                             : useCustomMonthRange
                                                               ? monthToRangeEndIso(syncSettings.customEndMonth)
                                                               : undefined;
-                                                          if (syncSettings.syncMode === 'business_day_backfill' && !useCustomDayRange) {
-                                                            alert('Historical Daily Backfill requires explicit Start Date and End Date (day-level).');
+                                                          // Month-range inputs are normalized to concrete day-level
+                                                          // start/end dates before dispatch; allow either mode.
+                                                          if (syncSettings.syncMode === 'business_day_backfill' && !useCustomDayRange && !useCustomMonthRange) {
+                                                            alert('Historical Daily Backfill requires a custom Start/End range (day-level or month-level).');
                                                             return;
                                                           }
                                                           if (useCustomDayRange || useCustomMonthRange) {
@@ -6188,8 +6190,10 @@ export default function SiteAdminDashboard(props: any) {
                                                     : useCustomMonthRange
                                                       ? monthToRangeEndIso(operationalSettings.customEndMonth)
                                                       : undefined;
-                                                  if (operationalSettings.syncMode === 'business_day_backfill' && !useCustomDayRange) {
-                                                    alert('Historical Daily Backfill requires explicit Start Date and End Date (day-level).');
+                                                  // Month-range inputs are normalized to concrete day-level
+                                                  // start/end dates before dispatch; allow either mode.
+                                                  if (operationalSettings.syncMode === 'business_day_backfill' && !useCustomDayRange && !useCustomMonthRange) {
+                                                    alert('Historical Daily Backfill requires a custom Start/End range (day-level or month-level).');
                                                     return;
                                                   }
                                                   if (useCustomDayRange || useCustomMonthRange) {
