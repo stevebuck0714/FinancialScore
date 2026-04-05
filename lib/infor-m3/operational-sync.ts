@@ -3831,8 +3831,13 @@ async function saveAPOpenBills(
     (row.dueDate ? 1 : 0) +
     (Number(row.amountHome || 0) !== 0 ? 1 : 0) +
     (Number(row.amountCurrency || 0) !== 0 ? 1 : 0);
+  const normalizeDedupToken = (value: unknown): string =>
+    String(value || '')
+      .trim()
+      .toLowerCase();
   for (const row of rows) {
-    const key = `${String(row.vendorId || '').trim() || row.vendorName}||${row.billNo}`;
+    // Must align with DB unique key: (companyId, frequency, snapshotDate, billNo, vendorName)
+    const key = `${normalizeDedupToken(row.vendorName)}||${normalizeDedupToken(row.billNo)}`;
     const existing = deduped.get(key);
     const nextScore = scoreRow(row);
     const existingDateMs = existing?.sourceRecordDate ? existing.sourceRecordDate.getTime() : Number.NEGATIVE_INFINITY;
@@ -3850,7 +3855,7 @@ async function saveAPOpenBills(
   const BATCH_SIZE = 2000;
   for (let i = 0; i < finalRows.length; i += BATCH_SIZE) {
     const batch = finalRows.slice(i, i + BATCH_SIZE);
-    await (prisma as any).aPOpenBillSnapshot.createMany({ data: batch });
+    await (prisma as any).aPOpenBillSnapshot.createMany({ data: batch, skipDuplicates: true });
   }
   return finalRows.length;
 }
