@@ -5264,7 +5264,8 @@ export async function syncInforM3OperationalData(
       // snapshots. Backfill/manual modes must honor the date window so each day
       // is rebuilt from that day slice instead of replaying one global snapshot.
       const isArOpenSnapshotProgram =
-        moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
+        moduleType === 'ar' &&
+        ['SLARTRANS', 'SLCUSTDRFTS'].includes(String(row.miProgram || '').trim().toUpperCase());
       const isApOpenSupportProgram =
         moduleType === 'ap' &&
         ['SLAPTRXPS', 'SLAPPMTS', 'SLAPTRXP', 'SLAPTRXS'].includes(String(row.miProgram || '').trim().toUpperCase());
