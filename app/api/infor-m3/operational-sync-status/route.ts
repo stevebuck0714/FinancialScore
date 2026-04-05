@@ -169,6 +169,10 @@ export async function GET(request: NextRequest) {
       return nowMs - new Date(value).getTime();
     };
 
+    const rawIngestOnlyMode =
+      String(process.env.INFOR_RAW_INGEST_ENABLED || '').trim().toLowerCase() === 'true' &&
+      String(process.env.INFOR_RAW_INGEST_ONLY || '').trim().toLowerCase() === 'true';
+
     await requireSiteAdmin();
     const companyId = getRequestedCompanyId(request);
     if (!companyId) {
@@ -258,6 +262,7 @@ export async function GET(request: NextRequest) {
           runMode: mapped.mode || null,
           diagnostics,
           queueTaskPreview,
+          rawIngestOnlyMode,
         });
       }
     }
@@ -355,6 +360,7 @@ export async function GET(request: NextRequest) {
       runLastError: runMatches?.lastError || null,
       runMode: runMatches?.mode || null,
       diagnostics,
+      rawIngestOnlyMode,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

@@ -68,6 +68,10 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
     const action = String(body.action || 'start').trim().toLowerCase();
+    const rawIngestOnlyMode =
+      String(process.env.INFOR_RAW_INGEST_ENABLED || '').trim().toLowerCase() === 'true' &&
+      String(process.env.INFOR_RAW_INGEST_ONLY || '').trim().toLowerCase() === 'true';
+    const allowRawIngestOnly = body.allowRawIngestOnly === true;
     const queuePlatform = normalizeQueuePlatform(body.platform);
 
     const connection = await prisma.accountingConnection.findUnique({
@@ -200,6 +204,17 @@ export async function POST(request: NextRequest) {
     const endDate = normalizeIsoDate(body.endDate);
     const salesOnly = body.salesOnly === true || String(body.scope || '').trim().toLowerCase() === 'sales';
 
+    if (rawIngestOnlyMode && !allowRawIngestOnly) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Sync start blocked: INFOR_RAW_INGEST_ONLY is enabled. Disable raw-ingest-only for ingest+transform runs, or pass allowRawIngestOnly=true to acknowledge ingest-only behavior.',
+        },
+        { status: 409 }
+      );
+    }
+
     const company = await prisma.company.findUnique({
       where: { id: companyId },
       select: { accountingSystem: true },
@@ -243,6 +258,16 @@ export async function POST(request: NextRequest) {
       if (isCustomWindowHistory) {
         mode = 'business_day_backfill';
       }
+    }
+
+    if (mode === 'business_day_backfill' && (!startDate || !endDate)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Historical Daily Backfill requires explicit startDate and endDate (day-level).',
+        },
+        { status: 400 }
+      );
     }
 
     if (queueEnabled) {

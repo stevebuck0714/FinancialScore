@@ -1717,7 +1717,7 @@ function filterRecordsByDateWindow(
   window?: SyncWindow
 ): Record<string, unknown>[] {
   if (!window || records.length === 0) return records;
-  const transactionalModules = new Set<ReturnType<typeof classifyModule>>(['ar', 'ap', 'sales', 'inventory']);
+  const transactionalModules = new Set<ReturnType<typeof classifyModule>>(['ar', 'ap', 'sales', 'inventory', 'gl']);
   if (!transactionalModules.has(moduleType)) return records;
 
   const dateKeysByModule: Record<string, string[]> = {
@@ -1725,13 +1725,32 @@ function filterRecordsByDateWindow(
     ap: ['InvDate', 'invoiceDate', 'DistDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
     sales: ['OrderDate', 'orderDate', 'InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'ShipDate', 'RecordDate', 'date'],
     inventory: ['ItemChangeDate', 'ChangeDate', 'RecordDate', 'SSDATE', 'date'],
+    gl: ['TransDate', 'transDate', 'RecordDate', 'date'],
   };
   const keys = dateKeysByModule[moduleType] || [];
   if (keys.length === 0) return records;
 
+  const isPeriodWithinWindow = (record: Record<string, unknown>): boolean | null => {
+    if (moduleType !== 'gl') return null;
+    const fiscalYear = Number(
+      pickString(record, ['FiscalYear', 'fiscalYear', 'ControlYear', 'controlYear']) || NaN
+    );
+    const fiscalPeriod = Number(
+      pickString(record, ['FiscalPeriod', 'fiscalPeriod', 'ControlPeriod', 'controlPeriod']) || NaN
+    );
+    if (!Number.isFinite(fiscalYear) || !Number.isFinite(fiscalPeriod)) return null;
+    if (fiscalPeriod < 1 || fiscalPeriod > 12) return null;
+    const rowMonth = Date.UTC(Math.floor(fiscalYear), Math.floor(fiscalPeriod) - 1, 1);
+    const startMonth = Date.UTC(window.startDate.getUTCFullYear(), window.startDate.getUTCMonth(), 1);
+    const endMonth = Date.UTC(window.endDate.getUTCFullYear(), window.endDate.getUTCMonth(), 1);
+    return rowMonth >= startMonth && rowMonth <= endMonth;
+  };
+
   // Keep records lacking any parseable date to avoid dropping valid rows from sparse payloads.
   return records.filter((record) => {
     const date = firstRecordDate(record, keys);
+    const periodMatch = isPeriodWithinWindow(record);
+    if (!date && periodMatch !== null) return periodMatch;
     // For sales windows (bookings/order slices), missing dates break period attribution.
     // Exclude undated rows so backfill/manual windows cannot replay full snapshot payloads.
     if (!date) {
@@ -5335,6 +5354,9 @@ export async function syncInforM3OperationalData(
       const recordsAfterDateWindow = shouldApplyDateWindow
         ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
         : recordsAfterSiteFilter;
+      const rawRecordsForIngest = shouldApplyDateWindow
+        ? recordsAfterDateWindow
+        : recordsAfterSiteFilter;
       const shouldAggregateForRollup =
         !isOrderLineProgram && !requestedSite && siteDetected && (sitePolicy === 'required' || sitePolicy === 'optional');
       const records = shouldAggregateForRollup
@@ -5708,7 +5730,7 @@ export async function syncInforM3OperationalData(
 
       try {
         if (rawIngestEnabled) {
-          const ingestedRecords = rawRecords.slice(0, rawIngestRecordCap);
+          const ingestedRecords = rawRecordsForIngest.slice(0, rawIngestRecordCap);
           const batchId = randomUUID();
           const syncWindowStartIso = syncWindow?.startDate ? syncWindow.startDate.toISOString() : null;
           const bookmarkOut =
@@ -5719,7 +5741,7 @@ export async function syncInforM3OperationalData(
               : null;
           const payloadHash = createHash('sha256')
             .update(
-              `${companyId}|${syncRunId}|${moduleType}|${programId || ''}|${req.transaction}|${effectiveEndpointPath}|${rawRecords.length}|${requestDurationMs}|${response.status}`
+              `${companyId}|${syncRunId}|${moduleType}|${programId || ''}|${req.transaction}|${effectiveEndpointPath}|${rawRecordsForIngest.length}|${requestDurationMs}|${response.status}`
             )
             .digest('hex');
           await (prisma as any).inforRawBatch.create({
@@ -5817,6 +5839,7 @@ export async function syncInforM3OperationalData(
             requestedSite: requestedSite || null,
             siteDetected,
             sourceRecordCount: rawRecords.length,
+            storedRawRecordCount: rawRecordsForIngest.length,
             postWindowRecordCount: recordsAfterDateWindow.length,
             persistedRecordCount: records.length,
             companyRollupApplied: shouldAggregateForRollup,

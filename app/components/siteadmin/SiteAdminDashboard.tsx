@@ -245,9 +245,29 @@ export default function SiteAdminDashboard(props: any) {
             {status.message}
           </div>
         )}
+        {(status as any)?.rawIngestOnlyMode && (
+          <div style={{ marginTop: '6px', fontSize: '11px', color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '6px' }}>
+            RAW INGEST ONLY is enabled. This run ingests raw records but does not hydrate operational snapshots.
+          </div>
+        )}
         {status.state === 'failed' && status.lastError && (
           <div style={{ fontSize: '11px', color: '#7f1d1d', marginTop: '4px' }}>
             Error: {status.lastError}
+          </div>
+        )}
+        {Array.isArray((status as any)?.queueTaskPreview) && (status as any).queueTaskPreview.length > 0 && (
+          <div style={{ marginTop: '6px', fontSize: '11px', color: '#334155' }}>
+            <strong>Latest Task:</strong>{' '}
+            {(() => {
+              const task = (status as any).queueTaskPreview[0];
+              const mode = String(task?.mode || 'n/a');
+              const businessDateIso = String(task?.businessDateIso || 'n/a');
+              const programOffset = Number.isFinite(Number(task?.programOffset)) ? Number(task.programOffset) : 0;
+              const programEndOffset =
+                Number.isFinite(Number(task?.programEndOffset)) ? Number(task.programEndOffset) : null;
+              const requestOffset = Number.isFinite(Number(task?.requestOffset)) ? Number(task.requestOffset) : 0;
+              return `${mode} | ${businessDateIso} | program ${programOffset}${programEndOffset !== null ? `..${programEndOffset}` : ''} | request ${requestOffset}`;
+            })()}
           </div>
         )}
         {(status as any)?.diagnostics && (

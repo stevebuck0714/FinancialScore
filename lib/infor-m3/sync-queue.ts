@@ -292,6 +292,17 @@ function buildTaskPayload(run: QueueRunRecord, cursor?: Record<string, unknown> 
     frequency: run.frequency,
     programBatchSize: resolveInitialProgramBatchSize(run),
     syncRunId: run.id,
+    runIntent: {
+      mode: run.mode || null,
+      frequency: run.frequency,
+      site: run.site || null,
+      salesOnly: run.salesOnly === true,
+      startDate: asIso(run.startDate),
+      endDate: asIso(run.endDate),
+      backfillMonths: run.backfillMonths ?? null,
+      lookbackDays: run.lookbackDays ?? null,
+      createdAt: asIso(run.createdAt) || null,
+    },
   };
   if (run.site) payload.site = run.site;
   if (run.mode) payload.mode = run.mode;

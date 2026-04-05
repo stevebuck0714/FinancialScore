@@ -217,11 +217,32 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const rawIngestOnlyMode =
+      String(process.env.INFOR_RAW_INGEST_ENABLED || '').trim().toLowerCase() === 'true' &&
+      String(process.env.INFOR_RAW_INGEST_ONLY || '').trim().toLowerCase() === 'true';
+    const allowRawIngestOnly = body.allowRawIngestOnly === true;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
     const frequency = normalizeFrequency(body.frequency);
     const site = String(body.site || '').trim();
     const mode = normalizeMode(body.mode);
     const syncWindow = buildSyncWindow(body, frequency);
+    if (rawIngestOnlyMode && !allowRawIngestOnly) {
+      return NextResponse.json(
+        {
+          error:
+            'Sync start blocked: INFOR_RAW_INGEST_ONLY is enabled. Disable raw-ingest-only for ingest+transform runs, or pass allowRawIngestOnly=true to acknowledge ingest-only behavior.',
+        },
+        { status: 409 }
+      );
+    }
+    if (mode === 'business_day_backfill' && (!parseDate(body.startDate) || !parseDate(body.endDate))) {
+      return NextResponse.json(
+        {
+          error: 'Historical Daily Backfill requires explicit startDate and endDate (day-level).',
+        },
+        { status: 400 }
+      );
+    }
     const programBatchSize = Math.min(normalizePositiveInt(body.programBatchSize) ?? 1, 10);
     const requestedProgramOffset = normalizeNonNegativeInt(body.programOffset) ?? 0;
     const requestedProgramEndOffset = normalizeNonNegativeInt(body.programEndOffset);
