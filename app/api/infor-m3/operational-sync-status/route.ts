@@ -203,7 +203,37 @@ export async function GET(request: NextRequest) {
       }
       if (queueRun) {
         const mapped = mapQueueRunToLegacy(queueRun);
-        const diagnostics = await buildRunDiagnostics(companyId, syncRunId);
+        let diagnostics: {
+          failedChunks: number;
+          skippedChunks: number;
+          failedPrograms: string[];
+          suggestedRerunWindows: Array<{ startDate: string; endDate: string; reason: string }>;
+          staleSourceWarnings: Array<{
+            createdAt: string;
+            targetSnapshotDate: string | null;
+            message: string;
+            staleSources: string[];
+            sourceDates: Record<string, string | null>;
+          }>;
+        } = {
+          failedChunks: 0,
+          skippedChunks: 0,
+          failedPrograms: [],
+          suggestedRerunWindows: [],
+          staleSourceWarnings: [],
+        };
+        try {
+          diagnostics = await buildRunDiagnostics(companyId, syncRunId);
+        } catch {
+          // Keep queue status visible even when diagnostics query is unavailable.
+          diagnostics = {
+            failedChunks: 0,
+            skippedChunks: 0,
+            failedPrograms: [],
+            suggestedRerunWindows: [],
+            staleSourceWarnings: [],
+          };
+        }
         let queueTaskPreview: Array<{
           id: string;
           status: string;
