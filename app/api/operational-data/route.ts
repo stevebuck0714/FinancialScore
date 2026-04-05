@@ -700,11 +700,11 @@ export async function GET(request: NextRequest) {
     const hydratedInforDates = shouldEnforceHydratedInforDailyFilter
       ? await getHydratedInforBusinessDates(companyId, startDate, endDate)
       : null;
+    const shouldApplyHydratedDateFilter =
+      Array.isArray(hydratedInforDates) && hydratedInforDates.length > 0;
     const dateFilter =
-      hydratedInforDates !== null
-        ? hydratedInforDates.length > 0
-          ? { in: hydratedInforDates }
-          : { gte: new Date('9999-01-01T00:00:00.000Z') }
+      shouldApplyHydratedDateFilter
+        ? { in: hydratedInforDates! }
         : {
             gte: startDate,
             lte: endDate,
