@@ -161,6 +161,28 @@ function monthStartFromBusinessMonthKey(key: string): Date {
   return new Date(Date.UTC(year, month - 1, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
 }
 
+async function getHydratedInforBusinessDates(
+  companyId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<Date[]> {
+  const normalizedStart = startOfUtcDay(startDate);
+  const normalizedEnd = endOfUtcDay(endDate);
+  const rows = await prisma.$queryRaw<Array<{ businessDate: Date }>>`
+    SELECT DISTINCT "businessDate"
+    FROM "InforRawCompleteness"
+    WHERE "companyId" = ${companyId}
+      AND platform = 'INFOR_M3'
+      AND "isComplete" = true
+      AND "businessDate" >= ${normalizedStart}
+      AND "businessDate" <= ${normalizedEnd}
+    ORDER BY "businessDate" ASC
+  `;
+  return rows
+    .map((row) => (row?.businessDate ? startOfUtcDay(new Date(row.businessDate)) : null))
+    .filter((value): value is Date => Boolean(value));
+}
+
 let customerOrderLineOrderDateColumnCache: boolean | null = null;
 async function customerOrderLineHasOrderDateColumn(): Promise<boolean> {
   if (customerOrderLineOrderDateColumnCache !== null) return customerOrderLineOrderDateColumnCache;
@@ -670,11 +692,23 @@ export async function GET(request: NextRequest) {
     const isQuickBooksCompany =
       normalizedAccountingSystem === 'QUICKBOOKS' || normalizedAccountingSystem === 'QUICKBOOKS_DESKTOP';
 
-    // Build date filter
-    const dateFilter = {
-      gte: startDate,
-      lte: endDate,
-    };
+    // Build date filter. For INFOR daily operational reads, gate on business dates
+    // that have completed raw->snapshot hydration to avoid stale/partial snapshots.
+    const shouldEnforceHydratedInforDailyFilter =
+      (normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI') &&
+      frequency === 'daily';
+    const hydratedInforDates = shouldEnforceHydratedInforDailyFilter
+      ? await getHydratedInforBusinessDates(companyId, startDate, endDate)
+      : null;
+    const dateFilter =
+      hydratedInforDates !== null
+        ? hydratedInforDates.length > 0
+          ? { in: hydratedInforDates }
+          : { gte: new Date('9999-01-01T00:00:00.000Z') }
+        : {
+            gte: startDate,
+            lte: endDate,
+          };
 
     let data;
 
