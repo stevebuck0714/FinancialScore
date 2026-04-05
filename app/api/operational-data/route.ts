@@ -2342,6 +2342,9 @@ export async function GET(request: NextRequest) {
         // Get AP aging data
         const apFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isQuickBooksCompany && frequency !== 'monthly' ? 'monthly' : frequency;
+        const apOpenRowCap = Math.max(limit * 50, 5000);
+        const apPaymentRowCap = Math.max(limit * 200, 20000);
+        const apPaymentLookbackStart = addMonths(startDate, -24);
         data = await prisma.aPAgingSnapshot.findMany({
           where: {
             companyId,
@@ -2481,6 +2484,7 @@ export async function GET(request: NextRequest) {
             where: {
               companyId,
               paymentDate: {
+                gte: apPaymentLookbackStart,
                 lte: endDate,
               },
             },
@@ -2491,11 +2495,14 @@ export async function GET(request: NextRequest) {
               paidAmountHome: true,
               sourceProgram: true,
             },
+            orderBy: [{ paymentDate: 'desc' }],
+            take: apPaymentRowCap,
           });
           const apOpenItemSignalRows = await (prisma as any).aPPaymentFact.findMany({
             where: {
               companyId,
               paymentDate: {
+                gte: apPaymentLookbackStart,
                 lte: endDate,
               },
               sourceProgram: {
@@ -2508,6 +2515,8 @@ export async function GET(request: NextRequest) {
               billNo: true,
               paymentDate: true,
             },
+            orderBy: [{ paymentDate: 'desc' }],
+            take: apPaymentRowCap,
           });
           const normalizeVendorBillKey = (vendorName: unknown, billNo: unknown) =>
             `${String(vendorName || 'Unknown Vendor').trim().toUpperCase()}|${String(billNo || '').trim().toUpperCase()}`;
@@ -2556,6 +2565,7 @@ export async function GET(request: NextRequest) {
               snapshotDate: latestOpenBillsSnapshotDate.snapshotDate,
             },
             orderBy: [{ amountDueHome: 'desc' }],
+            take: apOpenRowCap,
           });
           const nettedOpenBillRows = openBillRows.map((row: any) => {
             const grossAmount = Number(row.amountDueHome || 0);
@@ -2604,24 +2614,28 @@ export async function GET(request: NextRequest) {
             { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
           );
 
-          // Canonical AP trend: recompute each snapshot from net-open vouchers
-          // using cumulative applied payments up to each snapshot date.
-          const trendOpenRows = await (prisma as any).aPOpenBillSnapshot.findMany({
-            where: {
-              companyId,
-              frequency: apFrequencyForQuery,
-              snapshotDate: dateFilter,
-            },
-            select: {
-              snapshotDate: true,
-              vendorName: true,
-              billNo: true,
-              amountDueHome: true,
-              billDate: true,
-              dueDate: true,
-            },
-            orderBy: [{ snapshotDate: 'asc' }],
-          });
+          // Canonical AP trend replay from open vouchers is expensive on large tenants.
+          // When AP aging snapshots already exist, prefer those records for trend speed.
+          const shouldReplayCanonicalApTrend = data.length === 0;
+          const trendOpenRows = shouldReplayCanonicalApTrend
+            ? await (prisma as any).aPOpenBillSnapshot.findMany({
+                where: {
+                  companyId,
+                  frequency: apFrequencyForQuery,
+                  snapshotDate: dateFilter,
+                },
+                select: {
+                  snapshotDate: true,
+                  vendorName: true,
+                  billNo: true,
+                  amountDueHome: true,
+                  billDate: true,
+                  dueDate: true,
+                },
+                orderBy: [{ snapshotDate: 'asc' }],
+                take: apOpenRowCap,
+              })
+            : [];
           if (trendOpenRows.length) {
             const trendPaymentsRaw = await (prisma as any).aPPaymentFact.findMany({
               where: {
