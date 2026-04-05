@@ -377,6 +377,22 @@ export default function OperationsTab({
     'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'qtyOnHand' | 'avgCost' | 'assetValue'
   >('assetValue');
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
+  const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
+  const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
+  const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
+    | 'itemName'
+    | 'sku'
+    | 'qtyOnHand'
+    | 'assetValue'
+    | 'lastSaleDate'
+    | 'daysSinceLastSale'
+    | 'shippedQty30'
+    | 'shippedQty60'
+    | 'shippedQty90'
+    | 'riskTier'
+    | 'estimatedObsolescenceExposure'
+  >('estimatedObsolescenceExposure');
+  const [inventoryAgingSortDir, setInventoryAgingSortDir] = useState<'asc' | 'desc'>('desc');
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
   const operationalHubSections =
@@ -3942,10 +3958,14 @@ export default function OperationsTab({
         row.pricePriorWeek != null ||
         row.costPriorWeek != null ||
         row.spreadPriorWeek != null ||
-        (Number(row.revenueThisWeek || 0) !== 0 && Number(row.marginAmountThisWeek || 0) !== 0);
+        Number(row.revenueThisWeek || 0) !== 0 ||
+        Number(row.marginAmountThisWeek || 0) !== 0;
       return hasSignal;
     });
-    const filteredComparisonRows = comparisonRowsWithSignal.filter((row) => {
+    const comparisonRowsBase = comparisonRowsWithSignal.length > 0
+      ? comparisonRowsWithSignal
+      : weeklyMarginModel.comparisonRows;
+    const filteredComparisonRows = comparisonRowsBase.filter((row) => {
       const matchesSearch =
         !priceCostSearchTerm.trim() ||
         row.itemName.toLowerCase().includes(priceCostSearchTerm.toLowerCase()) ||
@@ -4591,10 +4611,85 @@ export default function OperationsTab({
     };
     const inventorySortLabel = (key: string) =>
       inventorySortKey === key ? (inventorySortDir === 'asc' ? ' ▲' : ' ▼') : '';
-    const inventoryAgingRows = Array.isArray(agingReport) ? agingReport.slice(0, 100) : [];
+    const rawInventoryAgingRows = Array.isArray(agingReport) ? agingReport.slice(0, 100) : [];
+    const inventoryAgingSearch = String(inventoryAgingSearchTerm || '').trim().toLowerCase();
+    const filteredInventoryAgingRows = rawInventoryAgingRows.filter((row: any) => {
+      if (!inventoryAgingSearch) return true;
+      const itemName = String(row?.itemName || '').toLowerCase();
+      const sku = String(row?.sku || '').toLowerCase();
+      return itemName.includes(inventoryAgingSearch) || sku.includes(inventoryAgingSearch);
+    });
+    const sortedInventoryAgingRows = [...filteredInventoryAgingRows].sort((a: any, b: any) => {
+      const dir = inventoryAgingSortDir === 'asc' ? 1 : -1;
+      if (
+        inventoryAgingSortKey === 'qtyOnHand' ||
+        inventoryAgingSortKey === 'assetValue' ||
+        inventoryAgingSortKey === 'daysSinceLastSale' ||
+        inventoryAgingSortKey === 'shippedQty30' ||
+        inventoryAgingSortKey === 'shippedQty60' ||
+        inventoryAgingSortKey === 'shippedQty90' ||
+        inventoryAgingSortKey === 'estimatedObsolescenceExposure'
+      ) {
+        const aValue = Number(a?.[inventoryAgingSortKey] || 0);
+        const bValue = Number(b?.[inventoryAgingSortKey] || 0);
+        return (aValue - bValue) * dir;
+      }
+      if (inventoryAgingSortKey === 'lastSaleDate') {
+        const aTime = parseDateValue(a?.lastSaleDate)?.getTime() ?? 0;
+        const bTime = parseDateValue(b?.lastSaleDate)?.getTime() ?? 0;
+        return (aTime - bTime) * dir;
+      }
+      if (inventoryAgingSortKey === 'riskTier') {
+        const riskRank: Record<string, number> = { Low: 1, Medium: 2, High: 3 };
+        const aValue = riskRank[String(a?.riskTier || 'Low')] ?? 1;
+        const bValue = riskRank[String(b?.riskTier || 'Low')] ?? 1;
+        return (aValue - bValue) * dir;
+      }
+      const aText = String(a?.[inventoryAgingSortKey] || '').toLowerCase();
+      const bText = String(b?.[inventoryAgingSortKey] || '').toLowerCase();
+      return aText.localeCompare(bText) * dir;
+    });
+    const handleInventoryAgingSort = (
+      key:
+        | 'itemName'
+        | 'sku'
+        | 'qtyOnHand'
+        | 'assetValue'
+        | 'lastSaleDate'
+        | 'daysSinceLastSale'
+        | 'shippedQty30'
+        | 'shippedQty60'
+        | 'shippedQty90'
+        | 'riskTier'
+        | 'estimatedObsolescenceExposure'
+    ) => {
+      if (inventoryAgingSortKey === key) {
+        setInventoryAgingSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        return;
+      }
+      setInventoryAgingSortKey(key);
+      setInventoryAgingSortDir(key === 'itemName' || key === 'sku' || key === 'riskTier' ? 'asc' : 'desc');
+    };
+    const inventoryAgingSortLabel = (key: string) =>
+      inventoryAgingSortKey === key ? (inventoryAgingSortDir === 'asc' ? ' ▲' : ' ▼') : '';
     const top10InventoryByValue = [...latestRecords]
       .sort((a: any, b: any) => Number(b?.assetValue || 0) - Number(a?.assetValue || 0))
       .slice(0, 10);
+    const top5InventoryValue =
+      Number(summary?.top5InventoryValue) ||
+      [...latestRecords]
+        .sort((a: any, b: any) => Number(b?.assetValue || 0) - Number(a?.assetValue || 0))
+        .slice(0, 5)
+        .reduce((sum: number, item: any) => sum + Number(item?.assetValue || 0), 0);
+    const totalObsolescenceExposure =
+      Number(summary?.totalObsolescenceExposure) ||
+      (Array.isArray(rawInventoryAgingRows)
+        ? rawInventoryAgingRows.reduce((sum: number, row: any) => sum + Number(row?.estimatedObsolescenceExposure || 0), 0)
+        : 0);
+    const inventoryTurnoverRaw = Number(summary?.inventoryTurnover);
+    const inventoryTurnoverLabel = Number.isFinite(inventoryTurnoverRaw) && inventoryTurnoverRaw > 0
+      ? `${inventoryTurnoverRaw.toFixed(2)}x`
+      : 'N/A';
 
     const toIsoDay = (d: Date) =>
       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
@@ -4686,6 +4781,24 @@ export default function OperationsTab({
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Value</div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#16a34a' }}>
               {formatCurrency(summary.totalValue)}
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Value of Top 5 Inventory Items</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#0f766e' }}>
+              {formatCurrency(top5InventoryValue)}
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Total Obsolescence Exposure</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#7c3aed' }}>
+              {formatCurrency(totalObsolescenceExposure)}
+            </div>
+          </div>
+          <div style={{ background: 'white', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: '1', minWidth: '0' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Inventory Turnover</div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#1d4ed8' }}>
+              {inventoryTurnoverLabel}
             </div>
           </div>
         </div>
@@ -4839,9 +4952,34 @@ export default function OperationsTab({
 
         {isSectionEnabled('inventoryAgingObsolescenceV1') && (
           <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0', marginTop: '24px' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>
-              Inventory Aging & Obsolescence (V1 Proxy)
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setInventoryAgingTableExpanded((prev) => !prev)}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    background: '#fff',
+                    color: '#334155',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                  }}
+                >
+                  {inventoryAgingTableExpanded ? 'Collapse' : 'Expand'}
+                </button>
+                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                  Inventory Aging & Obsolescence (V1 Proxy)
+                </h3>
+              </div>
+              <input
+                value={inventoryAgingSearchTerm}
+                onChange={(event) => setInventoryAgingSearchTerm(event.target.value)}
+                placeholder="Search item name or SKU"
+                style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12px', minWidth: '240px' }}
+              />
+            </div>
             <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px' }}>
               Sales-driven proxy using outbound activity from latest available order-line snapshot (top 100 exposure rows).
             </div>
@@ -4849,63 +4987,65 @@ export default function OperationsTab({
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Item Name</th>
-                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>SKU</th>
-                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Qty on Hand</th>
-                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Asset Value</th>
-                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Last Sale Date</th>
-                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Days Since Last Sale</th>
-                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Shipped Qty (30d)</th>
-                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Shipped Qty (60d)</th>
-                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Shipped Qty (90d)</th>
-                    <th style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Risk Tier</th>
-                    <th style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Est. Obsolescence Exposure</th>
+                    <th onClick={() => handleInventoryAgingSort('itemName')} style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Item Name{inventoryAgingSortLabel('itemName')}</th>
+                    <th onClick={() => handleInventoryAgingSort('sku')} style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>SKU{inventoryAgingSortLabel('sku')}</th>
+                    <th onClick={() => handleInventoryAgingSort('qtyOnHand')} style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Qty on Hand{inventoryAgingSortLabel('qtyOnHand')}</th>
+                    <th onClick={() => handleInventoryAgingSort('assetValue')} style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Asset Value{inventoryAgingSortLabel('assetValue')}</th>
+                    <th onClick={() => handleInventoryAgingSort('lastSaleDate')} style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Last Sale Date{inventoryAgingSortLabel('lastSaleDate')}</th>
+                    <th onClick={() => handleInventoryAgingSort('daysSinceLastSale')} style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Days Since Last Sale{inventoryAgingSortLabel('daysSinceLastSale')}</th>
+                    <th onClick={() => handleInventoryAgingSort('shippedQty30')} style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Shipped Qty (30d){inventoryAgingSortLabel('shippedQty30')}</th>
+                    <th onClick={() => handleInventoryAgingSort('shippedQty60')} style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Shipped Qty (60d){inventoryAgingSortLabel('shippedQty60')}</th>
+                    <th onClick={() => handleInventoryAgingSort('shippedQty90')} style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Shipped Qty (90d){inventoryAgingSortLabel('shippedQty90')}</th>
+                    <th onClick={() => handleInventoryAgingSort('riskTier')} style={{ textAlign: 'left', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Risk Tier{inventoryAgingSortLabel('riskTier')}</th>
+                    <th onClick={() => handleInventoryAgingSort('estimatedObsolescenceExposure')} style={{ textAlign: 'right', padding: '10px', fontSize: '13px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Est. Obsolescence Exposure{inventoryAgingSortLabel('estimatedObsolescenceExposure')}</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {inventoryAgingRows.map((row: any, index: number) => {
-                    const riskColor =
-                      row.riskTier === 'High' ? '#b91c1c' : row.riskTier === 'Medium' ? '#b45309' : '#166534';
-                    return (
-                      <tr key={`${row.sku || row.itemName || 'row'}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#1e293b', fontWeight: 500 }}>{row.itemName}</td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#64748b' }}>{row.sku || 'N/A'}</td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#2563eb', textAlign: 'right', fontWeight: 600 }}>
-                          {Number(row.qtyOnHand || 0).toLocaleString()}
-                        </td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: 600 }}>
-                          {formatCurrency(Number(row.assetValue || 0))}
-                        </td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569' }}>
-                          {row.lastSaleDate ? formatDateUtcMinus4(row.lastSaleDate) : 'N/A'}
-                        </td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
-                          {row.daysSinceLastSale == null ? 'N/A' : Number(row.daysSinceLastSale).toLocaleString()}
-                        </td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
-                          {Number(row.shippedQty30 || 0).toLocaleString()}
-                        </td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
-                          {Number(row.shippedQty60 || 0).toLocaleString()}
-                        </td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
-                          {Number(row.shippedQty90 || 0).toLocaleString()}
-                        </td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: riskColor, fontWeight: 600 }}>{row.riskTier || 'Low'}</td>
-                        <td style={{ padding: '10px', fontSize: '13px', color: '#7c3aed', textAlign: 'right', fontWeight: 600 }}>
-                          {formatCurrency(Number(row.estimatedObsolescenceExposure || 0))}
+                {inventoryAgingTableExpanded && (
+                  <tbody>
+                    {sortedInventoryAgingRows.map((row: any, index: number) => {
+                      const riskColor =
+                        row.riskTier === 'High' ? '#b91c1c' : row.riskTier === 'Medium' ? '#b45309' : '#166534';
+                      return (
+                        <tr key={`${row.sku || row.itemName || 'row'}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#1e293b', fontWeight: 500 }}>{row.itemName}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#64748b' }}>{row.sku || 'N/A'}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#2563eb', textAlign: 'right', fontWeight: 600 }}>
+                            {Number(row.qtyOnHand || 0).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: 600 }}>
+                            {formatCurrency(Number(row.assetValue || 0))}
+                          </td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#475569' }}>
+                            {row.lastSaleDate ? formatDateUtcMinus4(row.lastSaleDate) : 'N/A'}
+                          </td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
+                            {row.daysSinceLastSale == null ? 'N/A' : Number(row.daysSinceLastSale).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
+                            {Number(row.shippedQty30 || 0).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
+                            {Number(row.shippedQty60 || 0).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>
+                            {Number(row.shippedQty90 || 0).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: riskColor, fontWeight: 600 }}>{row.riskTier || 'Low'}</td>
+                          <td style={{ padding: '10px', fontSize: '13px', color: '#7c3aed', textAlign: 'right', fontWeight: 600 }}>
+                            {formatCurrency(Number(row.estimatedObsolescenceExposure || 0))}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {sortedInventoryAgingRows.length === 0 && (
+                      <tr>
+                        <td colSpan={11} style={{ padding: '14px', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
+                          No aging proxy rows match your search for the selected range yet.
                         </td>
                       </tr>
-                    );
-                  })}
-                  {inventoryAgingRows.length === 0 && (
-                    <tr>
-                      <td colSpan={11} style={{ padding: '14px', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
-                        No aging proxy rows available for the selected range yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
+                    )}
+                  </tbody>
+                )}
               </table>
             </div>
           </div>

@@ -1095,6 +1095,31 @@ export async function GET(request: NextRequest) {
           acc[record.customerName].totalInvoices += record.invoiceCount;
           return acc;
         }, {} as Record<string, any>);
+        const fullWindowTopCustomers = await prisma.$queryRaw<
+          Array<{ name: string; totalRevenue: number; totalInvoices: number }>
+        >`
+          SELECT
+            COALESCE(NULLIF(TRIM("customerName"), ''), 'Unknown Customer') AS name,
+            SUM(COALESCE("revenue", 0))::double precision AS "totalRevenue",
+            SUM(COALESCE("invoiceCount", 0))::double precision AS "totalInvoices"
+          FROM "CustomerSalesSnapshot"
+          WHERE "companyId" = ${companyId}
+            AND "frequency" = ${frequency}
+            AND "snapshotDate" >= ${startDate}
+            AND "snapshotDate" <= ${endDate}
+          GROUP BY 1
+          ORDER BY "totalRevenue" DESC
+          LIMIT 10
+        `;
+        const topCustomersSummary = fullWindowTopCustomers.length
+          ? fullWindowTopCustomers.map((row) => ({
+              name: String(row.name || 'Unknown Customer'),
+              totalRevenue: Number(row.totalRevenue || 0),
+              totalInvoices: Number(row.totalInvoices || 0),
+            }))
+          : Object.values(customerTotals)
+              .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
+              .slice(0, 10);
 
         if (!data.length && shouldUseMockData) {
           return NextResponse.json(
@@ -1113,9 +1138,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           records: data,
           summary: {
-            topCustomers: Object.values(customerTotals)
-              .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
-              .slice(0, 10),
+            topCustomers: topCustomersSummary,
             bookings: {
               totals: bookingsTotals,
               top5: bookingsTop5,
@@ -1135,7 +1158,16 @@ export async function GET(request: NextRequest) {
         if (isQuickBooksCompany && frequency !== 'monthly') {
           arFrequencyForQuery = 'monthly';
         }
-        data = [];
+        data = await prisma.aRAgingSnapshot.findMany({
+          where: {
+            companyId,
+            frequency: arFrequencyForQuery,
+            snapshotDate: dateFilter,
+          },
+          orderBy: { snapshotDate: 'desc' },
+          take: limit,
+        });
+        const useArSnapshotFirstResponse = data.length > 0;
 
         let unpaidByCustomer: Array<{
           customerId: string;
@@ -1764,7 +1796,9 @@ export async function GET(request: NextRequest) {
           ORDER BY b."snapshotDate" DESC
           LIMIT ${Math.max(limit, 365)}
         `;
-          data = arTrendFromOpenRows;
+          if (!useArSnapshotFirstResponse) {
+            data = arTrendFromOpenRows;
+          }
 
           if (openRowsInvoiceLike.length > 0) {
           const openRowsEligible = openRowsInvoiceLike;
@@ -2480,48 +2514,9 @@ export async function GET(request: NextRequest) {
         });
 
         if (latestOpenBillsSnapshotDate?.snapshotDate) {
-          const apPaymentsForNetting = await (prisma as any).aPPaymentFact.findMany({
-            where: {
-              companyId,
-              paymentDate: {
-                gte: apPaymentLookbackStart,
-                lte: endDate,
-              },
-            },
-            select: {
-              vendorName: true,
-              billNo: true,
-              paymentDate: true,
-              paidAmountHome: true,
-              sourceProgram: true,
-            },
-            orderBy: [{ paymentDate: 'desc' }],
-            take: apPaymentRowCap,
-          });
-          const apOpenItemSignalRows = await (prisma as any).aPPaymentFact.findMany({
-            where: {
-              companyId,
-              paymentDate: {
-                gte: apPaymentLookbackStart,
-                lte: endDate,
-              },
-              sourceProgram: {
-                contains: 'SLAptrxps',
-                mode: 'insensitive',
-              },
-            },
-            select: {
-              vendorName: true,
-              billNo: true,
-              paymentDate: true,
-            },
-            orderBy: [{ paymentDate: 'desc' }],
-            take: apPaymentRowCap,
-          });
+          const apOpenItemSignalRows: Array<{ vendorName: string | null; billNo: string | null; paymentDate: Date | null }> = [];
           const normalizeVendorBillKey = (vendorName: unknown, billNo: unknown) =>
             `${String(vendorName || 'Unknown Vendor').trim().toUpperCase()}|${String(billNo || '').trim().toUpperCase()}`;
-          const seenPaymentSignatures = new Set<string>();
-          const appliedByVendorBill = new Map<string, number>();
           const openItemFirstSeenByBill = new Map<string, Date>();
           const openItemLastSeenByBill = new Map<string, Date>();
           for (const signalRow of apOpenItemSignalRows) {
@@ -2539,24 +2534,7 @@ export async function GET(request: NextRequest) {
               openItemLastSeenByBill.set(billKey, signalDate);
             }
           }
-          const useOpenItemFilter = openItemFirstSeenByBill.size > 0;
-          for (const paymentRow of apPaymentsForNetting) {
-            const billNo = String(paymentRow.billNo || '').trim();
-            if (!billNo) continue;
-            const billKey = normalizeVendorBillKey(paymentRow.vendorName, billNo);
-            const paidAmountHome = Number(paymentRow.paidAmountHome || 0);
-            if (!Number.isFinite(paidAmountHome) || paidAmountHome <= 0) continue;
-            const paymentDateIso = paymentRow.paymentDate ? new Date(paymentRow.paymentDate).toISOString() : '';
-            const signature = [
-              billKey,
-              paymentDateIso,
-              String(paymentRow.sourceProgram || ''),
-              paidAmountHome.toFixed(6),
-            ].join('|');
-            if (seenPaymentSignatures.has(signature)) continue;
-            seenPaymentSignatures.add(signature);
-            appliedByVendorBill.set(billKey, Number(appliedByVendorBill.get(billKey) || 0) + paidAmountHome);
-          }
+          const useOpenItemFilter = false;
 
           const openBillRows = await (prisma as any).aPOpenBillSnapshot.findMany({
             where: {
@@ -2569,11 +2547,9 @@ export async function GET(request: NextRequest) {
           });
           const nettedOpenBillRows = openBillRows.map((row: any) => {
             const grossAmount = Number(row.amountDueHome || 0);
-            const billKey = normalizeVendorBillKey(row.vendorName, row.billNo);
-            const paidApplied = Number(appliedByVendorBill.get(billKey) || 0);
-            const netAmount = Math.max(grossAmount - paidApplied, 0);
-            const openSignalDate = openItemLastSeenByBill.get(billKey) || null;
-            const openItemEligible = !useOpenItemFilter || Boolean(openSignalDate);
+            const netAmount = Math.max(grossAmount, 0);
+            const openSignalDate = null;
+            const openItemEligible = true;
             return {
               ...row,
               netAmountDueHome: netAmount,
@@ -2637,42 +2613,7 @@ export async function GET(request: NextRequest) {
               })
             : [];
           if (trendOpenRows.length) {
-            const trendPaymentsRaw = await (prisma as any).aPPaymentFact.findMany({
-              where: {
-                companyId,
-                paymentDate: {
-                  lte: endDate,
-                },
-              },
-              select: {
-                vendorName: true,
-                billNo: true,
-                paymentDate: true,
-                paidAmountHome: true,
-                sourceProgram: true,
-              },
-              orderBy: [{ paymentDate: 'asc' }],
-            });
-            const trendSeenSignatures = new Set<string>();
-            const trendPayments = trendPaymentsRaw
-              .map((row: any) => {
-                const billNo = String(row.billNo || '').trim();
-                if (!billNo) return null;
-                const amount = Number(row.paidAmountHome || 0);
-                const paymentDate = row.paymentDate ? new Date(row.paymentDate) : null;
-                if (!paymentDate || Number.isNaN(paymentDate.getTime()) || !Number.isFinite(amount) || amount <= 0) return null;
-                const billKey = normalizeVendorBillKey(row.vendorName, billNo);
-                const signature = [
-                  billKey,
-                  paymentDate.toISOString(),
-                  String(row.sourceProgram || ''),
-                  amount.toFixed(6),
-                ].join('|');
-                if (trendSeenSignatures.has(signature)) return null;
-                trendSeenSignatures.add(signature);
-                return { billKey, paymentDate, amount };
-              })
-              .filter((row: any): row is { billKey: string; paymentDate: Date; amount: number } => Boolean(row));
+            const trendPayments: Array<{ billKey: string; paymentDate: Date; amount: number }> = [];
 
             const rowsBySnapshot = new Map<string, Array<any>>();
             for (const row of trendOpenRows) {
@@ -2721,10 +2662,8 @@ export async function GET(request: NextRequest) {
                 const grossAmount = Number(row.amountDueHome || 0);
                 if (!Number.isFinite(grossAmount) || grossAmount <= 0) continue;
                 const billKey = normalizeVendorBillKey(row.vendorName, row.billNo);
-                const firstSeen = openItemFirstSeenByBill.get(billKey);
-                if (useOpenItemFilter && (!firstSeen || firstSeen.getTime() > snapshotDate.getTime())) continue;
-                const paidApplied = Number(cumulativeAppliedByBill.get(billKey) || 0);
-                const openAmount = Math.max(grossAmount - paidApplied, 0);
+                const firstSeen = openItemFirstSeenByBill.get(billKey) || null;
+                const openAmount = Math.max(grossAmount, 0);
                 if (openAmount <= OPEN_AMOUNT_EPSILON) continue;
                 const ageCandidates = [row.dueDate, row.billDate, firstSeen]
                   .map((value: any) => (value ? new Date(value) : null))
@@ -3274,6 +3213,52 @@ export async function GET(request: NextRequest) {
           acc[record.itemName].totalQuantity += record.quantitySold;
           return acc;
         }, {} as Record<string, any>);
+        const fullWindowTopProducts = await prisma.$queryRaw<
+          Array<{
+            name: string;
+            sku: string | null;
+            totalRevenue: number;
+            totalCogs: number;
+            totalQuantity: number;
+          }>
+        >`
+          SELECT
+            COALESCE(NULLIF(TRIM("itemName"), ''), 'Unknown Item') AS name,
+            NULLIF(MAX(TRIM(COALESCE("sku", ''))), '') AS sku,
+            SUM(COALESCE("revenue", 0))::double precision AS "totalRevenue",
+            SUM(COALESCE("cogs", 0))::double precision AS "totalCogs",
+            SUM(COALESCE("quantitySold", 0))::double precision AS "totalQuantity"
+          FROM "ProductSalesSnapshot"
+          WHERE "companyId" = ${companyId}
+            AND "frequency" = ${frequency}
+            AND "snapshotDate" >= ${startDate}
+            AND "snapshotDate" <= ${endDate}
+          GROUP BY 1
+          ORDER BY "totalRevenue" DESC
+          LIMIT 10
+        `;
+        const topProductsSummary = fullWindowTopProducts.length
+          ? fullWindowTopProducts.map((row) => {
+              const totalRevenue = Number(row.totalRevenue || 0);
+              const totalCogs = Number(row.totalCogs || 0);
+              return {
+                name: String(row.name || 'Unknown Item'),
+                sku: row.sku || null,
+                totalRevenue,
+                totalCogs,
+                totalQuantity: Number(row.totalQuantity || 0),
+                grossMargin: totalRevenue - totalCogs,
+                grossMarginPct: totalRevenue > 0 ? ((totalRevenue - totalCogs) / totalRevenue) * 100 : 0,
+              };
+            })
+          : Object.values(productTotals)
+              .map((p: any) => ({
+                ...p,
+                grossMargin: p.totalRevenue - p.totalCogs,
+                grossMarginPct: p.totalRevenue > 0 ? ((p.totalRevenue - p.totalCogs) / p.totalRevenue) * 100 : 0,
+              }))
+              .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
+              .slice(0, 10);
 
         if (!data.length && shouldUseMockData) {
           return NextResponse.json(
@@ -3292,14 +3277,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           records: data,
           summary: {
-            topProducts: Object.values(productTotals)
-              .map((p: any) => ({
-                ...p,
-                grossMargin: p.totalRevenue - p.totalCogs,
-                grossMarginPct: p.totalRevenue > 0 ? ((p.totalRevenue - p.totalCogs) / p.totalRevenue) * 100 : 0,
-              }))
-              .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
-              .slice(0, 10),
+            topProducts: topProductsSummary,
           },
         });
 
@@ -3685,8 +3663,10 @@ export async function GET(request: NextRequest) {
                 }
               }
               const qty = Math.max(0, Number(line.qtyInvoiced || 0));
-              const eventDateRaw = line.orderDate ? new Date(line.orderDate) : line.snapshotDate ? new Date(line.snapshotDate) : null;
-              if (eventDateRaw) {
+              // "Last Sale Date" should be based on an actual sold/shipped event.
+              // Do not use snapshotDate fallback because it can misrepresent recency.
+              const eventDateRaw = line.orderDate ? new Date(line.orderDate) : null;
+              if (eventDateRaw && qty > 0) {
                 const eventUtc = new Date(
                   Date.UTC(eventDateRaw.getUTCFullYear(), eventDateRaw.getUTCMonth(), eventDateRaw.getUTCDate())
                 );
@@ -3745,7 +3725,34 @@ export async function GET(request: NextRequest) {
           totalValue: latestInventoryBySku.reduce((sum, item) => sum + Number(item.assetValue || 0), 0),
           itemCount: latestInventoryBySku.length,
           topItems: latestInventoryBySku.slice(0, 10),
+          top5InventoryValue: 0,
+          totalObsolescenceExposure: 0,
+          inventoryTurnover: null as number | null,
         };
+        inventoryMetrics.top5InventoryValue = [...latestInventoryBySku]
+          .sort((a, b) => Number(b.assetValue || 0) - Number(a.assetValue || 0))
+          .slice(0, 5)
+          .reduce((sum, item) => sum + Number(item.assetValue || 0), 0);
+        inventoryMetrics.totalObsolescenceExposure = (Array.isArray(agingReport) ? agingReport : []).reduce(
+          (sum: number, row: any) => sum + Number(row?.estimatedObsolescenceExposure || 0),
+          0
+        );
+        const avgInventoryValue = inventoryTrendDaily.length
+          ? inventoryTrendDaily.reduce((sum, point) => sum + Number(point.assetValue || 0), 0) / inventoryTrendDaily.length
+          : Number(inventoryMetrics.totalValue || 0);
+        const inventoryCogsAgg = await prisma.productSalesSnapshot.aggregate({
+          where: {
+            companyId,
+            frequency: 'daily',
+            snapshotDate: dateFilter,
+          },
+          _sum: {
+            cogs: true,
+          },
+        });
+        const periodCogs = Number(inventoryCogsAgg?._sum?.cogs || 0);
+        inventoryMetrics.inventoryTurnover =
+          periodCogs > 0 && avgInventoryValue > 0 ? periodCogs / avgInventoryValue : null;
 
         // Real-data only for inventory: do not return mock payloads.
         // If no inventory snapshots exist yet, return an empty real response.
@@ -3757,6 +3764,9 @@ export async function GET(request: NextRequest) {
               totalValue: 0,
               itemCount: 0,
               topItems: [],
+              top5InventoryValue: 0,
+              totalObsolescenceExposure: 0,
+              inventoryTurnover: null,
             },
           });
         }
@@ -3959,7 +3969,9 @@ export async function GET(request: NextRequest) {
               // Some CSI accounts only appear in sparse spot snapshots (e.g. a few days)
               // while synthetic series can provide full-period continuity from anchors.
               const observedLooksSparse = observedCoverageRatio < 0.5 && syntheticDays > observedDays;
-              if ((observedLooksFlat && syntheticVariation > observedVariation) || observedLooksSparse) {
+              // Flat observed account balances are often stale carry-forward artifacts in
+              // historical windows. Prefer movement-based reconstruction whenever present.
+              if (observedLooksFlat || observedLooksSparse || syntheticVariation > observedVariation) {
                 selectedRows = syntheticRows;
               }
             }
