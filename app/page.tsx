@@ -45,7 +45,7 @@ const DailyAlertsView = dynamic(() => import('./components/operations/DailyAlert
 const DataRoomView = dynamic(() => import('./components/dataroom/DataRoomView'), { ssr: false });
 
 const Header = dynamic(() => import('./components/layout/Header'), { ssr: false });
-const SiteAdminDashboard = dynamic(() => import('./components/siteadmin/SiteAdminDashboard'), { ssr: false });
+import SiteAdminDashboard from './components/siteadmin/SiteAdminDashboard';
 import { renderColumnSelector as renderColumnSelectorUtil } from './utils/import-helpers';
 import { saveProjectionDefaults as saveProjectionDefaultsUtil } from './utils/projection-helpers';
 const MAWelcomeView = dynamic(() => import('./components/assessment/MAWelcomeView'), { ssr: false });
@@ -968,6 +968,7 @@ function FinancialScorePage() {
   });
   const [valuationSelectionSaveStatus, setValuationSelectionSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [valuationSectionPreview, setValuationSectionPreview] = useState<{ id: string; title: string; content: string } | null>(null);
+  const [pendingRichValuationPrint, setPendingRichValuationPrint] = useState(false);
   const [valuationSectionExpanded, setValuationSectionExpanded] = useState<Record<string, boolean>>({
     '1': false,
     '2': false,
@@ -983,6 +984,45 @@ function FinancialScorePage() {
     '12': false,
     '13': false,
   });
+
+  useEffect(() => {
+    const CHUNK_RELOAD_KEY = '__corelytics_chunk_reload_once__';
+    const chunkPattern = /ChunkLoadError|Loading chunk .* failed|Failed to fetch dynamically imported module|_next\/static\/chunks/i;
+
+    const reloadOnce = () => {
+      try {
+        if (sessionStorage.getItem(CHUNK_RELOAD_KEY)) return;
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+      } catch {
+        // Ignore storage issues and still try reloading
+      }
+      window.location.reload();
+    };
+
+    const onWindowError = (event: ErrorEvent) => {
+      const message = String(event?.message || event?.error?.message || '');
+      if (chunkPattern.test(message)) {
+        reloadOnce();
+      }
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason: any = event?.reason;
+      const message = typeof reason === 'string' ? reason : String(reason?.message || reason || '');
+      if (chunkPattern.test(message)) {
+        event.preventDefault?.();
+        reloadOnce();
+      }
+    };
+
+    window.addEventListener('error', onWindowError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', onWindowError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+    };
+  }, []);
+
   useEffect(() => {
     if (!selectedCompanyId) return;
     try {
@@ -1003,6 +1043,16 @@ function FinancialScorePage() {
       console.warn('Failed to load saved valuation report selections:', error);
     }
   }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (!pendingRichValuationPrint || !valuationSectionPreview) return;
+    if (!['5', '6', '7'].includes(valuationSectionPreview.id)) return;
+    const timer = window.setTimeout(() => {
+      window.print();
+      setPendingRichValuationPrint(false);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [pendingRichValuationPrint, valuationSectionPreview]);
   
   // State - Dashboard Customization
   const [selectedDashboardWidgets, setSelectedDashboardWidgets] = useState<string[]>([]);
@@ -10210,6 +10260,12 @@ function FinancialScorePage() {
   }, [buildValuationSectionReportText]);
   const handleValuationSectionPrint = useCallback(
     (sectionId: string, sectionTitle: string) => {
+      if (['5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
+        const content = buildValuationSectionReportText(sectionId, sectionTitle);
+        setValuationSectionPreview({ id: sectionId, title: sectionTitle, content });
+        setPendingRichValuationPrint(true);
+        return;
+      }
       const content = buildValuationSectionReportText(sectionId, sectionTitle);
       const popup = window.open('', '_blank', 'width=900,height=700');
       if (!popup) {
@@ -10230,7 +10286,13 @@ function FinancialScorePage() {
       popup.focus();
       popup.print();
     },
-    [buildValuationSectionReportText, buildStyledValuationReportHtml, buildStyledValuationReportPaginatedHtml, buildHistoricalFinancialSummaryReportHtml]
+    [
+      buildValuationSectionReportText,
+      buildStyledValuationReportHtml,
+      buildStyledValuationReportPaginatedHtml,
+      buildHistoricalFinancialSummaryReportHtml,
+      sdeValuationReportPreviewModel,
+    ]
   );
   const handleValuationSectionDownload = useCallback((sectionId: string, sectionTitle: string) => {
     let content = buildValuationSectionReportText(sectionId, sectionTitle);
@@ -15732,6 +15794,7 @@ function FinancialScorePage() {
 
       {valuationSectionPreview && (
         <div
+          className="valuation-rich-print-modal"
           onClick={() => setValuationSectionPreview(null)}
           style={{
             position: 'fixed',
@@ -15745,6 +15808,7 @@ function FinancialScorePage() {
           }}
         >
           <div
+            className="valuation-rich-print-card"
             onClick={(e) => e.stopPropagation()}
             style={{
               width: 'min(1200px, 96vw)',
@@ -15757,7 +15821,36 @@ function FinancialScorePage() {
               padding: '16px',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+            <style>{`
+              @media print {
+                body * {
+                  visibility: hidden !important;
+                }
+                .valuation-rich-print-modal,
+                .valuation-rich-print-modal * {
+                  visibility: visible !important;
+                }
+                .valuation-rich-print-modal {
+                  position: fixed !important;
+                  inset: 0 !important;
+                  padding: 0 !important;
+                  background: #ffffff !important;
+                }
+                .valuation-rich-print-card {
+                  width: 100% !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                  border-radius: 0 !important;
+                  padding: 0 !important;
+                }
+                .valuation-rich-print-hide {
+                  display: none !important;
+                }
+              }
+            `}</style>
+            <div className="valuation-rich-print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
               <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>Section Preview: {valuationSectionPreview.title}</div>
               <button
                 onClick={() => setValuationSectionPreview(null)}

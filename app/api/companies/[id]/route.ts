@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditCompanyOperation, auditForbiddenAccess } from '@/lib/audit-logger';
-
-const prisma = new PrismaClient();
+import prisma from '@/lib/prisma';
 
 // MANUAL WORKAROUND: If you need to delete companies immediately,
 // you can run this SQL directly in your database:
@@ -71,8 +69,6 @@ export async function PATCH(
       success: false,
       error: error.message
     }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -178,12 +174,6 @@ export async function DELETE(
       success: false,
       error: error.message || 'Delete operation failed',
     }, { status: 500 });
-  } finally {
-    try {
-      await prisma.$disconnect();
-    } catch (e) {
-      // Ignore disconnect errors
-    }
   }
 }
 
