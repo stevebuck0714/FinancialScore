@@ -58,6 +58,7 @@ import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
 import type { SdeExecutiveFinancialSummary, SdeExecutiveSummary, SdeRecommendation } from '@/lib/sde-recommendations';
+import { buildSdeValuationPreviewModel } from '@/lib/sde-valuation-preview-model';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
 const LOBManager = dynamic(() => import('./components/dashboard/LOBManager'), { ssr: false });
 const AggregatedFinancialsTab = dynamic(() => import('./components/AggregatedFinancialsTab'), { ssr: false });
@@ -73,6 +74,9 @@ const FocusBoard = dynamic(() => import('./components/performance-analytics/Focu
 const TrendExplorer = dynamic(() => import('./components/performance-analytics/TrendExplorer'), { ssr: false });
 const AnomalyInbox = dynamic(() => import('./components/performance-analytics/AnomalyInbox'), { ssr: false });
 const OpportunityWorkspace = dynamic(() => import('./components/performance-analytics/OpportunityWorkspace'), { ssr: false });
+const ValuationSdeSection5Preview = dynamic(() => import('./components/valuation/ValuationSdeSection5Preview'), { ssr: false });
+const ValuationEbitdaSection6Preview = dynamic(() => import('./components/valuation/ValuationEbitdaSection6Preview'), { ssr: false });
+const ValuationDcfSection7Preview = dynamic(() => import('./components/valuation/ValuationDcfSection7Preview'), { ssr: false });
 const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
 const FinancialScoreView = dynamic(() => import('./components/FinancialScoreView'), { ssr: false });
 import GoalsView from './components/GoalsView';
@@ -938,9 +942,21 @@ function FinancialScorePage() {
     wc_normalizedWorkingCapital: true,
     wc_arapAnalysis: true,
     wc_cashConversion: true,
-    vm_sdeValuation: true,
-    vm_ebitdaValuation: true,
-    vm_dcfValuation: true,
+    sde_executiveSummary: true,
+    sde_ebitdaAdjustments: true,
+    sde_revenueQuality: true,
+    sde_customerQuality: true,
+    sde_workingCapital: true,
+    sde_cashFlowQuality: true,
+    sde_balanceSheetQuality: true,
+    ebitda_revenueQuality: true,
+    ebitda_customerMixConcentration: true,
+    ebitda_cashFlowQuality: true,
+    ebitda_balanceSheetQuality: true,
+    dcf_workingCapital: true,
+    dcf_cashFlowQuality: true,
+    dcf_revenueDurability: true,
+    dcf_balanceSheetQuality: true,
     vs_methodComparison: true,
     vs_finalValueRange: true,
     ra_keyRisks: true,
@@ -960,10 +976,12 @@ function FinancialScorePage() {
     '5': false,
     '6': false,
     '7': false,
+    '8': false,
     '9': false,
     '10': false,
     '11': false,
     '12': false,
+    '13': false,
   });
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -8815,6 +8833,18 @@ function FinancialScorePage() {
     growth_24mo,
     businessOverviewCustomerConcentration,
   ]);
+  const sdeValuationReportPreviewModel = useMemo(
+    () =>
+      buildSdeValuationPreviewModel({
+        monthly: monthly as MonthlyDataRow[],
+        sdeManualInputs,
+        sdeMultiplier,
+        industrySectorCategory,
+        companyIndustrySectorCategory: company?.industrySectorCategory,
+        customerQualityRecords,
+      }),
+    [monthly, sdeManualInputs, sdeMultiplier, industrySectorCategory, company?.industrySectorCategory, customerQualityRecords],
+  );
   const valuationSectionDefinitions = useMemo(() => ([
     {
       id: '1',
@@ -8851,7 +8881,49 @@ function FinancialScorePage() {
     },
     {
       id: '4',
-      title: '4. Quality of Earnings',
+      title: '4. Working Capital Analysis',
+      rows: [
+        { key: 'wc_normalizedWorkingCapital', label: 'Normalized Working Capital' },
+        { key: 'wc_arapAnalysis', label: 'AR/AP Analysis' },
+        { key: 'wc_cashConversion', label: 'Cash Conversion' },
+      ],
+    },
+    {
+      id: '5',
+      title: '5. SDE Valuation',
+      rows: [
+        { key: 'sde_executiveSummary', label: 'Executive Summary' },
+        { key: 'sde_ebitdaAdjustments', label: 'EBITDA Adjustments' },
+        { key: 'sde_revenueQuality', label: 'Revenue Quality' },
+        { key: 'sde_customerQuality', label: 'Customer Quality' },
+        { key: 'sde_workingCapital', label: 'Working Capital' },
+        { key: 'sde_cashFlowQuality', label: 'Cash Flow Quality' },
+        { key: 'sde_balanceSheetQuality', label: 'Balance Sheet Quality' },
+      ],
+    },
+    {
+      id: '6',
+      title: '6. EBITDA Valuation',
+      rows: [
+        { key: 'ebitda_revenueQuality', label: 'Revenue Quality' },
+        { key: 'ebitda_customerMixConcentration', label: 'Customer Mix / Concentration' },
+        { key: 'ebitda_cashFlowQuality', label: 'Cash Flow Quality' },
+        { key: 'ebitda_balanceSheetQuality', label: 'Balance Sheet Quality' },
+      ],
+    },
+    {
+      id: '7',
+      title: '7. DCF Valuation',
+      rows: [
+        { key: 'dcf_workingCapital', label: 'Working Capital' },
+        { key: 'dcf_cashFlowQuality', label: 'Cash Flow Quality' },
+        { key: 'dcf_revenueDurability', label: 'Revenue Durability' },
+        { key: 'dcf_balanceSheetQuality', label: 'Balance Sheet Quality' },
+      ],
+    },
+    {
+      id: '8',
+      title: '8. Quality of Earnings',
       rows: [
         { key: 'qoe_adjustments', label: 'EBITDA/SDE Adjustments' },
         { key: 'qoe_revenueQuality', label: 'Revenue Quality' },
@@ -8860,55 +8932,37 @@ function FinancialScorePage() {
       ],
     },
     {
-      id: '5',
-      title: '5. Working Capital Analysis',
-      rows: [
-        { key: 'wc_normalizedWorkingCapital', label: 'Normalized Working Capital' },
-        { key: 'wc_arapAnalysis', label: 'AR/AP Analysis' },
-        { key: 'wc_cashConversion', label: 'Cash Conversion' },
-      ],
-    },
-    {
-      id: '6',
-      title: '6. Valuation Methodologies',
-      rows: [
-        { key: 'vm_sdeValuation', label: 'SDE Valuation (+/- 10%)' },
-        { key: 'vm_ebitdaValuation', label: 'EBITDA Valuation (+/- 10%)' },
-        { key: 'vm_dcfValuation', label: 'DCF Valuation (Inputs +/- 10%)' },
-      ],
-    },
-    {
-      id: '7',
-      title: '7. Valuation Summary',
+      id: '9',
+      title: '9. Valuation Summary',
       rows: [
         { key: 'vs_methodComparison', label: 'Method Comparison (SDE/EBITDA/DCF)' },
         { key: 'vs_finalValueRange', label: 'Final Value Range' },
       ],
     },
     {
-      id: '9',
-      title: '9. Risk Analysis',
+      id: '10',
+      title: '10. Risk Analysis',
       rows: [
         { key: 'ra_keyRisks', label: 'Key Risks' },
         { key: 'ra_mitigation', label: 'Mitigation' },
       ],
     },
     {
-      id: '10',
-      title: '10. Growth Opportunities',
+      id: '11',
+      title: '11. Growth Opportunities',
       rows: [
         { key: 'go_expansionOpportunities', label: 'Expansion Opportunities' },
         { key: 'go_operationalImprovements', label: 'Operational Improvements' },
       ],
     },
     {
-      id: '11',
-      title: '11. Data Room & Supporting Documents',
+      id: '12',
+      title: '12. Data Room & Supporting Documents',
       rows: [{ key: 'dr_documentsByCategory', label: 'Documents by Category' }],
     },
     {
-      id: '12',
-      title: '12. Appendix',
+      id: '13',
+      title: '13. Appendix',
       rows: [{ key: 'ap_detailedFinancials', label: 'Detailed Financials' }],
     },
   ]), []);
@@ -9459,7 +9513,7 @@ function FinancialScorePage() {
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
           <div style="font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Corelytics Valuation Report</div>
           <div style="font-size: 30px; color: #1e293b; font-weight: 800; margin-top: 4px;">3. Historical Financial Summary</div>
-          <div style="font-size: 13px; color: #475569; margin-top: 4px;">Company: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))}</div>
+          <div style="font-size: 17px; color: #475569; margin-top: 4px;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))}</div>
         </div>
         <div style="padding: 16px 18px;">
           ${sections.join('')}
@@ -9494,44 +9548,6 @@ function FinancialScorePage() {
     };
 
     if (sectionId === '4') {
-      const adjustments =
-        Number((sdeAnalysisTotalsState as any).totalAdjustments) ||
-        Number((sdeAnalysisTotalsState as any).qoeTotalAdjustments) ||
-        (valuationExecutiveOverview.ttmSde - valuationExecutiveOverview.ttmEbitda);
-      if (valuationBuilderSelections.qoe_adjustments) {
-        lines.push(`${rowLabel('qoe_adjustments', 'EBITDA/SDE Adjustments')}:`);
-        lines.push(`- Reported EBITDA baseline: ${money(valuationExecutiveOverview.ttmEbitda)}.`);
-        lines.push(`- Net normalization adjustments: ${money(adjustments)}.`);
-        lines.push(`- Normalized SDE proxy: ${money(valuationExecutiveOverview.ttmSde)}.`);
-        lines.push('');
-      }
-      if (valuationBuilderSelections.qoe_revenueQuality) {
-        const concentrationText = businessOverviewCustomerConcentration
-          ? `Top 1 concentration ${pct(businessOverviewCustomerConcentration.top1Pct)} and Top 5 concentration ${pct(businessOverviewCustomerConcentration.top5Pct)} indicate current customer dependency levels.`
-          : 'Customer concentration feed is unavailable, so revenue quality concentration could not be quantified in this export.';
-        lines.push(`${rowLabel('qoe_revenueQuality', 'Revenue Quality')}:`);
-        lines.push(`- ${concentrationText}`);
-        lines.push('');
-      }
-      if (valuationBuilderSelections.qoe_costStructure) {
-        const latestGrossMargin = historicalFinancialSummaryData.grossMarginByQuarter.at(-1) || 0;
-        const latestEbitdaMargin = historicalFinancialSummaryData.ebitdaMarginByQuarter.at(-1) || 0;
-        lines.push(`${rowLabel('qoe_costStructure', 'Cost Structure')}:`);
-        lines.push(`- Latest gross margin: ${pct(latestGrossMargin)}.`);
-        lines.push(`- Latest EBITDA margin: ${pct(latestEbitdaMargin)}.`);
-        lines.push('');
-      }
-      if (valuationBuilderSelections.qoe_score) {
-        const score = valuationExecutiveOverview.ttmEbitda !== 0
-          ? (valuationExecutiveOverview.ttmSde / valuationExecutiveOverview.ttmEbitda) * 100
-          : 0;
-        lines.push(`${rowLabel('qoe_score', 'QoE Score')}:`);
-        lines.push(`- Normalized earnings conversion ratio: ${pct(score)} (SDE / EBITDA).`);
-      }
-      return lines.join('\n');
-    }
-
-    if (sectionId === '5') {
       const recent12 = monthly.slice(-12);
       const avg = (arr: number[]) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
       const hasWcData = recent12.length > 0;
@@ -9572,35 +9588,367 @@ function FinancialScorePage() {
       return lines.join('\n');
     }
 
-    if (sectionId === '6') {
+    if (sectionId === '5') {
+      const VALUATION_PAGE_BREAK = '__VALUATION_PAGE_BREAK__';
       const sensitivity = (base: number) => ({
         low: base * 0.9,
         high: base * 1.1,
       });
-      if (valuationBuilderSelections.vm_sdeValuation) {
-        const range = sensitivity(valuationExecutiveOverview.sdeEstimatedValue);
-        lines.push(`${rowLabel('vm_sdeValuation', 'SDE Valuation (+/- 10%)')}:`);
-        lines.push(`- Base SDE valuation: ${money(valuationExecutiveOverview.sdeEstimatedValue)} at ${Number(sdeMultiplier).toFixed(2)}x.`);
-        lines.push(`- Sensitivity range: ${money(range.low)} to ${money(range.high)}.`);
-        lines.push('');
+      const sdeValRange = sensitivity(valuationExecutiveOverview.sdeEstimatedValue);
+      const recent12 = monthly.slice(-12);
+      const avg = (arr: number[]) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
+      const hasWcData = recent12.length > 0;
+      const avgAr = hasWcData ? avg(recent12.map((m: any) => Number(m?.ar) || 0)) : Number.NaN;
+      const avgInventory = hasWcData ? avg(recent12.map((m: any) => Number(m?.inventory) || 0)) : Number.NaN;
+      const avgAp = hasWcData ? avg(recent12.map((m: any) => Number(m?.ap) || 0)) : Number.NaN;
+      const normalizedWorkingCapital = hasWcData ? avgAr + avgInventory - avgAp : Number.NaN;
+      const latestMo = recent12.at(-1) as any;
+      const currentWorkingCapital = hasWcData
+        ? (Number(latestMo?.ar) || 0) + (Number(latestMo?.inventory) || 0) - (Number(latestMo?.ap) || 0)
+        : Number.NaN;
+      const wcAdjustment =
+        Number.isFinite(currentWorkingCapital) && Number.isFinite(normalizedWorkingCapital)
+          ? currentWorkingCapital - normalizedWorkingCapital
+          : Number.NaN;
+      const latestTrend = trendData.at(-1);
+      const ccc = latestTrend
+        ? (Number(latestTrend.daysInv) || 0) + (Number(latestTrend.daysAR) || 0) - (Number(latestTrend.daysAP) || 0)
+        : Number.NaN;
+      const ttmRevenue = recent12.reduce((s, m) => s + Number((m as any)?.revenue || 0), 0);
+      const fcfMargin =
+        ttmRevenue > 0 && Number.isFinite(valuationExecutiveOverview.ttmFreeCashFlow)
+          ? (valuationExecutiveOverview.ttmFreeCashFlow / ttmRevenue) * 100
+          : Number.NaN;
+      const fcfToEbitda =
+        Number.isFinite(valuationExecutiveOverview.ttmEbitda) && valuationExecutiveOverview.ttmEbitda !== 0
+          ? (valuationExecutiveOverview.ttmFreeCashFlow / valuationExecutiveOverview.ttmEbitda) * 100
+          : Number.NaN;
+      const adjustments =
+        Number((sdeAnalysisTotalsState as any).totalAdjustments) ||
+        Number((sdeAnalysisTotalsState as any).qoeTotalAdjustments) ||
+        (valuationExecutiveOverview.ttmSde - valuationExecutiveOverview.ttmEbitda);
+      const latestBs = latestMo;
+      const tca = Number(latestBs?.tca) || 0;
+      const tcl = Number(latestBs?.tcl) || 0;
+      const totalAssets = Number(latestBs?.totalAssets) || 0;
+      const totalLiab = Number(latestBs?.totalLiab) || 0;
+      const totalEquity = Number(latestBs?.totalEquity) || 0;
+      const cash = Number(latestBs?.cash) || 0;
+      const currentRatio = tcl > 0 ? tca / tcl : Number.NaN;
+      const debtToEquity = totalEquity > 0 ? totalLiab / totalEquity : Number.NaN;
+
+      const categoryChunks: string[] = [];
+
+      if (valuationBuilderSelections.sde_executiveSummary) {
+        const c: string[] = [];
+        c.push(`${rowLabel('sde_executiveSummary', 'Executive Summary')}:`);
+        c.push(`- Valuation (as of): ${valuationExecutiveOverview.valuationDateLabel}.`);
+        c.push(
+          `- Enterprise value range (all methods): ${money(valuationExecutiveOverview.enterpriseValueLow)} to ${money(valuationExecutiveOverview.enterpriseValueHigh)}.`
+        );
+        c.push(`- Primary indication (highest method): ${valuationExecutiveOverview.primaryMethod}.`);
+        c.push(`- TTM SDE: ${money(valuationExecutiveOverview.ttmSde)} at ${Number(sdeMultiplier).toFixed(2)}x.`);
+        c.push(`- Implied SDE-based value: ${money(valuationExecutiveOverview.sdeEstimatedValue)}.`);
+        c.push(`- SDE sensitivity (±10%): ${money(sdeValRange.low)} to ${money(sdeValRange.high)}.`);
+        categoryChunks.push(c.join('\n'));
       }
-      if (valuationBuilderSelections.vm_ebitdaValuation) {
-        const range = sensitivity(valuationExecutiveOverview.ebitdaEstimatedValue);
-        lines.push(`${rowLabel('vm_ebitdaValuation', 'EBITDA Valuation (+/- 10%)')}:`);
-        lines.push(`- Base EBITDA valuation: ${money(valuationExecutiveOverview.ebitdaEstimatedValue)} at ${Number(ebitdaMultiplier).toFixed(2)}x.`);
-        lines.push(`- Sensitivity range: ${money(range.low)} to ${money(range.high)}.`);
-        lines.push('');
+      if (valuationBuilderSelections.sde_ebitdaAdjustments) {
+        const c: string[] = [];
+        c.push(`${rowLabel('sde_ebitdaAdjustments', 'EBITDA Adjustments')}:`);
+        c.push(`- Reported EBITDA baseline: ${money(valuationExecutiveOverview.ttmEbitda)}.`);
+        c.push(`- Net normalization adjustments (to SDE): ${money(adjustments)}.`);
+        c.push(`- Normalized SDE: ${money(valuationExecutiveOverview.ttmSde)}.`);
+        categoryChunks.push(c.join('\n'));
       }
-      if (valuationBuilderSelections.vm_dcfValuation) {
-        const range = sensitivity(valuationExecutiveOverview.dcfEstimatedValue);
-        lines.push(`${rowLabel('vm_dcfValuation', 'DCF Valuation (Inputs +/- 10%)')}:`);
-        lines.push(`- Base DCF valuation: ${money(valuationExecutiveOverview.dcfEstimatedValue)} using discount ${Number(dcfDiscountRate).toFixed(2)}% and terminal growth ${Number(dcfTerminalGrowth).toFixed(2)}%.`);
-        lines.push(`- Sensitivity range: ${money(range.low)} to ${money(range.high)}.`);
+      if (valuationBuilderSelections.sde_revenueQuality) {
+        const mixPct = (v: number | null) => (v != null && Number.isFinite(Number(v)) ? pct(Number(v)) : 'N/A');
+        const c: string[] = [];
+        c.push(`${rowLabel('sde_revenueQuality', 'Revenue Quality')}:`);
+        c.push(`- 24-month revenue growth trend: ${pct(Number(growth_24mo) || 0)}.`);
+        c.push(`- Recurring revenue: ${mixPct(businessOverviewRevenueMix.recurring)}.`);
+        c.push(`- Contracted revenue: ${mixPct(businessOverviewRevenueMix.contracted)}.`);
+        c.push(`- Project-based revenue: ${mixPct(businessOverviewRevenueMix.projectBased)}.`);
+        c.push(`- Transactional / one-time revenue: ${mixPct(businessOverviewRevenueMix.transactional)}.`);
+        categoryChunks.push(c.join('\n'));
       }
+      if (valuationBuilderSelections.sde_customerQuality) {
+        const c: string[] = [];
+        c.push(`${rowLabel('sde_customerQuality', 'Customer Quality')}:`);
+        if (businessOverviewCustomerConcentration) {
+          c.push(
+            `- Top 1 customer: ${pct(businessOverviewCustomerConcentration.top1Pct)} of revenue; Top 5: ${pct(businessOverviewCustomerConcentration.top5Pct)} (${businessOverviewCustomerConcentration.customerCount} customers in cohort).`
+          );
+        } else {
+          c.push('- Customer concentration detail is unavailable for this export.');
+        }
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.sde_workingCapital) {
+        const c: string[] = [];
+        c.push(`${rowLabel('sde_workingCapital', 'Working Capital')}:`);
+        c.push(`- 12-month normalized operating working capital: ${money(normalizedWorkingCapital)}.`);
+        c.push(`- Current operating working capital: ${money(currentWorkingCapital)}.`);
+        c.push(
+          `- Adjustment vs normalized target: ${Number.isFinite(wcAdjustment) && wcAdjustment >= 0 ? '+' : ''}${money(wcAdjustment)}.`
+        );
+        c.push(
+          `- Cash conversion cycle (DSO + DIO - DPO): ${Number.isFinite(ccc) ? `${Number(ccc).toFixed(1)} days` : 'N/A'}.`
+        );
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.sde_cashFlowQuality) {
+        const c: string[] = [];
+        c.push(`${rowLabel('sde_cashFlowQuality', 'Cash Flow Quality')}:`);
+        c.push(`- TTM free cash flow: ${money(valuationExecutiveOverview.ttmFreeCashFlow)}.`);
+        c.push(`- FCF as % of TTM revenue: ${Number.isFinite(fcfMargin) ? pct(fcfMargin) : 'N/A'}.`);
+        c.push(`- FCF / EBITDA (cash conversion of earnings): ${Number.isFinite(fcfToEbitda) ? pct(fcfToEbitda) : 'N/A'}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.sde_balanceSheetQuality) {
+        const c: string[] = [];
+        c.push(`${rowLabel('sde_balanceSheetQuality', 'Balance Sheet Quality')}:`);
+        c.push(`- Latest total assets: ${money(totalAssets)}; total liabilities: ${money(totalLiab)}; equity: ${money(totalEquity)}.`);
+        c.push(`- Cash: ${money(cash)}.`);
+        c.push(`- Current ratio (TCA / TCL): ${Number.isFinite(currentRatio) ? currentRatio.toFixed(2) : 'N/A'}.`);
+        c.push(`- Liabilities / equity: ${Number.isFinite(debtToEquity) ? debtToEquity.toFixed(2) : 'N/A'}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+
+      lines.length = 0;
+      lines.push(section.title, '');
+      if (categoryChunks.length === 0) {
+        lines.push('No rows selected for this section.');
+        return lines.join('\n');
+      }
+      lines.push(categoryChunks.join(`\n${VALUATION_PAGE_BREAK}\n`));
+      return lines.join('\n');
+    }
+
+    if (sectionId === '6') {
+      const VALUATION_PAGE_BREAK = '__VALUATION_PAGE_BREAK__';
+      const recent12 = monthly.slice(-12);
+      const ttmRevenue = recent12.reduce((s, m) => s + Number((m as any)?.revenue || 0), 0);
+      const ebitdaMargin =
+        ttmRevenue > 0 && Number.isFinite(valuationExecutiveOverview.ttmEbitda)
+          ? (valuationExecutiveOverview.ttmEbitda / ttmRevenue) * 100
+          : Number.NaN;
+      const fcfToEbitda =
+        Number.isFinite(valuationExecutiveOverview.ttmEbitda) && valuationExecutiveOverview.ttmEbitda !== 0
+          ? (valuationExecutiveOverview.ttmFreeCashFlow / valuationExecutiveOverview.ttmEbitda) * 100
+          : Number.NaN;
+      const fcfMargin =
+        ttmRevenue > 0 && Number.isFinite(valuationExecutiveOverview.ttmFreeCashFlow)
+          ? (valuationExecutiveOverview.ttmFreeCashFlow / ttmRevenue) * 100
+          : Number.NaN;
+      const latestBs = recent12.at(-1) as any;
+      const tca = Number(latestBs?.tca) || 0;
+      const tcl = Number(latestBs?.tcl) || 0;
+      const totalAssets = Number(latestBs?.totalAssets) || 0;
+      const totalLiab = Number(latestBs?.totalLiab) || 0;
+      const totalEquity = Number(latestBs?.totalEquity) || 0;
+      const cash = Number(latestBs?.cash) || 0;
+      const currentRatio = tcl > 0 ? tca / tcl : Number.NaN;
+      const debtToEquity = totalEquity > 0 ? totalLiab / totalEquity : Number.NaN;
+
+      const categoryChunks: string[] = [];
+
+      if (valuationBuilderSelections.ebitda_revenueQuality) {
+        const mixPct = (v: number | null) => (v != null && Number.isFinite(Number(v)) ? pct(Number(v)) : 'N/A');
+        const c: string[] = [];
+        c.push(`${rowLabel('ebitda_revenueQuality', 'Revenue Quality')}:`);
+        c.push(`- 24-month revenue growth trend: ${pct(Number(growth_24mo) || 0)}.`);
+        c.push(`- Recurring revenue: ${mixPct(businessOverviewRevenueMix.recurring)}.`);
+        c.push(`- Contracted revenue: ${mixPct(businessOverviewRevenueMix.contracted)}.`);
+        c.push(`- Project-based revenue: ${mixPct(businessOverviewRevenueMix.projectBased)}.`);
+        c.push(`- Transactional / one-time revenue: ${mixPct(businessOverviewRevenueMix.transactional)}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.ebitda_customerMixConcentration) {
+        const c: string[] = [];
+        c.push(`${rowLabel('ebitda_customerMixConcentration', 'Customer Mix / Concentration')}:`);
+        if (businessOverviewCustomerConcentration) {
+          c.push(
+            `- Revenue concentration — Top 1: ${pct(businessOverviewCustomerConcentration.top1Pct)}; Top 5: ${pct(businessOverviewCustomerConcentration.top5Pct)}.`
+          );
+          c.push(`- Customers in analyzed cohort: ${businessOverviewCustomerConcentration.customerCount}.`);
+        } else {
+          c.push('- Customer mix / concentration detail is unavailable for this export.');
+        }
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.ebitda_cashFlowQuality) {
+        const c: string[] = [];
+        c.push(`${rowLabel('ebitda_cashFlowQuality', 'Cash Flow Quality')}:`);
+        c.push(`- TTM EBITDA: ${money(valuationExecutiveOverview.ttmEbitda)} (${Number(ebitdaMultiplier).toFixed(2)}x multiple → ${money(valuationExecutiveOverview.ebitdaEstimatedValue)} implied value).`);
+        c.push(`- EBITDA margin (TTM EBITDA / TTM revenue): ${Number.isFinite(ebitdaMargin) ? pct(ebitdaMargin) : 'N/A'}.`);
+        c.push(`- TTM free cash flow: ${money(valuationExecutiveOverview.ttmFreeCashFlow)}.`);
+        c.push(`- FCF as % of revenue: ${Number.isFinite(fcfMargin) ? pct(fcfMargin) : 'N/A'}.`);
+        c.push(`- FCF / EBITDA (conversion of EBITDA to cash): ${Number.isFinite(fcfToEbitda) ? pct(fcfToEbitda) : 'N/A'}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.ebitda_balanceSheetQuality) {
+        const c: string[] = [];
+        c.push(`${rowLabel('ebitda_balanceSheetQuality', 'Balance Sheet Quality')}:`);
+        c.push(`- Latest total assets: ${money(totalAssets)}; total liabilities: ${money(totalLiab)}; equity: ${money(totalEquity)}.`);
+        c.push(`- Cash: ${money(cash)}.`);
+        c.push(`- Current ratio (TCA / TCL): ${Number.isFinite(currentRatio) ? currentRatio.toFixed(2) : 'N/A'}.`);
+        c.push(`- Liabilities / equity: ${Number.isFinite(debtToEquity) ? debtToEquity.toFixed(2) : 'N/A'}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+
+      lines.length = 0;
+      lines.push(section.title, '');
+      if (categoryChunks.length === 0) {
+        lines.push('No rows selected for this section.');
+        return lines.join('\n');
+      }
+      lines.push(categoryChunks.join(`\n${VALUATION_PAGE_BREAK}\n`));
       return lines.join('\n');
     }
 
     if (sectionId === '7') {
+      const VALUATION_PAGE_BREAK = '__VALUATION_PAGE_BREAK__';
+      const sensitivity = (base: number) => ({
+        low: base * 0.9,
+        high: base * 1.1,
+      });
+      const dcfRange = sensitivity(valuationExecutiveOverview.dcfEstimatedValue);
+      const recent12 = monthly.slice(-12);
+      const avg = (arr: number[]) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
+      const hasWcData = recent12.length > 0;
+      const avgAr = hasWcData ? avg(recent12.map((m: any) => Number(m?.ar) || 0)) : Number.NaN;
+      const avgInventory = hasWcData ? avg(recent12.map((m: any) => Number(m?.inventory) || 0)) : Number.NaN;
+      const avgAp = hasWcData ? avg(recent12.map((m: any) => Number(m?.ap) || 0)) : Number.NaN;
+      const normalizedWorkingCapital = hasWcData ? avgAr + avgInventory - avgAp : Number.NaN;
+      const latestMo = recent12.at(-1) as any;
+      const currentWorkingCapital = hasWcData
+        ? (Number(latestMo?.ar) || 0) + (Number(latestMo?.inventory) || 0) - (Number(latestMo?.ap) || 0)
+        : Number.NaN;
+      const wcAdjustment =
+        Number.isFinite(currentWorkingCapital) && Number.isFinite(normalizedWorkingCapital)
+          ? currentWorkingCapital - normalizedWorkingCapital
+          : Number.NaN;
+      const latestTrend = trendData.at(-1);
+      const ccc = latestTrend
+        ? (Number(latestTrend.daysInv) || 0) + (Number(latestTrend.daysAR) || 0) - (Number(latestTrend.daysAP) || 0)
+        : Number.NaN;
+      const ttmRevenue = recent12.reduce((s, m) => s + Number((m as any)?.revenue || 0), 0);
+      const fcfMargin =
+        ttmRevenue > 0 && Number.isFinite(valuationExecutiveOverview.ttmFreeCashFlow)
+          ? (valuationExecutiveOverview.ttmFreeCashFlow / ttmRevenue) * 100
+          : Number.NaN;
+      const latestBs = latestMo;
+      const tca = Number(latestBs?.tca) || 0;
+      const tcl = Number(latestBs?.tcl) || 0;
+      const totalAssets = Number(latestBs?.totalAssets) || 0;
+      const totalLiab = Number(latestBs?.totalLiab) || 0;
+      const totalEquity = Number(latestBs?.totalEquity) || 0;
+      const cash = Number(latestBs?.cash) || 0;
+      const currentRatio = tcl > 0 ? tca / tcl : Number.NaN;
+      const debtToEquity = totalEquity > 0 ? totalLiab / totalEquity : Number.NaN;
+
+      const categoryChunks: string[] = [];
+
+      if (valuationBuilderSelections.dcf_workingCapital) {
+        const c: string[] = [];
+        c.push(`${rowLabel('dcf_workingCapital', 'Working Capital')}:`);
+        c.push(`- 12-month normalized operating working capital: ${money(normalizedWorkingCapital)}.`);
+        c.push(`- Current operating working capital: ${money(currentWorkingCapital)}.`);
+        c.push(
+          `- Adjustment vs normalized target: ${Number.isFinite(wcAdjustment) && wcAdjustment >= 0 ? '+' : ''}${money(wcAdjustment)}.`
+        );
+        c.push(`- Cash conversion cycle (DSO + DIO - DPO): ${Number.isFinite(ccc) ? `${Number(ccc).toFixed(1)} days` : 'N/A'}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.dcf_cashFlowQuality) {
+        const c: string[] = [];
+        c.push(`${rowLabel('dcf_cashFlowQuality', 'Cash Flow Quality')}:`);
+        c.push(`- TTM free cash flow (DCF starting point): ${money(valuationExecutiveOverview.ttmFreeCashFlow)}.`);
+        c.push(`- FCF as % of TTM revenue: ${Number.isFinite(fcfMargin) ? pct(fcfMargin) : 'N/A'}.`);
+        c.push(`- Discount rate: ${Number(dcfDiscountRate).toFixed(2)}%; terminal growth: ${Number(dcfTerminalGrowth).toFixed(2)}%.`);
+        c.push(`- Implied DCF value: ${money(valuationExecutiveOverview.dcfEstimatedValue)}.`);
+        c.push(`- Sensitivity (±10% on DCF result): ${money(dcfRange.low)} to ${money(dcfRange.high)}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.dcf_revenueDurability) {
+        const mixPct = (v: number | null) => (v != null && Number.isFinite(Number(v)) ? pct(Number(v)) : 'N/A');
+        const rec = businessOverviewRevenueMix.recurring;
+        const con = businessOverviewRevenueMix.contracted;
+        const durablePct =
+          rec != null && con != null && Number.isFinite(Number(rec)) && Number.isFinite(Number(con))
+            ? Number(rec) + Number(con)
+            : null;
+        const c: string[] = [];
+        c.push(`${rowLabel('dcf_revenueDurability', 'Revenue Durability')}:`);
+        c.push(`- 24-month revenue growth trend: ${pct(Number(growth_24mo) || 0)}.`);
+        c.push(
+          `- Estimated durable revenue (recurring + contracted): ${durablePct != null && Number.isFinite(durablePct) ? pct(durablePct) : 'N/A'}.`
+        );
+        c.push(`- Recurring revenue: ${mixPct(businessOverviewRevenueMix.recurring)}.`);
+        c.push(`- Contracted revenue: ${mixPct(businessOverviewRevenueMix.contracted)}.`);
+        c.push(`- Project-based revenue: ${mixPct(businessOverviewRevenueMix.projectBased)}.`);
+        c.push(`- Transactional / one-time revenue: ${mixPct(businessOverviewRevenueMix.transactional)}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+      if (valuationBuilderSelections.dcf_balanceSheetQuality) {
+        const c: string[] = [];
+        c.push(`${rowLabel('dcf_balanceSheetQuality', 'Balance Sheet Quality')}:`);
+        c.push(`- Latest total assets: ${money(totalAssets)}; total liabilities: ${money(totalLiab)}; equity: ${money(totalEquity)}.`);
+        c.push(`- Cash: ${money(cash)}.`);
+        c.push(`- Current ratio (TCA / TCL): ${Number.isFinite(currentRatio) ? currentRatio.toFixed(2) : 'N/A'}.`);
+        c.push(`- Liabilities / equity: ${Number.isFinite(debtToEquity) ? debtToEquity.toFixed(2) : 'N/A'}.`);
+        categoryChunks.push(c.join('\n'));
+      }
+
+      lines.length = 0;
+      lines.push(section.title, '');
+      if (categoryChunks.length === 0) {
+        lines.push('No rows selected for this section.');
+        return lines.join('\n');
+      }
+      lines.push(categoryChunks.join(`\n${VALUATION_PAGE_BREAK}\n`));
+      return lines.join('\n');
+    }
+
+    if (sectionId === '8') {
+      const adjustments =
+        Number((sdeAnalysisTotalsState as any).totalAdjustments) ||
+        Number((sdeAnalysisTotalsState as any).qoeTotalAdjustments) ||
+        (valuationExecutiveOverview.ttmSde - valuationExecutiveOverview.ttmEbitda);
+      if (valuationBuilderSelections.qoe_adjustments) {
+        lines.push(`${rowLabel('qoe_adjustments', 'EBITDA/SDE Adjustments')}:`);
+        lines.push(`- Reported EBITDA baseline: ${money(valuationExecutiveOverview.ttmEbitda)}.`);
+        lines.push(`- Net normalization adjustments: ${money(adjustments)}.`);
+        lines.push(`- Normalized SDE proxy: ${money(valuationExecutiveOverview.ttmSde)}.`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.qoe_revenueQuality) {
+        const concentrationText = businessOverviewCustomerConcentration
+          ? `Top 1 concentration ${pct(businessOverviewCustomerConcentration.top1Pct)} and Top 5 concentration ${pct(businessOverviewCustomerConcentration.top5Pct)} indicate current customer dependency levels.`
+          : 'Customer concentration feed is unavailable, so revenue quality concentration could not be quantified in this export.';
+        lines.push(`${rowLabel('qoe_revenueQuality', 'Revenue Quality')}:`);
+        lines.push(`- ${concentrationText}`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.qoe_costStructure) {
+        const latestGrossMargin = historicalFinancialSummaryData.grossMarginByQuarter.at(-1) || 0;
+        const latestEbitdaMargin = historicalFinancialSummaryData.ebitdaMarginByQuarter.at(-1) || 0;
+        lines.push(`${rowLabel('qoe_costStructure', 'Cost Structure')}:`);
+        lines.push(`- Latest gross margin: ${pct(latestGrossMargin)}.`);
+        lines.push(`- Latest EBITDA margin: ${pct(latestEbitdaMargin)}.`);
+        lines.push('');
+      }
+      if (valuationBuilderSelections.qoe_score) {
+        const score = valuationExecutiveOverview.ttmEbitda !== 0
+          ? (valuationExecutiveOverview.ttmSde / valuationExecutiveOverview.ttmEbitda) * 100
+          : 0;
+        lines.push(`${rowLabel('qoe_score', 'QoE Score')}:`);
+        lines.push(`- Normalized earnings conversion ratio: ${pct(score)} (SDE / EBITDA).`);
+      }
+      return lines.join('\n');
+    }
+
+    if (sectionId === '9') {
       const methods = [
         { label: 'SDE', value: valuationExecutiveOverview.sdeEstimatedValue },
         { label: 'EBITDA Multiple', value: valuationExecutiveOverview.ebitdaEstimatedValue },
@@ -9623,7 +9971,7 @@ function FinancialScorePage() {
       return lines.join('\n');
     }
 
-    if (sectionId === '9') {
+    if (sectionId === '10') {
       if (valuationBuilderSelections.ra_keyRisks) {
         const riskItems: string[] = [];
         if (businessOverviewCustomerConcentration) {
@@ -9642,7 +9990,7 @@ function FinancialScorePage() {
       return lines.join('\n');
     }
 
-    if (sectionId === '10') {
+    if (sectionId === '11') {
       const growthPct = Number(growth_24mo) || 0;
       const latestEbitdaMargin = historicalFinancialSummaryData.ebitdaMarginByQuarter.at(-1) || 0;
       if (valuationBuilderSelections.go_expansionOpportunities) {
@@ -9659,7 +10007,7 @@ function FinancialScorePage() {
       return lines.join('\n');
     }
 
-    if (sectionId === '11') {
+    if (sectionId === '12') {
       if (valuationBuilderSelections.dr_documentsByCategory) {
         lines.push(`${rowLabel('dr_documentsByCategory', 'Documents by Category')}:`);
         lines.push('- Financials: monthly/quarterly statements, trial balance exports, and normalization workpapers.');
@@ -9670,7 +10018,7 @@ function FinancialScorePage() {
       return lines.join('\n');
     }
 
-    if (sectionId === '12') {
+    if (sectionId === '13') {
       if (valuationBuilderSelections.ap_detailedFinancials) {
         lines.push(`${rowLabel('ap_detailedFinancials', 'Detailed Financials')}:`);
         lines.push(`- Quarters included: ${historicalFinancialSummaryData.quarters.map((q) => q.label).join(', ') || 'No quarter labels available'}.`);
@@ -9681,7 +10029,7 @@ function FinancialScorePage() {
     }
 
     return lines.join('\n');
-  }, [buildExecutiveSummaryReportText, buildBusinessOverviewReportText, buildHistoricalFinancialSummaryReportText, valuationSectionDefinitions, valuationBuilderSelections, indexToLetterLabel, sdeAnalysisTotalsState, valuationExecutiveOverview, businessOverviewCustomerConcentration, monthly, trendData, sdeMultiplier, ebitdaMultiplier, dcfDiscountRate, dcfTerminalGrowth, growth_24mo, historicalFinancialSummaryData]);
+  }, [buildExecutiveSummaryReportText, buildBusinessOverviewReportText, buildHistoricalFinancialSummaryReportText, valuationSectionDefinitions, valuationBuilderSelections, indexToLetterLabel, sdeAnalysisTotalsState, valuationExecutiveOverview, businessOverviewCustomerConcentration, businessOverviewRevenueMix, monthly, trendData, sdeMultiplier, ebitdaMultiplier, dcfDiscountRate, dcfTerminalGrowth, growth_24mo, historicalFinancialSummaryData]);
   const buildStyledValuationReportHtml = useCallback((content: string): string => {
     const escapeHtml = (value: string) =>
       value
@@ -9744,33 +10092,149 @@ function FinancialScorePage() {
       <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #ffffff;">
         <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
           <div style="font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Corelytics Valuation Report</div>
-          <div style="font-size: 13px; color: #475569; margin-top: 4px;">Company: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))}</div>
+          <div style="font-size: 17px; color: #475569; margin-top: 4px;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))}</div>
         </div>
         <div style="padding: 20px 22px;">${blocks.join('')}</div>
       </div>
     `;
   }, [companyName]);
+
+  const VALUATION_PAGE_BREAK_MARKER = '__VALUATION_PAGE_BREAK__';
+  const buildStyledValuationReportPaginatedHtml = useCallback(
+    (content: string): string => {
+      if (!content.includes(VALUATION_PAGE_BREAK_MARKER)) {
+        return buildStyledValuationReportHtml(content);
+      }
+      const escapeHtml = (value: string) =>
+        value
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+
+      const buildLabelValueRow = (label: string, value: string, margin: string) =>
+        `<div style="display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; margin: ${margin};">` +
+        `<div style="font-size: 16px; font-weight: 800; color: #1e293b; line-height: 1.6;">${escapeHtml(label)}:</div>` +
+        `<div style="font-size: 16px; color: #334155; line-height: 1.6; text-align: left;">${escapeHtml(value)}</div>` +
+        `</div>`;
+
+      const processLineLoop = (lineList: string[], firstLineMode: 'main' | 'category') => {
+        const blocks: string[] = [];
+        let headingRendered = false;
+        for (const rawLine of lineList) {
+          const line = rawLine || '';
+          const trimmed = line.trim();
+          if (!trimmed) {
+            blocks.push('<div style="height: 10px;"></div>');
+            continue;
+          }
+
+          if (!headingRendered) {
+            headingRendered = true;
+            if (firstLineMode === 'main') {
+              blocks.push(
+                `<div style="font-size: 34px; font-weight: 800; color: #0f172a; line-height: 1.2; margin: 0 0 16px 0;">${escapeHtml(trimmed)}</div>`
+              );
+            } else {
+              blocks.push(
+                `<div style="font-size: 20px; font-weight: 800; color: #1e293b; line-height: 1.35; margin: 0 0 8px 0;">${escapeHtml(trimmed)}</div>`
+              );
+            }
+            continue;
+          }
+
+          if (/^[^-].*:\s*$/.test(trimmed)) {
+            blocks.push(
+              `<div style="font-size: 20px; font-weight: 800; color: #1e293b; line-height: 1.35; margin: 18px 0 8px 0;">${escapeHtml(trimmed)}</div>`
+            );
+            continue;
+          }
+
+          if (/^- /.test(trimmed)) {
+            const itemText = trimmed.slice(2).trim();
+            const colonIndex = itemText.indexOf(':');
+            if (colonIndex > 0) {
+              const label = itemText.slice(0, colonIndex).trim();
+              const value = itemText.slice(colonIndex + 1).trim();
+              blocks.push(buildLabelValueRow(label, value, '4px 0'));
+            } else {
+              blocks.push(`<div style="font-size: 16px; color: #334155; line-height: 1.65; margin: 4px 0;">${escapeHtml(itemText)}</div>`);
+            }
+            continue;
+          }
+
+          const colonIndex = trimmed.indexOf(':');
+          if (colonIndex > 0) {
+            const label = trimmed.slice(0, colonIndex).trim();
+            const value = trimmed.slice(colonIndex + 1).trim();
+            blocks.push(buildLabelValueRow(label, value, '6px 0'));
+          } else {
+            blocks.push(`<div style="font-size: 16px; color: #334155; line-height: 1.65; margin: 6px 0;">${escapeHtml(trimmed)}</div>`);
+          }
+        }
+        return blocks.join('');
+      };
+
+      const segments = content
+        .split(VALUATION_PAGE_BREAK_MARKER)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const partsHtml: string[] = [];
+      segments.forEach((segment, idx) => {
+        const lineList = segment.split('\n');
+        const inner = processLineLoop(lineList, idx === 0 ? 'main' : 'category');
+        if (idx === 0) {
+          partsHtml.push(inner);
+        } else {
+          partsHtml.push(
+            `<div class="valuation-section-print-page" style="page-break-before: always; break-before: page;">${inner}</div>`
+          );
+        }
+      });
+
+      return `
+      <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #ffffff;">
+        <div style="padding: 18px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+          <div style="font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Corelytics Valuation Report</div>
+          <div style="font-size: 17px; color: #475569; margin-top: 4px;">Prepared for: <strong>${escapeHtml(companyName || 'Selected Company')}</strong> | Generated: ${escapeHtml(new Date().toLocaleDateString('en-US'))}</div>
+        </div>
+        <div style="padding: 20px 22px;">${partsHtml.join('')}</div>
+      </div>
+    `;
+    },
+    [companyName, buildStyledValuationReportHtml]
+  );
+
   const handleValuationSectionView = useCallback((sectionId: string, sectionTitle: string) => {
     const content = buildValuationSectionReportText(sectionId, sectionTitle);
     setValuationSectionPreview({ id: sectionId, title: sectionTitle, content });
   }, [buildValuationSectionReportText]);
-  const handleValuationSectionPrint = useCallback((sectionId: string, sectionTitle: string) => {
-    const content = buildValuationSectionReportText(sectionId, sectionTitle);
-    const popup = window.open('', '_blank', 'width=900,height=700');
-    if (!popup) {
-      alert('Please allow pop-ups to print this section.');
-      return;
-    }
-    const styledHtml = sectionId === '3'
-      ? buildHistoricalFinancialSummaryReportHtml()
-      : buildStyledValuationReportHtml(content);
-    popup.document.write(`<html><head><title>${sectionTitle}</title></head><body style="font-family: Arial, sans-serif; padding: 24px; background: #ffffff;">${styledHtml}</body></html>`);
-    popup.document.close();
-    popup.focus();
-    popup.print();
-  }, [buildValuationSectionReportText, buildStyledValuationReportHtml, buildHistoricalFinancialSummaryReportHtml]);
+  const handleValuationSectionPrint = useCallback(
+    (sectionId: string, sectionTitle: string) => {
+      const content = buildValuationSectionReportText(sectionId, sectionTitle);
+      const popup = window.open('', '_blank', 'width=900,height=700');
+      if (!popup) {
+        alert('Please allow pop-ups to print this section.');
+        return;
+      }
+      const styledHtml =
+        sectionId === '3'
+          ? buildHistoricalFinancialSummaryReportHtml()
+          : content.includes(VALUATION_PAGE_BREAK_MARKER)
+            ? buildStyledValuationReportPaginatedHtml(content)
+            : buildStyledValuationReportHtml(content);
+      const printCss = `@media print { .valuation-section-print-page { page-break-before: always !important; break-before: page !important; } }`;
+      popup.document.write(
+        `<html><head><meta charset="utf-8"><title>${sectionTitle}</title><style>${printCss}</style></head><body style="font-family: Arial, sans-serif; padding: 24px; background: #ffffff;">${styledHtml}</body></html>`
+      );
+      popup.document.close();
+      popup.focus();
+      popup.print();
+    },
+    [buildValuationSectionReportText, buildStyledValuationReportHtml, buildStyledValuationReportPaginatedHtml, buildHistoricalFinancialSummaryReportHtml]
+  );
   const handleValuationSectionDownload = useCallback((sectionId: string, sectionTitle: string) => {
-    const content = buildValuationSectionReportText(sectionId, sectionTitle);
+    let content = buildValuationSectionReportText(sectionId, sectionTitle);
+    content = content.split(`\n${VALUATION_PAGE_BREAK_MARKER}\n`).join('\n\n');
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -15146,14 +15610,11 @@ function FinancialScorePage() {
         <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '24px 20px 36px 20px' }}>
           <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
             <div style={{ padding: '26px 28px', background: 'linear-gradient(135deg, #0f4c81 0%, #1f70c1 55%, #63a8e8 100%)' }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '1.1px', color: 'rgba(255,255,255,0.88)', textTransform: 'uppercase' }}>
-                Professional Report Outline
-              </div>
-              <h1 style={{ fontSize: '34px', fontWeight: '800', color: '#ffffff', margin: '10px 0 6px 0', letterSpacing: '-0.3px' }}>
+              <h1 style={{ fontSize: '34px', fontWeight: '800', color: '#ffffff', margin: '0 0 6px 0', letterSpacing: '-0.3px' }}>
                 Corelytics Valuation Report
               </h1>
-              <p style={{ margin: 0, fontSize: '14px', color: 'rgba(255,255,255,0.92)' }}>
-                Company: <strong>{companyName || 'Selected Company'}</strong>
+              <p style={{ margin: 0, fontSize: '20px', color: 'rgba(255,255,255,0.92)' }}>
+                Prepared for: <strong>{companyName || 'Selected Company'}</strong>
               </p>
             </div>
 
@@ -15305,13 +15766,62 @@ function FinancialScorePage() {
                 Close
               </button>
             </div>
-            {valuationSectionPreview.id === '2' ? (
+            {valuationSectionPreview.id === '5' && sdeValuationReportPreviewModel ? (
+              <ValuationSdeSection5Preview
+                model={sdeValuationReportPreviewModel}
+                monthly={monthly as MonthlyDataRow[]}
+                selections={valuationBuilderSelections}
+                companyName={companyName || ''}
+                latestFinancialSource={latestFinancialSource}
+                sdeExecutiveSummaryApi={sdeExecutiveSummaryApi}
+                sdeExecutiveFinancialSummaryApi={sdeExecutiveFinancialSummaryApi}
+                sdeRecommendationsApi={sdeRecommendationsApi}
+              />
+            ) : valuationSectionPreview.id === '5' && !sdeValuationReportPreviewModel ? (
+              <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
+                SDE Valuation preview needs at least one month of financial data for this company.
+              </div>
+            ) : valuationSectionPreview.id === '6' && sdeValuationReportPreviewModel ? (
+              <ValuationEbitdaSection6Preview
+                model={sdeValuationReportPreviewModel}
+                monthly={monthly as MonthlyDataRow[]}
+                selections={valuationBuilderSelections}
+                companyName={companyName || ''}
+                latestFinancialSource={latestFinancialSource}
+                ttmEbitda={valuationExecutiveOverview.ttmEbitda}
+                ebitdaMultiplier={ebitdaMultiplier}
+                ebitdaEstimatedValue={valuationExecutiveOverview.ebitdaEstimatedValue}
+                ttmFreeCashFlow={valuationExecutiveOverview.ttmFreeCashFlow}
+              />
+            ) : valuationSectionPreview.id === '6' && !sdeValuationReportPreviewModel ? (
+              <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
+                EBITDA Valuation preview needs at least one month of financial data for this company.
+              </div>
+            ) : valuationSectionPreview.id === '7' && sdeValuationReportPreviewModel ? (
+              <ValuationDcfSection7Preview
+                model={sdeValuationReportPreviewModel}
+                monthly={monthly as MonthlyDataRow[]}
+                selections={valuationBuilderSelections}
+                companyName={companyName || ''}
+                latestFinancialSource={latestFinancialSource}
+                dcfEstimatedValue={valuationExecutiveOverview.dcfEstimatedValue}
+                dcfDiscountRate={dcfDiscountRate}
+                dcfTerminalGrowth={dcfTerminalGrowth}
+                ttmFreeCashFlow={valuationExecutiveOverview.ttmFreeCashFlow}
+                growth24mo={growth_24mo}
+                revenueMix={businessOverviewRevenueMix}
+              />
+            ) : valuationSectionPreview.id === '7' && !sdeValuationReportPreviewModel ? (
+              <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
+                DCF Valuation preview needs at least one month of financial data for this company.
+              </div>
+            ) : valuationSectionPreview.id === '2' ? (
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
                 <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                   <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Corelytics Valuation Report</div>
                   <div style={{ fontSize: '24px', color: '#1e293b', fontWeight: 800, marginTop: '4px' }}>Business Overview</div>
-                  <div style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>
-                    Company: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')}
+                  <div style={{ fontSize: '17px', color: '#475569', marginTop: '4px' }}>
+                    Prepared for: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')}
                   </div>
                 </div>
                 <div style={{ padding: '16px 18px', display: 'grid', gap: '12px' }}>
