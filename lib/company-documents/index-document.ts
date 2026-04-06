@@ -108,7 +108,7 @@ export async function indexCompanyDocument(params: {
           const vecLit = toVectorLiteral(v);
 
           valuesSql.push(
-            `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}::vector)`,
+            `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}::vector, NOW(), NOW())`,
           );
           params.push(
             id,
@@ -125,7 +125,7 @@ export async function indexCompanyDocument(params: {
 
         const sql = `
           INSERT INTO "CompanyDocumentChunk"
-            ("id","documentId","companyId","chunkIndex","startOffset","endOffset","text","textHash","embedding")
+            ("id","documentId","companyId","chunkIndex","startOffset","endOffset","text","textHash","embedding","createdAt","updatedAt")
           VALUES
             ${valuesSql.join(',')}
         `;
