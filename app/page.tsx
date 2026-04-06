@@ -75,6 +75,7 @@ const TrendExplorer = dynamic(() => import('./components/performance-analytics/T
 const AnomalyInbox = dynamic(() => import('./components/performance-analytics/AnomalyInbox'), { ssr: false });
 const OpportunityWorkspace = dynamic(() => import('./components/performance-analytics/OpportunityWorkspace'), { ssr: false });
 const ValuationSdeSection5Preview = dynamic(() => import('./components/valuation/ValuationSdeSection5Preview'), { ssr: false });
+const ValuationWorkingCapitalSection4Preview = dynamic(() => import('./components/valuation/ValuationWorkingCapitalSection4Preview'), { ssr: false });
 const ValuationEbitdaSection6Preview = dynamic(() => import('./components/valuation/ValuationEbitdaSection6Preview'), { ssr: false });
 const ValuationDcfSection7Preview = dynamic(() => import('./components/valuation/ValuationDcfSection7Preview'), { ssr: false });
 const DashboardView = dynamic(() => import('./components/DashboardView'), { ssr: false });
@@ -1046,7 +1047,7 @@ function FinancialScorePage() {
 
   useEffect(() => {
     if (!pendingRichValuationPrint || !valuationSectionPreview) return;
-    if (!['5', '6', '7'].includes(valuationSectionPreview.id)) return;
+    if (!['4', '5', '6', '7'].includes(valuationSectionPreview.id)) return;
     const timer = window.setTimeout(() => {
       window.print();
       setPendingRichValuationPrint(false);
@@ -9008,26 +9009,8 @@ function FinancialScorePage() {
       ],
     },
     {
-      id: '8',
-      title: '8. Quality of Earnings',
-      rows: [
-        { key: 'qoe_adjustments', label: 'EBITDA/SDE Adjustments' },
-        { key: 'qoe_revenueQuality', label: 'Revenue Quality' },
-        { key: 'qoe_costStructure', label: 'Cost Structure' },
-        { key: 'qoe_score', label: 'QoE Score' },
-      ],
-    },
-    {
-      id: '9',
-      title: '9. Valuation Summary',
-      rows: [
-        { key: 'vs_methodComparison', label: 'Method Comparison (SDE/EBITDA/DCF)' },
-        { key: 'vs_finalValueRange', label: 'Final Value Range' },
-      ],
-    },
-    {
       id: '10',
-      title: '10. Risk Analysis',
+      title: '8. Risk Analysis',
       rows: [
         { key: 'ra_keyRisks', label: 'Key Risks' },
         { key: 'ra_mitigation', label: 'Mitigation' },
@@ -9035,7 +9018,7 @@ function FinancialScorePage() {
     },
     {
       id: '11',
-      title: '11. Growth Opportunities',
+      title: '9. Growth Opportunities',
       rows: [
         { key: 'go_expansionOpportunities', label: 'Expansion Opportunities' },
         { key: 'go_operationalImprovements', label: 'Operational Improvements' },
@@ -9043,12 +9026,12 @@ function FinancialScorePage() {
     },
     {
       id: '12',
-      title: '12. Data Room & Supporting Documents',
+      title: '10. Data Room & Supporting Documents',
       rows: [{ key: 'dr_documentsByCategory', label: 'Documents by Category' }],
     },
     {
       id: '13',
-      title: '13. Appendix',
+      title: '11. Appendix',
       rows: [{ key: 'ap_detailedFinancials', label: 'Detailed Financials' }],
     },
   ]), []);
@@ -10296,7 +10279,7 @@ function FinancialScorePage() {
   }, [buildValuationSectionReportText]);
   const handleValuationSectionPrint = useCallback(
     (sectionId: string, sectionTitle: string) => {
-      if (['5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
+      if (['4', '5', '6', '7'].includes(sectionId) && sdeValuationReportPreviewModel) {
         const content = buildValuationSectionReportText(sectionId, sectionTitle);
         setValuationSectionPreview({ id: sectionId, title: sectionTitle, content });
         setPendingRichValuationPrint(true);
@@ -15895,7 +15878,18 @@ function FinancialScorePage() {
                 Close
               </button>
             </div>
-            {valuationSectionPreview.id === '5' && sdeValuationReportPreviewModel ? (
+            {valuationSectionPreview.id === '4' && sdeValuationReportPreviewModel ? (
+              <ValuationWorkingCapitalSection4Preview
+                model={sdeValuationReportPreviewModel}
+                selections={valuationBuilderSelections}
+                companyName={companyName || ''}
+                latestFinancialSource={latestFinancialSource}
+              />
+            ) : valuationSectionPreview.id === '4' && !sdeValuationReportPreviewModel ? (
+              <div style={{ marginTop: '10px', padding: '14px', border: '1px solid #fecaca', borderRadius: '10px', background: '#fef2f2', color: '#991b1b', fontSize: '13px' }}>
+                Working Capital preview needs at least one month of financial data for this company.
+              </div>
+            ) : valuationSectionPreview.id === '5' && sdeValuationReportPreviewModel ? (
               <ValuationSdeSection5Preview
                 model={sdeValuationReportPreviewModel}
                 monthly={monthly as MonthlyDataRow[]}
