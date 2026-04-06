@@ -8812,7 +8812,7 @@ function FinancialScorePage() {
   }, []);
   const buildExecutiveSummaryReportText = useCallback((): string => {
     const executiveRows = [
-      { key: 'es_enterpriseValueRange', label: 'Enterprise Value Range' },
+      { key: 'es_enterpriseValueRange', label: 'Summary' },
       { key: 'es_primaryValuationMethod', label: 'Primary Valuation Method' },
       { key: 'es_normalizedEarnings', label: 'Normalized Earnings (SDE/EBITDA)' },
       { key: 'es_keyValueDrivers', label: 'Key Value Drivers' },
@@ -8828,9 +8828,9 @@ function FinancialScorePage() {
     };
     const lines: string[] = ['1. Executive Summary', ''];
     if (valuationBuilderSelections.es_enterpriseValueRange) {
-      lines.push(`${rowLabel('es_enterpriseValueRange', 'Enterprise Value Range')}:`);
-      lines.push(`- Valuation Date: ${valuationExecutiveOverview.valuationDateLabel}`);
-      lines.push(`- Enterprise Value Range: ${money(valuationExecutiveOverview.enterpriseValueLow)} to ${money(valuationExecutiveOverview.enterpriseValueHigh)}`);
+      lines.push(`${rowLabel('es_enterpriseValueRange', 'Summary')}:`);
+      lines.push('- Goal of this report: provide company leadership with a practical, buyer-oriented valuation view that ties historical performance, operating quality, and risk to actionable value drivers.');
+      lines.push('- How to use this document: identify valuation range and primary method, validate assumptions behind each method, prioritize quality and risk improvements, and support investor, lender, or transaction discussions with consistent evidence.');
       lines.push('');
       lines.push('SDE Method:');
       lines.push('- Uses Seller Discretionary Earnings to value owner-operated cash-flow potential.');
@@ -8849,16 +8849,6 @@ function FinancialScorePage() {
       lines.push('- Projects free cash flow and discounts it to present value plus terminal value.');
       lines.push(`- Free Cash Flow (TTM): ${money(valuationExecutiveOverview.ttmFreeCashFlow)}`);
       lines.push(`- Estimated Business Value: ${money(valuationExecutiveOverview.dcfEstimatedValue)}`);
-      lines.push('');
-    }
-    if (valuationBuilderSelections.es_primaryValuationMethod) {
-      lines.push(`${rowLabel('es_primaryValuationMethod', 'Primary Valuation Method')}:`);
-      lines.push(`- ${valuationExecutiveOverview.primaryMethod}`);
-      lines.push('');
-    }
-    if (valuationBuilderSelections.es_normalizedEarnings) {
-      lines.push(`${rowLabel('es_normalizedEarnings', 'Normalized Earnings (SDE/EBITDA)')}:`);
-      lines.push(`- SDE ${money(valuationExecutiveOverview.ttmSde)} | EBITDA ${money(valuationExecutiveOverview.ttmEbitda)}`);
       lines.push('');
     }
     if (valuationBuilderSelections.es_keyValueDrivers) {
@@ -8900,7 +8890,7 @@ function FinancialScorePage() {
       id: '1',
       title: '1. Executive Summary',
       rows: [
-        { key: 'es_enterpriseValueRange', label: 'Enterprise Value Range' },
+        { key: 'es_enterpriseValueRange', label: 'Summary' },
         { key: 'es_primaryValuationMethod', label: 'Primary Valuation Method' },
         { key: 'es_normalizedEarnings', label: 'Normalized Earnings (SDE/EBITDA)' },
         { key: 'es_keyValueDrivers', label: 'Key Value Drivers' },
