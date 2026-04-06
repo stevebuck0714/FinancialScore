@@ -73,18 +73,18 @@ export default function LoginView(props: LoginViewProps) {
   } = props;
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '40px 20px' }}>
-      <div style={{ maxWidth: '480px', margin: '0 auto', background: 'white', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', padding: '40px', boxSizing: 'border-box' }}>
+    <div style={{ minHeight: '100vh', background: '#e8edf3', padding: '48px 20px' }}>
+      <div style={{ maxWidth: '560px', margin: '0 auto', background: 'white', borderRadius: '0', border: '1px solid #dbe3ee', boxShadow: '0 6px 20px rgba(15, 23, 42, 0.08)', padding: '40px', boxSizing: 'border-box' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{ fontSize: '48px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', letterSpacing: '-1px' }}>
+          <div style={{ fontSize: '42px', fontWeight: '700', color: '#1F70C1', marginBottom: '16px', letterSpacing: '-0.5px' }}>
             Corelytics<sup style={{ fontSize: '18px', fontWeight: '400' }}>TM</sup>
           </div>
-          <h1 style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>Business Evaluation Tool</h1>
-          <p style={{ color: '#64748b', fontSize: '14px' }}>Professional financial analysis for consultants and businesses</p>
+          <h1 style={{ fontSize: '27px', fontWeight: '700', color: '#0f172a', marginBottom: '8px' }}>Business Evaluation Platform</h1>
+          <p style={{ color: '#475569', fontSize: '14px' }}>Comprehensive financial and operational analysis for consultants and businesses</p>
         </div>
 
         {loginError && (
-          <div style={{ padding: '12px 16px', background: '#fee2e2', color: '#991b1b', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #fecaca' }}>
+          <div style={{ padding: '12px 16px', background: '#fee2e2', color: '#991b1b', borderRadius: '0', marginBottom: '16px', fontSize: '14px', border: '1px solid #fecaca' }}>
             {loginError}
           </div>
         )}
@@ -95,7 +95,7 @@ export default function LoginView(props: LoginViewProps) {
             <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '12px' }}>Enter your email address and we'll send you instructions to reset your password.</p>
             
             {resetSuccess && (
-              <div style={{ padding: '12px 16px', background: '#d1fae5', color: '#065f46', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', border: '1px solid #6ee7b7' }}>
+              <div style={{ padding: '12px 16px', background: '#d1fae5', color: '#065f46', borderRadius: '0', marginBottom: '16px', fontSize: '14px', border: '1px solid #6ee7b7' }}>
                 {resetSuccess}
               </div>
             )}
@@ -107,7 +107,7 @@ export default function LoginView(props: LoginViewProps) {
               value={resetEmail} 
               onChange={(e) => { setResetEmail(e.target.value); setLoginError(''); }} 
               autoComplete="off"
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '12px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             <button 
               onClick={async () => {
@@ -147,7 +147,7 @@ export default function LoginView(props: LoginViewProps) {
                 }
               }}
               disabled={isLoading}
-              style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1, boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#0f172a', color: 'white', border: 'none', borderRadius: '0', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1, boxSizing: 'border-box' }}
             >
               {isLoading ? 'Sending...' : 'Send Reset Instructions'}
             </button>
@@ -155,7 +155,7 @@ export default function LoginView(props: LoginViewProps) {
               type="button"
               onClick={() => { setShowForgotPassword(false); setLoginError(''); setResetSuccess(''); setResetEmail(''); }} 
               disabled={isLoading}
-              style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}
+              style={{ width: '100%', padding: '14px', background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '0', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}
             >
               Back to Login
             </button>
@@ -171,7 +171,7 @@ export default function LoginView(props: LoginViewProps) {
               onChange={(e) => setLoginName(e.target.value)} 
               autoComplete="off" 
               required
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             <input 
               type="text" 
@@ -181,7 +181,7 @@ export default function LoginView(props: LoginViewProps) {
               onChange={(e) => setLoginEmail(e.target.value)} 
               autoComplete="off" 
               required
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             <input 
               type="tel" 
@@ -191,7 +191,7 @@ export default function LoginView(props: LoginViewProps) {
               onChange={(e) => setLoginPhone(formatPhoneNumber(e.target.value))} 
               autoComplete="off" 
               required
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             <input 
               type="text" 
@@ -201,7 +201,7 @@ export default function LoginView(props: LoginViewProps) {
               onChange={(e) => setLoginCompanyName(e.target.value)} 
               autoComplete="off" 
               required
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             
             {/* Company Address Fields */}
@@ -215,7 +215,7 @@ export default function LoginView(props: LoginViewProps) {
                 onChange={(e) => setLoginCompanyAddress1(e.target.value)} 
                 autoComplete="off" 
                 required
-                style={{ width: '100%', padding: '12px 16px', marginBottom: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '8px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
               <input 
                 type="text" 
@@ -224,7 +224,7 @@ export default function LoginView(props: LoginViewProps) {
                 value={loginCompanyAddress2} 
                 onChange={(e) => setLoginCompanyAddress2(e.target.value)} 
                 autoComplete="off" 
-                style={{ width: '100%', padding: '12px 16px', marginBottom: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                style={{ width: '100%', padding: '12px 16px', marginBottom: '8px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                 <input 
@@ -235,14 +235,14 @@ export default function LoginView(props: LoginViewProps) {
                   onChange={(e) => setLoginCompanyCity(e.target.value)} 
                   autoComplete="off" 
                   required
-                  style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                  style={{ width: '100%', padding: '12px 16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                 />
                 <select 
                   name={`company_state_${Date.now()}`}
                   value={loginCompanyState} 
                   onChange={(e) => setLoginCompanyState(e.target.value)} 
                   required
-                  style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', backgroundColor: 'white' }}
+                  style={{ width: '100%', padding: '12px 16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', backgroundColor: 'white' }}
                 >
                   {US_STATES.map(state => (
                     <option key={state.code} value={state.code}>{state.name}</option>
@@ -257,7 +257,7 @@ export default function LoginView(props: LoginViewProps) {
                   autoComplete="off" 
                   required
                   maxLength={10}
-                  style={{ width: '100%', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                  style={{ width: '100%', padding: '12px 16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px' }} 
                 />
               </div>
             </div>
@@ -269,7 +269,7 @@ export default function LoginView(props: LoginViewProps) {
               value={loginCompanyWebsite} 
               onChange={(e) => setLoginCompanyWebsite(e.target.value)} 
               autoComplete="off" 
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }} 
             />
             
             {/* Password field with toggle */}
@@ -282,7 +282,7 @@ export default function LoginView(props: LoginViewProps) {
                 onChange={(e) => setLoginPassword(e.target.value)} 
                 autoComplete="new-password"
                 required
-                style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }} 
+                style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px' }} 
               />
               <button
                 type="button"
@@ -297,10 +297,10 @@ export default function LoginView(props: LoginViewProps) {
               Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
             </div>
             
-            <button type="submit" disabled={isLoading} style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1 }}>
+            <button type="submit" disabled={isLoading} style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#0f172a', color: 'white', border: 'none', borderRadius: '0', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px', opacity: isLoading ? 0.7 : 1 }}>
               {isLoading ? 'Registering...' : 'Register'}
             </button>
-            <button type="button" onClick={() => { setIsRegistering(false); setLoginError(''); setShowPassword(false); }} disabled={isLoading} style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}>Back to Login</button>
+            <button type="button" onClick={() => { setIsRegistering(false); setLoginError(''); setShowPassword(false); }} disabled={isLoading} style={{ width: '100%', padding: '14px', background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '0', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}>Back to Login</button>
           </form>
         ) : (
           <form autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (!isLoading) handleLogin(); }}>
@@ -312,7 +312,7 @@ export default function LoginView(props: LoginViewProps) {
               value={loginEmail}
               onChange={(e) => { setLoginEmail(e.target.value); setLoginError(''); }}
               autoComplete="off"
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
             />
             
             {/* Password field with toggle */}
@@ -324,7 +324,7 @@ export default function LoginView(props: LoginViewProps) {
                 value={loginPassword}
                 onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
                 autoComplete="new-password"
-                style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '12px 40px 12px 16px', borderRadius: '0', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' }}
               />
               <button
                 type="button"
@@ -341,19 +341,28 @@ export default function LoginView(props: LoginViewProps) {
               <button 
                 type="button"
                 onClick={() => { setShowForgotPassword(true); setLoginError(''); setShowPassword(false); }} 
-                style={{ background: 'none', border: 'none', color: '#667eea', fontSize: '13px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                style={{ background: 'none', border: 'none', color: '#1d4ed8', fontSize: '13px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
               >
                 Forgot Password?
               </button>
             </div>
             
-            <button type="submit" disabled={isLoading} style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#667eea', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '16px', opacity: isLoading ? 0.7 : 1 }}>
+            <button type="submit" disabled={isLoading} style={{ width: '100%', padding: '14px', background: isLoading ? '#94a3b8' : '#1d4ed8', color: 'white', border: '1px solid #1e40af', borderRadius: '0', fontSize: '16px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '16px', opacity: isLoading ? 0.7 : 1 }}>
               {isLoading ? 'Signing In...' : 'Sign In'}
             </button>
-            <button type="button" onClick={() => { setIsRegistering(true); setLoginError(''); setShowPassword(false); }} disabled={isLoading} style={{ width: '100%', padding: '14px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', marginBottom: '12px' }}>Register as Consultant</button>
-            <button type="button" onClick={() => window.location.href = '/register-business'} disabled={isLoading} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)' }}>
-              🏢 Register Your Business
-            </button>
+            <div style={{ borderTop: '1px solid #e2e8f0', marginTop: '4px', paddingTop: '14px', marginBottom: '4px' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                New to Corelytics?
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <button type="button" onClick={() => { setIsRegistering(true); setLoginError(''); setShowPassword(false); }} disabled={isLoading} style={{ width: '100%', padding: '12px', background: '#f8fafc', color: '#1e293b', border: '1px solid #cbd5e1', borderRadius: '0', fontSize: '13px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}>
+                  Register as a Consultant
+                </button>
+                <button type="button" onClick={() => window.location.href = '/register-business'} disabled={isLoading} style={{ width: '100%', padding: '12px', background: '#1d4ed8', color: 'white', border: '1px solid #1d4ed8', borderRadius: '0', fontSize: '13px', fontWeight: '600', cursor: isLoading ? 'not-allowed' : 'pointer' }}>
+                  Register Your Company
+                </button>
+              </div>
+            </div>
           </form>
         )}
       </div>
