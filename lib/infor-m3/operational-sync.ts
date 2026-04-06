@@ -401,7 +401,9 @@ function aggregateForCompanyRollup(
         (acc) => {
           acc.amountCurrency = Number(acc.amountCurrency || 0) + pickNumber(record, ['amountCurrency', 'billAmount', 'CUAM']);
           acc.amountHome = Number(acc.amountHome || 0) + pickNumber(record, ['amountHome', 'homeAmount', 'ACAM']);
-          acc.amountDueHome = Number(acc.amountDueHome || 0) + pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'balance', 'CUAM', 'ACAM']);
+          acc.amountDueHome =
+            Number(acc.amountDueHome || 0) +
+            pickNumber(record, ['amountDueHome', 'amountDue', 'openAmount', 'openBalance', 'balance', 'Balance', 'DerAmtBal', 'UbOpening']);
           acc.current = Number(acc.current || 0) + pickNumber(record, ['current', 'bucket0']);
           acc.days1to30 = Number(acc.days1to30 || 0) + pickNumber(record, ['days1to30', 'bucket1']);
           acc.days31to60 = Number(acc.days31to60 || 0) + pickNumber(record, ['days31to60', 'bucket2']);
@@ -1050,15 +1052,35 @@ function buildSlLedgersKeysetBookmarkFromCsiBookmark(bookmark: string | null): s
 
 function resolveSlaPtrxFallbackPath(endpointPath: string): string | null {
   if (!/\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(endpointPath)) return null;
-  if (/\/load\/SLAptrx(?=\?|$)/i.test(endpointPath)) return null;
-  return endpointPath
-    .replace(/\/load\/SLAptrxps/gi, '/load/SLAptrx')
-    .replace(/\/load\/SLAptrxp(?=\?|$)/gi, '/load/SLAptrx');
+  if (/\/load\/SLAptrx(?=\?|$)/i.test(endpointPath)) {
+    return endpointPath.replace(/\/load\/SLAptrx(?=\?|$)/gi, '/load/SLAptrxps');
+  }
+  if (/\/load\/SLAptrxp(?=\?|$)/i.test(endpointPath)) {
+    return endpointPath.replace(/\/load\/SLAptrxp(?=\?|$)/gi, '/load/SLAptrxps');
+  }
+  return endpointPath.replace(/\/load\/SLAptrxps/gi, '/load/SLAptrx');
 }
 
-const SLA_PTRXP_SAFE_PROPERTIES = ['VendNum', 'Name', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
+const SLA_PTRXP_SAFE_PROPERTIES = [
+  'VendNum',
+  'VendaddrName',
+  'UbVendName',
+  'InvNum',
+  'Voucher',
+  'Type',
+  'InvDate',
+  'DueDate',
+  'DistDate',
+  'RecordDate',
+  'CurrCode',
+  'AmtPaid',
+  'InvAmt',
+  'DerAmtBal',
+  'UbPayment',
+  'UbOpening',
+];
 const SLA_PTRX_SAFE_PROPERTIES = ['VendNum', 'InvNum', 'InvDate', 'DueDate', 'CurrCode', 'Amount'];
-const AP_IDO_CANDIDATES = ['SLAptrx', 'SLAptrxp', 'SLAptrxps', 'SLAptrxs', 'Aptrx', 'Aptrxp', 'Aptrxps', 'Aptrxs'];
+const AP_IDO_CANDIDATES = ['SLAptrxps', 'SLAptrxp', 'SLAptrx', 'SLAptrxs', 'Aptrxps', 'Aptrxp', 'Aptrx', 'Aptrxs'];
 const GL_TRANSACTION_SAFE_PROPERTIES = [
   'Acct',
   'TransDate',
@@ -1120,10 +1142,8 @@ function ensureCsiProperties(endpointPath: string, properties: string[]): string
 
 function resolveSlaPtrxSafePropertyPath(endpointPath: string): string | null {
   if (!/\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(endpointPath)) return null;
-  const canonical = endpointPath
-    .replace(/\/load\/SLAptrxps/gi, '/load/SLAptrx')
-    .replace(/\/load\/SLAptrxp(?=\?|$)/gi, '/load/SLAptrx');
-  return ensureCsiProperties(canonical, SLA_PTRX_SAFE_PROPERTIES);
+  const isXpsFamily = /\/load\/SLAptrxps|\/load\/SLAptrxp(?=\?|$)/i.test(endpointPath);
+  return ensureCsiProperties(endpointPath, isXpsFamily ? SLA_PTRXP_SAFE_PROPERTIES : SLA_PTRX_SAFE_PROPERTIES);
 }
 
 function parseMissingPropertyFromMessage(message: string): string | null {
@@ -3672,47 +3692,309 @@ async function upsertArContractSupportTables(
   }
 }
 
+type ApLifecycleOpenRow = {
+  voucherNo: string;
+  vendorId: string | null;
+  vendorName: string;
+  invoiceReference: string | null;
+  billDate: Date | null;
+  dueDate: Date | null;
+  bookedAmount: number;
+  paidAmount: number;
+  outstandingAmount: number;
+  current: number;
+  days1to30: number;
+  days31to60: number;
+  days61to90: number;
+  days90plus: number;
+};
+
+function normalizeVoucherToken(value: unknown): string | null {
+  const token = String(value || '').trim();
+  return token ? token : null;
+}
+
+function getAgingBucketValuesFromDueDate(
+  outstanding: number,
+  dueDate: Date | null,
+  asOfDate: Date
+): { current: number; days1to30: number; days31to60: number; days61to90: number; days90plus: number } {
+  const safeOutstanding = Math.max(0, Number(outstanding || 0));
+  if (!safeOutstanding) {
+    return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+  }
+  const aging = buildAgingBucketFromDueDate(dueDate, null, asOfDate);
+  if (aging.agingBucket === 'Current') return { current: safeOutstanding, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+  if (aging.agingBucket === '30') return { current: 0, days1to30: safeOutstanding, days31to60: 0, days61to90: 0, days90plus: 0 };
+  if (aging.agingBucket === '60') return { current: 0, days1to30: 0, days31to60: safeOutstanding, days61to90: 0, days90plus: 0 };
+  if (aging.agingBucket === '90') return { current: 0, days1to30: 0, days31to60: 0, days61to90: safeOutstanding, days90plus: 0 };
+  return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: safeOutstanding };
+}
+
+async function deriveApLifecycleOpenRowsFromAvailableData(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  records: Record<string, unknown>[]
+): Promise<ApLifecycleOpenRow[]> {
+  const vendorMetaByVoucher = new Map<
+    string,
+    { vendorId: string | null; vendorName: string; invoiceReference: string | null; dueDate: Date | null; billDate: Date | null; latestRecordDateMs: number }
+  >();
+  const bookedByVoucher = new Map<string, { bookedAmount: number; bookedDate: Date | null }>();
+  const paymentByVoucher = new Map<string, { paidAmount: number; firstPaidDate: Date | null; lastPaidDate: Date | null }>();
+  const paymentDedupe = new Set<string>();
+
+  for (const record of records) {
+    const voucherNo = normalizeVoucherToken(
+      pickString(record, ['Voucher', 'voucher', 'billNo', 'billNumber', 'invoiceNo', 'InvNum', 'SINO'])
+    );
+    if (!voucherNo) continue;
+    const vendorId = pickString(record, VENDOR_ID_KEYS);
+    const vendorName = pickString(record, ['UbVendName', 'VendaddrName', 'VendorName', ...VENDOR_NAME_KEYS]) || `Vendor ${voucherNo}`;
+    const invoiceReference = pickString(record, ['InvNum', 'invoiceNo', 'invoiceNumber']);
+    const dueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'DistDate']));
+    const billDate = parseMaybeDate(pickString(record, ['InvDate', 'invoiceDate', 'billDate', 'DistDate', 'date']));
+    const recordDate = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate', 'DistDate', 'InvDate', 'date']));
+    const recordDateMs = recordDate ? recordDate.getTime() : Number.NEGATIVE_INFINITY;
+
+    const existingMeta = vendorMetaByVoucher.get(voucherNo);
+    if (!existingMeta || recordDateMs >= existingMeta.latestRecordDateMs) {
+      vendorMetaByVoucher.set(voucherNo, {
+        vendorId: vendorId || null,
+        vendorName,
+        invoiceReference: invoiceReference || null,
+        dueDate: dueDate || null,
+        billDate: billDate || null,
+        latestRecordDateMs: recordDateMs,
+      });
+    }
+
+    const typeToken = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
+    if (typeToken === 'V') {
+      const invAmt = Math.abs(pickNumber(record, ['InvAmt', 'invoiceAmount', 'Amount', 'amount', 'ACAM', 'CUAM']));
+      if (invAmt > 0) {
+        const existingBooked = bookedByVoucher.get(voucherNo);
+        const nextBookedDate = billDate || recordDate || existingBooked?.bookedDate || null;
+        if (!existingBooked) {
+          bookedByVoucher.set(voucherNo, { bookedAmount: invAmt, bookedDate: nextBookedDate });
+        } else {
+          bookedByVoucher.set(voucherNo, {
+            bookedAmount: Math.max(existingBooked.bookedAmount, invAmt),
+            bookedDate:
+              existingBooked.bookedDate && nextBookedDate
+                ? (existingBooked.bookedDate < nextBookedDate ? existingBooked.bookedDate : nextBookedDate)
+                : existingBooked.bookedDate || nextBookedDate,
+          });
+        }
+      }
+    }
+
+    if (typeToken === 'P' || typeToken === 'A') {
+      const paidAmt = Math.abs(pickNumber(record, ['AmtPaid', 'paidAmount', 'UbPayment', 'DerAmtBal', 'ACAM', 'PYAM']));
+      if (paidAmt > 0) {
+        const paidDate = parseMaybeDate(pickString(record, ['DistDate', 'RecordDate', 'paymentDate', 'date', 'PYDT', 'RGDT']));
+        const dedupeKey = `${voucherNo}||${typeToken}||${paidDate ? paidDate.toISOString().slice(0, 10) : ''}||${paidAmt.toFixed(2)}||${
+          invoiceReference || ''
+        }`;
+        if (!paymentDedupe.has(dedupeKey)) {
+          paymentDedupe.add(dedupeKey);
+          const existingPayment = paymentByVoucher.get(voucherNo);
+          if (!existingPayment) {
+            paymentByVoucher.set(voucherNo, { paidAmount: paidAmt, firstPaidDate: paidDate || null, lastPaidDate: paidDate || null });
+          } else {
+            paymentByVoucher.set(voucherNo, {
+              paidAmount: existingPayment.paidAmount + paidAmt,
+              firstPaidDate:
+                existingPayment.firstPaidDate && paidDate
+                  ? (existingPayment.firstPaidDate < paidDate ? existingPayment.firstPaidDate : paidDate)
+                  : existingPayment.firstPaidDate || paidDate || null,
+              lastPaidDate:
+                existingPayment.lastPaidDate && paidDate
+                  ? (existingPayment.lastPaidDate > paidDate ? existingPayment.lastPaidDate : paidDate)
+                  : existingPayment.lastPaidDate || paidDate || null,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const missingBookedVouchers = Array.from(vendorMetaByVoucher.keys()).filter((voucherNo) => !bookedByVoucher.has(voucherNo));
+  if (missingBookedVouchers.length > 0) {
+    const glDelegate = (prisma as any).gLTransactionFact;
+    if (glDelegate?.findMany) {
+      const BATCH_SIZE = 250;
+      for (let i = 0; i < missingBookedVouchers.length; i += BATCH_SIZE) {
+        const batch = missingBookedVouchers.slice(i, i + BATCH_SIZE);
+        const refs = batch.map((voucherNo) => `APV ${voucherNo}`);
+        const glRows = await glDelegate.findMany({
+          where: {
+            companyId,
+            accountId: '30100',
+            transDate: { lt: new Date(snapshotDate.getTime() + 24 * 60 * 60 * 1000) },
+            ref: { in: refs },
+          },
+          select: {
+            ref: true,
+            transDate: true,
+            signedAmount: true,
+            createdAt: true,
+            transNum: true,
+            site: true,
+            accountId: true,
+          },
+          orderBy: [{ createdAt: 'desc' }],
+        });
+
+        const glDedup = new Map<string, { voucherNo: string; transDate: Date | null; signedAmount: number }>();
+        for (const row of glRows) {
+          const voucherNo = normalizeVoucherToken(String(row.ref || '').replace(/^APV\s+/i, ''));
+          if (!voucherNo) continue;
+          const dedupeKey = `${voucherNo}||${row.accountId || ''}||${row.site || ''}||${row.transNum || ''}||${
+            row.transDate ? new Date(row.transDate).toISOString().slice(0, 10) : ''
+          }`;
+          if (glDedup.has(dedupeKey)) continue;
+          glDedup.set(dedupeKey, {
+            voucherNo,
+            transDate: row.transDate ? new Date(row.transDate) : null,
+            signedAmount: Math.abs(Number(row.signedAmount || 0)),
+          });
+        }
+
+        for (const row of Array.from(glDedup.values())) {
+          if (row.signedAmount <= 0) continue;
+          const existing = bookedByVoucher.get(row.voucherNo);
+          if (!existing) {
+            bookedByVoucher.set(row.voucherNo, { bookedAmount: row.signedAmount, bookedDate: row.transDate });
+            continue;
+          }
+          const betterBookedDate =
+            existing.bookedDate && row.transDate
+              ? (existing.bookedDate < row.transDate ? existing.bookedDate : row.transDate)
+              : existing.bookedDate || row.transDate;
+          bookedByVoucher.set(row.voucherNo, {
+            bookedAmount: Math.max(existing.bookedAmount, row.signedAmount),
+            bookedDate: betterBookedDate,
+          });
+        }
+      }
+    }
+  }
+
+  const rows: ApLifecycleOpenRow[] = [];
+  for (const [voucherNo, meta] of Array.from(vendorMetaByVoucher.entries())) {
+    const booked = bookedByVoucher.get(voucherNo);
+    if (!booked || booked.bookedAmount <= 0) continue;
+    const paid = paymentByVoucher.get(voucherNo);
+    const outstandingAmount = Math.max(0, Number(booked.bookedAmount || 0) - Number(paid?.paidAmount || 0));
+    if (outstandingAmount <= 0.0001) continue;
+    const effectiveDueDate = meta.dueDate || booked.bookedDate || meta.billDate || null;
+    const buckets = getAgingBucketValuesFromDueDate(outstandingAmount, effectiveDueDate, snapshotDate);
+    rows.push({
+      voucherNo,
+      vendorId: meta.vendorId,
+      vendorName: meta.vendorName || `Vendor ${voucherNo}`,
+      invoiceReference: meta.invoiceReference,
+      billDate: booked.bookedDate || meta.billDate || null,
+      dueDate: effectiveDueDate,
+      bookedAmount: Number(booked.bookedAmount || 0),
+      paidAmount: Number(paid?.paidAmount || 0),
+      outstandingAmount,
+      ...buckets,
+    });
+  }
+
+  return rows;
+}
+
 async function saveAPAging(
   companyId: string,
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
-  const fromBuckets = records.reduce(
-    (acc, record) => {
-      acc.totalAP += pickNumber(record, ['totalAP', 'total', 'TOTAP']);
-      acc.current += pickNumber(record, ['current', 'CURAP', 'currentAmount']);
-      acc.days1to30 += pickNumber(record, ['days1to30', 'AP1_30', 'bucket1']);
-      acc.days31to60 += pickNumber(record, ['days31to60', 'AP31_60', 'bucket2']);
-      acc.days61to90 += pickNumber(record, ['days61to90', 'AP61_90', 'bucket3']);
-      acc.days90plus += pickNumber(record, ['days90plus', 'AP90P', 'bucket4']);
-      return acc;
-    },
-    { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
-  );
+  const deriveApOutstandingAmount = (record: Record<string, unknown>): number => {
+    const directOpenBalance = pickNumber(record, [
+      'amountDueHome',
+      'amountDue',
+      'openAmount',
+      'openBalance',
+      'balance',
+      'Balance',
+      'DerAmtBal',
+      'UbOpening',
+    ]);
+    return directOpenBalance;
+  };
 
-  const derived = calculateAgingTotalsFromTransactions(records, {
-    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'invoiceDate', 'DistDate', 'IVDT', 'RecordDate', 'date'],
-    balanceKeys: ['Balance', 'balance', 'openBalance', 'openAmount', 'amountDue', 'InvAmt', 'Amount'],
-    amountKeys: ['Amount', 'amount', 'invoiceAmount', 'InvAmt'],
+  // AP aging must be based on open-item rows only. Do not trust summary-level
+  // TOTAP/AP90P payload shortcuts, and do not age by invoice totals.
+  const openApLineItems = records
+    .map((record) => ({
+      ...record,
+      // AP aging should represent unpaid AP only; ignore negative/credit residuals.
+      __derivedApOutstanding: Math.max(0, deriveApOutstandingAmount(record)),
+    }))
+    .filter((record) => {
+      const hasLineIdentity = Boolean(
+        pickString(record, VENDOR_ID_KEYS) ||
+          pickString(record, VENDOR_NAME_KEYS) ||
+          pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'voucher', 'Voucher', 'SINO'])
+      );
+      const hasDueDate = Boolean(parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'DistDate'])));
+      const outstanding = toNumber(record.__derivedApOutstanding);
+      return hasLineIdentity && hasDueDate && outstanding > 0.0001;
+    });
+
+  const derived = calculateAgingTotalsFromTransactions(openApLineItems, {
+    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'DistDate'],
+    balanceKeys: ['__derivedApOutstanding'],
+    amountKeys: [],
     openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
     statusKeys: ['Status', 'status', 'STAT', 'state', 'State'],
     asOfDate: snapshotDate,
   });
 
-  const totals =
-    fromBuckets.totalAP !== 0
-      ? fromBuckets
-      : {
-          totalAP: derived.total,
-          current: derived.current,
-          days1to30: derived.days1to30,
-          days31to60: derived.days31to60,
-          days61to90: derived.days61to90,
-          days90plus: derived.days90plus,
-        };
+  const totals = {
+    totalAP: derived.total,
+    current: derived.current,
+    days1to30: derived.days1to30,
+    days31to60: derived.days31to60,
+    days61to90: derived.days61to90,
+    days90plus: derived.days90plus,
+  };
 
-  if (totals.totalAP === 0) return 0;
+  if (totals.totalAP === 0) {
+    const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
+    if (lifecycleRows.length > 0) {
+      const lifecycleTotals = lifecycleRows.reduce(
+        (acc, row) => {
+          acc.totalAP += row.outstandingAmount;
+          acc.current += row.current;
+          acc.days1to30 += row.days1to30;
+          acc.days31to60 += row.days31to60;
+          acc.days61to90 += row.days61to90;
+          acc.days90plus += row.days90plus;
+          return acc;
+        },
+        { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+      );
+      await prisma.aPAgingSnapshot.upsert({
+        where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+        update: lifecycleTotals,
+        create: {
+          companyId,
+          snapshotDate,
+          frequency,
+          ...lifecycleTotals,
+        },
+      });
+      return 1;
+    }
+    await prisma.aPAgingSnapshot.deleteMany({ where: { companyId, snapshotDate, frequency } });
+    return 0;
+  }
 
   await prisma.aPAgingSnapshot.upsert({
     where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
@@ -3737,23 +4019,28 @@ async function saveAPOpenBills(
 ): Promise<number> {
   await (prisma as any).aPOpenBillSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
+  const deriveApOutstandingAmount = (record: Record<string, unknown>): number => {
+    const directOpenBalance = pickNumber(record, [
+      'amountDueHome',
+      'amountDue',
+      'openAmount',
+      'openBalance',
+      'balance',
+      'Balance',
+      'DerAmtBal',
+      'UbOpening',
+    ]);
+    return directOpenBalance;
+  };
+
   const rows = records
     .map((record, idx) => {
       const vendorName = pickString(record, VENDOR_NAME_KEYS) || `Unknown Vendor ${idx + 1}`;
       const billNo =
         pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'voucher', 'Voucher', 'SINO']) ||
         `UNKNOWN-${idx + 1}`;
-      const amountDueHome = pickNumber(record, [
-        'amountDueHome',
-        'amountDue',
-        'openAmount',
-        'balance',
-        'InvAmt',
-        'DerAmtBal',
-        'UbOpening',
-        'CUAM',
-        'ACAM',
-      ]);
+      // AP open snapshot is unpaid amount only; do not carry negative residuals.
+      const amountDueHome = Math.max(0, deriveApOutstandingAmount(record));
       return {
         companyId,
         snapshotDate,
@@ -3781,9 +4068,58 @@ async function saveAPOpenBills(
         sourceRecordDate: parseMaybeDate(pickString(record, ['RecordDate', 'recordDate', 'DistDate', 'InvDate', 'date'])),
       };
     })
-    .filter((row) => row.vendorName && row.billNo && Number.isFinite(row.amountDueHome));
+    .filter((row) => {
+      if (!row.vendorName || !row.billNo || !Number.isFinite(row.amountDueHome)) return false;
+      if (Math.abs(Number(row.amountDueHome || 0)) <= 0.0001) return false;
+      const statusToken = String(row.status || '')
+        .trim()
+        .toLowerCase();
+      if (!statusToken) return true;
+      return !(
+        statusToken.includes('closed') ||
+        statusToken.includes('paid') ||
+        statusToken.includes('void') ||
+        statusToken.includes('cancel') ||
+        statusToken.includes('settled') ||
+        statusToken.includes('history')
+      );
+    });
 
-  if (!rows.length) return 0;
+  if (!rows.length) {
+    const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
+    if (!lifecycleRows.length) return 0;
+    const derivedRows = lifecycleRows.map((row, idx) => ({
+      companyId,
+      snapshotDate,
+      frequency,
+      vendorId: row.vendorId,
+      vendorName: row.vendorName || `Unknown Vendor ${idx + 1}`,
+      billNo: row.voucherNo,
+      billDate: row.billDate,
+      dueDate: row.dueDate,
+      status: 'open',
+      currencyCode: null as string | null,
+      amountCurrency: row.bookedAmount || null,
+      amountHome: row.bookedAmount || null,
+      amountDueHome: row.outstandingAmount,
+      current: row.current || null,
+      days1to30: row.days1to30 || null,
+      days31to60: row.days31to60 || null,
+      days61to90: row.days61to90 || null,
+      days90plus: row.days90plus || null,
+      sourcePlatform: 'INFOR_M3',
+      sourceProgram: `${context.miProgram || 'AP'}_LIFECYCLE_DERIVED`,
+      sourceTransaction: `${context.transaction || 'CSI_LOAD'}_DERIVED`,
+      cono: context.cono || null,
+      divi: context.divi || null,
+    }));
+    const DERIVED_BATCH_SIZE = 2000;
+    for (let i = 0; i < derivedRows.length; i += DERIVED_BATCH_SIZE) {
+      const batch = derivedRows.slice(i, i + DERIVED_BATCH_SIZE);
+      await (prisma as any).aPOpenBillSnapshot.createMany({ data: batch, skipDuplicates: true });
+    }
+    return derivedRows.length;
+  }
   const deduped = new Map<
     string,
     { row: Omit<(typeof rows)[number], 'sourceRecordDate'>; sourceRecordDate: Date | null; score: number }
@@ -4748,8 +5084,8 @@ export async function syncInforM3OperationalData(
           response = retryWithoutMongooseResponse;
         }
       }
-      // Some CSI environments expose SLAptrxp/SLAptrxps with a broken projection that references
-      // vendor_bank_id. Retry with a narrowed property list first, then fallback to SLAptrx.
+      // Some CSI environments expose SLAptrx* variants with broken projections or missing IDOs.
+      // Retry with narrowed properties first, then hop between SLAptrx* aliases.
       const initialMessage = extractResponseMessage(response.body);
       const shouldTryApAliasFallback =
         /\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(req.endpointPath) &&
@@ -5068,14 +5404,19 @@ export async function syncInforM3OperationalData(
       // snapshots. Backfill/manual modes must honor the date window so each day
       // is rebuilt from that day slice instead of replaying one global snapshot.
       const isArOpenSnapshotProgram =
-        moduleType === 'ar' && String(row.miProgram || '').trim().toUpperCase() === 'SLARTRANS';
+        moduleType === 'ar' &&
+        ['SLARTRANS', 'SLCUSTDRFTS'].includes(String(row.miProgram || '').trim().toUpperCase());
       const isApOpenSupportProgram =
         moduleType === 'ap' &&
-        ['SLAPTRXPS', 'SLAPPMTS', 'SLAPTRXP', 'SLAPTRXS'].includes(String(row.miProgram || '').trim().toUpperCase());
+        ['SLAPTRX', 'SLAPTRXPS', 'SLAPPMTS', 'SLAPTRXP', 'SLAPTRXS'].includes(String(row.miProgram || '').trim().toUpperCase());
+      const isApOpenSnapshotProgram =
+        moduleType === 'ap' &&
+        ['SLVCHHDRS'].includes(String(row.miProgram || '').trim().toUpperCase());
       const isArApOpenFlow =
         ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
       const keepFullArApPopulation =
         isArOpenSnapshotProgram ||
+        isApOpenSnapshotProgram ||
         isApOpenSupportProgram ||
         (isArApOpenFlow && syncWindow?.mode === 'daily_overlap');
       // Contract/backlog math from SLCoitems also requires full line populations; clipping
@@ -5250,9 +5591,6 @@ export async function syncInforM3OperationalData(
                 };
                 const apProgramId = String(row.miProgram || '').trim().toUpperCase();
                 const forcePaymentProgram =
-                  apProgramId === 'SLAPTRX' ||
-                  apProgramId === 'SLAPTRXS' ||
-                  apProgramId === 'SLAPTRXPS' ||
                   apProgramId === 'SLAPPMTS' ||
                   apProgramId === 'SLAPTRXP';
                 if (forcePaymentProgram || arApFlow === 'payments') {
@@ -5549,4 +5887,357 @@ export async function syncInforM3OperationalData(
     continuation,
     totalProgramRows,
   };
+}
+type InforRawTransformResult = {
+  success: boolean;
+  daysProcessed: number;
+  rawRecordsRead: number;
+  recordsCreated: number;
+  errors: string[];
+};
+
+function asRawRecordPayload(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+export async function transformInforM3RawRun(options: {
+  companyId: string;
+  syncRunId: string;
+  frequency?: 'daily' | 'weekly' | 'monthly';
+  businessDateIso?: string;
+  maxBusinessDates?: number;
+  batchSize?: number;
+}): Promise<InforRawTransformResult> {
+  const companyId = String(options.companyId || '').trim();
+  const syncRunId = String(options.syncRunId || '').trim();
+  const frequency = options.frequency || 'daily';
+  const errors: string[] = [];
+  if (!companyId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing companyId'] };
+  if (!syncRunId) return { success: false, daysProcessed: 0, rawRecordsRead: 0, recordsCreated: 0, errors: ['Missing syncRunId'] };
+
+  const maxBusinessDatesRaw = Number(options.maxBusinessDates || 0);
+  const maxBusinessDates =
+    Number.isFinite(maxBusinessDatesRaw) && maxBusinessDatesRaw > 0
+      ? Math.min(366, Math.max(1, Math.floor(maxBusinessDatesRaw)))
+      : null;
+  const batchSizeRaw = Number(options.batchSize || 2000);
+  const batchSize =
+    Number.isFinite(batchSizeRaw) && batchSizeRaw > 0
+      ? Math.min(10000, Math.max(250, Math.floor(batchSizeRaw)))
+      : 2000;
+
+  const requestedBusinessDate = String(options.businessDateIso || '').trim();
+  const businessDateFilter =
+    requestedBusinessDate.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(requestedBusinessDate)
+      ? requestedBusinessDate
+      : null;
+
+  const businessDateRows = await prisma.$queryRaw<Array<{ businessDate: Date }>>`
+    SELECT DISTINCT "businessDate"
+    FROM "InforRawBatch"
+    WHERE "companyId" = ${companyId}
+      AND platform = 'INFOR_M3'
+      AND "syncRunId" = ${syncRunId}
+      ${businessDateFilter ? Prisma.sql`AND "businessDate" = ${new Date(`${businessDateFilter}T00:00:00.000Z`)}` : Prisma.sql``}
+    ORDER BY "businessDate" ASC
+    ${maxBusinessDates ? Prisma.sql`LIMIT ${maxBusinessDates}` : Prisma.sql``}
+  `;
+
+  let daysProcessed = 0;
+  let rawRecordsRead = 0;
+  let recordsCreated = 0;
+  for (const businessDateRow of businessDateRows) {
+    const snapshotDate = startOfUtcDay(new Date(businessDateRow.businessDate));
+    const rawByModuleProgram = new Map<string, {
+      moduleType: ReturnType<typeof classifyModule>;
+      module: string;
+      miProgram: string;
+      transaction: string;
+      records: Record<string, unknown>[];
+    }>();
+
+    let cursorId: string | null = null;
+    while (true) {
+      const rows = await (prisma as any).inforRawRecord.findMany({
+        where: {
+          companyId,
+          platform: 'INFOR_M3',
+          syncRunId,
+          businessDate: snapshotDate,
+        },
+        select: {
+          id: true,
+          module: true,
+          miProgram: true,
+          transaction: true,
+          payload: true,
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+        take: batchSize,
+      });
+      if (!rows.length) break;
+      for (const row of rows) {
+        const payload = asRawRecordPayload(row.payload);
+        if (!payload) continue;
+        const module = String(row.module || '').trim();
+        const miProgram = String(row.miProgram || '').trim().toUpperCase();
+        const transaction = String(row.transaction || 'CSI_LOAD').trim() || 'CSI_LOAD';
+        const moduleType = classifyModule(module);
+        const key = `${moduleType}||${miProgram}||${transaction}`;
+        const existing = rawByModuleProgram.get(key);
+        if (existing) {
+          existing.records.push(payload);
+        } else {
+          rawByModuleProgram.set(key, {
+            moduleType,
+            module,
+            miProgram,
+            transaction,
+            records: [payload],
+          });
+        }
+      }
+      rawRecordsRead += rows.length;
+      cursorId = String(rows[rows.length - 1].id);
+    }
+
+    const glAccountMasterById = new Map<string, GlAccountMasterEntry>();
+    for (const item of Array.from(rawByModuleProgram.values())) {
+      if (item.moduleType !== 'gl' || !GL_ACCOUNT_MASTER_PROGRAM_IDS.has(item.miProgram)) continue;
+      for (const record of item.records) {
+        const parsed = parseGlAccountMasterEntry(record);
+        if (!parsed) continue;
+        const key = normalizeGlAccountKey(parsed.accountId);
+        if (!key) continue;
+        const existing = glAccountMasterById.get(key);
+        if (!existing) {
+          glAccountMasterById.set(key, parsed);
+          continue;
+        }
+        glAccountMasterById.set(key, {
+          accountId: existing.accountId || parsed.accountId,
+          accountName: existing.accountName || parsed.accountName,
+          accountType: existing.accountType || parsed.accountType,
+          accountCategory: existing.accountCategory || parsed.accountCategory,
+        });
+      }
+    }
+
+    try {
+      const cashRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'cash')
+        .flatMap((item) => item.records);
+      if (cashRecords.length > 0) {
+        recordsCreated += await saveCash(companyId, snapshotDate, frequency, cashRecords);
+      }
+
+      const arCustDrfts = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'ar' && item.miProgram === 'SLCUSTDRFTS')
+        .flatMap((item) => item.records);
+      const arTrans = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'ar' && item.miProgram === 'SLARTRANS')
+        .flatMap((item) => item.records);
+      const arOpenSource = arCustDrfts.length > 0 ? arCustDrfts : arTrans;
+      if (arOpenSource.length > 0) {
+        recordsCreated += await saveAROpenInvoices(companyId, snapshotDate, frequency, arOpenSource, {
+          miProgram: arCustDrfts.length > 0 ? 'SLCUSTDRFTS' : 'SLARTRANS',
+          transaction: 'RAW_REPLAY',
+          resetSnapshot: true,
+        });
+        recordsCreated += await saveARAging(companyId, snapshotDate, frequency, arOpenSource);
+      }
+      if (arTrans.length > 0) {
+        recordsCreated += await saveARPayments(companyId, arTrans, {
+          miProgram: 'SLARTRANS',
+          transaction: 'RAW_REPLAY',
+        });
+        await upsertArContractSupportTables(companyId, snapshotDate, frequency);
+      }
+
+      const apPayments = Array.from(rawByModuleProgram.values())
+        .filter((item) =>
+          item.moduleType === 'ap' &&
+          ['SLAPPMTS', 'SLAPTRXP'].includes(item.miProgram)
+        )
+        .flatMap((item) => item.records);
+      const apOpen = Array.from(rawByModuleProgram.values())
+        .filter((item) =>
+          item.moduleType === 'ap' &&
+          !['SLAPPMTS', 'SLAPTRXP'].includes(item.miProgram)
+        )
+        .flatMap((item) => item.records);
+      if (apOpen.length > 0) {
+        recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, apOpen, {
+          miProgram: 'AP_OPEN',
+          transaction: 'RAW_REPLAY',
+        });
+        recordsCreated += await saveAPAging(companyId, snapshotDate, frequency, apOpen);
+      }
+      if (apPayments.length > 0) {
+        recordsCreated += await saveAPPayments(companyId, apPayments, {
+          miProgram: 'AP_PAYMENTS',
+          transaction: 'RAW_REPLAY',
+        });
+      }
+
+      const glTrans = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'gl' && item.miProgram === 'SLGLTRANS')
+        .flatMap((item) => item.records);
+      if (glTrans.length > 0) {
+        recordsCreated += await saveGLTransactionFacts(
+          companyId,
+          glTrans,
+          { miProgram: 'SLGLTRANS', transaction: 'RAW_REPLAY' },
+          glAccountMasterById
+        );
+        recordsCreated += await saveBalanceMovementsFromGl(companyId, frequency, glTrans, glAccountMasterById);
+      }
+
+      const customerRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'customer')
+        .flatMap((item) => item.records);
+      if (customerRecords.length > 0) {
+        recordsCreated += await saveCustomerSales(companyId, snapshotDate, frequency, customerRecords);
+      }
+
+      const inventoryRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'inventory')
+        .flatMap((item) => item.records);
+      if (inventoryRecords.length > 0) {
+        recordsCreated += await saveInventory(companyId, snapshotDate, frequency, inventoryRecords);
+      }
+
+      const salesRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'sales')
+        .flatMap((item) => item.records);
+      if (salesRecords.length > 0) {
+        recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, salesRecords);
+      }
+
+      await prisma.aROpenInvoiceSnapshot.deleteMany({
+        where: {
+          companyId,
+          frequency,
+          snapshotDate: { gte: snapshotDate, lt: new Date(snapshotDate.getTime() + 24 * 60 * 60 * 1000) },
+          amountDueHome: { lte: 0 },
+        },
+      });
+      await upsertDailyFinancialSnapshotFromOperationalTables(companyId, snapshotDate, frequency);
+      await (prisma as any).inforRawCompleteness.updateMany({
+        where: {
+          companyId,
+          platform: 'INFOR_M3',
+          syncRunId,
+          businessDate: snapshotDate,
+        },
+        data: {
+          isComplete: true,
+          statusMessage: 'transformed',
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      daysProcessed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Raw transform day processing failed';
+      await (prisma as any).inforRawCompleteness.updateMany({
+        where: {
+          companyId,
+          platform: 'INFOR_M3',
+          syncRunId,
+          businessDate: snapshotDate,
+        },
+        data: {
+          isComplete: false,
+          statusMessage: `transform_failed:${String(message).slice(0, 240)}`,
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      errors.push(`${snapshotDate.toISOString().slice(0, 10)}: ${message}`);
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    daysProcessed,
+    rawRecordsRead,
+    recordsCreated,
+    errors,
+  };
+}
+
+export async function processPendingInforRawTransforms(options?: {
+  maxDaysPerTick?: number;
+}): Promise<{
+  processedDays: number;
+  failedDays: number;
+  results: Array<{ companyId: string; syncRunId: string; businessDateIso: string; ok: boolean; errors: string[] }>;
+}> {
+  const limitRaw = Number(options?.maxDaysPerTick || 1);
+  const maxDaysPerTick =
+    Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(50, Math.max(1, Math.floor(limitRaw)))
+      : 1;
+
+  const pendingDays = await prisma.$queryRaw<Array<{
+    companyId: string;
+    syncRunId: string;
+    businessDate: Date;
+    frequency: string | null;
+    oldestUpdatedAt: Date;
+    runPriorityAt: Date | null;
+  }>>`
+    SELECT
+      rc."companyId",
+      rc."syncRunId",
+      rc."businessDate",
+      sr."frequency",
+      MIN(rc."updatedAt") AS "oldestUpdatedAt",
+      MAX(COALESCE(sr."finishedAt", sr."updatedAt", sr."createdAt")) AS "runPriorityAt"
+    FROM "InforRawCompleteness" rc
+    INNER JOIN "InforSyncRun" sr
+      ON sr.id = rc."syncRunId"
+      AND sr.status = 'done'
+    WHERE rc.platform = 'INFOR_M3'
+      AND rc."isComplete" = false
+    GROUP BY rc."companyId", rc."syncRunId", rc."businessDate", sr."frequency"
+    ORDER BY
+      MAX(COALESCE(sr."finishedAt", sr."updatedAt", sr."createdAt")) DESC NULLS LAST,
+      MIN(rc."updatedAt") ASC
+    LIMIT ${maxDaysPerTick}
+  `;
+
+  let processedDays = 0;
+  let failedDays = 0;
+  const results: Array<{ companyId: string; syncRunId: string; businessDateIso: string; ok: boolean; errors: string[] }> = [];
+
+  for (const row of pendingDays) {
+    const businessDateIso = startOfUtcDay(new Date(row.businessDate)).toISOString().slice(0, 10);
+    const frequencyRaw = String(row.frequency || '').trim().toLowerCase();
+    const frequency: 'daily' | 'weekly' | 'monthly' =
+      frequencyRaw === 'weekly' ? 'weekly' : frequencyRaw === 'monthly' ? 'monthly' : 'daily';
+
+    const transformed = await transformInforM3RawRun({
+      companyId: String(row.companyId),
+      syncRunId: String(row.syncRunId),
+      frequency,
+      businessDateIso,
+      maxBusinessDates: 1,
+    });
+    const ok = transformed.success;
+    if (ok) processedDays += 1;
+    else failedDays += 1;
+    results.push({
+      companyId: String(row.companyId),
+      syncRunId: String(row.syncRunId),
+      businessDateIso,
+      ok,
+      errors: transformed.errors,
+    });
+  }
+
+  return { processedDays, failedDays, results };
 }
