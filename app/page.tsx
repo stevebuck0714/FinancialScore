@@ -8559,37 +8559,83 @@ function FinancialScorePage() {
     [companyProfiles, selectedCompanyId]
   );
   const businessOverviewProfileItems = useMemo(() => {
+    const companyAddress = [
+      company?.addressStreet,
+      [company?.addressCity, company?.addressState].filter(Boolean).join(', '),
+      company?.addressZip,
+      company?.addressCountry,
+    ]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(' ');
+    const accountingSystemLabelMap: Record<string, string> = {
+      ACUMATICA: 'Acumatica',
+      CERTINIA: 'Certinia',
+      CSV_FILE: 'CSV file',
+      DYNAMICS: 'Dynamics',
+      EPICOR: 'Epicor',
+      FUSION_CLOUD: 'Fusion Cloud',
+      INFOR_CSI: 'Infor CSI',
+      INFOR_M3: 'Infor M3',
+      NETSUITE: 'NetSuite',
+      ODOO: 'Odoo',
+      ORACLE_EBS: 'Oracle EBS',
+      QUICKBOOKS: 'QuickBooks',
+      QUICKBOOKS_DESKTOP: 'QuickBooks Desktop',
+      SAGE_INTACCT: 'Sage Intacct',
+      SAP_S4HANA: 'SAP S/4HANA',
+      XERO: 'Xero',
+    };
+    const accountingSystemLabel =
+      accountingSystemLabelMap[String(company?.accountingSystem || '').toUpperCase()] ||
+      (company?.accountingSystem ? String(company.accountingSystem) : 'N/A');
+    const sectorLabel = company?.industrySectorCategory || 'N/A';
+
     if (!selectedCompanyProfile) {
       return [
         { label: 'Legal Structure', value: 'N/A' },
         { label: 'Business Status', value: 'N/A' },
         { label: 'Ownership', value: 'N/A' },
+        { label: 'Address', value: companyAddress || company?.location || 'N/A' },
+        { label: 'Accounting System', value: accountingSystemLabel },
+        { label: 'Sector', value: sectorLabel },
         { label: 'Workforce', value: 'N/A' },
         { label: 'Key Advisors', value: 'N/A' },
         { label: 'Special Notes', value: 'N/A' },
         { label: 'QoE Notes', value: 'N/A' },
       ];
     }
-    const keyEmployees = Array.isArray(selectedCompanyProfile.keyEmployees) && selectedCompanyProfile.keyEmployees.length > 0
-      ? selectedCompanyProfile.keyEmployees
-          .map((emp) => {
-            const name = String(emp?.name || '').trim() || 'Unnamed';
-            const title = String(emp?.title || '').trim() || 'No title';
-            const year = String(emp?.yearEmployed || '').trim();
-            return `${name} (${title}${year ? `, since ${year}` : ''})`;
-          })
-          .join('; ')
-      : 'N/A';
     return [
       { label: 'Legal Structure', value: selectedCompanyProfile.legalStructure || 'N/A' },
       { label: 'Business Status', value: selectedCompanyProfile.businessStatus || 'N/A' },
       { label: 'Ownership', value: selectedCompanyProfile.ownership || 'N/A' },
+      { label: 'Address', value: companyAddress || company?.location || 'N/A' },
+      { label: 'Accounting System', value: accountingSystemLabel },
+      { label: 'Sector', value: sectorLabel },
       { label: 'Workforce', value: selectedCompanyProfile.workforce || 'N/A' },
       { label: 'Key Advisors', value: selectedCompanyProfile.keyAdvisors || 'N/A' },
-      { label: 'Key Employees', value: keyEmployees },
       { label: 'Special Notes', value: selectedCompanyProfile.specialNotes || 'N/A' },
       { label: 'QoE Notes', value: selectedCompanyProfile.qoeNotes || 'N/A' },
     ];
+  }, [selectedCompanyProfile, company]);
+  const businessOverviewKeyEmployees = useMemo(() => {
+    const raw = Array.isArray(selectedCompanyProfile?.keyEmployees) ? selectedCompanyProfile?.keyEmployees : [];
+    const currentYear = new Date().getFullYear();
+    return raw.map((emp) => {
+      const name = String(emp?.name || '').trim() || 'Unnamed';
+      const title = String(emp?.title || '').trim() || 'No title';
+      const yearText = String(emp?.yearEmployed || '').trim();
+      const startYear = Number.parseInt(yearText, 10);
+      const yearsWithCompany =
+        Number.isFinite(startYear) && startYear > 1900 && startYear <= currentYear
+          ? Math.max(0, currentYear - startYear).toString()
+          : 'N/A';
+      return {
+        name,
+        title,
+        yearsWithCompany,
+      };
+    });
   }, [selectedCompanyProfile]);
   const businessOverviewDisclosuresSummary = useMemo(() => {
     const disclosures = selectedCompanyProfile?.disclosures;
@@ -15907,7 +15953,7 @@ function FinancialScorePage() {
                     Prepared for: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')}
                   </div>
                 </div>
-                <div style={{ padding: '16px 18px', display: 'grid', gap: '12px' }}>
+                <div style={{ padding: '16px 18px', display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
                   {valuationBuilderSelections.bo_companyProfile && (
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
                       <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Company Profile</div>
@@ -15916,6 +15962,35 @@ function FinancialScorePage() {
                           <li key={item.label}><strong>{item.label}:</strong> {item.value}</li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+                  {valuationBuilderSelections.bo_companyProfile && (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Key Employees</div>
+                      {businessOverviewKeyEmployees.length > 0 ? (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', color: '#334155' }}>
+                            <thead>
+                              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                <th style={{ textAlign: 'left', padding: '8px 10px', color: '#334155' }}>Name</th>
+                                <th style={{ textAlign: 'left', padding: '8px 10px', color: '#334155' }}>Title</th>
+                                <th style={{ textAlign: 'right', padding: '8px 10px', color: '#334155' }}>Years with Company</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {businessOverviewKeyEmployees.map((emp, idx) => (
+                                <tr key={`${emp.name}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '8px 10px' }}>{emp.name}</td>
+                                  <td style={{ padding: '8px 10px' }}>{emp.title}</td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{emp.yearsWithCompany}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '13px', color: '#64748b' }}>No key employees entered.</div>
+                      )}
                     </div>
                   )}
                   {valuationBuilderSelections.bo_companyDisclosures && (
