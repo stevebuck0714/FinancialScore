@@ -2497,7 +2497,35 @@ async function saveARAging(
           days90plus: derived.days90plus,
         };
 
-  if (totals.totalAR === 0) return 0;
+  if (totals.totalAR === 0) {
+    const lifecycleRows = await deriveArLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, records);
+    if (lifecycleRows.length > 0) {
+      const lifecycleTotals = lifecycleRows.reduce(
+        (acc, row) => {
+          acc.totalAR += row.outstandingAmount;
+          acc.current += row.current;
+          acc.days1to30 += row.days1to30;
+          acc.days31to60 += row.days31to60;
+          acc.days61to90 += row.days61to90;
+          acc.days90plus += row.days90plus;
+          return acc;
+        },
+        { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+      );
+      await prisma.aRAgingSnapshot.upsert({
+        where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+        update: lifecycleTotals,
+        create: {
+          companyId,
+          snapshotDate,
+          frequency,
+          ...lifecycleTotals,
+        },
+      });
+      return 1;
+    }
+    return 0;
+  }
 
   await prisma.aRAgingSnapshot.upsert({
     where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
@@ -2752,7 +2780,7 @@ async function saveAROpenInvoices(
     existing.currencyCode = existing.currencyCode || movement.currencyCode;
   }
 
-  const movementRows = Array.from(invoiceAccumulator.values())
+  let movementRows = Array.from(invoiceAccumulator.values())
     .map((entry) => {
       const remainingHome = Number(entry.remainingHome || 0);
       if (!Number.isFinite(remainingHome) || remainingHome === 0) return null;
@@ -2790,6 +2818,36 @@ async function saveAROpenInvoices(
       };
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+  if (movementRows.length === 0) {
+    const lifecycleRows = await deriveArLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, records);
+    movementRows = lifecycleRows.map((row) => ({
+      id: randomUUID(),
+      companyId,
+      snapshotDate: snapshotDayStart,
+      frequency,
+      customerId: row.customerId,
+      customerName: row.customerName,
+      invoiceNo: row.invoiceNo,
+      invoiceDate: row.invoiceDate,
+      dueDate: row.dueDate,
+      status: 'OPEN_DERIVED',
+      currencyCode: null as string | null,
+      amountCurrency: row.bookedAmount || null,
+      amountHome: row.bookedAmount || null,
+      amountDueHome: row.outstandingAmount,
+      current: row.current || null,
+      days1to30: row.days1to30 || null,
+      days31to60: row.days31to60 || null,
+      days61to90: row.days61to90 || null,
+      days90plus: row.days90plus || null,
+      sourcePlatform: 'INFOR_M3' as const,
+      sourceProgram: `${context.miProgram || 'AR'}_LIFECYCLE_DERIVED`,
+      sourceTransaction: `${context.transaction || 'CSI_LOAD'}_DERIVED`,
+      cono: context.cono || null,
+      divi: context.divi || null,
+    }));
+  }
 
   const snapshotLockKey = `ar_open_invoice_snapshot|${companyId}|${frequency}|${snapshotDayStart.toISOString()}`;
   if (context.resetSnapshot) {
@@ -3803,7 +3861,28 @@ type ApLifecycleOpenRow = {
   days90plus: number;
 };
 
+type ArLifecycleOpenRow = {
+  invoiceNo: string;
+  customerId: string | null;
+  customerName: string;
+  invoiceDate: Date | null;
+  dueDate: Date | null;
+  bookedAmount: number;
+  paidAmount: number;
+  outstandingAmount: number;
+  current: number;
+  days1to30: number;
+  days31to60: number;
+  days61to90: number;
+  days90plus: number;
+};
+
 function normalizeVoucherToken(value: unknown): string | null {
+  const token = String(value || '').trim();
+  return token ? token : null;
+}
+
+function normalizeInvoiceToken(value: unknown): string | null {
   const token = String(value || '').trim();
   return token ? token : null;
 }
@@ -3999,6 +4078,191 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
     });
   }
 
+  return rows;
+}
+
+async function deriveArLifecycleOpenRowsFromAvailableData(
+  companyId: string,
+  snapshotDate: Date,
+  records: Record<string, unknown>[]
+): Promise<ArLifecycleOpenRow[]> {
+  const customerMetaByInvoice = new Map<
+    string,
+    { customerId: string | null; customerName: string; dueDate: Date | null; invoiceDate: Date | null; latestRecordDateMs: number }
+  >();
+  const bookedByInvoice = new Map<string, { bookedAmount: number; invoiceDate: Date | null }>();
+  const paymentByInvoice = new Map<string, { paidAmount: number; firstPaidDate: Date | null; lastPaidDate: Date | null }>();
+  const paymentDedupe = new Set<string>();
+
+  const isPaymentLike = (record: Record<string, unknown>): boolean => {
+    const typeToken = normalizeToken(record['Type']) || '';
+    if (['p', 'pay', 'pmt', 'payment', 'c', 'cr', 'credit', 'cm'].includes(typeToken)) return true;
+    const drCrToken = normalizeToken(record['DrCr']) || '';
+    if (['c', 'cr', 'credit'].includes(drCrToken)) return true;
+    const ref = (pickString(record, ['Ref', 'reference']) || '').trim().toLowerCase();
+    if (ref.startsWith('arp') || ref.includes('payment') || ref.includes('receipt') || ref.includes('cash')) return true;
+    return false;
+  };
+
+  for (const record of records) {
+    const nativeInvoiceNo = normalizeInvoiceToken(pickString(record, ['InvNum', 'DerInvNum', ...AR_INVOICE_NO_KEYS]));
+    const applyToInvoiceNo = normalizeInvoiceToken(pickString(record, AR_APPLY_TO_INVOICE_KEYS));
+    const invoiceNo = isPaymentLike(record) ? applyToInvoiceNo || nativeInvoiceNo : nativeInvoiceNo || applyToInvoiceNo;
+    if (!invoiceNo) continue;
+
+    const customerId =
+      pickString(record, CUSTOMER_ID_KEYS) ||
+      parseCustomerIdFromComposite(pickString(record, ['DerCustNoName', 'customerComposite']));
+    const customerName = pickCustomerDisplayName(record) || (customerId ? `Customer ${customerId}` : `Customer ${invoiceNo}`);
+    const dueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'invoiceDate']));
+    const invoiceDate = parseMaybeDate(pickString(record, ['InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date']));
+    const recordDate = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate', 'date', 'InvDate']));
+    const recordDateMs = recordDate ? recordDate.getTime() : Number.NEGATIVE_INFINITY;
+
+    const existingMeta = customerMetaByInvoice.get(invoiceNo);
+    if (!existingMeta || recordDateMs >= existingMeta.latestRecordDateMs) {
+      customerMetaByInvoice.set(invoiceNo, {
+        customerId: customerId || null,
+        customerName,
+        dueDate: dueDate || null,
+        invoiceDate: invoiceDate || null,
+        latestRecordDateMs: recordDateMs,
+      });
+    }
+
+    if (isPaymentLike(record)) {
+      const paidAmt = Math.abs(
+        pickNumber(record, ['DerPaymentCheckAmount', 'paidAmountHome', 'paidAmount', 'amount', 'ACAM', 'PYAM', 'Amount'])
+      );
+      if (paidAmt > 0) {
+        const paidDate = parseMaybeDate(
+          pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT', 'DerReceiptDate', 'ReceiptDate', 'InvDate', 'RecordDate'])
+        );
+        const dedupeKey = `${invoiceNo}||${paidDate ? paidDate.toISOString().slice(0, 10) : ''}||${paidAmt.toFixed(2)}||${
+          customerId || ''
+        }`;
+        if (!paymentDedupe.has(dedupeKey)) {
+          paymentDedupe.add(dedupeKey);
+          const existingPayment = paymentByInvoice.get(invoiceNo);
+          if (!existingPayment) {
+            paymentByInvoice.set(invoiceNo, { paidAmount: paidAmt, firstPaidDate: paidDate || null, lastPaidDate: paidDate || null });
+          } else {
+            paymentByInvoice.set(invoiceNo, {
+              paidAmount: existingPayment.paidAmount + paidAmt,
+              firstPaidDate:
+                existingPayment.firstPaidDate && paidDate
+                  ? (existingPayment.firstPaidDate < paidDate ? existingPayment.firstPaidDate : paidDate)
+                  : existingPayment.firstPaidDate || paidDate || null,
+              lastPaidDate:
+                existingPayment.lastPaidDate && paidDate
+                  ? (existingPayment.lastPaidDate > paidDate ? existingPayment.lastPaidDate : paidDate)
+                  : existingPayment.lastPaidDate || paidDate || null,
+            });
+          }
+        }
+      }
+      continue;
+    }
+
+    const bookedAmt = Math.abs(
+      pickNumber(record, ['InvAmt', 'invoiceAmount', 'Amount', 'amount', 'DerOrderBalance', 'DerPaymentCheckAmount', 'ACAM'])
+    );
+    if (bookedAmt > 0) {
+      const existingBooked = bookedByInvoice.get(invoiceNo);
+      if (!existingBooked) {
+        bookedByInvoice.set(invoiceNo, { bookedAmount: bookedAmt, invoiceDate: invoiceDate || recordDate || null });
+      } else {
+        bookedByInvoice.set(invoiceNo, {
+          bookedAmount: Math.max(existingBooked.bookedAmount, bookedAmt),
+          invoiceDate:
+            existingBooked.invoiceDate && (invoiceDate || recordDate)
+              ? (existingBooked.invoiceDate < (invoiceDate || recordDate)! ? existingBooked.invoiceDate : (invoiceDate || recordDate))
+              : existingBooked.invoiceDate || invoiceDate || recordDate || null,
+        });
+      }
+    }
+  }
+
+  const missingBookedInvoices = Array.from(customerMetaByInvoice.keys()).filter((invoiceNo) => !bookedByInvoice.has(invoiceNo));
+  if (missingBookedInvoices.length > 0) {
+    const glDelegate = (prisma as any).gLTransactionFact;
+    if (glDelegate?.findMany) {
+      const BATCH_SIZE = 250;
+      for (let i = 0; i < missingBookedInvoices.length; i += BATCH_SIZE) {
+        const batch = missingBookedInvoices.slice(i, i + BATCH_SIZE);
+        const refs = batch.map((invoiceNo) => `ARI ${invoiceNo}`);
+        const glRows = await glDelegate.findMany({
+          where: {
+            companyId,
+            accountId: '11100',
+            transDate: { lt: new Date(snapshotDate.getTime() + 24 * 60 * 60 * 1000) },
+            ref: { in: refs },
+          },
+          select: {
+            ref: true,
+            transDate: true,
+            signedAmount: true,
+            transNum: true,
+            site: true,
+            accountId: true,
+            createdAt: true,
+          },
+          orderBy: [{ createdAt: 'desc' }],
+        });
+        const glDedup = new Map<string, { invoiceNo: string; transDate: Date | null; signedAmount: number }>();
+        for (const row of glRows) {
+          const invoiceNo = normalizeInvoiceToken(String(row.ref || '').replace(/^ARI\s+/i, ''));
+          if (!invoiceNo) continue;
+          const dedupeKey = `${invoiceNo}||${row.accountId || ''}||${row.site || ''}||${row.transNum || ''}||${
+            row.transDate ? new Date(row.transDate).toISOString().slice(0, 10) : ''
+          }`;
+          if (glDedup.has(dedupeKey)) continue;
+          glDedup.set(dedupeKey, {
+            invoiceNo,
+            transDate: row.transDate ? new Date(row.transDate) : null,
+            signedAmount: Math.abs(Number(row.signedAmount || 0)),
+          });
+        }
+        for (const row of Array.from(glDedup.values())) {
+          if (row.signedAmount <= 0) continue;
+          const existing = bookedByInvoice.get(row.invoiceNo);
+          if (!existing) {
+            bookedByInvoice.set(row.invoiceNo, { bookedAmount: row.signedAmount, invoiceDate: row.transDate });
+          } else {
+            bookedByInvoice.set(row.invoiceNo, {
+              bookedAmount: Math.max(existing.bookedAmount, row.signedAmount),
+              invoiceDate:
+                existing.invoiceDate && row.transDate
+                  ? (existing.invoiceDate < row.transDate ? existing.invoiceDate : row.transDate)
+                  : existing.invoiceDate || row.transDate,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const rows: ArLifecycleOpenRow[] = [];
+  for (const [invoiceNo, meta] of Array.from(customerMetaByInvoice.entries())) {
+    const booked = bookedByInvoice.get(invoiceNo);
+    if (!booked || booked.bookedAmount <= 0) continue;
+    const paid = paymentByInvoice.get(invoiceNo);
+    const outstandingAmount = Math.max(0, Number(booked.bookedAmount || 0) - Number(paid?.paidAmount || 0));
+    if (outstandingAmount <= 0.0001) continue;
+    const effectiveDueDate = meta.dueDate || booked.invoiceDate || meta.invoiceDate || null;
+    const buckets = getAgingBucketValuesFromDueDate(outstandingAmount, effectiveDueDate, snapshotDate);
+    rows.push({
+      invoiceNo,
+      customerId: meta.customerId,
+      customerName: meta.customerName,
+      invoiceDate: booked.invoiceDate || meta.invoiceDate || null,
+      dueDate: effectiveDueDate,
+      bookedAmount: Number(booked.bookedAmount || 0),
+      paidAmount: Number(paid?.paidAmount || 0),
+      outstandingAmount,
+      ...buckets,
+    });
+  }
   return rows;
 }
 
