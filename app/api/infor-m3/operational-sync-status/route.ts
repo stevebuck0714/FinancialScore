@@ -178,9 +178,47 @@ export async function GET(request: NextRequest) {
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required.' }, { status: 400 });
     }
-    const syncRunId = String(request.nextUrl.searchParams.get('syncRunId') || '').trim();
+    let syncRunId = String(request.nextUrl.searchParams.get('syncRunId') || '').trim();
+    if (!syncRunId && isInforSyncQueueEnabled()) {
+      const latestActiveRun = await prisma.inforSyncRun.findFirst({
+        where: {
+          companyId,
+          platform: 'INFOR_M3',
+          status: { in: ['running', 'queued'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (latestActiveRun?.id) {
+        syncRunId = String(latestActiveRun.id).trim();
+      }
+    }
     if (!syncRunId) {
-      return NextResponse.json({ error: 'syncRunId is required.' }, { status: 400 });
+      return NextResponse.json({
+        ok: true,
+        companyId,
+        syncRunId: null,
+        runNotFound: true,
+        chunkCount: 0,
+        recordsCreated: 0,
+        warningCount: 0,
+        lastChunkAt: null,
+        lastStatusText: null,
+        recentlyActive: false,
+        runStatus: null,
+        runMessage: null,
+        runLastError: null,
+        runMode: null,
+        diagnostics: {
+          failedChunks: 0,
+          skippedChunks: 0,
+          failedPrograms: [],
+          suggestedRerunWindows: [],
+          staleSourceWarnings: [],
+        },
+        queueTaskPreview: [],
+        rawIngestOnlyMode,
+      });
     }
 
     if (isInforSyncQueueEnabled()) {

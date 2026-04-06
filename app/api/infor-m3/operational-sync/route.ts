@@ -252,6 +252,8 @@ export async function POST(request: NextRequest) {
     const requestedStagnantCursorCount = normalizeNonNegativeInt(body.stagnantCursorCount) ?? 0;
     const requestedSyncRunId =
       typeof body.syncRunId === 'string' && body.syncRunId.trim().length > 0 ? body.syncRunId.trim() : null;
+    const forceIngestOnly = body.forceIngestOnly !== false;
+    const deferDailySnapshotHydration = forceIngestOnly || body.deferDailySnapshotHydration === true;
     const salesOnly = body.salesOnly === true || String(body.scope || '').trim().toLowerCase() === 'sales';
     const hasContinuationCursor = requestedProgramOffset > 0 || requestedRequestOffset > 0 || Boolean(requestedBookmark);
     const resetContinuationForMissingRunId = hasContinuationCursor && !requestedSyncRunId;
@@ -365,6 +367,8 @@ export async function POST(request: NextRequest) {
           snapshotDateOverride: businessDate,
           preserveCashSnapshot: shouldPreserveCashSnapshotForSlice,
           skipPrune: true,
+          ingestOnly: forceIngestOnly,
+          deferDailySnapshotHydration,
           businessDayFanout,
           programOffset: effectiveProgramOffset,
           programEndOffset: effectiveProgramEndOffset ?? undefined,
@@ -488,6 +492,8 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await syncInforM3OperationalData(companyId, frequency, site, syncWindow || undefined, {
+      ingestOnly: forceIngestOnly,
+      deferDailySnapshotHydration,
       programOffset: effectiveProgramOffset,
       programEndOffset: effectiveProgramEndOffset ?? undefined,
       programLimit: programBatchSize,

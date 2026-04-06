@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import prisma from '@/lib/prisma';
 import type { AccountingPlatform } from '@prisma/client';
 import type { InforOperationalAsyncRun } from '@/lib/infor-m3/async-run-state';
+import { processPendingInforRawTransforms, transformInforM3RawRun } from '@/lib/infor-m3/operational-sync';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { runOperationalSyncForCompany } from '@/lib/operational-sync/runner';
 
@@ -317,6 +318,8 @@ function buildTaskPayload(run: QueueRunRecord, cursor?: Record<string, unknown> 
     frequency: run.frequency,
     programBatchSize: resolveInitialProgramBatchSize(run),
     syncRunId: run.id,
+    deferDailySnapshotHydration: String(run.platform || '') === 'INFOR_M3',
+    forceIngestOnly: String(run.platform || '') === 'INFOR_M3',
     runIntent: {
       mode: run.mode || null,
       frequency: run.frequency,
@@ -1122,6 +1125,65 @@ async function processTask(
   if (!processed) {
     return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
   }
+
+  const shouldHydrateDeferredDailySnapshot =
+    String(task.run.platform || '') === 'INFOR_M3' &&
+    String(task.run.frequency || '').toLowerCase() === 'daily' &&
+    taskPayload.forceIngestOnly === true &&
+    taskPayload.deferDailySnapshotHydration === true &&
+    !hasMore;
+  if (shouldHydrateDeferredDailySnapshot) {
+    const businessDateIsoRaw =
+      String(taskPayload.businessDateIso || '').trim() ||
+      String(taskPayload.endDate || '').trim().slice(0, 10) ||
+      '';
+    const businessDateIso =
+      /^\d{4}-\d{2}-\d{2}$/.test(businessDateIsoRaw) ? businessDateIsoRaw : null;
+    if (businessDateIso) {
+      try {
+        const isBusinessDayFanoutTask = taskPayload.businessDayFanout === true;
+        if (isBusinessDayFanoutTask) {
+          const dayStatusRows = await db().$queryRaw<Array<{ pendingOrLeased: bigint; failed: bigint }>>`
+            SELECT
+              COUNT(*) FILTER (WHERE status IN ('pending', 'leased')) AS "pendingOrLeased",
+              COUNT(*) FILTER (WHERE status = 'failed') AS failed
+            FROM "InforSyncTask"
+            WHERE "runId" = ${task.runId}
+              AND COALESCE(payload->>'businessDateIso', '') = ${businessDateIso}
+          `;
+          const row = dayStatusRows?.[0];
+          const pendingOrLeased = Number(row?.pendingOrLeased || 0);
+          const failed = Number(row?.failed || 0);
+          if (pendingOrLeased === 0 && failed === 0) {
+            await transformInforM3RawRun({
+              companyId: task.companyId,
+              syncRunId: task.runId,
+              frequency: 'daily',
+              businessDateIso,
+              maxBusinessDates: 1,
+            });
+          }
+        } else {
+          const runStatusRows = await db().$queryRaw<Array<{ pendingOrLeased: bigint; failed: bigint }>>`
+            SELECT
+              COUNT(*) FILTER (WHERE status IN ('pending', 'leased')) AS "pendingOrLeased",
+              COUNT(*) FILTER (WHERE status = 'failed') AS failed
+            FROM "InforSyncTask"
+            WHERE "runId" = ${task.runId}
+          `;
+          const row = runStatusRows?.[0];
+          const pendingOrLeased = Number(row?.pendingOrLeased || 0);
+          const failed = Number(row?.failed || 0);
+          if (pendingOrLeased === 0 && failed === 0) {
+            await processPendingInforRawTransforms({ maxDaysPerTick: 2 });
+          }
+        }
+      } catch {
+        // Snapshot hydration is best-effort; queue progress should not regress on hydration failures.
+      }
+    }
+  }
+
   return { runId: task.runId, taskId: task.id, status: 'success' };
 }
 

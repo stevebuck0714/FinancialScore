@@ -6334,6 +6334,108 @@ function FinancialScorePage() {
         setInforStatus(data.status);
         setInforLastSync(data.lastSyncAt ? new Date(data.lastSyncAt) : null);
         setInforError(data.errorMessage || null);
+        // Rehydrate operational sync panel from backend so refresh/new tab
+        // still shows the currently active/queued run for this company.
+        try {
+          const syncResponse = await fetch(
+            `/api/infor-m3/operational-sync-status?companyId=${encodeURIComponent(companyId)}`
+          );
+          const syncData = await syncResponse.json().catch(() => ({}));
+          if (syncResponse.ok && syncData?.ok) {
+            const syncRunId = String(syncData.syncRunId || '').trim();
+            if (syncRunId && syncData.runNotFound !== true) {
+              const runStatus = String(syncData.runStatus || syncData.lastStatusText || '').trim().toLowerCase();
+              const nextState: InforOperationalSyncStatus['state'] =
+                runStatus === 'failed' || runStatus === 'error'
+                  ? 'failed'
+                  : runStatus === 'done' || runStatus === 'cancelled'
+                    ? 'done'
+                    : 'running';
+              const diagnostics =
+                syncData?.diagnostics && typeof syncData.diagnostics === 'object' && !Array.isArray(syncData.diagnostics)
+                  ? {
+                      failedChunks: Math.max(0, Number((syncData.diagnostics as any).failedChunks || 0)),
+                      skippedChunks: Math.max(0, Number((syncData.diagnostics as any).skippedChunks || 0)),
+                      failedPrograms: Array.isArray((syncData.diagnostics as any).failedPrograms)
+                        ? ((syncData.diagnostics as any).failedPrograms as unknown[])
+                            .map((entry) => String(entry || '').trim())
+                            .filter((entry) => entry.length > 0)
+                            .slice(0, 20)
+                        : [],
+                      suggestedRerunWindows: Array.isArray((syncData.diagnostics as any).suggestedRerunWindows)
+                        ? ((syncData.diagnostics as any).suggestedRerunWindows as any[])
+                            .map((entry) => ({
+                              startDate: String(entry?.startDate || '').trim(),
+                              endDate: String(entry?.endDate || '').trim(),
+                              reason: String(entry?.reason || '').trim(),
+                            }))
+                            .filter((entry) => entry.startDate && entry.endDate)
+                            .slice(0, 12)
+                        : [],
+                      staleSourceWarnings: Array.isArray((syncData.diagnostics as any).staleSourceWarnings)
+                        ? ((syncData.diagnostics as any).staleSourceWarnings as any[])
+                            .map((entry) => ({
+                              createdAt: String(entry?.createdAt || '').trim(),
+                              targetSnapshotDate: String(entry?.targetSnapshotDate || '').trim() || null,
+                              message: String(entry?.message || '').trim(),
+                              staleSources: Array.isArray(entry?.staleSources)
+                                ? (entry.staleSources as unknown[])
+                                    .map((value) => String(value || '').trim())
+                                    .filter((value) => value.length > 0)
+                                    .slice(0, 10)
+                                : [],
+                              sourceDates:
+                                entry?.sourceDates && typeof entry.sourceDates === 'object' && !Array.isArray(entry.sourceDates)
+                                  ? Object.fromEntries(
+                                      Object.entries(entry.sourceDates as Record<string, unknown>).map(([key, value]) => [
+                                        key,
+                                        String(value || '').trim() || null,
+                                      ])
+                                    )
+                                  : {},
+                            }))
+                            .filter((entry) => entry.message.length > 0)
+                            .slice(0, 8)
+                        : [],
+                    }
+                  : null;
+              setInforOperationalSyncStatus({
+                companyId,
+                syncRunId,
+                state: nextState,
+                runMode:
+                  typeof syncData.runMode === 'string' && syncData.runMode.trim().length > 0
+                    ? (syncData.runMode.trim() as InforOperationalSyncStatus['runMode'])
+                    : null,
+                chunkCount: Math.max(0, Number(syncData.chunkCount || 0)),
+                recordsCreated: Math.max(0, Number(syncData.recordsCreated || 0)),
+                warningCount: Math.max(0, Number(syncData.warningCount || 0)),
+                lastChunkAt:
+                  typeof syncData.lastChunkAt === 'string' && syncData.lastChunkAt.trim().length > 0
+                    ? syncData.lastChunkAt
+                    : null,
+                lastStatusText:
+                  typeof syncData.lastStatusText === 'string' && syncData.lastStatusText.trim().length > 0
+                    ? syncData.lastStatusText
+                    : null,
+                message:
+                  typeof syncData.runMessage === 'string' && syncData.runMessage.trim().length > 0
+                    ? syncData.runMessage
+                    : null,
+                lastError:
+                  typeof syncData.runLastError === 'string' && syncData.runLastError.trim().length > 0
+                    ? syncData.runLastError
+                    : null,
+                recentlyActive: syncData.recentlyActive === true,
+                diagnostics,
+              });
+            } else {
+              setInforOperationalSyncStatus((prev) => (prev && prev.companyId === companyId ? null : prev));
+            }
+          }
+        } catch {
+          // Keep connector status functional even if sync-status hydration fails.
+        }
       } else {
         setInforConnected(false);
         setInforStatus('NOT_CONNECTED');

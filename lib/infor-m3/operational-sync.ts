@@ -47,9 +47,11 @@ type SyncOptions = {
   skipPrune?: boolean;
   syncRunId?: string;
   salesOnly?: boolean;
+  ingestOnly?: boolean;
   businessDayFanout?: boolean;
   arOnlyBackfill?: boolean;
   skipDailySnapshotHydration?: boolean;
+  deferDailySnapshotHydration?: boolean;
   programOffset?: number;
   programLimit?: number;
   programEndOffset?: number;
@@ -4115,7 +4117,7 @@ function toIsoDayOrNull(value: Date | null | undefined): string | null {
   return value.toISOString().slice(0, 10);
 }
 
-async function upsertDailyFinancialSnapshotFromOperationalTables(
+export async function upsertDailyFinancialSnapshotFromOperationalTables(
   companyId: string,
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly'
@@ -4580,15 +4582,14 @@ export async function syncInforM3OperationalData(
     Number.isFinite(fanoutGlPeriodMaxPagesRaw) && fanoutGlPeriodMaxPagesRaw > 0
       ? Math.min(300, Math.max(fanoutMaxPagesPerRequest, Math.floor(fanoutGlPeriodMaxPagesRaw)))
       : 120;
-  const rawIngestEnabled =
-    String(process.env.INFOR_RAW_INGEST_ENABLED || '')
-      .trim()
-      .toLowerCase() === 'true';
-  const rawIngestOnly =
-    rawIngestEnabled &&
-    String(process.env.INFOR_RAW_INGEST_ONLY || '')
-      .trim()
-      .toLowerCase() === 'true';
+  const rawIngestEnabledFromEnv =
+    String(process.env.INFOR_RAW_INGEST_ENABLED || '').trim().toLowerCase() === 'true';
+  const rawIngestOnlyFromEnv =
+    rawIngestEnabledFromEnv &&
+    String(process.env.INFOR_RAW_INGEST_ONLY || '').trim().toLowerCase() === 'true';
+  const forceIngestOnly = options?.ingestOnly === true;
+  const rawIngestEnabled = rawIngestEnabledFromEnv || forceIngestOnly;
+  const rawIngestOnly = rawIngestOnlyFromEnv || forceIngestOnly;
   const rawIngestRecordCapRaw = Number(process.env.INFOR_RAW_INGEST_RECORD_CAP_PER_BATCH || 5000);
   const rawIngestRecordCap =
     Number.isFinite(rawIngestRecordCapRaw) && rawIngestRecordCapRaw > 0
@@ -5927,8 +5928,10 @@ export async function syncInforM3OperationalData(
     });
     const shouldSkipDailySnapshotHydration =
       frequency === 'daily' &&
-      syncWindow?.mode === 'backfill' &&
-      (isArBackfillFastPath || skipDailySnapshotHydrationForArBackfill);
+      (
+        options?.deferDailySnapshotHydration === true ||
+        (syncWindow?.mode === 'backfill' && (isArBackfillFastPath || skipDailySnapshotHydrationForArBackfill))
+      );
     if (!shouldSkipDailySnapshotHydration) {
       try {
         const dailySnapshotOutcome = await upsertDailyFinancialSnapshotFromOperationalTables(

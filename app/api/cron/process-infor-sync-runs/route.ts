@@ -64,6 +64,8 @@ function buildChunkPayload(run: InforOperationalAsyncRun): Record<string, unknow
     frequency: run.frequency,
     programBatchSize: 1,
     syncRunId: run.syncRunId,
+    forceIngestOnly: true,
+    deferDailySnapshotHydration: true,
   };
   if (run.site) payload.site = run.site;
   if (run.mode) payload.mode = run.mode;
