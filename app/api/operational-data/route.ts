@@ -7,6 +7,11 @@ import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from 
 export const dynamic = 'force-dynamic';
 
 async function companyHasAnyRealOperationalData(companyId: string): Promise<boolean> {
+  const optionalFindFirst = async (delegate: any): Promise<{ id: string } | null> => {
+    if (!delegate || typeof delegate.findFirst !== 'function') return null;
+    return delegate.findFirst({ where: { companyId }, select: { id: true } });
+  };
+
   const [
     customers,
     arAging,
@@ -27,8 +32,8 @@ async function companyHasAnyRealOperationalData(companyId: string): Promise<bool
     prisma.cashSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
     prisma.aROpenInvoiceSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
     prisma.aRPaymentFact.findFirst({ where: { companyId }, select: { id: true } }),
-    (prisma as any).aPOpenBillSnapshot.findFirst({ where: { companyId }, select: { id: true } }),
-    (prisma as any).aPPaymentFact.findFirst({ where: { companyId }, select: { id: true } }),
+    optionalFindFirst((prisma as any).aPOpenBillSnapshot),
+    optionalFindFirst((prisma as any).aPPaymentFact),
   ]);
   return Boolean(
     customers ||
@@ -462,19 +467,24 @@ export async function GET(request: NextRequest) {
           lastMonth: number;
           last12Months: number;
         }> = [];
+        const apOpenBillDelegate = (prisma as any).aPOpenBillSnapshot;
+        const apPaymentDelegate = (prisma as any).aPPaymentFact;
 
-        const latestOpenBillsSnapshotDate = await (prisma as any).aPOpenBillSnapshot.findFirst({
-          where: {
-            companyId,
-            frequency,
-            snapshotDate: dateFilter,
-          },
-          select: { snapshotDate: true },
-          orderBy: { snapshotDate: 'desc' },
-        });
+        const latestOpenBillsSnapshotDate =
+          apOpenBillDelegate && typeof apOpenBillDelegate.findFirst === 'function'
+            ? await apOpenBillDelegate.findFirst({
+                where: {
+                  companyId,
+                  frequency,
+                  snapshotDate: dateFilter,
+                },
+                select: { snapshotDate: true },
+                orderBy: { snapshotDate: 'desc' },
+              })
+            : null;
 
-        if (latestOpenBillsSnapshotDate?.snapshotDate) {
-          const openBillRows = await (prisma as any).aPOpenBillSnapshot.findMany({
+        if (latestOpenBillsSnapshotDate?.snapshotDate && apOpenBillDelegate && typeof apOpenBillDelegate.findMany === 'function') {
+          const openBillRows = await apOpenBillDelegate.findMany({
             where: {
               companyId,
               frequency,
@@ -545,17 +555,20 @@ export async function GET(request: NextRequest) {
         const apMonthStart = startOfMonth(endDate);
         const apLastMonthStart = addMonths(apMonthStart, -1);
         const apTrailing12Start = addMonths(apMonthStart, -11);
-        const apPaymentRows = await (prisma as any).aPPaymentFact.findMany({
-          where: {
-            companyId,
-            paymentDate: {
-              gte: apTrailing12Start,
-              lte: endDate,
-            },
-          },
-          orderBy: [{ paymentDate: 'desc' }],
-          take: Math.max(limit * 5, 2000),
-        });
+        const apPaymentRows =
+          apPaymentDelegate && typeof apPaymentDelegate.findMany === 'function'
+            ? await apPaymentDelegate.findMany({
+                where: {
+                  companyId,
+                  paymentDate: {
+                    gte: apTrailing12Start,
+                    lte: endDate,
+                  },
+                },
+                orderBy: [{ paymentDate: 'desc' }],
+                take: Math.max(limit * 5, 2000),
+              })
+            : [];
 
         if (apPaymentRows.length) {
           const grouped = apPaymentRows.reduce((acc: Record<string, any>, row: any) => {
