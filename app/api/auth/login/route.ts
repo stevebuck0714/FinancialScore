@@ -67,10 +67,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // MFA policy:
-    // - Production runtime should require MFA.
-    // - Dev/staging should allow disabling MFA for simple access/testing.
-    const isVercelProd = process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
+    // Treat branch preview hosts as non-production even though Vercel runs them
+    // with NODE_ENV=production. Staging/preview access should not require MFA.
+    const requestHost = String(request.nextUrl.hostname || '').trim().toLowerCase();
+    const isVercelPreviewHost = requestHost.endsWith('.vercel.app') && requestHost.includes('-git-');
+    const isVercelProd =
+      process.env.VERCEL === '1' &&
+      process.env.VERCEL_ENV === 'production' &&
+      !isVercelPreviewHost;
     const requireMfa = isVercelProd && process.env.DISABLE_MFA !== 'true' && process.env.DISABLE_MFA_DEV !== 'true';
     const appScope = getMfaAppScope(request);
 

@@ -59,6 +59,10 @@ setInterval(() => {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+  const requestHost = String(request.nextUrl.hostname || '').trim().toLowerCase()
+  const isVercelPreviewHost = requestHost.endsWith('.vercel.app') && requestHost.includes('-git-')
+  const isVercelNonProduction =
+    process.env.VERCEL === '1' && String(process.env.VERCEL_ENV || '').trim().toLowerCase() !== 'production'
   
   // Get client identifier for rate limiting
   const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0] || 
@@ -67,7 +71,10 @@ export async function middleware(request: NextRequest) {
   
   // Apply API rate limiting in production only.
   // Dev/staging testing flows can generate many auth/session calls quickly.
-  const shouldApplyRateLimit = process.env.NODE_ENV === 'production'
+  const shouldApplyRateLimit =
+    process.env.NODE_ENV === 'production' &&
+    !isVercelNonProduction &&
+    !isVercelPreviewHost
   if (pathname.startsWith('/api') && shouldApplyRateLimit) {
     const rateLimit = checkRateLimit(clientIp, pathname)
     
