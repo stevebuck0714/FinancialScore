@@ -2374,13 +2374,13 @@ export async function GET(request: NextRequest) {
               dsoWeightedDaysDenominator: 0,
             }
           : null;
-        // Keep AR summary aligned with the trend source:
-        // - snapshot-first when ARAgingSnapshot rows exist,
-        // - otherwise invoice/open-row reconstruction.
-        const summaryTotals = useArSnapshotFirstResponse && latestSnapshotTotals && latestSnapshotTotals.totalAR > 0
-          ? latestSnapshotTotals
-          : latestOpenTotals.totalAR > 0
-            ? latestOpenTotals
+        // Prefer fresh open-invoice detail for the headline summary. It is the
+        // most reliable AR source when aging snapshots lag or were derived from
+        // summary-style raw payloads.
+        const summaryTotals = latestOpenTotals.totalAR > 0
+          ? latestOpenTotals
+          : useArSnapshotFirstResponse && latestSnapshotTotals && latestSnapshotTotals.totalAR > 0
+            ? latestSnapshotTotals
             : {
                 totalAR: Number(derivedTotals.totalAR || 0),
                 current: Number(derivedTotals.current || 0),

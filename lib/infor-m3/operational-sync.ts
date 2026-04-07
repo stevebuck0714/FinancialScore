@@ -2461,6 +2461,33 @@ async function saveARAging(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
+  const lifecycleRows = await deriveArLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, records);
+  if (lifecycleRows.length > 0) {
+    const lifecycleTotals = lifecycleRows.reduce(
+      (acc, row) => {
+        acc.totalAR += row.outstandingAmount;
+        acc.current += row.current;
+        acc.days1to30 += row.days1to30;
+        acc.days31to60 += row.days31to60;
+        acc.days61to90 += row.days61to90;
+        acc.days90plus += row.days90plus;
+        return acc;
+      },
+      { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+    );
+    await prisma.aRAgingSnapshot.upsert({
+      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+      update: lifecycleTotals,
+      create: {
+        companyId,
+        snapshotDate,
+        frequency,
+        ...lifecycleTotals,
+      },
+    });
+    return 1;
+  }
+
   const fromBuckets = records.reduce(
     (acc, record) => {
       acc.totalAR += pickNumber(record, ['totalAR', 'total', 'TOTAR']);
@@ -2497,35 +2524,7 @@ async function saveARAging(
           days90plus: derived.days90plus,
         };
 
-  if (totals.totalAR === 0) {
-    const lifecycleRows = await deriveArLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, records);
-    if (lifecycleRows.length > 0) {
-      const lifecycleTotals = lifecycleRows.reduce(
-        (acc, row) => {
-          acc.totalAR += row.outstandingAmount;
-          acc.current += row.current;
-          acc.days1to30 += row.days1to30;
-          acc.days31to60 += row.days31to60;
-          acc.days61to90 += row.days61to90;
-          acc.days90plus += row.days90plus;
-          return acc;
-        },
-        { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
-      );
-      await prisma.aRAgingSnapshot.upsert({
-        where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
-        update: lifecycleTotals,
-        create: {
-          companyId,
-          snapshotDate,
-          frequency,
-          ...lifecycleTotals,
-        },
-      });
-      return 1;
-    }
-    return 0;
-  }
+  if (totals.totalAR === 0) return 0;
 
   await prisma.aRAgingSnapshot.upsert({
     where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
@@ -3964,7 +3963,7 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
     }
 
     if (typeToken === 'P' || typeToken === 'A') {
-      const paidAmt = Math.abs(pickNumber(record, ['AmtPaid', 'paidAmount', 'UbPayment', 'DerAmtBal', 'ACAM', 'PYAM']));
+      const paidAmt = Math.abs(pickNumber(record, ['AmtPaid', 'paidAmount', 'UbPayment', 'PYAM']));
       if (paidAmt > 0) {
         const paidDate = parseMaybeDate(pickString(record, ['DistDate', 'RecordDate', 'paymentDate', 'date', 'PYDT', 'RGDT']));
         const dedupeKey = `${voucherNo}||${typeToken}||${paidDate ? paidDate.toISOString().slice(0, 10) : ''}||${paidAmt.toFixed(2)}||${
@@ -4272,14 +4271,35 @@ async function saveAPAging(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
+  const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
+  if (lifecycleRows.length > 0) {
+    const lifecycleTotals = lifecycleRows.reduce(
+      (acc, row) => {
+        acc.totalAP += row.outstandingAmount;
+        acc.current += row.current;
+        acc.days1to30 += row.days1to30;
+        acc.days31to60 += row.days31to60;
+        acc.days61to90 += row.days61to90;
+        acc.days90plus += row.days90plus;
+        return acc;
+      },
+      { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+    );
+    await prisma.aPAgingSnapshot.upsert({
+      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+      update: lifecycleTotals,
+      create: {
+        companyId,
+        snapshotDate,
+        frequency,
+        ...lifecycleTotals,
+      },
+    });
+    return 1;
+  }
+
   const deriveApOutstandingAmount = (record: Record<string, unknown>): number => {
     const directOpenBalance = pickNumber(record, [
-      'amountDueHome',
-      'amountDue',
-      'openAmount',
-      'openBalance',
-      'balance',
-      'Balance',
       'DerAmtBal',
       'UbOpening',
     ]);
@@ -4324,32 +4344,6 @@ async function saveAPAging(
   };
 
   if (totals.totalAP === 0) {
-    const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
-    if (lifecycleRows.length > 0) {
-      const lifecycleTotals = lifecycleRows.reduce(
-        (acc, row) => {
-          acc.totalAP += row.outstandingAmount;
-          acc.current += row.current;
-          acc.days1to30 += row.days1to30;
-          acc.days31to60 += row.days31to60;
-          acc.days61to90 += row.days61to90;
-          acc.days90plus += row.days90plus;
-          return acc;
-        },
-        { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
-      );
-      await prisma.aPAgingSnapshot.upsert({
-        where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
-        update: lifecycleTotals,
-        create: {
-          companyId,
-          snapshotDate,
-          frequency,
-          ...lifecycleTotals,
-        },
-      });
-      return 1;
-    }
     await prisma.aPAgingSnapshot.deleteMany({ where: { companyId, snapshotDate, frequency } });
     return 0;
   }
@@ -4377,14 +4371,43 @@ async function saveAPOpenBills(
 ): Promise<number> {
   await (prisma as any).aPOpenBillSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
+  const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
+  if (lifecycleRows.length > 0) {
+    const derivedRows = lifecycleRows.map((row, idx) => ({
+      companyId,
+      snapshotDate,
+      frequency,
+      vendorId: row.vendorId,
+      vendorName: row.vendorName || `Unknown Vendor ${idx + 1}`,
+      billNo: row.voucherNo,
+      billDate: row.billDate,
+      dueDate: row.dueDate,
+      status: 'open',
+      currencyCode: null as string | null,
+      amountCurrency: row.bookedAmount || null,
+      amountHome: row.bookedAmount || null,
+      amountDueHome: row.outstandingAmount,
+      current: row.current || null,
+      days1to30: row.days1to30 || null,
+      days31to60: row.days31to60 || null,
+      days61to90: row.days61to90 || null,
+      days90plus: row.days90plus || null,
+      sourcePlatform: 'INFOR_M3',
+      sourceProgram: `${context.miProgram || 'AP'}_LIFECYCLE_DERIVED`,
+      sourceTransaction: `${context.transaction || 'CSI_LOAD'}_DERIVED`,
+      cono: context.cono || null,
+      divi: context.divi || null,
+    }));
+    const DERIVED_BATCH_SIZE = 2000;
+    for (let i = 0; i < derivedRows.length; i += DERIVED_BATCH_SIZE) {
+      const batch = derivedRows.slice(i, i + DERIVED_BATCH_SIZE);
+      await (prisma as any).aPOpenBillSnapshot.createMany({ data: batch, skipDuplicates: true });
+    }
+    return derivedRows.length;
+  }
+
   const deriveApOutstandingAmount = (record: Record<string, unknown>): number => {
     const directOpenBalance = pickNumber(record, [
-      'amountDueHome',
-      'amountDue',
-      'openAmount',
-      'openBalance',
-      'balance',
-      'Balance',
       'DerAmtBal',
       'UbOpening',
     ]);
@@ -4443,41 +4466,7 @@ async function saveAPOpenBills(
       );
     });
 
-  if (!rows.length) {
-    const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
-    if (!lifecycleRows.length) return 0;
-    const derivedRows = lifecycleRows.map((row, idx) => ({
-      companyId,
-      snapshotDate,
-      frequency,
-      vendorId: row.vendorId,
-      vendorName: row.vendorName || `Unknown Vendor ${idx + 1}`,
-      billNo: row.voucherNo,
-      billDate: row.billDate,
-      dueDate: row.dueDate,
-      status: 'open',
-      currencyCode: null as string | null,
-      amountCurrency: row.bookedAmount || null,
-      amountHome: row.bookedAmount || null,
-      amountDueHome: row.outstandingAmount,
-      current: row.current || null,
-      days1to30: row.days1to30 || null,
-      days31to60: row.days31to60 || null,
-      days61to90: row.days61to90 || null,
-      days90plus: row.days90plus || null,
-      sourcePlatform: 'INFOR_M3',
-      sourceProgram: `${context.miProgram || 'AP'}_LIFECYCLE_DERIVED`,
-      sourceTransaction: `${context.transaction || 'CSI_LOAD'}_DERIVED`,
-      cono: context.cono || null,
-      divi: context.divi || null,
-    }));
-    const DERIVED_BATCH_SIZE = 2000;
-    for (let i = 0; i < derivedRows.length; i += DERIVED_BATCH_SIZE) {
-      const batch = derivedRows.slice(i, i + DERIVED_BATCH_SIZE);
-      await (prisma as any).aPOpenBillSnapshot.createMany({ data: batch, skipDuplicates: true });
-    }
-    return derivedRows.length;
-  }
+  if (!rows.length) return 0;
   const deduped = new Map<
     string,
     { row: Omit<(typeof rows)[number], 'sourceRecordDate'>; sourceRecordDate: Date | null; score: number }
