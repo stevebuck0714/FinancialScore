@@ -475,22 +475,61 @@ function buildExternalQueryResultsOnlyResponse(params: {
   sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
 }): AskOutput {
   const { question, sources } = params;
-  const normalizedSources = sources.slice(0, 12);
-  const citedBullets = normalizedSources.map((s) => ({
-    text: (s.snippet && String(s.snippet).trim()) || (s.title ? `${s.title}` : s.url),
-    citations: [{ url: s.url, title: s.title, publishedDate: s.publishedDate }],
+  const normalizedSources = sources.slice(0, 8);
+  const xRegex = /(\d+(?:\.\d+)?)\s*x\b/gi;
+  const rangeRegex = /(\d+(?:\.\d+)?)\s*(?:-|to|–)\s*(\d+(?:\.\d+)?)\s*x\b/gi;
+  const isValuationQuestion = /valuation|multiple|ev\/ebitda|ebitda/i.test(question);
+
+  const extracted = normalizedSources.map((s) => {
+    const text = `${String(s.title || '')} ${String(s.snippet || '')}`;
+    const ranges = Array.from(text.matchAll(rangeRegex)).map((m) => `${m[1]}x-${m[2]}x`);
+    const singles = Array.from(text.matchAll(xRegex)).map((m) => `${m[1]}x`);
+    const mentions = Array.from(new Set([...ranges, ...singles])).slice(0, 3);
+    return { source: s, mentions };
+  });
+
+  const allXValues = extracted
+    .flatMap((e) => e.mentions)
+    .flatMap((m) => m.match(/\d+(?:\.\d+)?/g) || [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
+  const minX = allXValues.length > 0 ? Math.min(...allXValues) : null;
+  const maxX = allXValues.length > 0 ? Math.max(...allXValues) : null;
+
+  const citedBullets = extracted.map(({ source, mentions }) => ({
+    text:
+      mentions.length > 0
+        ? `${source.title || 'Market source'} — reported multiples: ${mentions.join(', ')}`
+        : (source.snippet && String(source.snippet).trim()) || (source.title ? `${source.title}` : source.url),
+    citations: [{ url: source.url, title: source.title, publishedDate: source.publishedDate }],
   }));
+
+  const shortAnswer =
+    isValuationQuestion && minX !== null && maxX !== null
+      ? `External sources indicate sector valuation multiples roughly in the ${minX.toFixed(1)}x-${maxX.toFixed(1)}x range (methodology and deal size vary by source).`
+      : isValuationQuestion
+        ? 'I found sector valuation references, but most sources did not provide clean numeric ranges in the snippets.'
+        : `External market context was retrieved for: ${question}`;
+
+  const longAnswer = extracted
+    .map(({ source, mentions }, idx) => {
+      const title = source.title || source.url;
+      const snippet = source.snippet ? String(source.snippet).trim() : '';
+      const mentionText = mentions.length > 0 ? ` | Multiples noted: ${mentions.join(', ')}` : '';
+      return `${idx + 1}. ${title}${mentionText}${snippet ? ` — ${snippet}` : ''}`;
+    })
+    .join('\n');
+
+  const howThisImpactsUs =
+    isValuationQuestion && minX !== null && maxX !== null
+      ? `Use this external range to bracket enterprise value (for example, EBITDA x ${minX.toFixed(1)} to ${maxX.toFixed(1)}), then adjust for your company size, growth, and risk versus sector norms.`
+      : 'Use these sources as directional market context; for defensible valuation, prioritize sources with explicit sector multiples and methodology.';
+
   return {
-    shortAnswer: `External query results for: ${question}`,
-    longAnswer: normalizedSources
-      .map((s, idx) => {
-        const title = s.title || s.url;
-        const snippet = s.snippet ? ` — ${String(s.snippet).trim()}` : '';
-        return `${idx + 1}. ${title}${snippet}`;
-      })
-      .join('\n'),
+    shortAnswer,
+    longAnswer,
     citedBullets,
-    howThisImpactsUs: 'N/A',
+    howThisImpactsUs,
     sources: normalizedSources,
   };
 }
@@ -1050,7 +1089,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { industrySector: true, name: true },
+      select: { industrySector: true, industrySectorCategory: true, name: true },
     });
     const industryGroupId = company?.industrySector ? String(company.industrySector) : null;
     const benchmarks = industryGroupId
@@ -1333,11 +1372,14 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       ? buildExternalQueryPlan({
           question,
           industryGroupName,
+          industrySectorCategory: company?.industrySectorCategory || null,
           companyName: companyName || company?.name || null,
         })
       : null;
     const externalQuery = externalQueryPlan?.query || question;
-    const searchResults = useExternalSources ? await searchExternalWeb(externalQuery) : [];
+    const searchResults = useExternalSources
+      ? await searchExternalWeb(externalQuery, { requiredTerms: externalQueryPlan?.requiredTerms || [] })
+      : [];
     const externalSources = searchResults.map((r) => ({
       url: r.link as string,
       title: r.title || undefined,
@@ -1348,6 +1390,7 @@ export async function runAskCorelyticsLegacy(request: NextRequest) {
       (internalSummary as any).queryContext.externalQueryText = externalQuery;
       (internalSummary as any).queryContext.externalSearchIntent = externalQueryPlan.searchIntent;
       (internalSummary as any).queryContext.externalTopic = externalQueryPlan.topic;
+      (internalSummary as any).queryContext.externalRequiredTerms = externalQueryPlan.requiredTerms;
     }
     internalSummary.queryContext.externalSourcesAvailable = externalSources.length > 0;
     const sources =

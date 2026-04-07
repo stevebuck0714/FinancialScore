@@ -4,11 +4,37 @@ export type ExternalSearchHit = {
   snippet?: string;
   date?: string;
 };
+type ExternalSearchOptions = {
+  requiredTerms?: string[];
+};
 
 const SEARCH_TIMEOUT_MS = 6500;
 const MAX_RESULTS = 5;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const externalSearchCache = new Map<string, { expiresAt: number; results: ExternalSearchHit[] }>();
+const BLOCKED_HOST_PATTERNS = ['reddit.com', 'quora.com', 'calculator', 'forum', 'pinterest'];
+
+function filterLowValueResults(results: ExternalSearchHit[]): ExternalSearchHit[] {
+  return results.filter((r) => {
+    const link = String(r.link || '').toLowerCase();
+    const title = String(r.title || '').toLowerCase();
+    const snippet = String(r.snippet || '').toLowerCase();
+    const text = `${link} ${title} ${snippet}`;
+    if (!link) return false;
+    if (BLOCKED_HOST_PATTERNS.some((p) => text.includes(p))) return false;
+    return true;
+  });
+}
+
+function filterByRequiredTerms(results: ExternalSearchHit[], requiredTerms: string[]): ExternalSearchHit[] {
+  if (!requiredTerms.length) return results;
+  const relevant = results.filter((r) => {
+    const text = `${String(r.link || '')} ${String(r.title || '')} ${String(r.snippet || '')}`.toLowerCase();
+    return requiredTerms.some((term) => text.includes(term.toLowerCase()));
+  });
+  // Keep a few broader results if relevance filter is too strict.
+  return relevant.length >= 3 ? relevant : results;
+}
 
 async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
@@ -51,7 +77,8 @@ async function braveSearch(query: string): Promise<ExternalSearchHit[]> {
   const data: any = await res.json();
   const results = Array.isArray(data?.web?.results) ? data.web.results : [];
 
-  return results
+  return filterLowValueResults(
+    results
     .map((r: any) => ({
       title: r?.title ? String(r.title) : undefined,
       link: r?.url ? String(r.url) : undefined,
@@ -59,7 +86,7 @@ async function braveSearch(query: string): Promise<ExternalSearchHit[]> {
       date: r?.page_age ? String(r.page_age) : undefined,
     }))
     .filter((r: ExternalSearchHit) => Boolean(r.link))
-    .slice(0, MAX_RESULTS);
+  ).slice(0, MAX_RESULTS);
 }
 
 async function serpApiSearch(query: string): Promise<ExternalSearchHit[]> {
@@ -82,7 +109,8 @@ async function serpApiSearch(query: string): Promise<ExternalSearchHit[]> {
 
   const data: any = await res.json();
   const organic = Array.isArray(data?.organic_results) ? data.organic_results : [];
-  return organic
+  return filterLowValueResults(
+    organic
     .map((r: any) => ({
       title: r?.title ? String(r.title) : undefined,
       link: r?.link ? String(r.link) : undefined,
@@ -90,10 +118,11 @@ async function serpApiSearch(query: string): Promise<ExternalSearchHit[]> {
       date: r?.date ? String(r.date) : undefined,
     }))
     .filter((r: ExternalSearchHit) => Boolean(r.link))
-    .slice(0, MAX_RESULTS);
+  ).slice(0, MAX_RESULTS);
 }
 
-export async function searchExternalWeb(query: string): Promise<ExternalSearchHit[]> {
+export async function searchExternalWeb(query: string, options?: ExternalSearchOptions): Promise<ExternalSearchHit[]> {
+  const requiredTerms = Array.isArray(options?.requiredTerms) ? options!.requiredTerms!.filter(Boolean) : [];
   const cacheKey = query.trim().toLowerCase();
   const now = Date.now();
   const cached = externalSearchCache.get(cacheKey);
@@ -105,9 +134,13 @@ export async function searchExternalWeb(query: string): Promise<ExternalSearchHi
   try {
     const brave = await braveSearch(query);
     if (brave.length > 0) {
-      console.info('Ask Corelytics external search provider=brave', { count: brave.length });
-      externalSearchCache.set(cacheKey, { expiresAt: now + CACHE_TTL_MS, results: brave });
-      return brave;
+      const filtered = filterByRequiredTerms(brave, requiredTerms);
+      console.info('Ask Corelytics external search provider=brave', {
+        count: filtered.length,
+        requiredTermsApplied: requiredTerms.length > 0,
+      });
+      externalSearchCache.set(cacheKey, { expiresAt: now + CACHE_TTL_MS, results: filtered });
+      return filtered;
     }
   } catch (error) {
     console.warn('Brave search unavailable; attempting fallback provider.', error);
@@ -115,13 +148,17 @@ export async function searchExternalWeb(query: string): Promise<ExternalSearchHi
 
   try {
     const fallback = await serpApiSearch(query);
+    const filtered = filterByRequiredTerms(fallback, requiredTerms);
     if (fallback.length > 0) {
-      console.info('Ask Corelytics external search provider=serpapi-fallback', { count: fallback.length });
-      externalSearchCache.set(cacheKey, { expiresAt: now + CACHE_TTL_MS, results: fallback });
+      console.info('Ask Corelytics external search provider=serpapi-fallback', {
+        count: filtered.length,
+        requiredTermsApplied: requiredTerms.length > 0,
+      });
+      externalSearchCache.set(cacheKey, { expiresAt: now + CACHE_TTL_MS, results: filtered });
     } else {
       console.info('Ask Corelytics external search provider=none', { count: 0 });
     }
-    return fallback;
+    return filtered;
   } catch (error) {
     console.warn('Fallback web search failed.', error);
     console.info('Ask Corelytics external search provider=none', { count: 0 });
