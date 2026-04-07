@@ -35,6 +35,7 @@ try {
 }
 console.log('🔐 ENV loaded:', {
   hasOpenAI: !!process.env.OPENAI_API_KEY,
+  hasBrave: !!(process.env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_API_KEY),
   hasSerpApi: !!process.env.SERPAPI_API_KEY,
   serpApiLen: (process.env.SERPAPI_API_KEY || '').length,
   serpApiFileLen,

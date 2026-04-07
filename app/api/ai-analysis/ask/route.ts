@@ -7,6 +7,8 @@ import { getBenchmarkValue } from '@/app/utils/data-processing';
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 import { retrieveDocumentChunks } from '@/lib/company-documents/retrieve-chunks';
 import { createModelText } from '@/lib/openai-helpers';
+import { searchExternalWeb } from '@/lib/ask-corelytics/externalSearch';
+import { buildExternalQueryPlan } from '@/lib/ask-corelytics/externalQueryBuilder';
 
 type RatioSnapshot = {
   name: string;
@@ -128,48 +130,6 @@ function buildChangeSummary(current?: number | null, previous?: number | null): 
   return { current, previous, delta, direction, percentChange };
 }
 
-type SerperOrganicResult = {
-  title?: string;
-  link?: string;
-  snippet?: string;
-  date?: string;
-};
-
-async function serpApiSearch(query: string): Promise<SerperOrganicResult[]> {
-  const apiKey = process.env.SERPAPI_API_KEY;
-  if (!apiKey) {
-    return [];
-  }
-
-  const url = new URL('https://serpapi.com/search.json');
-  url.searchParams.set('engine', 'google');
-  url.searchParams.set('q', query);
-  url.searchParams.set('num', '10');
-  url.searchParams.set('hl', 'en');
-  url.searchParams.set('gl', 'us');
-  url.searchParams.set('api_key', apiKey);
-
-  const res = await fetch(url.toString(), { method: 'GET' });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`Web search failed (${res.status}): ${txt || res.statusText}`);
-  }
-
-  const data: any = await res.json();
-  // SerpApi format: organic_results: [{ title, link, snippet, date }, ...]
-  const organic = Array.isArray(data?.organic_results) ? (data.organic_results as SerperOrganicResult[]) : [];
-  return organic
-    .filter((r) => r?.link)
-    .slice(0, 8)
-    .map((r) => ({
-      title: r.title,
-      link: r.link,
-      snippet: r.snippet,
-      date: r.date,
-    }));
-}
-
 function safeJsonParse(rawContent: string): any {
   const raw = String(rawContent || '');
   if (!raw.trim()) {
@@ -243,6 +203,20 @@ type AskOutput = {
   }>;
   howThisImpactsUs: string;
   sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+};
+
+type ConversationTurn = {
+  askedAt: string;
+  question: string;
+  shortAnswer: string;
+  longAnswer: string;
+  howThisImpactsUs: string;
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null }>;
+};
+
+type ConversationContext = {
+  recentTurns: ConversationTurn[];
+  runningSummary: string;
 };
 
 const REFERRAL_BLOCKLIST = ['yelp', "angi", "angie's list", 'homeadvisor', 'yellow pages'];
@@ -386,7 +360,8 @@ function isCompetitorQuestion(question: string): boolean {
 
 function shouldUseExternalSources(question: string, override?: boolean | null): boolean {
   if (override === true) {
-    return !isInternalOnlyQuestion(question);
+    // Explicit UI intent: when user turns external sources ON, always run external retrieval.
+    return true;
   }
   if (override === false) return false;
   const q = question.toLowerCase();
@@ -445,6 +420,33 @@ function hasNonEmptyBullets(citedBullets: AskOutput['citedBullets']): boolean {
   return citedBullets.every((b) => String(b?.text || '').trim().length >= 3);
 }
 
+function normalizeConversationContext(input: unknown): ConversationContext | null {
+  if (!input || typeof input !== 'object') return null;
+  const raw = input as any;
+  const rawRecent = Array.isArray(raw.recentTurns) ? raw.recentTurns : [];
+  const recentTurns: ConversationTurn[] = rawRecent
+    .slice(-8)
+    .map((turn: any) => ({
+      askedAt: String(turn?.askedAt || '').slice(0, 64),
+      question: String(turn?.question || '').slice(0, 2000),
+      shortAnswer: String(turn?.shortAnswer || '').slice(0, 2500),
+      longAnswer: String(turn?.longAnswer || '').slice(0, 7000),
+      howThisImpactsUs: String(turn?.howThisImpactsUs || '').slice(0, 2000),
+      sources: (Array.isArray(turn?.sources) ? turn.sources : [])
+        .slice(0, 8)
+        .map((s: any) => ({
+          url: String(s?.url || '').slice(0, 1200),
+          title: s?.title ? String(s.title).slice(0, 300) : undefined,
+          publishedDate: s?.publishedDate ? String(s.publishedDate).slice(0, 80) : null,
+        }))
+        .filter((s: any) => s.url),
+    }))
+    .filter((turn: ConversationTurn) => turn.question || turn.shortAnswer || turn.longAnswer);
+  const runningSummary = String(raw.runningSummary || '').slice(0, 4000);
+  if (recentTurns.length === 0 && !runningSummary) return null;
+  return { recentTurns, runningSummary };
+}
+
 function extractCompanyCandidates(
   sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>,
 ): Array<{ name: string; sourceUrl: string; sourceTitle?: string }> {
@@ -466,6 +468,31 @@ function extractCompanyCandidates(
     candidates.push({ name: raw, sourceUrl: s.url, sourceTitle: s.title || undefined });
   }
   return candidates;
+}
+
+function buildExternalQueryResultsOnlyResponse(params: {
+  question: string;
+  sources: Array<{ url: string; title?: string; publishedDate?: string | null; snippet?: string }>;
+}): AskOutput {
+  const { question, sources } = params;
+  const normalizedSources = sources.slice(0, 12);
+  const citedBullets = normalizedSources.map((s) => ({
+    text: (s.snippet && String(s.snippet).trim()) || (s.title ? `${s.title}` : s.url),
+    citations: [{ url: s.url, title: s.title, publishedDate: s.publishedDate }],
+  }));
+  return {
+    shortAnswer: `External query results for: ${question}`,
+    longAnswer: normalizedSources
+      .map((s, idx) => {
+        const title = s.title || s.url;
+        const snippet = s.snippet ? ` — ${String(s.snippet).trim()}` : '';
+        return `${idx + 1}. ${title}${snippet}`;
+      })
+      .join('\n'),
+    citedBullets,
+    howThisImpactsUs: 'N/A',
+    sources: normalizedSources,
+  };
 }
 
 function buildFallbackFromSources(params: {
@@ -654,6 +681,7 @@ async function generateAskJson(params: {
 }): Promise<{ parsed: AskOutput; finish_reason: string | null | undefined; contentPreview: string; contentLength: number }> {
   const { openai, model, companyName, question, internalSummary, sources, mode, requestedCount, strictCitations } = params;
   const hasDoc = !!(internalSummary as any)?.documentContext?.id;
+  const conversationContext = !hasDoc ? ((internalSummary as any)?.conversationContext as ConversationContext | null) : null;
   const docCtx = hasDoc ? ((internalSummary as any).documentContext as any) : null;
   const retrievedChunks = hasDoc && Array.isArray(docCtx?.retrievedChunks) ? (docCtx.retrievedChunks as any[]) : [];
   const qLower = String(question || '').toLowerCase();
@@ -694,6 +722,8 @@ async function generateAskJson(params: {
         'In this app, KPIs are the same as ratio metrics shown in the Ratios view. Treat KPI questions as ratio questions.',
         'When describing month-over-month changes, use internalSummary.monthlyChanges.direction and values.',
         'If the user asks for a list of N items, provide N items directly (no referrals to other sites).',
+        'Use conversation context for follow-up questions (for example: "that", "it", "compare this to last answer").',
+        'When prior context conflicts with new grounded sources, prioritize current grounded sources and mention the change.',
       ].join('\n');
 
   const requirements =
@@ -771,6 +801,14 @@ async function generateAskJson(params: {
         'Internal data summary (use for company-specific metrics; do NOT invent data not present):',
         // Keep compact to reduce token use.
         JSON.stringify(internalSummary),
+        ...(conversationContext
+          ? [
+              '',
+              'Conversation context for true follow-up threading:',
+              JSON.stringify(conversationContext),
+              '- Use this to resolve references to prior turns and keep continuity.',
+            ]
+          : []),
         '',
         'Allowed sources (cite ONLY these URLs):',
         JSON.stringify(sourceList),
@@ -868,7 +906,7 @@ async function generateAskJson(params: {
   };
 }
 
-export async function POST(request: NextRequest) {
+export async function runAskCorelyticsLegacy(request: NextRequest) {
   try {
     await requireAuth();
 
@@ -883,6 +921,8 @@ export async function POST(request: NextRequest) {
     const useExternalSourcesRaw = body?.useExternalSources;
     const useExternalSourcesOverride =
       typeof useExternalSourcesRaw === 'boolean' ? useExternalSourcesRaw : false;
+    const threadId = body?.threadId ? String(body.threadId).slice(0, 120) : '';
+    const conversationContext = normalizeConversationContext(body?.conversationContext);
 
     if (!companyId) {
       return NextResponse.json({ error: 'companyId is required' }, { status: 400 });
@@ -1010,7 +1050,7 @@ export async function POST(request: NextRequest) {
 
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { industrySector: true },
+      select: { industrySector: true, name: true },
     });
     const industryGroupId = company?.industrySector ? String(company.industrySector) : null;
     const benchmarks = industryGroupId
@@ -1144,6 +1184,10 @@ export async function POST(request: NextRequest) {
         : {
             generatedAt: now.toISOString(),
             company: { id: companyId, name: companyName || null, industryGroupId, industryGroupName },
+            threadContext: {
+              threadId: threadId || null,
+            },
+            conversationContext,
             documentContext: docContext
               ? {
                   id: docContext.id,
@@ -1285,13 +1329,26 @@ export async function POST(request: NextRequest) {
       },
     ];
 
-    const searchResults = useExternalSources ? await serpApiSearch(question) : [];
+    const externalQueryPlan = useExternalSources
+      ? buildExternalQueryPlan({
+          question,
+          industryGroupName,
+          companyName: companyName || company?.name || null,
+        })
+      : null;
+    const externalQuery = externalQueryPlan?.query || question;
+    const searchResults = useExternalSources ? await searchExternalWeb(externalQuery) : [];
     const externalSources = searchResults.map((r) => ({
       url: r.link as string,
       title: r.title || undefined,
       publishedDate: r.date || null,
       snippet: r.snippet || undefined,
     }));
+    if (useExternalSources && externalQueryPlan) {
+      (internalSummary as any).queryContext.externalQueryText = externalQuery;
+      (internalSummary as any).queryContext.externalSearchIntent = externalQueryPlan.searchIntent;
+      (internalSummary as any).queryContext.externalTopic = externalQueryPlan.topic;
+    }
     internalSummary.queryContext.externalSourcesAvailable = externalSources.length > 0;
     const sources =
       uiMode === 'document'
@@ -1301,7 +1358,7 @@ export async function POST(request: NextRequest) {
 
     if (useExternalSources && externalSources.length === 0) {
       return NextResponse.json(
-        { error: 'No external sources found for this query. Try a more specific query or location.' },
+        { error: 'No external sources found for this query. Try a more specific query or location.', debug: { externalQuery } },
         { status: 422 },
       );
     }
@@ -1321,6 +1378,7 @@ export async function POST(request: NextRequest) {
     // Try full mode first; if truncated, retry once in compact mode.
     let parsed: AskOutput;
     let finishReason: string | null | undefined;
+    const externalResultsOnly = Boolean((internalSummary as any)?.queryContext?.externalQuery);
     try {
       const first = await generateAskJson({
         openai,
@@ -1368,7 +1426,9 @@ export async function POST(request: NextRequest) {
       });
 
       if (second.finish_reason === 'length' || isListInvalid(parsed, requestedCount)) {
-        parsed = buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
+        parsed = externalResultsOnly
+          ? buildExternalQueryResultsOnlyResponse({ question, sources: sourcesWithDoc })
+          : buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
       }
     }
 
@@ -1414,7 +1474,9 @@ export async function POST(request: NextRequest) {
       citationsOk = hasValidCitations(citedBullets, allowedUrls);
 
       if (strictRetry.finish_reason === 'length' || isListInvalid(parsed, requestedCount) || !citationsOk) {
-        parsed = buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
+        parsed = externalResultsOnly
+          ? buildExternalQueryResultsOnlyResponse({ question, sources: sourcesWithDoc })
+          : buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
       }
     }
 
@@ -1456,7 +1518,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (!hasNonEmptyBullets(citedBullets)) {
-      parsed = buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
+      parsed = externalResultsOnly
+        ? buildExternalQueryResultsOnlyResponse({ question, sources: sourcesWithDoc })
+        : buildFallbackFromSources({ sources: sourcesWithDoc, companyName, question, requestedCount, internalSummary });
       citedBullets = Array.isArray(parsed?.citedBullets) ? parsed.citedBullets : [];
       if (!hasNonEmptyBullets(citedBullets)) {
         return NextResponse.json(
@@ -1498,5 +1562,9 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+export async function POST(request: NextRequest) {
+  return runAskCorelyticsLegacy(request);
 }
 
