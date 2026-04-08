@@ -2112,6 +2112,24 @@ function filterRecordsByDateWindow(
     return rowMonth >= startMonth && rowMonth <= endMonth;
   };
 
+  const hasUndatedSalesSignal = (record: Record<string, unknown>): boolean => {
+    const orderId = pickString(record, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum']);
+    const invoiceNo = pickString(record, ['InvNum', 'invoiceNo', 'invoiceNumber', 'DerInvNum', 'IVNO']);
+    const customerHint = pickString(record, ['CustNum', 'DerCustNoName', 'customerComposite', 'CustNumName']);
+    const amountHint = pickNumber(record, [
+      'Amount',
+      'amount',
+      'ExtPrice',
+      'extPrice',
+      'LineAmount',
+      'lineAmount',
+      'InvoicedAmount',
+      'invoicedAmount',
+      'AmtInvoiced',
+    ]);
+    return Boolean(orderId || invoiceNo || customerHint || amountHint !== 0);
+  };
+
   // Keep records lacking any parseable date to avoid dropping valid rows from sparse payloads.
   return records.filter((record) => {
     const date = firstRecordDate(record, keys);
@@ -2122,6 +2140,12 @@ function filterRecordsByDateWindow(
     if (!date) {
       if ((moduleType === 'ar' || moduleType === 'ap') && window.mode !== 'daily_overlap') {
         return false;
+      }
+      if (moduleType === 'sales' && window.mode !== 'daily_overlap') {
+        // For explicit/backfill slices, keep undated sales rows when they still carry
+        // order/invoice/customer or amount signals. Some CSI tenants omit date fields
+        // on SLCOITEMS/SLCOS rows even though they are valid sales inputs.
+        return hasUndatedSalesSignal(record);
       }
       return moduleType === 'sales' ? false : true;
     }
@@ -7939,6 +7963,34 @@ export async function transformInforM3RawRun(options: {
           updatedAt: new Date(),
         },
       });
+      const salesRawInputCount = await (prisma as any).inforRawRecord.count({
+        where: {
+          companyId,
+          platform: 'INFOR_M3',
+          syncRunId,
+          businessDate: snapshotDate,
+          miProgram: {
+            in: ['SLCOITEMS', 'SLCoitems', 'SLINVHDRS', 'SLInvHdrs', 'SLCOS', 'SLCos', 'SLCOHDRS', 'SLCohdrs'],
+          },
+        },
+      });
+      if (salesRawInputCount <= 0) {
+        await (prisma as any).inforRawCompleteness.updateMany({
+          where: {
+            companyId,
+            platform: 'INFOR_M3',
+            syncRunId,
+            businessDate: snapshotDate,
+            sourceKey: 'sales',
+          },
+          data: {
+            isComplete: false,
+            statusMessage: 'raw_missing:sales_inputs',
+            lastSeenAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+      }
       daysProcessed += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Raw transform day processing failed';
@@ -8003,6 +8055,7 @@ export async function processPendingInforRawTransforms(options?: {
       AND sr.status = 'done'
     WHERE rc.platform = 'INFOR_M3'
       AND rc."isComplete" = false
+      AND COALESCE(rc."statusMessage", '') NOT LIKE 'raw_missing:%'
     GROUP BY rc."companyId", rc."syncRunId", rc."businessDate", sr."frequency"
     ORDER BY
       MAX(COALESCE(sr."finishedAt", sr."updatedAt", sr."createdAt")) DESC NULLS LAST,
