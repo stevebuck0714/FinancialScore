@@ -890,6 +890,33 @@ export async function GET(request: NextRequest) {
           const mtdStart = startOfBusinessMonth(endDate);
           const qtdStart = startOfBusinessQuarter(endDate);
           const ytdStart = startOfBusinessYear(endDate);
+          const applyBookingDelta = (
+            customerId: string | null,
+            customerNameRaw: string,
+            snapshot: Date,
+            delta: number
+          ) => {
+            if (delta <= 0 || Number.isNaN(snapshot.getTime())) return;
+            const customerName = String(customerNameRaw || 'Unknown Customer');
+            const key = `${customerId || ''}|${customerName.toLowerCase()}`;
+            if (!bookingsByCustomer.has(key)) {
+              bookingsByCustomer.set(key, {
+                customerId,
+                customerName,
+                mtd: 0,
+                qtd: 0,
+                ytd: 0,
+              });
+            }
+            const acc = bookingsByCustomer.get(key)!;
+            if (snapshot >= mtdStart && snapshot <= endDate) acc.mtd += delta;
+            if (snapshot >= qtdStart && snapshot <= endDate) acc.qtd += delta;
+            if (snapshot >= ytdStart && snapshot <= endDate) acc.ytd += delta;
+            if (snapshot >= startDate && snapshot <= endDate) {
+              const monthKey = businessMonthKey(snapshot);
+              bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + delta);
+            }
+          };
           if (hasOrderDateColumn) {
             const orderRows = await bookingsOrderLineDelegate.findMany({
               where: {
@@ -908,7 +935,7 @@ export async function GET(request: NextRequest) {
                 contractValue: true,
                 invoicedAmount: true,
               },
-              orderBy: [{ snapshotDate: 'desc' }],
+              orderBy: [{ snapshotDate: 'asc' }],
               take: 300000,
             });
 
@@ -919,18 +946,10 @@ export async function GET(request: NextRequest) {
                 customerName: string;
                 lastValue: number;
                 hasBaseline: boolean;
-                endValue: number;
-                beforeMtd: number;
-                beforeQtd: number;
-                beforeYtd: number;
-                hasEndValue: boolean;
               }
             >();
 
-            const orderRowsAsc = [...(orderRows as any[])].sort(
-              (a: any, b: any) => Number(new Date(a.snapshotDate)) - Number(new Date(b.snapshotDate))
-            );
-            for (const row of orderRowsAsc) {
+            for (const row of orderRows as any[]) {
               const snapshot = new Date(row.snapshotDate);
               if (Number.isNaN(snapshot.getTime())) continue;
               const customerName = String(row.customerName || 'Unknown Customer');
@@ -944,11 +963,6 @@ export async function GET(request: NextRequest) {
                   customerName,
                   lastValue: 0,
                   hasBaseline: false,
-                  endValue: 0,
-                  beforeMtd: 0,
-                  beforeQtd: 0,
-                  beforeYtd: 0,
-                  hasEndValue: false,
                 });
               }
               const state = lineState.get(lineKey)!;
@@ -967,43 +981,12 @@ export async function GET(request: NextRequest) {
               if (!state.hasBaseline) {
                 state.lastValue = value;
                 state.hasBaseline = true;
+                applyBookingDelta(state.customerId, state.customerName, snapshot, value);
               } else {
                 const delta = value - state.lastValue;
-                if (delta > 0 && snapshot >= startDate && snapshot <= endDate) {
-                  const monthKey = businessMonthKey(snapshot);
-                  bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + delta);
-                }
+                applyBookingDelta(state.customerId, state.customerName, snapshot, delta);
                 state.lastValue = value;
               }
-              if (snapshot < mtdStart) state.beforeMtd = value;
-              if (snapshot < qtdStart) state.beforeQtd = value;
-              if (snapshot < ytdStart) state.beforeYtd = value;
-              if (snapshot <= endDate) {
-                state.endValue = value;
-                state.hasEndValue = true;
-              }
-            }
-
-            for (const state of lineState.values()) {
-              if (!state.hasEndValue) continue;
-              const mtd = Math.max(state.endValue - state.beforeMtd, 0);
-              const qtd = Math.max(state.endValue - state.beforeQtd, 0);
-              const ytd = Math.max(state.endValue - state.beforeYtd, 0);
-              if (mtd === 0 && qtd === 0 && ytd === 0) continue;
-              const key = `${state.customerId || ''}|${state.customerName.toLowerCase()}`;
-              if (!bookingsByCustomer.has(key)) {
-                bookingsByCustomer.set(key, {
-                  customerId: state.customerId,
-                  customerName: state.customerName,
-                  mtd: 0,
-                  qtd: 0,
-                  ytd: 0,
-                });
-              }
-              const acc = bookingsByCustomer.get(key)!;
-              acc.mtd += mtd;
-              acc.qtd += qtd;
-              acc.ytd += ytd;
             }
           } else {
             // Backward-compatible fallback until orderDate column is migrated/backfilled.
@@ -1033,11 +1016,6 @@ export async function GET(request: NextRequest) {
                 customerName: string;
                 lastValue: number;
                 hasBaseline: boolean;
-                endValue: number;
-                beforeMtd: number;
-                beforeQtd: number;
-                beforeYtd: number;
-                hasEndValue: boolean;
               }
             >();
 
@@ -1056,11 +1034,6 @@ export async function GET(request: NextRequest) {
                   customerName,
                   lastValue: 0,
                   hasBaseline: false,
-                  endValue: 0,
-                  beforeMtd: 0,
-                  beforeQtd: 0,
-                  beforeYtd: 0,
-                  hasEndValue: false,
                 });
               }
               const state = lineState.get(lineKey)!;
@@ -1080,43 +1053,12 @@ export async function GET(request: NextRequest) {
               if (!state.hasBaseline) {
                 state.lastValue = value;
                 state.hasBaseline = true;
+                applyBookingDelta(state.customerId, state.customerName, snapshot, value);
               } else {
                 const delta = value - state.lastValue;
-                if (delta > 0 && snapshot >= startDate && snapshot <= endDate) {
-                  const monthKey = businessMonthKey(snapshot);
-                  bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + delta);
-                }
+                applyBookingDelta(state.customerId, state.customerName, snapshot, delta);
                 state.lastValue = value;
               }
-              if (snapshot < mtdStart) state.beforeMtd = value;
-              if (snapshot < qtdStart) state.beforeQtd = value;
-              if (snapshot < ytdStart) state.beforeYtd = value;
-              if (snapshot <= endDate) {
-                state.endValue = value;
-                state.hasEndValue = true;
-              }
-            }
-
-            for (const state of lineState.values()) {
-              if (!state.hasEndValue) continue;
-              const mtd = Math.max(state.endValue - state.beforeMtd, 0);
-              const qtd = Math.max(state.endValue - state.beforeQtd, 0);
-              const ytd = Math.max(state.endValue - state.beforeYtd, 0);
-              if (mtd === 0 && qtd === 0 && ytd === 0) continue;
-              const key = `${state.customerId || ''}|${state.customerName.toLowerCase()}`;
-              if (!bookingsByCustomer.has(key)) {
-                bookingsByCustomer.set(key, {
-                  customerId: state.customerId,
-                  customerName: state.customerName,
-                  mtd: 0,
-                  qtd: 0,
-                  ytd: 0,
-                });
-              }
-              const acc = bookingsByCustomer.get(key)!;
-              acc.mtd += mtd;
-              acc.qtd += qtd;
-              acc.ytd += ytd;
             }
           }
         }
@@ -3399,6 +3341,23 @@ export async function GET(request: NextRequest) {
               ].filter(Boolean)
             )
           );
+        const trimProductToken = (value: unknown): string => String(value || '').trim();
+        const looksLikeItemCode = (value: string): boolean =>
+          /[A-Za-z]/.test(value) || value.includes('-') || value.includes('/') || value.includes('_');
+        const looksNumericOnly = (value: string): boolean => /^\d+$/.test(value);
+        const normalizeProductIdentity = (row: any) => {
+          const rawSku = trimProductToken(row?.sku);
+          const rawItemId = trimProductToken(row?.itemId);
+          const candidate = [rawSku, rawItemId].find((token) => token && looksLikeItemCode(token)) || '';
+          if (candidate) {
+            row.sku = candidate;
+            if (!looksLikeItemCode(rawItemId)) row.itemId = candidate;
+            return;
+          }
+          // No valid item-like identifier present: suppress numeric transaction/customer ids.
+          if (looksNumericOnly(rawSku)) row.sku = null;
+          if (looksNumericOnly(rawItemId)) row.itemId = null;
+        };
 
         const recordsV1 = data.map((row: any) => ({
           ...row,
@@ -3409,6 +3368,7 @@ export async function GET(request: NextRequest) {
           returnsAmount: Number(row?.revenue || 0) < 0 ? Math.abs(Number(row?.revenue || 0)) : 0,
           isEstimatedCost: false,
         }));
+        for (const row of recordsV1) normalizeProductIdentity(row);
 
         // Quantity fallback from order-line snapshots when product quantity is missing/zero.
         const productOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;

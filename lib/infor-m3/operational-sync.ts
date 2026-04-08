@@ -5445,6 +5445,22 @@ async function saveProductSales(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
+  const looksLikeItemCode = (value: string): boolean =>
+    /[A-Za-z]/.test(value) || value.includes('-') || value.includes('/') || value.includes('_');
+  const canonicalItemCode = (record: Record<string, unknown>): string | null => {
+    const candidates = [
+      pickString(record, ['Item']),
+      pickString(record, ['ITNO']),
+      pickString(record, ['itemCode']),
+      pickString(record, ['itemId']),
+      pickString(record, ['sku']),
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+    if (candidates.length === 0) return null;
+    const preferred = candidates.find((value) => looksLikeItemCode(value)) || candidates[0];
+    return preferred || null;
+  };
   await prisma.productSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
   const snapshotDayUtcMs = startOfUtcDay(snapshotDate).getTime();
   const rows = records
@@ -5468,13 +5484,15 @@ async function saveProductSales(
       const revenue = metrics.revenue;
       const cogs = metrics.cogs;
       const grossMargin = revenue - cogs;
+      const itemCode = canonicalItemCode(record);
       return {
         companyId,
         snapshotDate,
         frequency,
-        itemId: pickString(record, ['itemId', 'ITNO', 'sku', 'Item', 'CustNum']),
-        itemName: pickString(record, ['itemName', 'name', 'ITDS', 'Item', 'AddrName', 'DerCustNoName']) || 'Unknown Item',
-        sku: pickString(record, ['sku', 'itemCode', 'ITNO', 'Item', 'InvNum', 'CoNum']),
+        // No cross-domain fallbacks: product identity must come from item fields only.
+        itemId: itemCode,
+        itemName: pickString(record, ['itemName', 'name', 'ITDS', 'Description']) || 'Unknown Item',
+        sku: itemCode,
         quantitySold,
         revenue,
         cogs,
@@ -5496,19 +5514,36 @@ async function saveInventory(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
+  const looksLikeItemCode = (value: string): boolean =>
+    /[A-Za-z]/.test(value) || value.includes('-') || value.includes('/') || value.includes('_');
+  const canonicalItemCode = (record: Record<string, unknown>): string | null => {
+    const candidates = [
+      pickString(record, ['Item']),
+      pickString(record, ['ITNO']),
+      pickString(record, ['itemCode']),
+      pickString(record, ['itemId']),
+      pickString(record, ['sku']),
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+    if (candidates.length === 0) return null;
+    const preferred = candidates.find((value) => looksLikeItemCode(value)) || candidates[0];
+    return preferred || null;
+  };
   await prisma.inventorySnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
   const rows = records
     .map((record) => {
       const qtyOnHand = pickNumber(record, ['qtyOnHand', 'quantity', 'QTY', 'onHand', 'DerQtyOnHand', 'iwvQtyOnHand', 'ITWHQtyOnHand']);
       const avgCost = pickNumber(record, ['avgCost', 'cost', 'averageCost', 'UnitCost', 'AvgUCost', 'CurUCost', 'DerUnitCost']);
       const assetValue = pickNumber(record, ['assetValue', 'value', 'inventoryValue', 'UbValue', 'DerExtValue']) || qtyOnHand * avgCost;
+      const itemCode = canonicalItemCode(record);
       return {
         companyId,
         snapshotDate,
         frequency,
-        itemId: pickString(record, ['itemId', 'ITNO', 'sku', 'Item']),
+        itemId: itemCode,
         itemName: pickString(record, ['itemName', 'name', 'ITDS', 'Description', 'Item']) || 'Unknown Item',
-        sku: pickString(record, ['sku', 'itemCode', 'ITNO', 'Item']),
+        sku: itemCode,
         warehouse: pickString(record, ['warehouse', 'Warehouse', 'WHLO', 'Whse', 'ITWHWhse', 'MfgWhse', 'SupplyWhse']),
         bin: pickString(record, ['bin', 'Bin', 'BANO', 'UbLocation', 'BflushLoc']),
         lot: pickString(record, ['lot', 'Lot', 'LOT', 'UbLotNumber', 'LotNum']),
