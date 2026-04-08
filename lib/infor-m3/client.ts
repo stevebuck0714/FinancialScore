@@ -42,12 +42,80 @@ type CachedToken = {
   expiresAtMs: number;
 };
 
+export type InforIonApiRequestMeta = {
+  programId?: string;
+  sourcePath?: string;
+  syncRunId?: string;
+  businessDateIso?: string | null;
+};
+
 const tokenCache = new Map<string, CachedToken>();
 
 function joinUrl(base: string, path: string): string {
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
   const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
   return `${normalizedBase}${normalizedPath}`;
+}
+
+function classifySlVchHdrsBookmarkShape(bookmark: string | null | undefined): 'empty' | 'legacy' | 'canonical' | 'unknown' {
+  if (!bookmark) return 'empty';
+  const raw = String(bookmark).trim();
+  if (!raw) return 'empty';
+  const hasRecordDate = /RecordDate/i.test(raw);
+  const hasVoucher = /Voucher/i.test(raw);
+  const hasVendNum = /VendNum/i.test(raw);
+  const hasRowPointer = /RowPointer/i.test(raw);
+  if (hasVoucher && hasVendNum && !hasRecordDate) return 'legacy';
+  if (hasRecordDate && hasVoucher && hasRowPointer) return 'canonical';
+  return 'unknown';
+}
+
+function assertNoLegacySlVchHdrsOutboundRequest(endpointPath: string, meta?: InforIonApiRequestMeta): void {
+  const [path, queryString = ''] = String(endpointPath || '').split('?');
+  if (!/\/IDORequestService\/ido\/load\/SLVchHdrs/i.test(path)) return;
+
+  const params = new URLSearchParams(queryString);
+  const filter = String(params.get('filter') || '');
+  const orderBy = String(params.get('orderby') || params.get('orderBy') || '');
+  const bookmark = String(params.get('bookmark') || '').trim() || null;
+  const bookmarkShape = classifySlVchHdrsBookmarkShape(bookmark);
+  const hasRecordDate = /RecordDate/i.test(filter);
+  const hasOrderBy = /RecordDate/i.test(orderBy) && /Voucher/i.test(orderBy);
+  const legacyBookmark = bookmarkShape === 'legacy';
+  const debugSync = process.env.SYNC_DEBUG === '1';
+
+  if (debugSync) {
+    console.log(
+      JSON.stringify({
+        event: 'slvchhdrs_outbound_final',
+        syncRunId: meta?.syncRunId || null,
+        businessDateIso: meta?.businessDateIso || null,
+        sourcePath: meta?.sourcePath || null,
+        programId: meta?.programId || 'SLVCHHDRS',
+        hasRecordDate,
+        hasOrderBy,
+        bookmarkShape,
+        endpointPath,
+      })
+    );
+  }
+
+  if (!hasRecordDate || !hasOrderBy || legacyBookmark) {
+    console.error(
+      JSON.stringify({
+        event: 'slvchhdrs_outbound_blocked',
+        syncRunId: meta?.syncRunId || null,
+        businessDateIso: meta?.businessDateIso || null,
+        sourcePath: meta?.sourcePath || null,
+        programId: meta?.programId || 'SLVCHHDRS',
+        hasRecordDate,
+        hasOrderBy,
+        bookmarkShape,
+        endpointPath,
+      })
+    );
+    throw new Error(`Blocked legacy SLVCHHDRS outbound request: ${endpointPath}`);
+  }
 }
 
 function parseJsonSafely(text: string): Record<string, unknown> {
@@ -231,7 +299,7 @@ export async function requestInforM3AccessToken(
 export async function callInforIonApi(
   credentials: InforM3Credentials,
   endpointPath: string,
-  options?: { timeoutMs?: number; headers?: Record<string, string> }
+  options?: { timeoutMs?: number; headers?: Record<string, string>; meta?: InforIonApiRequestMeta }
 ): Promise<{
   ok: boolean;
   status: number;
@@ -239,6 +307,7 @@ export async function callInforIonApi(
   body: Record<string, unknown> | string;
   token: InforTokenMeta;
 }> {
+  assertNoLegacySlVchHdrsOutboundRequest(endpointPath, options?.meta);
   const tokenResult = await requestInforM3AccessToken(credentials, options?.timeoutMs ?? 12000);
   if (!tokenResult.ok) {
     return {

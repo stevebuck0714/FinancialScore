@@ -282,6 +282,7 @@ export async function POST(request: NextRequest) {
         startDate,
         endDate,
         salesOnly,
+        workerBaseUrl: request.nextUrl.origin,
       });
       return NextResponse.json({
         ok: true,

@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { callInforIonApi } from '@/lib/infor-m3/client';
-import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
+import { getInforM3CredentialsWithOptionalEnvFallback, type InforM3Credentials } from '@/lib/infor-m3/credentials';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { createHash, randomUUID } from 'node:crypto';
 
@@ -165,7 +165,8 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   {
     module: 'Vendors',
     miProgram: 'SLVendors',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLVendors?properties=VendNum,Name&recordCap=1000',
+    endpointPath:
+      '/APR_PRD/CSI/IDORequestService/ido/load/SLVendors?properties=VendNum,Name,RecordDate,LastPaid,LastPurch,PayYtd,PayLstYr,PurchYtd,PurchLstYr,CurrCode,TermsCode,PayType,Phone,Stat,VadAddr_1,VadCity,VadState,VadZip,VadCountry,DerAgeBal1,DerAgeBal2,DerAgeBal3,DerAgeBal4,DerAgeBal5,DerAgeBal6,DerNewAmount,DerOldAmount&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
@@ -650,6 +651,13 @@ function formatCsiDateLiteral(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function formatCsiCompactDateLiteral(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}${month}${day}`;
+}
+
 function formatCsiDateTimeLiteral(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -770,14 +778,351 @@ function buildSlCustDrftsAsOfFilter(window?: SyncWindow, site?: string): string 
   return `(${clauses.join(' and ')})`;
 }
 
+const SL_VCHHDRS_SAFE_PROPERTIES = [
+  'VendNum',
+  'VadName',
+  'Voucher',
+  'VouchSeq',
+  'InvNum',
+  'InvDate',
+  'DistDate',
+  'RecordDate',
+  'Type',
+  'InvAmt',
+  'DiscPct',
+  'TermsCode',
+  'ExchRate',
+  'PreRegister',
+  'InWorkflow',
+  'PostFromPo',
+];
+
+function buildSlVchHdrsAsOfFilter(window?: SyncWindow, site?: string): string | null {
+  if (!window || window.mode === 'daily_overlap') return null;
+  // SLVCHHDRS in this CSI tenant accepts compact numeric date literals for RecordDate
+  // more reliably than hyphenated dates during filtered backfills.
+  const historyStart = formatCsiCompactDateLiteral(AP_MIN_BILL_DATE);
+  const end = formatCsiCompactDateLiteral(window.endDate);
+  // Do not inject Site predicates here. This tenant succeeds with the site header,
+  // but can reject or ignore explicit Site clauses on SLVCHHDRS filters.
+  const clauses = [`(RecordDate >= '${historyStart}')`, `(RecordDate <= '${end}')`];
+  return `(${clauses.join(' and ')})`;
+}
+
+function buildCanonicalSlVchHdrsBaseEndpointPath(
+  endpointPath: string,
+  window?: SyncWindow,
+  site?: string
+): string {
+  const [path] = endpointPath.split('?');
+  const params = new URLSearchParams();
+  const asOfFilter = buildSlVchHdrsAsOfFilter(window, site);
+  if (asOfFilter) params.set('filter', asOfFilter);
+  params.set('recordCap', '1000');
+  params.set('orderby', 'RecordDate desc, Voucher desc');
+  const withBaseParams = params.toString() ? `${path}?${params.toString()}` : path;
+  return ensureCsiProperties(withBaseParams, SL_VCHHDRS_SAFE_PROPERTIES);
+}
+
+function assertSlVchHdrsCanonicalEndpointPath(endpointPath: string, window?: SyncWindow): string {
+  const [path, queryString = ''] = endpointPath.split('?');
+  if (!/\/IDORequestService\/ido\/load\/SLVchHdrs/i.test(path)) {
+    throw new Error(`SLVCHHDRS canonical path mismatch: ${endpointPath}`);
+  }
+
+  const params = new URLSearchParams(queryString);
+  const filter = String(params.get('filter') || '').trim();
+  if (window && window.mode !== 'daily_overlap' && !/RecordDate/i.test(filter)) {
+    throw new Error(`SLVCHHDRS canonical path missing RecordDate filter: ${endpointPath}`);
+  }
+
+  const orderBy = String(params.get('orderby') || params.get('orderBy') || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (orderBy !== 'recorddate desc, voucher desc') {
+    throw new Error(`SLVCHHDRS canonical path missing orderby invariant: ${endpointPath}`);
+  }
+
+  const properties = new Set(
+    String(params.get('properties') || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+  const missingProperties = SL_VCHHDRS_SAFE_PROPERTIES.filter((property) => !properties.has(property));
+  if (missingProperties.length > 0) {
+    throw new Error(
+      `SLVCHHDRS canonical path missing properties [${missingProperties.join(', ')}]: ${endpointPath}`
+    );
+  }
+
+  return endpointPath;
+}
+
+function classifySlVchHdrsBookmarkShape(bookmark: string | null | undefined): 'empty' | 'legacy' | 'canonical' | 'unknown' {
+  if (!bookmark) return 'empty';
+  const raw = String(bookmark).trim();
+  if (!raw) return 'empty';
+
+  const hasRecordDate = /RecordDate/i.test(raw);
+  const hasVoucher = /Voucher/i.test(raw);
+  const hasVendNum = /VendNum/i.test(raw);
+  const hasRowPointer = /RowPointer/i.test(raw);
+
+  if (hasVoucher && hasVendNum && !hasRecordDate) return 'legacy';
+  if (hasRecordDate && hasVoucher && hasRowPointer) return 'canonical';
+  return 'unknown';
+}
+
+function assertSlVchHdrsCanonicalBookmark(bookmark: string | null | undefined): string | null {
+  if (!bookmark) return null;
+  const normalizedBookmark = String(bookmark).trim();
+  if (!normalizedBookmark) return null;
+
+  const shape = classifySlVchHdrsBookmarkShape(normalizedBookmark);
+  if (shape === 'legacy') {
+    throw new Error(`SLVCHHDRS received legacy/raw bookmark shape: ${normalizedBookmark}`);
+  }
+  if (shape !== 'canonical') {
+    throw new Error(`SLVCHHDRS bookmark is not canonical: ${normalizedBookmark}`);
+  }
+
+  return normalizedBookmark;
+}
+
+function isSlVchHdrsProgramLike(params: {
+  programId?: string | null;
+  row?: Pick<InforProgramRow, 'miProgram' | 'endpointPath'> | null;
+  endpointPath?: string | null;
+}): boolean {
+  const normalizedProgramId = String(params.programId || '').trim().toUpperCase();
+  if (normalizedProgramId === 'SLVCHHDRS') return true;
+
+  const normalizedRowProgram = String(params.row?.miProgram || '').trim().toUpperCase();
+  if (normalizedRowProgram === 'SLVCHHDRS') return true;
+
+  const endpointCandidates = [params.endpointPath, params.row?.endpointPath];
+  return endpointCandidates.some((value) =>
+    /\/IDORequestService\/ido\/load\/SLVchHdrs(?:[/?]|$)/i.test(String(value || '').trim())
+  );
+}
+
+function assertSlVchHdrsPersistedBatchPath(endpointPath: string | null | undefined, sourcePath: string, window?: SyncWindow): string | null {
+  if (!endpointPath) return null;
+  const normalizedEndpointPath = assertSlVchHdrsCanonicalEndpointPath(String(endpointPath), window);
+  const [, queryString = ''] = normalizedEndpointPath.split('?');
+  const searchParams = new URLSearchParams(queryString);
+  assertSlVchHdrsCanonicalBookmark(searchParams.get('bookmark'));
+  console.error(
+    JSON.stringify({
+      event: 'slvchhdrs_rawbatch_write',
+      sourcePath,
+      endpointPath: normalizedEndpointPath,
+      bookmarkShape: classifySlVchHdrsBookmarkShape(searchParams.get('bookmark')),
+      stack: new Error().stack,
+    })
+  );
+  return normalizedEndpointPath;
+}
+
+function buildCanonicalSlVchHdrsEndpointPath(
+  endpointPath: string,
+  window?: SyncWindow,
+  site?: string,
+  bookmark?: string | null
+): string {
+  const canonicalBaseEndpointPath = assertSlVchHdrsCanonicalEndpointPath(
+    buildCanonicalSlVchHdrsBaseEndpointPath(endpointPath, window, site),
+    window
+  );
+  const canonicalEndpointPath = bookmark
+    ? appendBookmarkToEndpoint(canonicalBaseEndpointPath, bookmark)
+    : normalizeCsiLoadPaging(canonicalBaseEndpointPath, 'FIRST');
+  return assertSlVchHdrsCanonicalEndpointPath(canonicalEndpointPath, window);
+}
+
+type SlVchHdrsFetchResult = {
+  initialEndpointPath: string;
+  effectiveEndpointPath: string;
+  response: Awaited<ReturnType<typeof callInforIonApi>>;
+  rawRecords: Record<string, unknown>[];
+  pagesFetched: number;
+  paginationTruncated: boolean;
+  paginationBookmarkStalled: boolean;
+  paginationState: { moreRowsExist: boolean; bookmark: string | null };
+};
+
+async function fetchSlVchHdrsCanonicalPages(params: {
+  credentials: InforM3Credentials;
+  baseEndpointPath: string;
+  window?: SyncWindow;
+  site?: string;
+  inputBookmark?: string | null;
+  requestTimeoutMs: number;
+  headers?: Record<string, string>;
+  maxPagesPerRequest: number;
+  debugSync: boolean;
+  syncRunId: string;
+  snapshotDate: Date;
+  absoluteProgramOffset: number;
+  reqIndex: number;
+  startedAt: number;
+}): Promise<SlVchHdrsFetchResult> {
+  const canonicalBaseEndpointPath = assertSlVchHdrsCanonicalEndpointPath(
+    buildCanonicalSlVchHdrsBaseEndpointPath(params.baseEndpointPath, params.window, params.site),
+    params.window
+  );
+  const describeEndpoint = (endpointPath: string) => {
+    const [, queryString = ''] = endpointPath.split('?');
+    const searchParams = new URLSearchParams(queryString);
+    const orderBy = String(searchParams.get('orderby') || searchParams.get('orderBy') || '');
+    return {
+      filterPresent: /RecordDate/i.test(String(searchParams.get('filter') || '')),
+      orderByPresent: /RecordDate/i.test(orderBy) && /Voucher/i.test(orderBy),
+    };
+  };
+
+  const buildEndpointForBookmark = (bookmark: string | null, phase: 'initial' | 'next', priorEndpointPath?: string): string => {
+    const canonicalBookmark = assertSlVchHdrsCanonicalBookmark(bookmark);
+    const nextEndpointPath = assertSlVchHdrsCanonicalEndpointPath(
+      canonicalBookmark
+        ? appendBookmarkToEndpoint(canonicalBaseEndpointPath, canonicalBookmark)
+        : normalizeCsiLoadPaging(canonicalBaseEndpointPath, 'FIRST'),
+      params.window
+    );
+    if (params.debugSync) {
+      const endpointShape = describeEndpoint(nextEndpointPath);
+      const bookmarkShape = classifySlVchHdrsBookmarkShape(canonicalBookmark);
+      console.log(
+        JSON.stringify({
+          event: 'slvchhdrs_endpoint_mutation',
+          phase,
+          syncRunId: params.syncRunId,
+          snapshotDate: params.snapshotDate.toISOString(),
+          absoluteProgramOffset: params.absoluteProgramOffset,
+          reqIndex: params.reqIndex,
+          canonicalBaseEndpointPath,
+          priorEndpointPath: priorEndpointPath || null,
+          bookmark: canonicalBookmark,
+          bookmarkShape,
+          filterPresent: endpointShape.filterPresent,
+          orderByPresent: endpointShape.orderByPresent,
+          nextEndpointPath,
+        })
+      );
+    }
+    return nextEndpointPath;
+  };
+
+  const initialEndpointPath = buildEndpointForBookmark(params.inputBookmark || null, 'initial');
+  let effectiveEndpointPath = initialEndpointPath;
+  let response = await callInforIonApi(params.credentials, initialEndpointPath, {
+    timeoutMs: params.requestTimeoutMs,
+    headers: params.headers,
+    meta: {
+      programId: 'SLVCHHDRS',
+      sourcePath: 'slvchhdrs.pagination.initial',
+      syncRunId: params.syncRunId,
+      businessDateIso: params.snapshotDate.toISOString().slice(0, 10),
+    },
+  });
+  if (params.debugSync) {
+    console.log(
+      JSON.stringify({
+        event: 'sync_request_first_response',
+        syncRunId: params.syncRunId,
+        moduleType: 'ap',
+        programId: 'SLVCHHDRS',
+        absoluteProgramOffset: params.absoluteProgramOffset,
+        reqIndex: params.reqIndex,
+        responseStatus: response.status,
+        elapsedMs: Date.now() - params.startedAt,
+      })
+    );
+  }
+
+  let rawRecords = extractRecords(response.body);
+  let pagesFetched = 1;
+  let paginationTruncated = false;
+  let paginationBookmarkStalled = false;
+  let paginationState =
+    /\/IDORequestService\/ido\/load\//i.test(effectiveEndpointPath) && isTransportAndPayloadSuccess(response)
+      ? extractPagingState(response.body)
+      : { moreRowsExist: false, bookmark: null };
+
+  while (
+    paginationState.moreRowsExist &&
+    paginationState.bookmark &&
+    pagesFetched < params.maxPagesPerRequest
+  ) {
+    const priorBookmark = paginationState.bookmark;
+    const nextEndpointPath = buildEndpointForBookmark(priorBookmark, 'next', effectiveEndpointPath);
+    const nextResponse = await callInforIonApi(params.credentials, nextEndpointPath, {
+      timeoutMs: params.requestTimeoutMs,
+      headers: params.headers,
+      meta: {
+        programId: 'SLVCHHDRS',
+        sourcePath: 'slvchhdrs.pagination.next',
+        syncRunId: params.syncRunId,
+        businessDateIso: params.snapshotDate.toISOString().slice(0, 10),
+      },
+    });
+    if (!isTransportAndPayloadSuccess(nextResponse)) {
+      paginationTruncated = true;
+      break;
+    }
+    const nextRecords = extractRecords(nextResponse.body);
+    rawRecords = rawRecords.concat(nextRecords);
+    response = nextResponse;
+    effectiveEndpointPath = nextEndpointPath;
+    pagesFetched += 1;
+    paginationState = extractPagingState(nextResponse.body);
+    if (
+      paginationState.moreRowsExist &&
+      paginationState.bookmark &&
+      paginationState.bookmark === priorBookmark
+    ) {
+      paginationBookmarkStalled = true;
+      paginationTruncated = true;
+      break;
+    }
+  }
+
+  if (params.debugSync) {
+    console.log(
+      JSON.stringify({
+        event: 'sync_request_paging_complete',
+        syncRunId: params.syncRunId,
+        moduleType: 'ap',
+        programId: 'SLVCHHDRS',
+        absoluteProgramOffset: params.absoluteProgramOffset,
+        reqIndex: params.reqIndex,
+        pagesFetched,
+        paginationTruncated,
+        rawRecordCount: rawRecords.length,
+        elapsedMs: Date.now() - params.startedAt,
+      })
+    );
+  }
+
+  return {
+    initialEndpointPath,
+    effectiveEndpointPath,
+    response,
+    rawRecords,
+    pagesFetched,
+    paginationTruncated,
+    paginationBookmarkStalled,
+    paginationState,
+  };
+}
+
 function applyCsiSourceWindowAndSort(
   endpointPath: string,
   row: InforProgramRow,
   moduleType: ReturnType<typeof classifyModule>,
   window?: SyncWindow
-): { endpointPath: string; applied: boolean } {
+): { endpointPath: string; applied: boolean; allowRetryWithoutSourceWindow: boolean } {
   if (!/\/IDORequestService\/ido\/load\//i.test(endpointPath)) {
-    return { endpointPath, applied: false };
+    return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
   }
 
   // Start with known high-volume CSI sources where narrowing by window materially
@@ -794,27 +1139,27 @@ function applyCsiSourceWindowAndSort(
     }
     if (!params.get('recordCap')) params.set('recordCap', '1000');
     const next = params.toString();
-    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: true };
   }
   if (moduleType === 'sales' && ido === 'SLINVHDRS') {
     const filter = buildSlInvHdrsWindowFilter(window);
-    if (!filter) return { endpointPath, applied: false };
+    if (!filter) return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
     if (!params.get('filter')) params.set('filter', filter);
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'InvDate desc, RecordDate desc');
     const next = params.toString();
-    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
 
   if (moduleType === 'gl' && ido === 'SLLEDGERS') {
     const filter = buildSlLedgersPeriodFilter(window, row.site);
-    if (!filter) return { endpointPath, applied: false };
+    if (!filter) return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
     // For SLLedgers, extract by accounting period instead of RecordDate ranges.
     // This avoids sparse month coverage and aligns to financial reporting periods.
     params.set('filter', filter);
     params.set('recordCap', '1000');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'Site asc,TransNum asc');
     const next = params.toString();
-    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
 
   // SLBankHdrs in this CSI tenant rejects filter expressions with
@@ -823,21 +1168,21 @@ function applyCsiSourceWindowAndSort(
 
   if (moduleType === 'gl' && ido === 'SLGLTRANS') {
     const filter = buildSlGlTransWindowFilter(window, row.site);
-    if (!filter) return { endpointPath, applied: false };
+    if (!filter) return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
     params.set('filter', filter);
     params.set('recordCap', '500');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'TransDate desc, RecordDate desc');
     const next = params.toString();
-    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
   if (moduleType === 'gl' && ido === 'GLACCTPERIODBALANCES') {
     const filter = buildGlAcctPeriodBalancesWindowFilter(window, row.site);
-    if (!filter) return { endpointPath, applied: false };
+    if (!filter) return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
     params.set('filter', filter);
     params.set('recordCap', '1000');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'FiscalYear desc, FiscalPeriod desc, Acct asc');
     const next = params.toString();
-    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
 
   if (moduleType === 'ar' && ido === 'SLARTRANS') {
@@ -850,7 +1195,7 @@ function applyCsiSourceWindowAndSort(
     params.set('recordCap', '1000');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'RecordDate desc, InvDate desc');
     const next = params.toString();
-    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
   if (moduleType === 'ar' && ido === 'SLCUSTDRFTS') {
     if (window && window.mode !== 'daily_overlap') {
@@ -860,10 +1205,17 @@ function applyCsiSourceWindowAndSort(
     params.set('recordCap', '1000');
     if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'CustNum asc, InvNum asc');
     const next = params.toString();
-    return { endpointPath: next ? `${path}?${next}` : path, applied: true };
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
+  }
+  if (isSlVchHdrsProgramLike({ programId: ido, row, endpointPath })) {
+    return {
+      endpointPath: buildCanonicalSlVchHdrsEndpointPath(endpointPath, window, row.site),
+      applied: true,
+      allowRetryWithoutSourceWindow: false,
+    };
   }
 
-  return { endpointPath, applied: false };
+  return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
 }
 
 const SLINVHDRS_KEYSET_PREFIX = 'slinvhdrs-keyset:';
@@ -1916,6 +2268,7 @@ export async function pruneCompanyOperationalData(companyId: string): Promise<vo
     prisma.cashSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     prisma.aRAgingSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     prisma.aPAgingSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
+    (prisma as any).vendorSnapshot?.deleteMany ? (prisma as any).vendorSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }) : Promise.resolve(),
     prisma.customerSalesSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     prisma.productSalesSnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
     prisma.inventorySnapshot.deleteMany({ where: { companyId, snapshotDate: { lt: cutoff } } }),
@@ -3861,6 +4214,20 @@ type ApLifecycleOpenRow = {
   days90plus: number;
 };
 
+type ApVendorAdjustableRow = {
+  vendorId: string | null;
+  vendorName: string;
+  billNo: string;
+  billDate: Date | null;
+  dueDate: Date | null;
+  amountDueHome: number;
+  current: number | null;
+  days1to30: number | null;
+  days31to60: number | null;
+  days61to90: number | null;
+  days90plus: number | null;
+};
+
 type ArLifecycleOpenRow = {
   invoiceNo: string;
   customerId: string | null;
@@ -3904,6 +4271,158 @@ function getAgingBucketValuesFromDueDate(
   return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: safeOutstanding };
 }
 
+const AP_MIN_BILL_DATE = new Date('2023-01-01T00:00:00.000Z');
+
+function isApDateWithinHistoryWindow(value: Date | null | undefined): boolean {
+  if (!value || Number.isNaN(value.getTime())) return false;
+  return value.getTime() >= AP_MIN_BILL_DATE.getTime();
+}
+
+function resolveApBillDateFromRecord(record: Record<string, unknown>): Date | null {
+  return parseMaybeDate(pickString(record, ['billDate', 'invoiceDate', 'InvDate', 'DistDate', 'date', 'IVDT']));
+}
+
+async function applyVendorSnapshotApFallback<T extends ApVendorAdjustableRow>(
+  companyId: string,
+  snapshotDate: Date,
+  rows: T[]
+): Promise<T[]> {
+  if (!rows.length) return rows;
+  const vendorSnapshotDelegate = (prisma as any).vendorSnapshot;
+  if (!vendorSnapshotDelegate?.findMany) return rows;
+
+  const vendorIds = Array.from(new Set(rows.map((row) => String(row.vendorId || '').trim()).filter(Boolean)));
+  const vendorNames = Array.from(new Set(rows.map((row) => String(row.vendorName || '').trim()).filter(Boolean)));
+  if (!vendorIds.length && !vendorNames.length) return rows;
+
+  const snapshotRows = await vendorSnapshotDelegate.findMany({
+    where: {
+      companyId,
+      OR: [
+        ...(vendorIds.length ? [{ vendorId: { in: vendorIds } }] : []),
+        ...(vendorNames.length ? [{ vendorName: { in: vendorNames } }] : []),
+      ],
+    },
+    orderBy: [{ snapshotDate: 'desc' }],
+    select: {
+      vendorId: true,
+      vendorName: true,
+      snapshotDate: true,
+      lastPaidDate: true,
+      payYtd: true,
+      purchaseYtd: true,
+    },
+  });
+
+  const latestSnapshotByVendorId = new Map<string, { lastPaidDate: Date | null; payYtd: number | null; purchaseYtd: number | null }>();
+  const latestSnapshotByVendorName = new Map<string, { lastPaidDate: Date | null; payYtd: number | null; purchaseYtd: number | null }>();
+  for (const snapshot of snapshotRows) {
+    const vendorId = String(snapshot.vendorId || '').trim();
+    const vendorName = String(snapshot.vendorName || '').trim();
+    const payload = {
+      lastPaidDate: snapshot.lastPaidDate ? new Date(snapshot.lastPaidDate) : null,
+      payYtd: snapshot.payYtd == null ? null : Number(snapshot.payYtd),
+      purchaseYtd: snapshot.purchaseYtd == null ? null : Number(snapshot.purchaseYtd),
+    };
+    if (vendorId && !latestSnapshotByVendorId.has(vendorId)) latestSnapshotByVendorId.set(vendorId, payload);
+    if (vendorName && !latestSnapshotByVendorName.has(vendorName.toLowerCase())) latestSnapshotByVendorName.set(vendorName.toLowerCase(), payload);
+  }
+
+  const adjustedRows = rows.map((row) => ({ ...row }));
+  const rowsByVendor = new Map<string, Array<{ index: number; row: T }>>();
+  adjustedRows.forEach((row, index) => {
+    const key = String(row.vendorId || '').trim() || String(row.vendorName || '').trim().toLowerCase();
+    if (!key) return;
+    const existing = rowsByVendor.get(key);
+    if (existing) existing.push({ index, row });
+    else rowsByVendor.set(key, [{ index, row }]);
+  });
+
+  const snapshotDay = startOfUtcDay(snapshotDate);
+  const nextDay = (date: Date): Date => new Date(startOfUtcDay(date).getTime() + 24 * 60 * 60 * 1000);
+  const nullableBucketValue = (value: number): number | null => (value > 0.0001 ? value : null);
+
+  for (const [vendorKey, vendorRows] of Array.from(rowsByVendor.entries())) {
+    const firstRow = vendorRows[0]?.row;
+    if (!firstRow) continue;
+    const snapshot =
+      latestSnapshotByVendorId.get(String(firstRow.vendorId || '').trim()) ||
+      latestSnapshotByVendorName.get(String(firstRow.vendorName || '').trim().toLowerCase());
+    if (!snapshot?.lastPaidDate) continue;
+    if (snapshot.payYtd == null || snapshot.purchaseYtd == null) continue;
+    if (snapshotDay < nextDay(snapshot.lastPaidDate)) continue;
+
+    const paidYear = snapshot.lastPaidDate.getUTCFullYear();
+    const effectiveBillDate = (row: T): Date | null => row.billDate || row.dueDate || null;
+    const adjustable = vendorRows
+      .filter(({ row }) => {
+        const dt = effectiveBillDate(row);
+        return Boolean(dt && dt.getUTCFullYear() === paidYear && dt.getTime() <= snapshot.lastPaidDate!.getTime() && Number(row.amountDueHome || 0) > 0.0001);
+      })
+      .sort((a, b) => {
+        const aTime = effectiveBillDate(a.row)?.getTime() || Number.POSITIVE_INFINITY;
+        const bTime = effectiveBillDate(b.row)?.getTime() || Number.POSITIVE_INFINITY;
+        if (aTime !== bTime) return aTime - bTime;
+        return String(a.row.billNo || '').localeCompare(String(b.row.billNo || ''));
+      });
+    if (!adjustable.length) continue;
+
+    const postPaymentOpen = vendorRows
+      .filter(({ row }) => {
+        const dt = effectiveBillDate(row);
+        return Boolean(dt && dt.getUTCFullYear() === paidYear && dt.getTime() > snapshot.lastPaidDate!.getTime() && Number(row.amountDueHome || 0) > 0.0001);
+      })
+      .reduce((sum, entry) => sum + Math.max(0, Number(entry.row.amountDueHome || 0)), 0);
+    const currentOpenAdjustable = adjustable.reduce((sum, entry) => sum + Math.max(0, Number(entry.row.amountDueHome || 0)), 0);
+    const vendorNetYtd = Math.max(0, Number(snapshot.purchaseYtd || 0) - Number(snapshot.payYtd || 0));
+    const targetOpenAdjustable = Math.max(0, vendorNetYtd - postPaymentOpen);
+    if (targetOpenAdjustable >= currentOpenAdjustable - 0.0001) continue;
+
+    let reductionRemaining = currentOpenAdjustable - targetOpenAdjustable;
+    for (const entry of adjustable) {
+      if (reductionRemaining <= 0.0001) break;
+      const originalOutstanding = Math.max(0, Number(entry.row.amountDueHome || 0));
+      if (originalOutstanding <= 0.0001) continue;
+      const nextOutstanding = Math.max(0, originalOutstanding - reductionRemaining);
+      reductionRemaining = Math.max(0, reductionRemaining - originalOutstanding);
+      entry.row.amountDueHome = nextOutstanding;
+      const buckets = getAgingBucketValuesFromDueDate(nextOutstanding, entry.row.dueDate, snapshotDate);
+      entry.row.current = nullableBucketValue(buckets.current);
+      entry.row.days1to30 = nullableBucketValue(buckets.days1to30);
+      entry.row.days31to60 = nullableBucketValue(buckets.days31to60);
+      entry.row.days61to90 = nullableBucketValue(buckets.days61to90);
+      entry.row.days90plus = nullableBucketValue(buckets.days90plus);
+    }
+  }
+
+  return adjustedRows.filter((row) => Math.max(0, Number(row.amountDueHome || 0)) > 0.0001);
+}
+
+function mergeApPaymentEvidence(
+  paymentByVoucher: Map<string, { paidAmount: number; firstPaidDate: Date | null; lastPaidDate: Date | null }>,
+  voucherNo: string,
+  paidAmt: number,
+  paidDate: Date | null
+): void {
+  if (!voucherNo || paidAmt <= 0.0001) return;
+  const existingPayment = paymentByVoucher.get(voucherNo);
+  if (!existingPayment) {
+    paymentByVoucher.set(voucherNo, { paidAmount: paidAmt, firstPaidDate: paidDate || null, lastPaidDate: paidDate || null });
+    return;
+  }
+  paymentByVoucher.set(voucherNo, {
+    paidAmount: existingPayment.paidAmount + paidAmt,
+    firstPaidDate:
+      existingPayment.firstPaidDate && paidDate
+        ? (existingPayment.firstPaidDate < paidDate ? existingPayment.firstPaidDate : paidDate)
+        : existingPayment.firstPaidDate || paidDate || null,
+    lastPaidDate:
+      existingPayment.lastPaidDate && paidDate
+        ? (existingPayment.lastPaidDate > paidDate ? existingPayment.lastPaidDate : paidDate)
+        : existingPayment.lastPaidDate || paidDate || null,
+  });
+}
+
 async function deriveApLifecycleOpenRowsFromAvailableData(
   companyId: string,
   snapshotDate: Date,
@@ -3919,6 +4438,8 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
   const paymentDedupe = new Set<string>();
 
   for (const record of records) {
+    const billDate = resolveApBillDateFromRecord(record);
+    if (!isApDateWithinHistoryWindow(billDate)) continue;
     const voucherNo = normalizeVoucherToken(
       pickString(record, ['Voucher', 'voucher', 'billNo', 'billNumber', 'invoiceNo', 'InvNum', 'SINO'])
     );
@@ -3927,7 +4448,6 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
     const vendorName = pickString(record, ['UbVendName', 'VendaddrName', 'VendorName', ...VENDOR_NAME_KEYS]) || `Vendor ${voucherNo}`;
     const invoiceReference = pickString(record, ['InvNum', 'invoiceNo', 'invoiceNumber']);
     const dueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'DistDate']));
-    const billDate = parseMaybeDate(pickString(record, ['InvDate', 'invoiceDate', 'billDate', 'DistDate', 'date']));
     const recordDate = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate', 'DistDate', 'InvDate', 'date']));
     const recordDateMs = recordDate ? recordDate.getTime() : Number.NEGATIVE_INFINITY;
 
@@ -3972,23 +4492,78 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
         }`;
         if (!paymentDedupe.has(dedupeKey)) {
           paymentDedupe.add(dedupeKey);
-          const existingPayment = paymentByVoucher.get(voucherNo);
-          if (!existingPayment) {
-            paymentByVoucher.set(voucherNo, { paidAmount: paidAmt, firstPaidDate: paidDate || null, lastPaidDate: paidDate || null });
-          } else {
-            paymentByVoucher.set(voucherNo, {
-              paidAmount: existingPayment.paidAmount + paidAmt,
-              firstPaidDate:
-                existingPayment.firstPaidDate && paidDate
-                  ? (existingPayment.firstPaidDate < paidDate ? existingPayment.firstPaidDate : paidDate)
-                  : existingPayment.firstPaidDate || paidDate || null,
-              lastPaidDate:
-                existingPayment.lastPaidDate && paidDate
-                  ? (existingPayment.lastPaidDate > paidDate ? existingPayment.lastPaidDate : paidDate)
-                  : existingPayment.lastPaidDate || paidDate || null,
-            });
-          }
+          mergeApPaymentEvidence(paymentByVoucher, voucherNo, paidAmt, paidDate);
         }
+      }
+    }
+  }
+
+  const appPaymentDelegate = (prisma as any).aPPaymentFact;
+  if (appPaymentDelegate?.findMany) {
+    const vendorIds = Array.from(
+      new Set(Array.from(vendorMetaByVoucher.values()).map((meta) => String(meta.vendorId || '').trim()).filter(Boolean))
+    );
+    const vendorNames = Array.from(
+      new Set(Array.from(vendorMetaByVoucher.values()).map((meta) => String(meta.vendorName || '').trim()).filter(Boolean))
+    );
+    const billNos = Array.from(
+      new Set(
+        Array.from(vendorMetaByVoucher.values())
+          .flatMap((meta) => [String(meta.invoiceReference || '').trim()])
+          .filter(Boolean)
+      )
+    );
+    if ((vendorIds.length || vendorNames.length) && billNos.length) {
+      const appPayments = await appPaymentDelegate.findMany({
+        where: {
+          companyId,
+          paymentDate: { lt: new Date(snapshotDate.getTime() + 24 * 60 * 60 * 1000) },
+          paidAmountHome: { gt: 0 },
+          billNo: { in: billNos },
+          OR: [
+            ...(vendorIds.length ? [{ vendorId: { in: vendorIds } }] : []),
+            ...(vendorNames.length ? [{ vendorName: { in: vendorNames } }] : []),
+          ],
+        },
+        select: {
+          paymentDate: true,
+          vendorId: true,
+          vendorName: true,
+          billNo: true,
+          paidAmountHome: true,
+          sourceProgram: true,
+          sourceTransaction: true,
+        },
+        orderBy: [{ paymentDate: 'asc' }],
+      });
+
+      const paymentByBillNo = new Map<string, { paidAmount: number; firstPaidDate: Date | null; lastPaidDate: Date | null }>();
+      const paymentFactDedupe = new Set<string>();
+      for (const row of appPayments) {
+        const billNo = String(row.billNo || '').trim();
+        const paidAmt = Math.abs(Number(row.paidAmountHome || 0));
+        if (!billNo || paidAmt <= 0.0001) continue;
+        const paidDate = row.paymentDate ? new Date(row.paymentDate) : null;
+        const dedupeKey = [
+          String(row.vendorId || '').trim().toLowerCase(),
+          String(row.vendorName || '').trim().toLowerCase(),
+          billNo.toLowerCase(),
+          paidDate ? paidDate.toISOString().slice(0, 10) : '',
+          paidAmt.toFixed(2),
+          String(row.sourceProgram || '').trim().toLowerCase(),
+          String(row.sourceTransaction || '').trim().toLowerCase(),
+        ].join('||');
+        if (paymentFactDedupe.has(dedupeKey)) continue;
+        paymentFactDedupe.add(dedupeKey);
+        mergeApPaymentEvidence(paymentByBillNo, billNo, paidAmt, paidDate);
+      }
+
+      for (const [voucherNo, meta] of Array.from(vendorMetaByVoucher.entries())) {
+        const invoiceReference = String(meta.invoiceReference || '').trim();
+        if (!invoiceReference) continue;
+        const matchedPayment = paymentByBillNo.get(invoiceReference);
+        if (!matchedPayment) continue;
+        mergeApPaymentEvidence(paymentByVoucher, voucherNo, matchedPayment.paidAmount, matchedPayment.lastPaidDate);
       }
     }
   }
@@ -4302,50 +4877,82 @@ async function saveAPAging(
       );
       const hasDueDate = Boolean(parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'DistDate'])));
       const outstanding = toNumber(record.__derivedApOutstanding);
-      return hasLineIdentity && hasDueDate && outstanding > 0.0001;
+      const billDate = resolveApBillDateFromRecord(record);
+      return hasLineIdentity && hasDueDate && isApDateWithinHistoryWindow(billDate) && outstanding > 0.0001;
     });
 
-  const derived = calculateAgingTotalsFromTransactions(openApLineItems, {
-    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'DistDate'],
-    balanceKeys: ['__derivedApOutstanding'],
-    amountKeys: [],
-    openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
-    statusKeys: ['Status', 'status', 'STAT', 'state', 'State'],
-    asOfDate: snapshotDate,
+  const directAgingRows = openApLineItems.map((record, idx) => {
+    const vendorName = pickString(record, VENDOR_NAME_KEYS) || `Unknown Vendor ${idx + 1}`;
+    const billNo =
+      pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'voucher', 'Voucher', 'SINO']) ||
+      `UNKNOWN-${idx + 1}`;
+    const amountDueHome = Math.max(0, toNumber(record.__derivedApOutstanding));
+    const dueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'DistDate']));
+    const buckets = getAgingBucketValuesFromDueDate(amountDueHome, dueDate, snapshotDate);
+    return {
+      vendorId: pickString(record, VENDOR_ID_KEYS),
+      vendorName,
+      billNo,
+      billDate: parseMaybeDate(pickString(record, ['billDate', 'invoiceDate', 'InvDate', 'DistDate', 'date', 'IVDT'])),
+      dueDate,
+      amountDueHome,
+      current: buckets.current || null,
+      days1to30: buckets.days1to30 || null,
+      days31to60: buckets.days31to60 || null,
+      days61to90: buckets.days61to90 || null,
+      days90plus: buckets.days90plus || null,
+    };
   });
 
-  const totals = {
-    totalAP: derived.total,
-    current: derived.current,
-    days1to30: derived.days1to30,
-    days31to60: derived.days31to60,
-    days61to90: derived.days61to90,
-    days90plus: derived.days90plus,
-  };
+  let totals = directAgingRows.reduce(
+    (acc, row) => {
+      acc.totalAP += Number(row.amountDueHome || 0);
+      acc.current += Number(row.current || 0);
+      acc.days1to30 += Number(row.days1to30 || 0);
+      acc.days31to60 += Number(row.days31to60 || 0);
+      acc.days61to90 += Number(row.days61to90 || 0);
+      acc.days90plus += Number(row.days90plus || 0);
+      return acc;
+    },
+    { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+  );
 
   if (totals.totalAP === 0) {
     const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
-    if (lifecycleRows.length > 0) {
-      const lifecycleTotals = lifecycleRows.reduce(
+    const adjustedLifecycleRows = lifecycleRows.map((row) => ({
+      vendorId: row.vendorId,
+      vendorName: row.vendorName,
+      billNo: row.voucherNo,
+      billDate: row.billDate,
+      dueDate: row.dueDate,
+      amountDueHome: row.outstandingAmount,
+      current: row.current || null,
+      days1to30: row.days1to30 || null,
+      days31to60: row.days31to60 || null,
+      days61to90: row.days61to90 || null,
+      days90plus: row.days90plus || null,
+    }));
+    if (adjustedLifecycleRows.length > 0) {
+      totals = adjustedLifecycleRows.reduce(
         (acc, row) => {
-          acc.totalAP += row.outstandingAmount;
-          acc.current += row.current;
-          acc.days1to30 += row.days1to30;
-          acc.days31to60 += row.days31to60;
-          acc.days61to90 += row.days61to90;
-          acc.days90plus += row.days90plus;
+          acc.totalAP += Number(row.amountDueHome || 0);
+          acc.current += Number(row.current || 0);
+          acc.days1to30 += Number(row.days1to30 || 0);
+          acc.days31to60 += Number(row.days31to60 || 0);
+          acc.days61to90 += Number(row.days61to90 || 0);
+          acc.days90plus += Number(row.days90plus || 0);
           return acc;
         },
         { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
       );
       await prisma.aPAgingSnapshot.upsert({
         where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
-        update: lifecycleTotals,
+        update: totals,
         create: {
           companyId,
           snapshotDate,
           frequency,
-          ...lifecycleTotals,
+          ...totals,
         },
       });
       return 1;
@@ -4399,6 +5006,7 @@ async function saveAPOpenBills(
         `UNKNOWN-${idx + 1}`;
       // AP open snapshot is unpaid amount only; do not carry negative residuals.
       const amountDueHome = Math.max(0, deriveApOutstandingAmount(record));
+      const billDate = resolveApBillDateFromRecord(record);
       return {
         companyId,
         snapshotDate,
@@ -4406,7 +5014,7 @@ async function saveAPOpenBills(
         vendorId: pickString(record, VENDOR_ID_KEYS),
         vendorName,
         billNo,
-        billDate: parseMaybeDate(pickString(record, ['billDate', 'invoiceDate', 'InvDate', 'DistDate', 'date', 'IVDT'])),
+        billDate,
         dueDate: parseMaybeDate(pickString(record, ['dueDate', 'DUDT', 'DueDate', 'InvDate', 'DistDate'])),
         status: pickString(record, ['status', 'STAT']),
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
@@ -4428,6 +5036,7 @@ async function saveAPOpenBills(
     })
     .filter((row) => {
       if (!row.vendorName || !row.billNo || !Number.isFinite(row.amountDueHome)) return false;
+      if (!isApDateWithinHistoryWindow(row.billDate)) return false;
       if (Math.abs(Number(row.amountDueHome || 0)) <= 0.0001) return false;
       const statusToken = String(row.status || '')
         .trim()
@@ -4446,7 +5055,7 @@ async function saveAPOpenBills(
   if (!rows.length) {
     const lifecycleRows = await deriveApLifecycleOpenRowsFromAvailableData(companyId, snapshotDate, frequency, records);
     if (!lifecycleRows.length) return 0;
-    const derivedRows = lifecycleRows.map((row, idx) => ({
+    const derivedRowsRaw = lifecycleRows.map((row, idx) => ({
       companyId,
       snapshotDate,
       frequency,
@@ -4471,6 +5080,7 @@ async function saveAPOpenBills(
       cono: context.cono || null,
       divi: context.divi || null,
     }));
+    const derivedRows = derivedRowsRaw;
     const DERIVED_BATCH_SIZE = 2000;
     for (let i = 0; i < derivedRows.length; i += DERIVED_BATCH_SIZE) {
       const batch = derivedRows.slice(i, i + DERIVED_BATCH_SIZE);
@@ -4524,6 +5134,8 @@ async function saveAPPayments(
 ): Promise<number> {
   const rows = records
     .map((record, idx) => {
+      const billDate = resolveApBillDateFromRecord(record);
+      if (!isApDateWithinHistoryWindow(billDate)) return null;
       const paymentDate = parseMaybeDate(
         pickString(record, ['paymentDate', 'date', 'PYDT', 'RGDT', 'DistDate', 'CheckDate', 'CreateDate', 'RecordDate'])
       );
@@ -4694,6 +5306,136 @@ async function saveInventory(
 
   if (rows.length === 0) return 0;
   await prisma.inventorySnapshot.createMany({ data: rows });
+  return rows.length;
+}
+
+async function saveVendorSnapshots(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  records: Record<string, unknown>[],
+  context: {
+    miProgram: string;
+    transaction: string;
+    cono?: string;
+    divi?: string;
+    resetSnapshot?: boolean;
+  }
+): Promise<number> {
+  const delegate = (prisma as any).vendorSnapshot;
+  if (!delegate?.createMany || !delegate?.deleteMany) return 0;
+
+  const snapshotDay = startOfUtcDay(snapshotDate);
+  if (context.resetSnapshot) {
+    await delegate.deleteMany({ where: { companyId, frequency, snapshotDate: snapshotDay } });
+  }
+
+  const pickNullableNumber = (record: Record<string, unknown>, keys: string[]): number | null => {
+    for (const key of keys) {
+      const raw = lookupRecordValue(record, key);
+      if (raw === undefined) continue;
+      const value = toNumber(raw);
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
+  };
+
+  const rowsByVendor = new Map<
+    string,
+    {
+      recordDateMs: number;
+      row: {
+        companyId: string;
+        snapshotDate: Date;
+        frequency: 'daily' | 'weekly' | 'monthly';
+        vendorId: string;
+        vendorName: string;
+        sourceRecordDate: Date | null;
+        lastPaidDate: Date | null;
+        lastPurchaseDate: Date | null;
+        currencyCode: string | null;
+        termsCode: string | null;
+        payType: string | null;
+        phone: string | null;
+        status: string | null;
+        addressLine1: string | null;
+        city: string | null;
+        state: string | null;
+        postalCode: string | null;
+        country: string | null;
+        payYtd: number | null;
+        payLastYear: number | null;
+        purchaseYtd: number | null;
+        purchaseLastYear: number | null;
+        ageBalance1: number | null;
+        ageBalance2: number | null;
+        ageBalance3: number | null;
+        ageBalance4: number | null;
+        ageBalance5: number | null;
+        ageBalance6: number | null;
+        newAmount: number | null;
+        oldAmount: number | null;
+        sourcePlatform: 'INFOR_M3';
+        sourceProgram: string;
+        sourceTransaction: string;
+        cono: string | null;
+        divi: string | null;
+      };
+    }
+  >();
+
+  for (const record of records) {
+    const vendorId = pickString(record, ['VendNum', 'vendorId', 'vendorNumber']);
+    if (!vendorId) continue;
+    const sourceRecordDate = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate']));
+    const recordDateMs = sourceRecordDate ? sourceRecordDate.getTime() : Number.NEGATIVE_INFINITY;
+    const existing = rowsByVendor.get(vendorId);
+    if (existing && existing.recordDateMs > recordDateMs) continue;
+    rowsByVendor.set(vendorId, {
+      recordDateMs,
+      row: {
+        companyId,
+        snapshotDate: snapshotDay,
+        frequency,
+        vendorId,
+        vendorName: pickString(record, ['Name', 'VadName', 'vendorName']) || `Vendor ${vendorId}`,
+        sourceRecordDate: sourceRecordDate || null,
+        lastPaidDate: parseMaybeDate(pickString(record, ['LastPaid', 'lastPaid'])),
+        lastPurchaseDate: parseMaybeDate(pickString(record, ['LastPurch', 'lastPurchase', 'lastPurch'])),
+        currencyCode: pickString(record, ['CurrCode', 'currencyCode']),
+        termsCode: pickString(record, ['TermsCode', 'termsCode']),
+        payType: pickString(record, ['PayType', 'payType']),
+        phone: pickString(record, ['Phone', 'phone']),
+        status: pickString(record, ['Stat', 'status']),
+        addressLine1: pickString(record, ['VadAddr_1', 'addressLine1']),
+        city: pickString(record, ['VadCity', 'city']),
+        state: pickString(record, ['VadState', 'state']),
+        postalCode: pickString(record, ['VadZip', 'postalCode', 'zip']),
+        country: pickString(record, ['VadCountry', 'country']),
+        payYtd: pickNullableNumber(record, ['PayYtd', 'DerPayYTD']),
+        payLastYear: pickNullableNumber(record, ['PayLstYr']),
+        purchaseYtd: pickNullableNumber(record, ['PurchYtd', 'DerPurchYTD']),
+        purchaseLastYear: pickNullableNumber(record, ['PurchLstYr']),
+        ageBalance1: pickNullableNumber(record, ['DerAgeBal1']),
+        ageBalance2: pickNullableNumber(record, ['DerAgeBal2']),
+        ageBalance3: pickNullableNumber(record, ['DerAgeBal3']),
+        ageBalance4: pickNullableNumber(record, ['DerAgeBal4']),
+        ageBalance5: pickNullableNumber(record, ['DerAgeBal5']),
+        ageBalance6: pickNullableNumber(record, ['DerAgeBal6']),
+        newAmount: pickNullableNumber(record, ['DerNewAmount']),
+        oldAmount: pickNullableNumber(record, ['DerOldAmount']),
+        sourcePlatform: 'INFOR_M3',
+        sourceProgram: context.miProgram,
+        sourceTransaction: context.transaction,
+        cono: context.cono || null,
+        divi: context.divi || null,
+      },
+    });
+  }
+
+  const rows = Array.from(rowsByVendor.values()).map((entry) => entry.row);
+  if (!rows.length) return 0;
+  await delegate.createMany({ data: rows, skipDuplicates: true });
   return rows.length;
 }
 
@@ -5515,7 +6257,10 @@ export async function syncInforM3OperationalData(
       const sourceWindowBaseEndpointPath = sourceWindowPathResult.endpointPath;
       const fallbackBaseEndpointPath = req.endpointPath;
       let initialEndpointPath = sourceWindowBaseEndpointPath;
-      const inputBookmark = typeof options?.bookmark === 'string' && options.bookmark.trim() ? options.bookmark.trim() : null;
+      const rawInputBookmark = typeof options?.bookmark === 'string' && options.bookmark.trim() ? options.bookmark.trim() : null;
+      // Historical business-day fanout tasks must start each business date at FIRST.
+      // Reusing a bookmark from a prior day replays the same cursor page into every slice.
+      const inputBookmark = isFanoutHistoricalDailySlice ? null : rawInputBookmark;
       const inputKeyset = decodeSlInvHdrsKeysetBookmark(inputBookmark);
       const inputCustomersKeyset = decodeSlCustomersKeysetBookmark(inputBookmark);
       const inputArtransKeyset = decodeSlArtransKeysetBookmark(inputBookmark);
@@ -5546,255 +6291,332 @@ export async function syncInforM3OperationalData(
           initialEndpointPath = appendBookmarkToEndpoint(sourceWindowBaseEndpointPath, inputBookmark);
         }
       }
+      if (isSlVchHdrsProgramLike({ programId, row, endpointPath: req.endpointPath })) {
+        initialEndpointPath = buildCanonicalSlVchHdrsEndpointPath(req.endpointPath, syncWindow, row.site, inputBookmark);
+        if (debugSync) {
+          const initialShape = (() => {
+            const [, queryString = ''] = initialEndpointPath.split('?');
+            const searchParams = new URLSearchParams(queryString);
+            const orderBy = String(searchParams.get('orderby') || searchParams.get('orderBy') || '');
+            return {
+              filterPresent: /RecordDate/i.test(String(searchParams.get('filter') || '')),
+              orderByPresent: /RecordDate/i.test(orderBy) && /Voucher/i.test(orderBy),
+            };
+          })();
+          console.log(
+            JSON.stringify({
+              event: 'slvchhdrs_initial_endpoint',
+              syncRunId,
+              snapshotDate: snapshotDate.toISOString(),
+              absoluteProgramOffset,
+              reqIndex,
+              reqEndpointPath: req.endpointPath,
+              sourceWindowBaseEndpointPath,
+              initialEndpointPath,
+              inputBookmark,
+              inputBookmarkShape: classifySlVchHdrsBookmarkShape(inputBookmark),
+              filterPresent: initialShape.filterPresent,
+              orderByPresent: initialShape.orderByPresent,
+            })
+          );
+        }
+      }
 
       const normalizedInitialEndpointPath = resolveSlCoitemsSafePath(initialEndpointPath) || initialEndpointPath;
+      const isSlVchHdrs = isSlVchHdrsProgramLike({ programId, row, endpointPath: req.endpointPath });
       let effectiveEndpointPath = normalizedInitialEndpointPath;
-      let response = await callInforIonApi(credentials, normalizedInitialEndpointPath, {
-        timeoutMs: requestTimeoutMs,
-        headers: req.headers,
-      });
-      if (debugSync) {
-        console.log(
-          JSON.stringify({
-            event: 'sync_request_first_response',
-            syncRunId,
-            moduleType,
-            programId,
-            absoluteProgramOffset,
-            reqIndex,
-            responseStatus: response.status,
-            elapsedMs: Date.now() - startedAt,
-          })
-        );
-      }
-      const isWindowedSlLedgersRequest =
-        moduleType === 'gl' &&
-        String(row.miProgram || '').trim().toUpperCase() === 'SLLEDGERS' &&
-        Boolean(syncWindow);
-      if (
-        !isTransportAndPayloadSuccess(response) &&
-        sourceWindowPathResult.applied &&
-        !isWindowedSlLedgersRequest &&
-        shouldRetryWithoutSourceWindowHint(extractResponseMessage(response.body))
-      ) {
-        const fallbackInitialPath =
-          absoluteProgramOffset === programOffset &&
-          reqIndex === requestStartIndex &&
-          typeof options?.bookmark === 'string' &&
-          options.bookmark.trim()
-            ? appendBookmarkToEndpoint(fallbackBaseEndpointPath, options.bookmark.trim())
-            : fallbackBaseEndpointPath;
-        const fallbackResponse = await callInforIonApi(credentials, fallbackInitialPath, {
+      let response: Awaited<ReturnType<typeof callInforIonApi>>;
+      let rawRecords: Record<string, unknown>[] = [];
+      let pagesFetched = 1;
+      let paginationTruncated = false;
+      let paginationBookmarkStalled = false;
+      let paginationState: { moreRowsExist: boolean; bookmark: string | null } = {
+        moreRowsExist: false,
+        bookmark: null,
+      };
+      if (isSlVchHdrs) {
+        const slVchHdrsResult = await fetchSlVchHdrsCanonicalPages({
+          credentials,
+          baseEndpointPath: req.endpointPath,
+          window: syncWindow,
+          site: row.site,
+          inputBookmark,
+          requestTimeoutMs,
+          headers: req.headers,
+          maxPagesPerRequest,
+          debugSync,
+          syncRunId,
+          snapshotDate,
+          absoluteProgramOffset,
+          reqIndex,
+          startedAt,
+        });
+        effectiveEndpointPath = slVchHdrsResult.effectiveEndpointPath;
+        response = slVchHdrsResult.response;
+        rawRecords = slVchHdrsResult.rawRecords;
+        pagesFetched = slVchHdrsResult.pagesFetched;
+        paginationTruncated = slVchHdrsResult.paginationTruncated;
+        paginationBookmarkStalled = slVchHdrsResult.paginationBookmarkStalled;
+        paginationState = slVchHdrsResult.paginationState;
+      } else {
+        if (isSlVchHdrsProgramLike({ programId, row, endpointPath: normalizedInitialEndpointPath })) {
+          console.error(
+            JSON.stringify({
+              event: 'slvchhdrs_generic_branch_blocked',
+              syncRunId,
+              snapshotDate: snapshotDate.toISOString(),
+              moduleType,
+              programId,
+              rowModule: row.module,
+              rowProgram: row.miProgram || null,
+              reqEndpointPath: req.endpointPath,
+              normalizedInitialEndpointPath,
+              stack: new Error().stack,
+            })
+          );
+          throw new Error(
+            `SLVCHHDRS attempted generic CSI request branch: module=${row.module} program=${programId || row.miProgram || 'unknown'}`
+          );
+        }
+        response = await callInforIonApi(credentials, normalizedInitialEndpointPath, {
           timeoutMs: requestTimeoutMs,
           headers: req.headers,
         });
-        if (isTransportAndPayloadSuccess(fallbackResponse)) {
-          response = fallbackResponse;
-          effectiveEndpointPath = fallbackInitialPath;
+        if (debugSync) {
+          console.log(
+            JSON.stringify({
+              event: 'sync_request_first_response',
+              syncRunId,
+              moduleType,
+              programId,
+              absoluteProgramOffset,
+              reqIndex,
+              responseStatus: response.status,
+              elapsedMs: Date.now() - startedAt,
+            })
+          );
         }
-      }
-      if (
-        !isTransportAndPayloadSuccess(response) &&
-        req.headers?.['X-Infor-MongooseConfig'] &&
-        shouldRetryWithoutMongooseConfig(extractResponseMessage(response.body))
-      ) {
-        const headersWithoutMongoose = { ...(req.headers || {}) };
-        delete headersWithoutMongoose['X-Infor-MongooseConfig'];
-        const retryWithoutMongooseResponse = await callInforIonApi(credentials, effectiveEndpointPath, {
-          timeoutMs: requestTimeoutMs,
-          headers: Object.keys(headersWithoutMongoose).length > 0 ? headersWithoutMongoose : undefined,
-        });
-        if (isTransportAndPayloadSuccess(retryWithoutMongooseResponse)) {
-          response = retryWithoutMongooseResponse;
-        }
-      }
-      // Some CSI environments expose SLAptrx* variants with broken projections or missing IDOs.
-      // Retry with narrowed properties first, then hop between SLAptrx* aliases.
-      const initialMessage = extractResponseMessage(response.body);
-      const shouldTryApAliasFallback =
-        /\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(req.endpointPath) &&
-        (
-          /invalid column name 'vendor_bank_id'/i.test(initialMessage) ||
-          /ido not found/i.test(initialMessage)
-        );
-      if (
-        !isTransportAndPayloadSuccess(response) &&
-        shouldTryApAliasFallback
-      ) {
-        const safePropertyPath = resolveSlaPtrxSafePropertyPath(req.endpointPath);
-        if (safePropertyPath && safePropertyPath !== req.endpointPath) {
-          const safeRetry = await callInforIonApi(credentials, safePropertyPath, {
+        if (
+          !isTransportAndPayloadSuccess(response) &&
+          sourceWindowPathResult.applied &&
+          sourceWindowPathResult.allowRetryWithoutSourceWindow &&
+          shouldRetryWithoutSourceWindowHint(extractResponseMessage(response.body))
+        ) {
+          const fallbackInitialPath =
+            absoluteProgramOffset === programOffset &&
+            reqIndex === requestStartIndex &&
+            inputBookmark
+              ? appendBookmarkToEndpoint(fallbackBaseEndpointPath, inputBookmark)
+              : fallbackBaseEndpointPath;
+          const fallbackResponse = await callInforIonApi(credentials, fallbackInitialPath, {
             timeoutMs: requestTimeoutMs,
             headers: req.headers,
           });
-          response = safeRetry;
-          effectiveEndpointPath = safePropertyPath;
+          if (isTransportAndPayloadSuccess(fallbackResponse)) {
+            response = fallbackResponse;
+            effectiveEndpointPath = fallbackInitialPath;
+          }
         }
-        if (!isTransportAndPayloadSuccess(response)) {
-          const fallbackPath = resolveSlaPtrxFallbackPath(req.endpointPath);
-          if (fallbackPath) {
-            let fallbackWithProperties = ensureCsiProperties(fallbackPath, SLA_PTRX_SAFE_PROPERTIES);
-            let attempts = 0;
-            while (fallbackWithProperties && fallbackWithProperties !== effectiveEndpointPath && attempts < 5) {
-              attempts += 1;
-              const legacyRetry = await callInforIonApi(credentials, fallbackWithProperties, {
-                timeoutMs: requestTimeoutMs,
-                headers: req.headers,
-              });
-              response = legacyRetry;
-              effectiveEndpointPath = fallbackWithProperties;
-              if (isTransportAndPayloadSuccess(response)) break;
+        if (
+          !isTransportAndPayloadSuccess(response) &&
+          req.headers?.['X-Infor-MongooseConfig'] &&
+          shouldRetryWithoutMongooseConfig(extractResponseMessage(response.body))
+        ) {
+          const headersWithoutMongoose = { ...(req.headers || {}) };
+          delete headersWithoutMongoose['X-Infor-MongooseConfig'];
+          const retryWithoutMongooseResponse = await callInforIonApi(credentials, effectiveEndpointPath, {
+            timeoutMs: requestTimeoutMs,
+            headers: Object.keys(headersWithoutMongoose).length > 0 ? headersWithoutMongoose : undefined,
+          });
+          if (isTransportAndPayloadSuccess(retryWithoutMongooseResponse)) {
+            response = retryWithoutMongooseResponse;
+          }
+        }
+        // Some CSI environments expose SLAptrx* variants with broken projections or missing IDOs.
+        // Retry with narrowed properties first, then hop between SLAptrx* aliases.
+        const initialMessage = extractResponseMessage(response.body);
+        const shouldTryApAliasFallback =
+          /\/load\/SLAptrx|\/load\/SLAptrxp|\/load\/SLAptrxps/i.test(req.endpointPath) &&
+          (
+            /invalid column name 'vendor_bank_id'/i.test(initialMessage) ||
+            /ido not found/i.test(initialMessage)
+          );
+        if (
+          !isTransportAndPayloadSuccess(response) &&
+          shouldTryApAliasFallback
+        ) {
+          const safePropertyPath = resolveSlaPtrxSafePropertyPath(req.endpointPath);
+          if (safePropertyPath && safePropertyPath !== req.endpointPath) {
+            const safeRetry = await callInforIonApi(credentials, safePropertyPath, {
+              timeoutMs: requestTimeoutMs,
+              headers: req.headers,
+            });
+            response = safeRetry;
+            effectiveEndpointPath = safePropertyPath;
+          }
+          if (!isTransportAndPayloadSuccess(response)) {
+            const fallbackPath = resolveSlaPtrxFallbackPath(req.endpointPath);
+            if (fallbackPath) {
+              let fallbackWithProperties = ensureCsiProperties(fallbackPath, SLA_PTRX_SAFE_PROPERTIES);
+              let attempts = 0;
+              while (fallbackWithProperties && fallbackWithProperties !== effectiveEndpointPath && attempts < 5) {
+                attempts += 1;
+                const legacyRetry = await callInforIonApi(credentials, fallbackWithProperties, {
+                  timeoutMs: requestTimeoutMs,
+                  headers: req.headers,
+                });
+                response = legacyRetry;
+                effectiveEndpointPath = fallbackWithProperties;
+                if (isTransportAndPayloadSuccess(response)) break;
 
-              const retryMessage = extractResponseMessage(response.body);
-              const missingProperty = parseMissingPropertyFromMessage(retryMessage);
-              if (!missingProperty) break;
-              const reducedPath = removePropertyFromEndpoint(fallbackWithProperties, missingProperty);
-              if (!reducedPath || reducedPath === fallbackWithProperties) break;
-              fallbackWithProperties = reducedPath;
+                const retryMessage = extractResponseMessage(response.body);
+                const missingProperty = parseMissingPropertyFromMessage(retryMessage);
+                if (!missingProperty) break;
+                const reducedPath = removePropertyFromEndpoint(fallbackWithProperties, missingProperty);
+                if (!reducedPath || reducedPath === fallbackWithProperties) break;
+                fallbackWithProperties = reducedPath;
+              }
             }
           }
         }
-      }
-      if (
-        !isTransportAndPayloadSuccess(response) &&
-        /\/load\/SLCoitems/i.test(req.endpointPath)
-      ) {
-        const missingPropertyFromInitial = parseMissingPropertyFromMessage(initialMessage);
-        const shouldTryCoitemsPropertyFallback =
-          /invalid column name 'contract_price_method'/i.test(initialMessage) || Boolean(missingPropertyFromInitial);
-        if (!shouldTryCoitemsPropertyFallback) {
-          // Continue with normal error handling for non-property related failures.
-        } else {
-        const safeCoitemsPath = resolveSlCoitemsSafePath(req.endpointPath);
-        if (safeCoitemsPath && safeCoitemsPath !== req.endpointPath) {
-          let currentPath = safeCoitemsPath;
-          let attempts = 0;
-          while (currentPath && attempts < 6) {
-            attempts += 1;
-            const retry = await callInforIonApi(credentials, currentPath, {
-              timeoutMs: requestTimeoutMs,
-              headers: req.headers,
-            });
-            response = retry;
-            effectiveEndpointPath = currentPath;
-            if (isTransportAndPayloadSuccess(response)) break;
-
-            const retryMessage = extractResponseMessage(response.body);
-            const missingProperty = parseMissingPropertyFromMessage(retryMessage);
-            if (!missingProperty) break;
-            const reducedPath = removePropertyFromEndpoint(currentPath, missingProperty);
-            if (!reducedPath || reducedPath === currentPath) break;
-            currentPath = reducedPath;
-          }
-        }
-        }
-      }
-      if (moduleType === 'ap' && !isTransportAndPayloadSuccess(response)) {
-        const apErrorMessage = extractResponseMessage(response.body);
-        if (/ido not found/i.test(apErrorMessage) && /\/load\//i.test(effectiveEndpointPath)) {
-          const candidates = buildApSlaPtrxCandidatePaths(effectiveEndpointPath);
-          for (const candidatePath of candidates) {
-            if (candidatePath === effectiveEndpointPath) continue;
-            const candidateResponse = await callInforIonApi(credentials, candidatePath, {
-              timeoutMs: requestTimeoutMs,
-              headers: req.headers,
-            });
-            if (!isTransportAndPayloadSuccess(candidateResponse)) continue;
-            response = candidateResponse;
-            effectiveEndpointPath = candidatePath;
-            break;
-          }
-        }
-      }
-      if (moduleType === 'gl' && !isTransportAndPayloadSuccess(response)) {
-        const glErrorMessage = extractResponseMessage(response.body);
         if (
-          /\/load\//i.test(effectiveEndpointPath) &&
-          (
-            /ido not found/i.test(glErrorMessage) ||
-            /property .* not found/i.test(glErrorMessage) ||
-            /invalid column name/i.test(glErrorMessage)
-          )
+          !isTransportAndPayloadSuccess(response) &&
+          /\/load\/SLCoitems/i.test(req.endpointPath)
         ) {
-          const candidates = buildGlTransactionCandidatePaths(effectiveEndpointPath);
-          for (const candidatePath of candidates) {
-            if (candidatePath === effectiveEndpointPath) continue;
-            let currentPath = candidatePath;
+          const missingPropertyFromInitial = parseMissingPropertyFromMessage(initialMessage);
+          const shouldTryCoitemsPropertyFallback =
+            /invalid column name 'contract_price_method'/i.test(initialMessage) || Boolean(missingPropertyFromInitial);
+          if (!shouldTryCoitemsPropertyFallback) {
+            // Continue with normal error handling for non-property related failures.
+          } else {
+          const safeCoitemsPath = resolveSlCoitemsSafePath(req.endpointPath);
+          if (safeCoitemsPath && safeCoitemsPath !== req.endpointPath) {
+            let currentPath = safeCoitemsPath;
             let attempts = 0;
             while (currentPath && attempts < 6) {
               attempts += 1;
-              const candidateResponse = await callInforIonApi(credentials, currentPath, {
+              const retry = await callInforIonApi(credentials, currentPath, {
                 timeoutMs: requestTimeoutMs,
                 headers: req.headers,
               });
-              response = candidateResponse;
+              response = retry;
               effectiveEndpointPath = currentPath;
-              if (isTransportAndPayloadSuccess(candidateResponse)) break;
+              if (isTransportAndPayloadSuccess(response)) break;
 
-              const retryMessage = extractResponseMessage(candidateResponse.body);
+              const retryMessage = extractResponseMessage(response.body);
               const missingProperty = parseMissingPropertyFromMessage(retryMessage);
               if (!missingProperty) break;
               const reducedPath = removePropertyFromEndpoint(currentPath, missingProperty);
               if (!reducedPath || reducedPath === currentPath) break;
               currentPath = reducedPath;
             }
-            if (isTransportAndPayloadSuccess(response)) break;
+          }
           }
         }
-      }
-      let rawRecords = extractRecords(response.body);
-      let pagesFetched = 1;
-      let paginationTruncated = false;
-      let paginationBookmarkStalled = false;
-      const isCsiLoadEndpoint = /\/IDORequestService\/ido\/load\//i.test(effectiveEndpointPath);
-      if (isCsiLoadEndpoint && isTransportAndPayloadSuccess(response)) {
-        let paginationState = extractPagingState(response.body);
-        while (
-          paginationState.moreRowsExist &&
-          paginationState.bookmark &&
-          pagesFetched < maxPagesPerRequest
-        ) {
-          const priorBookmark = paginationState.bookmark;
-          const nextEndpointPath = appendBookmarkToEndpoint(effectiveEndpointPath, priorBookmark);
-          const nextResponse = await callInforIonApi(credentials, nextEndpointPath, {
-            timeoutMs: requestTimeoutMs,
-            headers: req.headers,
-          });
-          if (!isTransportAndPayloadSuccess(nextResponse)) {
-            paginationTruncated = true;
-            break;
+        if (moduleType === 'ap' && !isTransportAndPayloadSuccess(response)) {
+          const apErrorMessage = extractResponseMessage(response.body);
+          if (/ido not found/i.test(apErrorMessage) && /\/load\//i.test(effectiveEndpointPath)) {
+            const candidates = buildApSlaPtrxCandidatePaths(effectiveEndpointPath);
+            for (const candidatePath of candidates) {
+              if (candidatePath === effectiveEndpointPath) continue;
+              const candidateResponse = await callInforIonApi(credentials, candidatePath, {
+                timeoutMs: requestTimeoutMs,
+                headers: req.headers,
+              });
+              if (!isTransportAndPayloadSuccess(candidateResponse)) continue;
+              response = candidateResponse;
+              effectiveEndpointPath = candidatePath;
+              break;
+            }
           }
-          const nextRecords = extractRecords(nextResponse.body);
-          rawRecords = rawRecords.concat(nextRecords);
-          response = nextResponse;
-          effectiveEndpointPath = nextEndpointPath;
-          pagesFetched += 1;
-          paginationState = extractPagingState(nextResponse.body);
+        }
+        if (moduleType === 'gl' && !isTransportAndPayloadSuccess(response)) {
+          const glErrorMessage = extractResponseMessage(response.body);
           if (
+            /\/load\//i.test(effectiveEndpointPath) &&
+            (
+              /ido not found/i.test(glErrorMessage) ||
+              /property .* not found/i.test(glErrorMessage) ||
+              /invalid column name/i.test(glErrorMessage)
+            )
+          ) {
+            const candidates = buildGlTransactionCandidatePaths(effectiveEndpointPath);
+            for (const candidatePath of candidates) {
+              if (candidatePath === effectiveEndpointPath) continue;
+              let currentPath = candidatePath;
+              let attempts = 0;
+              while (currentPath && attempts < 6) {
+                attempts += 1;
+                const candidateResponse = await callInforIonApi(credentials, currentPath, {
+                  timeoutMs: requestTimeoutMs,
+                  headers: req.headers,
+                });
+                response = candidateResponse;
+                effectiveEndpointPath = currentPath;
+                if (isTransportAndPayloadSuccess(candidateResponse)) break;
+
+                const retryMessage = extractResponseMessage(candidateResponse.body);
+                const missingProperty = parseMissingPropertyFromMessage(retryMessage);
+                if (!missingProperty) break;
+                const reducedPath = removePropertyFromEndpoint(currentPath, missingProperty);
+                if (!reducedPath || reducedPath === currentPath) break;
+                currentPath = reducedPath;
+              }
+              if (isTransportAndPayloadSuccess(response)) break;
+            }
+          }
+        }
+        rawRecords = extractRecords(response.body);
+        const isCsiLoadEndpoint = /\/IDORequestService\/ido\/load\//i.test(effectiveEndpointPath);
+        if (isCsiLoadEndpoint && isTransportAndPayloadSuccess(response)) {
+          paginationState = extractPagingState(response.body);
+          while (
             paginationState.moreRowsExist &&
             paginationState.bookmark &&
-            paginationState.bookmark === priorBookmark
+            pagesFetched < maxPagesPerRequest
           ) {
-            paginationBookmarkStalled = true;
-            paginationTruncated = true;
-            break;
+            const priorBookmark = paginationState.bookmark;
+            const nextEndpointPath = appendBookmarkToEndpoint(effectiveEndpointPath, priorBookmark);
+            const nextResponse = await callInforIonApi(credentials, nextEndpointPath, {
+              timeoutMs: requestTimeoutMs,
+              headers: req.headers,
+            });
+            if (!isTransportAndPayloadSuccess(nextResponse)) {
+              paginationTruncated = true;
+              break;
+            }
+            const nextRecords = extractRecords(nextResponse.body);
+            rawRecords = rawRecords.concat(nextRecords);
+            response = nextResponse;
+            effectiveEndpointPath = nextEndpointPath;
+            pagesFetched += 1;
+            paginationState = extractPagingState(nextResponse.body);
+            if (
+              paginationState.moreRowsExist &&
+              paginationState.bookmark &&
+              paginationState.bookmark === priorBookmark
+            ) {
+              paginationBookmarkStalled = true;
+              paginationTruncated = true;
+              break;
+            }
           }
-        }
-        if (debugSync) {
-          console.log(
-            JSON.stringify({
-              event: 'sync_request_paging_complete',
-              syncRunId,
-              moduleType,
-              programId,
-              absoluteProgramOffset,
-              reqIndex,
-              pagesFetched,
-              paginationTruncated,
-              rawRecordCount: rawRecords.length,
-              elapsedMs: Date.now() - startedAt,
-            })
-          );
+          if (debugSync) {
+            console.log(
+              JSON.stringify({
+                event: 'sync_request_paging_complete',
+                syncRunId,
+                moduleType,
+                programId,
+                absoluteProgramOffset,
+                reqIndex,
+                pagesFetched,
+                paginationTruncated,
+                rawRecordCount: rawRecords.length,
+                elapsedMs: Date.now() - startedAt,
+              })
+            );
+          }
         }
         if (pagesFetched >= maxPagesPerRequest && paginationState.moreRowsExist && paginationState.bookmark) {
           paginationTruncated = true;
@@ -5937,9 +6759,7 @@ export async function syncInforM3OperationalData(
       const isApOpenSupportProgram =
         moduleType === 'ap' &&
         ['SLAPTRX', 'SLAPTRXPS', 'SLAPPMTS', 'SLAPTRXP', 'SLAPTRXS'].includes(String(row.miProgram || '').trim().toUpperCase());
-      const isApOpenSnapshotProgram =
-        moduleType === 'ap' &&
-        ['SLVCHHDRS'].includes(String(row.miProgram || '').trim().toUpperCase());
+      const isApOpenSnapshotProgram = isSlVchHdrsProgramLike({ programId, row, endpointPath: req.endpointPath });
       const isArApOpenFlow =
         ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
       const keepFullArApPopulation =
@@ -6243,6 +7063,31 @@ export async function syncInforM3OperationalData(
             case 'inventory':
               moduleRecordsCreated = await saveInventory(companyId, snapshotDate, frequency, records);
               break;
+            case 'other':
+              if (programId === 'SLVENDORS') {
+                const isHistoricalDailySlice =
+                  frequency === 'daily' &&
+                  Boolean(options?.snapshotDateOverride);
+                if (isHistoricalDailySlice) {
+                  // SLVendors is current-state master data in this tenant.
+                  // Avoid stamping the same current row across historical business dates.
+                  await (prisma as any).vendorSnapshot?.deleteMany?.({
+                    where: { companyId, frequency, snapshotDate: startOfUtcDay(snapshotDate) },
+                  });
+                  moduleRecordsCreated = 0;
+                } else {
+                  moduleRecordsCreated = await saveVendorSnapshots(companyId, snapshotDate, frequency, records, {
+                    miProgram: row.miProgram || row.module,
+                    transaction: req.transaction,
+                    cono: row.cono,
+                    divi: row.divi,
+                    resetSnapshot: !options?.bookmark,
+                  });
+                }
+                break;
+              }
+              moduleRecordsCreated = records.length;
+              break;
             default:
               moduleRecordsCreated = records.length;
               break;
@@ -6340,6 +7185,14 @@ export async function syncInforM3OperationalData(
           const ingestedRecords = rawRecordsForIngest.slice(0, rawIngestRecordCap);
           const batchId = randomUUID();
           const syncWindowStartIso = syncWindow?.startDate ? syncWindow.startDate.toISOString() : null;
+          const persistedEndpointPath =
+            isSlVchHdrsProgramLike({ programId, row, endpointPath: effectiveEndpointPath })
+              ? assertSlVchHdrsPersistedBatchPath(
+                  effectiveEndpointPath,
+                  'slvchhdrs.persist.raw_batch',
+                  syncWindow
+                )
+              : effectiveEndpointPath || null;
           const bookmarkOut =
             continuation &&
             continuation.programOffset === absoluteProgramOffset &&
@@ -6365,7 +7218,7 @@ export async function syncInforM3OperationalData(
               module: row.module || null,
               miProgram: row.miProgram || null,
               transaction: req.transaction || null,
-              endpointPath: effectiveEndpointPath || null,
+              endpointPath: persistedEndpointPath,
               pageNo: pagesFetched,
               bookmarkIn: inputBookmark,
               bookmarkOut,
@@ -6727,6 +7580,8 @@ export async function transformInforM3RawRun(options: {
   let daysProcessed = 0;
   let rawRecordsRead = 0;
   let recordsCreated = 0;
+  const cumulativeApPaymentsByKey = new Map<string, Record<string, unknown>>();
+  const cumulativeApOpenByKey = new Map<string, Record<string, unknown>>();
   for (const businessDateRow of businessDateRows) {
     const snapshotDate = startOfUtcDay(new Date(businessDateRow.businessDate));
     const rawByModuleProgram = new Map<string, {
@@ -6848,15 +7703,34 @@ export async function transformInforM3RawRun(options: {
           !['SLAPPMTS', 'SLAPTRXP'].includes(item.miProgram)
         )
         .flatMap((item) => item.records);
-      if (apOpen.length > 0) {
-        recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, apOpen, {
+      const apRecordIdentity = (record: Record<string, unknown>): string => {
+        const voucher = pickString(record, ['Voucher', 'voucher', 'billNo', 'billNumber', 'invoiceNo', 'InvNum', 'SINO']) || '';
+        const vendorId = pickString(record, VENDOR_ID_KEYS) || '';
+        const recordDate = pickString(record, ['RecordDate', 'recordDate', 'DistDate', 'InvDate', 'date']) || '';
+        const rowPointer = pickString(record, ['RowPointer', 'rowPointer', '_ItemId']) || '';
+        const type = pickString(record, ['Type', 'type']) || '';
+        return [vendorId, voucher, type, recordDate, rowPointer].join('||');
+      };
+      for (const record of apOpen) {
+        const billDate = resolveApBillDateFromRecord(record);
+        if (!isApDateWithinHistoryWindow(billDate)) continue;
+        cumulativeApOpenByKey.set(apRecordIdentity(record), record);
+      }
+      for (const record of apPayments) {
+        const billDate = resolveApBillDateFromRecord(record);
+        if (!isApDateWithinHistoryWindow(billDate)) continue;
+        cumulativeApPaymentsByKey.set(apRecordIdentity(record), record);
+      }
+      const cumulativeApOpen = Array.from(cumulativeApOpenByKey.values());
+      if (cumulativeApOpen.length > 0) {
+        recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, cumulativeApOpen, {
           miProgram: 'AP_OPEN',
           transaction: 'RAW_REPLAY',
         });
-        recordsCreated += await saveAPAging(companyId, snapshotDate, frequency, apOpen);
+        recordsCreated += await saveAPAging(companyId, snapshotDate, frequency, cumulativeApOpen);
       }
-      if (apPayments.length > 0) {
-        recordsCreated += await saveAPPayments(companyId, apPayments, {
+      if (cumulativeApPaymentsByKey.size > 0) {
+        recordsCreated += await saveAPPayments(companyId, Array.from(cumulativeApPaymentsByKey.values()), {
           miProgram: 'AP_PAYMENTS',
           transaction: 'RAW_REPLAY',
         });
@@ -6894,6 +7768,17 @@ export async function transformInforM3RawRun(options: {
         .flatMap((item) => item.records);
       if (salesRecords.length > 0) {
         recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, salesRecords);
+      }
+
+      const vendorRecords = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.miProgram === 'SLVENDORS')
+        .flatMap((item) => item.records);
+      if (vendorRecords.length > 0) {
+        recordsCreated += await saveVendorSnapshots(companyId, snapshotDate, frequency, vendorRecords, {
+          miProgram: 'SLVENDORS',
+          transaction: 'RAW_REPLAY',
+          resetSnapshot: true,
+        });
       }
 
       await prisma.aROpenInvoiceSnapshot.deleteMany({

@@ -68,6 +68,16 @@ function asIso(value: Date | null | undefined): string | null {
   return value ? new Date(value).toISOString() : null;
 }
 
+function normalizeWorkerBaseUrl(value: unknown): string | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
+}
+
 function describeTaskPayload(payload: Record<string, unknown>): string {
   const mode = String(payload.mode || '').trim() || 'unknown';
   const businessDateIso = String(payload.businessDateIso || '').trim() || 'n/a';
@@ -349,6 +359,12 @@ function buildTaskPayload(run: QueueRunRecord, cursor?: Record<string, unknown> 
   if (cursor && typeof cursor === 'object') {
     Object.assign(payload, cursor);
   }
+  const workerBaseUrl = normalizeWorkerBaseUrl(payload.workerBaseUrl);
+  if (workerBaseUrl) {
+    payload.workerBaseUrl = workerBaseUrl;
+  } else {
+    delete payload.workerBaseUrl;
+  }
   return payload;
 }
 
@@ -374,6 +390,10 @@ function buildSkippedCursorFromPayload(payload: Record<string, unknown>): Record
   const businessDateIso = String(payload.businessDateIso || '').trim();
   if (businessDateIso) {
     cursor.businessDateIso = businessDateIso;
+  }
+  const workerBaseUrl = normalizeWorkerBaseUrl(payload.workerBaseUrl);
+  if (workerBaseUrl) {
+    cursor.workerBaseUrl = workerBaseUrl;
   }
   return cursor;
 }
@@ -459,6 +479,7 @@ export async function startQueueRun(input: {
   startDate?: string;
   endDate?: string;
   salesOnly?: boolean;
+  workerBaseUrl?: string;
 }): Promise<{ alreadyRunning: boolean; queued: boolean; run: QueueRunRecord }> {
   const running = await getRunningQueueRun(input.companyId, input.platform);
   const initialStatus = running ? 'queued' : 'running';
@@ -514,6 +535,7 @@ export async function startQueueRun(input: {
             requestOffset: 0,
             bookmark: null,
             stagnantCursorCount: 0,
+            workerBaseUrl: normalizeWorkerBaseUrl(input.workerBaseUrl),
           }),
         }))
       );
@@ -533,7 +555,9 @@ export async function startQueueRun(input: {
           companyId: input.companyId,
           status: 'pending',
           maxAttempts: DEFAULT_MAX_ATTEMPTS,
-          payload: buildTaskPayload(runRecord, null),
+          payload: buildTaskPayload(runRecord, {
+            workerBaseUrl: normalizeWorkerBaseUrl(input.workerBaseUrl),
+          }),
         },
       });
     }
@@ -544,7 +568,9 @@ export async function startQueueRun(input: {
         companyId: input.companyId,
         status: 'pending',
         maxAttempts: DEFAULT_MAX_ATTEMPTS,
-        payload: buildTaskPayload(runRecord, null),
+        payload: buildTaskPayload(runRecord, {
+          workerBaseUrl: normalizeWorkerBaseUrl(input.workerBaseUrl),
+        }),
       },
     });
   }
@@ -740,6 +766,27 @@ async function processTask(
     syncRunId: task.run.id,
     companyId: task.run.companyId,
   };
+  const taskWorkerBaseUrl = normalizeWorkerBaseUrl(taskPayload.workerBaseUrl);
+  const currentWorkerBaseUrl = normalizeWorkerBaseUrl(baseUrl);
+  if (taskWorkerBaseUrl && currentWorkerBaseUrl && taskWorkerBaseUrl !== currentWorkerBaseUrl) {
+    const now = new Date();
+    await db().inforSyncTask.updateMany({
+      where: { id: task.id, status: 'leased' },
+      data: {
+        status: 'pending',
+        updatedAt: now,
+        availableAt: new Date(now.getTime() + 5_000),
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
+    });
+    return {
+      runId: task.runId,
+      taskId: task.id,
+      status: 'deferred',
+      details: `Pinned to worker ${taskWorkerBaseUrl}; current worker ${currentWorkerBaseUrl} released task.`,
+    };
+  }
   const start = Date.now();
   const isBusinessDayFanoutTask = taskPayload.businessDayFanout === true;
   const isGlBackfillGuardEnabled =
@@ -1089,6 +1136,7 @@ async function processTask(
         ...cursor,
         glNoForwardProgressCount: nextNoProgressCount,
         glLastObservedMaxBusinessDate: glMaxAfter ? glMaxAfter.toISOString() : (glMaxBefore ? glMaxBefore.toISOString() : null),
+        workerBaseUrl: taskWorkerBaseUrl,
       });
       await tx.inforSyncTask.create({
         data: {
