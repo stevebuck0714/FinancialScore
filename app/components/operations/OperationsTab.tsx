@@ -365,6 +365,7 @@ export default function OperationsTab({
   const [customerDateRangeSaveStatus, setCustomerDateRangeSaveStatus] = useState<string | null>(null);
   const [customerRevenuePeriodMode, setCustomerRevenuePeriodMode] = useState<'year' | 'quarter' | 'month'>('month');
   const [customerRevenuePeriodKey, setCustomerRevenuePeriodKey] = useState<string>('all');
+  const [expandedWipCustomers, setExpandedWipCustomers] = useState<Record<string, boolean>>({});
   const [opsSectorLayoutConfig, setOpsSectorLayoutConfig] = useState<any | null>(null);
   const [smartCardsLoading, setSmartCardsLoading] = useState(false);
   const [showPriceCostExceptionsOnly, setShowPriceCostExceptionsOnly] = useState(false);
@@ -407,6 +408,9 @@ export default function OperationsTab({
     const value = operationalHubSections[sectionKey];
     return value === undefined ? true : value !== false;
   };
+  const toggleWipCustomerExpanded = (key: string) => {
+    setExpandedWipCustomers((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
   const isCustomersTab = mapModuleToDataType(activeTab) === 'customers' || activeTab === 'customers';
   const isTabModuleEnabled = (moduleKey: string): boolean => {
     const normalized = String(moduleKey || '').trim();
@@ -433,6 +437,9 @@ export default function OperationsTab({
     return maxSelectableEndDate;
   });
   const hasHydratedDateRangeRef = useRef(false);
+  useEffect(() => {
+    setExpandedWipCustomers({});
+  }, [selectedCompanyId, startDate, endDate, frequency]);
 
   useEffect(() => {
     if (endDate > maxSelectableEndDate) setEndDate(maxSelectableEndDate);
@@ -1882,19 +1889,55 @@ export default function OperationsTab({
                   ? String(effectivePeriodKey)
                   : monthDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
               })();
-    const retentionProxyRows = rankedCustomers.slice(0, 8).map((customer: any, index: number) => {
-      const baselineFactor = 0.88 + (index % 5) * 0.03;
-      const priorRevenue = Number(customer.totalRevenue || 0) * baselineFactor;
-      const currentRevenue = Number(customer.totalRevenue || 0);
-      const changePct = priorRevenue > 0 ? ((currentRevenue - priorRevenue) / priorRevenue) * 100 : 0;
-      return {
-        customer: customer.name,
-        priorRevenue,
-        currentRevenue,
-        changePct,
-        status: changePct < -5 ? 'At Risk' : changePct < 2 ? 'Flat' : 'Expanding',
-      };
-    });
+    const halfWindowRows = recordsInSelectedDateRange.reduce(
+      (
+        acc: Record<
+          string,
+          {
+            customer: string;
+            priorRevenue: number;
+            currentRevenue: number;
+          }
+        >,
+        record: any
+      ) => {
+        const parsed = parseDateValue(record?.snapshotDate);
+        if (!parsed) return acc;
+        const customer = String(record?.customerName || 'Unknown Customer');
+        if (!acc[customer]) {
+          acc[customer] = { customer, priorRevenue: 0, currentRevenue: 0 };
+        }
+        const ts = parsed.getTime();
+        const midpointTs =
+          selectedStartForCustomer && selectedEndForCustomer
+            ? selectedStartForCustomer.getTime() +
+              Math.floor((selectedEndForCustomer.getTime() - selectedStartForCustomer.getTime()) / 2)
+            : null;
+        if (midpointTs !== null && ts <= midpointTs) {
+          acc[customer].priorRevenue += Number(record?.revenue || 0);
+        } else {
+          acc[customer].currentRevenue += Number(record?.revenue || 0);
+        }
+        return acc;
+      },
+      {}
+    );
+    const retentionProxyRows = Object.values(halfWindowRows)
+      .map((row) => {
+        const priorRevenue = Number(row.priorRevenue || 0);
+        const currentRevenue = Number(row.currentRevenue || 0);
+        const changePct = priorRevenue > 0 ? ((currentRevenue - priorRevenue) / priorRevenue) * 100 : currentRevenue > 0 ? 100 : 0;
+        return {
+          customer: row.customer,
+          priorRevenue,
+          currentRevenue,
+          changePct,
+          status: changePct < -5 ? 'At Risk' : changePct < 2 ? 'Flat' : 'Expanding',
+        };
+      })
+      .filter((row) => row.priorRevenue > 0 || row.currentRevenue > 0)
+      .sort((a, b) => b.currentRevenue - a.currentRevenue)
+      .slice(0, 8);
     const invoiceVelocityTrend = trendData.map((row: any) => ({
       month: row.month,
       revenue: Number(row.revenue || 0),
@@ -1908,13 +1951,12 @@ export default function OperationsTab({
         </h2>
 
         {(() => {
-          const topTenRaw = rankedCustomersForTableEffective.slice(0, 10);
-          const tableCustomers = topTenRaw.map((customer) => ({
+          let tableCustomers = rankedCustomersForTableEffective.slice(0, 10).map((customer) => ({
             ...customer,
-            totalInvoices: Math.max(1, Math.round(customer.totalInvoices || customer.totalRevenue / 10000)),
+            totalInvoices: Math.max(0, Number(customer.totalInvoices || 0)),
           }));
-          const chartCustomers = tableCustomers;
-          const chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
+          let chartCustomers = tableCustomers;
+          let chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
           const bookingsSummary = summary?.bookings || {};
           const bookingsTotals = {
             mtd: Number(bookingsSummary?.totals?.mtd || 0),
@@ -1936,7 +1978,89 @@ export default function OperationsTab({
             .filter((row: any) => row.mtd > 0 || row.qtd > 0 || row.ytd > 0)
             .sort((a: any, b: any) => b.ytd - a.ytd)
             .slice(0, 10);
-          const atRiskRows: any[] = [];
+          if (tableCustomers.length === 0 && bookingsTopRows.length > 0) {
+            tableCustomers = bookingsTopRows.map((row: any) => ({
+              name: row.customerName,
+              totalRevenue: Number(row.ytd || 0),
+              totalInvoices: 0,
+            }));
+            chartCustomers = tableCustomers;
+            chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
+          }
+          const wipSummary = summary?.wip || {};
+          const wipTotals = {
+            totalWip: Number(wipSummary?.totals?.totalWip || 0),
+            totalContractValue: Number(wipSummary?.totals?.totalContractValue || 0),
+            totalInvoicedValue: Number(wipSummary?.totals?.totalInvoicedValue || 0),
+            customerCount: Number(wipSummary?.totals?.customerCount || 0),
+          };
+          const wipRows = (Array.isArray(wipSummary?.topCustomers) ? wipSummary.topCustomers : [])
+            .map((row: any) => ({
+              customerId: String(row?.customerId || '').trim(),
+              customerName: String(row?.customerName || 'Unknown Customer'),
+              contractValue: Number(row?.contractValue || 0),
+              invoicedValue: Number(row?.invoicedValue || 0),
+              wipValue: Number(row?.wipValue || 0),
+              lineCount: Number(row?.lineCount || 0),
+              wipItems: (Array.isArray(row?.wipItems) ? row.wipItems : [])
+                .map((item: any) => ({
+                  orderId: String(item?.orderId || 'UNKNOWN_ORDER'),
+                  lineId: String(item?.lineId || 'UNKNOWN_LINE'),
+                  item: String(item?.item || 'UNKNOWN_ITEM'),
+                  stat: item?.stat ? String(item.stat) : null,
+                  orderDate: item?.orderDate ? String(item.orderDate) : null,
+                  dueDate: item?.dueDate ? String(item.dueDate) : null,
+                  qtyOrdered: Number(item?.qtyOrdered || 0),
+                  qtyShipped: Number(item?.qtyShipped || 0),
+                  qtyInvoiced: Number(item?.qtyInvoiced || 0),
+                  contractValue: Number(item?.contractValue || 0),
+                  invoicedValue: Number(item?.invoicedValue || 0),
+                  wipValue: Number(item?.wipValue || 0),
+                }))
+                .filter((item: any) => item.wipValue > 0),
+            }))
+            .filter((row: any) => row.wipValue > 0)
+            .sort((a: any, b: any) => b.wipValue - a.wipValue)
+            .slice(0, 10);
+          const wipAsOfDate = parseDateValue(String(wipSummary?.asOf || ''));
+          const wipAsOfLabel = wipAsOfDate
+            ? formatDateSafeUtc(wipAsOfDate, { year: 'numeric', month: 'short', day: 'numeric' })
+            : customerAsOfLabel;
+          const bookingsByCustomerName = new Map<string, { ytd: number }>(
+            bookingsTopRows.map((row: any) => [String(row.customerName), { ytd: Number(row.ytd || 0) }])
+          );
+          const wipByCustomerName = new Map<string, { wip: number }>(
+            wipRows.map((row: any) => [String(row.customerName), { wip: Number(row.wipValue || 0) }])
+          );
+          const retentionByCustomerName = new Map<string, { changePct: number }>(
+            retentionProxyRows.map((row: any) => [String(row.customer), { changePct: Number(row.changePct || 0) }])
+          );
+          const atRiskRows = Array.from(
+            new Set<string>([
+              ...Array.from(bookingsByCustomerName.keys()),
+              ...Array.from(wipByCustomerName.keys()),
+              ...Array.from(retentionByCustomerName.keys()),
+            ])
+          )
+            .map((customerName) => {
+              const bookingsYtd = Number(bookingsByCustomerName.get(customerName)?.ytd || 0);
+              const backlog90 = Number(wipByCustomerName.get(customerName)?.wip || 0);
+              const trendPct = Number(retentionByCustomerName.get(customerName)?.changePct || 0);
+              const denominator = bookingsYtd + backlog90;
+              const backlog90Pct = denominator > 0 ? (backlog90 / denominator) * 100 : 0;
+              const riskScore = Math.max(backlog90Pct - Math.max(trendPct, -100), 0);
+              return {
+                customerName,
+                bookingsYtd,
+                backlog90,
+                backlog90Pct,
+                trendPct,
+                riskScore,
+              };
+            })
+            .filter((row) => row.bookingsYtd > 0 || row.backlog90 > 0)
+            .sort((a, b) => b.riskScore - a.riskScore)
+            .slice(0, 10);
 
           const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent }: any) => {
             const radius = outerRadius + 16;
@@ -2027,6 +2151,139 @@ export default function OperationsTab({
                   </div>
                 )}
               </div>
+              <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                    WIP by Customer (Unbilled)
+                  </h3>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>As of: {wipAsOfLabel}</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Total WIP</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#b45309' }}>{formatCurrency(wipTotals.totalWip)}</div>
+                  </div>
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Contract Value</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{formatCurrency(wipTotals.totalContractValue)}</div>
+                  </div>
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Invoiced to Date</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#16a34a' }}>{formatCurrency(wipTotals.totalInvoicedValue)}</div>
+                  </div>
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Customers with WIP</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{wipTotals.customerCount}</div>
+                  </div>
+                </div>
+                {wipRows.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>No WIP rows found in selected operational snapshots.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #7c2d12', background: '#9a3412' }}>
+                          <th style={{ textAlign: 'center', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white', width: '42px' }}></th>
+                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Rank</th>
+                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Customer</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Contract</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Invoiced</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Open Lines</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wipRows.map((row: any, index: number) => {
+                          const rowKey = `${row.customerId || row.customerName}|${index}`;
+                          const isExpanded = expandedWipCustomers[rowKey] === true;
+                          return (
+                            <React.Fragment key={rowKey}>
+                              <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                  <button
+                                    onClick={() => toggleWipCustomerExpanded(rowKey)}
+                                    style={{
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: '6px',
+                                      background: 'white',
+                                      width: '24px',
+                                      height: '24px',
+                                      cursor: 'pointer',
+                                      color: '#334155',
+                                      fontWeight: 700,
+                                      lineHeight: 1,
+                                    }}
+                                    aria-label={isExpanded ? 'Collapse WIP line items' : 'Expand WIP line items'}
+                                    title={isExpanded ? 'Collapse' : 'Expand'}
+                                  >
+                                    {isExpanded ? '-' : '+'}
+                                  </button>
+                                </td>
+                                <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b' }}>#{index + 1}</td>
+                                <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: 600 }}>{row.customerName}</td>
+                                <td style={{ padding: '6px 10px', fontSize: '13px', color: '#b45309', textAlign: 'right', fontWeight: 700 }}>
+                                  {formatCurrency(row.wipValue)}
+                                </td>
+                                <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.contractValue)}</td>
+                                <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(row.invoicedValue)}</td>
+                                <td style={{ padding: '6px 10px', fontSize: '13px', color: '#475569', textAlign: 'right' }}>{row.lineCount}</td>
+                              </tr>
+                              {isExpanded && (
+                                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                  <td colSpan={7} style={{ padding: '10px 12px' }}>
+                                    {Array.isArray(row.wipItems) && row.wipItems.length > 0 ? (
+                                      <div style={{ overflowX: 'auto' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                          <thead>
+                                            <tr style={{ borderBottom: '1px solid #cbd5e1' }}>
+                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Order</th>
+                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Line</th>
+                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Item</th>
+                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Stat</th>
+                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Order Date</th>
+                                              <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Due</th>
+                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Qty Ord</th>
+                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Qty Shp</th>
+                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Qty Inv</th>
+                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>WIP</th>
+                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Contract</th>
+                                              <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: '#475569' }}>Invoiced</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {row.wipItems.map((item: any, itemIndex: number) => (
+                                              <tr key={`${rowKey}-${item.orderId}-${item.lineId}-${itemIndex}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.orderId}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.lineId}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.item}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b' }}>{item.stat || '-'}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#64748b' }}>{item.orderDate || '-'}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#64748b' }}>{item.dueDate || '-'}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{item.qtyOrdered.toLocaleString('en-US')}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{item.qtyShipped.toLocaleString('en-US')}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{item.qtyInvoiced.toLocaleString('en-US')}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#b45309', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(item.wipValue)}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(item.contractValue)}</td>
+                                                <td style={{ padding: '4px 8px', fontSize: '12px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(item.invoicedValue)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    ) : (
+                                      <div style={{ fontSize: '12px', color: '#64748b' }}>No line-level WIP items available.</div>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
               {/* Top Customers Table */}
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -2107,7 +2364,7 @@ export default function OperationsTab({
                             </td>
                             <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>{customer.totalInvoices}</td>
                             <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
-                              {formatCurrency(customer.totalRevenue / customer.totalInvoices)}
+                              {customer.totalInvoices > 0 ? formatCurrency(customer.totalRevenue / customer.totalInvoices) : '-'}
                             </td>
                           </tr>
                         ))
@@ -2255,13 +2512,13 @@ export default function OperationsTab({
               </div>
               )}
 
-              {false && isSectionEnabled('customersAtRiskQueue') && (
+              {isSectionEnabled('customersAtRiskQueue') && (
                 <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
                   At-Risk Accounts Queue
                 </h3>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
-                  Prioritized by declining trend and aged backlog mix.
+                  Prioritized by declining trend and unbilled backlog mix.
                 </div>
                 {atRiskRows.length === 0 ? (
                   <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
@@ -2274,8 +2531,8 @@ export default function OperationsTab({
                         <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
                           <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Customer</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>YTD Bookings</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Backlog 90+</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Backlog 90+ %</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP / Unbilled</th>
+                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>WIP Mix %</th>
                           <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Trend</th>
                         </tr>
                       </thead>
@@ -2286,8 +2543,8 @@ export default function OperationsTab({
                             <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.bookingsYtd)}</td>
                             <td style={{ padding: '6px 10px', fontSize: '13px', color: '#991b1b', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(row.backlog90)}</td>
                             <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{row.backlog90Pct.toFixed(1)}%</td>
-                            <td style={{ padding: '6px 10px', fontSize: '13px', color: row.trendK < 0 ? '#dc2626' : '#16a34a', textAlign: 'right', fontWeight: 700 }}>
-                              {row.trendK >= 0 ? '+' : '-'}${Math.abs(row.trendK)}k/mo
+                            <td style={{ padding: '6px 10px', fontSize: '13px', color: row.trendPct < 0 ? '#dc2626' : '#16a34a', textAlign: 'right', fontWeight: 700 }}>
+                              {row.trendPct >= 0 ? '+' : ''}{row.trendPct.toFixed(1)}%
                             </td>
                           </tr>
                         ))}
@@ -2594,15 +2851,24 @@ export default function OperationsTab({
         : frequency === 'weekly'
           ? Math.max(Math.ceil(chartData.length / 20) - 1, 0)
           : 0;
-    const arCollectionsTrend = chartData.map((row: any) => ({
-      period: row.month,
-      dso: 0,
-      over30Pct:
-        row.total > 0
-          ? ((row['Open AR 31-60'] + row['Open AR 61-90'] + row['Open AR 90+']) / row.total) * 100
-          : 0,
-      over90Pct: row.total > 0 ? (row['Open AR 90+'] / row.total) * 100 : 0,
-    }));
+    const arCollectionsTrend = chartData.map((row: any) => {
+      const total = Number(row.total || 0);
+      const d1to30 = Number(row['Open AR 1-30'] || 0);
+      const d31to60 = Number(row['Open AR 31-60'] || 0);
+      const d61to90 = Number(row['Open AR 61-90'] || 0);
+      const d90 = Number(row['Open AR 90+'] || 0);
+      // DSO proxy from aging mix midpoints (days): 15, 45, 75, 120.
+      const dsoProxy =
+        total > 0
+          ? (d1to30 * 15 + d31to60 * 45 + d61to90 * 75 + d90 * 120) / total
+          : 0;
+      return {
+        period: row.month,
+        dso: dsoProxy,
+        over30Pct: total > 0 ? ((d31to60 + d61to90 + d90) / total) * 100 : 0,
+        over90Pct: total > 0 ? (d90 / total) * 100 : 0,
+      };
+    });
     const arCollectionsRiskQueue = arCustomers
       .map((row) => {
         const overdue =

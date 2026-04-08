@@ -330,99 +330,6 @@ async function deriveCustomerSalesFromOrderLineDeltas(
   });
 }
 
-async function deriveCustomerInvoiceProxyFromArOpenSnapshots(
-  companyId: string,
-  frequency: 'daily' | 'weekly' | 'monthly',
-  startDate: Date,
-  endDate: Date
-): Promise<
-  Array<{
-    companyId: string;
-    snapshotDate: Date;
-    frequency: 'daily' | 'weekly' | 'monthly';
-    customerId: string | null;
-    customerName: string;
-    revenue: number;
-    invoiceCount: number;
-    avgInvoiceSize: number | null;
-  }>
-> {
-  const rows = await prisma.aROpenInvoiceSnapshot.findMany({
-    where: {
-      companyId,
-      frequency,
-      snapshotDate: {
-        gte: startDate,
-        lte: endDate,
-      },
-    },
-    select: {
-      snapshotDate: true,
-      customerId: true,
-      customerName: true,
-      invoiceNo: true,
-      amountHome: true,
-      amountDueHome: true,
-    },
-    orderBy: [{ snapshotDate: 'asc' }, { customerName: 'asc' }],
-    take: 250000,
-  });
-
-  const byCustomerDay = new Map<
-    string,
-    {
-      snapshotDate: Date;
-      customerId: string | null;
-      customerName: string;
-      billedProxy: number;
-      invoiceNos: Set<string>;
-    }
-  >();
-
-  for (const row of rows) {
-    const snapshotDate = new Date(row.snapshotDate);
-    if (Number.isNaN(snapshotDate.getTime())) continue;
-    const customerId = String(row.customerId || '').trim() || null;
-    const customerName = String(row.customerName || '').trim() || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
-    const invoiceNo = String(row.invoiceNo || '').trim();
-    const amountHome = Number(row.amountHome || 0);
-    const amountDue = Number(row.amountDueHome || 0);
-    const billedProxy = amountHome > 0 ? amountHome : Math.max(amountDue, 0);
-    if (!Number.isFinite(billedProxy) || billedProxy <= 0) continue;
-
-    const dayKey = snapshotDate.toISOString().slice(0, 10);
-    const customerKey = `${customerId || ''}|${customerName.toLowerCase()}|${dayKey}`;
-    if (!byCustomerDay.has(customerKey)) {
-      byCustomerDay.set(customerKey, {
-        snapshotDate: new Date(`${dayKey}T00:00:00.000Z`),
-        customerId,
-        customerName,
-        billedProxy: 0,
-        invoiceNos: new Set<string>(),
-      });
-    }
-    const acc = byCustomerDay.get(customerKey)!;
-    acc.billedProxy += billedProxy;
-    if (invoiceNo) acc.invoiceNos.add(invoiceNo);
-  }
-
-  return Array.from(byCustomerDay.values())
-    .map((row) => {
-      const invoiceCount = row.invoiceNos.size;
-      return {
-        companyId,
-        snapshotDate: row.snapshotDate,
-        frequency,
-        customerId: row.customerId,
-        customerName: row.customerName,
-        revenue: row.billedProxy,
-        invoiceCount,
-        avgInvoiceSize: invoiceCount > 0 ? row.billedProxy / invoiceCount : null,
-      };
-    })
-    .sort((a, b) => Number(a.snapshotDate) - Number(b.snapshotDate));
-}
-
 function normalizeAccountNameForKey(name: string): string {
   return String(name || '')
     .trim()
@@ -937,49 +844,10 @@ export async function GET(request: NextRequest) {
           isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
         const orderLineFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
-        // Get customer sales data for the full requested date window.
-        // Guardrail: extremely large tenants can return hundreds of thousands of
-        // rows and time out the request in production.
-        const customerRowCap = Math.max(Math.min(boundedLimit * 40, 50000), 10000);
-        data = await prisma.customerSalesSnapshot.findMany({
-          where: {
-            companyId,
-            frequency: customerFrequencyForQuery,
-            snapshotDate: dateFilter,
-          },
-          orderBy: [{ snapshotDate: 'desc' }, { customerName: 'asc' }],
-          take: customerRowCap,
-        });
-        data = data.sort(
-          (a, b) =>
-            new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime() ||
-            String(a.customerName || '').localeCompare(String(b.customerName || ''))
-        );
-
-        const hasNonZeroCustomerSales = data.some(
-          (record) => Number(record.revenue || 0) !== 0 || Number(record.invoiceCount || 0) !== 0
-        );
-
-        let customerDataBasis: 'sales' | 'orderline_delta' | 'invoice_proxy_ar' = 'sales';
-        // Fallback for tenants where CustomerSalesSnapshot rows exist but revenue/invoice
-        // are not populated yet: derive recognized customer revenue from persisted
-        // order-line invoicing deltas instead of relying on zeroed snapshot rows.
-        if (!hasNonZeroCustomerSales) {
-          data = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
-          customerDataBasis = 'orderline_delta';
-        }
-        const hasNonZeroCustomerAfterOrderLineFallback = (data as any[]).some(
-          (record) => Number(record?.revenue || 0) !== 0 || Number(record?.invoiceCount || 0) !== 0
-        );
-        if (!hasNonZeroCustomerAfterOrderLineFallback) {
-          data = await deriveCustomerInvoiceProxyFromArOpenSnapshots(
-            companyId,
-            customerFrequencyForQuery,
-            startDate,
-            endDate
-          );
-          customerDataBasis = 'invoice_proxy_ar';
-        }
+        // Customer revenue is derived strictly from order-line invoicing deltas.
+        // No snapshot fallback or invoice proxy fallback.
+        data = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
+        const customerDataBasis: 'orderline_delta' = 'orderline_delta';
 
         // Build real bookings from order headers/lines using orderDate periods.
         // Formula intent: SUM(QtyOrdered * Price) grouped by SLCohdrs.OrderDate period.
@@ -995,7 +863,7 @@ export async function GET(request: NextRequest) {
         >();
         const bookingsByMonth = new Map<string, number>();
         const bookingsOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
-        if (customerDataBasis !== 'invoice_proxy_ar' && bookingsOrderLineDelegate?.findMany) {
+        if (bookingsOrderLineDelegate?.findMany) {
           const hasOrderDateColumn = await customerOrderLineHasOrderDateColumn();
           const mtdStart = startOfBusinessMonth(endDate);
           const qtdStart = startOfBusinessQuarter(endDate);
@@ -1219,6 +1087,300 @@ export async function GET(request: NextRequest) {
           },
           { mtd: 0, qtd: 0, ytd: 0 }
         );
+        let wipAsOf: string | null = null;
+        let wipTopCustomers: Array<{
+          customerId: string | null;
+          customerName: string;
+          contractValue: number;
+          invoicedValue: number;
+          wipValue: number;
+          lineCount: number;
+          wipItems: Array<{
+            orderId: string;
+            lineId: string;
+            item: string;
+            stat: string | null;
+            orderDate: string | null;
+            dueDate: string | null;
+            qtyOrdered: number;
+            qtyShipped: number;
+            qtyInvoiced: number;
+            contractValue: number;
+            invoicedValue: number;
+            wipValue: number;
+          }>;
+        }> = [];
+        let wipTotals = {
+          totalWip: 0,
+          totalContractValue: 0,
+          totalInvoicedValue: 0,
+          customerCount: 0,
+        };
+        if (bookingsOrderLineDelegate?.findFirst && bookingsOrderLineDelegate?.findMany) {
+          const latestOrderSnapshot = await bookingsOrderLineDelegate.findFirst({
+            where: {
+              companyId,
+              frequency: orderLineFrequencyForQuery,
+              snapshotDate: { lte: endDate },
+            },
+            select: { snapshotDate: true },
+            orderBy: [{ snapshotDate: 'desc' }],
+          });
+          const latestOrderSnapshotDate = latestOrderSnapshot?.snapshotDate
+            ? startOfUtcDay(new Date(latestOrderSnapshot.snapshotDate))
+            : null;
+          if (latestOrderSnapshotDate) {
+            wipAsOf = latestOrderSnapshotDate.toISOString();
+            const snapshotDayEnd = new Date(latestOrderSnapshotDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+            const latestOrderRows = await bookingsOrderLineDelegate.findMany({
+              where: {
+                companyId,
+                frequency: orderLineFrequencyForQuery,
+                snapshotDate: {
+                  gte: latestOrderSnapshotDate,
+                  lte: snapshotDayEnd,
+                },
+              },
+              select: {
+                snapshotDate: true,
+                customerId: true,
+                customerName: true,
+                orderId: true,
+                lineId: true,
+                orderDate: true,
+                itemId: true,
+                itemName: true,
+                sku: true,
+                qtyOrdered: true,
+                qtyInvoiced: true,
+                contractValue: true,
+                invoicedAmount: true,
+                remainingAmount: true,
+              },
+              orderBy: [{ contractValue: 'desc' }],
+              take: 300000,
+            });
+            const orderIdsForRawLookup = Array.from(
+              new Set(
+                (latestOrderRows as any[])
+                  .map((row: any) => String(row?.orderId || '').trim())
+                  .filter((value: string) => value.length > 0)
+              )
+            );
+            const orderIdsForRawLookupSet = new Set(orderIdsForRawLookup);
+            const rawDetailByOrderLine = new Map<string, { item: string; stat: string | null }>();
+            const normalizeToken = (value: unknown): string => {
+              const raw = String(value ?? '').trim();
+              if (!raw) return '';
+              const num = Number(raw);
+              if (Number.isFinite(num)) return String(num);
+              return raw.toUpperCase();
+            };
+            const parseSnapshotLine = (lineId: unknown): { line: string; release: string } => {
+              const raw = String(lineId ?? '').trim();
+              if (!raw) return { line: '0', release: '0' };
+              const [linePart, releasePart] = raw.split('-');
+              return {
+                line: normalizeToken(linePart || '0') || '0',
+                release: normalizeToken(releasePart || '0') || '0',
+              };
+            };
+            const buildOrderLineKey = (orderIdRaw: unknown, lineRaw: unknown, releaseRaw: unknown): string => {
+              const orderId = normalizeToken(orderIdRaw);
+              const line = normalizeToken(lineRaw) || '0';
+              const release = normalizeToken(releaseRaw) || '0';
+              return `${orderId}|${line}-${release}`;
+            };
+            if (orderIdsForRawLookup.length > 0 && (prisma as any).inforRawRecord?.findMany) {
+              const rawRows = await (prisma as any).inforRawRecord.findMany({
+                where: {
+                  companyId,
+                  platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+                  miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+                },
+                select: {
+                  payload: true,
+                },
+                orderBy: [{ createdAt: 'desc' }],
+                take: 100000,
+              });
+              for (const row of rawRows as any[]) {
+                const payload =
+                  row?.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+                    ? (row.payload as Record<string, unknown>)
+                    : null;
+                if (!payload) continue;
+                const rawOrderId = normalizeToken(payload['CoNum'] ?? payload['CONUM'] ?? payload['coNum'] ?? '');
+                if (!rawOrderId || !orderIdsForRawLookupSet.has(rawOrderId)) continue;
+                const rawLine = payload['CoLine'] ?? payload['COLINE'] ?? payload['coLine'] ?? '0';
+                const rawRelease = payload['CoRelease'] ?? payload['CORELEASE'] ?? payload['coRelease'] ?? '0';
+                const rawItem = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
+                const rawStat = String(payload['Stat'] ?? payload['STAT'] ?? '').trim() || null;
+                if (!rawItem && !rawStat) continue;
+                const rawLineKey = buildOrderLineKey(rawOrderId, rawLine, rawRelease);
+                if (!rawDetailByOrderLine.has(rawLineKey)) {
+                  rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat });
+                }
+              }
+            }
+            const latestLineState = new Map<
+              string,
+              {
+                customerId: string | null;
+                customerName: string;
+                orderId: string;
+                lineId: string;
+                item: string;
+                stat: string | null;
+                orderDate: string | null;
+                dueDate: string | null;
+                qtyOrdered: number;
+                qtyShipped: number;
+                qtyInvoiced: number;
+                contractValue: number;
+                invoicedValue: number;
+                remainingValue: number;
+              }
+            >();
+            for (const row of latestOrderRows as any[]) {
+              const orderId = String(row?.orderId || '').trim() || 'UNKNOWN_ORDER';
+              const lineId = String(row?.lineId || '').trim() || 'UNKNOWN_LINE';
+              const lineKey = `${orderId}|${lineId}`;
+              const parsedLine = parseSnapshotLine(lineId);
+              const normalizedLineKey = buildOrderLineKey(orderId, parsedLine.line, parsedLine.release);
+              const customerId = String(row?.customerId || '').trim() || null;
+              const customerName = String(row?.customerName || '').trim() || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
+              const rawDetail = rawDetailByOrderLine.get(normalizedLineKey) || rawDetailByOrderLine.get(lineKey);
+              const item = rawDetail?.item || 'UNKNOWN_ITEM';
+              const stat = rawDetail?.stat || null;
+              const orderDateRaw = row?.orderDate ? new Date(row.orderDate) : null;
+              const orderDate =
+                orderDateRaw && !Number.isNaN(orderDateRaw.getTime()) ? orderDateRaw.toISOString().slice(0, 10) : null;
+              // Due date is not persisted on CustomerOrderLineSnapshot rows.
+              // Do not mirror order date; leave empty until true due-date enrichment is wired.
+              const dueDate: string | null = null;
+              const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
+              const qtyShipped = 0;
+              const qtyInvoiced = Math.max(Number(row?.qtyInvoiced || 0), 0);
+              const contractValue = Math.max(Number(row?.contractValue || 0), 0);
+              const invoicedValue = Math.max(Number(row?.invoicedAmount || 0), 0);
+              const remainingExplicit = Number(row?.remainingAmount || 0);
+              const remainingValue =
+                Number.isFinite(remainingExplicit) && remainingExplicit > 0
+                  ? remainingExplicit
+                  : Math.max(contractValue - invoicedValue, 0);
+              if (!latestLineState.has(lineKey)) {
+                latestLineState.set(lineKey, {
+                  customerId,
+                  customerName,
+                  orderId,
+                  lineId,
+                  item,
+                  stat,
+                  orderDate,
+                  dueDate,
+                  qtyOrdered,
+                  qtyShipped,
+                  qtyInvoiced,
+                  contractValue,
+                  invoicedValue,
+                  remainingValue,
+                });
+              }
+            }
+            const byCustomer = new Map<
+              string,
+              {
+                customerId: string | null;
+                customerName: string;
+                contractValue: number;
+                invoicedValue: number;
+                wipValue: number;
+                lineCount: number;
+                wipItems: Array<{
+                  orderId: string;
+                  lineId: string;
+                  item: string;
+                  stat: string | null;
+                  orderDate: string | null;
+                  dueDate: string | null;
+                  qtyOrdered: number;
+                  qtyShipped: number;
+                  qtyInvoiced: number;
+                  contractValue: number;
+                  invoicedValue: number;
+                  wipValue: number;
+                }>;
+              }
+            >();
+            for (const line of latestLineState.values()) {
+              if (line.remainingValue <= 0) continue;
+              const customerKey = `${line.customerId || ''}|${line.customerName.toLowerCase()}`;
+              if (!byCustomer.has(customerKey)) {
+                byCustomer.set(customerKey, {
+                  customerId: line.customerId,
+                  customerName: line.customerName,
+                  contractValue: 0,
+                  invoicedValue: 0,
+                  wipValue: 0,
+                  lineCount: 0,
+                  wipItems: [],
+                });
+              }
+              const acc = byCustomer.get(customerKey)!;
+              acc.contractValue += line.contractValue;
+              acc.invoicedValue += line.invoicedValue;
+              acc.wipValue += line.remainingValue;
+              acc.lineCount += 1;
+              acc.wipItems.push({
+                orderId: line.orderId,
+                lineId: line.lineId,
+                item: line.item,
+                stat: line.stat,
+                orderDate: line.orderDate,
+                dueDate: line.dueDate,
+                qtyOrdered: line.qtyOrdered,
+                qtyShipped: line.qtyShipped,
+                qtyInvoiced: line.qtyInvoiced,
+                contractValue: line.contractValue,
+                invoicedValue: line.invoicedValue,
+                wipValue: line.remainingValue,
+              });
+            }
+            const allWipCustomers = Array.from(byCustomer.values())
+              .filter((row) => Number(row.wipValue || 0) > 0)
+              .sort((a, b) => b.wipValue - a.wipValue);
+            wipTopCustomers = allWipCustomers.slice(0, 10).map((row) => ({
+              ...row,
+              wipItems: row.wipItems
+                .sort((a, b) => {
+                  const aDate = String(a.orderDate || '');
+                  const bDate = String(b.orderDate || '');
+                  if (aDate !== bDate) return aDate.localeCompare(bDate);
+                  const aOrder = String(a.orderId || '');
+                  const bOrder = String(b.orderId || '');
+                  if (aOrder !== bOrder) return aOrder.localeCompare(bOrder);
+                  return String(a.lineId || '').localeCompare(String(b.lineId || ''));
+                })
+                .slice(0, 50),
+            }));
+            wipTotals = allWipCustomers.reduce(
+              (acc, row) => {
+                acc.totalWip += Number(row.wipValue || 0);
+                acc.totalContractValue += Number(row.contractValue || 0);
+                acc.totalInvoicedValue += Number(row.invoicedValue || 0);
+                acc.customerCount += 1;
+                return acc;
+              },
+              {
+                totalWip: 0,
+                totalContractValue: 0,
+                totalInvoicedValue: 0,
+                customerCount: 0,
+              }
+            );
+          }
+        }
 
         const revenueByMonth = new Map<string, number>();
         for (const row of data as any[]) {
@@ -1296,7 +1458,7 @@ export async function GET(request: NextRequest) {
           summary: {
             topCustomers: topCustomersSummary,
             customerDataBasis,
-            revenueLabel: customerDataBasis === 'invoice_proxy_ar' ? 'Billed Amount (Invoice Proxy)' : 'Revenue',
+            revenueLabel: 'Revenue',
             bookings: {
               totals: bookingsTotals,
               top5: bookingsTop5,
@@ -1304,6 +1466,11 @@ export async function GET(request: NextRequest) {
               monthly: bookingsMonthly,
               bridge: bookingsVsRevenueBridge,
               backlogSeries,
+            },
+            wip: {
+              asOf: wipAsOf,
+              totals: wipTotals,
+              topCustomers: wipTopCustomers,
             },
           },
         });
@@ -1316,16 +1483,9 @@ export async function GET(request: NextRequest) {
         if (isQuickBooksCompany && frequency !== 'monthly') {
           arFrequencyForQuery = 'monthly';
         }
-        data = await prisma.aRAgingSnapshot.findMany({
-          where: {
-            companyId,
-            frequency: arFrequencyForQuery,
-            snapshotDate: dateFilter,
-          },
-          orderBy: { snapshotDate: 'desc' },
-          take: limit,
-        });
-        const useArSnapshotFirstResponse = data.length > 0;
+        // Open AR is derived strictly from invoice-level open rows.
+        // Do not fall back to pre-aggregated AR aging snapshots here.
+        data = [];
 
         let unpaidByCustomer: Array<{
           customerId: string;
@@ -1418,7 +1578,6 @@ export async function GET(request: NextRequest) {
           dsoWeightedDaysDenominator: 0,
         };
         let arAsOfReferenceDate = endDate;
-        let usedArInvoiceDetail = false;
         const preferOpenInvoiceSnapshotTrend = true;
 
         let arInvoiceTrendRows: Array<{
@@ -1575,7 +1734,6 @@ export async function GET(request: NextRequest) {
           `;
         }
         if (!preferOpenInvoiceSnapshotTrend && arInvoiceTrendRows.length > 0) {
-          usedArInvoiceDetail = true;
           data = arInvoiceTrendRows;
           const latestArInvoiceSnapshotDate = new Date(arInvoiceTrendRows[0].snapshotTs || arInvoiceTrendRows[0].snapshotDate);
           arAsOfReferenceDate = latestArInvoiceSnapshotDate;
@@ -1725,7 +1883,7 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        if (!usedArInvoiceDetail) {
+        {
           const latestOpenSnapshot = await prisma.aROpenInvoiceSnapshot.findFirst({
           where: {
             companyId,
@@ -1954,9 +2112,7 @@ export async function GET(request: NextRequest) {
           ORDER BY b."snapshotDate" DESC
           LIMIT ${Math.max(limit, 365)}
         `;
-          if (!useArSnapshotFirstResponse) {
-            data = arTrendFromOpenRows;
-          }
+          data = arTrendFromOpenRows;
 
           if (openRowsInvoiceLike.length > 0) {
           const openRowsEligible = openRowsInvoiceLike;
@@ -2480,24 +2636,8 @@ export async function GET(request: NextRequest) {
           },
           { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
         );
-        const latestSnapshotTotals = data.length
-          ? {
-              totalAR: Number(data[0].totalAR || 0),
-              current: Number(data[0].current || 0),
-              days1to30: Number(data[0].days1to30 || 0),
-              days31to60: Number(data[0].days31to60 || 0),
-              days61to90: Number(data[0].days61to90 || 0),
-              days90plus: Number(data[0].days90plus || 0),
-              dsoWeightedDaysNumerator: 0,
-              dsoWeightedDaysDenominator: 0,
-            }
-          : null;
-        // Keep AR summary aligned with the trend source:
-        // - snapshot-first when ARAgingSnapshot rows exist,
-        // - otherwise invoice/open-row reconstruction.
-        const summaryTotals = useArSnapshotFirstResponse && latestSnapshotTotals && latestSnapshotTotals.totalAR > 0
-          ? latestSnapshotTotals
-          : latestOpenTotals.totalAR > 0
+        const summaryTotals =
+          latestOpenTotals.totalAR > 0
             ? latestOpenTotals
             : {
                 totalAR: Number(derivedTotals.totalAR || 0),
