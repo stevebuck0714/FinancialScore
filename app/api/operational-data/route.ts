@@ -208,6 +208,128 @@ async function customerOrderLineHasOrderDateColumn(): Promise<boolean> {
   return customerOrderLineOrderDateColumnCache;
 }
 
+async function deriveCustomerSalesFromOrderLineDeltas(
+  companyId: string,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  startDate: Date,
+  endDate: Date
+): Promise<
+  Array<{
+    companyId: string;
+    snapshotDate: Date;
+    frequency: 'daily' | 'weekly' | 'monthly';
+    customerId: string | null;
+    customerName: string;
+    revenue: number;
+    invoiceCount: number;
+    avgInvoiceSize: number | null;
+  }>
+> {
+  const snapshotStart = new Date(`${dateKeyUtc(startDate)}T00:00:00.000Z`);
+  const snapshotEnd = new Date(`${dateKeyUtc(endDate)}T23:59:59.999Z`);
+  const rows = await prisma.$queryRawUnsafe<
+    Array<{
+      snapshotDate: Date;
+      customerId: string | null;
+      customerName: string | null;
+      revenue: number;
+      invoiceCount: number;
+    }>
+  >(
+    `
+      WITH relevant_lines AS (
+        SELECT DISTINCT "orderId", "lineId"
+        FROM "CustomerOrderLineSnapshot"
+        WHERE "companyId" = $1
+          AND "frequency" = $2
+          AND "snapshotDate" >= $3
+          AND "snapshotDate" <= $4
+      ),
+      ordered_rows AS (
+        SELECT
+          date_trunc('day', c."snapshotDate") AS day,
+          c."snapshotDate",
+          c."customerId",
+          c."customerName",
+          c."orderId",
+          c."lineId",
+          GREATEST(COALESCE(c."invoicedAmount", 0), 0)::double precision AS "invoicedAmount",
+          ROW_NUMBER() OVER (
+            PARTITION BY c."orderId", c."lineId", date_trunc('day', c."snapshotDate")
+            ORDER BY c."snapshotDate" DESC
+          ) AS rn
+        FROM "CustomerOrderLineSnapshot" c
+        INNER JOIN relevant_lines r
+          ON r."orderId" = c."orderId"
+         AND r."lineId" = c."lineId"
+        WHERE c."companyId" = $1
+          AND c."frequency" = $2
+          AND c."snapshotDate" <= $4
+      ),
+      daily_state AS (
+        SELECT
+          day,
+          "snapshotDate",
+          "customerId",
+          "customerName",
+          "orderId",
+          "lineId",
+          "invoicedAmount"
+        FROM ordered_rows
+        WHERE rn = 1
+      ),
+      line_deltas AS (
+        SELECT
+          day,
+          "customerId",
+          "customerName",
+          "orderId",
+          GREATEST(
+            "invoicedAmount" - LAG("invoicedAmount", 1, 0) OVER (
+              PARTITION BY "orderId", "lineId"
+              ORDER BY day ASC, "snapshotDate" ASC
+            ),
+            0
+          )::double precision AS revenue_delta
+        FROM daily_state
+      )
+      SELECT
+        day AS "snapshotDate",
+        NULLIF(TRIM(COALESCE("customerId", '')), '') AS "customerId",
+        NULLIF(TRIM(COALESCE("customerName", '')), '') AS "customerName",
+        COALESCE(SUM(revenue_delta), 0)::double precision AS revenue,
+        COUNT(DISTINCT "orderId")::int AS "invoiceCount"
+      FROM line_deltas
+      WHERE day >= $3
+        AND day <= $4
+        AND revenue_delta > 0.0001
+      GROUP BY day, "customerId", "customerName"
+      ORDER BY day ASC, "customerName" ASC
+    `,
+    companyId,
+    frequency,
+    snapshotStart,
+    snapshotEnd
+  );
+
+  return rows.map((row) => {
+    const customerId = String(row.customerId || '').trim() || null;
+    const customerName = String(row.customerName || '').trim() || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
+    const revenue = Number(row.revenue || 0);
+    const invoiceCount = Math.max(0, Number(row.invoiceCount || 0));
+    return {
+      companyId,
+      snapshotDate: new Date(row.snapshotDate),
+      frequency,
+      customerId,
+      customerName,
+      revenue,
+      invoiceCount,
+      avgInvoiceSize: invoiceCount > 0 ? revenue / invoiceCount : null,
+    };
+  });
+}
+
 function normalizeAccountNameForKey(name: string): string {
   return String(name || '')
     .trim()
@@ -750,119 +872,10 @@ export async function GET(request: NextRequest) {
         );
 
         // Fallback for tenants where CustomerSalesSnapshot rows exist but revenue/invoice
-        // are not populated yet: derive customer revenue from order-line snapshots.
-        // Important: emit rows at business period dates (orderDate when present), not
-        // a single endDate stamp, so all customer charts/tables can period-group correctly.
+        // are not populated yet: derive recognized customer revenue from persisted
+        // order-line invoicing deltas instead of relying on zeroed snapshot rows.
         if (!hasNonZeroCustomerSales) {
-          const orderLineDelegate = (prisma as any).customerOrderLineSnapshot;
-          if (orderLineDelegate?.findMany) {
-            const orderRows = await orderLineDelegate.findMany({
-              where: {
-                companyId,
-                frequency: orderLineFrequencyForQuery,
-                snapshotDate: { lte: endDate },
-              },
-              select: {
-                snapshotDate: true,
-                orderDate: true,
-                customerId: true,
-                customerName: true,
-                orderId: true,
-                lineId: true,
-                contractValue: true,
-                invoicedAmount: true,
-              },
-              orderBy: [{ snapshotDate: 'asc' }],
-              take: 250000,
-            });
-
-            const latestLineSnapshot = new Map<
-              string,
-              {
-                snapshotDate: Date;
-                effectiveDate: Date;
-                customerId: string | null;
-                customerName: string;
-                orderId: string;
-                lineId: string;
-                invoicedAmount: number;
-                contractValue: number;
-              }
-            >();
-
-            for (const row of orderRows as any[]) {
-              const snapshotDate = new Date(row.snapshotDate || row.orderDate);
-              if (Number.isNaN(snapshotDate.getTime())) continue;
-              if (snapshotDate > endDate) continue;
-              const orderDateRaw = row.orderDate ? new Date(row.orderDate) : null;
-              const effectiveDate =
-                orderDateRaw && !Number.isNaN(orderDateRaw.getTime())
-                  ? orderDateRaw
-                  : snapshotDate;
-              if (effectiveDate < startDate || effectiveDate > endDate) continue;
-              const customerName = String(row.customerName || 'Unknown Customer');
-              const customerId = row.customerId ? String(row.customerId) : null;
-              const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
-              const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
-              const key = `${customerId || customerName.toLowerCase()}|${orderId}|${lineId}`;
-              const existing = latestLineSnapshot.get(key);
-              if (!existing || snapshotDate >= existing.snapshotDate) {
-                latestLineSnapshot.set(key, {
-                  snapshotDate,
-                  effectiveDate,
-                  customerId,
-                  customerName,
-                  orderId,
-                  lineId,
-                  invoicedAmount: Number(row.invoicedAmount || 0),
-                  contractValue: Number(row.contractValue || 0),
-                });
-              }
-            }
-
-            const customerDayAgg = new Map<
-              string,
-              {
-                snapshotDate: Date;
-                customerId: string | null;
-                customerName: string;
-                revenue: number;
-                orderIds: Set<string>;
-              }
-            >();
-
-            for (const state of latestLineSnapshot.values()) {
-              const recognizedRevenue = state.invoicedAmount > 0 ? state.invoicedAmount : state.contractValue;
-              if (recognizedRevenue <= 0) continue;
-              const dayKey = state.effectiveDate.toISOString().slice(0, 10);
-              const customerKey = `${state.customerId || ''}|${state.customerName.toLowerCase()}|${dayKey}`;
-              if (!customerDayAgg.has(customerKey)) {
-                customerDayAgg.set(customerKey, {
-                  snapshotDate: new Date(`${dayKey}T00:00:00.000Z`),
-                  customerId: state.customerId,
-                  customerName: state.customerName,
-                  revenue: 0,
-                  orderIds: new Set<string>(),
-                });
-              }
-              const acc = customerDayAgg.get(customerKey)!;
-              acc.revenue += recognizedRevenue;
-              acc.orderIds.add(state.orderId);
-            }
-
-            data = Array.from(customerDayAgg.values())
-              .map((row) => ({
-                companyId,
-                snapshotDate: row.snapshotDate,
-                frequency,
-                customerId: row.customerId,
-                customerName: row.customerName,
-                revenue: row.revenue,
-                invoiceCount: row.orderIds.size,
-                avgInvoiceSize: row.orderIds.size > 0 ? row.revenue / row.orderIds.size : null,
-              }))
-              .sort((a, b) => Number(b.revenue || 0) - Number(a.revenue || 0)) as any[];
-          }
+          data = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
         }
 
         // Build real bookings from order headers/lines using orderDate periods.
