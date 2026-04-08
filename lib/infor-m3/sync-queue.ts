@@ -900,6 +900,7 @@ async function processTask(
         (textSnippet ? `HTTP ${responseStatus}: ${textSnippet}` : `HTTP ${responseStatus}: Async sync chunk failed`);
 
   const attemptNo = Math.max(0, Number(task.attemptCount || 0)) + 1;
+  let runCompletedInThisTask = false;
 
   if (responseStatus >= 400 || !data?.ok) {
     const reachedMax = attemptNo >= Math.max(1, Number(task.maxAttempts || DEFAULT_MAX_ATTEMPTS));
@@ -1191,7 +1192,7 @@ async function processTask(
         },
       });
       if (remaining === 0) {
-        await tx.inforSyncRun.updateMany({
+        const completed = await tx.inforSyncRun.updateMany({
           where: { id: task.runId, status: 'running' },
           data: {
             status: 'done',
@@ -1200,6 +1201,7 @@ async function processTask(
             message: 'Background sync completed.',
           },
         });
+        runCompletedInThisTask = Number(completed?.count || 0) === 1;
       }
     }
   });
@@ -1263,6 +1265,41 @@ async function processTask(
       } catch {
         // Snapshot hydration is best-effort; queue progress should not regress on hydration failures.
       }
+    }
+  }
+
+  // Final safety pass: when the run transitions to done, automatically hydrate any
+  // remaining incomplete business dates for this run so users never need manual intervention.
+  const shouldRunCompletionHydrationPass =
+    runCompletedInThisTask &&
+    String(task.run.platform || '') === 'INFOR_M3' &&
+    String(task.run.frequency || '').toLowerCase() === 'daily' &&
+    taskPayload.forceIngestOnly === true &&
+    taskPayload.deferDailySnapshotHydration === true;
+  if (shouldRunCompletionHydrationPass) {
+    try {
+      const incompleteRows = await db().$queryRaw<Array<{ businessDate: Date }>>`
+        SELECT DISTINCT "businessDate"
+        FROM "InforRawCompleteness"
+        WHERE "companyId" = ${task.companyId}
+          AND "syncRunId" = ${task.runId}
+          AND platform = 'INFOR_M3'
+          AND "isComplete" = false
+        ORDER BY "businessDate" ASC
+        LIMIT 31
+      `;
+      for (const row of incompleteRows) {
+        const businessDateIso = new Date(row.businessDate).toISOString().slice(0, 10);
+        await transformInforM3RawRun({
+          companyId: task.companyId,
+          syncRunId: task.runId,
+          frequency: 'daily',
+          businessDateIso,
+          maxBusinessDates: 1,
+        });
+      }
+    } catch {
+      // Completion hydration is best-effort and must not regress queue health.
     }
   }
 

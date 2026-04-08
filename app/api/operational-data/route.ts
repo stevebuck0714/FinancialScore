@@ -807,13 +807,10 @@ export async function GET(request: NextRequest) {
       await activateRealOperationalData(companyId);
       hasRealOperationalData = true;
     }
-    // Hard guard: once a company is on real operational data, never serve mock payloads.
-    // This prevents mixed real+mock experiences if a stale demo flag remains enabled.
-    // Additional prod guard: production should never serve operational mock payloads.
-    const shouldUseMockData =
-      !isProduction &&
-      company.forceOperationalMockData === true &&
-      hasRealOperationalData !== true;
+    // In non-production environments, site-admin demo toggle is authoritative:
+    // when enabled, always serve mock payloads so localhost/dev testing is deterministic.
+    // Production still never serves operational mock payloads.
+    const shouldUseMockData = !isProduction && company.forceOperationalMockData === true;
 
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
     const normalizedAccountingSystem = String(company.accountingSystem || '').trim().toUpperCase();
@@ -1174,7 +1171,7 @@ export async function GET(request: NextRequest) {
           .sort((a, b) => b.totalRevenue - a.totalRevenue)
           .slice(0, 10);
 
-        if (!data.length && shouldUseMockData) {
+        if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'customers',
@@ -2349,7 +2346,7 @@ export async function GET(request: NextRequest) {
           { contractAR: 0, nonContractAR: 0, unknownSourceAR: 0 }
         );
 
-        if (!data.length && shouldUseMockData) {
+        if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'ar-aging',
@@ -2884,7 +2881,7 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        if (!data.length && shouldUseMockData) {
+        if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'ap-aging',
@@ -3275,7 +3272,7 @@ export async function GET(request: NextRequest) {
               .sort((a: any, b: any) => b.totalRevenue - a.totalRevenue)
               .slice(0, 10);
 
-        if (!data.length && shouldUseMockData) {
+        if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'products',
@@ -4200,7 +4197,7 @@ export async function GET(request: NextRequest) {
             : 0,
         };
 
-        if (!data.length && shouldUseMockData) {
+        if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
               type: 'cash',
@@ -4431,7 +4428,7 @@ export async function GET(request: NextRequest) {
           cashRecords: cash,
           dailyFinancialRecords: dailyFinancials,
         };
-        if (!customers && !arAging && !apAging && !products && !inventory && !cash && !dailyFinancials && shouldUseMockData) {
+        if (shouldUseMockData) {
           return NextResponse.json({
             summary: buildOperationalMockSummaryCounts(sectorCategory),
           });

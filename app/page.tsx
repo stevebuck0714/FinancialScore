@@ -10840,21 +10840,6 @@ function FinancialScorePage() {
           <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: '12px' }}>
             {currentUser?.userType !== 'assessment' && null}
 
-            <div
-              style={{
-                fontSize: '16px',
-                fontWeight: '800',
-                color: '#1e293b',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                padding: '1px 24px 10px 24px',
-                margin: '0 0 12px 0',
-                borderBottom: '1px solid #e2e8f0'
-              }}
-            >
-              ANALYTICS
-            </div>
-
             <div style={{ marginBottom: '16px' }}>
               <h3
                 onClick={() => handleNavigation('ai-analysis')}
