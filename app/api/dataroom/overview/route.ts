@@ -8,6 +8,7 @@ import {
   isCompanyAdminForDataRoom,
   resolveDataRoomCapabilities,
 } from '@/lib/dataroom/access';
+import { DATAROOM_COMPANY_QUOTA_BYTES, getCompanyDataRoomUsage, getUsageLevel } from '@/lib/dataroom/quota';
 
 function getDisplayName(name: string | null | undefined, email: string | null | undefined) {
   const trimmedName = String(name || '').trim();
@@ -160,11 +161,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const usedBytes = await getCompanyDataRoomUsage(companyId);
+    const quotaBytes = DATAROOM_COMPANY_QUOTA_BYTES;
+    const remainingBytes = Math.max(0, quotaBytes - usedBytes);
+    const usageLevel = getUsageLevel(usedBytes, quotaBytes);
+
     return NextResponse.json({
       company: { id: company.id, name: company.name },
       enabledByAdmin: Boolean(state.dataRoom.enabledByAdmin),
       subscription: state.subscription,
       capabilities: baseCapabilities,
+      storage: {
+        usedBytes,
+        quotaBytes,
+        remainingBytes,
+        usagePct: quotaBytes > 0 ? Math.min(100, (usedBytes / quotaBytes) * 100) : 0,
+        level: usageLevel,
+      },
       folders: grouped,
     });
   } catch (error: any) {

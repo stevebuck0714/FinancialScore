@@ -4,6 +4,7 @@ import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { extractTextFromArrayBuffer, sanitizeTextForPostgres } from '@/lib/company-documents/extract-text';
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 import { validateDataRoomFilePolicy } from '@/lib/dataroom/file-policy';
+import { ensureCompanyWithinDataRoomQuota } from '@/lib/dataroom/quota';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,6 +122,22 @@ export async function POST(req: NextRequest) {
     const hasAccess = await validateCompanyAccess(companyId);
     if (!hasAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const quota = await ensureCompanyWithinDataRoomQuota({
+      companyId,
+      incomingSizeBytes: Number(sizeBytes || 0),
+      incomingBlobUrl: blobUrl,
+    });
+    if (!quota.ok) {
+      return NextResponse.json(
+        {
+          error: `Storage quota exceeded. Quota: ${Math.round(quota.quotaBytes / (1024 * 1024))} MB, projected usage: ${Math.round(
+            quota.projectedUsedBytes / (1024 * 1024),
+          )} MB.`,
+        },
+        { status: 400 },
+      );
     }
 
     const doc = await prisma.companyDocument.upsert({

@@ -1,6 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Document as DocxDocument,
+  ExternalHyperlink,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  TextRun,
+} from 'docx';
 
 type AskResponse = {
   shortAnswer: string;
@@ -56,6 +64,30 @@ type MonthlyDataLike = {
 };
 
 type QuestionsByCategory = Record<string, string[]>;
+type ThreadSource = {
+  url: string;
+  title?: string;
+  publishedDate?: string | null;
+};
+type ThreadTurnContext = {
+  askedAt: string;
+  question: string;
+  shortAnswer: string;
+  longAnswer: string;
+  howThisImpactsUs: string;
+  sources: ThreadSource[];
+};
+type ConversationContextPayload = {
+  recentTurns: ThreadTurnContext[];
+  runningSummary: string;
+};
+type AskThreadTurn = {
+  id: string;
+  askedAt: string;
+  question: string;
+  useExternalSources: boolean;
+  response: AskResponse;
+};
 
 type DocCategory = 'LOAN_DOCUMENTS' | 'FINANCING_DOCUMENTS' | 'LEGAL_AND_REGULATORY' | 'TAX_DOCUMENTS' | 'OTHER';
 type CompanyDocument = {
@@ -89,6 +121,8 @@ export default function AIAnalysisView(props: {
   const [askLoading, setAskLoading] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [askResponse, setAskResponse] = useState<AskResponse | null>(null);
+  const [askThreadId, setAskThreadId] = useState<string>(() => `thread-${Date.now()}`);
+  const [askThreadTurns, setAskThreadTurns] = useState<AskThreadTurn[]>([]);
   const askInputRef = useRef<HTMLInputElement | null>(null);
 
   // Document search (separate state so it doesn't leak from Ask Corelytics)
@@ -237,6 +271,158 @@ export default function AIAnalysisView(props: {
     ref.current = null;
   }
 
+  function summarizeTurnForContext(turn: AskThreadTurn): string {
+    const short = String(turn.response.shortAnswer || '').replace(/\s+/g, ' ').trim();
+    const impact = String(turn.response.howThisImpactsUs || '').replace(/\s+/g, ' ').trim();
+    const topSources = (turn.response.sources || [])
+      .slice(0, 2)
+      .map((s) => s.title || s.url)
+      .filter(Boolean)
+      .join('; ');
+    return `Q: ${turn.question}\nA: ${short}${impact ? `\nImpact: ${impact}` : ''}${topSources ? `\nSources: ${topSources}` : ''}`;
+  }
+
+  function buildConversationContext(turns: AskThreadTurn[]): ConversationContextPayload {
+    const recentTurns = turns.slice(-6).map((turn) => ({
+      askedAt: turn.askedAt,
+      question: turn.question,
+      shortAnswer: turn.response.shortAnswer,
+      longAnswer: turn.response.longAnswer,
+      howThisImpactsUs: turn.response.howThisImpactsUs,
+      sources: (turn.response.sources || []).map((s) => ({
+        url: s.url,
+        title: s.title,
+        publishedDate: s.publishedDate ?? null,
+      })),
+    }));
+    const olderTurns = turns.slice(0, Math.max(0, turns.length - recentTurns.length));
+    const runningSummary = olderTurns
+      .slice(-12)
+      .map((t) => summarizeTurnForContext(t))
+      .join('\n\n')
+      .slice(0, 3000);
+    return { recentTurns, runningSummary };
+  }
+
+  function startNewAskThread() {
+    abortInFlight('default');
+    setAskThreadId(`thread-${Date.now()}`);
+    setAskThreadTurns([]);
+    setAskResponse(null);
+    setAskError(null);
+  }
+
+  async function exportAskThreadDocx() {
+    if (askThreadTurns.length === 0) return;
+    const header = [
+      new Paragraph({
+        text: 'Ask Corelytics Thread Export',
+        heading: HeadingLevel.TITLE,
+      }),
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `Company: ${companyName || selectedCompanyId}`,
+          }),
+        ],
+      }),
+      new Paragraph({
+        text: `Thread ID: ${askThreadId}`,
+      }),
+      new Paragraph({
+        text: `Exported: ${new Date().toLocaleString()}`,
+      }),
+      new Paragraph({ text: '' }),
+    ];
+    const turnParagraphs: Paragraph[] = [];
+    for (let i = 0; i < askThreadTurns.length; i += 1) {
+      const turn = askThreadTurns[i];
+      turnParagraphs.push(
+        new Paragraph({
+          text: `Turn ${i + 1} - ${new Date(turn.askedAt).toLocaleString()}`,
+          heading: HeadingLevel.HEADING_2,
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: 'Question: ', bold: true }), new TextRun(turn.question)],
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: 'Short Answer: ', bold: true }), new TextRun(turn.response.shortAnswer || '')],
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: 'Long Answer: ', bold: true }), new TextRun(turn.response.longAnswer || '')],
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: 'How This Impacts Us: ', bold: true }), new TextRun(turn.response.howThisImpactsUs || '')],
+        }),
+        new Paragraph({ text: 'Cited Bullets', heading: HeadingLevel.HEADING_3 }),
+      );
+
+      for (const bullet of turn.response.citedBullets || []) {
+        turnParagraphs.push(
+          new Paragraph({
+            text: `- ${bullet.text || ''}`,
+          }),
+        );
+        for (const citation of bullet.citations || []) {
+          const href = String(citation.url || '').trim();
+          if (!href) continue;
+          turnParagraphs.push(
+            new Paragraph({
+              children: [
+                new TextRun('  citation: '),
+                new ExternalHyperlink({
+                  children: [new TextRun({ text: citation.title || href, style: 'Hyperlink' })],
+                  link: href,
+                }),
+                new TextRun(` (${href})`),
+              ],
+            }),
+          );
+        }
+      }
+
+      turnParagraphs.push(new Paragraph({ text: 'Sources', heading: HeadingLevel.HEADING_3 }));
+      for (const source of turn.response.sources || []) {
+        const href = String(source.url || '').trim();
+        if (!href) continue;
+        turnParagraphs.push(
+          new Paragraph({
+            children: [
+              new ExternalHyperlink({
+                children: [new TextRun({ text: source.title || href, style: 'Hyperlink' })],
+                link: href,
+              }),
+              new TextRun(` (${href})`),
+            ],
+          }),
+        );
+      }
+      turnParagraphs.push(new Paragraph({ text: '' }));
+    }
+
+    const doc = new DocxDocument({
+      sections: [
+        {
+          children: [...header, ...turnParagraphs],
+        },
+      ],
+    });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeCompany = String(companyName || 'company')
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase();
+    a.href = url;
+    a.download = `ask-corelytics-thread-${safeCompany || 'company'}-${new Date().toISOString().slice(0, 10)}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function runAsk(q: string, opts?: { mode?: 'default' | 'document' }) {
     const trimmed = q.trim();
     if (!trimmed) return;
@@ -271,6 +457,8 @@ export default function AIAnalysisView(props: {
           useExternalSources,
           documentId: mode === 'document' ? (selectedDocumentId || null) : null,
           mode,
+          threadId: mode === 'default' ? askThreadId : undefined,
+          conversationContext: mode === 'default' ? buildConversationContext(askThreadTurns) : undefined,
         }),
         signal: controller.signal,
       });
@@ -278,8 +466,22 @@ export default function AIAnalysisView(props: {
       if (!res.ok) {
         throw new Error(data?.error || 'Failed to run AI Search');
       }
-      if (mode === 'document') setDocResponse(data as AskResponse);
-      else setAskResponse(data as AskResponse);
+      if (mode === 'document') {
+        setDocResponse(data as AskResponse);
+      } else {
+        const response = data as AskResponse;
+        setAskResponse(response);
+        setAskThreadTurns((prev) => [
+          ...prev,
+          {
+            id: `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            askedAt: new Date().toISOString(),
+            question: trimmed,
+            useExternalSources,
+            response,
+          },
+        ]);
+      }
     } catch (e: any) {
       const msg =
         e?.name === 'AbortError'
@@ -368,6 +570,14 @@ export default function AIAnalysisView(props: {
       setUseExternalSources(false);
     }
   }, [tab]);
+
+  useEffect(() => {
+    // Company switch starts a fresh Ask thread context.
+    setAskThreadId(`thread-${Date.now()}`);
+    setAskThreadTurns([]);
+    setAskResponse(null);
+    setAskError(null);
+  }, [selectedCompanyId]);
 
   useEffect(() => {
     // Avoid a "stuck" feel: cancel in-flight requests when switching tabs.
@@ -692,6 +902,41 @@ export default function AIAnalysisView(props: {
                 <span style={{ fontSize: '12px', color: '#64748b' }}>
                   Off = internal financial/operational data only.
                 </span>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Thread turns: {askThreadTurns.length}
+                </span>
+                <button
+                  onClick={startNewAskThread}
+                  disabled={askLoading}
+                  style={{
+                    padding: '7px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    background: '#fff',
+                    color: '#1e293b',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: askLoading ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  New Thread
+                </button>
+                <button
+                  onClick={exportAskThreadDocx}
+                  disabled={askThreadTurns.length === 0}
+                  style={{
+                    padding: '7px 10px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: askThreadTurns.length > 0 ? '#2563eb' : '#94a3b8',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: askThreadTurns.length > 0 ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  Export Thread (.docx)
+                </button>
               </div>
 
               {askError && (
@@ -700,7 +945,79 @@ export default function AIAnalysisView(props: {
                 </div>
               )}
 
-              {askResponse && (
+              {askThreadTurns.length > 0 && (
+                <div style={{ marginTop: '16px', display: 'grid', gap: '14px' }}>
+                  {askThreadTurns.map((turn, turnIdx) => (
+                    <div key={turn.id} style={{ display: 'grid', gap: '10px' }}>
+                      <Section title={`Turn ${turnIdx + 1} · ${new Date(turn.askedAt).toLocaleString()}`}>
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>
+                          <strong>Question:</strong> {turn.question}
+                        </div>
+                        <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
+                          Sources mode: {turn.useExternalSources ? 'External web sources enabled' : 'Internal data only'}
+                        </div>
+                      </Section>
+                      <Section title="Short answer">
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>{turn.response.shortAnswer}</div>
+                      </Section>
+                      <Section title="Long answer">
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{turn.response.longAnswer}</div>
+                      </Section>
+                      <Section title="Cited bullets (every bullet is sourced)">
+                        <div style={{ display: 'grid', gap: '10px' }}>
+                          {turn.response.citedBullets.map((b, idx) => (
+                            <div key={`${turn.id}-b-${idx}`} style={{ padding: '10px 12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ color: '#0f172a', lineHeight: '1.55' }}>• {b.text}</div>
+                              <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {(b.citations || []).map((c, cIdx) => (
+                                  <a
+                                    key={`${turn.id}-${idx}-${cIdx}`}
+                                    href={c.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ fontSize: '12px', color: '#2563eb', textDecoration: 'none' }}
+                                    title={c.title || c.url}
+                                  >
+                                    {c.title ? c.title : new URL(c.url).hostname}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </Section>
+                      <Section title="How this impacts us">
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.7', color: '#0f172a' }}>{turn.response.howThisImpactsUs}</div>
+                      </Section>
+                      <Section title="Sources">
+                        <div style={{ display: 'grid', gap: '8px' }}>
+                          {turn.response.sources.map((s, idx) => (
+                            <a
+                              key={`${turn.id}-s-${idx}`}
+                              href={s.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                padding: '10px 12px',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '10px',
+                                color: '#0f172a',
+                                textDecoration: 'none',
+                                background: '#fff',
+                              }}
+                            >
+                              <div style={{ fontSize: '14px', fontWeight: '800' }}>{s.title || s.url}</div>
+                              {s.publishedDate && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{s.publishedDate}</div>}
+                              {s.snippet && <div style={{ fontSize: '13px', color: '#334155', marginTop: '6px', lineHeight: '1.45' }}>{s.snippet}</div>}
+                            </a>
+                          ))}
+                        </div>
+                      </Section>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {askResponse && askThreadTurns.length === 0 && (
                 <div style={{ marginTop: '16px', display: 'grid', gap: '14px' }}>
                   <Section title="Short answer">
                     <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.65', color: '#0f172a' }}>{askResponse.shortAnswer}</div>

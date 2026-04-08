@@ -63,6 +63,14 @@ type DataRoomFolder = {
   documents: FolderDoc[];
 };
 
+type StorageSummary = {
+  usedBytes: number;
+  quotaBytes: number;
+  remainingBytes: number;
+  usagePct: number;
+  level: 'ok' | 'warning' | 'critical';
+};
+
 type AuditEvent = {
   id: string;
   at: string;
@@ -138,6 +146,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
   const [scanning, setScanning] = useState(false);
   const [workingDocId, setWorkingDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [storage, setStorage] = useState<StorageSummary | null>(null);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -249,6 +258,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load DataRoom');
       const incoming = Array.isArray(data?.folders) ? data.folders : [];
+      const incomingStorage = data?.storage && typeof data.storage === 'object' ? (data.storage as StorageSummary) : null;
       const incomingCapabilities =
         data?.capabilities && typeof data.capabilities === 'object'
           ? data.capabilities
@@ -261,6 +271,17 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
           share: Boolean((incomingCapabilities as any).share),
           manage: Boolean((incomingCapabilities as any).manage),
         });
+      }
+      if (incomingStorage) {
+        setStorage({
+          usedBytes: Number(incomingStorage.usedBytes || 0),
+          quotaBytes: Number(incomingStorage.quotaBytes || 0),
+          remainingBytes: Number(incomingStorage.remainingBytes || 0),
+          usagePct: Number(incomingStorage.usagePct || 0),
+          level: (incomingStorage.level as any) || 'ok',
+        });
+      } else {
+        setStorage(null);
       }
       setFolders(incoming);
       if (!selectedFolderId && incoming.length > 0) {
@@ -355,6 +376,15 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
     if (file.size > MAX_FILE_SIZE_BYTES) {
       alert('File too large. Maximum file size is 100 MB.');
       return;
+    }
+    if (storage && Number.isFinite(storage.quotaBytes) && storage.quotaBytes > 0) {
+      const projected = Number(storage.usedBytes || 0) + Number(file.size || 0);
+      if (projected > storage.quotaBytes) {
+        alert(
+          `Storage quota exceeded. Used ${formatBytes(storage.usedBytes)} of ${formatBytes(storage.quotaBytes)}. Upload would exceed the company limit.`,
+        );
+        return;
+      }
     }
 
     setUploading(true);
@@ -664,6 +694,24 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
                 )}
               </div>
             </div>
+            {storage && storage.level !== 'ok' && (
+              <div
+                style={{
+                  margin: '12px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: storage.level === 'critical' ? '1px solid #fecaca' : '1px solid #fed7aa',
+                  background: storage.level === 'critical' ? '#fef2f2' : '#fff7ed',
+                  color: storage.level === 'critical' ? '#991b1b' : '#9a3412',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                }}
+              >
+                {storage.level === 'critical'
+                  ? `Storage is near or over limit (${storage.usagePct.toFixed(1)}% used). Remove files or increase quota before uploading more.`
+                  : `Storage is above 80% (${storage.usagePct.toFixed(1)}% used). Consider cleanup soon to avoid upload blocks.`}
+              </div>
+            )}
 
             {error && (
               <div style={{ margin: '12px', padding: '10px 12px', borderRadius: '8px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12px' }}>

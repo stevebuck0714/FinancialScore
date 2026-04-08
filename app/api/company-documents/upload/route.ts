@@ -6,6 +6,7 @@ import { extractTextFromArrayBuffer, sanitizeTextForPostgres } from '@/lib/compa
 import { indexCompanyDocument } from '@/lib/company-documents/index-document';
 import { DATAROOM_ALLOWED_CONTENT_TYPES } from '@/lib/dataroom/constants';
 import { validateDataRoomFilePolicy } from '@/lib/dataroom/file-policy';
+import { ensureCompanyWithinDataRoomQuota } from '@/lib/dataroom/quota';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,10 +73,25 @@ export async function POST(request: Request): Promise<Response> {
         if (!filePolicy.valid) {
           throw new Error(filePolicy.error);
         }
+        if (!Number.isFinite(Number(sizeBytes)) || Number(sizeBytes) <= 0) {
+          throw new Error('File size is required for upload.');
+        }
 
         const hasAccess = await validateCompanyAccess(companyId);
         if (!hasAccess) {
           throw new Error('Forbidden');
+        }
+
+        const quota = await ensureCompanyWithinDataRoomQuota({
+          companyId,
+          incomingSizeBytes: Number(sizeBytes),
+        });
+        if (!quota.ok) {
+          throw new Error(
+            `Storage quota exceeded. Quota: ${Math.round(quota.quotaBytes / (1024 * 1024))} MB, projected usage: ${Math.round(
+              quota.projectedUsedBytes / (1024 * 1024),
+            )} MB.`,
+          );
         }
 
         return {
