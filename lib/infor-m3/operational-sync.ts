@@ -755,26 +755,16 @@ function buildSlArtransAsOfFilter(window?: SyncWindow, site?: string): string | 
   const collectibleStartDate = new Date(
     startOfUtcDay(window.endDate).getTime() - AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
   );
-  const collectibleStart = formatCsiDateLiteral(collectibleStartDate);
-  const end = formatCsiDateLiteral(window.endDate);
+  const collectibleStart = formatCsiCompactDateLiteral(collectibleStartDate);
+  const end = formatCsiCompactDateLiteral(window.endDate);
   const clauses = [`(RecordDate <= '${end}')`, `(InvDate >= '${collectibleStart}')`];
-  const siteValue = String(site || '').trim();
-  if (siteValue) {
-    const safeSite = siteValue.replace(/'/g, "''");
-    clauses.unshift(`Site='${safeSite}'`);
-  }
   return `(${clauses.join(' and ')})`;
 }
 
 function buildSlCustDrftsAsOfFilter(window?: SyncWindow, site?: string): string | null {
   if (!window) return null;
-  const end = formatCsiDateLiteral(window.endDate);
+  const end = formatCsiCompactDateLiteral(window.endDate);
   const clauses = [`(InvDate <= '${end}')`];
-  const siteValue = String(site || '').trim();
-  if (siteValue) {
-    const safeSite = siteValue.replace(/'/g, "''");
-    clauses.unshift(`Site='${safeSite}'`);
-  }
   return `(${clauses.join(' and ')})`;
 }
 
@@ -2814,6 +2804,70 @@ async function saveARAging(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
+  const persistedOpenRows = await prisma.aROpenInvoiceSnapshot.findMany({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate,
+      amountDueHome: { gt: 0 },
+    },
+    select: {
+      amountDueHome: true,
+      invoiceDate: true,
+      dueDate: true,
+      current: true,
+      days1to30: true,
+      days31to60: true,
+      days61to90: true,
+      days90plus: true,
+    },
+  });
+  if (persistedOpenRows.length > 0) {
+    const totals = persistedOpenRows.reduce(
+      (acc, row) => {
+        const amountDueHome = Number(row.amountDueHome || 0);
+        if (!Number.isFinite(amountDueHome) || amountDueHome <= 0) return acc;
+        acc.totalAR += amountDueHome;
+
+        const hasExplicitBuckets =
+          Number(row.current || 0) !== 0 ||
+          Number(row.days1to30 || 0) !== 0 ||
+          Number(row.days31to60 || 0) !== 0 ||
+          Number(row.days61to90 || 0) !== 0 ||
+          Number(row.days90plus || 0) !== 0;
+        if (hasExplicitBuckets) {
+          acc.current += Number(row.current || 0);
+          acc.days1to30 += Number(row.days1to30 || 0);
+          acc.days31to60 += Number(row.days31to60 || 0);
+          acc.days61to90 += Number(row.days61to90 || 0);
+          acc.days90plus += Number(row.days90plus || 0);
+          return acc;
+        }
+
+        const buckets = getAgingBucketValuesFromDueDate(amountDueHome, row.invoiceDate || row.dueDate || null, snapshotDate);
+        acc.current += buckets.current;
+        acc.days1to30 += buckets.days1to30;
+        acc.days31to60 += buckets.days31to60;
+        acc.days61to90 += buckets.days61to90;
+        acc.days90plus += buckets.days90plus;
+        return acc;
+      },
+      { totalAR: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+    );
+
+    await prisma.aRAgingSnapshot.upsert({
+      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+      update: totals,
+      create: {
+        companyId,
+        snapshotDate,
+        frequency,
+        ...totals,
+      },
+    });
+    return 1;
+  }
+
   const fromBuckets = records.reduce(
     (acc, record) => {
       acc.totalAR += pickNumber(record, ['totalAR', 'total', 'TOTAR']);
@@ -6923,7 +6977,7 @@ export async function syncInforM3OperationalData(
                   // Prefer SLCustDrfts for open-item snapshots whenever configured.
                   // Keep SLArtrans for payment/reconciliation facts to avoid double counting open AR.
                   const preferCustDrftsForOpen =
-                    hasSlCustDrftsProgram && isSlArtransProgram;
+                    hasSlCustDrftsProgram && isSlArtransProgram && !isHistoricalDailySlice;
                   const skipCustDrftsOpenForHistoricalSlice = false;
                   const skipOpenForProgram = preferCustDrftsForOpen || skipCustDrftsOpenForHistoricalSlice;
                   const openRowsCreated = skipOpenForProgram
@@ -6933,7 +6987,7 @@ export async function syncInforM3OperationalData(
                     ? 0
                     : await saveARAging(companyId, snapshotDate, frequency, records);
                   const paymentRowsCreated =
-                    isSlCustDrftsProgram || isHistoricalDailySlice ? 0 : await saveARPayments(companyId, records, context);
+                    isSlCustDrftsProgram ? 0 : await saveARPayments(companyId, records, context);
                   moduleRecordsCreated = openRowsCreated + agingRowsCreated + paymentRowsCreated;
                   if (!isHistoricalDailySlice) {
                     await upsertArContractSupportTables(companyId, snapshotDate, frequency);
