@@ -3566,14 +3566,26 @@ async function saveCustomerOrderLines(
       const qtyInvoiced = pickNumber(record, ['QtyInvoiced', 'qtyInvoiced', 'invoicedQty']);
       const qtyShipped = pickNumber(record, ['QtyShipped', 'qtyShipped', 'shippedQty']);
       const unitPrice = pickNumber(record, ['Price', 'price', 'Upri', 'unitPrice', 'UnitPrice', 'UnitCost']);
+      const explicitLineAmount = pickNumber(record, ['Amount', 'amount', 'ExtPrice', 'extPrice', 'LineAmount', 'lineAmount']);
+      const hasInvoiceRef = Boolean(
+        pickString(record, ['InvNum', 'invoiceNo', 'invoiceNumber', 'DerInvNum', 'IVNO'])
+      );
       // Contract total follows CSI order-line rule:
-      // line total = QtyOrdered * Price
-      const contractValue = qtyOrdered * unitPrice;
+      // Prefer explicit line amount when present; fallback to QtyOrdered * Price.
+      const contractValue = explicitLineAmount !== 0 ? explicitLineAmount : qtyOrdered * unitPrice;
       const explicitInvoiced = pickNumber(record, ['InvoicedAmount', 'invoicedAmount', 'AmtInvoiced']);
-      const invoicedAmount = explicitInvoiced !== 0 ? explicitInvoiced : Math.max(qtyInvoiced, 0) * unitPrice;
+      const invoicedAmountDerived = explicitInvoiced !== 0 ? explicitInvoiced : Math.max(qtyInvoiced, 0) * unitPrice;
+      // Some CSI tenants provide invoiced lines with invoice number + line amount,
+      // but omit QtyInvoiced/InvoicedAmount. Use explicit amount in that shape.
+      const invoicedAmount =
+        invoicedAmountDerived !== 0
+          ? invoicedAmountDerived
+          : hasInvoiceRef && explicitLineAmount > 0
+            ? explicitLineAmount
+            : 0;
       const explicitRemaining = pickNumber(record, ['RemainingAmount', 'remainingAmount', 'BacklogAmount', 'backlogAmount']);
       const remainingAmount =
-        explicitRemaining !== 0 ? explicitRemaining : Math.max(qtyOrdered - Math.max(qtyInvoiced, 0), 0) * unitPrice;
+        explicitRemaining !== 0 ? explicitRemaining : Math.max(contractValue - Math.max(invoicedAmount, 0), 0);
       const explicitUnbilled = pickNumber(record, ['UnbilledAccrual', 'unbilledAccrual', 'accruedRevenueUnbilled', 'wipUnbilled']);
       const earnedRevenueSource = pickNumber(record, ['EarnedRevenue', 'earnedRevenue', 'wipEarned']);
       const earnedRevenue = earnedRevenueSource !== 0 ? earnedRevenueSource : Math.max(qtyShipped, 0) * unitPrice;

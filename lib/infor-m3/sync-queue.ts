@@ -246,6 +246,40 @@ function resolveFanoutProgramHint(): number {
   return Math.min(240, Math.max(8, Math.floor(raw)));
 }
 
+async function resolveFanoutProgramUpperBound(
+  companyId: string,
+  platform: AccountingPlatform
+): Promise<number> {
+  const envHint = resolveFanoutProgramHint();
+  if (platform !== 'INFOR_M3') return envHint;
+  try {
+    const connection = await db().accountingConnection.findUnique({
+      where: {
+        companyId_platform: {
+          companyId,
+          platform: 'INFOR_M3',
+        },
+      },
+      select: {
+        connectionMetadata: true,
+      },
+    });
+    const metadata = asRecord(connection?.connectionMetadata);
+    const globalPrograms = Array.isArray(metadata.accountingPrograms) ? metadata.accountingPrograms.length : 0;
+    const programsBySystem = asRecord(metadata.accountingProgramsBySystem);
+    const bySystemMax = Object.values(programsBySystem).reduce((maxCount, value) => {
+      const count = Array.isArray(value) ? value.length : 0;
+      return Math.max(maxCount, count);
+    }, 0);
+    const configuredCount = Math.max(globalPrograms, bySystemMax);
+    if (configuredCount <= 0) return envHint;
+    // Never under-scan configured programs during business-day fanout.
+    return Math.max(envHint, Math.max(8, configuredCount));
+  } catch {
+    return envHint;
+  }
+}
+
 function resolveInitialProgramBatchSize(run: QueueRunRecord): number {
   if (String(run.platform) !== 'INFOR_M3') return 1;
   const mode = String(run.mode || '');
@@ -513,7 +547,7 @@ export async function startQueueRun(input: {
     const endDate = new Date(String(input.endDate));
     const businessDates = enumerateBusinessDates(startDate, endDate);
     const shardSize = resolveAdaptiveFanoutDayProgramShardSize(businessDates.length);
-    const programHint = resolveFanoutProgramHint();
+    const programHint = await resolveFanoutProgramUpperBound(input.companyId, input.platform);
     if (businessDates.length > 0) {
       const shardRanges: Array<{ start: number; end: number }> = [];
       for (let offset = 0; offset < programHint; offset += shardSize) {
