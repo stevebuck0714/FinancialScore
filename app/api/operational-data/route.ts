@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from '@/lib/operations/sector-mock-data';
+import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
+import { callInforIonApi } from '@/lib/infor-m3/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -358,6 +360,26 @@ function normalizeAccountToken(value: string | null | undefined): string {
 }
 
 const EXCLUDED_CASH_CONTROL_ACCOUNT_IDS = new Set(['100000', '200000']);
+
+function extractCsiItems(body: unknown): Array<Record<string, unknown>> {
+  if (!body || typeof body !== 'object') return [];
+  const b = body as any;
+  if (Array.isArray(b.Items)) return b.Items as Array<Record<string, unknown>>;
+  if (Array.isArray(b.items)) return b.items as Array<Record<string, unknown>>;
+  if (Array.isArray(b.records)) return b.records as Array<Record<string, unknown>>;
+  return [];
+}
+
+function parseDateTokenToIso(value: unknown): string | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const compact = raw.replace(/\s+/g, '');
+  const m = compact.match(/^(\d{4})(\d{2})(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
 
 function isExcludedCashControlAccount(
   accountId: string | null | undefined,
@@ -890,65 +912,98 @@ export async function GET(request: NextRequest) {
               take: 300000,
             });
 
-            const latestLineAsOfEnd = new Map<
+            const lineState = new Map<
               string,
               {
-                orderDate: Date;
                 customerId: string | null;
                 customerName: string;
-                contractValue: number;
-                invoicedAmount: number;
+                lastValue: number;
+                hasBaseline: boolean;
+                endValue: number;
+                beforeMtd: number;
+                beforeQtd: number;
+                beforeYtd: number;
+                hasEndValue: boolean;
               }
             >();
 
-            for (const row of orderRows as any[]) {
+            const orderRowsAsc = [...(orderRows as any[])].sort(
+              (a: any, b: any) => Number(new Date(a.snapshotDate)) - Number(new Date(b.snapshotDate))
+            );
+            for (const row of orderRowsAsc) {
               const snapshot = new Date(row.snapshotDate);
-              const orderDate = row.orderDate ? new Date(row.orderDate) : null;
-              if (Number.isNaN(snapshot.getTime()) || !orderDate || Number.isNaN(orderDate.getTime())) continue;
+              if (Number.isNaN(snapshot.getTime())) continue;
               const customerName = String(row.customerName || 'Unknown Customer');
               const customerId = row.customerId ? String(row.customerId) : null;
               const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
               const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
-              // Deduplicate by physical order line identity only.
-              // Customer fields can vary across snapshots (null/late enrichment/name format changes),
-              // and including them in the key can double-count the same line.
               const lineKey = `${orderId}|${lineId}`;
-              if (latestLineAsOfEnd.has(lineKey)) continue;
-              latestLineAsOfEnd.set(lineKey, {
-                orderDate,
-                customerId,
-                customerName,
-                contractValue: Math.max(Number(row.contractValue || 0), 0),
-                invoicedAmount: Math.max(Number(row.invoicedAmount || 0), 0),
-              });
+              if (!lineState.has(lineKey)) {
+                lineState.set(lineKey, {
+                  customerId,
+                  customerName,
+                  lastValue: 0,
+                  hasBaseline: false,
+                  endValue: 0,
+                  beforeMtd: 0,
+                  beforeQtd: 0,
+                  beforeYtd: 0,
+                  hasEndValue: false,
+                });
+              }
+              const state = lineState.get(lineKey)!;
+              if (!state.customerId && customerId) state.customerId = customerId;
+              if (
+                (!state.customerName || state.customerName === 'Unknown Customer') &&
+                customerName &&
+                customerName !== 'Unknown Customer'
+              ) {
+                state.customerName = customerName;
+              }
+              const value =
+                Number(row.contractValue || 0) > 0
+                  ? Number(row.contractValue || 0)
+                  : Number(row.invoicedAmount || 0);
+              if (!state.hasBaseline) {
+                state.lastValue = value;
+                state.hasBaseline = true;
+              } else {
+                const delta = value - state.lastValue;
+                if (delta > 0 && snapshot >= startDate && snapshot <= endDate) {
+                  const monthKey = businessMonthKey(snapshot);
+                  bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + delta);
+                }
+                state.lastValue = value;
+              }
+              if (snapshot < mtdStart) state.beforeMtd = value;
+              if (snapshot < qtdStart) state.beforeQtd = value;
+              if (snapshot < ytdStart) state.beforeYtd = value;
+              if (snapshot <= endDate) {
+                state.endValue = value;
+                state.hasEndValue = true;
+              }
             }
 
-            for (const line of latestLineAsOfEnd.values()) {
-              const bookingValue =
-                Number(line.contractValue || 0) > 0
-                  ? Number(line.contractValue || 0)
-                  : Number(line.invoicedAmount || 0);
-              if (bookingValue <= 0) continue;
-              const orderDate = new Date(line.orderDate);
-              if (orderDate > endDate) continue;
-              const key = `${line.customerId || ''}|${line.customerName.toLowerCase()}`;
+            for (const state of lineState.values()) {
+              if (!state.hasEndValue) continue;
+              const mtd = Math.max(state.endValue - state.beforeMtd, 0);
+              const qtd = Math.max(state.endValue - state.beforeQtd, 0);
+              const ytd = Math.max(state.endValue - state.beforeYtd, 0);
+              if (mtd === 0 && qtd === 0 && ytd === 0) continue;
+              const key = `${state.customerId || ''}|${state.customerName.toLowerCase()}`;
               if (!bookingsByCustomer.has(key)) {
                 bookingsByCustomer.set(key, {
-                  customerId: line.customerId,
-                  customerName: line.customerName,
+                  customerId: state.customerId,
+                  customerName: state.customerName,
                   mtd: 0,
                   qtd: 0,
                   ytd: 0,
                 });
               }
               const acc = bookingsByCustomer.get(key)!;
-              if (orderDate >= mtdStart) acc.mtd += bookingValue;
-              if (orderDate >= qtdStart) acc.qtd += bookingValue;
-              if (orderDate >= ytdStart) acc.ytd += bookingValue;
-              if (orderDate >= startDate && orderDate <= endDate) {
-                const monthKey = businessMonthKey(orderDate);
-                bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + bookingValue);
-              }
+              acc.mtd += mtd;
+              acc.qtd += qtd;
+              acc.ytd += ytd;
             }
           } else {
             // Backward-compatible fallback until orderDate column is migrated/backfilled.
@@ -1191,6 +1246,84 @@ export async function GET(request: NextRequest) {
               const release = normalizeToken(releaseRaw) || '0';
               return `${orderId}|${line}-${release}`;
             };
+            const hydrateRawDetailFromLiveCsi = async (orderIdsInput: string[]) => {
+              try {
+                const company = await prisma.company.findUnique({
+                  where: { id: companyId },
+                  select: { accountingSystem: true },
+                });
+                const accountingSystem = String(company?.accountingSystem || '').toUpperCase();
+                const inforSystem = accountingSystem.includes('CSI') ? 'INFOR_CSI' : 'INFOR_M3';
+                const resolved = await getInforM3CredentialsWithOptionalEnvFallback(companyId, inforSystem as any);
+                if (!resolved.credentials) return;
+                const connection = await prisma.accountingConnection.findFirst({
+                  where: {
+                    companyId,
+                    platform: { in: ['INFOR_M3', 'INFOR_CSI'] as any },
+                  },
+                  select: { connectionMetadata: true },
+                });
+                const md =
+                  connection?.connectionMetadata && typeof connection.connectionMetadata === 'object'
+                    ? (connection.connectionMetadata as Record<string, unknown>)
+                    : {};
+                const site =
+                  String(md['site'] ?? md['inforSite'] ?? md['defaultSite'] ?? '').trim() || undefined;
+                const mongooseConfig =
+                  String(md['mongooseConfig'] ?? md['inforMongooseConfig'] ?? '').trim() || undefined;
+                const headers: Record<string, string> = {};
+                if (site) headers['X-Infor-Site'] = site;
+                if (mongooseConfig) headers['X-Infor-MongooseConfig'] = mongooseConfig;
+                const liveOrderIds = Array.from(
+                  new Set(orderIdsInput.map((value) => normalizeToken(value)).filter((value) => value.length > 0))
+                ).slice(0, 1200);
+                const chunkSize = 12;
+                for (let idx = 0; idx < liveOrderIds.length; idx += chunkSize) {
+                  const chunk = liveOrderIds.slice(idx, idx + chunkSize);
+                  const responses = await Promise.allSettled([
+                    (async () => {
+                      const filter = chunk
+                        .map((id) => `CoNum='${String(id).replace(/'/g, "''")}'`)
+                        .join(' OR ');
+                      const path =
+                        `/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=5000` +
+                        `&properties=${encodeURIComponent('CoNum,CoLine,CoRelease,Item,Stat')}` +
+                        `&filter=${encodeURIComponent(filter)}`;
+                      const response = await callInforIonApi(resolved.credentials, path, {
+                        timeoutMs: 8000,
+                        headers,
+                      });
+                      let items = extractCsiItems(response.body);
+                      if (items.length === 0 && Object.keys(headers).length > 0) {
+                        const retry = await callInforIonApi(resolved.credentials, path, {
+                          timeoutMs: 8000,
+                        });
+                        items = extractCsiItems(retry.body);
+                      }
+                      return items;
+                    })(),
+                  ]);
+                  for (const settled of responses) {
+                    if (settled.status !== 'fulfilled') continue;
+                    for (const payload of settled.value) {
+                      const rawOrderId = normalizeToken(payload['CoNum'] ?? payload['CONUM'] ?? payload['coNum'] ?? '');
+                      if (!rawOrderId || !orderIdsForRawLookupSet.has(rawOrderId)) continue;
+                      const rawLine = payload['CoLine'] ?? payload['COLINE'] ?? payload['coLine'] ?? '0';
+                      const rawRelease = payload['CoRelease'] ?? payload['CORELEASE'] ?? payload['coRelease'] ?? '0';
+                      const rawItem = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
+                      const rawStat = String(payload['Stat'] ?? payload['STAT'] ?? '').trim() || null;
+                      if (!rawItem && !rawStat) continue;
+                      const rawLineKey = buildOrderLineKey(rawOrderId, rawLine, rawRelease);
+                      if (!rawDetailByOrderLine.has(rawLineKey)) {
+                        rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat });
+                      }
+                    }
+                  }
+                }
+              } catch {
+                // best-effort enrichment only
+              }
+            };
             if (orderIdsForRawLookup.length > 0 && (prisma as any).inforRawRecord?.findMany) {
               const rawRows = await (prisma as any).inforRawRecord.findMany({
                 where: {
@@ -1288,6 +1421,26 @@ export async function GET(request: NextRequest) {
                 });
               }
             }
+            const unresolvedOrderIds = Array.from(
+              new Set(
+                Array.from(latestLineState.values())
+                  .filter((line) => String(line.item || '').trim() === 'UNKNOWN_ITEM' && Number(line.remainingValue || 0) > 0)
+                  .map((line) => String(line.orderId || '').trim())
+                  .filter((value) => value.length > 0)
+              )
+            );
+            if (unresolvedOrderIds.length > 0) {
+              await hydrateRawDetailFromLiveCsi(unresolvedOrderIds);
+              for (const line of latestLineState.values()) {
+                if (String(line.item || '').trim() !== 'UNKNOWN_ITEM') continue;
+                const parsed = parseSnapshotLine(line.lineId);
+                const normalizedLineKey = buildOrderLineKey(line.orderId, parsed.line, parsed.release);
+                const rawDetail = rawDetailByOrderLine.get(normalizedLineKey);
+                if (!rawDetail) continue;
+                line.item = rawDetail.item || line.item;
+                line.stat = rawDetail.stat ?? line.stat ?? null;
+              }
+            }
             const byCustomer = new Map<
               string,
               {
@@ -1352,8 +1505,8 @@ export async function GET(request: NextRequest) {
               .sort((a, b) => b.wipValue - a.wipValue);
             wipTopCustomers = allWipCustomers.slice(0, 10).map((row) => ({
               ...row,
-              wipItems: row.wipItems
-                .sort((a, b) => {
+              wipItems: (() => {
+                const chronological = [...row.wipItems].sort((a, b) => {
                   const aDate = String(a.orderDate || '');
                   const bDate = String(b.orderDate || '');
                   if (aDate !== bDate) return aDate.localeCompare(bDate);
@@ -1361,8 +1514,12 @@ export async function GET(request: NextRequest) {
                   const bOrder = String(b.orderId || '');
                   if (aOrder !== bOrder) return aOrder.localeCompare(bOrder);
                   return String(a.lineId || '').localeCompare(String(b.lineId || ''));
-                })
-                .slice(0, 50),
+                });
+                // Keep chronological display, but show the most recent portion
+                // so 2024/2025/2026 lines are visible instead of only oldest rows.
+                const recent = chronological.slice(-200);
+                return recent;
+              })(),
             }));
             wipTotals = allWipCustomers.reduce(
               (acc, row) => {
