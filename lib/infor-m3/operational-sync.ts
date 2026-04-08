@@ -3705,6 +3705,121 @@ async function saveCustomerOrderLines(
   return { persisted: debug.rowsPersisted || finalRows.length, debug };
 }
 
+async function enrichCustomerOrderLineItemsFromRaw(options: {
+  companyId: string;
+  snapshotDate: Date;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  syncRunId: string;
+}): Promise<number> {
+  const delegate = (prisma as any).customerOrderLineSnapshot;
+  if (!delegate?.findMany || !delegate?.updateMany) return 0;
+  const { companyId, snapshotDate, frequency, syncRunId } = options;
+  const dayStart = startOfUtcDay(snapshotDate);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+  const rawRows = await (prisma as any).inforRawRecord.findMany({
+    where: {
+      companyId,
+      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+      syncRunId,
+      businessDate: dayStart,
+      miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+    },
+    select: { payload: true },
+    take: 300000,
+  });
+
+  const normalizeToken = (value: unknown): string => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const num = Number(raw);
+    if (Number.isFinite(num)) return String(num);
+    return raw.toUpperCase();
+  };
+  const parseLineId = (value: unknown): { line: string; release: string } => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return { line: '0', release: '0' };
+    const [linePart, releasePart] = raw.split('-');
+    return {
+      line: normalizeToken(linePart || '0') || '0',
+      release: normalizeToken(releasePart || '0') || '0',
+    };
+  };
+  const buildKey = (orderIdRaw: unknown, lineRaw: unknown, releaseRaw: unknown): string => {
+    const orderId = normalizeToken(orderIdRaw);
+    const line = normalizeToken(lineRaw) || '0';
+    const release = normalizeToken(releaseRaw) || '0';
+    return `${orderId}|${line}-${release}`;
+  };
+
+  const itemByOrderLine = new Map<string, { itemCode: string; itemName: string | null }>();
+  for (const row of rawRows as any[]) {
+    const payload =
+      row?.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+        ? (row.payload as Record<string, unknown>)
+        : null;
+    if (!payload) continue;
+    const orderId = payload['CoNum'] ?? payload['CONUM'] ?? payload['coNum'] ?? '';
+    const coLine = payload['CoLine'] ?? payload['COLINE'] ?? payload['coLine'] ?? '0';
+    const coRelease = payload['CoRelease'] ?? payload['CORELEASE'] ?? payload['coRelease'] ?? '0';
+    const itemCode = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
+    const itemNameRaw = String(payload['ITDS'] ?? payload['Description'] ?? '').trim();
+    if (!itemCode && !itemNameRaw) continue;
+    const key = buildKey(orderId, coLine, coRelease);
+    if (!key || itemByOrderLine.has(key)) continue;
+    itemByOrderLine.set(key, {
+      itemCode: itemCode || '',
+      itemName: itemNameRaw || null,
+    });
+  }
+
+  if (itemByOrderLine.size === 0) return 0;
+
+  const snapshotRows = await delegate.findMany({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate: { gte: dayStart, lte: dayEnd },
+      OR: [{ itemId: null }, { sku: null }, { itemName: null }],
+    },
+    select: {
+      id: true,
+      orderId: true,
+      lineId: true,
+      itemId: true,
+      itemName: true,
+      sku: true,
+    },
+    take: 300000,
+  });
+
+  let updated = 0;
+  for (const row of snapshotRows as any[]) {
+    const parsed = parseLineId(row?.lineId);
+    const key = buildKey(row?.orderId, parsed.line, parsed.release);
+    const mapped = itemByOrderLine.get(key);
+    if (!mapped) continue;
+    const nextItemId = String(row?.itemId || '').trim() || mapped.itemCode || null;
+    const nextSku = String(row?.sku || '').trim() || mapped.itemCode || null;
+    const nextItemName = String(row?.itemName || '').trim() || mapped.itemName || null;
+    const changed =
+      String(nextItemId || '') !== String(row?.itemId || '') ||
+      String(nextSku || '') !== String(row?.sku || '') ||
+      String(nextItemName || '') !== String(row?.itemName || '');
+    if (!changed) continue;
+    await delegate.updateMany({
+      where: { id: row.id },
+      data: {
+        itemId: nextItemId,
+        sku: nextSku,
+        itemName: nextItemName,
+      },
+    });
+    updated += 1;
+  }
+  return updated;
+}
+
 async function saveSalesInvoiceHeaders(
   companyId: string,
   snapshotDate: Date,
@@ -7877,7 +7992,7 @@ export async function transformInforM3RawRun(options: {
         recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, salesRecords);
       }
       const salesInvoiceHeaderRecords = salesProgramItems
-        .filter((item) => item.miProgram === 'SLINVHDRS')
+        .filter((item) => String(item.miProgram || '').toUpperCase() === 'SLINVHDRS')
         .flatMap((item) => item.records);
       if (salesInvoiceHeaderRecords.length > 0) {
         recordsCreated += await saveSalesInvoiceHeaders(
@@ -7893,12 +8008,15 @@ export async function transformInforM3RawRun(options: {
         );
       }
       const slcoitemsRecords = salesProgramItems
-        .filter((item) => item.miProgram === 'SLCOITEMS')
+        .filter((item) => String(item.miProgram || '').toUpperCase() === 'SLCOITEMS')
         .flatMap((item) => item.records);
       if (slcoitemsRecords.length > 0) {
         const orderCustomerLookup = new Map<string, { customerId: string | null; customerName: string; orderDate: Date | null }>();
         const salesHeaderRecords = salesProgramItems
-          .filter((item) => item.miProgram === 'SLCOHDRS' || item.miProgram === 'SLCOS')
+          .filter((item) => {
+            const p = String(item.miProgram || '').toUpperCase();
+            return p === 'SLCOHDRS' || p === 'SLCOS';
+          })
           .flatMap((item) => item.records);
         for (const record of salesHeaderRecords) {
           const orderId = normalizeOrderJoinKey(
@@ -7936,6 +8054,12 @@ export async function transformInforM3RawRun(options: {
           orderCustomerLookup,
         });
         recordsCreated += Number(contractPersistResult?.persisted || 0);
+        recordsCreated += await enrichCustomerOrderLineItemsFromRaw({
+          companyId,
+          snapshotDate,
+          frequency,
+          syncRunId,
+        });
         await upsertArContractSupportTables(companyId, snapshotDate, frequency);
       }
 

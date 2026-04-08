@@ -1416,6 +1416,52 @@ model APAgingSnapshot {
   @@unique([companyId, snapshotDate, frequency])
 }
 
+model VendorSnapshot {
+  id                String   @id @default(cuid())
+  companyId         String
+  snapshotDate      DateTime
+  frequency         String   @default("daily") // 'daily', 'weekly', 'monthly'
+  vendorId          String
+  vendorName        String
+  sourceRecordDate  DateTime?
+  lastPaidDate      DateTime?
+  lastPurchaseDate  DateTime?
+  currencyCode      String?
+  termsCode         String?
+  payType           String?
+  phone             String?
+  status            String?
+  addressLine1      String?
+  city              String?
+  state             String?
+  postalCode        String?
+  country           String?
+  payYtd            Float?
+  payLastYear       Float?
+  purchaseYtd       Float?
+  purchaseLastYear  Float?
+  ageBalance1       Float?
+  ageBalance2       Float?
+  ageBalance3       Float?
+  ageBalance4       Float?
+  ageBalance5       Float?
+  ageBalance6       Float?
+  newAmount         Float?
+  oldAmount         Float?
+  sourcePlatform    String?  @default("INFOR_M3")
+  sourceProgram     String?
+  sourceTransaction String?
+  cono              String?
+  divi              String?
+  createdAt         DateTime @default(now())
+
+  @@index([companyId, snapshotDate(sort: Desc)])
+  @@index([companyId, frequency, snapshotDate(sort: Desc)])
+  @@index([companyId, vendorId, snapshotDate(sort: Desc)])
+  @@index([companyId, vendorName, snapshotDate(sort: Desc)])
+  @@unique([companyId, frequency, snapshotDate, vendorId])
+}
+
 model ProductSalesSnapshot {
   id              String   @id @default(cuid())
   companyId       String
