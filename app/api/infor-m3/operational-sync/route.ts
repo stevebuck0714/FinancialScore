@@ -148,6 +148,23 @@ function normalizeMode(value: unknown): SyncMode {
   return 'daily_overlap';
 }
 
+function normalizeCursorBounds(cursor: SyncCursor | null): SyncCursor | null {
+  if (!cursor) return null;
+  const endOffsetRaw = cursor.programEndOffset;
+  if (typeof endOffsetRaw !== 'number' || !Number.isFinite(endOffsetRaw)) return cursor;
+  const endOffset = Math.max(0, Math.floor(endOffsetRaw));
+  const startOffset = Math.max(0, Math.floor(Number(cursor.programOffset || 0)));
+  if (startOffset >= endOffset) {
+    // This shard/range is fully consumed; do not emit an invalid continuation.
+    return null;
+  }
+  return {
+    ...cursor,
+    programOffset: startOffset,
+    programEndOffset: endOffset,
+  };
+}
+
 function atUtcMidnight(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
@@ -459,6 +476,10 @@ export async function POST(request: NextRequest) {
             stagnantCursorCount: 0,
           };
         }
+        cursor = normalizeCursorBounds(cursor);
+        if (!cursor) {
+          hasMore = false;
+        }
       }
 
       const warningOnly = isBookmarkStallWarningOnly(dayResult.errors);
@@ -502,7 +523,8 @@ export async function POST(request: NextRequest) {
       syncRunId: effectiveSyncRunId,
       salesOnly,
     });
-    const cursor: SyncCursor | null = result.hasMore
+    let hasMore = result.hasMore;
+    let cursor: SyncCursor | null = result.hasMore
       ? {
           mode,
           syncRunId: effectiveSyncRunId,
@@ -515,7 +537,7 @@ export async function POST(request: NextRequest) {
           stagnantCursorCount: effectiveStagnantCursorCount,
         }
       : null;
-    if (result.hasMore && cursor) {
+    if (hasMore && cursor) {
       if (
         isCursorUnchangedFromRequest({
           requestedProgramOffset: effectiveProgramOffset,
@@ -551,6 +573,10 @@ export async function POST(request: NextRequest) {
       } else {
         (cursor as SyncCursor).stagnantCursorCount = nextCursor.stagnantCursorCount;
       }
+      cursor = normalizeCursorBounds(cursor as SyncCursor);
+      if (!cursor) {
+        hasMore = false;
+      }
     }
     const warningOnly = isBookmarkStallWarningOnly(result.errors);
     return NextResponse.json({
@@ -570,7 +596,7 @@ export async function POST(request: NextRequest) {
       warningOnly,
       credentialSource: result.credentialSource,
       syncRunId: effectiveSyncRunId,
-      hasMore: result.hasMore,
+      hasMore,
       cursor,
     });
   } catch (error) {
