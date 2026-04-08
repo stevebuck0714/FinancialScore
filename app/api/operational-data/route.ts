@@ -807,10 +807,9 @@ export async function GET(request: NextRequest) {
       await activateRealOperationalData(companyId);
       hasRealOperationalData = true;
     }
-    // In non-production environments, site-admin demo toggle is authoritative:
-    // when enabled, always serve mock payloads so localhost/dev testing is deterministic.
-    // Production still never serves operational mock payloads.
-    const shouldUseMockData = !isProduction && company.forceOperationalMockData === true;
+    // Site-admin demo toggle is authoritative per-company:
+    // when enabled, always serve mock operational payloads for that company.
+    const shouldUseMockData = company.forceOperationalMockData === true;
 
     const sectorCategory = sectorCategoryParam || company?.industrySectorCategory || '01';
     const normalizedAccountingSystem = String(company.accountingSystem || '').trim().toUpperCase();
