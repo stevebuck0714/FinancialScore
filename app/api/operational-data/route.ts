@@ -330,6 +330,99 @@ async function deriveCustomerSalesFromOrderLineDeltas(
   });
 }
 
+async function deriveCustomerInvoiceProxyFromArOpenSnapshots(
+  companyId: string,
+  frequency: 'daily' | 'weekly' | 'monthly',
+  startDate: Date,
+  endDate: Date
+): Promise<
+  Array<{
+    companyId: string;
+    snapshotDate: Date;
+    frequency: 'daily' | 'weekly' | 'monthly';
+    customerId: string | null;
+    customerName: string;
+    revenue: number;
+    invoiceCount: number;
+    avgInvoiceSize: number | null;
+  }>
+> {
+  const rows = await prisma.aROpenInvoiceSnapshot.findMany({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+    select: {
+      snapshotDate: true,
+      customerId: true,
+      customerName: true,
+      invoiceNo: true,
+      amountHome: true,
+      amountDueHome: true,
+    },
+    orderBy: [{ snapshotDate: 'asc' }, { customerName: 'asc' }],
+    take: 250000,
+  });
+
+  const byCustomerDay = new Map<
+    string,
+    {
+      snapshotDate: Date;
+      customerId: string | null;
+      customerName: string;
+      billedProxy: number;
+      invoiceNos: Set<string>;
+    }
+  >();
+
+  for (const row of rows) {
+    const snapshotDate = new Date(row.snapshotDate);
+    if (Number.isNaN(snapshotDate.getTime())) continue;
+    const customerId = String(row.customerId || '').trim() || null;
+    const customerName = String(row.customerName || '').trim() || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
+    const invoiceNo = String(row.invoiceNo || '').trim();
+    const amountHome = Number(row.amountHome || 0);
+    const amountDue = Number(row.amountDueHome || 0);
+    const billedProxy = amountHome > 0 ? amountHome : Math.max(amountDue, 0);
+    if (!Number.isFinite(billedProxy) || billedProxy <= 0) continue;
+
+    const dayKey = snapshotDate.toISOString().slice(0, 10);
+    const customerKey = `${customerId || ''}|${customerName.toLowerCase()}|${dayKey}`;
+    if (!byCustomerDay.has(customerKey)) {
+      byCustomerDay.set(customerKey, {
+        snapshotDate: new Date(`${dayKey}T00:00:00.000Z`),
+        customerId,
+        customerName,
+        billedProxy: 0,
+        invoiceNos: new Set<string>(),
+      });
+    }
+    const acc = byCustomerDay.get(customerKey)!;
+    acc.billedProxy += billedProxy;
+    if (invoiceNo) acc.invoiceNos.add(invoiceNo);
+  }
+
+  return Array.from(byCustomerDay.values())
+    .map((row) => {
+      const invoiceCount = row.invoiceNos.size;
+      return {
+        companyId,
+        snapshotDate: row.snapshotDate,
+        frequency,
+        customerId: row.customerId,
+        customerName: row.customerName,
+        revenue: row.billedProxy,
+        invoiceCount,
+        avgInvoiceSize: invoiceCount > 0 ? row.billedProxy / invoiceCount : null,
+      };
+    })
+    .sort((a, b) => Number(a.snapshotDate) - Number(b.snapshotDate));
+}
+
 function normalizeAccountNameForKey(name: string): string {
   return String(name || '')
     .trim()
@@ -867,11 +960,25 @@ export async function GET(request: NextRequest) {
           (record) => Number(record.revenue || 0) !== 0 || Number(record.invoiceCount || 0) !== 0
         );
 
+        let customerDataBasis: 'sales' | 'orderline_delta' | 'invoice_proxy_ar' = 'sales';
         // Fallback for tenants where CustomerSalesSnapshot rows exist but revenue/invoice
         // are not populated yet: derive recognized customer revenue from persisted
         // order-line invoicing deltas instead of relying on zeroed snapshot rows.
         if (!hasNonZeroCustomerSales) {
           data = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
+          customerDataBasis = 'orderline_delta';
+        }
+        const hasNonZeroCustomerAfterOrderLineFallback = (data as any[]).some(
+          (record) => Number(record?.revenue || 0) !== 0 || Number(record?.invoiceCount || 0) !== 0
+        );
+        if (!hasNonZeroCustomerAfterOrderLineFallback) {
+          data = await deriveCustomerInvoiceProxyFromArOpenSnapshots(
+            companyId,
+            customerFrequencyForQuery,
+            startDate,
+            endDate
+          );
+          customerDataBasis = 'invoice_proxy_ar';
         }
 
         // Build real bookings from order headers/lines using orderDate periods.
@@ -888,7 +995,7 @@ export async function GET(request: NextRequest) {
         >();
         const bookingsByMonth = new Map<string, number>();
         const bookingsOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
-        if (bookingsOrderLineDelegate?.findMany) {
+        if (customerDataBasis !== 'invoice_proxy_ar' && bookingsOrderLineDelegate?.findMany) {
           const hasOrderDateColumn = await customerOrderLineHasOrderDateColumn();
           const mtdStart = startOfBusinessMonth(endDate);
           const qtdStart = startOfBusinessQuarter(endDate);
@@ -1188,6 +1295,8 @@ export async function GET(request: NextRequest) {
           records: data,
           summary: {
             topCustomers: topCustomersSummary,
+            customerDataBasis,
+            revenueLabel: customerDataBasis === 'invoice_proxy_ar' ? 'Billed Amount (Invoice Proxy)' : 'Revenue',
             bookings: {
               totals: bookingsTotals,
               top5: bookingsTop5,
