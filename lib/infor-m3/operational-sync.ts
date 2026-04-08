@@ -3598,15 +3598,25 @@ async function saveCustomerOrderLines(
       // Prefer explicit line amount when present; fallback to QtyOrdered * Price.
       const contractValue = explicitLineAmount !== 0 ? explicitLineAmount : qtyOrdered * unitPrice;
       const explicitInvoiced = pickNumber(record, ['InvoicedAmount', 'invoicedAmount', 'AmtInvoiced']);
-      const invoicedAmountDerived = explicitInvoiced !== 0 ? explicitInvoiced : Math.max(qtyInvoiced, 0) * unitPrice;
-      // Some CSI tenants provide invoiced lines with invoice number + line amount,
-      // but omit QtyInvoiced/InvoicedAmount. Use explicit amount in that shape.
+      const invoicedByQty = Math.max(qtyInvoiced, 0) * unitPrice;
+      const revenueByShipment = Math.max(qtyShipped, 0) * unitPrice;
+      // Priority:
+      // 1) explicit invoiced amount from source
+      // 2) QtyInvoiced * Price
+      // 3) explicit line amount (Amount/ExtPrice)
+      // 4) QtyShipped * Price as operational revenue proxy when invoice fields are sparse
       const invoicedAmount =
-        invoicedAmountDerived !== 0
-          ? invoicedAmountDerived
-          : hasInvoiceRef && explicitLineAmount > 0
+        explicitInvoiced !== 0
+          ? explicitInvoiced
+          : invoicedByQty > 0
+            ? invoicedByQty
+            : explicitLineAmount > 0
             ? explicitLineAmount
-            : 0;
+            : hasInvoiceRef && explicitLineAmount > 0
+              ? explicitLineAmount
+              : revenueByShipment > 0
+                ? revenueByShipment
+                : 0;
       const explicitRemaining = pickNumber(record, ['RemainingAmount', 'remainingAmount', 'BacklogAmount', 'backlogAmount']);
       const remainingAmount =
         explicitRemaining !== 0 ? explicitRemaining : Math.max(contractValue - Math.max(invoicedAmount, 0), 0);
