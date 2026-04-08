@@ -7837,11 +7837,72 @@ export async function transformInforM3RawRun(options: {
         recordsCreated += await saveInventory(companyId, snapshotDate, frequency, inventoryRecords);
       }
 
-      const salesRecords = Array.from(rawByModuleProgram.values())
-        .filter((item) => item.moduleType === 'sales')
-        .flatMap((item) => item.records);
+      const salesProgramItems = Array.from(rawByModuleProgram.values()).filter((item) => item.moduleType === 'sales');
+      const salesRecords = salesProgramItems.flatMap((item) => item.records);
       if (salesRecords.length > 0) {
         recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, salesRecords);
+      }
+      const salesInvoiceHeaderRecords = salesProgramItems
+        .filter((item) => item.miProgram === 'SLINVHDRS')
+        .flatMap((item) => item.records);
+      if (salesInvoiceHeaderRecords.length > 0) {
+        recordsCreated += await saveSalesInvoiceHeaders(
+          companyId,
+          snapshotDate,
+          frequency,
+          salesInvoiceHeaderRecords,
+          {
+            miProgram: 'SLINVHDRS',
+            transaction: 'RAW_REPLAY',
+            resetSnapshot: true,
+          }
+        );
+      }
+      const slcoitemsRecords = salesProgramItems
+        .filter((item) => item.miProgram === 'SLCOITEMS')
+        .flatMap((item) => item.records);
+      if (slcoitemsRecords.length > 0) {
+        const orderCustomerLookup = new Map<string, { customerId: string | null; customerName: string; orderDate: Date | null }>();
+        const salesHeaderRecords = salesProgramItems
+          .filter((item) => item.miProgram === 'SLCOHDRS' || item.miProgram === 'SLCOS')
+          .flatMap((item) => item.records);
+        for (const record of salesHeaderRecords) {
+          const orderId = normalizeOrderJoinKey(
+            pickString(record, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum'])
+          );
+          if (!orderId) continue;
+          const customerComposite = pickString(record, ['DerCustNoName', 'customerComposite', 'CustNumName']);
+          const customerName =
+            pickCustomerDisplayName(record) ||
+            pickString(record, ['BillToName', 'CustName', 'DerCustName', ...CUSTOMER_NAME_KEYS]) ||
+            `Unknown Customer`;
+          const customerId =
+            pickString(record, ['CustNum', 'custNum', 'CoCustNum', 'CustNo', ...CUSTOMER_ID_KEYS]) ||
+            parseCustomerIdFromComposite(customerComposite);
+          const orderDate = firstRecordDate(record, ['OrderDate', 'orderDate']);
+          const existing = orderCustomerLookup.get(orderId);
+          if (!existing) {
+            orderCustomerLookup.set(orderId, {
+              customerId: customerId || null,
+              customerName,
+              orderDate: orderDate || null,
+            });
+            continue;
+          }
+          orderCustomerLookup.set(orderId, {
+            customerId: existing.customerId || customerId || null,
+            customerName: existing.customerName || customerName,
+            orderDate: existing.orderDate || orderDate || null,
+          });
+        }
+        const contractPersistResult = await saveCustomerOrderLines(companyId, snapshotDate, frequency, slcoitemsRecords, {
+          miProgram: 'SLCOITEMS',
+          transaction: 'RAW_REPLAY',
+          resetSnapshot: true,
+          orderCustomerLookup,
+        });
+        recordsCreated += Number(contractPersistResult?.persisted || 0);
+        await upsertArContractSupportTables(companyId, snapshotDate, frequency);
       }
 
       const vendorRecords = Array.from(rawByModuleProgram.values())
