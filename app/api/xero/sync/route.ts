@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { XeroClient } from 'xero-node';
 import prisma from '@/lib/prisma';
 import { ensureValidOAuthTokens } from '@/lib/oauth-token-manager';
+import { toCanonicalMonthlyFinancial, toMonthlyFinancialCreateInput } from '@/lib/financial-canonical';
+import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { emitSyncStatus } from '@/lib/websocket-emit';
 
 export const dynamic = 'force-dynamic';
@@ -441,6 +443,12 @@ export async function POST(request: NextRequest) {
     });
 
     const monthlyRecords = Array.from(monthlyData.values());
+    const canonicalRecords = monthlyRecords.map((row: any) =>
+      toCanonicalMonthlyFinancial({
+        ...row,
+        monthDate: row.monthDate,
+      }),
+    );
     console.log(`  ✅ Built ${monthlyRecords.length} months`);
 
     // Debug: Log first month to see what data we have
@@ -555,57 +563,16 @@ export async function POST(request: NextRequest) {
           source: 'xero',
           method: 'transaction_sync',
         },
-        monthlyData: {
-          create: monthlyRecords.map((m: any) => ({
-            companyId,
-            monthDate: m.monthDate,
-            revenue: m.revenue || 0,
-            cogsPayroll: m.cogsPayroll || 0,
-            cogsOwnerPay: m.cogsOwnerPay || 0,
-            cogsContractors: m.cogsContractors || 0,
-            cogsMaterials: m.cogsMaterials || 0,
-            cogsCommissions: m.cogsCommissions || 0,
-            cogsOther: m.cogsOther || 0,
-            cogsTotal: m.cogsTotal || 0,
-            payroll: m.payroll || 0,
-            ownerBasePay: m.ownerBasePay || 0,
-            benefits: m.benefits || 0,
-            insurance: m.insurance || 0,
-            professionalFees: m.professionalFees || 0,
-            subcontractors: m.subcontractors || 0,
-            rent: m.rent || 0,
-            taxLicense: m.taxLicense || 0,
-            phoneComm: m.phoneComm || 0,
-            infrastructure: m.infrastructure || 0,
-            autoTravel: m.autoTravel || 0,
-            salesExpense: m.salesExpense || 0,
-            marketing: m.marketing || 0,
-            trainingCert: m.trainingCert || 0,
-            mealsEntertainment: m.mealsEntertainment || 0,
-            interestExpense: m.interestExpense || 0,
-            depreciationAmortization: m.depreciationAmortization || 0,
-            otherExpense: m.otherExpense || 0,
-            expense: m.expense || 0,
-            cash: m.cash || 0,
-            ar: m.ar || 0,
-            inventory: m.inventory || 0,
-            ap: m.ap || 0,
-            tca: m.tca || 0,
-            fixedAssets: m.fixedAssets || 0,
-            totalAssets: m.totalAssets || 0,
-            tcl: m.tcl || 0,
-            totalLiab: m.totalLiab || 0,
-            totalEquity: m.totalEquity || 0,
-            totalLAndE: m.totalLAndE || 0,
-          })),
-        },
-      },
-      include: {
-        monthlyData: true,
       },
     });
 
-    recordsImported = financialRecord.monthlyData.length;
+    if (canonicalRecords.length > 0) {
+      await prisma.monthlyFinancial.createMany({
+        data: canonicalRecords.map((m) => toMonthlyFinancialCreateInput(companyId, financialRecord.id, m)),
+      });
+    }
+
+    recordsImported = canonicalRecords.length;
     console.log(`✅ Saved ${recordsImported} months to database`);
 
     const syncDuration = Date.now() - syncStartTime;
@@ -627,6 +594,24 @@ export async function POST(request: NextRequest) {
     console.error('❌ Xero sync error:', error);
     
     if (companyId) {
+      await prisma.apiSyncLog.create({
+        data: {
+          companyId,
+          platform: 'XERO',
+          syncType: 'manual',
+          status: 'error',
+          recordsImported,
+          errorCount: 1,
+          errorDetails: { message: error?.message || 'Xero sync failed' } as any,
+          duration: Date.now() - syncStartTime,
+        },
+      }).catch(() => undefined);
+      await notifyAdminsOfSyncFailure({
+        companyId,
+        platform: 'XERO',
+        syncType: 'manual',
+        errorSummary: error?.message || 'Xero sync failed',
+      });
       emitSyncStatus(companyId, {
         status: 'error',
         message: `Sync failed: ${error.message}`,

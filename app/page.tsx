@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useMemo, useEffect, useCallback, ChangeEvent } from 'react';
 import dynamic from 'next/dynamic';
@@ -7447,7 +7447,72 @@ function FinancialScorePage() {
           {!selectedCompanyId && adminDashboardTab === 'data-mapping' && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '48px 24px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#64748b', marginBottom: '12px' }}>No Company Selected</div>
-              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to map QuickBooks accounts.</p>
+              <p style={{ fontSize: '14px', color: '#94a3b8' }}>Please select a company from the sidebar to map accounts.</p>
+            </div>
+          )}
+
+          {adminDashboardTab === 'data-mapping' && selectedCompanyId && selectedAccountingSystem === 'CSV_FILE' && (
+            <div style={{ maxWidth: '1280px', margin: '-18px auto 6px auto', padding: '0 16px', display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '10px 12px', width: '52%', minWidth: '520px', maxWidth: '640px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'nowrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#9a3412', marginBottom: '4px' }}>Publish Monthly Financials</div>
+                  <p style={{ fontSize: '12px', color: '#92400e', margin: 0, fontWeight: '600', whiteSpace: 'nowrap' }}>
+                    Only Publish prior month data when books are closed.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', flexWrap: 'nowrap', flexShrink: 0 }}>
+                  <input
+                    type="month"
+                    value={publishMonthInput}
+                    onChange={(e) => setPublishMonthInput(e.target.value)}
+                    style={{ padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!selectedCompanyId) return;
+                      if (!publishMonthInput || !/^\d{4}-\d{2}$/.test(publishMonthInput)) {
+                        alert('Select a valid publish month first (YYYY-MM).');
+                        return;
+                      }
+                      setIsPublishingMonthlyData(true);
+                      try {
+                        const response = await fetch('/api/financials/publish-month', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            companyId: selectedCompanyId,
+                            month: publishMonthInput,
+                          }),
+                        });
+                        const result = await response.json();
+                        if (!response.ok || !result?.success) {
+                          throw new Error(result?.error || 'Failed to publish monthly data');
+                        }
+                        alert(`Published ${publishMonthInput} to core financial reports.`);
+                        masterDataStore.clearCompanyCache(selectedCompanyId);
+                      } catch (error: any) {
+                        alert(`Publish failed: ${error?.message || 'Unknown error'}`);
+                      } finally {
+                        setIsPublishingMonthlyData(false);
+                      }
+                    }}
+                    disabled={isPublishingMonthlyData}
+                    style={{
+                      padding: '8px 12px',
+                      background: isPublishingMonthlyData ? '#9ca3af' : '#7c3aed',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: isPublishingMonthlyData ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {isPublishingMonthlyData ? 'Publishing...' : 'Publish'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

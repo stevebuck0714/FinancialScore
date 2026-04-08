@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import prisma from '@/lib/prisma';
+import { ensureLegacyCompanyAccess, listAccessibleCompaniesForUser } from '@/lib/user-company-access';
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,6 +39,30 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('✅ User data retrieved:', user.email);
+    await ensureLegacyCompanyAccess(user.id);
+    const accessibleCompanies = await listAccessibleCompaniesForUser(user.id);
+    const cookieActiveCompanyId = request.cookies.get('fs_active_company')?.value;
+    let cookieCompanyId: string | null = null;
+    if (cookieActiveCompanyId) {
+      const inAccessibleList = accessibleCompanies.some((c) => c.companyId === cookieActiveCompanyId);
+      if (inAccessibleList) {
+        cookieCompanyId = cookieActiveCompanyId;
+      } else if (user.role === 'SITEADMIN') {
+        const companyExists = await prisma.company.findUnique({
+          where: { id: cookieActiveCompanyId },
+          select: { id: true },
+        });
+        if (companyExists?.id) {
+          cookieCompanyId = companyExists.id;
+        }
+      }
+    }
+
+    const activeCompanyId =
+      cookieCompanyId ||
+      accessibleCompanies[0]?.companyId ||
+      user.companyId ||
+      null;
 
     // Get consultant info
     const consultant = user.primaryConsultant || user.consultantFirm;
@@ -50,12 +75,13 @@ export async function GET(request: NextRequest) {
         name: user.name,
         role: user.role,
         userType: user.userType,
-        companyId: user.companyId,
+        companyId: activeCompanyId,
         consultantId: consultantId,
         isPrimaryContact: user.isPrimaryContact,
         consultantType: consultant?.type,
         consultantCompanyName: consultant?.companyName,
-        mfaEnabled: user.mfaEnabled
+        mfaEnabled: user.mfaEnabled,
+        accessibleCompanies,
       }
     });
   } catch (error) {

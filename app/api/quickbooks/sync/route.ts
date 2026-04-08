@@ -4,6 +4,13 @@ import prisma from '@/lib/prisma';
 import { createMonthlyRecords } from '@/lib/quickbooks-parser';
 import { CompanyLOB } from '@/lib/lob-allocator';
 import { ensureValidOAuthTokens } from '@/lib/oauth-token-manager';
+import {
+  buildMasterDataRows,
+  findZeroRevenueAnomalies,
+  toCanonicalMonthlyFinancial,
+  toMonthlyFinancialCreateInput,
+} from '@/lib/financial-canonical';
+import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { emitSyncStatus } from '@/lib/websocket-emit';
 
 export async function POST(request: NextRequest) {
@@ -12,9 +19,12 @@ export async function POST(request: NextRequest) {
   let errorCount = 0;
   const errors: any[] = [];
   let intuitTid: string | null = null; // Capture Intuit Transaction ID for debugging
+  let syncTraceId: string | null = null;
 
   try {
     const { companyId, userId } = await request.json();
+    syncTraceId = `qbo-sync-${companyId}-${Date.now()}`;
+    console.log('🧭 QBO sync trace ID:', syncTraceId);
 
     if (!companyId || !userId) {
       return NextResponse.json({ error: 'Company ID and User ID are required' }, { status: 400 });
@@ -171,6 +181,73 @@ export async function POST(request: NextRequest) {
         });
       }
       return response;
+    };
+
+    const formatDate = (date: Date): string => date.toISOString().split('T')[0];
+    const monthBounds = (monthDate: Date): { start: Date; end: Date; key: string } => {
+      const start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+      const end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+      return { start, end, key: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}` };
+    };
+    const fetchQueryRowsPaged = async (entity: string, whereClause: string): Promise<any[]> => {
+      const pageSize = 1000;
+      let startPosition = 1;
+      const allRows: any[] = [];
+      while (true) {
+        const query = `SELECT * FROM ${entity} ${whereClause} STARTPOSITION ${startPosition} MAXRESULTS ${pageSize}`;
+        const url = `${companyUrl}/query?query=${encodeURIComponent(query)}&minorversion=65`;
+        const response = await fetchWithTokenRetry(url, `${entity}Query`);
+        if (!response.ok) {
+          const body = await response.text().catch(() => '');
+          throw new Error(`QuickBooks ${entity} query failed: ${response.status} ${body}`);
+        }
+        const payload = await response.json();
+        const rows = payload?.QueryResponse?.[entity];
+        const normalized = Array.isArray(rows) ? rows : rows ? [rows] : [];
+        if (!normalized.length) break;
+        allRows.push(...normalized);
+        if (normalized.length < pageSize) break;
+        startPosition += pageSize;
+      }
+      return allRows;
+    };
+    const fetchSalesEvidenceForMonth = async (monthDate: Date): Promise<{
+      month: string;
+      invoiceCount: number;
+      invoiceTotal: number;
+      salesReceiptCount: number;
+      salesReceiptTotal: number;
+      combinedTotal: number;
+      error?: string;
+    }> => {
+      const { start, end, key } = monthBounds(monthDate);
+      try {
+        const whereClause = `WHERE TxnDate >= '${formatDate(start)}' AND TxnDate <= '${formatDate(end)}'`;
+        const [invoices, salesReceipts] = await Promise.all([
+          fetchQueryRowsPaged('Invoice', whereClause),
+          fetchQueryRowsPaged('SalesReceipt', whereClause),
+        ]);
+        const invoiceTotal = invoices.reduce((sum, row) => sum + Number(row?.TotalAmt || 0), 0);
+        const salesReceiptTotal = salesReceipts.reduce((sum, row) => sum + Number(row?.TotalAmt || 0), 0);
+        return {
+          month: key,
+          invoiceCount: invoices.length,
+          invoiceTotal,
+          salesReceiptCount: salesReceipts.length,
+          salesReceiptTotal,
+          combinedTotal: invoiceTotal + salesReceiptTotal,
+        };
+      } catch (error: any) {
+        return {
+          month: key,
+          invoiceCount: 0,
+          invoiceTotal: 0,
+          salesReceiptCount: 0,
+          salesReceiptTotal: 0,
+          combinedTotal: 0,
+          error: error?.message || 'Failed to fetch sales evidence',
+        };
+      }
     };
 
     // Calculate date range - use last day of previous month as end date
@@ -361,7 +438,153 @@ export async function POST(request: NextRequest) {
     }
     console.log(`✅ Found ${companyLOBs.length} company LOBs with headcount data`);
 
-    // Create a financial record
+    // Parse monthly financial records with LOB allocations.
+    const parsedRecords = createMonthlyRecords(plData, bsData, 'PENDING_FINANCIAL_RECORD', 36, accountMappings as any, companyLOBs);
+    const canonicalRecords = parsedRecords.map((row) =>
+      toCanonicalMonthlyFinancial({
+        ...row,
+        monthDate: row.monthDate,
+      }),
+    );
+    const traceSnapshotBase = {
+      syncTraceId,
+      plColumns: (plColumns || []).map((c: any) => c?.ColTitle || c?.ColType || ''),
+      bsColumns: (bsColumns || []).map((c: any) => c?.ColTitle || c?.ColType || ''),
+      parsedTail: canonicalRecords.slice(-6).map((row) => ({
+        monthDate: row.monthDate?.toISOString?.() || row.monthDate,
+        revenue: row.revenue,
+        cogsTotal: row.cogsTotal,
+        expense: row.expense,
+        totalAssets: row.totalAssets,
+        totalLiab: row.totalLiab,
+        totalEquity: row.totalEquity,
+      })),
+    };
+    const validationFailures = findZeroRevenueAnomalies(canonicalRecords);
+
+    const latestMonth = canonicalRecords.length
+      ? canonicalRecords.reduce((max, row) => (row.monthDate > max ? row.monthDate : max), canonicalRecords[0].monthDate)
+      : null;
+    const latestMonthKey = latestMonth
+      ? `${latestMonth.getFullYear()}-${String(latestMonth.getMonth() + 1).padStart(2, '0')}`
+      : null;
+
+    let blockingFailures: typeof validationFailures = [];
+    let latestMonthWarnings: typeof validationFailures = [];
+    let nonBlockingHistoricalWarnings: typeof validationFailures = [];
+
+    if (validationFailures.length > 0) {
+      const uniqueMonths = Array.from(new Set(validationFailures.map((f) => f.month)));
+      const monthDates = uniqueMonths.map((month) => new Date(`${month}-01T00:00:00`));
+      const salesEvidence = await Promise.all(monthDates.map((monthDate) => fetchSalesEvidenceForMonth(monthDate)));
+      const evidenceByMonth = new Map(salesEvidence.map((entry) => [entry.month, entry]));
+
+      latestMonthWarnings = validationFailures.filter((f) => f.month === latestMonthKey);
+      const historicalCandidates = validationFailures.filter((f) => f.month !== latestMonthKey);
+      blockingFailures = historicalCandidates.filter((f) => {
+        const evidence = evidenceByMonth.get(f.month);
+        return Number(evidence?.combinedTotal || 0) > 0;
+      });
+      nonBlockingHistoricalWarnings = historicalCandidates.filter((f) => {
+        const evidence = evidenceByMonth.get(f.month);
+        return Number(evidence?.combinedTotal || 0) <= 0;
+      });
+
+      if (latestMonthWarnings.length > 0) {
+        console.warn('⚠️ QBO sync validation warning on latest month (allowed):', {
+          traceId: syncTraceId,
+          latestMonth: latestMonthKey,
+          latestMonthWarnings,
+          salesEvidence: salesEvidence.filter((s) => s.month === latestMonthKey),
+        });
+      }
+      if (nonBlockingHistoricalWarnings.length > 0) {
+        console.warn('⚠️ QBO sync non-blocking historical warnings (no sales evidence):', {
+          traceId: syncTraceId,
+          nonBlockingHistoricalWarnings,
+          salesEvidence: salesEvidence.filter((s) =>
+            nonBlockingHistoricalWarnings.some((w) => w.month === s.month)
+          ),
+        });
+      }
+
+      if (blockingFailures.length > 0) {
+        const blockingMonths = Array.from(new Set(blockingFailures.map((f) => f.month)));
+        const validationMessage = `Validation failed: income is zero with non-zero COGS/Expenses for month(s): ${blockingMonths.join(', ')}`;
+        console.error('❌ QBO sync validation failed', {
+          traceId: syncTraceId,
+          blockingFailures,
+          latestMonthWarnings,
+          nonBlockingHistoricalWarnings,
+          salesEvidence,
+        });
+
+        await prisma.accountingConnection.update({
+          where: {
+            companyId_platform: {
+              companyId,
+              platform: 'QUICKBOOKS',
+            },
+          },
+          data: {
+            status: 'ACTIVE',
+            lastSyncAt: new Date(),
+            errorMessage: validationMessage,
+          },
+        });
+
+        await prisma.apiSyncLog.create({
+          data: {
+            companyId,
+            platform: 'QUICKBOOKS',
+            syncType: 'manual',
+            status: 'error',
+            recordsImported: 0,
+            errorCount: 1,
+            errorDetails: {
+              type: 'VALIDATION_FAILED',
+              traceId: syncTraceId,
+              blockingFailures,
+              latestMonthWarnings,
+              nonBlockingHistoricalWarnings,
+              salesEvidence,
+              diagnostics: traceSnapshotBase,
+            } as any,
+            intuitTid: intuitTid,
+            duration: Date.now() - syncStartTime,
+          },
+        });
+        await notifyAdminsOfSyncFailure({
+          companyId,
+          platform: 'QUICKBOOKS',
+          syncType: 'manual',
+          errorSummary: validationMessage,
+          errorDetails: `Trace: ${syncTraceId || 'n/a'}`,
+        });
+
+        emitSyncStatus(companyId, {
+          status: 'error',
+          message: validationMessage,
+          error: validationMessage,
+          intuitTid,
+          traceId: syncTraceId,
+        });
+
+        return NextResponse.json({
+          error: 'QuickBooks sync validation failed',
+          details: validationMessage,
+          validationFailed: true,
+          failedMonths: blockingMonths,
+          latestMonthWarnings,
+          nonBlockingHistoricalWarnings,
+          salesEvidence,
+          intuitTid,
+          traceId: syncTraceId,
+        }, { status: 422 });
+      }
+    }
+
+    // Create financial record only after validation passes.
     const financialRecord = await prisma.financialRecord.create({
       data: {
         companyId,
@@ -373,6 +596,13 @@ export async function POST(request: NextRequest) {
           balanceSheet: bsData,
           chartOfAccounts: accountsData,
           syncDate: new Date().toISOString(),
+          syncTraceId,
+          syncDiagnostics: {
+            ...traceSnapshotBase,
+            financialRecordId: 'PENDING',
+            validationWarnings: latestMonthWarnings,
+            nonBlockingHistoricalWarnings,
+          },
         },
         columnMapping: {
           source: 'QuickBooks Online',
@@ -380,45 +610,29 @@ export async function POST(request: NextRequest) {
         },
       },
     });
-
-    // Parse and create monthly financial records with LOB allocations
-    const parsedRecords = createMonthlyRecords(plData, bsData, financialRecord.id, 36, accountMappings as any, companyLOBs);
+    await prisma.financialRecord.update({
+      where: { id: financialRecord.id },
+      data: {
+        rawData: {
+          profitAndLoss: plData,
+          balanceSheet: bsData,
+          chartOfAccounts: accountsData,
+          syncDate: new Date().toISOString(),
+          syncTraceId,
+          syncDiagnostics: {
+            ...traceSnapshotBase,
+            financialRecordId: financialRecord.id,
+            validationWarnings: latestMonthWarnings,
+            nonBlockingHistoricalWarnings,
+          },
+        } as any,
+      },
+    });
     
-    if (parsedRecords.length > 0) {
-      const monthlyRecords = parsedRecords.map(record => ({
-        companyId: companyId,
-        financialRecordId: financialRecord.id,
-        monthDate: record.monthDate,
-        revenue: record.revenue,
-        revenueBreakdown: record.revenueBreakdown,
-        expense: record.expense,
-        expenseBreakdown: record.expenseBreakdown,
-        cogsTotal: record.cogsTotal,
-        cogsBreakdown: record.cogsBreakdown,
-        lobBreakdowns: record.lobBreakdowns,
-        cash: record.cash,
-        ar: record.ar,
-        inventory: record.inventory,
-        otherCA: record.otherCA,
-        tca: record.tca,
-        fixedAssets: record.fixedAssets,
-        otherAssets: record.otherAssets,
-        totalAssets: record.totalAssets,
-        ap: record.ap,
-        otherCL: record.otherCL,
-        tcl: record.tcl,
-        ltd: record.ltd,
-        totalLiab: record.totalLiab,
-        ownersCapital: 0, // TODO: Parse from QB Balance Sheet
-        ownersDraw: 0,
-        commonStock: 0,
-        preferredStock: 0,
-        retainedEarnings: 0,
-        additionalPaidInCapital: 0,
-        treasuryStock: 0,
-        totalEquity: record.totalEquity,
-        totalLAndE: record.totalLAndE,
-      }));
+    if (canonicalRecords.length > 0) {
+      const monthlyRecords = canonicalRecords.map((record) =>
+        toMonthlyFinancialCreateInput(companyId, financialRecord.id, record),
+      );
 
       await prisma.monthlyFinancial.createMany({
         data: monthlyRecords,
@@ -430,59 +644,7 @@ export async function POST(request: NextRequest) {
       try {
         const masterDataPayload = {
           companyId,
-          monthlyData: monthlyRecords.map(record => ({
-            date: record.monthDate.toISOString().split('T')[0], // YYYY-MM-DD format
-            revenue: record.revenue,
-            expense: record.expense,
-            cogsTotal: record.cogsTotal,
-            payroll: 0, // Will be allocated from expense
-            ownerBasePay: 0,
-            benefits: 0,
-            insurance: 0,
-            professionalFees: 0,
-            subcontractors: 0,
-            rent: 0,
-            taxLicense: 0,
-            phoneComm: 0,
-            infrastructure: 0,
-            autoTravel: 0,
-            salesExpense: 0,
-            marketing: 0,
-            trainingCert: 0,
-            mealsEntertainment: 0,
-            interestExpense: 0,
-            depreciationAmortization: 0,
-            otherExpense: 0,
-            nonOperatingIncome: 0,
-            extraordinaryItems: 0,
-            netProfit: 0,
-            cash: record.cash,
-            ar: record.ar,
-            inventory: record.inventory,
-            otherCA: record.otherCA,
-            tca: record.tca,
-            fixedAssets: record.fixedAssets,
-            otherAssets: record.otherAssets,
-            totalAssets: record.totalAssets,
-            ap: record.ap,
-            otherCL: record.otherCL,
-            tcl: record.tcl,
-            ltd: record.ltd,
-            totalLiab: record.totalLiab,
-            ownersCapital: record.ownersCapital,
-            ownersDraw: record.ownersDraw,
-            commonStock: record.commonStock,
-            preferredStock: record.preferredStock,
-            retainedEarnings: record.retainedEarnings,
-            additionalPaidInCapital: record.additionalPaidInCapital,
-            treasuryStock: record.treasuryStock,
-            totalEquity: record.totalEquity,
-            totalLAndE: record.totalLAndE,
-            revenueBreakdown: record.revenueBreakdown,
-            expenseBreakdown: record.expenseBreakdown,
-            cogsBreakdown: record.cogsBreakdown,
-            lobBreakdowns: record.lobBreakdowns
-          })),
+          monthlyData: buildMasterDataRows(canonicalRecords),
           metadata: {
             source: 'quickbooks',
             externalId: realmId,
@@ -490,7 +652,8 @@ export async function POST(request: NextRequest) {
             lastSync: new Date().toISOString(),
             version: '1.0',
             intuitTid: intuitTid,
-            recordsProcessed: recordsImported
+            recordsProcessed: recordsImported,
+            syncTraceId,
           }
         };
 
@@ -540,7 +703,7 @@ export async function POST(request: NextRequest) {
         status: 'success',
         recordsImported,
         errorCount,
-        errorDetails: errors.length > 0 ? { errors } : undefined,
+        errorDetails: errors.length > 0 ? { errors, traceId: syncTraceId } : ({ traceId: syncTraceId } as any),
         intuitTid: intuitTid,
         duration: Date.now() - syncStartTime,
       },
@@ -563,6 +726,7 @@ export async function POST(request: NextRequest) {
       recordsImported,
       monthsImported: recordsImported,
       intuitTid,
+      traceId: syncTraceId,
     });
   } catch (error: any) {
     console.error('QuickBooks sync error:', error);
@@ -580,6 +744,7 @@ export async function POST(request: NextRequest) {
         message: 'QuickBooks sync failed',
         error: error.message,
         intuitTid,
+        traceId: syncTraceId,
       });
     }
     if (companyId) {
@@ -591,10 +756,17 @@ export async function POST(request: NextRequest) {
           status: 'error',
           recordsImported,
           errorCount,
-          errorDetails: { errors },
+          errorDetails: { errors, traceId: syncTraceId },
           intuitTid: intuitTid,
           duration: Date.now() - syncStartTime,
         },
+      });
+      await notifyAdminsOfSyncFailure({
+        companyId,
+        platform: 'QUICKBOOKS',
+        syncType: 'manual',
+        errorSummary: error?.message || 'QuickBooks sync failed',
+        errorDetails: `Trace: ${syncTraceId || 'n/a'}`,
       });
     }
 
@@ -602,7 +774,8 @@ export async function POST(request: NextRequest) {
       { 
         error: 'Failed to sync QuickBooks data', 
         details: error.message,
-        intuitTid: intuitTid 
+        intuitTid: intuitTid,
+        traceId: syncTraceId,
       },
       { status: 500 }
     );
