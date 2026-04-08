@@ -5993,7 +5993,15 @@ export async function syncInforM3OperationalData(
       : 5000;
   // Normalize to a UTC calendar day key so repeated runs do not create
   // mixed local-time snapshot variants (e.g. 00:00 and 07:00).
-  const snapshotDate = startOfUtcDay(options?.snapshotDateOverride ? new Date(options.snapshotDateOverride) : new Date());
+  // For explicit/manual windows, anchor snapshot day to the requested window
+  // end date so a 4/7-4/7 run is stamped as 4/7 (not "today").
+  const explicitWindowSnapshotDate =
+    syncWindow && syncWindow.mode !== 'daily_overlap' ? startOfUtcDay(new Date(syncWindow.endDate)) : null;
+  const snapshotDate = startOfUtcDay(
+    options?.snapshotDateOverride
+      ? new Date(options.snapshotDateOverride)
+      : explicitWindowSnapshotDate || new Date()
+  );
 
   const connectionRows = await prisma.$queryRaw<
     Array<{ accountingProgramsBySystem: unknown; accountingPrograms: unknown }>
