@@ -378,6 +378,12 @@ export default function OperationsTab({
     'itemName' | 'sku' | 'warehouse' | 'bin' | 'lot' | 'qtyOnHand' | 'avgCost' | 'assetValue'
   >('assetValue');
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
+  const [inventoryCostTrendModalOpen, setInventoryCostTrendModalOpen] = useState(false);
+  const [inventoryCostTrendLoading, setInventoryCostTrendLoading] = useState(false);
+  const [inventoryCostTrendError, setInventoryCostTrendError] = useState<string | null>(null);
+  const [inventoryCostTrendSku, setInventoryCostTrendSku] = useState<string>('');
+  const [inventoryCostTrendItemName, setInventoryCostTrendItemName] = useState<string>('');
+  const [inventoryCostTrendPoints, setInventoryCostTrendPoints] = useState<any[]>([]);
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -430,7 +436,7 @@ export default function OperationsTab({
   const maxSelectableEndDate = toLocalInputDate(yesterdayLocal);
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date(yesterdayLocal);
-    date.setDate(date.getDate() - 90);
+    date.setFullYear(date.getFullYear() - 3);
     return toLocalInputDate(date);
   });
   const [endDate, setEndDate] = useState<string>(() => {
@@ -439,6 +445,13 @@ export default function OperationsTab({
   const hasHydratedDateRangeRef = useRef(false);
   useEffect(() => {
     setExpandedWipCustomers({});
+  }, [selectedCompanyId, startDate, endDate, frequency]);
+  useEffect(() => {
+    setInventoryCostTrendModalOpen(false);
+    setInventoryCostTrendPoints([]);
+    setInventoryCostTrendError(null);
+    setInventoryCostTrendSku('');
+    setInventoryCostTrendItemName('');
   }, [selectedCompanyId, startDate, endDate, frequency]);
 
   useEffect(() => {
@@ -771,6 +784,28 @@ export default function OperationsTab({
     } finally {
       window.clearTimeout(timeoutId);
     }
+  };
+
+  const fetchInventoryUnitCostHistory = async (sku: string) => {
+    const trimmedSku = String(sku || '').trim();
+    if (!trimmedSku) return [];
+    const params = new URLSearchParams({
+      companyId: selectedCompanyId,
+      type: 'inventory',
+      frequency,
+      startDate,
+      endDate,
+      limit: '1000',
+      sku: trimmedSku,
+      includeCostHistory: 'true',
+      ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+    });
+    const response = await fetch(`/api/operational-data?${params}`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error('Failed to load inventory unit cost history');
+    const payload = await response.json();
+    return Array.isArray(payload?.unitCostHistory) ? payload.unitCostHistory : [];
   };
 
   const fetchCashConversionFinancialData = async () => {
@@ -4878,6 +4913,50 @@ export default function OperationsTab({
     };
     const inventorySortLabel = (key: string) =>
       inventorySortKey === key ? (inventorySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    const openInventoryCostTrend = async (row: any) => {
+      const skuCandidate = String(row?.sku || row?.itemId || '').trim();
+      setInventoryCostTrendSku(skuCandidate);
+      setInventoryCostTrendItemName(String(row?.itemName || '').trim());
+      setInventoryCostTrendPoints([]);
+      setInventoryCostTrendError(null);
+      setInventoryCostTrendModalOpen(true);
+      if (!skuCandidate) {
+        setInventoryCostTrendError('No SKU/item identifier found for this row.');
+        return;
+      }
+      setInventoryCostTrendLoading(true);
+      try {
+        const points = await fetchInventoryUnitCostHistory(skuCandidate);
+        setInventoryCostTrendPoints(points);
+      } catch (err: any) {
+        setInventoryCostTrendError(err?.message || 'Failed to load cost trend');
+      } finally {
+        setInventoryCostTrendLoading(false);
+      }
+    };
+    const toInventoryIsoDay = (d: Date) =>
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    const formatInventoryTrendDay = (d: Date) =>
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const inventoryCostTrendChartData = inventoryCostTrendPoints
+      .map((point: any) => {
+        const parsed = parseDateValue(point?.snapshotDate);
+        if (!parsed) return null;
+        const utcDay = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+        return {
+          dateKey: toInventoryIsoDay(utcDay),
+          dateLabel: formatInventoryTrendDay(utcDay),
+          unitCost: point?.unitCost == null ? null : Number(point.unitCost),
+          source: String(point?.source || 'none'),
+        };
+      })
+      .filter(Boolean) as Array<{
+      dateKey: string;
+      dateLabel: string;
+      unitCost: number | null;
+      source: string;
+    }>;
+    const inventoryCostTrendXAxisInterval = Math.max(Math.ceil(inventoryCostTrendChartData.length / 16) - 1, 0);
     const rawInventoryAgingRows = Array.isArray(agingReport) ? agingReport.slice(0, 100) : [];
     const inventoryAgingSearch = String(inventoryAgingSearchTerm || '').trim().toLowerCase();
     const filteredInventoryAgingRows = rawInventoryAgingRows.filter((row: any) => {
@@ -5153,6 +5232,7 @@ export default function OperationsTab({
                   <th onClick={() => handleInventorySort('qtyOnHand')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Qty on Hand{inventorySortLabel('qtyOnHand')}</th>
                   <th onClick={() => handleInventorySort('avgCost')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Avg Cost{inventorySortLabel('avgCost')}</th>
                   <th onClick={() => handleInventorySort('assetValue')} style={{ textAlign: 'right', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569', cursor: 'pointer', userSelect: 'none' }}>Asset Value{inventorySortLabel('assetValue')}</th>
+                  <th style={{ textAlign: 'center', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Trend</th>
                 </tr>
               </thead>
               {inventoryTableExpanded && (
@@ -5173,11 +5253,28 @@ export default function OperationsTab({
                       <td style={{ padding: '12px', fontSize: '14px', color: '#16a34a', textAlign: 'right', fontWeight: '600' }}>
                         {formatCurrency(item.assetValue)}
                       </td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <button
+                          onClick={() => openInventoryCostTrend(item)}
+                          style={{
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '8px',
+                            padding: '4px 8px',
+                            background: '#fff',
+                            color: '#334155',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Trend
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {sortedInventoryRecords.length === 0 && (
                     <tr>
-                      <td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+                      <td colSpan={9} style={{ padding: '16px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
                         No inventory rows match your search.
                       </td>
                     </tr>
@@ -5187,6 +5284,99 @@ export default function OperationsTab({
             </table>
           </div>
         </div>
+        )}
+
+        {inventoryCostTrendModalOpen && (
+          <div
+            onClick={() => setInventoryCostTrendModalOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.35)',
+              zIndex: 60,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 'min(980px, 100%)',
+                maxHeight: '85vh',
+                overflow: 'auto',
+                background: '#fff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '16px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Unit Cost Trend</h3>
+                  <div style={{ marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+                    SKU: {inventoryCostTrendSku || 'N/A'} {inventoryCostTrendItemName ? `| Item: ${inventoryCostTrendItemName}` : ''}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setInventoryCostTrendModalOpen(false)}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    background: '#fff',
+                    color: '#334155',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              {inventoryCostTrendLoading ? (
+                <div style={{ padding: '22px 8px', color: '#64748b', fontSize: '13px' }}>Loading unit cost history...</div>
+              ) : inventoryCostTrendError ? (
+                <div style={{ padding: '22px 8px', color: '#b91c1c', fontSize: '13px' }}>{inventoryCostTrendError}</div>
+              ) : inventoryCostTrendChartData.length === 0 ? (
+                <div style={{ padding: '22px 8px', color: '#64748b', fontSize: '13px' }}>
+                  No historical unit-cost points were returned for this SKU in the selected range.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <LineChart data={inventoryCostTrendChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="dateKey"
+                      tickFormatter={(value) => {
+                        const match = inventoryCostTrendChartData.find((point) => point.dateKey === String(value));
+                        return match?.dateLabel || String(value);
+                      }}
+                      interval={inventoryCostTrendXAxisInterval}
+                      minTickGap={24}
+                      stroke="#64748b"
+                      style={{ fontSize: '12px' }}
+                    />
+                    <YAxis stroke="#64748b" style={{ fontSize: '12px' }} tickFormatter={(value) => formatUnitCost(Number(value || 0))} />
+                    <Tooltip
+                      formatter={(value: any, name: string, props: any) => {
+                        if (name === 'Unit Cost') return [formatUnitCost(Number(value || 0)), name];
+                        return [String(value ?? ''), name];
+                      }}
+                      labelFormatter={(value: any) => {
+                        const match = inventoryCostTrendChartData.find((point) => point.dateKey === String(value));
+                        return match?.dateLabel || String(value);
+                      }}
+                      contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
+                    />
+                    <Legend />
+                    <Line type="monotone" dataKey="unitCost" stroke="#2563eb" strokeWidth={2} dot={false} name="Unit Cost" />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Inventory Distribution Chart */}

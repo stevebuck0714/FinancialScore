@@ -777,6 +777,12 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type');
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');
+    const skuParam = String(searchParams.get('sku') || '').trim();
+    const includeCostHistory = ['1', 'true', 'yes'].includes(
+      String(searchParams.get('includeCostHistory') || '')
+        .trim()
+        .toLowerCase()
+    );
     const frequency = (searchParams.get('frequency') || 'monthly') as 'daily' | 'weekly' | 'monthly';
     const limit = parseInt(searchParams.get('limit') || '1000');
     const boundedLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 100), 5000) : 1000;
@@ -3901,6 +3907,74 @@ export async function GET(request: NextRequest) {
             orderBy: [{ snapshotDate: 'asc' }, { createdAt: 'desc' }],
           });
         }
+        let unitCostHistory: Array<{
+          snapshotDate: string;
+          unitCost: number | null;
+          qtyOnHand: number;
+          assetValue: number;
+          source: 'weighted' | 'none';
+        }> = [];
+        if (includeCostHistory && skuParam) {
+          const skuKey = canonicalInventoryKey(skuParam);
+          const historyByDay = new Map<
+            string,
+            {
+              snapshotDate: Date;
+              qtyOnHand: number;
+              assetValue: number;
+            }
+          >();
+          for (const row of inventoryTrendRowsRaw) {
+            const aliases = Array.from(
+              new Set(
+                [
+                  canonicalInventoryKey(row.sku),
+                  canonicalInventoryKey(row.itemId),
+                  canonicalInventoryKey(row.itemName),
+                ].filter(Boolean)
+              )
+            );
+            if (!aliases.includes(skuKey)) continue;
+            const day = new Date(
+              Date.UTC(
+                row.snapshotDate.getUTCFullYear(),
+                row.snapshotDate.getUTCMonth(),
+                row.snapshotDate.getUTCDate(),
+                0,
+                0,
+                0,
+                0
+              )
+            );
+            const dayKey = toIsoDay(day);
+            if (!historyByDay.has(dayKey)) {
+              historyByDay.set(dayKey, {
+                snapshotDate: day,
+                qtyOnHand: 0,
+                assetValue: 0,
+              });
+            }
+            const acc = historyByDay.get(dayKey)!;
+            const qtyOnHand = Number(row.qtyOnHand || 0);
+            const assetValue = Number(row.assetValue || 0);
+            acc.qtyOnHand += qtyOnHand;
+            acc.assetValue += assetValue;
+          }
+          unitCostHistory = Array.from(historyByDay.values())
+            .sort((a, b) => a.snapshotDate.getTime() - b.snapshotDate.getTime())
+            .map((row) => {
+              const weightedUnitCost = row.qtyOnHand > 0 ? row.assetValue / row.qtyOnHand : null;
+              const unitCost = weightedUnitCost;
+              const source: 'weighted' | 'none' = weightedUnitCost ? 'weighted' : 'none';
+              return {
+                snapshotDate: row.snapshotDate.toISOString(),
+                unitCost,
+                qtyOnHand: row.qtyOnHand,
+                assetValue: row.assetValue,
+                source,
+              };
+            });
+        }
 
         // Build a dense day-by-day inventory value series across the selected range.
         // For days without a fresh snapshot, carry forward the latest known inventory value.
@@ -3998,14 +4072,20 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        // V1 proxy model for aging/obsolescence using currently available data:
-        // inventory exposure + latest SLCoitems-derived order-line recency and quantities.
-        const inventoryOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
+        // V1 inventory aging/obsolescence model:
+        // inventory exposure + SLCOITEMS shipped deltas (no invoiced-qty proxy).
         const canonicalMovementKey = (value: unknown): string =>
           String(value || '')
             .trim()
             .replace(/[^A-Za-z0-9]/g, '')
             .toUpperCase();
+        const normalizeToken = (value: unknown): string => {
+          const raw = String(value ?? '').trim();
+          if (!raw) return '';
+          const num = Number(raw);
+          if (Number.isFinite(num)) return String(num);
+          return raw.toUpperCase();
+        };
         const daysBetweenUtc = (from: Date, to: Date): number =>
           Math.floor((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000));
         const start30Utc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate() - 29));
@@ -4013,116 +4093,126 @@ export async function GET(request: NextRequest) {
         const start90Utc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate() - 89));
         const asOfUtc = new Date(Date.UTC(inventoryEndUtcDay.getUTCFullYear(), inventoryEndUtcDay.getUTCMonth(), inventoryEndUtcDay.getUTCDate()));
         let agingReport: any[] = [];
-        if (inventoryOrderLineDelegate) {
-          const latestOrderLineSnapshot = await inventoryOrderLineDelegate.findFirst({
-            where: {
-              companyId,
-              frequency: 'daily',
-              snapshotDate: { lt: inventoryEndExclusive },
-            },
-            orderBy: { snapshotDate: 'desc' },
-            select: { snapshotDate: true },
-          });
-          if (latestOrderLineSnapshot?.snapshotDate) {
-            const orderLines = await inventoryOrderLineDelegate.findMany({
-              where: {
-                companyId,
-                frequency: 'daily',
-                snapshotDate: latestOrderLineSnapshot.snapshotDate,
-              },
-              select: {
-                itemId: true,
-                itemName: true,
-                orderDate: true,
-                snapshotDate: true,
-                qtyInvoiced: true,
-              },
-            });
-            const movementBySku = new Map<
-              string,
-              {
-                lastOrderDate: Date | null;
-                shippedQty30: number;
-                shippedQty60: number;
-                shippedQty90: number;
-              }
-            >();
-            for (const line of orderLines) {
-              const keyAliases = Array.from(
-                new Set([
-                  canonicalMovementKey(line.itemId),
-                  canonicalMovementKey(line.itemName),
-                ].filter(Boolean))
-              );
-              if (!keyAliases.length) continue;
-              for (const alias of keyAliases) {
-                if (!movementBySku.has(alias)) {
-                  movementBySku.set(alias, {
-                    lastOrderDate: null,
-                    shippedQty30: 0,
-                    shippedQty60: 0,
-                    shippedQty90: 0,
-                  });
-                }
-              }
-              const qty = Math.max(0, Number(line.qtyInvoiced || 0));
-              // "Last Sale Date" should be based on an actual sold/shipped event.
-              // Do not use snapshotDate fallback because it can misrepresent recency.
-              const eventDateRaw = line.orderDate ? new Date(line.orderDate) : null;
-              if (eventDateRaw && qty > 0) {
-                const eventUtc = new Date(
-                  Date.UTC(eventDateRaw.getUTCFullYear(), eventDateRaw.getUTCMonth(), eventDateRaw.getUTCDate())
-                );
-                for (const alias of keyAliases) {
-                  const acc = movementBySku.get(alias)!;
-                  if (!acc.lastOrderDate || eventUtc.getTime() > acc.lastOrderDate.getTime()) acc.lastOrderDate = eventUtc;
-                  if (eventUtc.getTime() >= start90Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty90 += qty;
-                  if (eventUtc.getTime() >= start60Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty60 += qty;
-                  if (eventUtc.getTime() >= start30Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty30 += qty;
-                }
-              }
+        const rawShippedRows = await (prisma as any).inforRawRecord.findMany({
+          where: {
+            companyId,
+            platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+            businessDate: { gte: start90Utc, lte: asOfUtc },
+            miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+          },
+          select: {
+            businessDate: true,
+            payload: true,
+          },
+          orderBy: [{ businessDate: 'asc' }],
+          take: 400000,
+        });
+        const movementBySku = new Map<
+          string,
+          {
+            lastOrderDate: Date | null;
+            shippedQty30: number;
+            shippedQty60: number;
+            shippedQty90: number;
+          }
+        >();
+        const lineState = new Map<string, { seen: boolean; lastQtyShipped: number }>();
+        for (const row of rawShippedRows as any[]) {
+          const payload =
+            row?.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+              ? (row.payload as Record<string, unknown>)
+              : null;
+          if (!payload) continue;
+          const rawOrderId = normalizeToken(payload['CoNum'] ?? payload['CONUM'] ?? payload['coNum'] ?? '');
+          const rawLine = normalizeToken(payload['CoLine'] ?? payload['COLINE'] ?? payload['coLine'] ?? '0') || '0';
+          const rawRelease = normalizeToken(payload['CoRelease'] ?? payload['CORELEASE'] ?? payload['coRelease'] ?? '0') || '0';
+          const lineKey = `${rawOrderId}|${rawLine}-${rawRelease}`;
+          if (!rawOrderId) continue;
+          const skuToken = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
+          const keyAliases = Array.from(
+            new Set([canonicalMovementKey(skuToken)].filter(Boolean))
+          );
+          if (!keyAliases.length) continue;
+          for (const alias of keyAliases) {
+            if (!movementBySku.has(alias)) {
+              movementBySku.set(alias, {
+                lastOrderDate: null,
+                shippedQty30: 0,
+                shippedQty60: 0,
+                shippedQty90: 0,
+              });
             }
-            agingReport = latestInventoryBySku.map((inv) => {
-              const lookupAliases = Array.from(
-                new Set([
-                  canonicalMovementKey(inv.sku),
-                  canonicalMovementKey(inv.itemId),
-                  canonicalMovementKey(inv.itemName),
-                ].filter(Boolean))
-              );
-              const movement =
-                lookupAliases.map((key) => movementBySku.get(key)).find((m) => Boolean(m)) || null;
-              const lastOrderDate = movement?.lastOrderDate || null;
-              const daysSinceLastSale = lastOrderDate ? Math.max(0, daysBetweenUtc(lastOrderDate, asOfUtc)) : null;
-              const qtyOnHand = Number(inv.qtyOnHand || 0);
-              const assetValue = Number(inv.assetValue || 0);
-              let riskTier: 'Low' | 'Medium' | 'High' = 'Low';
-              if (qtyOnHand > 0 && assetValue > 0) {
-                if (daysSinceLastSale == null || daysSinceLastSale > 180) riskTier = 'High';
-                else if (daysSinceLastSale > 90) riskTier = 'Medium';
-              }
-              const exposureFactor = riskTier === 'High' ? 1 : riskTier === 'Medium' ? 0.5 : 0.1;
-              return {
-                itemName: inv.itemName,
-                sku: inv.sku,
-                warehouse: inv.warehouse,
-                qtyOnHand,
-                assetValue,
-                lastSaleDate: lastOrderDate ? lastOrderDate.toISOString() : null,
-                daysSinceLastSale,
-                shippedQty30: Number(movement?.shippedQty30 || 0),
-                shippedQty60: Number(movement?.shippedQty60 || 0),
-                shippedQty90: Number(movement?.shippedQty90 || 0),
-                riskTier,
-                estimatedObsolescenceExposure: assetValue * exposureFactor,
-              };
-            });
-            agingReport = agingReport.sort(
-              (a, b) =>
-                Number(b.estimatedObsolescenceExposure || 0) - Number(a.estimatedObsolescenceExposure || 0)
-            );
+          }
+          const businessDateRaw = row?.businessDate ? new Date(row.businessDate) : null;
+          if (!businessDateRaw || Number.isNaN(businessDateRaw.getTime())) continue;
+          const eventUtc = new Date(
+            Date.UTC(businessDateRaw.getUTCFullYear(), businessDateRaw.getUTCMonth(), businessDateRaw.getUTCDate())
+          );
+          const qtyShippedAbs = Math.max(
+            0,
+            Number(payload['QtyShipped'] ?? payload['QTYSHIPPED'] ?? payload['qtyShipped'] ?? 0)
+          );
+          if (qtyShippedAbs > 0) {
+            for (const alias of keyAliases) {
+              const acc = movementBySku.get(alias)!;
+              if (!acc.lastOrderDate || eventUtc.getTime() > acc.lastOrderDate.getTime()) acc.lastOrderDate = eventUtc;
+            }
+          }
+          if (!lineState.has(lineKey)) {
+            lineState.set(lineKey, { seen: true, lastQtyShipped: qtyShippedAbs });
+            continue; // first observation is baseline to avoid synthetic overcounts
+          }
+          const state = lineState.get(lineKey)!;
+          const delta = qtyShippedAbs - state.lastQtyShipped;
+          state.lastQtyShipped = Math.max(state.lastQtyShipped, qtyShippedAbs);
+          if (delta <= 0) continue;
+          for (const alias of keyAliases) {
+            const acc = movementBySku.get(alias)!;
+            if (!acc.lastOrderDate || eventUtc.getTime() > acc.lastOrderDate.getTime()) acc.lastOrderDate = eventUtc;
+            if (eventUtc.getTime() >= start90Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty90 += delta;
+            if (eventUtc.getTime() >= start60Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty60 += delta;
+            if (eventUtc.getTime() >= start30Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty30 += delta;
           }
         }
+        agingReport = latestInventoryBySku.map((inv) => {
+          const lookupAliases = Array.from(
+            new Set([
+              canonicalMovementKey(inv.sku),
+              canonicalMovementKey(inv.itemId),
+              canonicalMovementKey(inv.itemName),
+            ].filter(Boolean))
+          );
+          const movement =
+            lookupAliases.map((key) => movementBySku.get(key)).find((m) => Boolean(m)) || null;
+          const lastOrderDate = movement?.lastOrderDate || null;
+          const daysSinceLastSale = lastOrderDate ? Math.max(0, daysBetweenUtc(lastOrderDate, asOfUtc)) : null;
+          const qtyOnHand = Number(inv.qtyOnHand || 0);
+          const assetValue = Number(inv.assetValue || 0);
+          let riskTier: 'Low' | 'Medium' | 'High' = 'Low';
+          if (qtyOnHand > 0 && assetValue > 0) {
+            if (daysSinceLastSale == null || daysSinceLastSale > 180) riskTier = 'High';
+            else if (daysSinceLastSale > 90) riskTier = 'Medium';
+          }
+          const exposureFactor = riskTier === 'High' ? 1 : riskTier === 'Medium' ? 0.5 : 0.1;
+          return {
+            itemName: inv.itemName,
+            sku: inv.sku,
+            warehouse: inv.warehouse,
+            qtyOnHand,
+            assetValue,
+            lastSaleDate: lastOrderDate ? lastOrderDate.toISOString() : null,
+            daysSinceLastSale,
+            shippedQty30: Number(movement?.shippedQty30 || 0),
+            shippedQty60: Number(movement?.shippedQty60 || 0),
+            shippedQty90: Number(movement?.shippedQty90 || 0),
+            riskTier,
+            estimatedObsolescenceExposure: assetValue * exposureFactor,
+          };
+        });
+        agingReport = agingReport.sort(
+          (a, b) =>
+            Number(b.estimatedObsolescenceExposure || 0) - Number(a.estimatedObsolescenceExposure || 0)
+        );
 
         const inventoryMetrics = {
           totalValue: latestInventoryBySku.reduce((sum, item) => sum + Number(item.assetValue || 0), 0),
@@ -4163,6 +4253,7 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({
             records: [],
             trend: [],
+            unitCostHistory,
             summary: {
               totalValue: 0,
               itemCount: 0,
@@ -4177,6 +4268,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           records: latestInventoryBySku,
           trend: inventoryTrendDaily,
+          unitCostHistory,
           agingReport,
           summary: inventoryMetrics,
         });
