@@ -544,7 +544,6 @@ const ENFORCED_PROGRAM_PROPERTIES: Record<string, string[]> = {
   SLAPPMTS: [
     'VendNum',
     'InvNum',
-    'Voucher',
     'Type',
     'CheckDate',
     'DistDate',
@@ -6784,6 +6783,31 @@ export async function syncInforM3OperationalData(
           });
           if (isTransportAndPayloadSuccess(retryWithoutMongooseResponse)) {
             response = retryWithoutMongooseResponse;
+          }
+        }
+        if (
+          !isTransportAndPayloadSuccess(response) &&
+          moduleType === 'ap' &&
+          /\/IDORequestService\/ido\/load\//i.test(effectiveEndpointPath)
+        ) {
+          // AP IDOs vary by tenant/version; peel rejected projected fields in-place.
+          let currentPath = effectiveEndpointPath;
+          let attempts = 0;
+          while (currentPath && attempts < 8) {
+            const retryMessage = extractResponseMessage(response.body);
+            const missingProperty = parseMissingPropertyFromMessage(retryMessage);
+            if (!missingProperty) break;
+            const reducedPath = removePropertyFromEndpoint(currentPath, missingProperty);
+            if (!reducedPath || reducedPath === currentPath) break;
+            attempts += 1;
+            const reducedRetry = await callInforIonApi(credentials, reducedPath, {
+              timeoutMs: requestTimeoutMs,
+              headers: req.headers,
+            });
+            response = reducedRetry;
+            effectiveEndpointPath = reducedPath;
+            currentPath = reducedPath;
+            if (isTransportAndPayloadSuccess(response)) break;
           }
         }
         // Some CSI environments expose SLAptrx* variants with broken projections or missing IDOs.
