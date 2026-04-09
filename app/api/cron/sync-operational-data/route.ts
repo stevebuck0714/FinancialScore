@@ -4,10 +4,46 @@ import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialRecordsFromMetadata, ingestDailyFinancialSnapshots } from '@/lib/financial/daily-financial-ingest';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 
+const OPERATIONAL_SYNC_TIME_ZONE = 'America/New_York';
+
 function normalizePullTime(value: unknown): string {
   if (typeof value !== 'string') return '08:00';
   const trimmed = value.trim();
   return /^\d{2}:\d{2}$/.test(trimmed) ? trimmed : '08:00';
+}
+
+function getTimeZoneNowParts(timeZone: string): {
+  hour: number;
+  minute: number;
+  dayOfWeek: number; // 0=Sun, 1=Mon ... 6=Sat
+  dayOfMonth: number;
+} {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'short',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const weekday = String(map.weekday || '').slice(0, 3);
+  const weekdayToNumber: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  return {
+    hour: Number.parseInt(String(map.hour || '0'), 10) || 0,
+    minute: Number.parseInt(String(map.minute || '0'), 10) || 0,
+    dayOfWeek: weekdayToNumber[weekday] ?? 0,
+    dayOfMonth: Number.parseInt(String(map.day || '1'), 10) || 1,
+  };
 }
 
 function readOperationalPullTime(metadata: unknown): string {
@@ -40,14 +76,14 @@ function readOperationalPullTime(metadata: unknown): string {
 
 function shouldRunForFrequency(frequency: string, pullTime: string): boolean {
   const normalized = String(frequency || 'daily').toLowerCase();
-  const now = new Date();
   const [scheduledHour, scheduledMinute] = normalizePullTime(pullTime).split(':').map((value) => Number(value));
-  if (now.getHours() !== scheduledHour || now.getMinutes() !== scheduledMinute) {
+  const now = getTimeZoneNowParts(OPERATIONAL_SYNC_TIME_ZONE);
+  if (now.hour !== scheduledHour || now.minute !== scheduledMinute) {
     return false;
   }
   if (normalized === 'daily') return true;
-  if (normalized === 'weekly') return now.getDay() === 0; // Sunday local server time
-  if (normalized === 'monthly') return now.getDate() === 1; // first day local server time
+  if (normalized === 'weekly') return now.dayOfWeek === 0; // Sunday in OPERATIONAL_SYNC_TIME_ZONE
+  if (normalized === 'monthly') return now.dayOfMonth === 1; // first day in OPERATIONAL_SYNC_TIME_ZONE
   return false;
 }
 
@@ -107,7 +143,9 @@ export async function GET(request: NextRequest) {
       )
     );
     
-    console.log(`📊 Found ${connections.length} auto-sync connections (${runnableConnections.length} runnable now)`);
+    console.log(
+      `📊 Found ${connections.length} auto-sync connections (${runnableConnections.length} runnable now) in ${OPERATIONAL_SYNC_TIME_ZONE}`
+    );
     
     if (runnableConnections.length === 0) {
       return NextResponse.json({

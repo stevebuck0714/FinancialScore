@@ -4174,7 +4174,7 @@ export default function SiteAdminDashboard(props: any) {
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
-                                                      <span style={{ fontWeight: 600 }}>Auto Pull Time (Local)</span>
+                                                      <span style={{ fontWeight: 600 }}>Auto Pull Time (America/New_York)</span>
                                                       <select
                                                         value={getCompanyOperationalSettings(company.id).pullTime}
                                                         onChange={(e) =>
@@ -6810,7 +6810,7 @@ export default function SiteAdminDashboard(props: any) {
                                         </select>
                                       </label>
                                       <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155', gridColumn: '2' }}>
-                                        <span style={{ fontWeight: 600 }}>Auto Pull Time (Local)</span>
+                                        <span style={{ fontWeight: 600 }}>Auto Pull Time (America/New_York)</span>
                                         <select
                                           value={operationalSettings.pullTime}
                                           onChange={(e) =>
