@@ -133,7 +133,10 @@ export class QuickBooksAdapter implements AccountingAdapter {
     };
 
     try {
-      const refreshResponse = await oauthClient.refreshUsingToken(this.config.refreshToken);
+      // Use SDK refresh() after setting oauthClient.token; this is the same
+      // path used by the scheduled token refresher and avoids refreshToken
+      // method mismatches seen in production.
+      const refreshResponse = await oauthClient.refresh();
       const newToken = refreshResponse.getJson();
       const accessToken = newToken.access_token || this.config.accessToken;
       const refreshToken = newToken.refresh_token || this.config.refreshToken;
@@ -900,7 +903,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
     }
 
     const [payments, creditMemos, refundReceipts] = await Promise.all([
-      this.runPagedEntityQuery('ReceivePayment', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`),
+      this.runPagedEntityQuery('Payment', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`),
       this.runPagedEntityQuery('CreditMemo', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`),
       this.runPagedEntityQuery('RefundReceipt', `WHERE TxnDate >= '${startStr}' AND TxnDate <= '${endStr}'`),
     ]);
@@ -933,7 +936,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
           paidAmountHome: Number(paymentRecord.TotalAmt || 0),
           sourcePlatform: 'QUICKBOOKS',
           sourceProgram: 'QBO_QUERY',
-          sourceTransaction: 'RECEIVE_PAYMENT',
+          sourceTransaction: 'PAYMENT',
           cono: null,
           divi: null,
         };

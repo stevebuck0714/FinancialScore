@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OAuthClient from 'intuit-oauth';
 import prisma from '@/lib/prisma';
-import crypto from 'crypto';
 import { createMonthlyRecords } from '@/lib/quickbooks-parser';
 import { CompanyLOB } from '@/lib/lob-allocator';
 import {
@@ -13,31 +12,7 @@ import {
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { emitSyncStatus } from '@/lib/websocket-emit';
 import { runOperationalSyncForCompany } from '@/lib/operational-sync/runner';
-
-// Decrypt OAuth tokens using modern cipher
-function decryptToken(encryptedToken: string): string {
-  const key = process.env.OAUTH_ENCRYPTION_KEY || 'default-key-change-me-in-prod';
-  const keyBuffer = Buffer.from(key.substring(0, 64), 'hex');
-  // Split IV and encrypted data
-  const parts = encryptedToken.split(':');
-  const iv = Buffer.from(parts[0], 'hex');
-  const encrypted = parts[1];
-  const decipher = crypto.createDecipheriv('aes-256-cbc', keyBuffer, iv);
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
-
-// Encrypt OAuth tokens using modern cipher
-function encryptToken(token: string): string {
-  const key = process.env.OAUTH_ENCRYPTION_KEY || 'default-key-change-me-in-prod';
-  const keyBuffer = Buffer.from(key.substring(0, 64), 'hex');
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv('aes-256-cbc', keyBuffer, iv);
-  let encrypted = cipher.update(token, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return iv.toString('hex') + ':' + encrypted;
-}
+import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
 
 type FinancialImportMode = 'through' | 'only';
 
@@ -113,8 +88,8 @@ export async function POST(request: NextRequest) {
     let refreshToken: string;
     
     try {
-      accessToken = decryptToken(connection.accessToken);
-      refreshToken = decryptToken(connection.refreshToken);
+      accessToken = decryptOAuthToken(connection.accessToken);
+      refreshToken = decryptOAuthToken(connection.refreshToken);
       console.log('✅ Tokens decrypted successfully');
       console.log('Access token length:', accessToken?.length);
       console.log('Refresh token length:', refreshToken?.length);
@@ -168,8 +143,8 @@ export async function POST(request: NextRequest) {
             },
           },
           data: {
-            accessToken: encryptToken(newToken.access_token),
-            refreshToken: encryptToken(newToken.refresh_token || refreshToken),
+            accessToken: encryptOAuthToken(newToken.access_token),
+            refreshToken: encryptOAuthToken(newToken.refresh_token || refreshToken),
             tokenExpiresAt: new Date(Date.now() + (newToken.expires_in || 3600) * 1000),
             status: 'ACTIVE',
             errorMessage: null,

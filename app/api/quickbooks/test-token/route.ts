@@ -1,19 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import crypto from 'crypto';
-
-// Decrypt OAuth tokens
-function decryptToken(encryptedToken: string): string {
-  const key = process.env.OAUTH_ENCRYPTION_KEY || 'default-key-change-me-in-prod';
-  const keyBuffer = Buffer.from(key.substring(0, 64), 'hex');
-  const parts = encryptedToken.split(':');
-  const iv = Buffer.from(parts[0], 'hex');
-  const encrypted = parts[1];
-  const decipher = crypto.createDecipheriv('aes-256-cbc', keyBuffer, iv);
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
+import { decryptOAuthToken } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +36,7 @@ export async function GET(request: NextRequest) {
     // Decrypt tokens
     let accessToken: string;
     try {
-      accessToken = decryptToken(connection.accessToken);
+      accessToken = decryptOAuthToken(connection.accessToken);
       console.log('✅ Token decryption: SUCCESS');
       console.log('   Access token length:', accessToken.length);
       console.log('   Access token (first 30 chars):', accessToken.substring(0, 30) + '...');

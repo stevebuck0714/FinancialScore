@@ -184,6 +184,8 @@ type MonitorCard = {
   dataType?: OpsDataType;
 };
 type CardSeverity = 'normal' | 'warning' | 'critical' | 'loading';
+const HEAVY_PREFETCH_TYPES: OpsDataType[] = ['ar-aging', 'ap-aging', 'customers', 'products'];
+const OPERATIONAL_DATA_CACHE_TTL_MS = 2 * 60 * 1000;
 
 type InvestigatePlaybook = {
   title: string;
@@ -388,6 +390,8 @@ export default function OperationsTab({
   const [customerMetricModalOpen, setCustomerMetricModalOpen] = useState(false);
   const [customerMetricModalTitle, setCustomerMetricModalTitle] = useState('');
   const [customerMetricModalNames, setCustomerMetricModalNames] = useState<string[]>([]);
+  const operationalDataCacheRef = useRef<Map<string, { fetchedAt: number; data: any }>>(new Map());
+  const operationalDataInflightRef = useRef<Map<string, Promise<any>>>(new Map());
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -738,6 +742,22 @@ export default function OperationsTab({
     };
   }, [activeTab, arData, apData, cashData, inventoryData, customerData, productData, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
 
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    let cancelled = false;
+    HEAVY_PREFETCH_TYPES.forEach((type) => {
+      void fetchOperationalTypeWithCache(type, { preferCache: true })
+        .catch(() => {
+          if (!cancelled) {
+            // Best-effort prefetch.
+          }
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
+
   const loadSummary = async () => {
     setLoading(true);
     setError(null);
@@ -797,6 +817,99 @@ export default function OperationsTab({
     }
   };
 
+  const buildOperationalDataCacheKey = (type: OpsDataType): string => {
+    const requestFrequency = type === 'daily-financials' ? 'daily' : frequency;
+    const rollupToken = type === 'daily-financials' ? dailyFinancialStatementRollup : 'n/a';
+    return [
+      selectedCompanyId,
+      type,
+      requestFrequency,
+      startDate,
+      endDate,
+      String(industrySectorCategory || ''),
+      rollupToken,
+    ].join('|');
+  };
+
+  const getCachedOperationalData = (type: OpsDataType): any | null => {
+    const key = buildOperationalDataCacheKey(type);
+    const cached = operationalDataCacheRef.current.get(key);
+    if (!cached) return null;
+    if (Date.now() - cached.fetchedAt > OPERATIONAL_DATA_CACHE_TTL_MS) {
+      operationalDataCacheRef.current.delete(key);
+      return null;
+    }
+    return cached.data ?? null;
+  };
+
+  const setCachedOperationalData = (type: OpsDataType, data: any) => {
+    const key = buildOperationalDataCacheKey(type);
+    operationalDataCacheRef.current.set(key, { fetchedAt: Date.now(), data });
+  };
+
+  const applyOperationalTypeData = (type: OpsDataType, data: any) => {
+    switch (type) {
+      case 'customers':
+        setCustomerData(data);
+        break;
+      case 'ar-aging':
+        setArData(data);
+        break;
+      case 'ap-aging':
+        setApData(data);
+        break;
+      case 'products':
+        setProductData(data);
+        break;
+      case 'inventory':
+        setInventoryData(data);
+        break;
+      case 'cash':
+        setCashData(data);
+        break;
+      case 'daily-financials':
+        setDailyFinancialData(data);
+        break;
+    }
+  };
+
+  const fetchOperationalTypeWithCache = async (
+    type: OpsDataType,
+    options?: { preferCache?: boolean; forceRefresh?: boolean }
+  ) => {
+    const preferCache = options?.preferCache === true;
+    const forceRefresh = options?.forceRefresh === true;
+    const key = buildOperationalDataCacheKey(type);
+    const cached = getCachedOperationalData(type);
+    if (!forceRefresh && preferCache && cached) {
+      return cached;
+    }
+    const inflight = operationalDataInflightRef.current.get(key);
+    if (inflight) {
+      return inflight;
+    }
+    const request = fetchOperationalType(type)
+      .then((data) => {
+        setCachedOperationalData(type, data);
+        return data;
+      })
+      .finally(() => {
+        operationalDataInflightRef.current.delete(key);
+      });
+    operationalDataInflightRef.current.set(key, request);
+    return request;
+  };
+
+  const prefetchTabData = (tab: string) => {
+    const type = mapModuleToDataType(tab) || null;
+    if (!type || !HEAVY_PREFETCH_TYPES.includes(type)) return;
+    void fetchOperationalTypeWithCache(type, { preferCache: true })
+      .then(() => {})
+      .catch(() => {
+        // Best-effort prefetch.
+      });
+  };
+
   const fetchInventoryUnitCostHistory = async (sku: string) => {
     const trimmedSku = String(sku || '').trim();
     if (!trimmedSku) return [];
@@ -851,39 +964,29 @@ export default function OperationsTab({
   };
 
   const loadTabData = async (tab: string) => {
-    setLoading(true);
-    setError(null);
     try {
       const type = mapModuleToDataType(tab) || null;
       if (!type) {
-        setLoading(false);
         return;
       }
-      const data = await fetchOperationalType(type);
-      
-      switch (type) {
-        case 'customers':
-          setCustomerData(data);
-          break;
-        case 'ar-aging':
-          setArData(data);
-          break;
-        case 'ap-aging':
-          setApData(data);
-          break;
-        case 'products':
-          setProductData(data);
-          break;
-        case 'inventory':
-          setInventoryData(data);
-          break;
-        case 'cash':
-          setCashData(data);
-          break;
-        case 'daily-financials':
-          setDailyFinancialData(data);
-          break;
+      const cached = getCachedOperationalData(type);
+      if (cached) {
+        applyOperationalTypeData(type, cached);
+        setError(null);
+        setLoading(false);
+        void fetchOperationalTypeWithCache(type, { forceRefresh: true })
+          .then((fresh) => {
+            if (fresh) applyOperationalTypeData(type, fresh);
+          })
+          .catch(() => {
+            // Keep cached data visible if background refresh fails.
+          });
+        return;
       }
+      setLoading(true);
+      setError(null);
+      const data = await fetchOperationalTypeWithCache(type, { preferCache: true });
+      applyOperationalTypeData(type, data);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -7993,6 +8096,7 @@ export default function OperationsTab({
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
+            onMouseEnter={() => prefetchTabData(tab)}
             style={{
               background: 'none',
               border: 'none',
