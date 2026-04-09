@@ -535,6 +535,46 @@ function normalizeTransactions(row: any): string[] {
   return legacy ? [legacy] : [];
 }
 
+const BLOCKED_PROGRAM_PROPERTIES: Record<string, Set<string>> = {
+  SLAPPMTS: new Set(['business_identifier_code']),
+};
+
+function inferProgramIdFromEndpointPath(endpointPath: string): string {
+  const raw = String(endpointPath || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/\/load\/([^/?]+)/i);
+  return String(match?.[1] || '').trim().toUpperCase();
+}
+
+function sanitizeProgramProperties(programId: string, properties: string[]): string[] {
+  const blocked = BLOCKED_PROGRAM_PROPERTIES[String(programId || '').trim().toUpperCase()];
+  if (!blocked || blocked.size === 0) return properties;
+  return properties.filter((property) => !blocked.has(String(property || '').trim().toLowerCase()));
+}
+
+function sanitizeEndpointPathProperties(endpointPath: string, explicitProgramId?: string): string {
+  const raw = String(endpointPath || '').trim();
+  if (!raw) return raw;
+  const [path, queryString = ''] = raw.split('?');
+  const params = new URLSearchParams(queryString);
+  const current = String(params.get('properties') || '').trim();
+  if (!current) return raw;
+  const programId = String(explicitProgramId || inferProgramIdFromEndpointPath(path)).trim().toUpperCase();
+  const blocked = BLOCKED_PROGRAM_PROPERTIES[programId];
+  if (!blocked || blocked.size === 0) return raw;
+  const filtered = current
+    .split(',')
+    .map((token) => token.trim())
+    .filter((token) => token && !blocked.has(token.toLowerCase()));
+  if (filtered.length === 0) {
+    params.delete('properties');
+  } else {
+    params.set('properties', filtered.join(','));
+  }
+  const next = params.toString();
+  return next ? `${path}?${next}` : path;
+}
+
 function parsePrograms(value: unknown): InforProgramRow[] {
   if (!Array.isArray(value)) return [];
   const rows: InforProgramRow[] = [];
@@ -546,15 +586,17 @@ function parsePrograms(value: unknown): InforProgramRow[] {
     const cono = typeof row?.cono === 'string' ? row.cono.trim() : '';
     const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
     const endpointPathRaw = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
-    const endpointPath = endpointPathRaw;
+    const inferredProgramId = String(miProgram || inferProgramIdFromEndpointPath(endpointPathRaw)).trim().toUpperCase();
+    const endpointPath = sanitizeEndpointPathProperties(endpointPathRaw, inferredProgramId);
     const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
     const site = typeof row?.site === 'string' ? row.site.trim() : '';
     const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
-    const properties = Array.isArray(row?.properties)
+    const rawProperties = Array.isArray(row?.properties)
       ? row.properties
           .map((value: unknown) => (typeof value === 'string' ? value.trim() : ''))
           .filter(Boolean)
       : [];
+    const properties = sanitizeProgramProperties(inferredProgramId, rawProperties);
     const enabled = typeof row?.enabled === 'boolean' ? row.enabled : true;
     if (!enabled || !module) continue;
     if (!endpointPath && !miProgram) continue;
@@ -1706,7 +1748,8 @@ function resolveRawSourceRecordId(record: Record<string, unknown>): string | nul
 
 function buildCsiEndpointPath(row: InforProgramRow): string | null {
   if (row.endpointPath && row.endpointPath.length > 0) {
-    const raw = row.endpointPath;
+    const explicitProgramId = String(row.miProgram || inferProgramIdFromEndpointPath(row.endpointPath)).trim().toUpperCase();
+    const raw = sanitizeEndpointPathProperties(row.endpointPath, explicitProgramId);
     if (/\/IDORequestService\/ido\/load\//i.test(raw)) {
       // Force explicit FIRST mode for initial calls and strip stale bookmarks.
       return normalizeCsiLoadPaging(raw, 'FIRST');
@@ -6238,18 +6281,23 @@ export async function syncInforM3OperationalData(
       ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
       : {};
 
-  const configuredSystemProgramsRaw = programsBySystem[inforSystem];
+  const hasSystemProgramKey = Object.prototype.hasOwnProperty.call(programsBySystem, inforSystem);
+  const configuredSystemProgramsRaw = hasSystemProgramKey ? programsBySystem[inforSystem] : null;
   const configuredSystemPrograms =
-    Array.isArray(configuredSystemProgramsRaw) && configuredSystemProgramsRaw.length > 0
+    Array.isArray(configuredSystemProgramsRaw)
       ? configuredSystemProgramsRaw
       : null;
   const configuredGlobalPrograms =
     Array.isArray(metadata.accountingPrograms) && metadata.accountingPrograms.length > 0
       ? metadata.accountingPrograms
       : null;
-  const hasAnyConfiguredProgramSet = Boolean(configuredSystemPrograms || configuredGlobalPrograms);
+  const hasAnyConfiguredProgramSet = hasSystemProgramKey || Boolean(configuredGlobalPrograms);
+  const configuredProgramSource =
+    hasSystemProgramKey
+      ? configuredSystemPrograms
+      : configuredGlobalPrograms;
 
-  const parsedProgramRows = parsePrograms(configuredSystemPrograms ?? configuredGlobalPrograms).filter(
+  const parsedProgramRows = parsePrograms(configuredProgramSource).filter(
     (row) => row.module.trim().toLowerCase() !== 'accounts'
   );
   if (hasAnyConfiguredProgramSet && parsedProgramRows.length === 0) {
