@@ -227,6 +227,12 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
           fileName: `AUTO_MONTH_END_PUBLISH_${targetMonth}`,
           rawData: {
             source: 'DAILY_FINANCIAL_MONTH_END',
+            sourceBasis: 'mapped_daily_snapshots',
+            statementCurrency: 'USD',
+            rollupPolicy: {
+              incomeStatement: 'sum_daily_activity',
+              balanceSheet: 'month_end_snapshot',
+            },
             month: targetMonth,
           },
           columnMapping: {},
@@ -266,6 +272,9 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
       )
     );
 
+    const publishNotes = force
+      ? 'Force publish | basis=mapped_daily_snapshots | currency=USD | IS=sum_daily_activity | BS=month_end_snapshot'
+      : 'basis=mapped_daily_snapshots | currency=USD | IS=sum_daily_activity | BS=month_end_snapshot';
     await publishDelegate.upsert({
       where: { companyId_monthStart: { companyId, monthStart: targetMonthStart } },
       create: {
@@ -276,14 +285,14 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
         publishedAt: new Date(),
         sourceSnapshotDays: snapshots.length,
         sourceRunIds,
-        notes: force ? 'Force publish' : null,
+        notes: publishNotes,
       },
       update: {
         status: 'PUBLISHED',
         publishedAt: new Date(),
         sourceSnapshotDays: snapshots.length,
         sourceRunIds,
-        notes: force ? 'Force publish' : null,
+        notes: publishNotes,
       },
     });
 

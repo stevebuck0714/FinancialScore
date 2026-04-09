@@ -345,6 +345,7 @@ export default function OperationsTab({
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
   const [dailyFinancialView, setDailyFinancialView] = useState<'summary' | 'income' | 'balance' | 'cashflow'>('summary');
+  const [dailyFinancialStatementRollup, setDailyFinancialStatementRollup] = useState<'daily' | 'quarterly' | 'annual'>('daily');
   const [selectedDailyTrendMetrics, setSelectedDailyTrendMetrics] = useState<Array<'revenue' | 'expense' | 'net' | 'cash' | 'grossMargin' | 'marginPct'>>([
     'revenue',
     'expense',
@@ -606,7 +607,7 @@ export default function OperationsTab({
     if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
       loadTabData(activeTab);
     }
-  }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate]);
+  }, [activeTab, selectedCompanyId, industrySectorCategory, frequency, startDate, endDate, dailyFinancialStatementRollup]);
 
   useEffect(() => {
     setCompanyOperationalHubConfig(operationalHubConfig || null);
@@ -759,14 +760,21 @@ export default function OperationsTab({
   const fetchOperationalType = async (type: OpsDataType) => {
     const typeLimit = type === 'customers' || type === 'products' ? 500 : 1000;
     const timeoutMs = type === 'customers' || type === 'products' ? 45000 : 25000;
+    const requestFrequency = type === 'daily-financials' ? 'daily' : frequency;
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       type,
-      frequency,
+      frequency: requestFrequency,
       startDate,
       endDate,
       limit: String(typeLimit),
       ...(industrySectorCategory ? { sectorCategory: industrySectorCategory } : {}),
+      ...(type === 'daily-financials'
+        ? {
+            statementRollup: dailyFinancialStatementRollup,
+            currency: 'USD',
+          }
+        : {}),
     });
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -6204,6 +6212,262 @@ export default function OperationsTab({
     };
     const rangeStartKey = /^\d{4}-\d{2}-\d{2}$/.test(String(startDate || '')) ? String(startDate) : null;
     const rangeEndKey = /^\d{4}-\d{2}-\d{2}$/.test(String(endDate || '')) ? String(endDate) : null;
+    const statementRecordsRaw = Array.isArray(dailyFinancialData?.statementRecords) ? dailyFinancialData.statementRecords : [];
+    const statementCurrency = String(summary?.statementCurrency || 'USD').toUpperCase();
+    const isRollupMode = dailyFinancialStatementRollup !== 'daily';
+    if (isRollupMode) {
+      const sortedRollupRecords = statementRecordsRaw
+        .map((row: any) => {
+          const periodStart = new Date(String(row?.periodStart || ''));
+          const periodEnd = new Date(String(row?.periodEnd || ''));
+          return {
+            ...row,
+            periodStart,
+            periodEnd,
+          };
+        })
+        .filter((row: any) => !Number.isNaN(row.periodStart.getTime()) && !Number.isNaN(row.periodEnd.getTime()))
+        .filter((row: any) => {
+          const rowStartKey = `${row.periodStart.getUTCFullYear()}-${String(row.periodStart.getUTCMonth() + 1).padStart(2, '0')}-${String(row.periodStart.getUTCDate()).padStart(2, '0')}`;
+          const rowEndKey = `${row.periodEnd.getUTCFullYear()}-${String(row.periodEnd.getUTCMonth() + 1).padStart(2, '0')}-${String(row.periodEnd.getUTCDate()).padStart(2, '0')}`;
+          // Keep rollup rows that overlap the selected date window.
+          if (rangeStartKey && rowEndKey < rangeStartKey) return false;
+          if (rangeEndKey && rowStartKey > rangeEndKey) return false;
+          return true;
+        })
+        .sort((a: any, b: any) => b.periodStart.getTime() - a.periodStart.getTime());
+
+      const maxRollupStart = Math.max(0, sortedRollupRecords.length - 24);
+      const rollupWindowStart = Math.min(dailyFinancialWindowStart, maxRollupStart);
+      const rollupWindow = sortedRollupRecords.slice(rollupWindowStart, rollupWindowStart + 24);
+      const rollupDays = rollupWindow.map((row: any) => ({
+        dateKey: String(row.periodKey || ''),
+        dateLabel: String(row.periodKey || toDisplayDate(row.periodStart)),
+        revenue: Number(row.revenue || 0),
+        cogsTotal: Number(row.cogsTotal || 0),
+        expense: Number(row.expense || 0),
+        grossProfit: Number(row.revenue || 0) - Number(row.cogsTotal || 0),
+        netIncome: Number(row.netIncome || (Number(row.revenue || 0) - Number(row.cogsTotal || 0) - Number(row.expense || 0))),
+        cash: Number(row.cash || 0),
+        ar: Number(row.ar || 0),
+        otherCA: Number(row.otherCA || 0),
+        tca: Number(row.tca || 0),
+        inventory: Number(row.inventory || 0),
+        fixedAssets: Number(row.fixedAssets || 0),
+        otherAssets: Number(row.otherAssets || 0),
+        ap: Number(row.ap || 0),
+        loc: Number(row.loc || 0),
+        otherCL: Number(row.otherCL || 0),
+        tcl: Number(row.tcl || 0),
+        ltd: Number(row.ltd || 0),
+        ownersCapital: Number(row.ownersCapital || 0),
+        ownersDraw: Number(row.ownersDraw || 0),
+        commonStock: Number(row.commonStock || 0),
+        preferredStock: Number(row.preferredStock || 0),
+        retainedEarnings: Number(row.retainedEarnings || 0),
+        additionalPaidInCapital: Number(row.additionalPaidInCapital || 0),
+        treasuryStock: Number(row.treasuryStock || 0),
+        totalAssets: Number(row.totalAssets || 0),
+        totalLiab: Number(row.totalLiab || 0),
+        totalEquity: Number(row.totalEquity || 0),
+        totalLAndE: Number(row.totalLAndE || 0),
+        sourceDays: Number(row.sourceDays || 0),
+      }));
+      const rollupByKey = rollupDays.reduce<Record<string, any>>((acc, row: any) => {
+        acc[row.dateKey] = row;
+        return acc;
+      }, {});
+      const rollupKeys = rollupDays.map((row: any) => row.dateKey);
+      const rollupSeries = (field: string): Record<string, number> =>
+        rollupKeys.reduce<Record<string, number>>((acc, key) => {
+          acc[key] = Number(rollupByKey[key]?.[field] || 0);
+          return acc;
+        }, {});
+      const incomeRowDefs = [
+        { label: 'Total Revenue', styleType: 'section', valuesByDate: rollupSeries('revenue') },
+        { label: 'Total COGS', styleType: 'subtotal', valuesByDate: rollupSeries('cogsTotal') },
+        { label: 'GROSS PROFIT', styleType: 'subtotal', valuesByDate: rollupSeries('grossProfit') },
+        { label: 'Total Operating Expenses', styleType: 'subtotal', valuesByDate: rollupSeries('expense') },
+        { label: getFieldDisplayName('netIncome'), styleType: 'total', valuesByDate: rollupSeries('netIncome') },
+      ] as Array<{ label: string; styleType: 'section' | 'subtotal' | 'total'; valuesByDate: Record<string, number> }>;
+      const balanceRowDefs = [
+        { label: 'Current Assets', styleType: 'section', valuesByDate: rollupSeries('tca') },
+        { label: getFieldDisplayName('cash'), styleType: 'normal', valuesByDate: rollupSeries('cash') },
+        { label: getFieldDisplayName('accountsReceivable'), styleType: 'normal', valuesByDate: rollupSeries('ar') },
+        { label: getFieldDisplayName('inventory'), styleType: 'normal', valuesByDate: rollupSeries('inventory') },
+        { label: getFieldDisplayName('otherCurrentAssets'), styleType: 'normal', valuesByDate: rollupSeries('otherCA') },
+        { label: getFieldDisplayName('totalCurrentAssets'), styleType: 'subtotal', valuesByDate: rollupSeries('tca') },
+        { label: 'Long-Term Assets', styleType: 'section', valuesByDate: rollupSeries('fixedAssets') },
+        { label: getFieldDisplayName('fixedAssets'), styleType: 'normal', valuesByDate: rollupSeries('fixedAssets') },
+        { label: getFieldDisplayName('otherAssets'), styleType: 'normal', valuesByDate: rollupSeries('otherAssets') },
+        { label: 'Current Liabilities', styleType: 'section', valuesByDate: rollupSeries('tcl') },
+        { label: getFieldDisplayName('accountsPayable'), styleType: 'normal', valuesByDate: rollupSeries('ap') },
+        { label: getFieldDisplayName('loc'), styleType: 'normal', valuesByDate: rollupSeries('loc') },
+        { label: getFieldDisplayName('otherCurrentLiabilities'), styleType: 'normal', valuesByDate: rollupSeries('otherCL') },
+        { label: getFieldDisplayName('totalCurrentLiabilities'), styleType: 'subtotal', valuesByDate: rollupSeries('tcl') },
+        { label: 'Long-Term Liabilities', styleType: 'section', valuesByDate: rollupSeries('ltd') },
+        { label: getFieldDisplayName('longTermDebt'), styleType: 'normal', valuesByDate: rollupSeries('ltd') },
+        { label: getFieldDisplayName('totalAssets'), styleType: 'total', valuesByDate: rollupSeries('totalAssets') },
+        { label: getFieldDisplayName('totalLiabilities'), styleType: 'subtotal', valuesByDate: rollupSeries('totalLiab') },
+        { label: 'Equity', styleType: 'section', valuesByDate: rollupSeries('totalEquity') },
+        { label: getFieldDisplayName('ownersCapital'), styleType: 'normal', valuesByDate: rollupSeries('ownersCapital') },
+        { label: getFieldDisplayName('ownersDraw'), styleType: 'normal', valuesByDate: rollupSeries('ownersDraw') },
+        { label: getFieldDisplayName('commonStock'), styleType: 'normal', valuesByDate: rollupSeries('commonStock') },
+        { label: getFieldDisplayName('preferredStock'), styleType: 'normal', valuesByDate: rollupSeries('preferredStock') },
+        { label: getFieldDisplayName('retainedEarnings'), styleType: 'normal', valuesByDate: rollupSeries('retainedEarnings') },
+        { label: getFieldDisplayName('additionalPaidInCapital'), styleType: 'normal', valuesByDate: rollupSeries('additionalPaidInCapital') },
+        { label: getFieldDisplayName('treasuryStock'), styleType: 'normal', valuesByDate: rollupSeries('treasuryStock') },
+        { label: getFieldDisplayName('totalEquity'), styleType: 'subtotal', valuesByDate: rollupSeries('totalEquity') },
+        { label: getFieldDisplayName('totalLiabilitiesAndEquity'), styleType: 'total', valuesByDate: rollupSeries('totalLAndE') },
+      ] as Array<{ label: string; styleType: 'normal' | 'section' | 'subtotal' | 'total'; valuesByDate: Record<string, number> }>;
+      const statementRowStyle = (
+        styleType: 'normal' | 'section' | 'subtotal' | 'total' | undefined
+      ): { rowBg: string; textColor: string; weight: 400 | 500 | 600 | 700 } => {
+        if (styleType === 'section') return { rowBg: '#f8fafc', textColor: '#1e293b', weight: 600 };
+        if (styleType === 'subtotal') return { rowBg: '#dbeafe', textColor: '#1e40af', weight: 700 };
+        if (styleType === 'total') return { rowBg: '#16a34a', textColor: '#ffffff', weight: 700 };
+        return { rowBg: '#ffffff', textColor: '#334155', weight: 400 };
+      };
+      const tabButtonStyle = (active: boolean): React.CSSProperties => ({
+        background: active ? '#eef2ff' : 'white',
+        border: active ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
+        color: active ? '#3730a3' : '#475569',
+        borderRadius: '8px',
+        padding: '8px 12px',
+        fontSize: '13px',
+        fontWeight: 600,
+        cursor: 'pointer',
+      });
+      const latestRollup = rollupDays[0] || null;
+
+      return (
+        <div>
+          <div className="ops-print-hide" style={{ padding: '8px 24px 0', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button style={tabButtonStyle(dailyFinancialView === 'summary')} onClick={() => setDailyFinancialView('summary')}>Summary</button>
+            {isSectionEnabled('dailyIncomeStatement') && (
+              <button style={tabButtonStyle(dailyFinancialView === 'income')} onClick={() => setDailyFinancialView('income')}>Income Statements</button>
+            )}
+            {isSectionEnabled('dailyBalanceSheet') && (
+              <button style={tabButtonStyle(dailyFinancialView === 'balance')} onClick={() => setDailyFinancialView('balance')}>Balance Sheets</button>
+            )}
+            {isSectionEnabled('dailyCashflowStatement') && (
+              <button style={tabButtonStyle(dailyFinancialView === 'cashflow')} onClick={() => setDailyFinancialView('cashflow')}>Cash Flow Statement</button>
+            )}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>Rollup</span>
+              <button style={tabButtonStyle(dailyFinancialStatementRollup === 'daily')} onClick={() => setDailyFinancialStatementRollup('daily')}>Daily</button>
+              <button style={tabButtonStyle(dailyFinancialStatementRollup === 'quarterly')} onClick={() => setDailyFinancialStatementRollup('quarterly')}>Quarterly</button>
+              <button style={tabButtonStyle(dailyFinancialStatementRollup === 'annual')} onClick={() => setDailyFinancialStatementRollup('annual')}>Annual</button>
+            </div>
+          </div>
+
+          <div style={{ padding: '12px 24px 24px' }}>
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ color: '#334155', fontSize: '13px', fontWeight: 600 }}>
+                  Showing {rollupWindow.length} periods ({rollupWindowStart + 1}-{Math.min(rollupWindowStart + 24, sortedRollupRecords.length)} of {sortedRollupRecords.length}, newest first)
+                </span>
+                <span style={{ color: '#64748b', fontSize: '12px' }}>Currency: {statementCurrency}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={maxRollupStart}
+                step={1}
+                value={rollupWindowStart}
+                onChange={(event) => setDailyFinancialWindowStart(Number(event.target.value))}
+                style={{ width: '100%' }}
+                disabled={maxRollupStart === 0}
+              />
+            </div>
+
+            {dailyFinancialView === 'summary' && (
+              <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ color: '#3b82f6', fontSize: '12px' }}>Latest {dailyFinancialStatementRollup} Revenue</div>
+                  <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(latestRollup?.revenue || 0))}</div>
+                </div>
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ color: '#ef4444', fontSize: '12px' }}>Latest {dailyFinancialStatementRollup} Expense</div>
+                  <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(latestRollup?.expense || 0))}</div>
+                </div>
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ color: '#10b981', fontSize: '12px' }}>Latest {dailyFinancialStatementRollup} Net Income</div>
+                  <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(latestRollup?.netIncome || 0))}</div>
+                </div>
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ color: '#8b5cf6', fontSize: '12px' }}>Latest Balance Sheet Cash</div>
+                  <div style={{ color: '#0f172a', fontSize: '24px', fontWeight: 700 }}>{formatCurrency(Number(latestRollup?.cash || 0))}</div>
+                </div>
+              </div>
+            )}
+
+            {dailyFinancialView === 'income' && (
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: '920px', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                      {['Account', ...rollupDays.map((day: any) => day.dateLabel)].map((header) => (
+                        <th key={header} style={{ textAlign: 'left', padding: '10px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #e2e8f0' }}>{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incomeRowDefs.map((rowDef) => (
+                      <tr key={rowDef.label} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
+                          {rowDef.label}
+                        </td>
+                        {rollupDays.map((day: any) => (
+                          <td key={`${rowDef.label}-${day.dateKey}`} style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontSize: '12px', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
+                            {formatCurrency(Number(rowDef.valuesByDate[day.dateKey] || 0))}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {dailyFinancialView === 'balance' && (
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: '920px', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                      {['Account', ...rollupDays.map((day: any) => day.dateLabel)].map((header) => (
+                        <th key={header} style={{ textAlign: 'left', padding: '10px', fontSize: '12px', color: '#334155', borderBottom: '1px solid #e2e8f0' }}>{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {balanceRowDefs.map((rowDef) => (
+                      <tr key={rowDef.label} style={{ background: statementRowStyle(rowDef.styleType).rowBg }}>
+                        <td style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
+                          {rowDef.label}
+                        </td>
+                        {rollupDays.map((day: any) => (
+                          <td key={`${rowDef.label}-${day.dateKey}`} style={{ padding: '10px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontSize: '12px', fontWeight: statementRowStyle(rowDef.styleType).weight, color: statementRowStyle(rowDef.styleType).textColor, whiteSpace: 'nowrap' }}>
+                            {formatCurrency(Number(rowDef.valuesByDate[day.dateKey] || 0))}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {dailyFinancialView === 'cashflow' && (
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px', color: '#64748b', fontSize: '13px' }}>
+                Cash flow statement proxy remains daily-only. Switch rollup to Daily to view it.
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     const hasNonZero = (value: unknown): boolean => Number(value || 0) !== 0;
     const rowCompletenessScore = (row: any): number => {
       const fields = [
@@ -6786,6 +7050,12 @@ export default function OperationsTab({
           {isSectionEnabled('dailyCashflowStatement') && (
             <button style={tabButtonStyle(dailyFinancialView === 'cashflow')} onClick={() => setDailyFinancialView('cashflow')}>Cash Flow Statement</button>
           )}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', color: '#64748b' }}>Rollup</span>
+            <button style={tabButtonStyle(dailyFinancialStatementRollup === 'daily')} onClick={() => setDailyFinancialStatementRollup('daily')}>Daily</button>
+            <button style={tabButtonStyle(dailyFinancialStatementRollup === 'quarterly')} onClick={() => setDailyFinancialStatementRollup('quarterly')}>Quarterly</button>
+            <button style={tabButtonStyle(dailyFinancialStatementRollup === 'annual')} onClick={() => setDailyFinancialStatementRollup('annual')}>Annual</button>
+          </div>
         </div>
 
         {dailyFinancialView === 'summary' && (

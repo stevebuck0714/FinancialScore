@@ -2625,8 +2625,14 @@ async function saveBalanceMovementsFromGl(
       .toLowerCase()
       .replace(/\s+/g, ' ')
       .trim();
+    const normalizedWordText = text.replace(/[^a-z0-9]+/g, ' ').trim();
     const targets = new Set<string>();
     const has = (token: string): boolean => text.includes(token);
+    const hasWord = (token: string): boolean => {
+      const escaped = String(token || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (!escaped) return false;
+      return new RegExp(`\\b${escaped}\\b`, 'i').test(normalizedWordText);
+    };
 
     const indicatesAsset =
       accountTypeText.startsWith('a') ||
@@ -2677,7 +2683,8 @@ async function saveBalanceMovementsFromGl(
     if (indicatesLiability) {
       targets.add('totalLiab');
       if (has('payable') || has('a/p') || has(' ap')) targets.add('ap');
-      if (has('line of credit') || has('loc')) targets.add('loc');
+      // Avoid accidental matches like "allocation" or "local".
+      if (has('line of credit') || hasWord('loc')) targets.add('loc');
       if (has('long term') || has('long-term') || has('non current')) targets.add('ltd');
       if (has('current liab') || has('other current')) targets.add('otherCL');
     }

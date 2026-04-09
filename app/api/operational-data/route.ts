@@ -163,6 +163,262 @@ function monthStartFromBusinessMonthKey(key: string): Date {
   return new Date(Date.UTC(year, month - 1, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
 }
 
+type StatementRollup = 'daily' | 'quarterly' | 'annual';
+
+const DAILY_STATEMENT_INCOME_FIELDS = ['revenue', 'cogsTotal', 'expense'] as const;
+const DAILY_STATEMENT_BALANCE_FIELDS = [
+  'cash',
+  'ar',
+  'ap',
+  'inventory',
+  'otherCA',
+  'tca',
+  'fixedAssets',
+  'otherAssets',
+  'loc',
+  'otherCL',
+  'tcl',
+  'ltd',
+  'ownersCapital',
+  'ownersDraw',
+  'commonStock',
+  'preferredStock',
+  'retainedEarnings',
+  'additionalPaidInCapital',
+  'treasuryStock',
+  'totalAssets',
+  'totalLiab',
+  'totalEquity',
+  'totalLAndE',
+] as const;
+
+function startOfBusinessQuarterByDate(date: Date): Date {
+  const shifted = shiftToBusinessTz(date);
+  const quarterStartMonth = Math.floor(shifted.getUTCMonth() / 3) * 3;
+  return new Date(Date.UTC(shifted.getUTCFullYear(), quarterStartMonth, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+}
+
+function endOfBusinessQuarterByDate(date: Date): Date {
+  const start = startOfBusinessQuarterByDate(date);
+  return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 3, 0, 23, 59, 59, 999));
+}
+
+function startOfBusinessYearByDate(date: Date): Date {
+  const shifted = shiftToBusinessTz(date);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), 0, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+}
+
+function endOfBusinessYearByDate(date: Date): Date {
+  const start = startOfBusinessYearByDate(date);
+  return new Date(Date.UTC(start.getUTCFullYear() + 1, 0, 0, 23, 59, 59, 999));
+}
+
+function statementRollupKey(date: Date, rollup: StatementRollup): string {
+  const shifted = shiftToBusinessTz(date);
+  if (rollup === 'daily') {
+    return dateKeyUtc(date);
+  }
+  if (rollup === 'quarterly') {
+    const quarter = Math.floor(shifted.getUTCMonth() / 3) + 1;
+    return `${shifted.getUTCFullYear()}-Q${quarter}`;
+  }
+  return String(shifted.getUTCFullYear());
+}
+
+function aggregateDailyStatementRows(
+  rows: any[],
+  rollup: StatementRollup
+): Array<{
+  periodKey: string;
+  periodStart: string;
+  periodEnd: string;
+  sourceDays: number;
+  revenue: number;
+  cogsTotal: number;
+  expense: number;
+  netIncome: number;
+  cash: number;
+  ar: number;
+  ap: number;
+  inventory: number;
+  otherCA: number;
+  tca: number;
+  fixedAssets: number;
+  otherAssets: number;
+  loc: number;
+  otherCL: number;
+  tcl: number;
+  ltd: number;
+  ownersCapital: number;
+  ownersDraw: number;
+  commonStock: number;
+  preferredStock: number;
+  retainedEarnings: number;
+  additionalPaidInCapital: number;
+  treasuryStock: number;
+  totalAssets: number;
+  totalLiab: number;
+  totalEquity: number;
+  totalLAndE: number;
+}> {
+  const buckets = new Map<
+    string,
+    {
+      periodStart: Date;
+      periodEnd: Date;
+      sourceDays: Set<string>;
+      revenue: number;
+      cogsTotal: number;
+      expense: number;
+      cash: number;
+      ar: number;
+      ap: number;
+      inventory: number;
+      otherCA: number;
+      tca: number;
+      fixedAssets: number;
+      otherAssets: number;
+      loc: number;
+      otherCL: number;
+      tcl: number;
+      ltd: number;
+      ownersCapital: number;
+      ownersDraw: number;
+      commonStock: number;
+      preferredStock: number;
+      retainedEarnings: number;
+      additionalPaidInCapital: number;
+      treasuryStock: number;
+      totalAssets: number;
+      totalLiab: number;
+      totalEquity: number;
+      totalLAndE: number;
+      lastSnapshotDate: Date | null;
+    }
+  >();
+
+  const normalizedRows = [...rows]
+    .filter((row) => row?.snapshotDate)
+    .sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
+
+  for (const row of normalizedRows) {
+    const snapshotDate = new Date(row.snapshotDate);
+    if (Number.isNaN(snapshotDate.getTime())) continue;
+    const key = statementRollupKey(snapshotDate, rollup);
+    if (!buckets.has(key)) {
+      const periodStart =
+        rollup === 'daily'
+          ? startOfUtcDay(snapshotDate)
+          : rollup === 'quarterly'
+            ? startOfBusinessQuarterByDate(snapshotDate)
+            : startOfBusinessYearByDate(snapshotDate);
+      const periodEnd =
+        rollup === 'daily'
+          ? endOfUtcDay(snapshotDate)
+          : rollup === 'quarterly'
+            ? endOfBusinessQuarterByDate(snapshotDate)
+            : endOfBusinessYearByDate(snapshotDate);
+      buckets.set(key, {
+        periodStart,
+        periodEnd,
+        sourceDays: new Set<string>(),
+        revenue: 0,
+        cogsTotal: 0,
+        expense: 0,
+        cash: 0,
+        ar: 0,
+        ap: 0,
+        inventory: 0,
+        otherCA: 0,
+        tca: 0,
+        fixedAssets: 0,
+        otherAssets: 0,
+        loc: 0,
+        otherCL: 0,
+        tcl: 0,
+        ltd: 0,
+        ownersCapital: 0,
+        ownersDraw: 0,
+        commonStock: 0,
+        preferredStock: 0,
+        retainedEarnings: 0,
+        additionalPaidInCapital: 0,
+        treasuryStock: 0,
+        totalAssets: 0,
+        totalLiab: 0,
+        totalEquity: 0,
+        totalLAndE: 0,
+        lastSnapshotDate: null,
+      });
+    }
+
+    const bucket = buckets.get(key)!;
+    bucket.sourceDays.add(dateKeyUtc(snapshotDate));
+    for (const field of DAILY_STATEMENT_INCOME_FIELDS) {
+      bucket[field] += Number(row?.[field] || 0);
+    }
+    if (!bucket.lastSnapshotDate || snapshotDate.getTime() >= bucket.lastSnapshotDate.getTime()) {
+      bucket.lastSnapshotDate = snapshotDate;
+      for (const field of DAILY_STATEMENT_BALANCE_FIELDS) {
+        bucket[field] = Number(row?.[field] || 0);
+      }
+    }
+  }
+
+  return Array.from(buckets.entries())
+    .sort((a, b) => a[1].periodStart.getTime() - b[1].periodStart.getTime())
+    .map(([periodKey, bucket]) => {
+      const tca = bucket.tca !== 0 ? bucket.tca : bucket.cash + bucket.ar + bucket.inventory + bucket.otherCA;
+      const totalAssets = bucket.totalAssets !== 0 ? bucket.totalAssets : tca + bucket.fixedAssets + bucket.otherAssets;
+      const tcl = bucket.tcl !== 0 ? bucket.tcl : bucket.ap + bucket.loc + bucket.otherCL;
+      const totalLiab = bucket.totalLiab !== 0 ? bucket.totalLiab : tcl + bucket.ltd;
+      const totalEquity =
+        bucket.totalEquity !== 0
+          ? bucket.totalEquity
+          : bucket.ownersCapital +
+            bucket.ownersDraw +
+            bucket.commonStock +
+            bucket.preferredStock +
+            bucket.retainedEarnings +
+            bucket.additionalPaidInCapital +
+            bucket.treasuryStock;
+      const totalLAndE = bucket.totalLAndE !== 0 ? bucket.totalLAndE : totalLiab + totalEquity;
+      return {
+        periodKey,
+        periodStart: bucket.periodStart.toISOString(),
+        periodEnd: bucket.periodEnd.toISOString(),
+        sourceDays: bucket.sourceDays.size,
+        revenue: bucket.revenue,
+        cogsTotal: bucket.cogsTotal,
+        expense: bucket.expense,
+        netIncome: bucket.revenue - bucket.cogsTotal - bucket.expense,
+        cash: bucket.cash,
+        ar: bucket.ar,
+        ap: bucket.ap,
+        inventory: bucket.inventory,
+        otherCA: bucket.otherCA,
+        tca,
+        fixedAssets: bucket.fixedAssets,
+        otherAssets: bucket.otherAssets,
+        loc: bucket.loc,
+        otherCL: bucket.otherCL,
+        tcl,
+        ltd: bucket.ltd,
+        ownersCapital: bucket.ownersCapital,
+        ownersDraw: bucket.ownersDraw,
+        commonStock: bucket.commonStock,
+        preferredStock: bucket.preferredStock,
+        retainedEarnings: bucket.retainedEarnings,
+        additionalPaidInCapital: bucket.additionalPaidInCapital,
+        treasuryStock: bucket.treasuryStock,
+        totalAssets,
+        totalLiab,
+        totalEquity,
+        totalLAndE,
+      };
+    });
+}
+
 async function getHydratedInforBusinessDates(
   companyId: string,
   startDate: Date,
@@ -783,6 +1039,16 @@ export async function GET(request: NextRequest) {
         .trim()
         .toLowerCase()
     );
+    const statementCurrency = String(searchParams.get('currency') || 'USD')
+      .trim()
+      .toUpperCase();
+    const rawStatementRollup = String(searchParams.get('statementRollup') || 'daily')
+      .trim()
+      .toLowerCase();
+    const statementRollup: StatementRollup =
+      rawStatementRollup === 'quarterly' || rawStatementRollup === 'annual'
+        ? (rawStatementRollup as StatementRollup)
+        : 'daily';
     const frequency = (searchParams.get('frequency') || 'monthly') as 'daily' | 'weekly' | 'monthly';
     const limit = parseInt(searchParams.get('limit') || '1000');
     const boundedLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 100), 5000) : 1000;
@@ -4963,23 +5229,39 @@ export async function GET(request: NextRequest) {
         // Financial snapshots used by Operations (daily/weekly/monthly).
         const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
         const dailyMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
+        if (statementCurrency !== 'USD') {
+          return NextResponse.json(
+            { error: `Unsupported currency "${statementCurrency}". Daily financial statements currently support USD only.` },
+            { status: 400 }
+          );
+        }
         if (!dailySnapshotDelegate) {
           return NextResponse.json({
             records: [],
+            statementRecords: [],
             summary: {
               latestRevenue: 0,
               latestExpense: 0,
               latestNet: 0,
               latestCash: 0,
+              statementCurrency: 'USD',
+              statementRollup,
               message: 'Daily financial snapshots model not available yet.',
             },
           });
         }
 
+        const requestedFinancialFrequency = String(searchParams.get('frequency') || '')
+          .trim()
+          .toLowerCase();
+        const financialFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
+          requestedFinancialFrequency === 'weekly' || requestedFinancialFrequency === 'monthly'
+            ? (requestedFinancialFrequency as 'weekly' | 'monthly')
+            : 'daily';
         data = await dailySnapshotDelegate.findMany({
           where: {
             companyId,
-            frequency,
+            frequency: financialFrequencyForQuery,
             snapshotDate: dateFilter,
           },
           orderBy: { snapshotDate: 'desc' },
@@ -4989,12 +5271,15 @@ export async function GET(request: NextRequest) {
         if (!data.length) {
           return NextResponse.json({
             records: [],
+            statementRecords: [],
             summary: {
               latestRevenue: 0,
               latestExpense: 0,
               latestNet: 0,
               latestCash: 0,
               days: 0,
+              statementCurrency: 'USD',
+              statementRollup,
             },
           });
         }
@@ -5010,17 +5295,19 @@ export async function GET(request: NextRequest) {
           ? await dailyMappedLineDelegate.findMany({
               where: {
                 companyId,
-                frequency,
+                frequency: financialFrequencyForQuery,
                 snapshotDate: dateFilter,
               },
               orderBy: [{ snapshotDate: 'desc' }, { sourceAccountName: 'asc' }],
               take: Math.max(limit * 200, 3000),
             })
           : [];
+        const statementRecords = aggregateDailyStatementRows(data, statementRollup);
 
         return NextResponse.json({
           records: data,
           mappedLines,
+          statementRecords,
           summary: {
             latestRevenue,
             latestExpense,
@@ -5030,6 +5317,10 @@ export async function GET(request: NextRequest) {
             latestAP: Number(latestDaily.ap || 0),
             netChange,
             days: data.length,
+            statementPeriods: statementRecords.length,
+            statementCurrency: 'USD',
+            statementRollup,
+            statementBasis: 'daily_activity',
             mappedLineCount: mappedLines.length,
           },
         });
