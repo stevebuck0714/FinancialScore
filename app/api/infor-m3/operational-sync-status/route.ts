@@ -38,6 +38,35 @@ type QueueTaskPreview = {
   payload: unknown;
 };
 
+type QueueRunSignals = {
+  staleThresholdMinutes: number;
+  secondsSinceLastChunk: number | null;
+  secondsSinceLastTaskAttempt: number | null;
+  watchdogState: 'healthy' | 'at_risk' | 'stale';
+  queueTaskCounts: {
+    pending: number;
+    leased: number;
+    done: number;
+    failed: number;
+    cancelled: number;
+  };
+};
+
+type RunTimelineEntry = {
+  id: string;
+  status: string;
+  chunkCount: number;
+  recordsCreated: number;
+  warningCount: number;
+  retryCount: number;
+  lastChunkAt: string | null;
+  updatedAt: string;
+  finishedAt: string | null;
+  secondsSinceProgress: number | null;
+  isStalled: boolean;
+  isActive: boolean;
+};
+
 const DEFAULT_RUN_STALE_MINUTES = 30;
 const DEFAULT_RUN_MAX_AGE_HOURS = 8;
 
@@ -51,6 +80,52 @@ function resolveRunMaxAgeHours(): number {
   const raw = Number(process.env.INFOR_SYNC_RUN_MAX_AGE_HOURS || DEFAULT_RUN_MAX_AGE_HOURS);
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RUN_MAX_AGE_HOURS;
   return Math.min(72, Math.max(1, Math.floor(raw)));
+}
+
+async function buildRunTimeline(companyId: string, nowMs: number): Promise<RunTimelineEntry[]> {
+  const staleThresholdSeconds = resolveRunStaleMinutes() * 60;
+  const rows = await prisma.inforSyncRun.findMany({
+    where: {
+      companyId,
+      platform: 'INFOR_M3',
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: {
+      id: true,
+      status: true,
+      chunkCount: true,
+      recordsCreated: true,
+      warningCount: true,
+      retryCount: true,
+      lastChunkAt: true,
+      updatedAt: true,
+      finishedAt: true,
+      createdAt: true,
+    },
+  });
+  return rows.map((row) => {
+    const status = String(row.status || '').trim().toLowerCase();
+    const isActive = status === 'running' || status === 'queued';
+    const progressAt = row.lastChunkAt || row.updatedAt || row.createdAt;
+    const progressMs = progressAt ? new Date(progressAt).getTime() : NaN;
+    const secondsSinceProgress = Number.isFinite(progressMs) ? Math.max(0, Math.floor((nowMs - progressMs) / 1000)) : null;
+    const isStalled = isActive && Number.isFinite(Number(secondsSinceProgress)) && Number(secondsSinceProgress) >= staleThresholdSeconds;
+    return {
+      id: row.id,
+      status: String(row.status || '').trim() || 'unknown',
+      chunkCount: Math.max(0, Number(row.chunkCount || 0)),
+      recordsCreated: Math.max(0, Number(row.recordsCreated || 0)),
+      warningCount: Math.max(0, Number(row.warningCount || 0)),
+      retryCount: Math.max(0, Number(row.retryCount || 0)),
+      lastChunkAt: row.lastChunkAt ? new Date(row.lastChunkAt).toISOString() : null,
+      updatedAt: new Date(row.updatedAt).toISOString(),
+      finishedAt: row.finishedAt ? new Date(row.finishedAt).toISOString() : null,
+      secondsSinceProgress,
+      isStalled,
+      isActive,
+    };
+  });
 }
 
 async function buildRunDiagnostics(companyId: string, syncRunId: string) {
@@ -161,6 +236,69 @@ async function buildRunDiagnostics(companyId: string, syncRunId: string) {
   };
 }
 
+async function buildQueueRunSignals(
+  syncRunId: string,
+  lastChunkAt: string | null,
+  nowMs: number
+): Promise<QueueRunSignals> {
+  const staleThresholdMinutes = resolveRunStaleMinutes();
+  const staleThresholdMs = staleThresholdMinutes * 60 * 1000;
+  const chunkAgeMs = lastChunkAt ? Math.max(0, nowMs - new Date(lastChunkAt).getTime()) : Number.POSITIVE_INFINITY;
+
+  const [attemptRows, taskRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ lastTaskFinishedAt: Date | null }>>`
+      SELECT MAX("finishedAt") AS "lastTaskFinishedAt"
+      FROM "InforSyncTaskAttempt"
+      WHERE "taskId" IN (
+        SELECT id
+        FROM "InforSyncTask"
+        WHERE "runId" = ${syncRunId}
+      )
+    `,
+    prisma.$queryRaw<Array<{ status: string; cnt: bigint }>>`
+      SELECT status, COUNT(*)::bigint AS cnt
+      FROM "InforSyncTask"
+      WHERE "runId" = ${syncRunId}
+      GROUP BY status
+    `,
+  ]);
+
+  const lastTaskFinishedAt = attemptRows?.[0]?.lastTaskFinishedAt || null;
+  const taskAgeMs = lastTaskFinishedAt ? Math.max(0, nowMs - new Date(lastTaskFinishedAt).getTime()) : Number.POSITIVE_INFINITY;
+  const counts = {
+    pending: 0,
+    leased: 0,
+    done: 0,
+    failed: 0,
+    cancelled: 0,
+  };
+  for (const row of taskRows || []) {
+    const key = String(row.status || '').trim().toLowerCase();
+    const count = Number(row.cnt || 0);
+    if (key === 'pending') counts.pending = count;
+    else if (key === 'leased') counts.leased = count;
+    else if (key === 'done') counts.done = count;
+    else if (key === 'failed') counts.failed = count;
+    else if (key === 'cancelled') counts.cancelled = count;
+  }
+
+  const worstAgeMs = Math.min(chunkAgeMs, taskAgeMs);
+  const watchdogState =
+    !Number.isFinite(worstAgeMs) || worstAgeMs >= staleThresholdMs
+      ? 'stale'
+      : worstAgeMs >= Math.floor(staleThresholdMs * 0.6)
+        ? 'at_risk'
+        : 'healthy';
+
+  return {
+    staleThresholdMinutes,
+    secondsSinceLastChunk: Number.isFinite(chunkAgeMs) ? Math.floor(chunkAgeMs / 1000) : null,
+    secondsSinceLastTaskAttempt: Number.isFinite(taskAgeMs) ? Math.floor(taskAgeMs / 1000) : null,
+    watchdogState,
+    queueTaskCounts: counts,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const nowMs = Date.now();
@@ -194,6 +332,7 @@ export async function GET(request: NextRequest) {
       }
     }
     if (!syncRunId) {
+      const runTimeline = await buildRunTimeline(companyId, nowMs);
       return NextResponse.json({
         ok: true,
         companyId,
@@ -217,6 +356,7 @@ export async function GET(request: NextRequest) {
           staleSourceWarnings: [],
         },
         queueTaskPreview: [],
+        runTimeline,
         rawIngestOnlyMode,
       });
     }
@@ -240,6 +380,7 @@ export async function GET(request: NextRequest) {
         }
       }
       if (queueRun) {
+        const runTimeline = await buildRunTimeline(companyId, nowMs);
         const mapped = mapQueueRunToLegacy(queueRun);
         let diagnostics: {
           failedChunks: number;
@@ -334,6 +475,12 @@ export async function GET(request: NextRequest) {
           mapped.status === 'running' &&
           (ageMs(mapped.updatedAt) <= 15 * 60 * 1000 ||
             (mapped.lastChunkAt ? ageMs(mapped.lastChunkAt) <= 3 * 60 * 1000 : false));
+        let queueSignals: QueueRunSignals | null = null;
+        try {
+          queueSignals = await buildQueueRunSignals(syncRunId, mapped.lastChunkAt || null, nowMs);
+        } catch {
+          queueSignals = null;
+        }
         return NextResponse.json({
           ok: true,
           companyId,
@@ -350,6 +497,8 @@ export async function GET(request: NextRequest) {
           runMode: mapped.mode || null,
           diagnostics,
           queueTaskPreview,
+          queueSignals,
+          runTimeline,
           rawIngestOnlyMode,
         });
       }
@@ -431,6 +580,7 @@ export async function GET(request: NextRequest) {
       (runMatches?.status === 'running' && ageMs(runMatches.updatedAt) <= 15 * 60 * 1000) ||
       (typeof lastChunkAt === 'string' && ageMs(lastChunkAt) <= 3 * 60 * 1000);
     const diagnostics = await buildRunDiagnostics(companyId, syncRunId);
+    const runTimeline = await buildRunTimeline(companyId, nowMs);
 
     return NextResponse.json({
       ok: true,
@@ -448,6 +598,8 @@ export async function GET(request: NextRequest) {
       runLastError: runMatches?.lastError || null,
       runMode: runMatches?.mode || null,
       diagnostics,
+      runTimeline,
+      queueSignals: null,
       rawIngestOnlyMode,
     });
   } catch (error) {

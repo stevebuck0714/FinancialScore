@@ -97,6 +97,14 @@ const formatDollar = (value: number): string => {
   return '$' + Math.round(Math.abs(value)).toLocaleString('en-US');
 };
 
+const resolveCompanyLandingView = (user: any, company?: any): 'operations' | 'daily-alerts' => {
+  const userIsDemo = Boolean(user?.demoCompany || user?.isDemoSignup);
+  const companyStatus = String(company?.subscriptionStatus || '').trim().toLowerCase();
+  const companyAffiliateCode = String(company?.affiliateCode || '').trim().toUpperCase();
+  const companyIsDemo = companyStatus.startsWith('demo') || companyAffiliateCode === 'SEVENDAYDEMO';
+  return userIsDemo || companyIsDemo ? 'operations' : 'daily-alerts';
+};
+
 type AccountReviewApiValueCacheEntry = {
   cachedAt: number;
   values: Record<string, number>;
@@ -173,6 +181,33 @@ type InforOperationalSyncStatus = {
       sourceDates: Record<string, string | null>;
     }>;
   } | null;
+  queueSignals?: {
+    staleThresholdMinutes: number;
+    secondsSinceLastChunk: number | null;
+    secondsSinceLastTaskAttempt: number | null;
+    watchdogState: 'healthy' | 'at_risk' | 'stale';
+    queueTaskCounts: {
+      pending: number;
+      leased: number;
+      done: number;
+      failed: number;
+      cancelled: number;
+    };
+  } | null;
+  runTimeline?: Array<{
+    id: string;
+    status: string;
+    chunkCount: number;
+    recordsCreated: number;
+    warningCount: number;
+    retryCount: number;
+    lastChunkAt: string | null;
+    updatedAt: string;
+    finishedAt: string | null;
+    secondsSinceProgress: number | null;
+    isStalled: boolean;
+    isActive: boolean;
+  }> | null;
 };
 
 type RevenueAnalysisQualifiers = {
@@ -866,6 +901,7 @@ function FinancialScorePage() {
   const [showCompanyDetailsModal, setShowCompanyDetailsModal] = useState(false);
   const [showAddCompanyModal, setShowAddCompanyModal] = useState(false);
   const [showUpgradeRequestModal, setShowUpgradeRequestModal] = useState(false);
+  const [showDemoHowToModal, setShowDemoHowToModal] = useState(false);
   const [editingCompanyId, setEditingCompanyId] = useState('');
   const [companyAddressStreet, setCompanyAddressStreet] = useState('');
   const [companyAddressCity, setCompanyAddressCity] = useState('');
@@ -1464,8 +1500,7 @@ function FinancialScorePage() {
           } else if (normalizedUser.userType === 'assessment') {
             setCurrentView('ma-welcome');
           } else if (normalizedUser.userType === 'company') {
-            // Company users land on Daily Alerts.
-            setCurrentView('daily-alerts');
+            setCurrentView(resolveCompanyLandingView(normalizedUser));
             // Load the company data for this user
             if (user.companyId) {
               setSelectedCompanyId(user.companyId);
@@ -1475,6 +1510,7 @@ function FinancialScorePage() {
                   if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
                     safeSetCompanies(data.companies);
                     setSelectedCompanyId(user.companyId);
+                    setCurrentView(resolveCompanyLandingView(normalizedUser, data.companies[0]));
                     console.log('✅ Loaded company after registration:', data.companies[0].name);
                   } else {
                     safeSetCompanies([]);
@@ -1487,8 +1523,7 @@ function FinancialScorePage() {
                 });
             }
           } else {
-            // Legacy business users without userType set also land on Company Pulse.
-            setCurrentView('daily-alerts');
+            setCurrentView(resolveCompanyLandingView(normalizedUser));
             // For business users without userType set, try to load their company
             if (user.companyId) {
               setSelectedCompanyId(user.companyId);
@@ -1498,6 +1533,7 @@ function FinancialScorePage() {
                   if (data.companies && Array.isArray(data.companies) && data.companies.length > 0) {
                     safeSetCompanies(data.companies);
                     setSelectedCompanyId(user.companyId);
+                    setCurrentView(resolveCompanyLandingView(normalizedUser, data.companies[0]));
                     console.log('✅ Loaded company for user without userType:', data.companies[0].name);
                   } else {
                     safeSetCompanies([]);
@@ -2536,16 +2572,15 @@ function FinancialScorePage() {
         if (prev.companyId !== currentStatus.companyId || prev.syncRunId !== currentStatus.syncRunId) return prev;
         return {
           ...prev,
-          state: 'failed',
-          recentlyActive: false,
-          lastStatusText: 'failed',
+          // Polling transport failures should not be reported as run failure.
+          state: prev.state === 'running' ? 'running' : prev.state,
+          recentlyActive: prev.recentlyActive,
+          lastStatusText: prev.lastStatusText || 'warning',
           lastError: reason || prev.lastError,
-          message:
-            prev.message ||
-            'Sync status polling lost connection. Reset sync state and retry to continue.',
+          message: 'Status polling temporarily failed. Backend sync may still be running. Refresh and verify run status.',
         };
       });
-      if (inforBusy) {
+      if (inforBusy && currentStatus.state !== 'running') {
         setInforBusy(false);
         setInforBusyAction(null);
         setInforBusyStartedAt(null);
@@ -2645,19 +2680,66 @@ function FinancialScorePage() {
                   : [],
               }
             : null;
-        const lastChunkTimeMs = apiLastChunkAt
-          ? new Date(apiLastChunkAt).getTime()
-          : (currentStatus.lastChunkAt ? new Date(currentStatus.lastChunkAt).getTime() : NaN);
-        const idleForMs = Number.isFinite(lastChunkTimeMs) ? Date.now() - lastChunkTimeMs : 0;
-        // Fallback: if UI busy state gets stuck but no new chunks arrive for a sustained
-        // period, mark the run complete so status does not remain "Running" indefinitely.
-        const idleCompletionThresholdMs = 4 * 60 * 1000;
-        const shouldForceCompleteForIdle = !apiRecentlyActive && idleForMs >= idleCompletionThresholdMs;
-        if (shouldForceCompleteForIdle && inforBusy) {
-          setInforBusy(false);
-          setInforBusyAction(null);
-          setInforBusyStartedAt(null);
-        }
+        const apiQueueSignals =
+          data?.queueSignals && typeof data.queueSignals === 'object' && !Array.isArray(data.queueSignals)
+            ? (() => {
+                const normalizedWatchdogState: 'healthy' | 'at_risk' | 'stale' =
+                  String((data.queueSignals as any).watchdogState || '').trim().toLowerCase() === 'stale'
+                    ? 'stale'
+                    : String((data.queueSignals as any).watchdogState || '').trim().toLowerCase() === 'at_risk'
+                      ? 'at_risk'
+                      : 'healthy';
+                return {
+                staleThresholdMinutes: Math.max(1, Number((data.queueSignals as any).staleThresholdMinutes || 30)),
+                secondsSinceLastChunk: Number.isFinite(Number((data.queueSignals as any).secondsSinceLastChunk))
+                  ? Math.max(0, Number((data.queueSignals as any).secondsSinceLastChunk))
+                  : null,
+                secondsSinceLastTaskAttempt: Number.isFinite(Number((data.queueSignals as any).secondsSinceLastTaskAttempt))
+                  ? Math.max(0, Number((data.queueSignals as any).secondsSinceLastTaskAttempt))
+                  : null,
+                watchdogState: normalizedWatchdogState,
+                queueTaskCounts:
+                  (data.queueSignals as any).queueTaskCounts &&
+                  typeof (data.queueSignals as any).queueTaskCounts === 'object' &&
+                  !Array.isArray((data.queueSignals as any).queueTaskCounts)
+                    ? {
+                        pending: Math.max(0, Number(((data.queueSignals as any).queueTaskCounts as any).pending || 0)),
+                        leased: Math.max(0, Number(((data.queueSignals as any).queueTaskCounts as any).leased || 0)),
+                        done: Math.max(0, Number(((data.queueSignals as any).queueTaskCounts as any).done || 0)),
+                        failed: Math.max(0, Number(((data.queueSignals as any).queueTaskCounts as any).failed || 0)),
+                        cancelled: Math.max(0, Number(((data.queueSignals as any).queueTaskCounts as any).cancelled || 0)),
+                      }
+                    : { pending: 0, leased: 0, done: 0, failed: 0, cancelled: 0 },
+                };
+              })()
+            : null;
+        const apiRunTimeline = Array.isArray((data as any)?.runTimeline)
+          ? ((data as any).runTimeline as any[])
+              .map((entry) => ({
+                id: String(entry?.id || '').trim(),
+                status: String(entry?.status || '').trim().toLowerCase(),
+                chunkCount: Math.max(0, Number(entry?.chunkCount || 0)),
+                recordsCreated: Math.max(0, Number(entry?.recordsCreated || 0)),
+                warningCount: Math.max(0, Number(entry?.warningCount || 0)),
+                retryCount: Math.max(0, Number(entry?.retryCount || 0)),
+                lastChunkAt:
+                  typeof entry?.lastChunkAt === 'string' && entry.lastChunkAt.trim().length > 0
+                    ? entry.lastChunkAt
+                    : null,
+                updatedAt: String(entry?.updatedAt || '').trim(),
+                finishedAt:
+                  typeof entry?.finishedAt === 'string' && entry.finishedAt.trim().length > 0
+                    ? entry.finishedAt
+                    : null,
+                secondsSinceProgress: Number.isFinite(Number(entry?.secondsSinceProgress))
+                  ? Math.max(0, Number(entry?.secondsSinceProgress))
+                  : null,
+                isStalled: entry?.isStalled === true,
+                isActive: entry?.isActive === true,
+              }))
+              .filter((entry) => entry.id.length > 0)
+              .slice(0, 10)
+          : null;
         setInforOperationalSyncStatus((prev) => {
           if (!prev) return prev;
           if (prev.companyId !== currentStatus.companyId || prev.syncRunId !== currentStatus.syncRunId) return prev;
@@ -2672,15 +2754,15 @@ function FinancialScorePage() {
             Boolean(apiRunLastError) ||
             apiWarningCount > 0 ||
             hasProblemMessage;
-          let nextState = prev.state;
-          if (isFailedStatus || hasProblemSignal) {
-            nextState = 'failed';
-          } else if (
-            ((!inforBusy && !apiRecentlyActive && prev.state === 'running') ||
-              (prev.state === 'running' && shouldForceCompleteForIdle)) &&
-            !hasProblemSignal
-          ) {
+          let nextState: InforOperationalSyncStatus['state'];
+          if (normalizedStatus === 'running' || normalizedStatus === 'queued') {
+            nextState = 'running';
+          } else if (normalizedStatus === 'done' || normalizedStatus === 'cancelled') {
             nextState = 'done';
+          } else if (isFailedStatus || hasProblemSignal) {
+            nextState = 'failed';
+          } else {
+            nextState = prev.state;
           }
           return {
             ...prev,
@@ -2695,6 +2777,8 @@ function FinancialScorePage() {
             lastError: apiRunLastError || prev.lastError,
             recentlyActive: apiRecentlyActive,
             diagnostics: apiDiagnostics || prev.diagnostics || null,
+            queueSignals: apiQueueSignals || prev.queueSignals || null,
+            runTimeline: apiRunTimeline || prev.runTimeline || null,
           };
         });
       } catch {
@@ -3174,10 +3258,9 @@ function FinancialScorePage() {
       } else if (user.role === 'consultant') {
         setCurrentView('consultant-dashboard');
       } else if ((user.userType || '').toLowerCase() === 'company') {
-        setCurrentView('daily-alerts');
+        setCurrentView(resolveCompanyLandingView(user));
       } else {
-        // Legacy business users without userType set also land on Company Pulse.
-        setCurrentView('daily-alerts');
+        setCurrentView(resolveCompanyLandingView(user));
       }
     }
   }, []);
@@ -5187,11 +5270,9 @@ function FinancialScorePage() {
       } else if (normalizedUser.userType === 'assessment') {
         setCurrentView('ma-welcome');
       } else if (normalizedUser.userType === 'company') {
-        // Company users land on Daily Alerts.
-        setCurrentView('daily-alerts');
+        setCurrentView(resolveCompanyLandingView(normalizedUser));
       } else {
-        // Legacy business users without userType set also land on Company Pulse.
-        setCurrentView('daily-alerts');
+        setCurrentView(resolveCompanyLandingView(normalizedUser));
       }
       
       if (normalizedUser.role !== 'consultant' && normalizedUser.role !== 'siteadmin') {
@@ -5238,6 +5319,7 @@ function FinancialScorePage() {
             safeSetCompanies(data.companies);
             // Ensure selectedCompanyId is set
             setSelectedCompanyId(user.companyId);
+            setCurrentView(resolveCompanyLandingView(normalizedUser, data.companies[0]));
             console.log('✅ Loaded company for business user:', data.companies[0].name);
           } else {
             safeSetCompanies([]);
@@ -5345,16 +5427,16 @@ function FinancialScorePage() {
               console.log('✅ Loaded company after MFA enrollment:', companyData.companies[0].name);
               // Delay setting view to allow React to complete state updates
               setTimeout(() => {
-                setCurrentView('daily-alerts');
+                setCurrentView(resolveCompanyLandingView(normalizedUser, companyData.companies[0]));
                 setAdminDashboardTab('company-management');
               }, 100);
             }
           } catch (error) {
             console.error('Error loading company after MFA enrollment:', error);
-            setTimeout(() => setCurrentView('daily-alerts'), 100);
+            setTimeout(() => setCurrentView(resolveCompanyLandingView(normalizedUser)), 100);
           }
         } else {
-          setTimeout(() => setCurrentView('daily-alerts'), 100);
+          setTimeout(() => setCurrentView(resolveCompanyLandingView(normalizedUser)), 100);
         }
       } else {
         setCurrentView('upload');
@@ -5440,16 +5522,16 @@ function FinancialScorePage() {
               console.log('✅ Loaded company after MFA verification:', companyData.companies[0].name);
               // Delay setting view to allow React to complete state updates
               setTimeout(() => {
-                setCurrentView('daily-alerts');
+                setCurrentView(resolveCompanyLandingView(normalizedUser, companyData.companies[0]));
                 setAdminDashboardTab('company-management');
               }, 100);
             }
           } catch (error) {
             console.error('Error loading company after MFA verification:', error);
-            setTimeout(() => setCurrentView('daily-alerts'), 100);
+            setTimeout(() => setCurrentView(resolveCompanyLandingView(normalizedUser)), 100);
           }
         } else {
-          setTimeout(() => setCurrentView('daily-alerts'), 100);
+          setTimeout(() => setCurrentView(resolveCompanyLandingView(normalizedUser)), 100);
         }
       } else {
         setCurrentView('upload');
@@ -6468,6 +6550,66 @@ function FinancialScorePage() {
                         : [],
                     }
                   : null;
+              const queueSignals =
+                syncData?.queueSignals && typeof syncData.queueSignals === 'object' && !Array.isArray(syncData.queueSignals)
+                  ? (() => {
+                      const normalizedWatchdogState: 'healthy' | 'at_risk' | 'stale' =
+                        String((syncData.queueSignals as any).watchdogState || '').trim().toLowerCase() === 'stale'
+                          ? 'stale'
+                          : String((syncData.queueSignals as any).watchdogState || '').trim().toLowerCase() === 'at_risk'
+                            ? 'at_risk'
+                            : 'healthy';
+                      return {
+                      staleThresholdMinutes: Math.max(1, Number((syncData.queueSignals as any).staleThresholdMinutes || 30)),
+                      secondsSinceLastChunk: Number.isFinite(Number((syncData.queueSignals as any).secondsSinceLastChunk))
+                        ? Math.max(0, Number((syncData.queueSignals as any).secondsSinceLastChunk))
+                        : null,
+                      secondsSinceLastTaskAttempt: Number.isFinite(Number((syncData.queueSignals as any).secondsSinceLastTaskAttempt))
+                        ? Math.max(0, Number((syncData.queueSignals as any).secondsSinceLastTaskAttempt))
+                        : null,
+                      watchdogState: normalizedWatchdogState,
+                      queueTaskCounts:
+                        (syncData.queueSignals as any).queueTaskCounts &&
+                        typeof (syncData.queueSignals as any).queueTaskCounts === 'object' &&
+                        !Array.isArray((syncData.queueSignals as any).queueTaskCounts)
+                          ? {
+                              pending: Math.max(0, Number(((syncData.queueSignals as any).queueTaskCounts as any).pending || 0)),
+                              leased: Math.max(0, Number(((syncData.queueSignals as any).queueTaskCounts as any).leased || 0)),
+                              done: Math.max(0, Number(((syncData.queueSignals as any).queueTaskCounts as any).done || 0)),
+                              failed: Math.max(0, Number(((syncData.queueSignals as any).queueTaskCounts as any).failed || 0)),
+                              cancelled: Math.max(0, Number(((syncData.queueSignals as any).queueTaskCounts as any).cancelled || 0)),
+                            }
+                          : { pending: 0, leased: 0, done: 0, failed: 0, cancelled: 0 },
+                      };
+                    })()
+                  : null;
+              const runTimeline = Array.isArray((syncData as any)?.runTimeline)
+                ? ((syncData as any).runTimeline as any[])
+                    .map((entry) => ({
+                      id: String(entry?.id || '').trim(),
+                      status: String(entry?.status || '').trim().toLowerCase(),
+                      chunkCount: Math.max(0, Number(entry?.chunkCount || 0)),
+                      recordsCreated: Math.max(0, Number(entry?.recordsCreated || 0)),
+                      warningCount: Math.max(0, Number(entry?.warningCount || 0)),
+                      retryCount: Math.max(0, Number(entry?.retryCount || 0)),
+                      lastChunkAt:
+                        typeof entry?.lastChunkAt === 'string' && entry.lastChunkAt.trim().length > 0
+                          ? entry.lastChunkAt
+                          : null,
+                      updatedAt: String(entry?.updatedAt || '').trim(),
+                      finishedAt:
+                        typeof entry?.finishedAt === 'string' && entry.finishedAt.trim().length > 0
+                          ? entry.finishedAt
+                          : null,
+                      secondsSinceProgress: Number.isFinite(Number(entry?.secondsSinceProgress))
+                        ? Math.max(0, Number(entry?.secondsSinceProgress))
+                        : null,
+                      isStalled: entry?.isStalled === true,
+                      isActive: entry?.isActive === true,
+                    }))
+                    .filter((entry) => entry.id.length > 0)
+                    .slice(0, 10)
+                : null;
               setInforOperationalSyncStatus({
                 companyId,
                 syncRunId,
@@ -6497,6 +6639,8 @@ function FinancialScorePage() {
                     : null,
                 recentlyActive: syncData.recentlyActive === true,
                 diagnostics,
+                queueSignals,
+                runTimeline,
               });
             } else {
               setInforOperationalSyncStatus((prev) => (prev && prev.companyId === companyId ? null : prev));
@@ -10795,22 +10939,40 @@ function FinancialScorePage() {
                     : ''
                 }${formattedDemoExpiry ? ` (expires ${formattedDemoExpiry})` : ''}.`}
           </div>
-          <button
-            onClick={handleUpgradeNow}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              background: demoAccessState.isExpired ? '#dc2626' : '#2563eb',
-              color: '#ffffff',
-              fontSize: '12px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Upgrade now
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => setShowDemoHowToModal(true)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: '1px solid #93c5fd',
+                background: '#ffffff',
+                color: '#1d4ed8',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              How to use
+            </button>
+            <button
+              onClick={handleUpgradeNow}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: 'none',
+                background: demoAccessState.isExpired ? '#dc2626' : '#2563eb',
+                color: '#ffffff',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Upgrade now
+            </button>
+          </div>
         </div>
       )}
 
@@ -15285,6 +15447,60 @@ function FinancialScorePage() {
       )}
 
       {/* Company Details Modal */}
+      {showDemoHowToModal && (
+        <div
+          onClick={() => setShowDemoHowToModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1400,
+            padding: '20px',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '720px',
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              boxShadow: '0 16px 40px rgba(15, 23, 42, 0.25)',
+              padding: '20px 20px 16px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>How to use</h3>
+              <button
+                onClick={() => setShowDemoHowToModal(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#475569',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+                aria-label="Close how to use dialog"
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ color: '#1e293b', fontSize: '14px', lineHeight: 1.6 }}>
+              <p style={{ margin: '0 0 6px 0' }}>1. This site has mock data but full functionality</p>
+              <p style={{ margin: '0 0 6px 0' }}>2. Review the functionality, add KPI&apos;s to the Financial KPI&apos;s page</p>
+              <p style={{ margin: '0 0 6px 0' }}>3. Use Ask Corelytics.</p>
+              <p style={{ margin: 0 }}>
+                4. If you would like to see how Corelytics can provide these insights for your company contact us today!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       <UpgradeRequestModal
         show={showUpgradeRequestModal}
         onClose={() => setShowUpgradeRequestModal(false)}

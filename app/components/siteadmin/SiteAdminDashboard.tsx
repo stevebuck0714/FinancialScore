@@ -212,6 +212,17 @@ export default function SiteAdminDashboard(props: any) {
           ? { text: '#b91c1c', border: '#fecaca', bg: '#fef2f2' }
           : { text: '#166534', border: '#bbf7d0', bg: '#f0fdf4' };
     const stateLabel = status.state === 'running' ? 'Running' : status.state === 'failed' ? 'Failed' : 'Done';
+    const queueSignals = (status as any)?.queueSignals || null;
+    const runTimeline = Array.isArray((status as any)?.runTimeline) ? (status as any).runTimeline : [];
+    const activeRuns = runTimeline.filter((run: any) => run?.isActive === true);
+    const stalledRuns = runTimeline.filter((run: any) => run?.isStalled === true);
+    const watchdogState = String(queueSignals?.watchdogState || '').toLowerCase();
+    const heartbeatTone =
+      watchdogState === 'stale' ? '#b91c1c' : watchdogState === 'at_risk' ? '#92400e' : '#065f46';
+    const heartbeatBg =
+      watchdogState === 'stale' ? '#fef2f2' : watchdogState === 'at_risk' ? '#fffbeb' : '#ecfdf5';
+    const heartbeatBorder =
+      watchdogState === 'stale' ? '#fecaca' : watchdogState === 'at_risk' ? '#fcd34d' : '#a7f3d0';
     return (
       <div style={{ gridColumn: '1 / -1', border: `1px solid ${stateColors.border}`, borderRadius: '6px', padding: '8px', background: stateColors.bg }}>
         <div style={{ fontSize: '12px', fontWeight: 700, color: stateColors.text, marginBottom: '4px' }}>
@@ -243,6 +254,73 @@ export default function SiteAdminDashboard(props: any) {
         {status.message && (
           <div style={{ fontSize: '11px', color: stateColors.text, marginTop: '4px' }}>
             {status.message}
+          </div>
+        )}
+        {status.state !== 'failed' && status.lastError && (
+          <div style={{ marginTop: '6px', fontSize: '11px', color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '6px' }}>
+            Alert: {status.lastError}
+          </div>
+        )}
+        {queueSignals && (
+          <div style={{ marginTop: '6px', fontSize: '11px', color: heartbeatTone, background: heartbeatBg, border: `1px solid ${heartbeatBorder}`, borderRadius: '6px', padding: '6px' }}>
+            <div style={{ fontWeight: 700, marginBottom: '3px' }}>
+              Queue heartbeat: {watchdogState === 'stale' ? 'STALE' : watchdogState === 'at_risk' ? 'AT RISK' : 'HEALTHY'}
+            </div>
+            <div>
+              Last chunk age: {Number.isFinite(Number(queueSignals.secondsSinceLastChunk)) ? `${Math.max(0, Number(queueSignals.secondsSinceLastChunk)).toLocaleString('en-US')}s` : 'n/a'} | Last task age: {Number.isFinite(Number(queueSignals.secondsSinceLastTaskAttempt)) ? `${Math.max(0, Number(queueSignals.secondsSinceLastTaskAttempt)).toLocaleString('en-US')}s` : 'n/a'} | Watchdog: {Number(queueSignals.staleThresholdMinutes || 0)}m
+            </div>
+            <div>
+              Tasks — pending: {Math.max(0, Number(queueSignals?.queueTaskCounts?.pending || 0)).toLocaleString('en-US')}, leased: {Math.max(0, Number(queueSignals?.queueTaskCounts?.leased || 0)).toLocaleString('en-US')}, done: {Math.max(0, Number(queueSignals?.queueTaskCounts?.done || 0)).toLocaleString('en-US')}, failed: {Math.max(0, Number(queueSignals?.queueTaskCounts?.failed || 0)).toLocaleString('en-US')}
+            </div>
+            {watchdogState === 'stale' && (
+              <div style={{ marginTop: '4px' }}>
+                No queue heartbeat detected near the stale threshold. Verify cron `/api/cron/process-infor-sync-runs` is running.
+              </div>
+            )}
+          </div>
+        )}
+        {runTimeline.length > 0 && (
+          <div style={{ marginTop: '6px', fontSize: '11px', color: '#1f2937', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px' }}>
+            <div style={{ fontWeight: 700, marginBottom: '4px' }}>
+              Live run monitor
+            </div>
+            <div style={{ marginBottom: '4px', color: stalledRuns.length > 0 ? '#b91c1c' : '#475569' }}>
+              Active: {activeRuns.length} | Stalled: {stalledRuns.length} | Showing last {runTimeline.length} runs
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '170px 90px 100px 120px minmax(0,1fr)', gap: '6px', alignItems: 'center' }}>
+              <div style={{ fontWeight: 700, color: '#475569' }}>Run ID</div>
+              <div style={{ fontWeight: 700, color: '#475569' }}>Status</div>
+              <div style={{ fontWeight: 700, color: '#475569' }}>Chunks</div>
+              <div style={{ fontWeight: 700, color: '#475569' }}>Records</div>
+              <div style={{ fontWeight: 700, color: '#475569' }}>Progress</div>
+              {runTimeline.map((run: any) => {
+                const runId = String(run?.id || '').trim();
+                const runStatus = String(run?.status || '').trim().toLowerCase();
+                const statusColor =
+                  runStatus === 'running'
+                    ? '#0f766e'
+                    : runStatus === 'queued'
+                      ? '#1d4ed8'
+                      : runStatus === 'failed'
+                        ? '#b91c1c'
+                        : '#166534';
+                const progressSeconds = Number.isFinite(Number(run?.secondsSinceProgress))
+                  ? Math.max(0, Number(run.secondsSinceProgress))
+                  : null;
+                return (
+                  <React.Fragment key={runId}>
+                    <div style={{ fontFamily: 'monospace', color: '#334155' }}>{runId.slice(0, 18)}{runId.length > 18 ? '...' : ''}</div>
+                    <div style={{ color: statusColor, fontWeight: 700 }}>{String(run?.status || '').toUpperCase()}</div>
+                    <div>{Math.max(0, Number(run?.chunkCount || 0)).toLocaleString('en-US')}</div>
+                    <div>{Math.max(0, Number(run?.recordsCreated || 0)).toLocaleString('en-US')}</div>
+                    <div style={{ color: run?.isStalled ? '#b91c1c' : '#475569' }}>
+                      {run?.isStalled ? 'STALLED' : run?.isActive ? 'ACTIVE' : 'IDLE'} ·{' '}
+                      {progressSeconds === null ? 'n/a' : `${progressSeconds.toLocaleString('en-US')}s ago`}
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
           </div>
         )}
         {(status as any)?.rawIngestOnlyMode && (
