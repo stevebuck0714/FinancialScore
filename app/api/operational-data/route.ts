@@ -1543,6 +1543,228 @@ export async function GET(request: NextRequest) {
         const topCustomersSummary = Object.values(customerTotals)
           .sort((a, b) => b.totalRevenue - a.totalRevenue)
           .slice(0, 10);
+        let customerOverview = {
+          asOf: endDate.toISOString(),
+          activeCustomers365: 0,
+          newCustomers90: 0,
+          totalBilled30: 0,
+          totalBilled90: 0,
+          totalBilled365: 0,
+          concentrationTop5Pct: 0,
+          customersPastDuePct: 0,
+          atRiskCustomers: 0,
+          avgRevenuePerCustomer: 0,
+          newCustomerNames90: [] as string[],
+          concentrationTop5CustomerNames: [] as string[],
+          pastDueCustomerNames: [] as string[],
+          atRiskCustomerNames: [] as string[],
+        };
+        const arInvoiceDetailDelegate =
+          (prisma as any).aRInvoiceDetail || (prisma as any).arInvoiceDetail;
+        if (arInvoiceDetailDelegate?.findFirst && arInvoiceDetailDelegate?.findMany) {
+          const latestInvoiceAsOf = await arInvoiceDetailDelegate.findFirst({
+            where: { companyId },
+            select: { asOfDate: true },
+            orderBy: [{ asOfDate: 'desc' }],
+          });
+          if (latestInvoiceAsOf?.asOfDate) {
+            const isPlaceholderCustomerName = (name: unknown): boolean => {
+              const normalized = String(name || '')
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, ' ');
+              if (!normalized) return true;
+              if (normalized === 'unknown customer') return true;
+              if (/^unknown customer \d+$/.test(normalized)) return true;
+              if (/^customer \d+$/.test(normalized)) return true;
+              return false;
+            };
+            const asOfDate = startOfUtcDay(new Date(latestInvoiceAsOf.asOfDate));
+            const start30 = new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), asOfDate.getUTCDate() - 29));
+            const start90 = new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), asOfDate.getUTCDate() - 89));
+            const start365 = new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), asOfDate.getUTCDate() - 364));
+            const staleStart90 = start90;
+            const staleEnd60 = new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), asOfDate.getUTCDate() - 60));
+            const invoiceRows = await arInvoiceDetailDelegate.findMany({
+              where: {
+                companyId,
+                asOfDate: latestInvoiceAsOf.asOfDate,
+              },
+              select: {
+                customerId: true,
+                customerName: true,
+                invoiceDate: true,
+                invoiceAmount: true,
+              },
+              take: 500000,
+            });
+            const customerByKey = new Map<
+              string,
+              {
+                name: string;
+                firstInvoice: Date | null;
+                lastInvoice: Date | null;
+                billed365: number;
+              }
+            >();
+            const customerNameByKey = new Map<string, string>();
+            for (const row of invoiceRows as any[]) {
+              const customerId = String(row?.customerId || '').trim();
+              const customerName = String(row?.customerName || '').trim();
+              const key =
+                customerId
+                  ? `id:${customerId}`
+                  : customerName
+                    ? `name:${customerName.toLowerCase()}`
+                    : '';
+              if (!key) continue;
+              if (!customerByKey.has(key)) {
+                customerByKey.set(key, {
+                  name: customerName,
+                  firstInvoice: null,
+                  lastInvoice: null,
+                  billed365: 0,
+                });
+              }
+              const acc = customerByKey.get(key)!;
+              if (!acc.name && customerName && !isPlaceholderCustomerName(customerName)) acc.name = customerName;
+              if (!isPlaceholderCustomerName(customerName)) {
+                customerNameByKey.set(key, customerName);
+              }
+              const invoiceDateRaw = row?.invoiceDate ? new Date(row.invoiceDate) : null;
+              if (!invoiceDateRaw || Number.isNaN(invoiceDateRaw.getTime())) continue;
+              const invoiceDate = startOfUtcDay(invoiceDateRaw);
+              const amount = Number(row?.invoiceAmount || 0);
+              if (!acc.firstInvoice || invoiceDate.getTime() < acc.firstInvoice.getTime()) acc.firstInvoice = invoiceDate;
+              if (!acc.lastInvoice || invoiceDate.getTime() > acc.lastInvoice.getTime()) acc.lastInvoice = invoiceDate;
+              if (invoiceDate >= start30 && invoiceDate <= asOfDate) customerOverview.totalBilled30 += amount;
+              if (invoiceDate >= start90 && invoiceDate <= asOfDate) customerOverview.totalBilled90 += amount;
+              if (invoiceDate >= start365 && invoiceDate <= asOfDate) {
+                customerOverview.totalBilled365 += amount;
+                acc.billed365 += amount;
+              }
+            }
+            const activeCustomers = Array.from(customerByKey.values()).filter(
+              (c) => c.lastInvoice && c.lastInvoice >= start365
+            );
+            customerOverview.activeCustomers365 = activeCustomers.length;
+            const newCustomerRows = Array.from(customerByKey.values()).filter(
+              (c) => c.firstInvoice && c.firstInvoice >= start90 && c.firstInvoice <= asOfDate
+            );
+            customerOverview.newCustomers90 = newCustomerRows.length;
+            customerOverview.newCustomerNames90 = newCustomerRows
+              .map((c) => String(c.name || '').trim())
+              .filter((name) => Boolean(name) && !isPlaceholderCustomerName(name))
+              .sort((a, b) => a.localeCompare(b))
+              .slice(0, 200);
+            const top5ActiveCustomers = activeCustomers
+              .slice()
+              .sort((a, b) => Number(b.billed365 || 0) - Number(a.billed365 || 0))
+              .slice(0, 5);
+            const top5Billed = top5ActiveCustomers
+              .map((c) => Number(c.billed365 || 0))
+              .reduce((sum, n) => sum + n, 0);
+            customerOverview.concentrationTop5CustomerNames = top5ActiveCustomers
+              .map((c) => String(c.name || '').trim())
+              .filter((name) => Boolean(name) && !isPlaceholderCustomerName(name));
+            customerOverview.concentrationTop5Pct =
+              customerOverview.totalBilled365 > 0
+                ? (top5Billed / customerOverview.totalBilled365) * 100
+                : 0;
+            customerOverview.avgRevenuePerCustomer =
+              customerOverview.activeCustomers365 > 0
+                ? customerOverview.totalBilled365 / customerOverview.activeCustomers365
+                : 0;
+
+            const pastDueByCustomer = new Map<string, number>();
+            const arOpenDelegate =
+              (prisma as any).aROpenInvoiceSnapshot || (prisma as any).arOpenInvoiceSnapshot;
+            if (arOpenDelegate?.findFirst && arOpenDelegate?.findMany) {
+              const latestOpenAsOf = await arOpenDelegate.findFirst({
+                where: { companyId, snapshotDate: { lte: asOfDate } },
+                select: { snapshotDate: true },
+                orderBy: [{ snapshotDate: 'desc' }],
+              });
+              if (latestOpenAsOf?.snapshotDate) {
+                const openRows = await arOpenDelegate.findMany({
+                  where: {
+                    companyId,
+                    snapshotDate: latestOpenAsOf.snapshotDate,
+                  },
+                  select: {
+                    customerId: true,
+                    customerName: true,
+                    amountDueHome: true,
+                    dueDate: true,
+                    days61to90: true,
+                    days90plus: true,
+                  },
+                  take: 500000,
+                });
+                for (const row of openRows as any[]) {
+                  const customerId = String(row?.customerId || '').trim();
+                  const customerName = String(row?.customerName || '').trim();
+                  const key =
+                    customerId
+                      ? `id:${customerId}`
+                      : customerName
+                        ? `name:${customerName.toLowerCase()}`
+                        : '';
+                  if (!key) continue;
+                  if (!isPlaceholderCustomerName(customerName)) {
+                    customerNameByKey.set(key, customerName);
+                    const existingCustomer = customerByKey.get(key);
+                    if (existingCustomer && !existingCustomer.name) {
+                      existingCustomer.name = customerName;
+                    }
+                  }
+                  const dueDateRaw = row?.dueDate ? new Date(row.dueDate) : null;
+                  const dueDate = dueDateRaw && !Number.isNaN(dueDateRaw.getTime()) ? startOfUtcDay(dueDateRaw) : null;
+                  const overdueByDate = dueDate ? dueDate.getTime() < asOfDate.getTime() : false;
+                  const overdueByBucket = Number(row?.days61to90 || 0) > 0 || Number(row?.days90plus || 0) > 0;
+                  const overdueAmount = Number(row?.amountDueHome || 0);
+                  if ((overdueByDate || overdueByBucket) && overdueAmount > 0) {
+                    pastDueByCustomer.set(key, Number(pastDueByCustomer.get(key) || 0) + overdueAmount);
+                  }
+                }
+              }
+            }
+            const activeKeys = new Set(
+              Array.from(customerByKey.entries())
+                .filter(([, c]) => c.lastInvoice && c.lastInvoice >= start365)
+                .map(([key]) => key)
+            );
+            const pastDueCustomers = Array.from(pastDueByCustomer.keys()).filter((key) => activeKeys.has(key)).length;
+            customerOverview.pastDueCustomerNames = Array.from(pastDueByCustomer.keys())
+              .filter((key) => activeKeys.has(key))
+              .map((key) => String(customerNameByKey.get(key) || customerByKey.get(key)?.name || '').trim())
+              .filter((name) => Boolean(name) && !isPlaceholderCustomerName(name))
+              .sort((a, b) => a.localeCompare(b))
+              .slice(0, 500);
+            customerOverview.customersPastDuePct =
+              customerOverview.activeCustomers365 > 0
+                ? (pastDueCustomers / customerOverview.activeCustomers365) * 100
+                : 0;
+            const inactive60to90 = Array.from(customerByKey.entries())
+              .filter(([key, c]) => {
+                if (!activeKeys.has(key)) return false;
+                if (!c.lastInvoice) return false;
+                return c.lastInvoice >= staleStart90 && c.lastInvoice <= staleEnd60;
+              })
+              .map(([key]) => key);
+            const atRiskSet = new Set<string>([
+              ...inactive60to90,
+              ...Array.from(pastDueByCustomer.keys()).filter((key) => activeKeys.has(key)),
+            ]);
+            customerOverview.atRiskCustomers = atRiskSet.size;
+            customerOverview.atRiskCustomerNames = Array.from(atRiskSet.values())
+              .map((key) => String(customerNameByKey.get(key) || customerByKey.get(key)?.name || '').trim())
+              .filter((name) => Boolean(name) && !isPlaceholderCustomerName(name))
+              .sort((a, b) => a.localeCompare(b))
+              .slice(0, 500);
+            customerOverview.asOf = asOfDate.toISOString();
+          }
+        }
 
         if (shouldUseMockData) {
           return NextResponse.json(
@@ -1564,6 +1786,7 @@ export async function GET(request: NextRequest) {
             topCustomers: topCustomersSummary,
             customerDataBasis,
             revenueLabel: 'Revenue',
+            customerOverview,
             bookings: {
               totals: bookingsTotals,
               top5: bookingsTop5,
@@ -3910,8 +4133,11 @@ export async function GET(request: NextRequest) {
         let unitCostHistory: Array<{
           snapshotDate: string;
           unitCost: number | null;
+          unitPrice: number | null;
+          spread: number | null;
           qtyOnHand: number;
           assetValue: number;
+          pricePointCount: number;
           source: 'weighted' | 'none';
         }> = [];
         if (includeCostHistory && skuParam) {
@@ -3924,6 +4150,27 @@ export async function GET(request: NextRequest) {
               assetValue: number;
             }
           >();
+          const priceByDay = new Map<
+            string,
+            {
+              sum: number;
+              count: number;
+            }
+          >();
+          const rawPriceRows = await (prisma as any).inforRawRecord.findMany({
+            where: {
+              companyId,
+              platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+              businessDate: { gte: inventoryStartUtcDay, lt: inventoryEndExclusive },
+              miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+            },
+            select: {
+              businessDate: true,
+              payload: true,
+            },
+            orderBy: [{ businessDate: 'asc' }],
+            take: 500000,
+          });
           for (const row of inventoryTrendRowsRaw) {
             const aliases = Array.from(
               new Set(
@@ -3960,20 +4207,59 @@ export async function GET(request: NextRequest) {
             acc.qtyOnHand += qtyOnHand;
             acc.assetValue += assetValue;
           }
-          unitCostHistory = Array.from(historyByDay.values())
-            .sort((a, b) => a.snapshotDate.getTime() - b.snapshotDate.getTime())
-            .map((row) => {
-              const weightedUnitCost = row.qtyOnHand > 0 ? row.assetValue / row.qtyOnHand : null;
-              const unitCost = weightedUnitCost;
+          for (const raw of rawPriceRows as any[]) {
+            const payload =
+              raw?.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload)
+                ? (raw.payload as Record<string, unknown>)
+                : null;
+            if (!payload) continue;
+            const rawSku = canonicalInventoryKey(payload['Item'] ?? payload['ITNO'] ?? '');
+            if (!rawSku || rawSku !== skuKey) continue;
+            const price = Number(payload['Price'] ?? payload['PRICE'] ?? payload['price'] ?? 0);
+            if (!Number.isFinite(price) || price <= 0) continue;
+            const dateRaw = raw?.businessDate ? new Date(raw.businessDate) : null;
+            if (!dateRaw || Number.isNaN(dateRaw.getTime())) continue;
+            const day = new Date(
+              Date.UTC(dateRaw.getUTCFullYear(), dateRaw.getUTCMonth(), dateRaw.getUTCDate(), 0, 0, 0, 0)
+            );
+            const dayKey = toIsoDay(day);
+            if (!priceByDay.has(dayKey)) {
+              priceByDay.set(dayKey, { sum: 0, count: 0 });
+            }
+            const acc = priceByDay.get(dayKey)!;
+            acc.sum += price;
+            acc.count += 1;
+          }
+          const allDays = new Set<string>([...historyByDay.keys(), ...priceByDay.keys()]);
+          unitCostHistory = Array.from(allDays.values())
+            .map((dayKey) => {
+              const inventory = historyByDay.get(dayKey) || null;
+              const priceAcc = priceByDay.get(dayKey) || null;
+              const weightedUnitCost =
+                inventory && inventory.qtyOnHand > 0 ? inventory.assetValue / inventory.qtyOnHand : null;
+              const unitPrice =
+                priceAcc && priceAcc.count > 0 ? priceAcc.sum / priceAcc.count : null;
+              const spread =
+                weightedUnitCost != null && unitPrice != null ? unitPrice - weightedUnitCost : null;
               const source: 'weighted' | 'none' = weightedUnitCost ? 'weighted' : 'none';
+              const snapshotDate = inventory?.snapshotDate
+                ? inventory.snapshotDate
+                : (() => {
+                    const [y, m, d] = dayKey.split('-').map((n) => Number(n));
+                    return new Date(Date.UTC(y, (m || 1) - 1, d || 1, 0, 0, 0, 0));
+                  })();
               return {
-                snapshotDate: row.snapshotDate.toISOString(),
-                unitCost,
-                qtyOnHand: row.qtyOnHand,
-                assetValue: row.assetValue,
+                snapshotDate: snapshotDate.toISOString(),
+                unitCost: weightedUnitCost,
+                unitPrice,
+                spread,
+                qtyOnHand: Number(inventory?.qtyOnHand || 0),
+                assetValue: Number(inventory?.assetValue || 0),
+                pricePointCount: Number(priceAcc?.count || 0),
                 source,
               };
-            });
+            })
+            .sort((a, b) => new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime());
         }
 
         // Build a dense day-by-day inventory value series across the selected range.

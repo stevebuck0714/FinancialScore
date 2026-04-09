@@ -384,6 +384,9 @@ export default function OperationsTab({
   const [inventoryCostTrendSku, setInventoryCostTrendSku] = useState<string>('');
   const [inventoryCostTrendItemName, setInventoryCostTrendItemName] = useState<string>('');
   const [inventoryCostTrendPoints, setInventoryCostTrendPoints] = useState<any[]>([]);
+  const [customerMetricModalOpen, setCustomerMetricModalOpen] = useState(false);
+  const [customerMetricModalTitle, setCustomerMetricModalTitle] = useState('');
+  const [customerMetricModalNames, setCustomerMetricModalNames] = useState<string[]>([]);
   const [inventoryAgingSearchTerm, setInventoryAgingSearchTerm] = useState('');
   const [inventoryAgingTableExpanded, setInventoryAgingTableExpanded] = useState(true);
   const [inventoryAgingSortKey, setInventoryAgingSortKey] = useState<
@@ -789,12 +792,17 @@ export default function OperationsTab({
   const fetchInventoryUnitCostHistory = async (sku: string) => {
     const trimmedSku = String(sku || '').trim();
     if (!trimmedSku) return [];
+    const endForTrend = /^\d{4}-\d{2}-\d{2}$/.test(String(endDate || ''))
+      ? new Date(`${endDate}T00:00:00.000Z`)
+      : new Date(`${maxSelectableEndDate}T00:00:00.000Z`);
+    const startForTrend = new Date(endForTrend);
+    startForTrend.setUTCFullYear(startForTrend.getUTCFullYear() - 3);
     const params = new URLSearchParams({
       companyId: selectedCompanyId,
       type: 'inventory',
-      frequency,
-      startDate,
-      endDate,
+      frequency: 'daily',
+      startDate: startForTrend.toISOString().slice(0, 10),
+      endDate: endForTrend.toISOString().slice(0, 10),
       limit: '1000',
       sku: trimmedSku,
       includeCostHistory: 'true',
@@ -916,6 +924,90 @@ export default function OperationsTab({
     const arRecords = Array.isArray(arData.records) ? arData.records : [];
     const apRecords = Array.isArray(apData.records) ? apData.records : [];
     const inventorySummary = inventoryData?.summary || {};
+    const productRecords = Array.isArray(productData?.records) ? productData.records : [];
+    const productCostSignals = (() => {
+      if (!productRecords.length) return null;
+      const end = parseDateValue(endDate) || new Date();
+      const endUtc = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+      const recentStart = new Date(Date.UTC(endUtc.getUTCFullYear(), endUtc.getUTCMonth(), endUtc.getUTCDate() - 29));
+      const priorStart = new Date(Date.UTC(endUtc.getUTCFullYear(), endUtc.getUTCMonth(), endUtc.getUTCDate() - 59));
+      type WindowStats = {
+        recentQty: number;
+        recentRevenue: number;
+        recentCogs: number;
+        priorQty: number;
+        priorRevenue: number;
+        priorCogs: number;
+      };
+      const bySku = new Map<string, WindowStats>();
+      for (const row of productRecords) {
+        const parsed = parseDateValue(row?.snapshotDate);
+        if (!parsed) continue;
+        const d = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+        if (d < priorStart || d > endUtc) continue;
+        const sku = String(row?.sku || row?.itemId || '').trim();
+        if (!sku) continue;
+        const qty = Math.max(0, Number(row?.quantitySold || 0));
+        const revenue = Number(row?.revenue || 0);
+        const cogs = Number(row?.cogs || 0);
+        if (!bySku.has(sku)) {
+          bySku.set(sku, {
+            recentQty: 0,
+            recentRevenue: 0,
+            recentCogs: 0,
+            priorQty: 0,
+            priorRevenue: 0,
+            priorCogs: 0,
+          });
+        }
+        const acc = bySku.get(sku)!;
+        if (d >= recentStart) {
+          acc.recentQty += qty;
+          acc.recentRevenue += revenue;
+          acc.recentCogs += cogs;
+        } else {
+          acc.priorQty += qty;
+          acc.priorRevenue += revenue;
+          acc.priorCogs += cogs;
+        }
+      }
+      const stats = Array.from(bySku.entries())
+        .map(([sku, s]) => {
+          if (s.recentQty <= 0 || s.priorQty <= 0) return null;
+          const recentUnitCost = s.recentCogs / s.recentQty;
+          const priorUnitCost = s.priorCogs / s.priorQty;
+          const recentUnitPrice = s.recentRevenue / s.recentQty;
+          const priorUnitPrice = s.priorRevenue / s.priorQty;
+          const recentSpread = recentUnitPrice - recentUnitCost;
+          const priorSpread = priorUnitPrice - priorUnitCost;
+          const unitCostChangePct =
+            priorUnitCost > 0 ? ((recentUnitCost - priorUnitCost) / priorUnitCost) * 100 : 0;
+          const spreadChangePct =
+            Math.abs(priorSpread) > 0 ? ((recentSpread - priorSpread) / Math.abs(priorSpread)) * 100 : 0;
+          return {
+            sku,
+            recentUnitCost,
+            priorUnitCost,
+            unitCostChangePct,
+            recentSpread,
+            priorSpread,
+            spreadChangePct,
+          };
+        })
+        .filter(Boolean) as Array<{
+        sku: string;
+        recentUnitCost: number;
+        priorUnitCost: number;
+        unitCostChangePct: number;
+        recentSpread: number;
+        priorSpread: number;
+        spreadChangePct: number;
+      }>;
+      if (!stats.length) return null;
+      const maxUnitCostSpike = [...stats].sort((a, b) => b.unitCostChangePct - a.unitCostChangePct)[0];
+      const worstSpreadCompression = [...stats].sort((a, b) => a.spreadChangePct - b.spreadChangePct)[0];
+      return { maxUnitCostSpike, worstSpreadCompression };
+    })();
 
     if (card.title === 'DSO Drift') {
       const currentDso = Number(arSummary.dso || 0);
@@ -968,6 +1060,42 @@ export default function OperationsTab({
       return {
         headline: `AP trend ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% period-over-period`,
         detail: `${formatCurrency(previousAp)} -> ${formatCurrency(latestAp)}`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Material Cost Drift') {
+      if (!productCostSignals?.maxUnitCostSpike) {
+        return {
+          headline: 'No SKU unit-cost trend signal yet',
+          detail: 'Need recent and prior period shipped quantity for SKU-level unit cost comparison.',
+          severity: 'loading',
+        };
+      }
+      const spike = productCostSignals.maxUnitCostSpike;
+      const severity: CardSeverity =
+        spike.unitCostChangePct >= 10 ? 'critical' : spike.unitCostChangePct >= 5 ? 'warning' : 'normal';
+      return {
+        headline: `Top unit-cost move ${spike.unitCostChangePct >= 0 ? '+' : ''}${spike.unitCostChangePct.toFixed(1)}% (SKU ${spike.sku})`,
+        detail: `${formatUnitCost(spike.priorUnitCost)} -> ${formatUnitCost(spike.recentUnitCost)} (recent 30d vs prior 30d)`,
+        severity,
+      };
+    }
+
+    if (card.title === 'Discount Rate Creep') {
+      if (!productCostSignals?.worstSpreadCompression) {
+        return {
+          headline: 'No spread trend signal yet',
+          detail: 'Need recent and prior period shipped quantity for SKU-level spread comparison.',
+          severity: 'loading',
+        };
+      }
+      const spread = productCostSignals.worstSpreadCompression;
+      const severity: CardSeverity =
+        spread.spreadChangePct <= -20 ? 'critical' : spread.spreadChangePct <= -10 ? 'warning' : 'normal';
+      return {
+        headline: `Worst spread move ${spread.spreadChangePct >= 0 ? '+' : ''}${spread.spreadChangePct.toFixed(1)}% (SKU ${spread.sku})`,
+        detail: `${formatUnitCost(spread.priorSpread)} -> ${formatUnitCost(spread.recentSpread)} spread/unit (recent 30d vs prior 30d)`,
         severity,
       };
     }
@@ -1993,16 +2121,6 @@ export default function OperationsTab({
           let chartCustomers = tableCustomers;
           let chartTotal = chartCustomers.reduce((sum: number, c: any) => sum + c.totalRevenue, 0);
           const bookingsSummary = summary?.bookings || {};
-          const bookingsTotals = {
-            mtd: Number(bookingsSummary?.totals?.mtd || 0),
-            qtd: Number(bookingsSummary?.totals?.qtd || 0),
-            ytd: Number(bookingsSummary?.totals?.ytd || 0),
-          };
-          const bookingsTop5 = {
-            mtd: Number(bookingsSummary?.top5?.mtd || 0),
-            qtd: Number(bookingsSummary?.top5?.qtd || 0),
-            ytd: Number(bookingsSummary?.top5?.ytd || 0),
-          };
           const bookingsTopRows = (Array.isArray(bookingsSummary?.topCustomers) ? bookingsSummary.topCustomers : [])
             .map((row: any) => ({
               customerName: String(row?.customerName || 'Unknown Customer'),
@@ -2096,6 +2214,32 @@ export default function OperationsTab({
             .filter((row) => row.bookingsYtd > 0 || row.backlog90 > 0)
             .sort((a, b) => b.riskScore - a.riskScore)
             .slice(0, 10);
+          const customerOverview = summary?.customerOverview || {};
+          const activeCustomers365 = Number(customerOverview?.activeCustomers365 || 0);
+          const newCustomers90 = Number(customerOverview?.newCustomers90 || 0);
+          const totalBilled30 = Number(customerOverview?.totalBilled30 || 0);
+          const totalBilled90 = Number(customerOverview?.totalBilled90 || 0);
+          const concentrationTop5Pct = Number(customerOverview?.concentrationTop5Pct || 0);
+          const customersPastDuePct = Number(customerOverview?.customersPastDuePct || 0);
+          const atRiskCustomers = Number(customerOverview?.atRiskCustomers || 0);
+          const avgRevenuePerCustomer = Number(customerOverview?.avgRevenuePerCustomer || 0);
+          const newCustomerNames90 = Array.isArray(customerOverview?.newCustomerNames90)
+            ? customerOverview.newCustomerNames90.map((value: any) => String(value || '').trim()).filter(Boolean)
+            : [];
+          const concentrationTop5CustomerNames = Array.isArray(customerOverview?.concentrationTop5CustomerNames)
+            ? customerOverview.concentrationTop5CustomerNames.map((value: any) => String(value || '').trim()).filter(Boolean)
+            : [];
+          const pastDueCustomerNames = Array.isArray(customerOverview?.pastDueCustomerNames)
+            ? customerOverview.pastDueCustomerNames.map((value: any) => String(value || '').trim()).filter(Boolean)
+            : [];
+          const atRiskCustomerNames = Array.isArray(customerOverview?.atRiskCustomerNames)
+            ? customerOverview.atRiskCustomerNames.map((value: any) => String(value || '').trim()).filter(Boolean)
+            : [];
+          const openCustomerMetricPopup = (title: string, names: string[]) => {
+            setCustomerMetricModalTitle(title);
+            setCustomerMetricModalNames(names);
+            setCustomerMetricModalOpen(true);
+          };
 
           const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent }: any) => {
             const radius = outerRadius + 16;
@@ -2117,75 +2261,135 @@ export default function OperationsTab({
 
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(280px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(200px, 1fr))', gap: '10px', marginBottom: '20px' }}>
                 <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings</div>
-                  <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>MTD</span>
-                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTotals.mtd)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>QTD</span>
-                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTotals.qtd)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>YTD</span>
-                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTotals.ytd)}</span>
-                    </div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>Total Active Customers</div>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginTop: '4px' }}>{activeCustomers365.toLocaleString()}</div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Activity in last 365 days</div>
+                </div>
+                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>New Customers (Last 90 Days)</div>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginTop: '4px' }}>{newCustomers90.toLocaleString()}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>First invoice date in period</div>
+                    <button
+                      onClick={() => openCustomerMetricPopup('New Customers (Last 90 Days)', newCustomerNames90)}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', padding: '2px 8px', fontSize: '11px', color: '#334155', cursor: 'pointer' }}
+                    >
+                      Names
+                    </button>
                   </div>
                 </div>
                 <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>Bookings Top 5 Customers</div>
-                  <div style={{ display: 'grid', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>MTD</span>
-                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTop5.mtd)}</span>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>Total Billed</div>
+                  <div style={{ display: 'grid', gap: '2px', marginTop: '4px', fontSize: '12px', color: '#334155' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>30d</span><strong>{formatCurrency(totalBilled30)}</strong></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>90d</span><strong>{formatCurrency(totalBilled90)}</strong></div>
+                  </div>
+                </div>
+                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>Customer Concentration (Top 5)</div>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: concentrationTop5Pct >= 70 ? '#b91c1c' : concentrationTop5Pct >= 55 ? '#92400e' : '#166534', marginTop: '4px' }}>
+                    {concentrationTop5Pct.toFixed(1)}%
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Top 5 billed / total billed (365d)</div>
+                    <button
+                      onClick={() => openCustomerMetricPopup('Customer Concentration (Top 5)', concentrationTop5CustomerNames)}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', padding: '2px 8px', fontSize: '11px', color: '#334155', cursor: 'pointer' }}
+                    >
+                      Names
+                    </button>
+                  </div>
+                </div>
+                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>Customers Past Due</div>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: customersPastDuePct >= 35 ? '#b91c1c' : customersPastDuePct >= 20 ? '#92400e' : '#166534', marginTop: '4px' }}>
+                    {customersPastDuePct.toFixed(1)}%
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Past due customers / active customers</div>
+                    <button
+                      onClick={() => openCustomerMetricPopup('Customers Past Due (Over 30 Days)', pastDueCustomerNames)}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', padding: '2px 8px', fontSize: '11px', color: '#334155', cursor: 'pointer' }}
+                    >
+                      Names
+                    </button>
+                  </div>
+                </div>
+                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>At-Risk Customers</div>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: atRiskCustomers > 0 ? '#b45309' : '#166534', marginTop: '4px' }}>
+                    {atRiskCustomers.toLocaleString()}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', gap: '8px' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>No activity 60-90d or past due</div>
+                    <button
+                      onClick={() => openCustomerMetricPopup('At-Risk Customers', atRiskCustomerNames)}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', padding: '2px 8px', fontSize: '11px', color: '#334155', cursor: 'pointer' }}
+                    >
+                      Names
+                    </button>
+                  </div>
+                </div>
+                <div style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>Avg Revenue per Customer</div>
+                  <div style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', marginTop: '4px' }}>{formatCurrency(avgRevenuePerCustomer)}</div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>Total billed / active customers (365d)</div>
+                </div>
+              </div>
+              {customerMetricModalOpen && (
+                <div
+                  onClick={() => setCustomerMetricModalOpen(false)}
+                  style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(2, 6, 23, 0.45)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 60,
+                    padding: '24px',
+                  }}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      width: 'min(680px, 100%)',
+                      maxHeight: '80vh',
+                      overflow: 'hidden',
+                      background: 'white',
+                      borderRadius: '12px',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 24px 50px rgba(15, 23, 42, 0.25)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid #e2e8f0' }}>
+                      <div>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{customerMetricModalTitle}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>{customerMetricModalNames.length.toLocaleString()} customers</div>
+                      </div>
+                      <button
+                        onClick={() => setCustomerMetricModalOpen(false)}
+                        style={{ border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', padding: '4px 10px', cursor: 'pointer', color: '#334155', fontSize: '12px' }}
+                      >
+                        Close
+                      </button>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>QTD</span>
-                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTop5.qtd)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>YTD</span>
-                      <span style={{ fontWeight: 700 }}>{formatCurrency(bookingsTop5.ytd)}</span>
+                    <div style={{ maxHeight: 'calc(80vh - 74px)', overflowY: 'auto', padding: '8px 0' }}>
+                      {customerMetricModalNames.length === 0 ? (
+                        <div style={{ padding: '12px 16px', fontSize: '12px', color: '#64748b' }}>No customers found for this metric in the selected period.</div>
+                      ) : (
+                        customerMetricModalNames.map((name, index) => (
+                          <div key={`${name}-${index}`} style={{ padding: '8px 16px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', color: '#0f172a' }}>
+                            {index + 1}. {name}
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
-              <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0, marginBottom: '10px' }}>
-                  Top Customers by Bookings
-                </h3>
-                {bookingsTopRows.length === 0 ? (
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>No bookings found in selected window.</div>
-                ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
-                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Rank</th>
-                          <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>Customer</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>MTD</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>QTD</th>
-                          <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: 700, color: 'white' }}>YTD</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {bookingsTopRows.map((row: any, index: number) => (
-                          <tr key={`${row.customerName}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b' }}>#{index + 1}</td>
-                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: 600 }}>{row.customerName}</td>
-                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.mtd)}</td>
-                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right' }}>{formatCurrency(row.qtd)}</td>
-                            <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right', fontWeight: 700 }}>{formatCurrency(row.ytd)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              )}
               <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
@@ -4934,11 +5138,16 @@ export default function OperationsTab({
         setInventoryCostTrendLoading(false);
       }
     };
+    const inventoryTrendWindowEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(endDate || ''))
+      ? new Date(`${endDate}T00:00:00.000Z`)
+      : new Date(`${maxSelectableEndDate}T00:00:00.000Z`);
+    const inventoryTrendWindowStart = new Date(inventoryTrendWindowEnd);
+    inventoryTrendWindowStart.setUTCFullYear(inventoryTrendWindowStart.getUTCFullYear() - 3);
     const toInventoryIsoDay = (d: Date) =>
       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     const formatInventoryTrendDay = (d: Date) =>
-      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-    const inventoryCostTrendChartData = inventoryCostTrendPoints
+      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    const sparseInventoryCostTrendChartData = inventoryCostTrendPoints
       .map((point: any) => {
         const parsed = parseDateValue(point?.snapshotDate);
         if (!parsed) return null;
@@ -4947,6 +5156,9 @@ export default function OperationsTab({
           dateKey: toInventoryIsoDay(utcDay),
           dateLabel: formatInventoryTrendDay(utcDay),
           unitCost: point?.unitCost == null ? null : Number(point.unitCost),
+          unitPrice: point?.unitPrice == null ? null : Number(point.unitPrice),
+          spread: point?.spread == null ? null : Number(point.spread),
+          pricePointCount: Number(point?.pricePointCount || 0),
           source: String(point?.source || 'none'),
         };
       })
@@ -4954,9 +5166,57 @@ export default function OperationsTab({
       dateKey: string;
       dateLabel: string;
       unitCost: number | null;
+      unitPrice: number | null;
+      spread: number | null;
+      pricePointCount: number;
       source: string;
     }>;
-    const inventoryCostTrendXAxisInterval = Math.max(Math.ceil(inventoryCostTrendChartData.length / 16) - 1, 0);
+    const sparseByDay = new Map<string, (typeof sparseInventoryCostTrendChartData)[number]>();
+    for (const row of sparseInventoryCostTrendChartData) {
+      sparseByDay.set(row.dateKey, row);
+    }
+    const inventoryCostTrendChartData: Array<{
+      dateKey: string;
+      dateLabel: string;
+      unitCost: number | null;
+      unitPrice: number | null;
+      spread: number | null;
+      pricePointCount: number;
+      source: string;
+    }> = [];
+    for (
+      let cursor = new Date(inventoryTrendWindowStart);
+      cursor.getTime() <= inventoryTrendWindowEnd.getTime();
+      cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 1))
+    ) {
+      const day = new Date(cursor);
+      const key = toInventoryIsoDay(day);
+      const sparse = sparseByDay.get(key);
+      inventoryCostTrendChartData.push({
+        dateKey: key,
+        dateLabel: formatInventoryTrendDay(day),
+        unitCost: sparse?.unitCost ?? null,
+        unitPrice: sparse?.unitPrice ?? null,
+        spread: sparse?.spread ?? null,
+        pricePointCount: sparse?.pricePointCount ?? 0,
+        source: sparse?.source ?? 'none',
+      });
+    }
+    const inventoryCostTrendTickKeys = (() => {
+      const ticks: string[] = [];
+      for (const row of inventoryCostTrendChartData) {
+        const parsed = parseDateValue(row.dateKey);
+        if (!parsed) continue;
+        const month = parsed.getUTCMonth(); // 0-11
+        const day = parsed.getUTCDate();
+        if ((month === 0 || month === 3 || month === 6 || month === 9) && day === 1) {
+          ticks.push(row.dateKey);
+        }
+      }
+      const last = inventoryCostTrendChartData[inventoryCostTrendChartData.length - 1]?.dateKey;
+      if (last && !ticks.includes(last)) ticks.push(last);
+      return ticks;
+    })();
     const rawInventoryAgingRows = Array.isArray(agingReport) ? agingReport.slice(0, 100) : [];
     const inventoryAgingSearch = String(inventoryAgingSearchTerm || '').trim().toLowerCase();
     const filteredInventoryAgingRows = rawInventoryAgingRows.filter((row: any) => {
@@ -5349,12 +5609,13 @@ export default function OperationsTab({
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis
                       dataKey="dateKey"
+                      ticks={inventoryCostTrendTickKeys}
                       tickFormatter={(value) => {
                         const match = inventoryCostTrendChartData.find((point) => point.dateKey === String(value));
                         return match?.dateLabel || String(value);
                       }}
-                      interval={inventoryCostTrendXAxisInterval}
-                      minTickGap={24}
+                      interval={0}
+                      minTickGap={48}
                       stroke="#64748b"
                       style={{ fontSize: '12px' }}
                     />
@@ -5362,6 +5623,8 @@ export default function OperationsTab({
                     <Tooltip
                       formatter={(value: any, name: string, props: any) => {
                         if (name === 'Unit Cost') return [formatUnitCost(Number(value || 0)), name];
+                        if (name === 'SKU Price') return [formatUnitCost(Number(value || 0)), name];
+                        if (name === 'Spread') return [formatUnitCost(Number(value || 0)), name];
                         return [String(value ?? ''), name];
                       }}
                       labelFormatter={(value: any) => {
@@ -5372,6 +5635,8 @@ export default function OperationsTab({
                     />
                     <Legend />
                     <Line type="monotone" dataKey="unitCost" stroke="#2563eb" strokeWidth={2} dot={false} name="Unit Cost" />
+                    <Line type="monotone" dataKey="unitPrice" stroke="#16a34a" strokeWidth={2} dot={false} name="SKU Price" />
+                    <Line type="monotone" dataKey="spread" stroke="#7c3aed" strokeWidth={1.5} dot={false} name="Spread" />
                   </LineChart>
                 </ResponsiveContainer>
               )}
