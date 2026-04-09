@@ -35,6 +35,7 @@ type InforM3ConnectionMetadata = {
 
 type InforConnectionMetadataContainer = Record<string, unknown> & {
   inforProfiles?: Record<string, InforM3ConnectionMetadata>;
+  inforManualDisconnect?: boolean;
 };
 
 function normalizeOptionalString(value: unknown): string | undefined {
@@ -105,8 +106,10 @@ async function resolveInforSystemForCompany(companyId: string, system?: InforSys
 export async function saveInforM3CredentialsForCompany(
   companyId: string,
   credentials: InforM3Credentials,
-  system?: InforSystem
+  system?: InforSystem,
+  options?: { activateConnection?: boolean }
 ): Promise<void> {
+  const activateConnection = options?.activateConnection !== false;
   const resolvedSystem = await resolveInforSystemForCompany(companyId, system);
   const metadata = toMetadata(credentials);
   const existing = await prisma.accountingConnection.findUnique({
@@ -131,6 +134,7 @@ export async function saveInforM3CredentialsForCompany(
   const mergedMetadata: InforConnectionMetadataContainer = {
     ...existingMetadata,
     inforProfiles: profiles,
+    inforManualDisconnect: activateConnection ? false : Boolean(existingMetadata.inforManualDisconnect),
   };
   if (resolvedSystem === 'INFOR_M3') {
     Object.assign(mergedMetadata, metadata);
@@ -144,7 +148,7 @@ export async function saveInforM3CredentialsForCompany(
       },
     },
     update: {
-      status: 'ACTIVE',
+      status: activateConnection ? 'ACTIVE' : 'INACTIVE',
       tenantId: credentials.tenantId,
       platformVersion: 'ionapi-1.0',
       errorMessage: null,
@@ -156,7 +160,7 @@ export async function saveInforM3CredentialsForCompany(
     create: {
       companyId,
       platform: 'INFOR_M3',
-      status: 'ACTIVE',
+      status: activateConnection ? 'ACTIVE' : 'INACTIVE',
       tenantId: credentials.tenantId,
       platformVersion: 'ionapi-1.0',
       autoSync: false,
@@ -193,6 +197,7 @@ export async function clearInforM3CredentialsForCompany(companyId: string, syste
   const profiles = { ...(metadata.inforProfiles || {}) };
   delete profiles[resolvedSystem];
   metadata.inforProfiles = profiles;
+  metadata.inforManualDisconnect = true;
 
   if (resolvedSystem === 'INFOR_M3') {
     delete metadata.clientIdEncrypted;
@@ -230,7 +235,7 @@ export async function clearInforM3CredentialsForCompany(companyId: string, syste
     },
     data: {
       connectionMetadata: metadata as Prisma.InputJsonValue,
-      status: 'ACTIVE',
+      status: 'INACTIVE',
       errorMessage: null,
     },
   });

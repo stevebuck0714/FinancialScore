@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
         updatedAt: Date | null;
         autoSyncTime: string | null;
         autoSyncWindowDays: string | null;
+        inforManualDisconnect: string | null;
       }>
     >`
       SELECT
@@ -42,7 +43,8 @@ export async function GET(request: NextRequest) {
         "syncFrequency",
         "updatedAt",
         "connectionMetadata"->>'operationalPullTime' AS "autoSyncTime",
-        "connectionMetadata"->>'operationalAutoSyncWindowDays' AS "autoSyncWindowDays"
+        "connectionMetadata"->>'operationalAutoSyncWindowDays' AS "autoSyncWindowDays",
+        "connectionMetadata"->>'inforManualDisconnect' AS "inforManualDisconnect"
       FROM "AccountingConnection"
       WHERE "companyId" = ${companyId}
         AND platform = 'INFOR_M3'
@@ -58,9 +60,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const manuallyDisconnected =
+      String(connection.inforManualDisconnect || '').trim().toLowerCase() === 'true';
+
     return NextResponse.json({
-      connected: connection.status === 'ACTIVE',
+      connected: connection.status === 'ACTIVE' && !manuallyDisconnected,
       companyId,
+      manuallyDisconnected,
       autoSyncTime: connection.autoSyncTime || null,
       ...connection,
     });

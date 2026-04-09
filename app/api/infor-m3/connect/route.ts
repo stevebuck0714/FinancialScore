@@ -111,7 +111,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await saveInforM3CredentialsForCompany(companyId, mergedCredentials);
+    await saveInforM3CredentialsForCompany(companyId, mergedCredentials, undefined, {
+      activateConnection: true,
+    });
 
     return NextResponse.json({
       ok: true,

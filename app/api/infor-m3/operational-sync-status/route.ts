@@ -363,12 +363,15 @@ export async function GET(request: NextRequest) {
 
     if (isInforSyncQueueEnabled()) {
       let queueRun = await getQueueRunById(companyId, syncRunId);
-      if (queueRun?.status === 'running') {
+      if (queueRun) {
+        const queueStatus = String(queueRun.status || '').trim().toLowerCase();
+        const shouldAttemptKick = queueStatus === 'running' || queueStatus === 'queued';
         const lastProgressAt = queueRun.lastChunkAt || queueRun.updatedAt;
         const millisSinceProgress = ageMs(lastProgressAt);
         // Opportunistically advance the queue from status polling when progress
-        // has gone quiet for a short interval (helps staging/dev without cron cadence).
-        if (Number.isFinite(millisSinceProgress) && millisSinceProgress > 15000) {
+        // has gone quiet for a short interval. This also helps queued runs that
+        // are blocked behind stale active runs when cron cadence is degraded.
+        if (shouldAttemptKick && Number.isFinite(millisSinceProgress) && millisSinceProgress > 15000) {
           const cronSecret = String(process.env.CRON_SECRET || '').trim();
           const workerSecret = cronSecret || 'dev-worker';
           try {

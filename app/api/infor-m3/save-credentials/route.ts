@@ -110,7 +110,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await saveInforM3CredentialsForCompany(companyId, bodyCredentials);
+    await saveInforM3CredentialsForCompany(companyId, bodyCredentials, undefined, {
+      activateConnection: false,
+    });
 
     if (frequency && pullTime) {
       const existing = await prisma.accountingConnection.findUnique({
