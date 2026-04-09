@@ -539,6 +539,24 @@ const BLOCKED_PROGRAM_PROPERTIES: Record<string, Set<string>> = {
   SLAPPMTS: new Set(['business_identifier_code']),
 };
 
+const ENFORCED_PROGRAM_PROPERTIES: Record<string, string[]> = {
+  // Prevent CSI tenant default projection from injecting unsupported banking columns.
+  SLAPPMTS: [
+    'VendNum',
+    'InvNum',
+    'Voucher',
+    'Type',
+    'CheckDate',
+    'DistDate',
+    'RecordDate',
+    'PYDT',
+    'RGDT',
+    'DomCheckAmt',
+    'ForCheckAmt',
+    'CUCD',
+  ],
+};
+
 function inferProgramIdFromEndpointPath(endpointPath: string): string {
   const raw = String(endpointPath || '').trim();
   if (!raw) return '';
@@ -575,6 +593,20 @@ function sanitizeEndpointPathProperties(endpointPath: string, explicitProgramId?
   return next ? `${path}?${next}` : path;
 }
 
+function applyProgramEndpointPropertyPolicy(endpointPath: string, explicitProgramId?: string): string {
+  const raw = String(endpointPath || '').trim();
+  if (!raw) return raw;
+  const [path] = raw.split('?');
+  const programId = String(explicitProgramId || inferProgramIdFromEndpointPath(path)).trim().toUpperCase();
+  let next = sanitizeEndpointPathProperties(raw, programId);
+  const enforced = ENFORCED_PROGRAM_PROPERTIES[programId];
+  if (enforced && /\/IDORequestService\/ido\/load\//i.test(next)) {
+    next = ensureCsiProperties(next, enforced);
+    next = sanitizeEndpointPathProperties(next, programId);
+  }
+  return next;
+}
+
 function parsePrograms(value: unknown): InforProgramRow[] {
   if (!Array.isArray(value)) return [];
   const rows: InforProgramRow[] = [];
@@ -587,7 +619,7 @@ function parsePrograms(value: unknown): InforProgramRow[] {
     const divi = typeof row?.divi === 'string' ? row.divi.trim() : '';
     const endpointPathRaw = typeof row?.endpointPath === 'string' ? row.endpointPath.trim() : '';
     const inferredProgramId = String(miProgram || inferProgramIdFromEndpointPath(endpointPathRaw)).trim().toUpperCase();
-    const endpointPath = sanitizeEndpointPathProperties(endpointPathRaw, inferredProgramId);
+    const endpointPath = applyProgramEndpointPropertyPolicy(endpointPathRaw, inferredProgramId);
     const mongooseConfig = typeof row?.mongooseConfig === 'string' ? row.mongooseConfig.trim() : '';
     const site = typeof row?.site === 'string' ? row.site.trim() : '';
     const recordCap = Number.isFinite(Number(row?.recordCap)) ? Number(row.recordCap) : undefined;
@@ -1561,8 +1593,11 @@ function resolveSlaPtrxSafePropertyPath(endpointPath: string): string | null {
 }
 
 function parseMissingPropertyFromMessage(message: string): string | null {
-  const match = message.match(/Property\s+([A-Za-z0-9_]+)\s+not found/i);
-  return match?.[1] ? String(match[1]).trim() : null;
+  const missingPropertyMatch = message.match(/Property\s+([A-Za-z0-9_]+)\s+not found/i);
+  if (missingPropertyMatch?.[1]) return String(missingPropertyMatch[1]).trim();
+  const invalidColumnMatch = message.match(/Invalid\s+column\s+name\s+'([A-Za-z0-9_]+)'/i);
+  if (invalidColumnMatch?.[1]) return String(invalidColumnMatch[1]).trim();
+  return null;
 }
 
 function removePropertyFromEndpoint(endpointPath: string, propertyName: string): string | null {
@@ -1749,7 +1784,7 @@ function resolveRawSourceRecordId(record: Record<string, unknown>): string | nul
 function buildCsiEndpointPath(row: InforProgramRow): string | null {
   if (row.endpointPath && row.endpointPath.length > 0) {
     const explicitProgramId = String(row.miProgram || inferProgramIdFromEndpointPath(row.endpointPath)).trim().toUpperCase();
-    const raw = sanitizeEndpointPathProperties(row.endpointPath, explicitProgramId);
+    const raw = applyProgramEndpointPropertyPolicy(row.endpointPath, explicitProgramId);
     if (/\/IDORequestService\/ido\/load\//i.test(raw)) {
       // Force explicit FIRST mode for initial calls and strip stale bookmarks.
       return normalizeCsiLoadPaging(raw, 'FIRST');
@@ -1763,10 +1798,10 @@ function buildCsiEndpointPath(row: InforProgramRow): string | null {
   }
   const cap = row.recordCap && row.recordCap > 0 ? row.recordCap : 1000;
   params.set('recordCap', String(cap));
-  return normalizeCsiLoadPaging(
+  return applyProgramEndpointPropertyPolicy(normalizeCsiLoadPaging(
     `/APR_PRD/CSI/IDORequestService/ido/load/${row.miProgram}?${params.toString()}`,
     'FIRST'
-  );
+  ));
 }
 
 function asString(value: unknown): string | null {
@@ -6567,8 +6602,11 @@ export async function syncInforM3OperationalData(
           })
         );
       }
-      const sourceWindowBaseEndpointPath = sourceWindowPathResult.endpointPath;
-      const fallbackBaseEndpointPath = req.endpointPath;
+      const sourceWindowBaseEndpointPath = applyProgramEndpointPropertyPolicy(
+        sourceWindowPathResult.endpointPath,
+        programId
+      );
+      const fallbackBaseEndpointPath = applyProgramEndpointPropertyPolicy(req.endpointPath, programId);
       let initialEndpointPath = sourceWindowBaseEndpointPath;
       const rawInputBookmark = typeof options?.bookmark === 'string' && options.bookmark.trim() ? options.bookmark.trim() : null;
       // Historical business-day fanout tasks must start each business date at FIRST.
@@ -6635,7 +6673,10 @@ export async function syncInforM3OperationalData(
         }
       }
 
-      const normalizedInitialEndpointPath = resolveSlCoitemsSafePath(initialEndpointPath) || initialEndpointPath;
+      const normalizedInitialEndpointPath = applyProgramEndpointPropertyPolicy(
+        resolveSlCoitemsSafePath(initialEndpointPath) || initialEndpointPath,
+        programId
+      );
       const isSlVchHdrs = isSlVchHdrsProgramLike({ programId, row, endpointPath: req.endpointPath });
       let effectiveEndpointPath = normalizedInitialEndpointPath;
       let response: Awaited<ReturnType<typeof callInforIonApi>>;
