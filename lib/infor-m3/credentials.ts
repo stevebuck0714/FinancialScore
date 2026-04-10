@@ -280,7 +280,7 @@ export async function getInforM3CredentialsForCompany(
   `;
 
   const connection = rows[0];
-  if (!connection || connection.status !== 'ACTIVE') {
+  if (!connection) {
     return null;
   }
 

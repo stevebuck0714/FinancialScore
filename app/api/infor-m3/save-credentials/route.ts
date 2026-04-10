@@ -111,7 +111,9 @@ export async function POST(request: NextRequest) {
     }
 
     await saveInforM3CredentialsForCompany(companyId, bodyCredentials, undefined, {
-      activateConnection: false,
+      // Saving credentials should keep this connector usable instead of forcing
+      // it into INACTIVE state and blocking follow-up pulls/retries.
+      activateConnection: true,
     });
 
     if (frequency && pullTime) {
