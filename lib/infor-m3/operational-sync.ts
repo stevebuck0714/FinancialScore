@@ -7944,13 +7944,29 @@ export async function transformInforM3RawRun(options: {
       ? requestedBusinessDate
       : null;
 
+  // Use both batch-level and record-level business dates. Some historical runs
+  // can have complete raw records while batch-date coverage is sparse; relying on
+  // batches alone can skip transform days and leave downstream snapshots empty.
   const businessDateRows = await prisma.$queryRaw<Array<{ businessDate: Date }>>`
     SELECT DISTINCT "businessDate"
-    FROM "InforRawBatch"
-    WHERE "companyId" = ${companyId}
-      AND platform = 'INFOR_M3'
-      AND "syncRunId" = ${syncRunId}
-      ${businessDateFilter ? Prisma.sql`AND "businessDate" = ${new Date(`${businessDateFilter}T00:00:00.000Z`)}` : Prisma.sql``}
+    FROM (
+      SELECT b."businessDate"
+      FROM "InforRawBatch" b
+      WHERE b."companyId" = ${companyId}
+        AND b.platform = 'INFOR_M3'
+        AND b."syncRunId" = ${syncRunId}
+        ${businessDateFilter ? Prisma.sql`AND b."businessDate" = ${new Date(`${businessDateFilter}T00:00:00.000Z`)}` : Prisma.sql``}
+
+      UNION
+
+      SELECT r."businessDate"
+      FROM "InforRawRecord" r
+      WHERE r."companyId" = ${companyId}
+        AND r.platform = 'INFOR_M3'
+        AND r."syncRunId" = ${syncRunId}
+        ${businessDateFilter ? Prisma.sql`AND r."businessDate" = ${new Date(`${businessDateFilter}T00:00:00.000Z`)}` : Prisma.sql``}
+    ) q
+    WHERE q."businessDate" IS NOT NULL
     ORDER BY "businessDate" ASC
     ${maxBusinessDates ? Prisma.sql`LIMIT ${maxBusinessDates}` : Prisma.sql``}
   `;
