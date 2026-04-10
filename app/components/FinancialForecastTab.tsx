@@ -575,6 +575,7 @@ export default function FinancialForecastTab({
   const [cogsGrowthByRow, setCogsGrowthByRow] = useState<Record<string, number[]>>({});
   const [opexPctByRow, setOpexPctByRow] = useState<Record<string, number[]>>({});
   const [opexAmountByRow, setOpexAmountByRow] = useState<Record<string, number[]>>({});
+  const [editingPercentDrafts, setEditingPercentDrafts] = useState<Record<string, string>>({});
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -809,6 +810,46 @@ export default function FinancialForecastTab({
         current[periodIndex] = value;
       }
       return { ...prev, [rowKey]: current };
+    });
+  };
+
+  const getPercentInputValue = (draftKey: string, numericValue: number, precision: number): string => {
+    if (Object.prototype.hasOwnProperty.call(editingPercentDrafts, draftKey)) {
+      return editingPercentDrafts[draftKey];
+    }
+    const safe = Number.isFinite(numericValue) ? numericValue : 0;
+    return safe.toFixed(precision);
+  };
+
+  const handlePercentDraftChange = (
+    draftKey: string,
+    raw: string,
+    commit: (value: number) => void,
+  ) => {
+    if (!/^-?\d*\.?\d*$/.test(raw)) return;
+    setEditingPercentDrafts((prev) => ({ ...prev, [draftKey]: raw }));
+    if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return;
+    commit(Number(parsed.toFixed(2)));
+  };
+
+  const handlePercentDraftBlur = (
+    draftKey: string,
+    commit: (value: number) => void,
+  ) => {
+    const raw = editingPercentDrafts[draftKey];
+    if (raw === undefined) return;
+    if (!(raw === '' || raw === '-' || raw === '.' || raw === '-.')) {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        commit(Number(parsed.toFixed(2)));
+      }
+    }
+    setEditingPercentDrafts((prev) => {
+      const next = { ...prev };
+      delete next[draftKey];
+      return next;
     });
   };
 
@@ -2098,14 +2139,18 @@ export default function FinancialForecastTab({
                             <input
                               type="text"
                               inputMode="decimal"
-                              value={(Number(revenueGrowthByRow[rowKey]?.[idx]) || 0).toFixed(1)}
+                              value={getPercentInputValue(`rev-cur-${rowKey}-${idx}`, Number(revenueGrowthByRow[rowKey]?.[idx] || 0), 1)}
                               onChange={(e) => {
                                 const raw = e.target.value.trim();
-                                if (!/^-?\d*\.?\d*$/.test(raw)) return;
-                                if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
-                                const parsed = Number((Number(raw) || 0).toFixed(2));
-                                updateRevenueMonthlyAndDerived(rowKey, idx, parsed);
+                                handlePercentDraftChange(`rev-cur-${rowKey}-${idx}`, raw, (parsed) =>
+                                  updateRevenueMonthlyAndDerived(rowKey, idx, parsed)
+                                );
                               }}
+                              onBlur={() =>
+                                handlePercentDraftBlur(`rev-cur-${rowKey}-${idx}`, (parsed) =>
+                                  updateRevenueMonthlyAndDerived(rowKey, idx, parsed)
+                                )
+                              }
                               style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                             />%
                           </>
@@ -2126,14 +2171,18 @@ export default function FinancialForecastTab({
                               <input
                                 type="text"
                                 inputMode="decimal"
-                                value={displayQuarterlyPct.toFixed(1)}
+                                value={getPercentInputValue(`rev-q-${rowKey}-${periodIndex}`, displayQuarterlyPct, 1)}
                                 onChange={(e) => {
                                   const raw = e.target.value.trim();
-                                  if (!/^-?\d*\.?\d*$/.test(raw)) return;
-                                  if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
-                                  const parsed = Number((Number(raw) || 0).toFixed(2));
-                                  updateSinglePeriod(setRevenueGrowthByRow, rowKey, periodIndex, parsed);
+                                  handlePercentDraftChange(`rev-q-${rowKey}-${periodIndex}`, raw, (parsed) =>
+                                    updateSinglePeriod(setRevenueGrowthByRow, rowKey, periodIndex, parsed)
+                                  );
                                 }}
+                                onBlur={() =>
+                                  handlePercentDraftBlur(`rev-q-${rowKey}-${periodIndex}`, (parsed) =>
+                                    updateSinglePeriod(setRevenueGrowthByRow, rowKey, periodIndex, parsed)
+                                  )
+                                }
                                 style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                               />%
                             </td>
@@ -2258,9 +2307,24 @@ export default function FinancialForecastTab({
                       ? quarterlyForecastPeriods.map((q, idx) => (
                           <td key={`${rowKey}-caq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
                             <input
-                              type="number"
-                              value={Number((Number(cogsGrowthByRow[rowKey]?.[idx + monthlyForecastCount]) || 0).toFixed(2))}
-                              onChange={(e) => updateSinglePeriod(setCogsGrowthByRow, rowKey, idx + monthlyForecastCount, Number((Number(e.target.value) || 0).toFixed(2)))}
+                              type="text"
+                              inputMode="decimal"
+                              value={getPercentInputValue(
+                                `cogs-q-${rowKey}-${idx + monthlyForecastCount}`,
+                                Number(cogsGrowthByRow[rowKey]?.[idx + monthlyForecastCount] || 0),
+                                2,
+                              )}
+                              onChange={(e) => {
+                                const raw = e.target.value.trim();
+                                handlePercentDraftChange(`cogs-q-${rowKey}-${idx + monthlyForecastCount}`, raw, (parsed) =>
+                                  updateSinglePeriod(setCogsGrowthByRow, rowKey, idx + monthlyForecastCount, parsed)
+                                );
+                              }}
+                              onBlur={() =>
+                                handlePercentDraftBlur(`cogs-q-${rowKey}-${idx + monthlyForecastCount}`, (parsed) =>
+                                  updateSinglePeriod(setCogsGrowthByRow, rowKey, idx + monthlyForecastCount, parsed)
+                                )
+                              }
                               style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                             />%
                           </td>
@@ -2391,9 +2455,24 @@ export default function FinancialForecastTab({
                             ) : (
                               <>
                                 <input
-                                  type="number"
-                                  value={Number(opexPctByRow[key]?.[idx + monthlyForecastCount] || 0)}
-                                  onChange={(e) => updateSinglePeriod(setOpexPctByRow, key, idx + monthlyForecastCount, Number(e.target.value) || 0)}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={getPercentInputValue(
+                                    `opex-q-${key}-${idx + monthlyForecastCount}`,
+                                    Number(opexPctByRow[key]?.[idx + monthlyForecastCount] || 0),
+                                    2,
+                                  )}
+                                  onChange={(e) => {
+                                    const raw = e.target.value.trim();
+                                    handlePercentDraftChange(`opex-q-${key}-${idx + monthlyForecastCount}`, raw, (parsed) =>
+                                      updateSinglePeriod(setOpexPctByRow, key, idx + monthlyForecastCount, parsed)
+                                    );
+                                  }}
+                                  onBlur={() =>
+                                    handlePercentDraftBlur(`opex-q-${key}-${idx + monthlyForecastCount}`, (parsed) =>
+                                      updateSinglePeriod(setOpexPctByRow, key, idx + monthlyForecastCount, parsed)
+                                    )
+                                  }
                                   style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                                 />%
                               </>
@@ -2553,9 +2632,24 @@ export default function FinancialForecastTab({
                           ) : (
                             <>
                               <input
-                                type="number"
-                                value={Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx + monthlyForecastCount] || 0)}
-                                onChange={(e) => updateSinglePeriod(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx + monthlyForecastCount, Number(e.target.value) || 0)}
+                                type="text"
+                                inputMode="decimal"
+                                value={getPercentInputValue(
+                                  `tax-q-${idx + monthlyForecastCount}`,
+                                  Number(opexPctByRow[INCOME_TAX_PCT_KEY]?.[idx + monthlyForecastCount] || 0),
+                                  2,
+                                )}
+                                onChange={(e) => {
+                                  const raw = e.target.value.trim();
+                                  handlePercentDraftChange(`tax-q-${idx + monthlyForecastCount}`, raw, (parsed) =>
+                                    updateSinglePeriod(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx + monthlyForecastCount, parsed)
+                                  );
+                                }}
+                                onBlur={() =>
+                                  handlePercentDraftBlur(`tax-q-${idx + monthlyForecastCount}`, (parsed) =>
+                                    updateSinglePeriod(setOpexPctByRow, INCOME_TAX_PCT_KEY, idx + monthlyForecastCount, parsed)
+                                  )
+                                }
                                 style={{ width: '62px', textAlign: 'right', padding: '4px' }}
                               />%
                             </>
