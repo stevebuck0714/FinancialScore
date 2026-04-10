@@ -1970,9 +1970,9 @@ export default function FinancialForecastTab({
                 onClick={handleSaveInputs}
                 disabled={isSavingInputs || isLoadingInputs || !isInputsDirty}
                 style={{
-                  border: '1px solid #cbd5e1',
-                  background: isSavingInputs ? '#f1f5f9' : '#ffffff',
-                  color: '#0f172a',
+                  border: '1px solid #2751d0',
+                  background: isSavingInputs || isLoadingInputs || !isInputsDirty ? '#94a3b8' : '#2751d0',
+                  color: 'white',
                   borderRadius: '8px',
                   padding: '8px 12px',
                   fontSize: '12px',

@@ -1355,7 +1355,7 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
               {isInputsOnly
                 ? 'Accrual Weekly Inputs (13 Weeks)'
                 : basisMode === 'accrual'
-                  ? 'Cash Forecast (Accrual Basis, 13 Weeks)'
+                  ? 'Cash Forecast - 13 Weeks'
                   : 'Cash Forecast (Cash Basis, 13 Weeks)'}
             </div>
             <div style={{ color: '#334155', fontSize: '13px' }}>
@@ -1378,8 +1378,8 @@ export default function WorkingCapitalForecastTab({ selectedCompanyId, basisMode
             style={{
               padding: '10px 16px',
               borderRadius: '8px',
-              border: '1px solid #c7d2fe',
-              background: isSaving ? '#e2e8f0' : '#667eea',
+              border: '1px solid #2751d0',
+              background: isSaving ? '#e2e8f0' : '#2751d0',
               color: isSaving ? '#475569' : '#ffffff',
               fontSize: '13px',
               fontWeight: 700,

@@ -686,7 +686,7 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
               disabled={saving}
               style={{
                 padding: '10px 24px',
-                background: saving ? '#94a3b8' : '#667eea',
+                background: saving ? '#94a3b8' : '#2751d0',
                 color: 'white',
                 border: 'none',
                 borderRadius: '8px',
@@ -696,8 +696,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                 transition: 'all 0.2s'
               }}
-              onMouseEnter={(e) => !saving && (e.currentTarget.style.background = '#5568d3')}
-              onMouseLeave={(e) => !saving && (e.currentTarget.style.background = '#667eea')}
+              onMouseEnter={(e) => !saving && (e.currentTarget.style.background = '#1f43b8')}
+              onMouseLeave={(e) => !saving && (e.currentTarget.style.background = '#2751d0')}
             >
               {saving ? 'Saving...' : 'Save Preferences'}
             </button>
