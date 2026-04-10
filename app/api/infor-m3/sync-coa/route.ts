@@ -450,13 +450,15 @@ export async function POST(request: NextRequest) {
       update: {
         connectionMetadata: nextMetadata as any,
         lastSyncAt: new Date(),
-        status: effectiveOk ? 'ACTIVE' : 'ERROR',
+        // COA pull failures should not mark the Infor connector disconnected.
+        // Keep connector status ACTIVE and surface pull issues via errorMessage/logs.
+        status: 'ACTIVE',
         errorMessage: effectiveOk ? null : 'Monthly COA pull failed. Check API sync log details.',
       },
       create: {
         companyId,
         platform: 'INFOR_M3',
-        status: effectiveOk ? 'ACTIVE' : 'ERROR',
+        status: 'ACTIVE',
         platformVersion: 'ionapi-1.0',
         autoSync: false,
         syncFrequency: 'manual',
