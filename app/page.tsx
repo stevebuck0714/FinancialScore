@@ -17485,7 +17485,7 @@ function FinancialScorePage() {
                 ) : (
                 <>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '12px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', borderBottom: '2px solid #e2e8f0' }}>
                     {[
                       { id: 'recommendations' as const, label: 'Executive Summary' },
                       { id: 'ebitda-adjustments' as const, label: 'EBITDA Adjustments' },
@@ -17500,13 +17500,13 @@ function FinancialScorePage() {
                         onClick={() => setSdeModuleTab(tab.id)}
                         style={{
                           padding: '8px 12px',
-                          borderRadius: '8px',
                           border: 'none',
+                          borderBottom: sdeModuleTab === tab.id ? '3px solid #2751d0' : '3px solid transparent',
                           fontSize: '12px',
                           fontWeight: 600,
                           cursor: 'pointer',
-                          background: sdeModuleTab === tab.id ? '#667eea' : '#f1f5f9',
-                          color: sdeModuleTab === tab.id ? 'white' : '#334155'
+                          background: 'none',
+                          color: sdeModuleTab === tab.id ? '#2751d0' : '#64748b'
                         }}
                       >
                         {tab.label}
@@ -20408,10 +20408,7 @@ function FinancialScorePage() {
                 {/* EBITDA Method */}
                 {valuationMethodTab === 'ebitda' && (
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                    EBITDA Multiple Method
-                  </h2>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
                     {[
                       { id: 'revenue-quality' as const, label: 'Revenue Quality' },
                       { id: 'customer-mix' as const, label: 'Customer Mix / Concentration' },
@@ -20423,13 +20420,13 @@ function FinancialScorePage() {
                         onClick={() => setEbitdaAnalysisTab(tab.id)}
                         style={{
                           padding: '8px 12px',
-                          borderRadius: '8px',
                           border: 'none',
+                          borderBottom: ebitdaAnalysisTab === tab.id ? '3px solid #2751d0' : '3px solid transparent',
                           fontSize: '12px',
                           fontWeight: 600,
                           cursor: 'pointer',
-                          background: ebitdaAnalysisTab === tab.id ? '#667eea' : '#f1f5f9',
-                          color: ebitdaAnalysisTab === tab.id ? 'white' : '#334155'
+                          background: 'none',
+                          color: ebitdaAnalysisTab === tab.id ? '#2751d0' : '#64748b'
                         }}
                       >
                         {tab.label}
@@ -20843,10 +20840,7 @@ function FinancialScorePage() {
                 {/* DCF Method */}
                 {valuationMethodTab === 'dcf' && (
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                    Discounted Cash Flow (DCF) Method
-                  </h2>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
                     {[
                       { id: 'working-capital' as const, label: 'Working Capital' },
                       { id: 'cash-flow-quality' as const, label: 'Cash Flow Quality' },
@@ -20858,13 +20852,13 @@ function FinancialScorePage() {
                         onClick={() => setDcfAnalysisTab(tab.id)}
                         style={{
                           padding: '8px 12px',
-                          borderRadius: '8px',
                           border: 'none',
+                          borderBottom: dcfAnalysisTab === tab.id ? '3px solid #2751d0' : '3px solid transparent',
                           fontSize: '12px',
                           fontWeight: 600,
                           cursor: 'pointer',
-                          background: dcfAnalysisTab === tab.id ? '#667eea' : '#f1f5f9',
-                          color: dcfAnalysisTab === tab.id ? 'white' : '#334155'
+                          background: 'none',
+                          color: dcfAnalysisTab === tab.id ? '#2751d0' : '#64748b'
                         }}
                       >
                         {tab.label}

@@ -233,7 +233,7 @@ const evidenceLevel = (confidence?: number | null) => {
             padding: '6px 12px',
             borderRadius: '8px',
             border: 'none',
-            background: runStatus === 'done' ? '#10b981' : runStatus === 'error' ? '#ef4444' : '#667eea',
+            background: runStatus === 'done' ? '#10b981' : runStatus === 'error' ? '#ef4444' : '#2751d0',
             color: 'white',
             fontSize: '12px',
             fontWeight: 600,
