@@ -595,7 +595,7 @@ export default function DataRoomView({ selectedCompanyId, companyName }: DataRoo
         }}
       >
         <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', margin: 0 }}>
-          Corelytics DataRoom
+          Corelytics Data Room
         </h1>
         <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', marginTop: '20px' }}>
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>

@@ -109,14 +109,13 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           onClick={() => props.setCompanyManagementSubTab('profile')}
           style={{
             padding: '10px 20px',
-            background: props.companyManagementSubTab === 'profile' ? '#667eea' : 'transparent',
-            color: props.companyManagementSubTab === 'profile' ? 'white' : '#64748b',
+            background: 'none',
+            color: props.companyManagementSubTab === 'profile' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: props.companyManagementSubTab === 'profile' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: props.companyManagementSubTab === 'profile' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '14px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '6px 6px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -126,14 +125,13 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           onClick={() => props.setCompanyManagementSubTab('details')}
           style={{
             padding: '10px 20px',
-            background: props.companyManagementSubTab === 'details' ? '#667eea' : 'transparent',
-            color: props.companyManagementSubTab === 'details' ? 'white' : '#64748b',
+            background: 'none',
+            color: props.companyManagementSubTab === 'details' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: props.companyManagementSubTab === 'details' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: props.companyManagementSubTab === 'details' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '14px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '6px 6px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -143,14 +141,13 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           onClick={() => props.setCompanyManagementSubTab('payments')}
           style={{
             padding: '10px 20px',
-            background: props.companyManagementSubTab === 'payments' ? '#667eea' : 'transparent',
-            color: props.companyManagementSubTab === 'payments' ? 'white' : '#64748b',
+            background: 'none',
+            color: props.companyManagementSubTab === 'payments' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: props.companyManagementSubTab === 'payments' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: props.companyManagementSubTab === 'payments' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '14px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '6px 6px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -160,14 +157,13 @@ export default function CompanyManagementTab(props: CompanyManagementTabProps) {
           onClick={() => props.setCompanyManagementSubTab('documentation')}
           style={{
             padding: '10px 20px',
-            background: props.companyManagementSubTab === 'documentation' ? '#667eea' : 'transparent',
-            color: props.companyManagementSubTab === 'documentation' ? 'white' : '#64748b',
+            background: 'none',
+            color: props.companyManagementSubTab === 'documentation' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: props.companyManagementSubTab === 'documentation' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: props.companyManagementSubTab === 'documentation' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '14px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '6px 6px 0 0',
             transition: 'all 0.2s'
           }}
         >

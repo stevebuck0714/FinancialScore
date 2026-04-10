@@ -377,14 +377,13 @@ export default function CashFlowTab({
           onClick={() => setCashFlowDisplay('monthly')}
           style={{
             padding: '12px 24px',
-            background: cashFlowDisplay === 'monthly' ? '#667eea' : 'transparent',
-            color: cashFlowDisplay === 'monthly' ? 'white' : '#64748b',
+            background: 'none',
+            color: cashFlowDisplay === 'monthly' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: cashFlowDisplay === 'monthly' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: cashFlowDisplay === 'monthly' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -394,14 +393,13 @@ export default function CashFlowTab({
           onClick={() => setCashFlowDisplay('quarterly')}
           style={{
             padding: '12px 24px',
-            background: cashFlowDisplay === 'quarterly' ? '#667eea' : 'transparent',
-            color: cashFlowDisplay === 'quarterly' ? 'white' : '#64748b',
+            background: 'none',
+            color: cashFlowDisplay === 'quarterly' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: cashFlowDisplay === 'quarterly' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: cashFlowDisplay === 'quarterly' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -411,14 +409,13 @@ export default function CashFlowTab({
           onClick={() => setCashFlowDisplay('annual')}
           style={{
             padding: '12px 24px',
-            background: cashFlowDisplay === 'annual' ? '#667eea' : 'transparent',
-            color: cashFlowDisplay === 'annual' ? 'white' : '#64748b',
+            background: 'none',
+            color: cashFlowDisplay === 'annual' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: cashFlowDisplay === 'annual' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: cashFlowDisplay === 'annual' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >

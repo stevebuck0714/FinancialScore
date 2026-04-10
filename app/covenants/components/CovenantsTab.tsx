@@ -1213,7 +1213,7 @@ export default function CovenantsTab({
       )}
 
       {/* Navigation Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #e2e8f0', marginBottom: '16px' }}>
         {[
           { id: 'overview', label: 'Overview' },
           { id: 'details', label: 'Details' },
@@ -1226,15 +1226,14 @@ export default function CovenantsTab({
             onClick={() => setActiveTab(tab.id as any)}
             disabled={tab.id !== 'add-loan' && !selectedLoan}
             style={{
-              padding: '8px 16px',
-              background: activeTab === tab.id ? '#667eea' : 'transparent',
-              color: activeTab === tab.id ? 'white' : (tab.id !== 'add-loan' && !selectedLoan) ? '#cbd5e1' : '#64748b',
+              padding: '12px 20px',
+              background: 'none',
+              color: activeTab === tab.id ? '#2751d0' : (tab.id !== 'add-loan' && !selectedLoan) ? '#cbd5e1' : '#64748b',
               border: 'none',
-              borderBottom: activeTab === tab.id ? '2px solid #667eea' : '2px solid transparent',
-              fontSize: '14px',
-              fontWeight: '500',
+              borderBottom: activeTab === tab.id ? '3px solid #2751d0' : '3px solid transparent',
+              fontSize: '16px',
+              fontWeight: '600',
               cursor: (tab.id !== 'add-loan' && !selectedLoan) ? 'not-allowed' : 'pointer',
-              borderRadius: '6px 6px 0 0',
               transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
@@ -1630,7 +1629,7 @@ export default function CovenantsTab({
                   onClick={() => setAlertFilter('all')}
                   style={{
                     padding: '6px 12px',
-                    background: alertFilter === 'all' ? '#667eea' : '#f3f4f6',
+                    background: alertFilter === 'all' ? '#2751d0' : '#f3f4f6',
                     color: alertFilter === 'all' ? 'white' : '#374151',
                     border: 'none',
                     borderRadius: '4px',
@@ -1807,7 +1806,7 @@ export default function CovenantsTab({
                   onClick={() => setConfigCategory('all')}
                   style={{
                     padding: '6px 12px',
-                    background: configCategory === 'all' ? '#667eea' : '#f3f4f6',
+                    background: configCategory === 'all' ? '#2751d0' : '#f3f4f6',
                     color: configCategory === 'all' ? 'white' : '#374151',
                     border: 'none',
                     borderRadius: '4px',
@@ -1821,7 +1820,7 @@ export default function CovenantsTab({
                   onClick={() => setConfigCategory('financial')}
                   style={{
                     padding: '6px 12px',
-                    background: configCategory === 'financial' ? '#667eea' : '#f3f4f6',
+                    background: configCategory === 'financial' ? '#2751d0' : '#f3f4f6',
                     color: configCategory === 'financial' ? 'white' : '#374151',
                     border: 'none',
                     borderRadius: '4px',
@@ -1835,7 +1834,7 @@ export default function CovenantsTab({
                   onClick={() => setConfigCategory('maintenance')}
                   style={{
                     padding: '6px 12px',
-                    background: configCategory === 'maintenance' ? '#667eea' : '#f3f4f6',
+                    background: configCategory === 'maintenance' ? '#2751d0' : '#f3f4f6',
                     color: configCategory === 'maintenance' ? 'white' : '#374151',
                     border: 'none',
                     borderRadius: '4px',
@@ -1849,7 +1848,7 @@ export default function CovenantsTab({
                   onClick={() => setConfigCategory('negative')}
                   style={{
                     padding: '6px 12px',
-                    background: configCategory === 'negative' ? '#667eea' : '#f3f4f6',
+                    background: configCategory === 'negative' ? '#2751d0' : '#f3f4f6',
                     color: configCategory === 'negative' ? 'white' : '#374151',
                     border: 'none',
                     borderRadius: '4px',
@@ -1863,7 +1862,7 @@ export default function CovenantsTab({
                   onClick={() => setConfigCategory('affirmative')}
                   style={{
                     padding: '6px 12px',
-                    background: configCategory === 'affirmative' ? '#667eea' : '#f3f4f6',
+                    background: configCategory === 'affirmative' ? '#2751d0' : '#f3f4f6',
                     color: configCategory === 'affirmative' ? 'white' : '#374151',
                     border: 'none',
                     borderRadius: '4px',
@@ -1877,7 +1876,7 @@ export default function CovenantsTab({
                   onClick={() => setConfigCategory('incurrence')}
                   style={{
                     padding: '6px 12px',
-                    background: configCategory === 'incurrence' ? '#667eea' : '#f3f4f6',
+                    background: configCategory === 'incurrence' ? '#2751d0' : '#f3f4f6',
                     color: configCategory === 'incurrence' ? 'white' : '#374151',
                     border: 'none',
                     borderRadius: '4px',

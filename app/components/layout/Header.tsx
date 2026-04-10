@@ -162,7 +162,7 @@ export default function Header({
             style={{
               fontSize: '24px',
               fontWeight: '700',
-              color: '#1F70C1',
+              color: '#2751d0',
               letterSpacing: '-0.2px',
               whiteSpace: 'nowrap',
               overflow: 'hidden',

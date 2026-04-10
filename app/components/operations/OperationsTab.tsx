@@ -331,8 +331,9 @@ export default function OperationsTab({
     return isOverviewOnly ? 'overview' : 'dashboard';
   });
   const [activeForecastBasisTab, setActiveForecastBasisTab] = useState<'cash-basis' | 'accrual-basis'>('accrual-basis');
+  const [activeCashSubTab, setActiveCashSubTab] = useState<'cash-conversion-analysis' | 'cash-position'>('cash-conversion-analysis');
   const [activeCashBasisForecastTab, setActiveCashBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
-  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('income-statement-forecast');
+  const [activeAccrualBasisForecastTab, setActiveAccrualBasisForecastTab] = useState<'income-statement-forecast' | 'cash-forecast' | 'graphs'>('cash-forecast');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -410,6 +411,7 @@ export default function OperationsTab({
   const [inventoryAgingSortDir, setInventoryAgingSortDir] = useState<'asc' | 'desc'>('desc');
   const [productScopeMode, setProductScopeMode] = useState<'total' | 'product'>('total');
   const [selectedScopeSku, setSelectedScopeSku] = useState('');
+  const [showCccInfoModal, setShowCccInfoModal] = useState(false);
   const operationalHubSections =
     companyOperationalHubConfig &&
     typeof companyOperationalHubConfig === 'object' &&
@@ -551,9 +553,15 @@ export default function OperationsTab({
   }, [initialForecastSubTab, initialForecastBasisTab, activeForecastBasisTab]);
 
   useEffect(() => {
+    if (activeTab === 'cash') {
+      setActiveCashSubTab('cash-conversion-analysis');
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     const needsCashConversionData =
-      activeTab === 'forecast' &&
-      activeForecastBasisTab === 'cash-basis';
+      (activeTab === 'forecast' && activeForecastBasisTab === 'cash-basis') ||
+      (activeTab === 'cash' && activeCashSubTab === 'cash-conversion-analysis');
     if (!needsCashConversionData) return;
 
     let cancelled = false;
@@ -573,6 +581,7 @@ export default function OperationsTab({
     };
   }, [
     activeTab,
+    activeCashSubTab,
     activeForecastBasisTab,
     activeAccrualBasisForecastTab,
     selectedCompanyId,
@@ -6012,8 +6021,47 @@ export default function OperationsTab({
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
+        <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
+          <button
+            onClick={() => setActiveCashSubTab('cash-conversion-analysis')}
+            style={{
+              padding: '12px 18px',
+              background: 'none',
+              color: activeCashSubTab === 'cash-conversion-analysis' ? '#2751d0' : '#64748b',
+              border: 'none',
+              borderBottom: activeCashSubTab === 'cash-conversion-analysis' ? '3px solid #2751d0' : '3px solid transparent',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            Cash Conversion Analysis
+          </button>
+          <button
+            onClick={() => setActiveCashSubTab('cash-position')}
+            style={{
+              padding: '12px 18px',
+              background: 'none',
+              color: activeCashSubTab === 'cash-position' ? '#2751d0' : '#64748b',
+              border: 'none',
+              borderBottom: activeCashSubTab === 'cash-position' ? '3px solid #2751d0' : '3px solid transparent',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            Cash Position
+          </button>
+        </div>
+
+        {activeCashSubTab === 'cash-conversion-analysis' && renderCashConversionAnalysis()}
+
+        {activeCashSubTab === 'cash-position' && (
+          <div>
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
-          Cash Management
+          Cash Position
         </h2>
 
         {/* KPI Cards */}
@@ -6287,6 +6335,8 @@ export default function OperationsTab({
             </div>
           )}
         </div>
+        )}
+          </div>
         )}
       </div>
     );
@@ -7424,8 +7474,7 @@ export default function OperationsTab({
     );
   };
 
-  const renderForecast = () => {
-    const renderCashConversionAnalysis = () => {
+  const renderCashConversionAnalysis = () => {
       const financialRecords = Array.isArray(cashConversionFinancialData?.records) ? cashConversionFinancialData.records : [];
       const mappedLines = Array.isArray(cashConversionFinancialData?.mappedLines) ? cashConversionFinancialData.mappedLines : [];
       const inferredFrequency = String(financialRecords[0]?.frequency || 'monthly').toLowerCase();
@@ -7544,10 +7593,104 @@ export default function OperationsTab({
 
       return (
         <div style={{ background: 'white', borderRadius: '12px', padding: '0 20px 20px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: 0, marginBottom: '10px' }}>Cash Conversion Analysis</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginTop: 0, marginBottom: 0 }}>Cash Conversion Analysis</h3>
+            <button
+              onClick={() => setShowCccInfoModal(true)}
+              style={{
+                padding: '8px 12px',
+                background: '#eff6ff',
+                color: '#1e3a8a',
+                border: '1px solid #bfdbfe',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              What is CCC
+            </button>
+          </div>
           <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6, marginBottom: '12px' }}>
             Convert CCC days into cash dollars so leadership can quantify working-capital drag, release opportunities, and growth funding needs.
           </p>
+          {showCccInfoModal && (
+            <div
+              onClick={() => setShowCccInfoModal(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(15, 23, 42, 0.55)',
+                zIndex: 1200,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px',
+              }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  width: 'min(900px, 100%)',
+                  maxHeight: '85vh',
+                  overflowY: 'auto',
+                  background: 'white',
+                  borderRadius: '12px',
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 20px 40px rgba(2, 6, 23, 0.25)',
+                  padding: '20px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>What is Cash Conversion Cycle (CCC)?</div>
+                  <button
+                    onClick={() => setShowCccInfoModal(false)}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      background: 'white',
+                      color: '#334155',
+                      borderRadius: '8px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div style={{ fontSize: '14px', color: '#334155', lineHeight: 1.7, whiteSpace: 'pre-line' }}>
+{`The Cash Conversion Cycle (CCC) is a financial metric measuring the time, in days, it takes for a company to convert its investments in inventory and other resources into cash flows from sales. A shorter CCC indicates better liquidity and efficient working capital management, as it shows how quickly a company can turn inventory back into cash.
+
+Key Components:
+- Days Inventory Outstanding (DIO): Average number of days to turn inventory into a finished product and sell it.
+- Days Sales Outstanding (DSO): Average number of days to collect payment on sales (receivables).
+- Days Payable Outstanding (DPO): Average number of days to pay suppliers (payables).
+
+Example of Cash Conversion Cycle
+If a company takes 40 days to sell inventory (DIO), 30 days to collect payments (DSO), and takes 40 days to pay its own suppliers (DPO):
+
+CCC = 40 + 30 - 40 = 30
+
+This means the company has cash tied up in its operations for 30 days.
+
+What is a Good Cash Conversion Cycle
+- Lower is Better: A lower or even negative CCC is ideal because it means the company is selling goods and collecting cash before it has to pay suppliers.
+- Industry Standards: A good CCC varies by sector; retail usually requires a lower CCC (around 9 days) compared to industries like real estate development (up to 870 days). The general median across industries is often between 30 and 45 days.
+
+Cash Conversion Cycle vs. Operating Cycle
+- Operating Cycle: Measures the total time from purchasing inventory to receiving cash, calculated as DIO + DSO.
+- Cash Conversion Cycle: Accounts for the time a company takes to pay its suppliers, providing a better picture of when the company actually has to use its own cash, calculated as Operating Cycle - DPO.
+
+Strategies to Improve the CCC
+- Reduce DIO: Clear out slow-moving inventory faster.
+- Reduce DSO: Speed up collections, perhaps by offering early payment discounts.
+- Extend DPO: Negotiate better payment terms with suppliers.`}
+                </div>
+              </div>
+            </div>
+          )}
           {!hasRequiredInputs ? (
             <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '12px', color: '#9a3412' }}>
               Cash Conversion Analysis requires master financial monthly data with Revenue, COGS, AR, Inventory, and AP fields. No fallback calculations are used.
@@ -7905,127 +8048,81 @@ export default function OperationsTab({
       );
     };
 
+  const renderForecast = () => {
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
           <button
-            onClick={() => setActiveForecastBasisTab('accrual-basis')}
+            onClick={() => setActiveAccrualBasisForecastTab('cash-forecast')}
             style={{
               padding: '12px 18px',
-              background: activeForecastBasisTab === 'accrual-basis' ? '#667eea' : 'transparent',
-              color: activeForecastBasisTab === 'accrual-basis' ? 'white' : '#64748b',
+              background: 'none',
+              color: activeAccrualBasisForecastTab === 'cash-forecast' ? '#2751d0' : '#64748b',
               border: 'none',
-              borderBottom: activeForecastBasisTab === 'accrual-basis' ? '3px solid #667eea' : '3px solid transparent',
+              borderBottom: activeAccrualBasisForecastTab === 'cash-forecast' ? '3px solid #2751d0' : '3px solid transparent',
               fontSize: '14px',
               fontWeight: '600',
               cursor: 'pointer',
-              borderRadius: '8px 8px 0 0',
               transition: 'all 0.2s'
             }}
           >
-            Accrual Cash Forecast
+            13 Week Cash Forecast
           </button>
           <button
-            onClick={() => setActiveForecastBasisTab('cash-basis')}
+            onClick={() => setActiveAccrualBasisForecastTab('income-statement-forecast')}
             style={{
               padding: '12px 18px',
-              background: activeForecastBasisTab === 'cash-basis' ? '#667eea' : 'transparent',
-              color: activeForecastBasisTab === 'cash-basis' ? 'white' : '#64748b',
+              background: 'none',
+              color: activeAccrualBasisForecastTab === 'income-statement-forecast' ? '#2751d0' : '#64748b',
               border: 'none',
-              borderBottom: activeForecastBasisTab === 'cash-basis' ? '3px solid #667eea' : '3px solid transparent',
+              borderBottom: activeAccrualBasisForecastTab === 'income-statement-forecast' ? '3px solid #2751d0' : '3px solid transparent',
               fontSize: '14px',
               fontWeight: '600',
               cursor: 'pointer',
-              borderRadius: '8px 8px 0 0',
               transition: 'all 0.2s'
             }}
           >
-            Cash Conversion Analysis
+            Income Statement Forecast
+          </button>
+          <button
+            onClick={() => setActiveAccrualBasisForecastTab('graphs')}
+            style={{
+              padding: '12px 18px',
+              background: 'none',
+              color: activeAccrualBasisForecastTab === 'graphs' ? '#2751d0' : '#64748b',
+              border: 'none',
+              borderBottom: activeAccrualBasisForecastTab === 'graphs' ? '3px solid #2751d0' : '3px solid transparent',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            Graphs
           </button>
         </div>
 
-        {activeForecastBasisTab === 'cash-basis' && (
-          renderCashConversionAnalysis()
+        {activeAccrualBasisForecastTab === 'income-statement-forecast' && (
+          <FinancialForecastTab
+            selectedCompanyId={selectedCompanyId}
+            companyName={companyName}
+            industrySectorCategory={industrySectorCategory || null}
+            displayMode="no-graphs"
+            basisMode="accrual"
+          />
         )}
 
-        {activeForecastBasisTab === 'accrual-basis' && (
-          <>
-            <div className="ops-print-hide" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0' }}>
-              <button
-                onClick={() => setActiveAccrualBasisForecastTab('income-statement-forecast')}
-                style={{
-                  padding: '12px 18px',
-                  background: activeAccrualBasisForecastTab === 'income-statement-forecast' ? '#667eea' : 'transparent',
-                  color: activeAccrualBasisForecastTab === 'income-statement-forecast' ? 'white' : '#64748b',
-                  border: 'none',
-                  borderBottom: activeAccrualBasisForecastTab === 'income-statement-forecast' ? '3px solid #667eea' : '3px solid transparent',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  borderRadius: '8px 8px 0 0',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Income Statement Forecast
-              </button>
-              <button
-                onClick={() => setActiveAccrualBasisForecastTab('cash-forecast')}
-                style={{
-                  padding: '12px 18px',
-                  background: activeAccrualBasisForecastTab === 'cash-forecast' ? '#667eea' : 'transparent',
-                  color: activeAccrualBasisForecastTab === 'cash-forecast' ? 'white' : '#64748b',
-                  border: 'none',
-                  borderBottom: activeAccrualBasisForecastTab === 'cash-forecast' ? '3px solid #667eea' : '3px solid transparent',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  borderRadius: '8px 8px 0 0',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Cash Forecast
-              </button>
-              <button
-                onClick={() => setActiveAccrualBasisForecastTab('graphs')}
-                style={{
-                  padding: '12px 18px',
-                  background: activeAccrualBasisForecastTab === 'graphs' ? '#667eea' : 'transparent',
-                  color: activeAccrualBasisForecastTab === 'graphs' ? 'white' : '#64748b',
-                  border: 'none',
-                  borderBottom: activeAccrualBasisForecastTab === 'graphs' ? '3px solid #667eea' : '3px solid transparent',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  borderRadius: '8px 8px 0 0',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Graphs
-              </button>
-            </div>
-
-            {activeAccrualBasisForecastTab === 'income-statement-forecast' && (
-              <FinancialForecastTab
-                selectedCompanyId={selectedCompanyId}
-                companyName={companyName}
-                industrySectorCategory={industrySectorCategory || null}
-                displayMode="no-graphs"
-                basisMode="accrual"
-              />
-            )}
-            {activeAccrualBasisForecastTab === 'cash-forecast' && (
-              <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} basisMode="accrual" />
-            )}
-            {activeAccrualBasisForecastTab === 'graphs' && (
-              <FinancialForecastTab
-                selectedCompanyId={selectedCompanyId}
-                companyName={companyName}
-                industrySectorCategory={industrySectorCategory || null}
-                displayMode="graphs-only"
-                basisMode="accrual"
-              />
-            )}
-          </>
+        {activeAccrualBasisForecastTab === 'cash-forecast' && (
+          <WorkingCapitalForecastTab selectedCompanyId={selectedCompanyId} basisMode="accrual" />
+        )}
+        {activeAccrualBasisForecastTab === 'graphs' && (
+          <FinancialForecastTab
+            selectedCompanyId={selectedCompanyId}
+            companyName={companyName}
+            industrySectorCategory={industrySectorCategory || null}
+            displayMode="graphs-only"
+            basisMode="accrual"
+          />
         )}
       </div>
     );
@@ -8103,16 +8200,16 @@ export default function OperationsTab({
               padding: '10px 0',
               fontSize: '19px',
               fontWeight: '600',
-              color: activeTab === tab ? '#667eea' : '#64748b',
+              color: activeTab === tab ? '#2751d0' : '#64748b',
               cursor: 'pointer',
-              borderBottom: activeTab === tab ? '3px solid #667eea' : '3px solid transparent',
+              borderBottom: activeTab === tab ? '3px solid #2751d0' : '3px solid transparent',
               transition: 'all 0.2s'
             }}
           >
             {tab === 'dashboard'
               ? 'Overview'
               : tab === 'forecast'
-                ? 'Cash Forecast'
+                ? 'Forecast'
               : getModuleLabel(tab)}
           </button>
         ))}

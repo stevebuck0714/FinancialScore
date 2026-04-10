@@ -141,7 +141,7 @@ export default function TrendAnalysisView({
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', borderBottom: '2px solid #e2e8f0' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
         <button
           onClick={() => setTrendAnalysisTab('item-trends')}
           style={{
@@ -150,10 +150,11 @@ export default function TrendAnalysisView({
             border: 'none',
             fontSize: '16px',
             fontWeight: '600',
-            color: trendAnalysisTab === 'item-trends' ? '#667eea' : '#64748b',
+            color: trendAnalysisTab === 'item-trends' ? '#2751d0' : '#64748b',
             cursor: 'pointer',
-            borderBottom: trendAnalysisTab === 'item-trends' ? '3px solid #667eea' : '3px solid transparent',
-            marginBottom: '-2px'
+            borderBottom: trendAnalysisTab === 'item-trends' ? '3px solid #2751d0' : '3px solid transparent',
+            marginBottom: '-2px',
+            transition: 'all 0.2s'
           }}
         >
           Item Trends
@@ -166,10 +167,11 @@ export default function TrendAnalysisView({
             border: 'none',
             fontSize: '16px',
             fontWeight: '600',
-            color: trendAnalysisTab === 'expense-analysis' ? '#667eea' : '#64748b',
+            color: trendAnalysisTab === 'expense-analysis' ? '#2751d0' : '#64748b',
             cursor: 'pointer',
-            borderBottom: trendAnalysisTab === 'expense-analysis' ? '3px solid #667eea' : '3px solid transparent',
-            marginBottom: '-2px'
+            borderBottom: trendAnalysisTab === 'expense-analysis' ? '3px solid #2751d0' : '3px solid transparent',
+            marginBottom: '-2px',
+            transition: 'all 0.2s'
           }}
         >
           Expense Analysis

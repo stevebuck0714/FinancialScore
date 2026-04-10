@@ -11821,14 +11821,13 @@ function FinancialScorePage() {
               onClick={() => handleAdminTabNavigation('company-management')}
               style={{
                 padding: '12px 24px',
-                background: adminDashboardTab === 'company-management' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'company-management' ? 'white' : '#64748b',
+                background: 'none',
+                color: adminDashboardTab === 'company-management' ? '#2751d0' : '#64748b',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'company-management' ? '3px solid #667eea' : '3px solid transparent',
+                borderBottom: adminDashboardTab === 'company-management' ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
                 transition: 'all 0.2s'
               }}
             >
@@ -11838,14 +11837,13 @@ function FinancialScorePage() {
               onClick={() => handleAdminTabNavigation('api-connections')}
               style={{
                 padding: '12px 24px',
-                background: adminDashboardTab === 'api-connections' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'api-connections' ? 'white' : '#64748b',
+                background: 'none',
+                color: adminDashboardTab === 'api-connections' ? '#2751d0' : '#64748b',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'api-connections' ? '3px solid #667eea' : '3px solid transparent',
+                borderBottom: adminDashboardTab === 'api-connections' ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
                 transition: 'all 0.2s'
               }}
             >
@@ -11855,14 +11853,13 @@ function FinancialScorePage() {
               onClick={() => handleAdminTabNavigation('company-settings')}
               style={{
                 padding: '12px 24px',
-                background: adminDashboardTab === 'company-settings' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'company-settings' ? 'white' : '#64748b',
+                background: 'none',
+                color: adminDashboardTab === 'company-settings' ? '#2751d0' : '#64748b',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'company-settings' ? '3px solid #667eea' : '3px solid transparent',
+                borderBottom: adminDashboardTab === 'company-settings' ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
                 transition: 'all 0.2s'
               }}
             >
@@ -11872,14 +11869,13 @@ function FinancialScorePage() {
               onClick={() => handleAdminTabNavigation('data-mapping')}
               style={{
                 padding: '12px 24px',
-                background: adminDashboardTab === 'data-mapping' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'data-mapping' ? 'white' : '#64748b',
+                background: 'none',
+                color: adminDashboardTab === 'data-mapping' ? '#2751d0' : '#64748b',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'data-mapping' ? '3px solid #667eea' : '3px solid transparent',
+                borderBottom: adminDashboardTab === 'data-mapping' ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
                 transition: 'all 0.2s'
               }}
             >
@@ -11889,14 +11885,13 @@ function FinancialScorePage() {
               onClick={() => handleAdminTabNavigation('data-review')}
               style={{
                 padding: '12px 24px',
-                background: adminDashboardTab === 'data-review' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'data-review' ? 'white' : '#64748b',
+                background: 'none',
+                color: adminDashboardTab === 'data-review' ? '#2751d0' : '#64748b',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'data-review' ? '3px solid #667eea' : '3px solid transparent',
+                borderBottom: adminDashboardTab === 'data-review' ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
                 transition: 'all 0.2s'
               }}
             >
@@ -11906,14 +11901,13 @@ function FinancialScorePage() {
               onClick={() => handleAdminTabNavigation('documents')}
               style={{
                 padding: '12px 24px',
-                background: adminDashboardTab === 'documents' ? '#667eea' : 'transparent',
-                color: adminDashboardTab === 'documents' ? 'white' : '#64748b',
+                background: 'none',
+                color: adminDashboardTab === 'documents' ? '#2751d0' : '#64748b',
                 border: 'none',
-                borderBottom: adminDashboardTab === 'documents' ? '3px solid #667eea' : '3px solid transparent',
+                borderBottom: adminDashboardTab === 'documents' ? '3px solid #2751d0' : '3px solid transparent',
                 fontSize: '16px',
                 fontWeight: '600',
                 cursor: 'pointer',
-                borderRadius: '8px 8px 0 0',
                 transition: 'all 0.2s'
               }}
             >

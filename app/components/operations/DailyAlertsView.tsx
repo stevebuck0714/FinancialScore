@@ -2308,9 +2308,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             padding: '10px 0',
             border: 'none',
             background: 'none',
-            color: activeTab === 'alerts' ? '#667eea' : '#64748b',
+            color: activeTab === 'alerts' ? '#2751d0' : '#64748b',
             cursor: 'pointer',
-            borderBottom: activeTab === 'alerts' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: activeTab === 'alerts' ? '3px solid #2751d0' : '3px solid transparent',
             transition: 'all 0.2s',
           }}
         >
@@ -2324,9 +2324,9 @@ export default function DailyAlertsView({ companyId, companyName, onNavigate }: 
             padding: '10px 0',
             border: 'none',
             background: 'none',
-            color: activeTab === 'policy' ? '#667eea' : '#64748b',
+            color: activeTab === 'policy' ? '#2751d0' : '#64748b',
             cursor: 'pointer',
-            borderBottom: activeTab === 'policy' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: activeTab === 'policy' ? '3px solid #2751d0' : '3px solid transparent',
             transition: 'all 0.2s',
           }}
         >

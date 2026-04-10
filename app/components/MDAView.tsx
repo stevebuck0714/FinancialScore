@@ -432,14 +432,13 @@ export default function MDAView({
           onClick={() => setMdaTab('executive-summary')}
           style={{
             padding: '12px 24px',
-            background: mdaTab === 'executive-summary' ? '#667eea' : 'transparent',
-            color: mdaTab === 'executive-summary' ? 'white' : '#64748b',
+            background: 'none',
+            color: mdaTab === 'executive-summary' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: mdaTab === 'executive-summary' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: mdaTab === 'executive-summary' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -449,14 +448,13 @@ export default function MDAView({
           onClick={() => setMdaTab('strengths-insights')}
           style={{
             padding: '12px 24px',
-            background: mdaTab === 'strengths-insights' ? '#667eea' : 'transparent',
-            color: mdaTab === 'strengths-insights' ? 'white' : '#64748b',
+            background: 'none',
+            color: mdaTab === 'strengths-insights' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: mdaTab === 'strengths-insights' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: mdaTab === 'strengths-insights' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -466,14 +464,13 @@ export default function MDAView({
           onClick={() => setMdaTab('key-metrics')}
           style={{
             padding: '12px 24px',
-            background: mdaTab === 'key-metrics' ? '#667eea' : 'transparent',
-            color: mdaTab === 'key-metrics' ? 'white' : '#64748b',
+            background: 'none',
+            color: mdaTab === 'key-metrics' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: mdaTab === 'key-metrics' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: mdaTab === 'key-metrics' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >

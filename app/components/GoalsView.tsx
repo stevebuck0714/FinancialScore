@@ -46,6 +46,22 @@ export default function GoalsView({
     }
   }, [selectedCompanyId]);
 
+  // Build a stable "last 6 months" timeline for operational goals (oldest -> newest).
+  const operationalMonthDates = React.useMemo(() => {
+    const now = new Date();
+    const months: Date[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(d);
+    }
+    return months;
+  }, []);
+
+  const operationalMonthLabels = React.useMemo(
+    () => operationalMonthDates.map(d => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })),
+    [operationalMonthDates]
+  );
+
   // Load operational data when tab switches to operational
   React.useEffect(() => {
     if (activeTab === 'operational' && selectedCompanyId && !operationalData) {
@@ -240,12 +256,18 @@ export default function GoalsView({
         input[type=number].no-spinner {
           -moz-appearance: textfield;
         }
+        .goals-table th,
+        .goals-table td {
+          padding-top: 6px !important;
+          padding-bottom: 6px !important;
+          line-height: 1.2;
+        }
       `}</style>
 
       {/* Tabs */}
       <div style={{ 
         display: 'flex', 
-        gap: '16px', 
+        gap: '8px', 
         borderBottom: '2px solid #e2e8f0',
         marginBottom: '32px'
       }}>
@@ -257,9 +279,9 @@ export default function GoalsView({
             padding: '12px 24px',
             fontSize: '16px',
             fontWeight: '600',
-            color: activeTab === 'expense' ? '#667eea' : '#64748b',
+            color: activeTab === 'expense' ? '#2751d0' : '#64748b',
             cursor: 'pointer',
-            borderBottom: activeTab === 'expense' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: activeTab === 'expense' ? '3px solid #2751d0' : '3px solid transparent',
             marginBottom: '-2px',
             transition: 'all 0.2s'
           }}
@@ -274,9 +296,9 @@ export default function GoalsView({
             padding: '12px 24px',
             fontSize: '16px',
             fontWeight: '600',
-            color: activeTab === 'operational' ? '#667eea' : '#64748b',
+            color: activeTab === 'operational' ? '#2751d0' : '#64748b',
             cursor: 'pointer',
-            borderBottom: activeTab === 'operational' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: activeTab === 'operational' ? '3px solid #2751d0' : '3px solid transparent',
             marginBottom: '-2px',
             transition: 'all 0.2s'
           }}
@@ -288,7 +310,7 @@ export default function GoalsView({
       {/* Expense Goals Tab */}
       {activeTab === 'expense' && (
         <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table className="goals-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                 <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Expense Category</th>
@@ -546,14 +568,6 @@ export default function GoalsView({
     );
   }
 
-  // Calculate 6-month data and averages for each metric
-  const calculateMetricData = (records: any[], metricKey: string) => {
-    const last6 = records.slice(0, 6).reverse();
-    const values = last6.map(r => r[metricKey] || 0);
-    const avg = values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
-    return { values, avg, months: last6.map(r => new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })) };
-  };
-
   const arMetrics = [
     { key: 'ar_current_pct', label: 'AR Current %', getValue: (r: any) => r.totalAR > 0 ? (r.current / r.totalAR) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
     { key: 'ar_over30_pct', label: 'AR Over 30 Days %', getValue: (r: any) => r.totalAR > 0 ? ((r.days1to30 + r.days31to60 + r.days61to90 + r.days90plus) / r.totalAR) * 100 : 0, format: (v: number) => v.toFixed(1) + '%', goalType: 'percentage' },
@@ -576,12 +590,24 @@ export default function GoalsView({
 
   // Process data for each metric
   const processMetrics = (metrics: any[], records: any[]) => {
+    // Keep one record per month (latest snapshot), then project onto fixed 6-month timeline.
+    const monthlyRecordMap = records.reduce((acc: any, r: any) => {
+      const snapshot = new Date(r.snapshotDate);
+      const monthKey = `${snapshot.getFullYear()}-${String(snapshot.getMonth() + 1).padStart(2, '0')}`;
+      if (!acc[monthKey] || new Date(r.snapshotDate) > new Date(acc[monthKey].snapshotDate)) {
+        acc[monthKey] = r;
+      }
+      return acc;
+    }, {});
+
     return metrics.map(metric => {
-      const last6 = records.slice(0, 6).reverse();
-      const values = last6.map(r => metric.getValue(r));
+      const values = operationalMonthDates.map(monthDate => {
+        const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+        const record = monthlyRecordMap[monthKey];
+        return record ? metric.getValue(record) : 0;
+      });
       const avg = values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
-      const months = last6.map(r => new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
-      return { ...metric, values, avg, months };
+      return { ...metric, values, avg, months: operationalMonthLabels };
     });
   };
 
@@ -608,19 +634,11 @@ export default function GoalsView({
   const cashProcessed = processMetrics(cashMetrics, cashRecords as any[]);
   const inventoryProcessed = processMetrics(inventoryMetrics, inventoryRecords as any[]);
 
-  const allMetrics = [
-    ...arProcessed,
-    ...apProcessed,
-    ...cashProcessed,
-    ...inventoryProcessed,
-  ];
-
-  // Get common months (use first metric's months)
-  const months = allMetrics[0]?.months || [];
+  const months = operationalMonthLabels;
 
   return (
     <div style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table className="goals-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
             <th style={{ textAlign: 'left', padding: '12px', fontSize: '14px', fontWeight: '600', color: '#64748b' }}>Operational Metric</th>

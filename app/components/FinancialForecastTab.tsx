@@ -55,13 +55,6 @@ const OPEX_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'taxLicense', label: 'Tax License' },
 ];
 
-type OpexPaymentTreatment = 'paid-in-full' | 'ap-schedule';
-const DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY: Record<string, OpexPaymentTreatment> = OPEX_FIELDS
-  .reduce((acc, { key }) => {
-    acc[key] = 'paid-in-full';
-    return acc;
-  }, {} as Record<string, OpexPaymentTreatment>);
-
 const INCOME_TAX_PCT_KEY = 'incomeTaxesTotal';
 const STACKED_BAR_COLORS = [
   '#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4',
@@ -173,7 +166,7 @@ export default function FinancialForecastTab({
   basisMode = 'cash',
 }: FinancialForecastTabProps) {
   const toplineLabel = basisMode === 'accrual' ? 'Sales' : 'Revenue';
-  const isAccrualWeeklyMode = basisMode === 'accrual' && displayMode !== 'graphs-only';
+  const isAccrualWeeklyMode = basisMode === 'accrual' && displayMode === 'full';
   const [accrualSalesInputMode, setAccrualSalesInputMode] = useState<'growth' | 'amount'>(
     basisMode === 'accrual' ? 'amount' : 'growth'
   );
@@ -181,14 +174,14 @@ export default function FinancialForecastTab({
     basisMode === 'accrual' ? 'amount' : 'percent'
   );
   const [activeTab, setActiveTab] = useState<ForecastTab>(displayMode === 'graphs-only' ? 'graphs' : 'inputs');
-  const [annualExpanded, setAnnualExpanded] = useState(false);
+  const [annualExpanded, setAnnualExpanded] = useState(true);
   const [isSavingInputs, setIsSavingInputs] = useState(false);
   const [isLoadingInputs, setIsLoadingInputs] = useState(false);
   const [isInputsDirty, setIsInputsDirty] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [isArchivingBudget, setIsArchivingBudget] = useState(false);
   const [lastBudgetArchiveAt, setLastBudgetArchiveAt] = useState<string | null>(null);
-  const [incomeStatementExpandLast2Years, setIncomeStatementExpandLast2Years] = useState(false);
+  const [incomeStatementCollapseByYear, setIncomeStatementCollapseByYear] = useState(false);
   const [graphGranularity, setGraphGranularity] = useState<'monthly' | 'quarterly'>('monthly');
   const [masterMonthlyData, setMasterMonthlyData] = useState<any[]>([]);
   const monthly = useMemo(
@@ -393,6 +386,14 @@ export default function FinancialForecastTab({
     () => monthActuals.slice(-actualMonthColumnCount),
     [monthActuals, actualMonthColumnCount],
   );
+  const useQuarterlyActualColumns = basisMode === 'accrual' && !isAccrualWeeklyMode;
+  const actualPeriodUnitLabel = useQuarterlyActualColumns ? 'Calendar Qtrs' : 'Months';
+  const currentForecastPeriodLabel = useQuarterlyActualColumns ? 'Current Year Forecast Quarterly' : 'Current Year Forecast Monthly';
+  const currentForecastPeriodPctLabel = useQuarterlyActualColumns
+    ? `Current Year Forecast Quarterly (% of ${toplineLabel})`
+    : `Current Year Forecast Monthly (% of ${toplineLabel})`;
+  const canUseAccrualSalesAmountInput = basisMode === 'accrual' && !useQuarterlyActualColumns && accrualSalesInputMode === 'amount';
+  const canUseAccrualOpexAmountInput = basisMode === 'accrual' && !useQuarterlyActualColumns && accrualOpexInputMode === 'amount';
   const displayedActualMonths = useMemo(() => {
     const emptyActualColumn = {
       key: 'placeholder',
@@ -403,6 +404,7 @@ export default function FinancialForecastTab({
       opexDetails: {} as Record<string, number>,
       incomeTaxes: 0,
     };
+    const sourceActuals = useQuarterlyActualColumns ? quarterActuals.slice(-actualMonthColumnCount) : actualMonths;
     const cols: Array<{
       key: string;
       label: string;
@@ -411,7 +413,7 @@ export default function FinancialForecastTab({
       cogsDetails: Record<string, number>;
       opexDetails: Record<string, number>;
       incomeTaxes: number;
-    }> = [...actualMonths];
+    }> = [...sourceActuals];
     while (cols.length < actualMonthColumnCount) {
       cols.unshift({
         ...emptyActualColumn,
@@ -429,7 +431,7 @@ export default function FinancialForecastTab({
         label: getMonthLabel(shifted.year, shifted.month),
       };
     });
-  }, [actualMonths, actualMonthColumnCount, isAccrualWeeklyMode]);
+  }, [actualMonths, quarterActuals, actualMonthColumnCount, isAccrualWeeklyMode, useQuarterlyActualColumns]);
   const latestActualMonth = useMemo(() => monthActuals[monthActuals.length - 1] || null, [monthActuals]);
 
   const monthlyForecastPeriods = useMemo<MonthMeta[]>(() => {
@@ -453,6 +455,23 @@ export default function FinancialForecastTab({
       }
       return results;
     }
+    if (useQuarterlyActualColumns) {
+      const latestQuarter =
+        quarterActuals[quarterActuals.length - 1] ||
+        getQuarterInfo(new Date(startYear, startMonth, 1));
+      const firstForecastQuarter = shiftQuarter(latestQuarter.year, latestQuarter.quarter, 1);
+      for (let i = 0; i < 4; i++) {
+        const shifted = shiftQuarter(firstForecastQuarter.year, firstForecastQuarter.quarter, i);
+        const quarterEndMonth = shifted.quarter * 3 - 1;
+        results.push({
+          key: `${shifted.year}-Q${shifted.quarter}`,
+          year: shifted.year,
+          month: quarterEndMonth,
+          label: getQuarterEndLabel(shifted.year, shifted.quarter),
+        });
+      }
+      return results;
+    }
     for (let i = 1; i <= 12; i++) {
       const shifted = shiftMonth(startYear, startMonth, i);
       results.push({
@@ -463,10 +482,30 @@ export default function FinancialForecastTab({
       });
     }
     return results;
-  }, [latestActualMonth, isAccrualWeeklyMode]);
+  }, [latestActualMonth, isAccrualWeeklyMode, useQuarterlyActualColumns, quarterActuals]);
 
   const quarterlyForecastPeriods = useMemo<QuarterMeta[]>(() => {
     if (isAccrualWeeklyMode) return [];
+    if (useQuarterlyActualColumns) {
+      const startYear = latestActualMonth?.year || new Date().getFullYear();
+      const startMonth = latestActualMonth?.month ?? new Date().getMonth();
+      const latestQuarter =
+        quarterActuals[quarterActuals.length - 1] ||
+        getQuarterInfo(new Date(startYear, startMonth, 1));
+      const firstFutureQuarter = shiftQuarter(latestQuarter.year, latestQuarter.quarter, 1 + monthlyForecastPeriods.length);
+      const futureQuarterCount = 16; // 4 years beyond the current forecast year
+      const results: QuarterMeta[] = [];
+      for (let i = 0; i < futureQuarterCount; i++) {
+        const shifted = shiftQuarter(firstFutureQuarter.year, firstFutureQuarter.quarter, i);
+        results.push({
+          key: `${shifted.year}-Q${shifted.quarter}`,
+          year: shifted.year,
+          quarter: shifted.quarter,
+          label: getQuarterEndLabel(shifted.year, shifted.quarter),
+        });
+      }
+      return results;
+    }
     const seedYear = latestActualMonth?.year || new Date().getFullYear();
     const seedMonth = latestActualMonth?.month ?? new Date().getMonth();
     const afterFirstYear = shiftMonth(seedYear, seedMonth, 12);
@@ -483,7 +522,7 @@ export default function FinancialForecastTab({
       });
     }
     return results;
-  }, [latestActualMonth, isAccrualWeeklyMode]);
+  }, [latestActualMonth, isAccrualWeeklyMode, useQuarterlyActualColumns, quarterActuals, monthlyForecastPeriods.length]);
 
   const forecastPeriods = useMemo<ForecastPeriodMeta[]>(
     () => [
@@ -492,6 +531,7 @@ export default function FinancialForecastTab({
     ],
     [monthlyForecastPeriods, quarterlyForecastPeriods],
   );
+  const monthlyForecastCount = monthlyForecastPeriods.length;
 
   const revenueRowKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -511,7 +551,7 @@ export default function FinancialForecastTab({
   }, [monthActuals, sectorFieldOptions.cogs, hasSectorSpecificSchema]);
 
   const computeDefaultPct = (rowKey: string, source: 'cogs' | 'opex'): number => {
-    const last = actualMonths[actualMonths.length - 1];
+    const last = displayedActualMonths[displayedActualMonths.length - 1];
     const revenue = Number(last?.revenue) || 0;
     if (revenue === 0) return 0;
     const raw = source === 'cogs'
@@ -520,7 +560,7 @@ export default function FinancialForecastTab({
     return (raw / revenue) * 100;
   };
   const computeDefaultIncomeTaxPct = (): number => {
-    const last = actualMonths[actualMonths.length - 1];
+    const last = displayedActualMonths[displayedActualMonths.length - 1];
     const revenue = Number(last?.revenue) || 0;
     const totalCogs = Object.values(last?.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
     const totalOpex = Object.values(last?.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
@@ -535,9 +575,6 @@ export default function FinancialForecastTab({
   const [cogsGrowthByRow, setCogsGrowthByRow] = useState<Record<string, number[]>>({});
   const [opexPctByRow, setOpexPctByRow] = useState<Record<string, number[]>>({});
   const [opexAmountByRow, setOpexAmountByRow] = useState<Record<string, number[]>>({});
-  const [accrualOpexPaymentTreatmentByKey, setAccrualOpexPaymentTreatmentByKey] = useState<Record<string, OpexPaymentTreatment>>(
-    { ...DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY },
-  );
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -575,19 +612,6 @@ export default function FinancialForecastTab({
             ? settings.opexPctByRow.__amountByRow
             : {},
         );
-        setAccrualOpexPaymentTreatmentByKey(
-          settings?.opexPctByRow?.__paymentTreatmentByKey && typeof settings.opexPctByRow.__paymentTreatmentByKey === 'object'
-            ? {
-                ...DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY,
-                ...Object.fromEntries(
-                  Object.entries(settings.opexPctByRow.__paymentTreatmentByKey).map(([key, value]) => [
-                    key,
-                    value === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full',
-                  ]),
-                ),
-              }
-            : { ...DEFAULT_ACCRUAL_OPEX_PAYMENT_TREATMENT_BY_KEY },
-        );
         if (basisMode === 'accrual') {
           const storedMode = settings?.opexPctByRow?.__inputMode;
           if (storedMode === 'amount' || storedMode === 'percent') {
@@ -617,9 +641,9 @@ export default function FinancialForecastTab({
       setAccrualSalesInputMode('growth');
       setAccrualOpexInputMode('percent');
     } else {
-      setAccrualOpexInputMode('amount');
+      setAccrualOpexInputMode(useQuarterlyActualColumns ? 'percent' : 'amount');
     }
-  }, [basisMode]);
+  }, [basisMode, useQuarterlyActualColumns]);
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -662,7 +686,9 @@ export default function FinancialForecastTab({
         const qStart = monthlyForecastCount;
         if (qStart < normalized.length) {
           const lastMonthlyPct = Number(normalized[Math.max(0, qStart - 1)] || 0);
-          const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
+          const derivedQuarterlyPct = useQuarterlyActualColumns
+            ? Number(lastMonthlyPct.toFixed(2))
+            : Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
           for (let i = qStart; i < normalized.length; i++) {
             normalized[i] = derivedQuarterlyPct;
           }
@@ -738,7 +764,7 @@ export default function FinancialForecastTab({
       return next;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revenueRowKeys.join('|'), cogsRowKeys.join('|'), forecastPeriods.length, selectedCompanyId, isLoadingInputs]);
+  }, [revenueRowKeys.join('|'), cogsRowKeys.join('|'), forecastPeriods.length, selectedCompanyId, isLoadingInputs, monthlyForecastCount, useQuarterlyActualColumns]);
 
   const updateForwardFill = (
     setter: React.Dispatch<React.SetStateAction<Record<string, number[]>>>,
@@ -786,14 +812,6 @@ export default function FinancialForecastTab({
     });
   };
 
-  const updateAccrualOpexPaymentTreatment = (rowKey: string, treatment: OpexPaymentTreatment) => {
-    setIsInputsDirty(true);
-    setAccrualOpexPaymentTreatmentByKey((prev) => ({
-      ...prev,
-      [rowKey]: treatment,
-    }));
-  };
-
   const updateRevenueMonthlyAndDerived = (
     rowKey: string,
     startMonthlyIndex: number,
@@ -806,7 +824,9 @@ export default function FinancialForecastTab({
         current[i] = value;
       }
       const lastMonthlyPct = Number(current[Math.max(0, monthlyForecastCount - 1)] || 0);
-      const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
+      const derivedQuarterlyPct = useQuarterlyActualColumns
+        ? Number(lastMonthlyPct.toFixed(2))
+        : Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
       for (let i = monthlyForecastCount; i < current.length; i++) {
         current[i] = derivedQuarterlyPct;
       }
@@ -889,7 +909,9 @@ export default function FinancialForecastTab({
         prevAmount = currAmount > 0 ? currAmount : prevAmount;
       }
       const lastMonthlyPct = Number(current[Math.max(0, monthlyForecastCount - 1)] || 0);
-      const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
+      const derivedQuarterlyPct = useQuarterlyActualColumns
+        ? Number(lastMonthlyPct.toFixed(2))
+        : Number(monthlyGrowthToQuarterlyGrowthPct(lastMonthlyPct).toFixed(2));
       for (let i = monthlyForecastCount; i < current.length; i += 1) {
         current[i] = derivedQuarterlyPct;
       }
@@ -933,7 +955,6 @@ export default function FinancialForecastTab({
             ...opexPctByRow,
             __amountByRow: opexAmountByRow,
             __inputMode: accrualOpexInputMode,
-            __paymentTreatmentByKey: accrualOpexPaymentTreatmentByKey,
           },
         }),
       });
@@ -995,7 +1016,6 @@ export default function FinancialForecastTab({
     });
   }, [monthlyForecastPeriods.length, quarterlyForecastPeriods]);
 
-  const monthlyForecastCount = monthlyForecastPeriods.length;
   const quarterlyFutureCount = quarterlyForecastPeriods.length;
   const futureSectionCount = annualExpanded ? quarterlyFutureCount : annualYearColumns.length;
   const totalInputPeriodCols = actualMonthColumnCount + monthlyForecastCount + futureSectionCount;
@@ -1019,9 +1039,12 @@ export default function FinancialForecastTab({
           return;
         }
         const monthlyBasePct = Number(revenueGrowthByRow[k]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
-        const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(2));
-        const growthPct = idx < monthlyForecastCount
-          ? (Number(revenueGrowthByRow[k]?.[idx]) || 0)
+        const derivedQuarterlyPct = useQuarterlyActualColumns
+          ? Number(monthlyBasePct.toFixed(2))
+          : Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(2));
+        const configuredGrowthPct = Number(revenueGrowthByRow[k]?.[idx]);
+        const growthPct = Number.isFinite(configuredGrowthPct)
+          ? configuredGrowthPct
           : derivedQuarterlyPct;
         const nextVal = revenueCarry[k] * (1 + growthPct / 100);
         revenueCarry[k] = nextVal;
@@ -1038,7 +1061,7 @@ export default function FinancialForecastTab({
 
       const opexDetails: Record<string, number> = {};
       OPEX_FIELDS.forEach(({ key }) => {
-        if (basisMode === 'accrual') {
+        if (canUseAccrualOpexAmountInput) {
           const enteredAmount = Number(opexAmountByRow[key]?.[idx]);
           if (Number.isFinite(enteredAmount)) {
             opexDetails[key] = Math.max(0, enteredAmount);
@@ -1075,7 +1098,7 @@ export default function FinancialForecastTab({
         netIncome,
       };
     });
-  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow, basisMode, accrualRevenueAmountByRow, accrualOpexInputMode, opexAmountByRow]);
+  }, [forecastPeriods, latestActualMonth, revenueRowKeys, revenueGrowthByRow, monthlyForecastCount, cogsRowKeys, cogsGrowthByRow, opexPctByRow, basisMode, accrualRevenueAmountByRow, opexAmountByRow, useQuarterlyActualColumns, canUseAccrualOpexAmountInput]);
 
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -1124,53 +1147,6 @@ export default function FinancialForecastTab({
       // Ignore localStorage errors in restricted browser modes.
     }
   }, [selectedCompanyId, forecastRows, basisMode]);
-
-  const incomeStatementColumns = useMemo(() => {
-    const base = forecastRows.map((row, idx) => ({
-      key: row.key,
-      label: row.label,
-      rowIndices: [idx],
-      isAnnual: false,
-      year: row.year,
-    }));
-    if (incomeStatementExpandLast2Years || forecastRows.length === 0) return base;
-
-    const years = Array.from(new Set(forecastRows.map((r) => r.year))).sort((a, b) => a - b);
-    const lastTwoYears = new Set(years.slice(-2));
-    if (!lastTwoYears.size) return base;
-
-    const yearToIndices = new Map<number, number[]>();
-    forecastRows.forEach((row, idx) => {
-      if (!yearToIndices.has(row.year)) yearToIndices.set(row.year, []);
-      yearToIndices.get(row.year)!.push(idx);
-    });
-
-    const collapsed: Array<{ key: string; label: string; rowIndices: number[]; isAnnual: boolean; year: number }> = [];
-    const addedYears = new Set<number>();
-    forecastRows.forEach((row, idx) => {
-      if (!lastTwoYears.has(row.year)) {
-        collapsed.push({
-          key: row.key,
-          label: row.label,
-          rowIndices: [idx],
-          isAnnual: false,
-          year: row.year,
-        });
-        return;
-      }
-      if (addedYears.has(row.year)) return;
-      addedYears.add(row.year);
-      collapsed.push({
-        key: `yr-${row.year}`,
-        label: String(row.year),
-        rowIndices: yearToIndices.get(row.year) || [idx],
-        isAnnual: true,
-        year: row.year,
-      });
-    });
-
-    return collapsed;
-  }, [forecastRows, incomeStatementExpandLast2Years]);
 
   const forecastRowsByQuarter = useMemo(() => {
     const grouped = new Map<string, any>();
@@ -1221,6 +1197,86 @@ export default function FinancialForecastTab({
       return a.quarter - b.quarter;
     });
   }, [forecastRows, revenueRowKeys, cogsRowKeys]);
+
+  const incomeStatementRows = useMemo(() => {
+    const latestActualQuarter = quarterActuals.length > 0 ? quarterActuals[quarterActuals.length - 1] : null;
+    const priorYear = latestActualQuarter ? latestActualQuarter.year - 1 : null;
+    const actualRows = quarterActuals
+      .filter((q) => {
+        if (priorYear === null || !latestActualQuarter) return true;
+        return q.year === priorYear || q.year === latestActualQuarter.year;
+      })
+      .map((q) => {
+        const totalRevenue = Number(q.revenue) || 0;
+        const totalCogs = Object.values(q.cogsDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+        const totalOpex = Object.values(q.opexDetails || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+        const grossProfit = totalRevenue - totalCogs;
+        const operatingIncome = grossProfit - totalOpex;
+        const totalIncomeTaxes = Number(q.incomeTaxes) || 0;
+        const netIncome = operatingIncome - totalIncomeTaxes;
+        return {
+          key: `actual-${q.key}`,
+          label: q.label,
+          year: q.year,
+          quarter: q.quarter,
+          revenueDetails: q.revenueDetails || {},
+          cogsDetails: q.cogsDetails || {},
+          opexDetails: q.opexDetails || {},
+          totalRevenue,
+          totalCogs,
+          grossProfit,
+          totalOpex,
+          totalIncomeTaxes,
+          operatingIncome,
+          netIncome,
+          isActual: true,
+        };
+      });
+
+    const quarterRank = (year: number, quarter: number) => year * 4 + quarter;
+    const latestActualRank = latestActualQuarter ? quarterRank(latestActualQuarter.year, latestActualQuarter.quarter) : null;
+    const forecastRowsAfterActuals = forecastRowsByQuarter
+      .filter((row) => {
+        if (latestActualRank === null) return true;
+        return quarterRank(Number(row.year), Number(row.quarter)) > latestActualRank;
+      })
+      .map((row) => ({ ...row, isActual: false }));
+
+    return [...actualRows, ...forecastRowsAfterActuals];
+  }, [quarterActuals, forecastRowsByQuarter]);
+
+  const incomeStatementColumns = useMemo(() => {
+    const base = incomeStatementRows.map((row, idx) => ({
+      key: row.key,
+      label: row.label,
+      rowIndices: [idx],
+      isAnnual: false,
+      year: row.year,
+    }));
+    if (!incomeStatementCollapseByYear || incomeStatementRows.length === 0) return base;
+
+    const yearToIndices = new Map<number, number[]>();
+    incomeStatementRows.forEach((row, idx) => {
+      if (!yearToIndices.has(row.year)) yearToIndices.set(row.year, []);
+      yearToIndices.get(row.year)!.push(idx);
+    });
+
+    const collapsed: Array<{ key: string; label: string; rowIndices: number[]; isAnnual: boolean; year: number }> = [];
+    const addedYears = new Set<number>();
+    incomeStatementRows.forEach((row, idx) => {
+      if (addedYears.has(row.year)) return;
+      addedYears.add(row.year);
+      collapsed.push({
+        key: `yr-${row.year}`,
+        label: String(row.year),
+        rowIndices: yearToIndices.get(row.year) || [idx],
+        isAnnual: true,
+        year: row.year,
+      });
+    });
+
+    return collapsed;
+  }, [incomeStatementRows, incomeStatementCollapseByYear]);
 
   const monthlyRevenueGraphPoints = useMemo(() => {
     const actual = actualMonths.slice(-3).map((m) => ({
@@ -1765,18 +1821,22 @@ export default function FinancialForecastTab({
 
 
   const tabButtonStyle = (tab: ForecastTab): React.CSSProperties => ({
-    padding: '10px 16px',
-    borderRadius: '8px',
-    border: activeTab === tab ? '2px solid #1f70c1' : '1px solid #cbd5e1',
-    background: activeTab === tab ? '#e0f2fe' : '#ffffff',
-    color: activeTab === tab ? '#0c4a6e' : '#334155',
+    padding: '12px 24px',
+    border: 'none',
+    borderBottom: activeTab === tab ? '3px solid #2751d0' : '3px solid transparent',
+    background: 'none',
+    color: activeTab === tab ? '#2751d0' : '#64748b',
     fontWeight: 600,
+    fontSize: '16px',
     cursor: 'pointer',
+    marginBottom: '-2px',
+    transition: 'all 0.2s',
   });
 
   const showInputsTab = displayMode !== 'graphs-only';
   const showIncomeStatementTab = displayMode !== 'graphs-only';
   const showGraphsTab = displayMode !== 'no-graphs';
+  const compactTabStackSpacing = displayMode === 'no-graphs';
   const visibleTabs: ForecastTab[] = [
     ...(showInputsTab ? (['inputs'] as ForecastTab[]) : []),
     ...(showIncomeStatementTab ? (['income-statement'] as ForecastTab[]) : []),
@@ -1794,7 +1854,7 @@ export default function FinancialForecastTab({
   }, [displayMode, activeTab]);
 
   return (
-    <div style={{ maxWidth: '2200px', margin: '0 auto', padding: '24px' }}>
+    <div style={{ maxWidth: '2200px', margin: '0 auto', padding: compactTabStackSpacing ? '8px 24px 24px' : '24px' }}>
       <style>{`
         .forecast-grid {
           font-size: 12px;
@@ -1878,10 +1938,10 @@ export default function FinancialForecastTab({
           }
         }
       `}</style>
-      <div style={{ marginBottom: '6px' }} />
+      <div style={{ marginBottom: compactTabStackSpacing ? '0px' : '6px' }} />
 
       {visibleTabs.length > 1 && (
-        <div className="ff-print-controls" style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <div className="ff-print-controls" style={{ display: 'flex', gap: '8px', marginBottom: compactTabStackSpacing ? '8px' : '20px', borderBottom: '2px solid #e2e8f0' }}>
           {showInputsTab && (
             <button style={tabButtonStyle('inputs')} onClick={() => setActiveTab('inputs')}>Inputs</button>
           )}
@@ -1941,7 +2001,7 @@ export default function FinancialForecastTab({
               >
                 {isAccrualWeeklyMode ? 'Weekly Horizon (13 Weeks)' : (annualExpanded ? 'Collapse Future Years to Years' : 'Expand Future Years to Quarters')}
               </button>
-              {basisMode === 'accrual' && (
+              {basisMode === 'accrual' && !useQuarterlyActualColumns && (
                 <button
                   onClick={() => setAccrualSalesInputMode((prev) => (prev === 'amount' ? 'growth' : 'amount'))}
                   style={{
@@ -1972,16 +2032,16 @@ export default function FinancialForecastTab({
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>{toplineLabel}</th>
                   <th colSpan={actualMonthColumnCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    {`Actual (Last ${actualMonthColumnCount} Months)`}
+                    {`Actual (Last ${actualMonthColumnCount} ${actualPeriodUnitLabel})`}
                   </th>
                   <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     {isAccrualWeeklyMode
                       ? (
                         <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>for the Week Ending</div>
                       )
-                      : (basisMode === 'accrual' && accrualSalesInputMode === 'amount'
+                      : (canUseAccrualSalesAmountInput
                         ? 'Current Year Forecast Monthly (Amount)'
-                        : 'Current Year Forecast Monthly (% Growth)')}
+                        : `${currentForecastPeriodLabel} (% Growth)`)}
                   </th>
                   {futureSectionCount > 0 && (
                     <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -2017,7 +2077,7 @@ export default function FinancialForecastTab({
                     ))}
                     {monthlyForecastPeriods.map((q, idx) => (
                       <td key={`${rowKey}-f-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
-                        {basisMode === 'accrual' && accrualSalesInputMode === 'amount' ? (
+                        {canUseAccrualSalesAmountInput ? (
                           <>
                             $
                             <input
@@ -2053,27 +2113,47 @@ export default function FinancialForecastTab({
                       </td>
                     ))}
                     {annualExpanded
-                      ? quarterlyForecastPeriods.map((q, idx) => (
-                          (() => {
-                            const monthlyBasePct = Number(revenueGrowthByRow[rowKey]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
-                            const derivedQuarterlyPct = Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(1));
-                            return (
-                          <td key={`${rowKey}-aq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={derivedQuarterlyPct.toFixed(1)}
-                              readOnly
-                              disabled
-                              style={{ width: '62px', textAlign: 'right', padding: '4px' }}
-                            />%
-                          </td>
-                            );
-                          })()
-                        ))
-                      : annualYearColumns.map((yearCol) => {
+                      ? quarterlyForecastPeriods.map((q, idx) => {
+                          const periodIndex = idx + monthlyForecastCount;
                           const monthlyBasePct = Number(revenueGrowthByRow[rowKey]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
-                          const annualGrowthPct = monthlyGrowthToAnnualGrowthPct(monthlyBasePct);
+                          const derivedQuarterlyPct = useQuarterlyActualColumns
+                            ? Number(monthlyBasePct.toFixed(1))
+                            : Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(1));
+                          const enteredQuarterlyPct = Number(revenueGrowthByRow[rowKey]?.[periodIndex]);
+                          const displayQuarterlyPct = Number.isFinite(enteredQuarterlyPct) ? enteredQuarterlyPct : derivedQuarterlyPct;
+                          return (
+                            <td key={`${rowKey}-aq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={displayQuarterlyPct.toFixed(1)}
+                                onChange={(e) => {
+                                  const raw = e.target.value.trim();
+                                  if (!/^-?\d*\.?\d*$/.test(raw)) return;
+                                  if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+                                  const parsed = Number((Number(raw) || 0).toFixed(2));
+                                  updateSinglePeriod(setRevenueGrowthByRow, rowKey, periodIndex, parsed);
+                                }}
+                                style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                              />%
+                            </td>
+                          );
+                        })
+                      : annualYearColumns.map((yearCol) => {
+                          const quarterValues = Array.from({ length: 4 }).map((_, quarterOffset) => {
+                            const periodIndex = yearCol.startIndex + quarterOffset;
+                            const configuredGrowthPct = Number(revenueGrowthByRow[rowKey]?.[periodIndex]);
+                            if (Number.isFinite(configuredGrowthPct)) return configuredGrowthPct;
+                            const monthlyBasePct = Number(revenueGrowthByRow[rowKey]?.[Math.max(0, monthlyForecastCount - 1)]) || 0;
+                            return useQuarterlyActualColumns
+                              ? Number(monthlyBasePct.toFixed(1))
+                              : Number(monthlyGrowthToQuarterlyGrowthPct(monthlyBasePct).toFixed(1));
+                          });
+                          const annualGrowthFactor = quarterValues.reduce(
+                            (factor, pct) => factor * (1 + Number(pct || 0) / 100),
+                            1,
+                          );
+                          const annualGrowthPct = (annualGrowthFactor - 1) * 100;
                           const displayValue = annualGrowthPct.toFixed(1);
                           return (
                             <td key={`${rowKey}-y-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
@@ -2083,7 +2163,7 @@ export default function FinancialForecastTab({
                                 value={displayValue}
                                 readOnly
                                 disabled
-                                style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                                style={{ width: '62px', textAlign: 'right', padding: '4px', background: '#f1f5f9' }}
                               />%
                             </td>
                           );
@@ -2117,12 +2197,12 @@ export default function FinancialForecastTab({
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>COGS</th>
                   <th colSpan={actualMonthColumnCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    {`Actual (Last ${actualMonthColumnCount} Months, % of ${toplineLabel})`}
+                    {`Actual (Last ${actualMonthColumnCount} ${actualPeriodUnitLabel}, % of ${toplineLabel})`}
                   </th>
                   <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     {isAccrualWeeklyMode ? (
                       <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>for the Week Ending</div>
-                    ) : `Current Year Forecast Monthly (% of ${toplineLabel})`}
+                    ) : currentForecastPeriodPctLabel}
                   </th>
                   {futureSectionCount > 0 && (
                     <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -2211,26 +2291,22 @@ export default function FinancialForecastTab({
             <table className="forecast-grid" style={{ width: 'max-content', minWidth: '1280px', borderCollapse: 'collapse', fontSize: '12px' }}>
               <colgroup>
                 <col className="name-col" />
-                {basisMode === 'accrual' && <col className="period-col" />}
                 {Array.from({ length: totalInputPeriodCols }).map((_, idx) => (
                   <col key={`opex-col-${idx}`} className="period-col" />
                 ))}
               </colgroup>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>{basisMode === 'accrual' ? 'Operating Expense' : 'Account'}</th>
-                  {basisMode === 'accrual' && (
-                    <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Cash Timing</th>
-                  )}
+                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>{canUseAccrualOpexAmountInput ? 'Operating Expense' : `Operating Expenses (% of ${toplineLabel})`}</th>
                   <th colSpan={actualMonthColumnCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    {basisMode === 'accrual'
-                      ? `Actual (Last ${actualMonthColumnCount} Months, $)`
-                      : `Actual (Last ${actualMonthColumnCount} Months)`}
+                    {canUseAccrualOpexAmountInput
+                      ? `Actual (Last ${actualMonthColumnCount} ${actualPeriodUnitLabel}, $)`
+                      : `Actual (Last ${actualMonthColumnCount} ${actualPeriodUnitLabel}, % of ${toplineLabel})`}
                   </th>
                   <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     {isAccrualWeeklyMode ? (
                       <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>for the Week Ending</div>
-                    ) : 'Current Year Forecast Monthly'}
+                    ) : (canUseAccrualOpexAmountInput ? currentForecastPeriodLabel : currentForecastPeriodPctLabel)}
                   </th>
                   {futureSectionCount > 0 && (
                     <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -2239,10 +2315,7 @@ export default function FinancialForecastTab({
                   )}
                 </tr>
                 <tr style={{ background: '#f8fafc' }}>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>{basisMode === 'accrual' ? 'Account' : `Operating Expenses (% of ${toplineLabel})`}</th>
-                  {basisMode === 'accrual' && (
-                    <th style={{ borderBottom: '1px solid #e2e8f0' }}>Treatment</th>
-                  )}
+                  <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Account</th>
                   {displayedActualMonths.map((q) => (
                     <th key={`oa-${q.key}`} style={{ borderBottom: '1px solid #e2e8f0' }}>{q.label}</th>
                   ))}
@@ -2262,32 +2335,20 @@ export default function FinancialForecastTab({
                 {OPEX_FIELDS.map(({ key, label }) => (
                   <tr key={key}>
                     <td className="name-col" style={{ borderBottom: '1px solid #f1f5f9', color: '#334155' }}>{label}</td>
-                    {basisMode === 'accrual' && (
-                      <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
-                        <select
-                          value={accrualOpexPaymentTreatmentByKey[key] === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full'}
-                          onChange={(e) => updateAccrualOpexPaymentTreatment(key, e.target.value === 'ap-schedule' ? 'ap-schedule' : 'paid-in-full')}
-                          style={{ width: '118px', padding: '4px', fontSize: '11px' }}
-                        >
-                          <option value="paid-in-full">Paid In Full</option>
-                          <option value="ap-schedule">Pay via AP</option>
-                        </select>
-                      </td>
-                    )}
                     {displayedActualMonths.map((q) => {
                       const amount = Number(q.opexDetails?.[key]) || 0;
                       const pct = q.revenue > 0 ? ((Number(q.opexDetails?.[key]) || 0) / q.revenue) * 100 : 0;
                       return (
                         <td key={`${key}-oa-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                          {basisMode === 'accrual'
+                          {canUseAccrualOpexAmountInput
                             ? `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                             : `${pct.toFixed(2)}%`}
                         </td>
                       );
                     })}
                     {monthlyForecastPeriods.map((q, idx) => (
-                      <td key={`${key}-of-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                        {basisMode === 'accrual' ? (
+                      <td key={`${key}-of-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                        {canUseAccrualOpexAmountInput ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
                             <span>$</span>
                             <input
@@ -2315,8 +2376,8 @@ export default function FinancialForecastTab({
                     ))}
                     {annualExpanded
                       ? quarterlyForecastPeriods.map((q, idx) => (
-                          <td key={`${key}-oaq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                            {basisMode === 'accrual' ? (
+                          <td key={`${key}-oaq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                            {canUseAccrualOpexAmountInput ? (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
                                 <span>$</span>
                                 <input
@@ -2345,8 +2406,8 @@ export default function FinancialForecastTab({
                           const amountValues = deriveOpexAmounts(key).slice(yearCol.startIndex, yearCol.startIndex + 4);
                           const amountAvg = amountValues.length ? amountValues.reduce((s, v) => s + Number(v || 0), 0) / amountValues.length : 0;
                           return (
-                            <td key={`${key}-oy-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                              {basisMode === 'accrual' ? (
+                            <td key={`${key}-oy-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                              {canUseAccrualOpexAmountInput ? (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
                                   <span>$</span>
                                   <input
@@ -2354,16 +2415,22 @@ export default function FinancialForecastTab({
                                     inputMode="numeric"
                                     value={formatCurrencyIntegerInput(amountAvg)}
                                     onChange={(e) => updateYearBlock(setOpexAmountByRow, key, yearCol.startIndex, parseCurrencyIntegerInput(e.target.value))}
-                                    style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                                    style={{ width: '72px', textAlign: 'right', padding: '4px', background: '#f1f5f9' }}
                                   />
                                 </span>
                               ) : (
                                 <>
                                   <input
-                                    type="number"
-                                    value={Number(pctAvg.toFixed(2))}
-                                    onChange={(e) => updateYearBlock(setOpexPctByRow, key, yearCol.startIndex, Number(e.target.value) || 0)}
-                                    style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={pctAvg.toFixed(1)}
+                                    onChange={(e) => {
+                                      const raw = e.target.value.trim();
+                                      if (!/^-?\d*\.?\d*$/.test(raw)) return;
+                                      if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+                                      updateYearBlock(setOpexPctByRow, key, yearCol.startIndex, Number((Number(raw) || 0).toFixed(2)));
+                                    }}
+                                    style={{ width: '62px', textAlign: 'right', padding: '4px', background: '#f1f5f9' }}
                                   />%
                                 </>
                               )}
@@ -2389,17 +2456,17 @@ export default function FinancialForecastTab({
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
                   <th style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
-                    {basisMode === 'accrual' ? 'Income Taxes ($)' : 'Income Taxes (Tax Rate on Operating Income)'}
+                    {canUseAccrualOpexAmountInput ? 'Income Taxes ($)' : 'Income Taxes (Tax Rate on Operating Income)'}
                   </th>
                   <th colSpan={actualMonthColumnCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    {basisMode === 'accrual'
-                      ? `Actual (Last ${actualMonthColumnCount} Months, $)`
-                      : `Actual (Last ${actualMonthColumnCount} Months)`}
+                    {canUseAccrualOpexAmountInput
+                      ? `Actual (Last ${actualMonthColumnCount} ${actualPeriodUnitLabel}, $)`
+                      : `Actual (Last ${actualMonthColumnCount} ${actualPeriodUnitLabel}, % on Operating Income)`}
                   </th>
                   <th colSpan={monthlyForecastCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     {isAccrualWeeklyMode ? (
                       <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>for the Week Ending</div>
-                    ) : 'Current Year Forecast Monthly'}
+                    ) : (canUseAccrualOpexAmountInput ? currentForecastPeriodLabel : currentForecastPeriodPctLabel)}
                   </th>
                   {futureSectionCount > 0 && (
                     <th colSpan={futureSectionCount} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -2435,15 +2502,15 @@ export default function FinancialForecastTab({
                     const pct = operatingIncome > 0 ? ((Number(q.incomeTaxes) || 0) / operatingIncome) * 100 : 0;
                     return (
                       <td key={`tax-a-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                        {basisMode === 'accrual'
+                        {canUseAccrualOpexAmountInput
                           ? `$${taxAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                           : `${pct.toFixed(2)}%`}
                       </td>
                     );
                   })}
                   {monthlyForecastPeriods.map((q, idx) => (
-                    <td key={`tax-f-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                      {basisMode === 'accrual' ? (
+                    <td key={`tax-f-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                      {canUseAccrualOpexAmountInput ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
                           <span>$</span>
                           <input
@@ -2471,8 +2538,8 @@ export default function FinancialForecastTab({
                   ))}
                   {annualExpanded
                     ? quarterlyForecastPeriods.map((q, idx) => (
-                        <td key={`tax-aq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                          {basisMode === 'accrual' ? (
+                        <td key={`tax-aq-${q.key}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                          {canUseAccrualOpexAmountInput ? (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
                               <span>$</span>
                               <input
@@ -2501,8 +2568,8 @@ export default function FinancialForecastTab({
                         const amountValues = (opexAmountByRow[INCOME_TAX_PCT_KEY] || []).slice(yearCol.startIndex, yearCol.startIndex + 4);
                         const amountAvg = amountValues.length ? amountValues.reduce((s, v) => s + Number(v || 0), 0) / amountValues.length : 0;
                         return (
-                          <td key={`tax-y-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9' }}>
-                            {basisMode === 'accrual' ? (
+                          <td key={`tax-y-${yearCol.id}`} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                            {canUseAccrualOpexAmountInput ? (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', whiteSpace: 'nowrap' }}>
                                 <span>$</span>
                                 <input
@@ -2510,16 +2577,22 @@ export default function FinancialForecastTab({
                                   inputMode="numeric"
                                   value={formatCurrencyIntegerInput(amountAvg)}
                                   onChange={(e) => updateYearBlock(setOpexAmountByRow, INCOME_TAX_PCT_KEY, yearCol.startIndex, parseCurrencyIntegerInput(e.target.value))}
-                                  style={{ width: '72px', textAlign: 'right', padding: '4px' }}
+                                  style={{ width: '72px', textAlign: 'right', padding: '4px', background: '#f1f5f9' }}
                                 />
                               </span>
                             ) : (
                               <>
                                 <input
-                                  type="number"
-                                  value={Number(pctAvg.toFixed(2))}
-                                  onChange={(e) => updateYearBlock(setOpexPctByRow, INCOME_TAX_PCT_KEY, yearCol.startIndex, Number(e.target.value) || 0)}
-                                  style={{ width: '62px', textAlign: 'right', padding: '4px' }}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={pctAvg.toFixed(1)}
+                                  onChange={(e) => {
+                                    const raw = e.target.value.trim();
+                                    if (!/^-?\d*\.?\d*$/.test(raw)) return;
+                                    if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return;
+                                    updateYearBlock(setOpexPctByRow, INCOME_TAX_PCT_KEY, yearCol.startIndex, Number((Number(raw) || 0).toFixed(2)));
+                                  }}
+                                  style={{ width: '62px', textAlign: 'right', padding: '4px', background: '#f1f5f9' }}
                                 />%
                               </>
                             )}
@@ -2539,7 +2612,7 @@ export default function FinancialForecastTab({
             <h3 style={{ margin: 0, color: '#0f172a' }}>Income Statement</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
-                onClick={() => setIncomeStatementExpandLast2Years((prev) => !prev)}
+                onClick={() => setIncomeStatementCollapseByYear((prev) => !prev)}
                 style={{
                   border: '1px solid #cbd5e1',
                   background: '#f8fafc',
@@ -2550,7 +2623,7 @@ export default function FinancialForecastTab({
                   cursor: 'pointer',
                 }}
               >
-                {incomeStatementExpandLast2Years ? 'Collapse Last 2 Years to Years' : 'Expand Last 2 Years to Quarters'}
+                {incomeStatementCollapseByYear ? 'Expand to Quarters' : 'Collapse to Calendar Years'}
               </button>
               <div style={{ fontSize: '12px', color: '#64748b' }}>
                 {lastBudgetArchiveAt ? `Last budget archive ${new Date(lastBudgetArchiveAt).toLocaleString()}` : 'No budget archive yet'}
@@ -2611,7 +2684,7 @@ export default function FinancialForecastTab({
                     <td style={{ padding: '8px', color: '#334155' }}>{getFieldDisplayName(rowKey)}</td>
                     {incomeStatementColumns.map((col) => (
                       <td key={`rev-detail-${rowKey}-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
-                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.revenueDetails?.[rowKey]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.revenueDetails?.[rowKey]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -2620,7 +2693,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#eff6ff' }}>{`Total ${toplineLabel}`}</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`rev-${col.key}`} style={{ textAlign: 'right', padding: '8px', fontWeight: 700, background: '#eff6ff' }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.totalRevenue) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalRevenue) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   ))}
                 </tr>
@@ -2635,7 +2708,7 @@ export default function FinancialForecastTab({
                     <td style={{ padding: '8px', color: '#334155' }}>{getFieldDisplayName(rowKey)}</td>
                     {incomeStatementColumns.map((col) => (
                       <td key={`cogs-detail-${rowKey}-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
-                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.cogsDetails?.[rowKey]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.cogsDetails?.[rowKey]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -2644,7 +2717,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#fef3c7' }}>Total COGS</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`cogs-${col.key}`} style={{ textAlign: 'right', padding: '8px', fontWeight: 700, background: '#fef3c7' }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.totalCogs) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalCogs) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   ))}
                 </tr>
@@ -2652,7 +2725,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#dbeafe' }}>Gross Profit</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`gp-${col.key}`} style={{ textAlign: 'right', padding: '8px', background: '#dbeafe', fontWeight: 700 }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.grossProfit) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.grossProfit) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   ))}
                 </tr>
@@ -2667,7 +2740,7 @@ export default function FinancialForecastTab({
                     <td style={{ padding: '8px', color: '#334155' }}>{label}</td>
                     {incomeStatementColumns.map((col) => (
                       <td key={`opex-detail-${key}-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
-                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.opexDetails?.[key]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.opexDetails?.[key]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </td>
                     ))}
                   </tr>
@@ -2676,7 +2749,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#fde68a' }}>Total Operating Expenses</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`opex-${col.key}`} style={{ textAlign: 'right', padding: '8px', fontWeight: 700, background: '#fde68a' }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.totalOpex) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalOpex) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   ))}
                 </tr>
@@ -2684,7 +2757,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#dcfce7' }}>Operating Income</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`oi-${col.key}`} style={{ textAlign: 'right', padding: '8px', background: '#dcfce7', fontWeight: 700 }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.operatingIncome) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.operatingIncome) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   ))}
                 </tr>
@@ -2692,7 +2765,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 600 }}>Income Taxes</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`tax-${col.key}`} style={{ textAlign: 'right', padding: '8px' }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.totalIncomeTaxes) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.totalIncomeTaxes) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   ))}
                 </tr>
@@ -2700,7 +2773,7 @@ export default function FinancialForecastTab({
                   <td style={{ padding: '8px', fontWeight: 700, background: '#f1f5f9' }}>Net Income</td>
                   {incomeStatementColumns.map((col) => (
                     <td key={`ni-${col.key}`} style={{ textAlign: 'right', padding: '8px', background: '#f1f5f9', fontWeight: 700 }}>
-                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(forecastRows[idx]?.netIncome) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Number(col.rowIndices.reduce((sum, idx) => sum + (Number(incomeStatementRows[idx]?.netIncome) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   ))}
                 </tr>

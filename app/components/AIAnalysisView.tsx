@@ -645,14 +645,13 @@ export default function AIAnalysisView(props: {
           onClick={() => setTab('ask')}
           style={{
             padding: '12px 20px',
-            background: tab === 'ask' ? '#667eea' : 'transparent',
-            color: tab === 'ask' ? 'white' : '#64748b',
+            background: 'none',
+            color: tab === 'ask' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: tab === 'ask' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: tab === 'ask' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '700',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
           }}
         >
           Ask Corelytics
@@ -661,14 +660,13 @@ export default function AIAnalysisView(props: {
           onClick={() => setTab('search-documents')}
           style={{
             padding: '12px 20px',
-            background: tab === 'search-documents' ? '#667eea' : 'transparent',
-            color: tab === 'search-documents' ? 'white' : '#64748b',
+            background: 'none',
+            color: tab === 'search-documents' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: tab === 'search-documents' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: tab === 'search-documents' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '700',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
           }}
         >
           Search Documents
@@ -677,14 +675,13 @@ export default function AIAnalysisView(props: {
           onClick={() => setTab('period-review')}
           style={{
             padding: '12px 20px',
-            background: tab === 'period-review' ? '#667eea' : 'transparent',
-            color: tab === 'period-review' ? 'white' : '#64748b',
+            background: 'none',
+            color: tab === 'period-review' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: tab === 'period-review' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: tab === 'period-review' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '700',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
           }}
         >
           Period Review

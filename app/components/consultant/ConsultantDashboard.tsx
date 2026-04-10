@@ -75,14 +75,13 @@ export default function ConsultantDashboard({
           onClick={() => setConsultantDashboardTab('company-list')}
           style={{
             padding: '12px 24px',
-            background: consultantDashboardTab === 'company-list' ? '#667eea' : 'transparent',
-            color: consultantDashboardTab === 'company-list' ? 'white' : '#64748b',
+            background: 'none',
+            color: consultantDashboardTab === 'company-list' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: consultantDashboardTab === 'company-list' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: consultantDashboardTab === 'company-list' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -93,14 +92,13 @@ export default function ConsultantDashboard({
             onClick={() => setConsultantDashboardTab('team-management')}
             style={{
               padding: '12px 24px',
-              background: consultantDashboardTab === 'team-management' ? '#667eea' : 'transparent',
-              color: consultantDashboardTab === 'team-management' ? 'white' : '#64748b',
+              background: 'none',
+              color: consultantDashboardTab === 'team-management' ? '#2751d0' : '#64748b',
               border: 'none',
-              borderBottom: consultantDashboardTab === 'team-management' ? '3px solid #667eea' : '3px solid transparent',
+              borderBottom: consultantDashboardTab === 'team-management' ? '3px solid #2751d0' : '3px solid transparent',
               fontSize: '16px',
               fontWeight: '600',
               cursor: 'pointer',
-              borderRadius: '8px 8px 0 0',
               transition: 'all 0.2s'
             }}
         >
@@ -111,14 +109,13 @@ export default function ConsultantDashboard({
           onClick={() => setConsultantDashboardTab('documentation')}
           style={{
             padding: '12px 24px',
-            background: consultantDashboardTab === 'documentation' ? '#667eea' : 'transparent',
-            color: consultantDashboardTab === 'documentation' ? 'white' : '#64748b',
+            background: 'none',
+            color: consultantDashboardTab === 'documentation' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: consultantDashboardTab === 'documentation' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: consultantDashboardTab === 'documentation' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >

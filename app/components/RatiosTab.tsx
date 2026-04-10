@@ -183,10 +183,6 @@ export default function RatiosTab({
         }
       `}</style>
 
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Ratios</h1>
-      </div>
-      
       {/* Benchmark Status Indicator - Only show on non-priority tabs */}
       {kpiDashboardTab !== 'priority-ratios' && (
         benchmarks.length > 0 ? (
@@ -206,14 +202,13 @@ export default function RatiosTab({
           onClick={() => setKpiDashboardTab('all-ratios')}
           style={{
             padding: '12px 24px',
-            background: kpiDashboardTab === 'all-ratios' ? '#667eea' : 'transparent',
-            color: kpiDashboardTab === 'all-ratios' ? 'white' : '#64748b',
+            background: 'none',
+            color: kpiDashboardTab === 'all-ratios' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: kpiDashboardTab === 'all-ratios' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: kpiDashboardTab === 'all-ratios' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -223,14 +218,13 @@ export default function RatiosTab({
           onClick={() => setKpiDashboardTab('priority-ratios')}
           style={{
             padding: '12px 24px',
-            background: kpiDashboardTab === 'priority-ratios' ? '#667eea' : 'transparent',
-            color: kpiDashboardTab === 'priority-ratios' ? 'white' : '#64748b',
+            background: 'none',
+            color: kpiDashboardTab === 'priority-ratios' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: kpiDashboardTab === 'priority-ratios' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: kpiDashboardTab === 'priority-ratios' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >
@@ -240,14 +234,13 @@ export default function RatiosTab({
           onClick={() => setKpiDashboardTab('monthly-ratios')}
           style={{
             padding: '12px 24px',
-            background: kpiDashboardTab === 'monthly-ratios' ? '#667eea' : 'transparent',
-            color: kpiDashboardTab === 'monthly-ratios' ? 'white' : '#64748b',
+            background: 'none',
+            color: kpiDashboardTab === 'monthly-ratios' ? '#2751d0' : '#64748b',
             border: 'none',
-            borderBottom: kpiDashboardTab === 'monthly-ratios' ? '3px solid #667eea' : '3px solid transparent',
+            borderBottom: kpiDashboardTab === 'monthly-ratios' ? '3px solid #2751d0' : '3px solid transparent',
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            borderRadius: '8px 8px 0 0',
             transition: 'all 0.2s'
           }}
         >
