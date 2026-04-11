@@ -10,6 +10,7 @@ const RUN_FREQUENCY = 'daily';
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_STALE_MINUTES = 30;
 const LEASE_TIMEOUT_MS = 120_000;
+const TASK_TIMEOUT_MS = 90_000;
 
 type PendingTaskPayload = {
   sourceSyncRunId: string;
@@ -288,6 +289,20 @@ export async function POST(request: NextRequest) {
 
       while (ticksRun < maxTicks && Date.now() - startedAt < hardStopMs) {
         const now = new Date();
+        await prisma.inforSyncTask.updateMany({
+          where: {
+            runId: run.id,
+            status: 'leased',
+            leaseExpiresAt: { lt: now },
+          },
+          data: {
+            status: 'pending',
+            availableAt: now,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            lastError: 'Auto-requeued expired leased task during run.',
+          },
+        });
         await prisma.inforSyncRun.updateMany({
           where: { id: run.id, status: 'running' },
           data: { updatedAt: now, lastChunkAt: now, message: 'Pending transform replay in progress.' },
@@ -321,180 +336,223 @@ export async function POST(request: NextRequest) {
 
           const payload = parseTaskPayload(task.payload);
           const attemptNo = Math.max(1, Number(task.attemptCount || 0) + 1);
-          if (!payload) {
-            failedDays += 1;
-            await prisma.$transaction([
-              prisma.inforSyncTask.update({
-                where: { id: task.id },
-                data: {
-                  status: 'failed',
-                  attemptCount: attemptNo,
-                  finishedAt: new Date(),
-                  lastError: 'Invalid pending transform task payload.',
-                  leaseOwner: null,
-                  leaseExpiresAt: null,
-                },
-              }),
-              prisma.inforSyncTaskAttempt.create({
-                data: {
-                  taskId: task.id,
-                  runId: run.id,
-                  companyId,
-                  attemptNo,
-                  status: 'failed',
-                  errorMessage: 'Invalid pending transform task payload.',
-                  finishedAt: new Date(),
-                },
-              }),
-            ]);
-            continue;
-          }
+          let finalized = false;
+          try {
+            if (!payload) {
+              failedDays += 1;
+              await prisma.$transaction([
+                prisma.inforSyncTask.update({
+                  where: { id: task.id },
+                  data: {
+                    status: 'failed',
+                    attemptCount: attemptNo,
+                    finishedAt: new Date(),
+                    lastError: 'Invalid pending transform task payload.',
+                    leaseOwner: null,
+                    leaseExpiresAt: null,
+                  },
+                }),
+                prisma.inforSyncTaskAttempt.create({
+                  data: {
+                    taskId: task.id,
+                    runId: run.id,
+                    companyId,
+                    attemptNo,
+                    status: 'failed',
+                    errorMessage: 'Invalid pending transform task payload.',
+                    finishedAt: new Date(),
+                  },
+                }),
+              ]);
+              finalized = true;
+              continue;
+            }
 
-          const transformed = await transformInforM3RawRun({
-            companyId,
-            syncRunId: payload.sourceSyncRunId,
-            frequency: payload.frequency,
-            businessDateIso: payload.businessDateIso,
-            maxBusinessDates: 1,
-            batchSize: getBatchSizeForAttempt(attemptNo),
-          });
-
-          if (transformed.success) {
-            processedDays += 1;
-            results.push({
-              businessDateIso: payload.businessDateIso,
-              syncRunId: payload.sourceSyncRunId,
-              ok: true,
-              status: 'success',
-            });
-            await prisma.$transaction([
-              prisma.inforSyncTask.update({
-                where: { id: task.id },
-                data: {
-                  status: 'done',
-                  attemptCount: attemptNo,
-                  finishedAt: new Date(),
-                  leaseOwner: null,
-                  leaseExpiresAt: null,
-                  lastError: null,
-                },
-              }),
-              prisma.inforSyncTaskAttempt.create({
-                data: {
-                  taskId: task.id,
-                  runId: run.id,
+            let transformed: { success: boolean; recordsCreated: number; errors: string[] } = {
+              success: false,
+              recordsCreated: 0,
+              errors: [],
+            };
+            try {
+              const runResult = (await Promise.race([
+                transformInforM3RawRun({
                   companyId,
-                  attemptNo,
-                  status: 'success',
-                  recordsCreated: Math.max(0, Number(transformed.recordsCreated || 0)),
-                  warningCount: transformed.errors.length,
-                  finishedAt: new Date(),
-                },
-              }),
-              prisma.inforSyncRun.update({
-                where: { id: run.id },
-                data: {
-                  chunkCount: { increment: 1 },
-                  recordsCreated: { increment: Math.max(0, Number(transformed.recordsCreated || 0)) },
-                  warningCount: { increment: transformed.errors.length },
-                  retryCount: 0,
-                  updatedAt: new Date(),
-                  lastChunkAt: new Date(),
-                  lastError: null,
-                },
-              }),
-            ]);
-            continue;
-          }
+                  syncRunId: payload.sourceSyncRunId,
+                  frequency: payload.frequency,
+                  businessDateIso: payload.businessDateIso,
+                  maxBusinessDates: 1,
+                  batchSize: getBatchSizeForAttempt(attemptNo),
+                }),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error(`Transform task timed out after ${TASK_TIMEOUT_MS}ms`)), TASK_TIMEOUT_MS)
+                ),
+              ])) as { success: boolean; recordsCreated: number; errors: string[] };
+              transformed = {
+                success: Boolean(runResult?.success),
+                recordsCreated: Math.max(0, Number(runResult?.recordsCreated || 0)),
+                errors: Array.isArray(runResult?.errors) ? runResult.errors.map((v) => String(v)) : [],
+              };
+            } catch (taskError) {
+              const message = taskError instanceof Error ? taskError.message : 'Unknown task error';
+              transformed = {
+                success: false,
+                recordsCreated: 0,
+                errors: [`task_exception:${message}`],
+              };
+            }
 
-          const errorDetails = transformed.errors.join(' | ') || 'Transform day failed.';
-          const reachedMax = attemptNo >= Math.max(1, Number(task.maxAttempts || maxAttempts));
-          if (reachedMax) {
-            failedDays += 1;
-            results.push({
-              businessDateIso: payload.businessDateIso,
-              syncRunId: payload.sourceSyncRunId,
-              ok: false,
-              status: 'failed',
-              details: errorDetails.slice(0, 500),
-            });
-            await prisma.$transaction([
-              prisma.inforSyncTask.update({
-                where: { id: task.id },
-                data: {
-                  status: 'failed',
-                  attemptCount: attemptNo,
-                  finishedAt: new Date(),
-                  lastError: errorDetails.slice(0, 1200),
-                  leaseOwner: null,
-                  leaseExpiresAt: null,
-                },
-              }),
-              prisma.inforSyncTaskAttempt.create({
-                data: {
-                  taskId: task.id,
-                  runId: run.id,
-                  companyId,
-                  attemptNo,
-                  status: 'failed',
-                  errorMessage: errorDetails.slice(0, 1200),
-                  finishedAt: new Date(),
-                },
-              }),
-              prisma.inforSyncRun.update({
-                where: { id: run.id },
-                data: {
-                  retryCount: { increment: 1 },
-                  updatedAt: new Date(),
-                  lastChunkAt: new Date(),
-                  lastError: errorDetails.slice(0, 1200),
-                  message: `Retry exhausted for ${payload.businessDateIso}.`,
-                },
-              }),
-            ]);
-          } else {
-            retriedDays += 1;
-            results.push({
-              businessDateIso: payload.businessDateIso,
-              syncRunId: payload.sourceSyncRunId,
-              ok: false,
-              status: 'retry',
-              details: errorDetails.slice(0, 500),
-            });
-            await prisma.$transaction([
-              prisma.inforSyncTask.update({
-                where: { id: task.id },
+            if (transformed.success) {
+              processedDays += 1;
+              results.push({
+                businessDateIso: payload.businessDateIso,
+                syncRunId: payload.sourceSyncRunId,
+                ok: true,
+                status: 'success',
+              });
+              await prisma.$transaction([
+                prisma.inforSyncTask.update({
+                  where: { id: task.id },
+                  data: {
+                    status: 'done',
+                    attemptCount: attemptNo,
+                    finishedAt: new Date(),
+                    leaseOwner: null,
+                    leaseExpiresAt: null,
+                    lastError: null,
+                  },
+                }),
+                prisma.inforSyncTaskAttempt.create({
+                  data: {
+                    taskId: task.id,
+                    runId: run.id,
+                    companyId,
+                    attemptNo,
+                    status: 'success',
+                    recordsCreated: transformed.recordsCreated,
+                    warningCount: transformed.errors.length,
+                    finishedAt: new Date(),
+                  },
+                }),
+                prisma.inforSyncRun.update({
+                  where: { id: run.id },
+                  data: {
+                    chunkCount: { increment: 1 },
+                    recordsCreated: { increment: transformed.recordsCreated },
+                    warningCount: { increment: transformed.errors.length },
+                    retryCount: 0,
+                    updatedAt: new Date(),
+                    lastChunkAt: new Date(),
+                    lastError: null,
+                  },
+                }),
+              ]);
+              finalized = true;
+              continue;
+            }
+
+            const errorDetails = transformed.errors.join(' | ') || 'Transform day failed.';
+            const reachedMax = attemptNo >= Math.max(1, Number(task.maxAttempts || maxAttempts));
+            if (reachedMax) {
+              failedDays += 1;
+              results.push({
+                businessDateIso: payload.businessDateIso,
+                syncRunId: payload.sourceSyncRunId,
+                ok: false,
+                status: 'failed',
+                details: errorDetails.slice(0, 500),
+              });
+              await prisma.$transaction([
+                prisma.inforSyncTask.update({
+                  where: { id: task.id },
+                  data: {
+                    status: 'failed',
+                    attemptCount: attemptNo,
+                    finishedAt: new Date(),
+                    lastError: errorDetails.slice(0, 1200),
+                    leaseOwner: null,
+                    leaseExpiresAt: null,
+                  },
+                }),
+                prisma.inforSyncTaskAttempt.create({
+                  data: {
+                    taskId: task.id,
+                    runId: run.id,
+                    companyId,
+                    attemptNo,
+                    status: 'failed',
+                    errorMessage: errorDetails.slice(0, 1200),
+                    finishedAt: new Date(),
+                  },
+                }),
+                prisma.inforSyncRun.update({
+                  where: { id: run.id },
+                  data: {
+                    retryCount: { increment: 1 },
+                    updatedAt: new Date(),
+                    lastChunkAt: new Date(),
+                    lastError: errorDetails.slice(0, 1200),
+                    message: `Retry exhausted for ${payload.businessDateIso}.`,
+                  },
+                }),
+              ]);
+            } else {
+              retriedDays += 1;
+              results.push({
+                businessDateIso: payload.businessDateIso,
+                syncRunId: payload.sourceSyncRunId,
+                ok: false,
+                status: 'retry',
+                details: errorDetails.slice(0, 500),
+              });
+              await prisma.$transaction([
+                prisma.inforSyncTask.update({
+                  where: { id: task.id },
+                  data: {
+                    status: 'pending',
+                    attemptCount: attemptNo,
+                    availableAt: new Date(Date.now() + getBackoffMs(attemptNo)),
+                    lastError: errorDetails.slice(0, 1200),
+                    leaseOwner: null,
+                    leaseExpiresAt: null,
+                  },
+                }),
+                prisma.inforSyncTaskAttempt.create({
+                  data: {
+                    taskId: task.id,
+                    runId: run.id,
+                    companyId,
+                    attemptNo,
+                    status: 'retry',
+                    errorMessage: errorDetails.slice(0, 1200),
+                    finishedAt: new Date(),
+                  },
+                }),
+                prisma.inforSyncRun.update({
+                  where: { id: run.id },
+                  data: {
+                    retryCount: { increment: 1 },
+                    updatedAt: new Date(),
+                    lastChunkAt: new Date(),
+                    lastError: errorDetails.slice(0, 1200),
+                    message: `Retry queued for ${payload.businessDateIso} (attempt ${attemptNo}).`,
+                  },
+                }),
+              ]);
+            }
+            finalized = true;
+          } finally {
+            if (!finalized) {
+              await prisma.inforSyncTask.updateMany({
+                where: { id: task.id, status: 'leased' },
                 data: {
                   status: 'pending',
-                  attemptCount: attemptNo,
-                  availableAt: new Date(Date.now() + getBackoffMs(attemptNo)),
-                  lastError: errorDetails.slice(0, 1200),
+                  availableAt: new Date(Date.now() + 5_000),
                   leaseOwner: null,
                   leaseExpiresAt: null,
+                  lastError: 'Auto-recovered leased task after unexpected task failure.',
                 },
-              }),
-              prisma.inforSyncTaskAttempt.create({
-                data: {
-                  taskId: task.id,
-                  runId: run.id,
-                  companyId,
-                  attemptNo,
-                  status: 'retry',
-                  errorMessage: errorDetails.slice(0, 1200),
-                  finishedAt: new Date(),
-                },
-              }),
-              prisma.inforSyncRun.update({
-                where: { id: run.id },
-                data: {
-                  retryCount: { increment: 1 },
-                  updatedAt: new Date(),
-                  lastChunkAt: new Date(),
-                  lastError: errorDetails.slice(0, 1200),
-                  message: `Retry queued for ${payload.businessDateIso} (attempt ${attemptNo}).`,
-                },
-              }),
-            ]);
+              });
+            }
           }
         }
 

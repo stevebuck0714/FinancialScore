@@ -7935,7 +7935,7 @@ export async function transformInforM3RawRun(options: {
   const batchSizeRaw = Number(options.batchSize || 2000);
   const batchSize =
     Number.isFinite(batchSizeRaw) && batchSizeRaw > 0
-      ? Math.min(10000, Math.max(250, Math.floor(batchSizeRaw)))
+      ? Math.min(10000, Math.max(25, Math.floor(batchSizeRaw)))
       : 2000;
 
   const requestedBusinessDate = String(options.businessDateIso || '').trim();
