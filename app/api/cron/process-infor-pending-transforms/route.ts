@@ -63,34 +63,42 @@ export async function GET(request: NextRequest) {
     const hardStopMs = 270_000;
     const allResults: Array<Record<string, unknown>> = [];
 
-    for (const companyId of companies) {
-      if (Date.now() - startedAt > hardStopMs) {
-        allResults.push({ companyId, skipped: true, reason: 'timeBudget' });
-        break;
-      }
+    let totalProcessed = 0;
+    let totalFailed = 0;
+    let tickCount = 0;
 
-      try {
-        const result = await processPendingInforRawTransforms({
-          companyId,
-          maxDaysPerTick: 1,
-        });
-        allResults.push({
-          companyId,
-          ok: true,
-          processedDays: result.processedDays,
-          failedDays: result.failedDays,
-          results: result.results.slice(0, 10),
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        allResults.push({ companyId, ok: false, error: message.slice(0, 500) });
+    for (const companyId of companies) {
+      while (Date.now() - startedAt < hardStopMs) {
+        tickCount += 1;
+        try {
+          const result = await processPendingInforRawTransforms({
+            companyId,
+            maxDaysPerTick: 1,
+          });
+          totalProcessed += result.processedDays;
+          totalFailed += result.failedDays;
+          if (result.processedDays === 0 && result.failedDays === 0) break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          allResults.push({ companyId, ok: false, error: message.slice(0, 500) });
+          break;
+        }
       }
+      allResults.push({
+        companyId,
+        ok: true,
+        processedDays: totalProcessed,
+        failedDays: totalFailed,
+      });
     }
 
     return NextResponse.json({
       ok: true,
       ran: true,
       companies: companies.length,
+      tickCount,
+      totalProcessed,
+      totalFailed,
       elapsedMs: Date.now() - startedAt,
       results: allResults,
     });
