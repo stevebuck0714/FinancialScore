@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
       try {
         const candidateCompanyId = companies[0] || '';
         if (candidateCompanyId) {
-          const { requireSiteAdminAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
-          await requireSiteAdminAuthorizedInforCompany(request, { companyId: candidateCompanyId });
+          const { requireAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
+          await requireAuthorizedInforCompany(request, { companyId: candidateCompanyId });
           authorizedBySession = true;
         }
       } catch {
