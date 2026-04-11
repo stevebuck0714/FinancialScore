@@ -8359,7 +8359,7 @@ export async function processPendingInforRawTransforms(options?: {
     FROM "InforRawCompleteness" rc
     INNER JOIN "InforSyncRun" sr
       ON sr.id = rc."syncRunId"
-      AND sr.status = 'done'
+      AND sr.status IN ('done', 'failed', 'cancelled')
     WHERE rc.platform = 'INFOR_M3'
       AND rc."isComplete" = false
       AND COALESCE(rc."statusMessage", '') NOT LIKE 'raw_missing:%'

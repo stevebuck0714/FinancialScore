@@ -89,7 +89,7 @@ async function getPendingRemaining(prisma: any, companyId: string): Promise<numb
       FROM "InforRawCompleteness" rc
       INNER JOIN "InforSyncRun" sr
         ON sr.id = rc."syncRunId"
-        AND sr.status = 'done'
+        AND sr.status IN ('done', 'failed', 'cancelled')
       WHERE rc.platform = 'INFOR_M3'
         AND rc."companyId" = ${companyId}
         AND rc."isComplete" = false
@@ -114,7 +114,7 @@ async function seedPendingTransformTasks(prisma: any, runId: string, companyId: 
     FROM "InforRawCompleteness" rc
     INNER JOIN "InforSyncRun" sr
       ON sr.id = rc."syncRunId"
-      AND sr.status = 'done'
+      AND sr.status IN ('done', 'failed', 'cancelled')
     WHERE rc.platform = 'INFOR_M3'
       AND rc."companyId" = ${companyId}
       AND rc."isComplete" = false
