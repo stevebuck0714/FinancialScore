@@ -5,6 +5,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
+  const startedAt = Date.now();
   try {
     const cronSecret = String(process.env.CRON_SECRET || '').trim();
     const authHeader = String(request.headers.get('authorization') || '').trim();
@@ -13,10 +14,10 @@ export async function GET(request: NextRequest) {
     let authorizedBySession = false;
     if (!authorizedByCronSecret) {
       try {
-        const { requireAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
+        const { requireSiteAdminAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
         const companyOverride = String(request.nextUrl.searchParams.get('companyId') || '').trim();
         if (companyOverride) {
-          await requireAuthorizedInforCompany(request, { companyId: companyOverride });
+          await requireSiteAdminAuthorizedInforCompany(request, { companyId: companyOverride });
           authorizedBySession = true;
         }
       } catch {
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
           FROM "InforRawCompleteness" rc
           INNER JOIN "InforSyncRun" sr
             ON sr.id = rc."syncRunId"
-            AND sr.status = 'done'
+            AND sr.status IN ('done', 'failed', 'cancelled')
           WHERE rc.platform = 'INFOR_M3'
             AND rc."isComplete" = false
             AND COALESCE(rc."statusMessage", '') NOT LIKE 'raw_missing:%'
@@ -59,13 +60,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: true, ran: false, message: 'No companies with pending transforms found.' });
     }
 
-    const startedAt = Date.now();
     const hardStopMs = 270_000;
-    const allResults: Array<Record<string, unknown>> = [];
-
     let totalProcessed = 0;
     let totalFailed = 0;
     let tickCount = 0;
+    const allResults: Array<Record<string, unknown>> = [];
 
     for (const companyId of companies) {
       while (Date.now() - startedAt < hardStopMs) {
@@ -105,7 +104,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { ok: false, error: 'Failed to process pending Infor transform cron tick.', details: message },
+      { ok: false, error: 'Failed to process pending Infor transform cron tick.', details: message, elapsedMs: Date.now() - startedAt },
       { status: 500 }
     );
   }

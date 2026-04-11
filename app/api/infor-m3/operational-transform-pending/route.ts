@@ -10,7 +10,7 @@ const RUN_FREQUENCY = 'daily';
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_STALE_MINUTES = 10;
 const LEASE_TIMEOUT_MS = 270_000;
-const TASK_TIMEOUT_MS = 240_000;
+const TASK_TIMEOUT_MS = 120_000;
 
 type PendingTaskPayload = {
   sourceSyncRunId: string;
