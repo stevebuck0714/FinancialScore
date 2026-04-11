@@ -8,7 +8,7 @@ export const maxDuration = 300;
 const RUN_MODE = 'pending_transform_replay';
 const RUN_FREQUENCY = 'daily';
 const DEFAULT_MAX_ATTEMPTS = 6;
-const DEFAULT_STALE_MINUTES = 30;
+const DEFAULT_STALE_MINUTES = 10;
 const LEASE_TIMEOUT_MS = 120_000;
 const TASK_TIMEOUT_MS = 90_000;
 
@@ -151,7 +151,7 @@ async function getOrCreateActiveRun(prisma: any, companyId: string): Promise<any
       platform: 'INFOR_M3',
       mode: RUN_MODE,
       status: 'running',
-      updatedAt: { lt: staleCutoff },
+      OR: [{ lastChunkAt: { lt: staleCutoff } }, { lastChunkAt: null, updatedAt: { lt: staleCutoff } }],
     },
     select: { id: true },
     take: 20,

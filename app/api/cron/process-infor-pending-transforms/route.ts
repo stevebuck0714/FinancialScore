@@ -13,14 +13,31 @@ function parseCompanyList(raw: string): string[] {
 
 export async function GET(request: NextRequest) {
   try {
+    const configuredCompanies = parseCompanyList(String(process.env.INFOR_PENDING_REPLAY_COMPANIES || ''));
+    const companyOverride = String(request.nextUrl.searchParams.get('companyId') || '').trim();
+    const companies = companyOverride ? [companyOverride] : configuredCompanies;
+
     const cronSecret = String(process.env.CRON_SECRET || '').trim();
     const authHeader = String(request.headers.get('authorization') || '').trim();
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    const authorizedByCronSecret = Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
+    let authorizedBySession = false;
+    if (!authorizedByCronSecret) {
+      try {
+        const candidateCompanyId = companies[0] || '';
+        if (candidateCompanyId) {
+          const { requireSiteAdminAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
+          await requireSiteAdminAuthorizedInforCompany(request, { companyId: candidateCompanyId });
+          authorizedBySession = true;
+        }
+      } catch {
+        authorizedBySession = false;
+      }
+    }
+    if (!authorizedByCronSecret && !authorizedBySession) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const configuredCompanies = parseCompanyList(String(process.env.INFOR_PENDING_REPLAY_COMPANIES || ''));
-    if (configuredCompanies.length === 0) {
+    if (companies.length === 0) {
       return NextResponse.json({
         ok: true,
         ran: false,
@@ -33,7 +50,7 @@ export async function GET(request: NextRequest) {
     const workerSecret = String(process.env.CRON_SECRET || '').trim();
     const results: Array<Record<string, unknown>> = [];
 
-    for (const companyId of configuredCompanies) {
+    for (const companyId of companies) {
       const response = await fetch(`${origin}/api/infor-m3/operational-transform-pending`, {
         method: 'POST',
         headers: {
@@ -70,7 +87,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       ran: true,
-      companies: configuredCompanies.length,
+      authMode: authorizedByCronSecret ? 'cron_secret' : 'site_admin_session',
+      companies: companies.length,
       results,
     });
   } catch (error) {
