@@ -358,6 +358,11 @@ export async function POST(request: NextRequest) {
 
         ticksRun += 1;
         for (const task of candidates) {
+          const elapsedMs = Date.now() - startedAt;
+          if (elapsedMs + TASK_TIMEOUT_MS + 10_000 > hardStopMs) {
+            stoppedBy = 'timeBudget';
+            break;
+          }
           const lease = await prisma.inforSyncTask.updateMany({
             where: { id: task.id, status: 'pending' },
             data: {
@@ -590,13 +595,16 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        if (stoppedBy === 'timeBudget') break;
         if (!runUntilDrained) {
           stoppedBy = 'maxTicks';
           break;
         }
       }
 
-      if (Date.now() - startedAt >= hardStopMs) {
+      if (stoppedBy === 'timeBudget') {
+        // already set
+      } else if (Date.now() - startedAt >= hardStopMs) {
         stoppedBy = 'hardStopMs';
       } else if (ticksRun >= maxTicks && runUntilDrained) {
         stoppedBy = 'maxTicks';
