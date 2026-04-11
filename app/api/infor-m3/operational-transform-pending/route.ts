@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
-import { processPendingInforRawTransforms } from '@/lib/infor-m3/operational-sync';
 import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +13,7 @@ function asPositiveInt(value: unknown, fallback: number): number {
 
 export async function POST(request: NextRequest) {
   try {
+    const { processPendingInforRawTransforms } = await import('@/lib/infor-m3/operational-sync');
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
     const maxDaysPerTick = Math.min(50, asPositiveInt(body.maxDaysPerTick, 25));
