@@ -5,11 +5,11 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-const TRANSFORM_LOCK_SCOPE = 'infor_m3_pending_transform';
 const RUN_MODE = 'pending_transform_replay';
 const RUN_FREQUENCY = 'daily';
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_STALE_MINUTES = 30;
+const LEASE_TIMEOUT_MS = 120_000;
 
 type PendingTaskPayload = {
   sourceSyncRunId: string;
@@ -249,24 +249,24 @@ export async function POST(request: NextRequest) {
     const startedAt = Date.now();
     const hardStopMs = 270_000;
 
-    const lockRows = await prisma.$queryRaw<Array<{ acquired: boolean }>>`
-      SELECT pg_try_advisory_lock(hashtext(${TRANSFORM_LOCK_SCOPE}), hashtext(${companyId})) AS acquired
-    `;
-    if (!Boolean(lockRows[0]?.acquired)) {
-      return NextResponse.json(
-        {
-          ok: false,
-          companyId,
-          running: true,
-          error: 'Pending transform run already in progress for this company.',
-        },
-        { status: 409 }
-      );
-    }
-
+    const run = await getOrCreateActiveRun(prisma, companyId);
     try {
-      const run = await getOrCreateActiveRun(prisma, companyId);
       await seedPendingTransformTasks(prisma, run.id, companyId, maxAttempts);
+      // Self-heal stale leased tasks from interrupted worker executions.
+      await prisma.inforSyncTask.updateMany({
+        where: {
+          runId: run.id,
+          status: 'leased',
+          leaseExpiresAt: { lt: new Date() },
+        },
+        data: {
+          status: 'pending',
+          availableAt: new Date(),
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          lastError: 'Auto-requeued expired leased task.',
+        },
+      });
       if (requeueFailed) {
         await prisma.inforSyncTask.updateMany({
           where: { runId: run.id, status: 'failed' },
@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
             data: {
               status: 'leased',
               leaseOwner: `pending-transform-${run.id.slice(0, 8)}`,
-              leaseExpiresAt: new Date(Date.now() + 120_000),
+              leaseExpiresAt: new Date(Date.now() + LEASE_TIMEOUT_MS),
             },
           });
           if (Number(lease.count || 0) !== 1) continue;
@@ -559,10 +559,6 @@ export async function POST(request: NextRequest) {
         elapsedMs: Date.now() - startedAt,
         sample: results.slice(0, 50),
       });
-    } finally {
-      await prisma.$queryRaw<Array<{ released: boolean }>>`
-        SELECT pg_advisory_unlock(hashtext(${TRANSFORM_LOCK_SCOPE}), hashtext(${companyId})) AS released
-      `;
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
