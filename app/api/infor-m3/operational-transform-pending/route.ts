@@ -18,6 +18,11 @@ type PendingTaskPayload = {
   frequency: 'daily' | 'weekly' | 'monthly';
 };
 
+type AuthorizedCompany = {
+  companyId: string;
+  viaWorkerSecret: boolean;
+};
+
 function asPositiveInt(value: unknown, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -53,6 +58,28 @@ function getBatchSizeForAttempt(attemptNo: number): number {
 
 function getBackoffMs(attemptNo: number): number {
   return Math.min(30_000, 1_000 * Math.max(2, 2 ** attemptNo));
+}
+
+async function resolveAuthorizedCompany(
+  request: NextRequest,
+  body: Record<string, unknown>,
+  requireSiteAdminAuthorizedInforCompany: (
+    request: NextRequest,
+    body: Record<string, unknown>
+  ) => Promise<{ companyId: string }>
+): Promise<AuthorizedCompany> {
+  const workerSecret = String(process.env.CRON_SECRET || '').trim();
+  const providedWorkerSecret = String(request.headers.get('x-infor-sync-worker-secret') || '').trim();
+  const viaWorkerSecret = Boolean(workerSecret && providedWorkerSecret && providedWorkerSecret === workerSecret);
+  if (viaWorkerSecret) {
+    const companyId = String(body.companyId || request.nextUrl.searchParams.get('companyId') || '').trim();
+    if (!companyId) {
+      throw new Error('companyId is required for worker execution.');
+    }
+    return { companyId, viaWorkerSecret: true };
+  }
+  const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
+  return { companyId, viaWorkerSecret: false };
 }
 
 async function getPendingRemaining(prisma: any, companyId: string): Promise<number> {
@@ -172,7 +199,11 @@ export async function GET(request: NextRequest) {
     const { requireSiteAdminAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
     const prisma = (await import('@/lib/prisma')).default;
     const companyIdParam = request.nextUrl.searchParams.get('companyId') || '';
-    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, { companyId: companyIdParam });
+    const { companyId } = await resolveAuthorizedCompany(
+      request,
+      { companyId: companyIdParam },
+      requireSiteAdminAuthorizedInforCompany
+    );
 
     const run = await prisma.inforSyncRun.findFirst({
       where: {
@@ -241,7 +272,11 @@ export async function POST(request: NextRequest) {
     const prisma = (await import('@/lib/prisma')).default;
     const { transformInforM3RawRun } = await import('@/lib/infor-m3/operational-sync');
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
+    const { companyId } = await resolveAuthorizedCompany(
+      request,
+      body,
+      requireSiteAdminAuthorizedInforCompany
+    );
     const maxDaysPerTick = Math.min(100, asPositiveInt(body.maxDaysPerTick, 20));
     const maxTicks = Math.min(5000, asPositiveInt(body.maxTicks, 5000));
     const maxAttempts = Math.min(12, asPositiveInt(body.maxAttempts, DEFAULT_MAX_ATTEMPTS));
