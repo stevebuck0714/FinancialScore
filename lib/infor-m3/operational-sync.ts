@@ -8328,12 +8328,14 @@ export async function transformInforM3RawRun(options: {
 
 export async function processPendingInforRawTransforms(options?: {
   maxDaysPerTick?: number;
+  companyId?: string;
 }): Promise<{
   processedDays: number;
   failedDays: number;
   results: Array<{ companyId: string; syncRunId: string; businessDateIso: string; ok: boolean; errors: string[] }>;
 }> {
   const limitRaw = Number(options?.maxDaysPerTick || 1);
+  const companyIdFilter = String(options?.companyId || '').trim() || null;
   const maxDaysPerTick =
     Number.isFinite(limitRaw) && limitRaw > 0
       ? Math.min(50, Math.max(1, Math.floor(limitRaw)))
@@ -8361,6 +8363,7 @@ export async function processPendingInforRawTransforms(options?: {
     WHERE rc.platform = 'INFOR_M3'
       AND rc."isComplete" = false
       AND COALESCE(rc."statusMessage", '') NOT LIKE 'raw_missing:%'
+      ${companyIdFilter ? Prisma.sql`AND rc."companyId" = ${companyIdFilter}` : Prisma.sql``}
     GROUP BY rc."companyId", rc."syncRunId", rc."businessDate", sr."frequency"
     ORDER BY
       MAX(COALESCE(sr."finishedAt", sr."updatedAt", sr."createdAt")) DESC NULLS LAST,
