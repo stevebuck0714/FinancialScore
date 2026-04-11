@@ -20,6 +20,7 @@ const DEFAULT_RUN_STALE_MINUTES = 30;
 const DEFAULT_RUN_MAX_AGE_HOURS = 8;
 const DEFAULT_TASK_FETCH_TIMEOUT_MS = 90_000;
 const DEFAULT_TASK_EXECUTION_TIMEOUT_MS = 110_000;
+const PENDING_TRANSFORM_REPLAY_MODE = 'pending_transform_replay';
 
 type QueueRunRecord = {
   id: string;
@@ -695,7 +696,10 @@ async function leasePendingTasks(limit: number): Promise<Array<QueueTaskRecord &
       status: 'pending',
       availableAt: { lte: now },
       OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lt: now } }],
-      run: { status: 'running' },
+      run: {
+        status: 'running',
+        mode: { not: PENDING_TRANSFORM_REPLAY_MODE },
+      },
     },
     include: { run: true },
     orderBy: { createdAt: 'asc' },
@@ -738,7 +742,10 @@ async function requeueExpiredLeasedTasks(): Promise<number> {
     where: {
       status: 'leased',
       leaseExpiresAt: { lt: now },
-      run: { status: 'running' },
+      run: {
+        status: 'running',
+        mode: { not: PENDING_TRANSFORM_REPLAY_MODE },
+      },
     },
     data: {
       status: 'pending',
@@ -754,13 +761,19 @@ async function requeueExpiredLeasedTasks(): Promise<number> {
 
 async function promoteQueuedRunsForIdleCompanies(): Promise<number> {
   const runningRuns = (await db().inforSyncRun.findMany({
-    where: { status: 'running' },
+    where: {
+      status: 'running',
+      mode: { not: PENDING_TRANSFORM_REPLAY_MODE },
+    },
     select: { companyId: true, platform: true },
   })) as Array<{ companyId: string; platform: string }>;
   const runningByKey = new Set(runningRuns.map((row) => `${String(row.companyId)}:${String(row.platform)}`));
 
   const queuedRuns = (await db().inforSyncRun.findMany({
-    where: { status: 'queued' },
+    where: {
+      status: 'queued',
+      mode: { not: PENDING_TRANSFORM_REPLAY_MODE },
+    },
     orderBy: { createdAt: 'asc' },
     take: 100,
   })) as QueueRunRecord[];
@@ -1372,7 +1385,10 @@ export async function processQueueTick(requestUrl: string, workerSecret: string)
     const now = new Date();
     const nowMs = now.getTime();
     const running = (await db().inforSyncRun.findMany({
-      where: { status: 'running' },
+      where: {
+        status: 'running',
+        mode: { not: PENDING_TRANSFORM_REPLAY_MODE },
+      },
       orderBy: { updatedAt: 'asc' },
       take: 200,
       select: {
