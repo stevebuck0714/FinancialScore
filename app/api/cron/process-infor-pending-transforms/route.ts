@@ -4,29 +4,19 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-function parseCompanyList(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const configuredCompanies = parseCompanyList(String(process.env.INFOR_PENDING_REPLAY_COMPANIES || ''));
-    const companyOverride = String(request.nextUrl.searchParams.get('companyId') || '').trim();
-    const companies = companyOverride ? [companyOverride] : configuredCompanies;
-
     const cronSecret = String(process.env.CRON_SECRET || '').trim();
     const authHeader = String(request.headers.get('authorization') || '').trim();
     const authorizedByCronSecret = Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
+
     let authorizedBySession = false;
     if (!authorizedByCronSecret) {
       try {
-        const candidateCompanyId = companies[0] || '';
-        if (candidateCompanyId) {
-          const { requireAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
-          await requireAuthorizedInforCompany(request, { companyId: candidateCompanyId });
+        const { requireAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
+        const companyOverride = String(request.nextUrl.searchParams.get('companyId') || '').trim();
+        if (companyOverride) {
+          await requireAuthorizedInforCompany(request, { companyId: companyOverride });
           authorizedBySession = true;
         }
       } catch {
@@ -37,68 +27,77 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (companies.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        ran: false,
-        message: 'No companies configured. Set INFOR_PENDING_REPLAY_COMPANIES.',
-      });
+    const prisma = (await import('@/lib/prisma')).default;
+    const { processPendingInforRawTransforms } = await import('@/lib/infor-m3/operational-sync');
+
+    const companyOverride = String(request.nextUrl.searchParams.get('companyId') || '').trim();
+    let companies: string[];
+
+    if (companyOverride) {
+      companies = [companyOverride];
+    } else {
+      const envCompanies = String(process.env.INFOR_PENDING_REPLAY_COMPANIES || '').trim();
+      if (envCompanies) {
+        companies = envCompanies.split(',').map((v) => v.trim()).filter(Boolean);
+      } else {
+        const rows = await prisma.$queryRaw<Array<{ companyId: string }>>`
+          SELECT DISTINCT rc."companyId"
+          FROM "InforRawCompleteness" rc
+          INNER JOIN "InforSyncRun" sr
+            ON sr.id = rc."syncRunId"
+            AND sr.status = 'done'
+          WHERE rc.platform = 'INFOR_M3'
+            AND rc."isComplete" = false
+            AND COALESCE(rc."statusMessage", '') NOT LIKE 'raw_missing:%'
+          LIMIT 10
+        `;
+        companies = rows.map((r) => r.companyId);
+      }
     }
 
-    const origin = new URL(request.url).origin;
-    const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
-    const workerSecret = String(process.env.CRON_SECRET || '').trim();
-    const results: Array<Record<string, unknown>> = [];
+    if (companies.length === 0) {
+      return NextResponse.json({ ok: true, ran: false, message: 'No companies with pending transforms found.' });
+    }
+
+    const startedAt = Date.now();
+    const hardStopMs = 270_000;
+    const allResults: Array<Record<string, unknown>> = [];
 
     for (const companyId of companies) {
-      const response = await fetch(`${origin}/api/infor-m3/operational-transform-pending`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          ...(workerSecret ? { 'x-infor-sync-worker-secret': workerSecret } : {}),
-          ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
-        },
-        body: JSON.stringify({
-          companyId,
-          runUntilDrained: false,
-          maxTicks: 1,
-          maxDaysPerTick: 1,
-          requeueFailed: true,
-          maxAttempts: 8,
-        }),
-        cache: 'no-store',
-      });
-      const text = await response.text().catch(() => '');
-      let parsed: unknown = null;
-      try {
-        parsed = text ? JSON.parse(text) : null;
-      } catch {
-        parsed = { bodyStart: text.slice(0, 300) };
+      if (Date.now() - startedAt > hardStopMs) {
+        allResults.push({ companyId, skipped: true, reason: 'timeBudget' });
+        break;
       }
-      results.push({
-        companyId,
-        status: response.status,
-        ok: response.ok,
-        response: parsed,
-      });
+
+      try {
+        const result = await processPendingInforRawTransforms({
+          companyId,
+          maxDaysPerTick: 1,
+        });
+        allResults.push({
+          companyId,
+          ok: true,
+          processedDays: result.processedDays,
+          failedDays: result.failedDays,
+          results: result.results.slice(0, 10),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        allResults.push({ companyId, ok: false, error: message.slice(0, 500) });
+      }
     }
 
     return NextResponse.json({
       ok: true,
       ran: true,
-      authMode: authorizedByCronSecret ? 'cron_secret' : 'site_admin_session',
       companies: companies.length,
-      results,
+      elapsedMs: Date.now() - startedAt,
+      results: allResults,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      {
-        ok: false,
-        error: 'Failed to process pending Infor transform cron tick.',
-        details: message,
-      },
+      { ok: false, error: 'Failed to process pending Infor transform cron tick.', details: message },
       { status: 500 }
     );
   }
