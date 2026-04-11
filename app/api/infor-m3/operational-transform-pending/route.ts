@@ -146,11 +146,18 @@ async function getOrCreateActiveRun(prisma: any, companyId: string): Promise<any
   const staleCutoff = new Date(Date.now() - DEFAULT_STALE_MINUTES * 60_000);
   const staleRuns = await prisma.inforSyncRun.findMany({
     where: {
-      companyId,
-      platform: 'INFOR_M3',
-      mode: RUN_MODE,
-      status: 'running',
-      OR: [{ lastChunkAt: { lt: staleCutoff } }, { lastChunkAt: null, updatedAt: { lt: staleCutoff } }],
+      AND: [
+        { companyId },
+        { platform: 'INFOR_M3' },
+        { mode: RUN_MODE },
+        { status: 'running' },
+        {
+          OR: [
+            { lastChunkAt: { lt: staleCutoff } },
+            { lastChunkAt: null, updatedAt: { lt: staleCutoff } },
+          ],
+        },
+      ],
     },
     select: { id: true },
     take: 20,
