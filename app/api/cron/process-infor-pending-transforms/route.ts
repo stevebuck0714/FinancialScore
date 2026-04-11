@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     const authorizedByCronSecret = Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
 
     let authorizedBySession = false;
+    let sessionAuthError = '';
     if (!authorizedByCronSecret) {
       try {
         const { requireSiteAdminAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
@@ -19,13 +20,16 @@ export async function GET(request: NextRequest) {
         if (companyOverride) {
           await requireSiteAdminAuthorizedInforCompany(request, { companyId: companyOverride });
           authorizedBySession = true;
+        } else {
+          sessionAuthError = 'No companyId query param for session auth.';
         }
-      } catch {
+      } catch (e) {
+        sessionAuthError = e instanceof Error ? e.message : 'Unknown session auth error';
         authorizedBySession = false;
       }
     }
     if (!authorizedByCronSecret && !authorizedBySession) {
-      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ ok: false, error: 'Unauthorized', sessionAuthError, hasCronSecret: Boolean(cronSecret), authHeader: authHeader ? 'present' : 'missing' }, { status: 401 });
     }
 
     const prisma = (await import('@/lib/prisma')).default;
