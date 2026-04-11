@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
-import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -13,6 +11,8 @@ function asPositiveInt(value: unknown, fallback: number): number {
 
 export async function POST(request: NextRequest) {
   try {
+    const { requireSiteAdminAuthorizedInforCompany } = await import('@/lib/infor-m3/route-guards');
+    const prisma = (await import('@/lib/prisma')).default;
     const { processPendingInforRawTransforms } = await import('@/lib/infor-m3/operational-sync');
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
