@@ -250,8 +250,7 @@ export async function POST(request: NextRequest) {
     const hardStopMs = 270_000;
 
     const run = await getOrCreateActiveRun(prisma, companyId);
-    try {
-      await seedPendingTransformTasks(prisma, run.id, companyId, maxAttempts);
+    await seedPendingTransformTasks(prisma, run.id, companyId, maxAttempts);
       // Self-heal stale leased tasks from interrupted worker executions.
       await prisma.inforSyncTask.updateMany({
         where: {
@@ -539,27 +538,26 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      return NextResponse.json({
-        ok: true,
-        companyId,
-        runId: run.id,
-        runMode: RUN_MODE,
-        ticksRun,
-        maxTicks,
-        runUntilDrained,
-        maxDaysPerTick,
-        maxAttempts,
-        processedDays,
-        failedDays,
-        retriedDays,
-        taskCounts,
-        pendingRemaining,
-        done: runDone && pendingRemaining === 0,
-        stoppedBy,
-        elapsedMs: Date.now() - startedAt,
-        sample: results.slice(0, 50),
-      });
-    }
+    return NextResponse.json({
+      ok: true,
+      companyId,
+      runId: run.id,
+      runMode: RUN_MODE,
+      ticksRun,
+      maxTicks,
+      runUntilDrained,
+      maxDaysPerTick,
+      maxAttempts,
+      processedDays,
+      failedDays,
+      retriedDays,
+      taskCounts,
+      pendingRemaining,
+      done: runDone && pendingRemaining === 0,
+      stoppedBy,
+      elapsedMs: Date.now() - startedAt,
+      sample: results.slice(0, 50),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     const status = message.includes('Unauthorized') ? 401 : message.includes('Forbidden') ? 403 : 500;
