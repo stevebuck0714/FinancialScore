@@ -3,6 +3,7 @@ import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-gua
 import { transformInforM3RawRun } from '@/lib/infor-m3/operational-sync';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 function normalizeFrequency(value: unknown): 'daily' | 'weekly' | 'monthly' {

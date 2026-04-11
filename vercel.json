@@ -1,6 +1,16 @@
 {
   "buildCommand": "npm run build",
   "installCommand": "npm install --include=dev",
+  "functions": {
+    "app/api/infor-m3/operational-transform-raw/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    },
+    "app/api/infor-m3/operational-transform-pending/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/keepalive",
