@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -152,6 +153,7 @@ async function getOrCreateActiveRun(prisma: any, companyId: string): Promise<any
 
   return prisma.inforSyncRun.create({
     data: {
+      id: randomUUID(),
       companyId,
       platform: 'INFOR_M3',
       status: 'running',
