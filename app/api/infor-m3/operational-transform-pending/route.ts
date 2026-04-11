@@ -9,8 +9,8 @@ const RUN_MODE = 'pending_transform_replay';
 const RUN_FREQUENCY = 'daily';
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_STALE_MINUTES = 10;
-const LEASE_TIMEOUT_MS = 120_000;
-const TASK_TIMEOUT_MS = 90_000;
+const LEASE_TIMEOUT_MS = 270_000;
+const TASK_TIMEOUT_MS = 240_000;
 
 type PendingTaskPayload = {
   sourceSyncRunId: string;
@@ -50,10 +50,9 @@ function parseTaskPayload(value: unknown): PendingTaskPayload | null {
 }
 
 function getBatchSizeForAttempt(attemptNo: number): number {
-  if (attemptNo <= 1) return 12;
-  if (attemptNo === 2) return 8;
-  if (attemptNo === 3) return 5;
-  return 3;
+  if (attemptNo <= 1) return 5;
+  if (attemptNo === 2) return 3;
+  return 1;
 }
 
 function getBackoffMs(attemptNo: number): number {
