@@ -1174,7 +1174,7 @@ export async function GET(request: NextRequest) {
               where: {
                 companyId,
                 frequency: orderLineFrequencyForQuery,
-                snapshotDate: { lte: endDate },
+                snapshotDate: { gte: startDate, lte: endDate },
                 orderDate: { lte: endDate },
               },
               select: {
@@ -1246,7 +1246,7 @@ export async function GET(request: NextRequest) {
               where: {
                 companyId,
                 frequency: orderLineFrequencyForQuery,
-                snapshotDate: { lte: endDate },
+                snapshotDate: { gte: startDate, lte: endDate },
               },
               select: {
                 snapshotDate: true,
