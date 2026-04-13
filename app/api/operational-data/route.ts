@@ -495,45 +495,27 @@ async function deriveCustomerSalesFromOrderLineDeltas(
     }>
   >(
     `
-      WITH relevant_lines AS (
-        SELECT DISTINCT "orderId", "lineId"
+      WITH daily_state AS (
+        SELECT
+          date_trunc('day', "snapshotDate") AS day,
+          "customerId",
+          "customerName",
+          "orderId",
+          "lineId",
+          GREATEST(COALESCE("invoicedAmount", 0), 0)::double precision AS "invoicedAmount",
+          ROW_NUMBER() OVER (
+            PARTITION BY "orderId", "lineId", date_trunc('day', "snapshotDate")
+            ORDER BY "snapshotDate" DESC
+          ) AS rn
         FROM "CustomerOrderLineSnapshot"
         WHERE "companyId" = $1
           AND "frequency" = $2
           AND "snapshotDate" >= $3
           AND "snapshotDate" <= $4
       ),
-      ordered_rows AS (
-        SELECT
-          date_trunc('day', c."snapshotDate") AS day,
-          c."snapshotDate",
-          c."customerId",
-          c."customerName",
-          c."orderId",
-          c."lineId",
-          GREATEST(COALESCE(c."invoicedAmount", 0), 0)::double precision AS "invoicedAmount",
-          ROW_NUMBER() OVER (
-            PARTITION BY c."orderId", c."lineId", date_trunc('day', c."snapshotDate")
-            ORDER BY c."snapshotDate" DESC
-          ) AS rn
-        FROM "CustomerOrderLineSnapshot" c
-        INNER JOIN relevant_lines r
-          ON r."orderId" = c."orderId"
-         AND r."lineId" = c."lineId"
-        WHERE c."companyId" = $1
-          AND c."frequency" = $2
-          AND c."snapshotDate" <= $4
-      ),
-      daily_state AS (
-        SELECT
-          day,
-          "snapshotDate",
-          "customerId",
-          "customerName",
-          "orderId",
-          "lineId",
-          "invoicedAmount"
-        FROM ordered_rows
+      deduped AS (
+        SELECT day, "customerId", "customerName", "orderId", "lineId", "invoicedAmount"
+        FROM daily_state
         WHERE rn = 1
       ),
       line_deltas AS (
@@ -545,11 +527,11 @@ async function deriveCustomerSalesFromOrderLineDeltas(
           GREATEST(
             "invoicedAmount" - LAG("invoicedAmount", 1, 0) OVER (
               PARTITION BY "orderId", "lineId"
-              ORDER BY day ASC, "snapshotDate" ASC
+              ORDER BY day ASC
             ),
             0
           )::double precision AS revenue_delta
-        FROM daily_state
+        FROM deduped
       )
       SELECT
         day AS "snapshotDate",
@@ -558,9 +540,7 @@ async function deriveCustomerSalesFromOrderLineDeltas(
         COALESCE(SUM(revenue_delta), 0)::double precision AS revenue,
         COUNT(DISTINCT "orderId")::int AS "invoiceCount"
       FROM line_deltas
-      WHERE day >= $3
-        AND day <= $4
-        AND revenue_delta > 0.0001
+      WHERE revenue_delta > 0.0001
       GROUP BY day, "customerId", "customerName"
       ORDER BY day ASC, "customerName" ASC
     `,
