@@ -1068,13 +1068,14 @@ enum CovenantStatus {
 model CustomerSalesSnapshot {
   id             String   @id @default(cuid())
   companyId      String
-  snapshotDate   DateTime // Changed from 'month' to support daily/weekly/monthly
-  frequency      String   @default("monthly") // 'daily', 'weekly', 'monthly'
-  customerId     String?  // QuickBooks customer ID
+  snapshotDate   DateTime
+  frequency      String   @default("monthly")
+  customerId     String?
   customerName   String
   revenue        Float
   invoiceCount   Int
   avgInvoiceSize Float?
+  bookings       Float?   @default(0)
   createdAt      DateTime @default(now())
   
   @@index([companyId, snapshotDate(sort: Desc)])

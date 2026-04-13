@@ -1132,197 +1132,31 @@ export async function GET(request: NextRequest) {
           data = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
         }
 
-        // Build real bookings from order headers/lines using orderDate periods.
-        // Formula intent: SUM(QtyOrdered * Price) grouped by SLCohdrs.OrderDate period.
+        const mtdStart = startOfBusinessMonth(endDate);
+        const qtdStart = startOfBusinessQuarter(endDate);
+        const ytdStart = startOfBusinessYear(endDate);
         const bookingsByCustomer = new Map<
           string,
-          {
-            customerId: string | null;
-            customerName: string;
-            mtd: number;
-            qtd: number;
-            ytd: number;
-          }
+          { customerId: string | null; customerName: string; mtd: number; qtd: number; ytd: number }
         >();
         const bookingsByMonth = new Map<string, number>();
-        const bookingsOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
-        if (bookingsOrderLineDelegate?.findMany) {
-          const hasOrderDateColumn = await customerOrderLineHasOrderDateColumn();
-          const mtdStart = startOfBusinessMonth(endDate);
-          const qtdStart = startOfBusinessQuarter(endDate);
-          const ytdStart = startOfBusinessYear(endDate);
-          const applyBookingDelta = (
-            customerId: string | null,
-            customerNameRaw: string,
-            snapshot: Date,
-            delta: number
-          ) => {
-            if (delta <= 0 || Number.isNaN(snapshot.getTime())) return;
-            const customerName = String(customerNameRaw || 'Unknown Customer');
-            const key = `${customerId || ''}|${customerName.toLowerCase()}`;
-            if (!bookingsByCustomer.has(key)) {
-              bookingsByCustomer.set(key, {
-                customerId,
-                customerName,
-                mtd: 0,
-                qtd: 0,
-                ytd: 0,
-              });
-            }
-            const acc = bookingsByCustomer.get(key)!;
-            if (snapshot >= mtdStart && snapshot <= endDate) acc.mtd += delta;
-            if (snapshot >= qtdStart && snapshot <= endDate) acc.qtd += delta;
-            if (snapshot >= ytdStart && snapshot <= endDate) acc.ytd += delta;
-            if (snapshot >= startDate && snapshot <= endDate) {
-              const monthKey = businessMonthKey(snapshot);
-              bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + delta);
-            }
-          };
-          const bookingsLowerBound = ytdStart < startDate ? startDate : ytdStart;
-          if (hasOrderDateColumn) {
-            const orderRows = await bookingsOrderLineDelegate.findMany({
-              where: {
-                companyId,
-                frequency: orderLineFrequencyForQuery,
-                snapshotDate: { gte: bookingsLowerBound, lte: endDate },
-                orderDate: { lte: endDate },
-              },
-              select: {
-                snapshotDate: true,
-                orderDate: true,
-                customerId: true,
-                customerName: true,
-                orderId: true,
-                lineId: true,
-                contractValue: true,
-                invoicedAmount: true,
-              },
-              orderBy: [{ snapshotDate: 'asc' }],
-              take: 300000,
-            });
-
-            const lineState = new Map<
-              string,
-              {
-                customerId: string | null;
-                customerName: string;
-                lastValue: number;
-                hasBaseline: boolean;
-              }
-            >();
-
-            for (const row of orderRows as any[]) {
-              const snapshot = new Date(row.snapshotDate);
-              if (Number.isNaN(snapshot.getTime())) continue;
-              const customerName = String(row.customerName || 'Unknown Customer');
-              const customerId = row.customerId ? String(row.customerId) : null;
-              const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
-              const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
-              const lineKey = `${orderId}|${lineId}`;
-              if (!lineState.has(lineKey)) {
-                lineState.set(lineKey, {
-                  customerId,
-                  customerName,
-                  lastValue: 0,
-                  hasBaseline: false,
-                });
-              }
-              const state = lineState.get(lineKey)!;
-              if (!state.customerId && customerId) state.customerId = customerId;
-              if (
-                (!state.customerName || state.customerName === 'Unknown Customer') &&
-                customerName &&
-                customerName !== 'Unknown Customer'
-              ) {
-                state.customerName = customerName;
-              }
-              const value =
-                Number(row.contractValue || 0) > 0
-                  ? Number(row.contractValue || 0)
-                  : Number(row.invoicedAmount || 0);
-              if (!state.hasBaseline) {
-                state.lastValue = value;
-                state.hasBaseline = true;
-                applyBookingDelta(state.customerId, state.customerName, snapshot, value);
-              } else {
-                const delta = value - state.lastValue;
-                applyBookingDelta(state.customerId, state.customerName, snapshot, delta);
-                state.lastValue = value;
-              }
-            }
-          } else {
-            // Backward-compatible fallback until orderDate column is migrated/backfilled.
-            const orderRows = await bookingsOrderLineDelegate.findMany({
-              where: {
-                companyId,
-                frequency: orderLineFrequencyForQuery,
-                snapshotDate: { gte: bookingsLowerBound, lte: endDate },
-              },
-              select: {
-                snapshotDate: true,
-                customerId: true,
-                customerName: true,
-                orderId: true,
-                lineId: true,
-                contractValue: true,
-                invoicedAmount: true,
-              },
-              orderBy: [{ snapshotDate: 'asc' }],
-              take: 250000,
-            });
-
-            const lineState = new Map<
-              string,
-              {
-                customerId: string | null;
-                customerName: string;
-                lastValue: number;
-                hasBaseline: boolean;
-              }
-            >();
-
-            for (const row of orderRows as any[]) {
-              const snapshot = new Date(row.snapshotDate);
-              if (Number.isNaN(snapshot.getTime())) continue;
-              const customerName = String(row.customerName || 'Unknown Customer');
-              const customerId = row.customerId ? String(row.customerId) : null;
-              const orderId = String(row.orderId || '').trim() || 'UNKNOWN_ORDER';
-              const lineId = String(row.lineId || '').trim() || 'UNKNOWN_LINE';
-              // Keep line identity stable across snapshots regardless of customer-field drift.
-              const lineKey = `${orderId}|${lineId}`;
-              if (!lineState.has(lineKey)) {
-                lineState.set(lineKey, {
-                  customerId,
-                  customerName,
-                  lastValue: 0,
-                  hasBaseline: false,
-                });
-              }
-              const state = lineState.get(lineKey)!;
-              // Prefer populated customer identity as rows become enriched over time.
-              if (!state.customerId && customerId) state.customerId = customerId;
-              if (
-                (!state.customerName || state.customerName === 'Unknown Customer') &&
-                customerName &&
-                customerName !== 'Unknown Customer'
-              ) {
-                state.customerName = customerName;
-              }
-              const value =
-                Number(row.contractValue || 0) > 0
-                  ? Number(row.contractValue || 0)
-                  : Number(row.invoicedAmount || 0);
-              if (!state.hasBaseline) {
-                state.lastValue = value;
-                state.hasBaseline = true;
-                applyBookingDelta(state.customerId, state.customerName, snapshot, value);
-              } else {
-                const delta = value - state.lastValue;
-                applyBookingDelta(state.customerId, state.customerName, snapshot, delta);
-                state.lastValue = value;
-              }
-            }
+        for (const row of data as any[]) {
+          const snapshot = new Date(row.snapshotDate);
+          if (Number.isNaN(snapshot.getTime())) continue;
+          const rev = Math.max(0, Number(row.revenue || 0));
+          if (rev <= 0) continue;
+          const customerId = row.customerId ? String(row.customerId) : null;
+          const customerName = String(row.customerName || 'Unknown Customer');
+          const key = `${customerId || ''}|${customerName.toLowerCase()}`;
+          if (!bookingsByCustomer.has(key)) {
+            bookingsByCustomer.set(key, { customerId, customerName, mtd: 0, qtd: 0, ytd: 0 });
           }
+          const acc = bookingsByCustomer.get(key)!;
+          if (snapshot >= mtdStart && snapshot <= endDate) acc.mtd += rev;
+          if (snapshot >= qtdStart && snapshot <= endDate) acc.qtd += rev;
+          if (snapshot >= ytdStart && snapshot <= endDate) acc.ytd += rev;
+          const monthKey = businessMonthKey(snapshot);
+          bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + rev);
         }
 
         const bookingsCustomers = Array.from(bookingsByCustomer.values())

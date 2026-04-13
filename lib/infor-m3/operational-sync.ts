@@ -61,6 +61,13 @@ type SyncOptions = {
 
 type SitePolicy = 'required' | 'optional' | 'none';
 
+function envTrue(name: string): boolean {
+  const raw = String(process.env[name] || '')
+    .trim()
+    .toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'y' || raw === 'on';
+}
+
 const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   {
     module: 'Customers',
@@ -841,6 +848,27 @@ function buildSlCustDrftsAsOfFilter(window?: SyncWindow, site?: string): string 
   return `(${clauses.join(' and ')})`;
 }
 
+function buildCsiRecordDateWindowFilter(params: {
+  window?: SyncWindow;
+  field?: string;
+  site?: string;
+  includeSitePredicate?: boolean;
+}): string | null {
+  if (!params.window) return null;
+  const field = String(params.field || 'RecordDate').trim() || 'RecordDate';
+  const start = formatCsiCompactDateLiteral(params.window.startDate);
+  const end = formatCsiCompactDateLiteral(params.window.endDate);
+  const clauses = [`(${field} >= '${start}' and ${field} <= '${end}')`];
+  if (params.includeSitePredicate) {
+    const siteValue = String(params.site || '').trim();
+    if (siteValue) {
+      const safeSite = siteValue.replace(/'/g, "''");
+      clauses.unshift(`Site='${safeSite}'`);
+    }
+  }
+  return `(${clauses.join(' and ')})`;
+}
+
 const SL_VCHHDRS_SAFE_PROPERTIES = [
   'VendNum',
   'VadName',
@@ -875,11 +903,15 @@ function buildSlVchHdrsAsOfFilter(window?: SyncWindow, site?: string): string | 
 function buildCanonicalSlVchHdrsBaseEndpointPath(
   endpointPath: string,
   window?: SyncWindow,
-  site?: string
+  site?: string,
+  options?: { noFullPulls?: boolean }
 ): string {
   const [path] = endpointPath.split('?');
   const params = new URLSearchParams();
-  const asOfFilter = buildSlVchHdrsAsOfFilter(window, site);
+  const asOfFilter =
+    options?.noFullPulls && window
+      ? buildCsiRecordDateWindowFilter({ window, field: 'RecordDate', includeSitePredicate: false })
+      : buildSlVchHdrsAsOfFilter(window, site);
   if (asOfFilter) params.set('filter', asOfFilter);
   params.set('recordCap', '1000');
   params.set('orderby', 'RecordDate desc, Voucher desc');
@@ -990,10 +1022,11 @@ function buildCanonicalSlVchHdrsEndpointPath(
   endpointPath: string,
   window?: SyncWindow,
   site?: string,
-  bookmark?: string | null
+  bookmark?: string | null,
+  options?: { noFullPulls?: boolean }
 ): string {
   const canonicalBaseEndpointPath = assertSlVchHdrsCanonicalEndpointPath(
-    buildCanonicalSlVchHdrsBaseEndpointPath(endpointPath, window, site),
+    buildCanonicalSlVchHdrsBaseEndpointPath(endpointPath, window, site, options),
     window
   );
   const canonicalEndpointPath = bookmark
@@ -1019,6 +1052,7 @@ async function fetchSlVchHdrsCanonicalPages(params: {
   window?: SyncWindow;
   site?: string;
   inputBookmark?: string | null;
+  noFullPulls?: boolean;
   requestTimeoutMs: number;
   headers?: Record<string, string>;
   maxPagesPerRequest: number;
@@ -1030,7 +1064,9 @@ async function fetchSlVchHdrsCanonicalPages(params: {
   startedAt: number;
 }): Promise<SlVchHdrsFetchResult> {
   const canonicalBaseEndpointPath = assertSlVchHdrsCanonicalEndpointPath(
-    buildCanonicalSlVchHdrsBaseEndpointPath(params.baseEndpointPath, params.window, params.site),
+    buildCanonicalSlVchHdrsBaseEndpointPath(params.baseEndpointPath, params.window, params.site, {
+      noFullPulls: params.noFullPulls === true,
+    }),
     params.window
   );
   const describeEndpoint = (endpointPath: string) => {
@@ -1182,11 +1218,14 @@ function applyCsiSourceWindowAndSort(
   endpointPath: string,
   row: InforProgramRow,
   moduleType: ReturnType<typeof classifyModule>,
-  window?: SyncWindow
+  window?: SyncWindow,
+  options?: { noFullPulls?: boolean }
 ): { endpointPath: string; applied: boolean; allowRetryWithoutSourceWindow: boolean } {
   if (!/\/IDORequestService\/ido\/load\//i.test(endpointPath)) {
     return { endpointPath, applied: false, allowRetryWithoutSourceWindow: true };
   }
+
+  const noFullPulls = options?.noFullPulls === true;
 
   // Start with known high-volume CSI sources where narrowing by window materially
   // reduces repeated page scans and aligns payload coverage to the requested run.
@@ -1194,6 +1233,10 @@ function applyCsiSourceWindowAndSort(
   const [path, queryString = ''] = endpointPath.split('?');
   const params = new URLSearchParams(queryString);
   if (moduleType === 'sales' && ido === 'SLCOITEMS') {
+    if (noFullPulls && window) {
+      const filter = buildCsiRecordDateWindowFilter({ window, field: 'RecordDate', includeSitePredicate: false });
+      if (filter) params.set('filter', filter);
+    }
     // SLCoitems must page deterministically across the full order-line universe.
     // Do not rely on implicit backend ordering.
     if (!params.get('orderby') && !params.get('orderBy')) {
@@ -1251,7 +1294,15 @@ function applyCsiSourceWindowAndSort(
   if (moduleType === 'ar' && ido === 'SLARTRANS') {
     // SLArtrans snapshots need prior-period transactions to preserve historical open-item carryover.
     // For non-overlap runs, apply an as-of RecordDate cap (<= endDate) rather than a same-day InvDate slice.
-    if (window && window.mode !== 'daily_overlap') {
+    if (window && noFullPulls) {
+      const filter = buildCsiRecordDateWindowFilter({
+        window,
+        field: 'RecordDate',
+        site: row.site,
+        includeSitePredicate: true,
+      });
+      if (filter) params.set('filter', filter);
+    } else if (window && window.mode !== 'daily_overlap') {
       const asOfFilter = buildSlArtransAsOfFilter(window, row.site);
       if (asOfFilter) params.set('filter', asOfFilter);
     }
@@ -1261,7 +1312,10 @@ function applyCsiSourceWindowAndSort(
     return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
   if (moduleType === 'ar' && ido === 'SLCUSTDRFTS') {
-    if (window && window.mode !== 'daily_overlap') {
+    if (window && noFullPulls) {
+      const filter = buildCsiRecordDateWindowFilter({ window, field: 'RecordDate', includeSitePredicate: false });
+      if (filter) params.set('filter', filter);
+    } else if (window && window.mode !== 'daily_overlap') {
       const asOfFilter = buildSlCustDrftsAsOfFilter(window, row.site);
       if (asOfFilter) params.set('filter', asOfFilter);
     }
@@ -1270,9 +1324,19 @@ function applyCsiSourceWindowAndSort(
     const next = params.toString();
     return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
   }
+  if (moduleType === 'ap' && ido === 'SLAPTRX') {
+    if (window && noFullPulls) {
+      const filter = buildCsiRecordDateWindowFilter({ window, field: 'RecordDate', includeSitePredicate: false });
+      if (filter) params.set('filter', filter);
+    }
+    params.set('recordCap', '1000');
+    if (!params.get('orderby') && !params.get('orderBy')) params.set('orderby', 'RecordDate desc');
+    const next = params.toString();
+    return { endpointPath: next ? `${path}?${next}` : path, applied: true, allowRetryWithoutSourceWindow: false };
+  }
   if (isSlVchHdrsProgramLike({ programId: ido, row, endpointPath })) {
     return {
-      endpointPath: buildCanonicalSlVchHdrsEndpointPath(endpointPath, window, row.site),
+      endpointPath: buildCanonicalSlVchHdrsEndpointPath(endpointPath, window, row.site, null, { noFullPulls }),
       applied: true,
       allowRetryWithoutSourceWindow: false,
     };
@@ -1860,9 +1924,8 @@ function lookupRecordValue(record: Record<string, unknown>, key: string): unknow
 function pickNumber(record: Record<string, unknown>, keys: string[]): number {
   for (const key of keys) {
     const raw = lookupRecordValue(record, key);
-    if (raw !== undefined) {
-      const value = toNumber(raw);
-      if (value !== 0) return value;
+    if (raw !== undefined && raw !== null && raw !== '') {
+      return toNumber(raw);
     }
   }
   return 0;
@@ -3056,6 +3119,362 @@ async function saveARAging(
   return 1;
 }
 
+async function resetAndSeedArOpenInvoiceSnapshotFromPriorDay(params: {
+  companyId: string;
+  snapshotDate: Date;
+  frequency: 'daily' | 'weekly' | 'monthly';
+}): Promise<{ copied: number; priorSnapshotDate: Date | null }> {
+  const dayStart = startOfUtcDay(params.snapshotDate);
+  const lockKey = `ar_open_seed|${params.companyId}|${params.frequency}|${dayStart.toISOString()}`;
+  return await retryOnDeadlock('aROpenInvoiceSnapshot.seed', () =>
+    prisma.$transaction(
+      async (tx) => {
+        try {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        } catch {
+          // Advisory locks are best-effort (non-Postgres dev envs).
+        }
+        await tx.aROpenInvoiceSnapshot.deleteMany({
+          where: { companyId: params.companyId, frequency: params.frequency, snapshotDate: dayStart },
+        });
+        const prior = await tx.aROpenInvoiceSnapshot.findFirst({
+          where: {
+            companyId: params.companyId,
+            frequency: params.frequency,
+            snapshotDate: { lt: dayStart },
+            amountDueHome: { gt: 0 },
+          },
+          orderBy: [{ snapshotDate: 'desc' }],
+          select: { snapshotDate: true },
+        });
+        if (!prior?.snapshotDate) return { copied: 0, priorSnapshotDate: null };
+
+        let copied = 0;
+        let cursorId: string | null = null;
+        const take = 5000;
+        while (true) {
+          const batch = await tx.aROpenInvoiceSnapshot.findMany({
+            where: {
+              companyId: params.companyId,
+              frequency: params.frequency,
+              snapshotDate: prior.snapshotDate,
+              amountDueHome: { gt: 0 },
+            },
+            ...(cursorId
+              ? {
+                  cursor: { id: cursorId },
+                  skip: 1,
+                }
+              : {}),
+            take,
+            orderBy: [{ id: 'asc' }],
+            select: {
+              id: true,
+              customerId: true,
+              customerName: true,
+              invoiceNo: true,
+              invoiceDate: true,
+              dueDate: true,
+              status: true,
+              currencyCode: true,
+              amountCurrency: true,
+              amountHome: true,
+              amountDueHome: true,
+              current: true,
+              days1to30: true,
+              days31to60: true,
+              days61to90: true,
+              days90plus: true,
+              sourcePlatform: true,
+              sourceProgram: true,
+              sourceTransaction: true,
+              cono: true,
+              divi: true,
+            },
+          });
+          if (batch.length === 0) break;
+          cursorId = batch[batch.length - 1].id;
+          const rowsToCreate = batch.map((row) => ({
+            id: randomUUID(),
+            companyId: params.companyId,
+            snapshotDate: dayStart,
+            frequency: params.frequency,
+            customerId: row.customerId,
+            customerName: row.customerName,
+            invoiceNo: row.invoiceNo,
+            invoiceDate: row.invoiceDate,
+            dueDate: row.dueDate,
+            status: row.status,
+            currencyCode: row.currencyCode,
+            amountCurrency: row.amountCurrency,
+            amountHome: row.amountHome,
+            amountDueHome: row.amountDueHome,
+            current: row.current,
+            days1to30: row.days1to30,
+            days31to60: row.days31to60,
+            days61to90: row.days61to90,
+            days90plus: row.days90plus,
+            sourcePlatform: row.sourcePlatform,
+            sourceProgram: row.sourceProgram,
+            sourceTransaction: row.sourceTransaction,
+            cono: row.cono,
+            divi: row.divi,
+          }));
+          await tx.aROpenInvoiceSnapshot.createMany({ data: rowsToCreate, skipDuplicates: true });
+          copied += rowsToCreate.length;
+          if (batch.length < take) break;
+        }
+        return { copied, priorSnapshotDate: prior.snapshotDate };
+      },
+      { maxWait: 10000, timeout: 120000 }
+    )
+  );
+}
+
+async function saveAROpenInvoicesNoFullPullsFromCustDrfts(params: {
+  companyId: string;
+  snapshotDate: Date;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  records: Record<string, unknown>[];
+  context: { miProgram: string; transaction: string; cono?: string; divi?: string; resetSnapshot: boolean };
+}): Promise<number> {
+  const dayStart = startOfUtcDay(params.snapshotDate);
+  if (params.context.resetSnapshot) {
+    await resetAndSeedArOpenInvoiceSnapshotFromPriorDay({
+      companyId: params.companyId,
+      snapshotDate: dayStart,
+      frequency: params.frequency,
+    });
+  }
+
+  const normalizeInvoiceNo = (value: string | null): string =>
+    String(value || '')
+      .trim()
+      .replace(/\s+/g, '')
+      .toUpperCase();
+  const normalizeName = (value: string): string => String(value || '').trim().replace(/\s+/g, ' ');
+  const normalizeStatusToken = (value: unknown): string =>
+    String(value || '')
+      .trim()
+      .toLowerCase();
+
+  type Candidate = {
+    customerId: string | null;
+    customerName: string;
+    invoiceNo: string;
+    invoiceDate: Date | null;
+    dueDate: Date | null;
+    status: string | null;
+    currencyCode: string | null;
+    amountHome: number | null;
+    amountCurrency: number | null;
+    amountDueHome: number;
+    recordDate: Date | null;
+  };
+  const deduped = new Map<string, { candidate: Candidate; score: number; recordDateMs: number }>();
+  const scoreCandidate = (c: Candidate): number =>
+    (Number.isFinite(c.amountDueHome) && c.amountDueHome > 0 ? 4 : 0) +
+    (c.invoiceDate ? 1 : 0) +
+    (c.dueDate ? 1 : 0) +
+    (c.currencyCode ? 1 : 0) +
+    (Number(c.amountHome || 0) > 0 ? 1 : 0);
+
+  for (let idx = 0; idx < params.records.length; idx += 1) {
+    const record = params.records[idx];
+    const customerId = pickString(record, ['CustNum', 'custNum', ...CUSTOMER_ID_KEYS]) || null;
+    const customerNameRaw =
+      pickCustomerDisplayName(record) ||
+      pickString(record, ['DerCustNoName', 'CustNumName', 'Name', ...CUSTOMER_NAME_KEYS]) ||
+      (customerId ? `Customer ${customerId}` : 'Unknown Customer');
+    const customerName = normalizeName(customerNameRaw);
+    const invoiceNo = normalizeInvoiceNo(pickString(record, ['InvNum', 'invoiceNo', 'invoiceNumber', ...AR_INVOICE_NO_KEYS]));
+    if (!invoiceNo || !customerName) continue;
+
+    const invoiceDate =
+      parseMaybeDate(pickString(record, ['InvDate', 'invoiceDate', 'IVDT', 'date'])) || null;
+    const dueDate = parseMaybeDate(pickString(record, ['DueDate', 'dueDate', 'DUDT'])) || null;
+    const status =
+      pickString(record, ['status', 'STAT']) ||
+      (normalizeStatusToken(record['Active']) ? String(record['Active']) : null);
+    const currencyCode = pickString(record, ['CurrCode', 'currencyCode', 'currency', 'CUCD']) || null;
+
+    const amountHomeRaw = pickNumber(record, ['DomAmt', 'amountHome', 'homeAmount', 'Amount', 'ACAM']);
+    const amountDueHomeRaw = pickNumber(record, [
+      'BalDue',
+      'amountDueHome',
+      'amountDue',
+      'openAmount',
+      'openBalance',
+      'balance',
+      'Balance',
+      'DerAmtBal',
+    ]);
+    const amountDueHome = Number.isFinite(amountDueHomeRaw) ? Number(amountDueHomeRaw) : 0;
+    const amountHome = Number.isFinite(amountHomeRaw) && amountHomeRaw !== 0 ? Math.abs(Number(amountHomeRaw)) : null;
+    const recordDate = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate'])) || null;
+
+    const candidate: Candidate = {
+      customerId,
+      customerName,
+      invoiceNo,
+      invoiceDate,
+      dueDate,
+      status: status ? String(status) : null,
+      currencyCode,
+      amountHome,
+      amountCurrency: null,
+      amountDueHome,
+      recordDate,
+    };
+    const key = `${customerName.toLowerCase()}||${invoiceNo}`;
+    const existing = deduped.get(key);
+    const recordDateMs = recordDate ? recordDate.getTime() : Number.NEGATIVE_INFINITY;
+    const score = scoreCandidate(candidate);
+    if (!existing) {
+      deduped.set(key, { candidate, score, recordDateMs });
+      continue;
+    }
+    const isNewer = recordDateMs > existing.recordDateMs;
+    const isSameMomentBetter = recordDateMs === existing.recordDateMs && score >= existing.score;
+    if (isNewer || isSameMomentBetter) {
+      deduped.set(key, { candidate, score, recordDateMs });
+    }
+  }
+
+  const openRows: Array<{
+    id: string;
+    companyId: string;
+    snapshotDate: Date;
+    frequency: 'daily' | 'weekly' | 'monthly';
+    customerId: string | null;
+    customerName: string;
+    invoiceNo: string;
+    invoiceDate: Date | null;
+    dueDate: Date | null;
+    status: string | null;
+    currencyCode: string | null;
+    amountCurrency: number | null;
+    amountHome: number | null;
+    amountDueHome: number;
+    current: number | null;
+    days1to30: number | null;
+    days31to60: number | null;
+    days61to90: number | null;
+    days90plus: number | null;
+    sourcePlatform: 'INFOR_M3';
+    sourceProgram: string;
+    sourceTransaction: string;
+    cono: string | null;
+    divi: string | null;
+  }> = [];
+  const closedKeys: Array<{ customerName: string; invoiceNo: string }> = [];
+
+  for (const { candidate } of Array.from(deduped.values())) {
+    const statusToken = normalizeStatusToken(candidate.status);
+    const isClosedStatus =
+      statusToken.includes('closed') ||
+      statusToken.includes('paid') ||
+      statusToken.includes('void') ||
+      statusToken.includes('cancel') ||
+      statusToken.includes('settled') ||
+      statusToken.includes('history');
+    const amountDueHome = Math.max(0, Number(candidate.amountDueHome || 0));
+    if (!Number.isFinite(amountDueHome) || amountDueHome <= 0.0001 || isClosedStatus) {
+      closedKeys.push({ customerName: candidate.customerName, invoiceNo: candidate.invoiceNo });
+      continue;
+    }
+    const buckets = getAgingBucketValuesFromDueDate(amountDueHome, candidate.dueDate || candidate.invoiceDate || null, dayStart);
+    openRows.push({
+      id: randomUUID(),
+      companyId: params.companyId,
+      snapshotDate: dayStart,
+      frequency: params.frequency,
+      customerId: candidate.customerId,
+      customerName: candidate.customerName,
+      invoiceNo: candidate.invoiceNo,
+      invoiceDate: candidate.invoiceDate,
+      dueDate: candidate.dueDate,
+      status: candidate.status || 'OPEN',
+      currencyCode: candidate.currencyCode,
+      amountCurrency: candidate.amountCurrency,
+      amountHome: candidate.amountHome,
+      amountDueHome,
+      current: buckets.current || null,
+      days1to30: buckets.days1to30 || null,
+      days31to60: buckets.days31to60 || null,
+      days61to90: buckets.days61to90 || null,
+      days90plus: buckets.days90plus || null,
+      sourcePlatform: 'INFOR_M3',
+      sourceProgram: params.context.miProgram,
+      sourceTransaction: params.context.transaction,
+      cono: params.context.cono || null,
+      divi: params.context.divi || null,
+    });
+  }
+
+  const deleteChunkSize = 200;
+  for (let i = 0; i < closedKeys.length; i += deleteChunkSize) {
+    const chunk = closedKeys.slice(i, i + deleteChunkSize);
+    const values = chunk.map((k) => Prisma.sql`(${k.invoiceNo}, ${k.customerName})`);
+    await prisma.$executeRaw(Prisma.sql`
+      WITH keys("invoiceNo","customerName") AS (VALUES ${Prisma.join(values)})
+      DELETE FROM "AROpenInvoiceSnapshot" s
+      USING keys
+      WHERE s."companyId" = ${params.companyId}
+        AND s."frequency" = ${params.frequency}
+        AND s."snapshotDate" = ${dayStart}
+        AND s."invoiceNo" = keys."invoiceNo"
+        AND s."customerName" = keys."customerName"
+    `);
+  }
+
+  const upsertChunkSize = 200;
+  for (let i = 0; i < openRows.length; i += upsertChunkSize) {
+    const chunk = openRows.slice(i, i + upsertChunkSize);
+    const values = chunk.map((row) => Prisma.sql`(
+      ${row.id}, ${row.companyId}, ${row.snapshotDate}, ${row.frequency}, ${row.customerId}, ${row.customerName}, ${row.invoiceNo},
+      ${row.invoiceDate}, ${row.dueDate}, ${row.status}, ${row.currencyCode},
+      ${row.amountCurrency}, ${row.amountHome}, ${row.amountDueHome}, ${row.current}, ${row.days1to30}, ${row.days31to60}, ${row.days61to90}, ${row.days90plus},
+      ${row.sourcePlatform}, ${row.sourceProgram}, ${row.sourceTransaction}, ${row.cono}, ${row.divi}
+    )`);
+    await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "AROpenInvoiceSnapshot" (
+        "id","companyId","snapshotDate","frequency","customerId","customerName","invoiceNo","invoiceDate","dueDate","status","currencyCode",
+        "amountCurrency","amountHome","amountDueHome","current","days1to30","days31to60","days61to90","days90plus",
+        "sourcePlatform","sourceProgram","sourceTransaction","cono","divi"
+      )
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("companyId","frequency","snapshotDate","invoiceNo","customerName")
+      DO UPDATE SET
+        "customerId" = COALESCE(EXCLUDED."customerId", "AROpenInvoiceSnapshot"."customerId"),
+        "invoiceDate" = COALESCE(EXCLUDED."invoiceDate", "AROpenInvoiceSnapshot"."invoiceDate"),
+        "dueDate" = COALESCE(EXCLUDED."dueDate", "AROpenInvoiceSnapshot"."dueDate"),
+        "status" = COALESCE(EXCLUDED."status", "AROpenInvoiceSnapshot"."status"),
+        "currencyCode" = COALESCE(EXCLUDED."currencyCode", "AROpenInvoiceSnapshot"."currencyCode"),
+        "amountCurrency" = EXCLUDED."amountCurrency",
+        "amountHome" = EXCLUDED."amountHome",
+        "amountDueHome" = EXCLUDED."amountDueHome",
+        "current" = EXCLUDED."current",
+        "days1to30" = EXCLUDED."days1to30",
+        "days31to60" = EXCLUDED."days31to60",
+        "days61to90" = EXCLUDED."days61to90",
+        "days90plus" = EXCLUDED."days90plus",
+        "sourcePlatform" = EXCLUDED."sourcePlatform",
+        "sourceProgram" = EXCLUDED."sourceProgram",
+        "sourceTransaction" = EXCLUDED."sourceTransaction",
+        "cono" = COALESCE(EXCLUDED."cono", "AROpenInvoiceSnapshot"."cono"),
+        "divi" = COALESCE(EXCLUDED."divi", "AROpenInvoiceSnapshot"."divi")
+    `);
+  }
+
+  // Guardrail cleanup for any rows that ended up at/below zero.
+  await prisma.aROpenInvoiceSnapshot.deleteMany({
+    where: { companyId: params.companyId, frequency: params.frequency, snapshotDate: dayStart, amountDueHome: { lte: 0 } },
+  });
+
+  return openRows.length;
+}
+
 async function saveAROpenInvoices(
   companyId: string,
   snapshotDate: Date,
@@ -3543,6 +3962,118 @@ async function customerOrderLineSupportsOrderDateColumn(): Promise<boolean> {
   return customerOrderLineOrderDateColumnCache;
 }
 
+async function resetAndSeedCustomerOrderLineSnapshotFromPriorDay(params: {
+  companyId: string;
+  snapshotDate: Date;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  supportsOrderDateColumn: boolean;
+}): Promise<{ copied: number; priorSnapshotDate: Date | null }> {
+  const dayStart = startOfUtcDay(params.snapshotDate);
+  const lockKey = `customer_order_line_seed|${params.companyId}|${params.frequency}|${dayStart.toISOString()}`;
+  const delegate = (prisma as any).customerOrderLineSnapshot;
+  if (!delegate?.deleteMany || !delegate?.findFirst || !delegate?.findMany || !delegate?.createMany) {
+    return { copied: 0, priorSnapshotDate: null };
+  }
+
+  return await retryOnDeadlock('customerOrderLineSnapshot.seed', () =>
+    prisma.$transaction(
+      async (tx) => {
+        try {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        } catch {
+          // Best-effort on non-Postgres dev envs.
+        }
+        const txDelegate = (tx as any).customerOrderLineSnapshot;
+        await txDelegate.deleteMany({ where: { companyId: params.companyId, frequency: params.frequency, snapshotDate: dayStart } });
+        const prior = await txDelegate.findFirst({
+          where: { companyId: params.companyId, frequency: params.frequency, snapshotDate: { lt: dayStart } },
+          orderBy: [{ snapshotDate: 'desc' }],
+          select: { snapshotDate: true },
+        });
+        if (!prior?.snapshotDate) return { copied: 0, priorSnapshotDate: null };
+
+        let copied = 0;
+        let cursorId: string | null = null;
+        const take = 5000;
+        while (true) {
+          const batch = await txDelegate.findMany({
+            where: { companyId: params.companyId, frequency: params.frequency, snapshotDate: prior.snapshotDate },
+            ...(cursorId
+              ? {
+                  cursor: { id: cursorId },
+                  skip: 1,
+                }
+              : {}),
+            take,
+            orderBy: [{ id: 'asc' }],
+            select: {
+              id: true,
+              customerId: true,
+              customerName: true,
+              orderId: true,
+              lineId: true,
+              orderDate: true,
+              itemId: true,
+              itemName: true,
+              sku: true,
+              qtyOrdered: true,
+              qtyInvoiced: true,
+              unitPrice: true,
+              contractValue: true,
+              invoicedAmount: true,
+              remainingAmount: true,
+              unbilledAccrual: true,
+              sourcePlatform: true,
+              sourceProgram: true,
+              sourceTransaction: true,
+              cono: true,
+              divi: true,
+            },
+          });
+          if (batch.length === 0) break;
+          cursorId = batch[batch.length - 1].id;
+          const rowsToCreate = batch.map((row: any) => {
+            const base = {
+              id: randomUUID(),
+              companyId: params.companyId,
+              snapshotDate: dayStart,
+              frequency: params.frequency,
+              customerId: row.customerId,
+              customerName: row.customerName,
+              orderId: row.orderId,
+              lineId: row.lineId,
+              itemId: row.itemId,
+              itemName: row.itemName,
+              sku: row.sku,
+              qtyOrdered: row.qtyOrdered,
+              qtyInvoiced: row.qtyInvoiced,
+              unitPrice: row.unitPrice,
+              contractValue: row.contractValue,
+              invoicedAmount: row.invoicedAmount,
+              remainingAmount: row.remainingAmount,
+              unbilledAccrual: row.unbilledAccrual,
+              sourcePlatform: row.sourcePlatform,
+              sourceProgram: row.sourceProgram,
+              sourceTransaction: row.sourceTransaction,
+              cono: row.cono,
+              divi: row.divi,
+            };
+            if (params.supportsOrderDateColumn) {
+              return { ...base, orderDate: row.orderDate };
+            }
+            return base;
+          });
+          await txDelegate.createMany({ data: rowsToCreate, skipDuplicates: true });
+          copied += rowsToCreate.length;
+          if (batch.length < take) break;
+        }
+        return { copied, priorSnapshotDate: prior.snapshotDate };
+      },
+      { maxWait: 10000, timeout: 120000 }
+    )
+  );
+}
+
 async function saveCustomerOrderLines(
   companyId: string,
   snapshotDate: Date,
@@ -3554,6 +4085,7 @@ async function saveCustomerOrderLines(
     cono?: string;
     divi?: string;
     resetSnapshot?: boolean;
+    incrementalNoFullPulls?: boolean;
     orderCustomerLookup?: Map<string, { customerId: string | null; customerName: string; orderDate: Date | null }>;
   }
 ): Promise<{
@@ -3601,8 +4133,19 @@ async function saveCustomerOrderLines(
     return { persisted: 0, debug };
   }
 
+  const supportsOrderDateColumn = await customerOrderLineSupportsOrderDateColumn();
+  const incrementalNoFullPulls = context.incrementalNoFullPulls === true;
   if (context.resetSnapshot) {
-    await delegate.deleteMany({ where: { companyId, frequency, snapshotDate } });
+    if (incrementalNoFullPulls) {
+      await resetAndSeedCustomerOrderLineSnapshotFromPriorDay({
+        companyId,
+        snapshotDate,
+        frequency,
+        supportsOrderDateColumn,
+      });
+    } else {
+      await delegate.deleteMany({ where: { companyId, frequency, snapshotDate } });
+    }
   }
 
   const parsedRows: Array<{
@@ -3777,13 +4320,30 @@ async function saveCustomerOrderLines(
   const finalRows = Array.from(deduped.values());
   debug.rowsAfterDedupe = finalRows.length;
   debug.rowsAttemptedPersist = finalRows.length;
-  const supportsOrderDateColumn = await customerOrderLineSupportsOrderDateColumn();
   // NOTE: avoid per-row updateMany loops here. On large SLCoitems pulls this causes
   // long-running chunks and apparent sync stalls. New rows are inserted with orderDate
   // via createMany below; null-date historical backfill should be handled separately.
   const dataToPersist = supportsOrderDateColumn
     ? finalRows
     : finalRows.map(({ orderDate: _orderDate, ...rest }) => rest);
+  if (incrementalNoFullPulls && finalRows.length > 0) {
+    const deleteChunkSize = 250;
+    for (let i = 0; i < finalRows.length; i += deleteChunkSize) {
+      const chunk = finalRows.slice(i, i + deleteChunkSize);
+      const values = chunk.map((row) => Prisma.sql`(${row.orderId}, ${row.lineId}, ${row.customerName})`);
+      await prisma.$executeRaw(Prisma.sql`
+        WITH keys("orderId","lineId","customerName") AS (VALUES ${Prisma.join(values)})
+        DELETE FROM "CustomerOrderLineSnapshot" s
+        USING keys
+        WHERE s."companyId" = ${companyId}
+          AND s."frequency" = ${frequency}
+          AND s."snapshotDate" = ${snapshotDate}
+          AND s."orderId" = keys."orderId"
+          AND s."lineId" = keys."lineId"
+          AND s."customerName" = keys."customerName"
+      `);
+    }
+  }
   const batch = await delegate.createMany({ data: dataToPersist, skipDuplicates: true });
   debug.rowsPersisted = Number(batch?.count || 0);
   return { persisted: debug.rowsPersisted || finalRows.length, debug };
@@ -3961,9 +4521,9 @@ function buildAgingBucketFromDueDate(
   invoiceDate: Date | null,
   asOfDate: Date
 ): { daysOutstanding: number | null; agingBucket: string } {
-  const baselineInvoiceDate = invoiceDate ? startOfUtcDay(invoiceDate) : null;
-  if (!baselineInvoiceDate) return { daysOutstanding: null, agingBucket: '90+' };
-  const days = Math.floor((startOfUtcDay(asOfDate).getTime() - baselineInvoiceDate.getTime()) / (24 * 60 * 60 * 1000));
+  const baseline = dueDate ? startOfUtcDay(dueDate) : invoiceDate ? startOfUtcDay(invoiceDate) : null;
+  if (!baseline) return { daysOutstanding: null, agingBucket: '90+' };
+  const days = Math.floor((startOfUtcDay(asOfDate).getTime() - baseline.getTime()) / (24 * 60 * 60 * 1000));
   if (days <= 0) return { daysOutstanding: days, agingBucket: 'Current' };
   if (days <= 30) return { daysOutstanding: days, agingBucket: '30' };
   if (days <= 60) return { daysOutstanding: days, agingBucket: '60' };
@@ -4562,7 +5122,7 @@ function getAgingBucketValuesFromDueDate(
   if (!safeOutstanding) {
     return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
   }
-  const aging = buildAgingBucketFromDueDate(dueDate, null, asOfDate);
+  const aging = buildAgingBucketFromDueDate(dueDate, dueDate, asOfDate);
   if (aging.agingBucket === 'Current') return { current: safeOutstanding, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
   if (aging.agingBucket === '30') return { current: 0, days1to30: safeOutstanding, days31to60: 0, days61to90: 0, days90plus: 0 };
   if (aging.agingBucket === '60') return { current: 0, days1to30: 0, days31to60: safeOutstanding, days61to90: 0, days90plus: 0 };
@@ -4813,28 +5373,39 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
       )
     );
     if ((vendorIds.length || vendorNames.length) && billNos.length) {
-      const appPayments = await appPaymentDelegate.findMany({
-        where: {
-          companyId,
-          paymentDate: { lt: new Date(snapshotDate.getTime() + 24 * 60 * 60 * 1000) },
-          paidAmountHome: { gt: 0 },
-          billNo: { in: billNos },
-          OR: [
-            ...(vendorIds.length ? [{ vendorId: { in: vendorIds } }] : []),
-            ...(vendorNames.length ? [{ vendorName: { in: vendorNames } }] : []),
-          ],
-        },
-        select: {
-          paymentDate: true,
-          vendorId: true,
-          vendorName: true,
-          billNo: true,
-          paidAmountHome: true,
-          sourceProgram: true,
-          sourceTransaction: true,
-        },
-        orderBy: [{ paymentDate: 'asc' }],
-      });
+      // Large bill number lists can blow up Prisma query args for one date/run.
+      // Query in deterministic chunks and merge results to preserve correctness.
+      const BILLNO_BATCH_SIZE = 500;
+      const appPayments: any[] = [];
+      for (let i = 0; i < billNos.length; i += BILLNO_BATCH_SIZE) {
+        const billNoBatch = billNos.slice(i, i + BILLNO_BATCH_SIZE);
+        if (!billNoBatch.length) continue;
+        const batchRows = await appPaymentDelegate.findMany({
+          where: {
+            companyId,
+            paymentDate: { lt: new Date(snapshotDate.getTime() + 24 * 60 * 60 * 1000) },
+            paidAmountHome: { gt: 0 },
+            billNo: { in: billNoBatch },
+            OR: [
+              ...(vendorIds.length ? [{ vendorId: { in: vendorIds } }] : []),
+              ...(vendorNames.length ? [{ vendorName: { in: vendorNames } }] : []),
+            ],
+          },
+          select: {
+            paymentDate: true,
+            vendorId: true,
+            vendorName: true,
+            billNo: true,
+            paidAmountHome: true,
+            sourceProgram: true,
+            sourceTransaction: true,
+          },
+          orderBy: [{ paymentDate: 'asc' }],
+        });
+        for (const row of batchRows) {
+          appPayments.push(row);
+        }
+      }
 
       const paymentByBillNo = new Map<string, { paidAmount: number; firstPaidDate: Date | null; lastPaidDate: Date | null }>();
       const paymentFactDedupe = new Set<string>();
@@ -5146,6 +5717,67 @@ async function saveAPAging(
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[]
 ): Promise<number> {
+  const persistedOpenRows = await (prisma as any).aPOpenBillSnapshot.findMany({
+    where: {
+      companyId,
+      frequency,
+      snapshotDate,
+      amountDueHome: { gt: 0 },
+    },
+    select: {
+      amountDueHome: true,
+      billDate: true,
+      dueDate: true,
+      current: true,
+      days1to30: true,
+      days31to60: true,
+      days61to90: true,
+      days90plus: true,
+    },
+  });
+  if (persistedOpenRows.length > 0) {
+    const totals = persistedOpenRows.reduce(
+      (acc: { totalAP: number; current: number; days1to30: number; days31to60: number; days61to90: number; days90plus: number }, row: any) => {
+        const amountDueHome = Number(row.amountDueHome || 0);
+        if (!Number.isFinite(amountDueHome) || amountDueHome <= 0) return acc;
+        acc.totalAP += amountDueHome;
+        const hasExplicitBuckets =
+          Number(row.current || 0) !== 0 ||
+          Number(row.days1to30 || 0) !== 0 ||
+          Number(row.days31to60 || 0) !== 0 ||
+          Number(row.days61to90 || 0) !== 0 ||
+          Number(row.days90plus || 0) !== 0;
+        if (hasExplicitBuckets) {
+          acc.current += Number(row.current || 0);
+          acc.days1to30 += Number(row.days1to30 || 0);
+          acc.days31to60 += Number(row.days31to60 || 0);
+          acc.days61to90 += Number(row.days61to90 || 0);
+          acc.days90plus += Number(row.days90plus || 0);
+          return acc;
+        }
+        const buckets = getAgingBucketValuesFromDueDate(amountDueHome, row.dueDate || row.billDate || null, snapshotDate);
+        acc.current += buckets.current;
+        acc.days1to30 += buckets.days1to30;
+        acc.days31to60 += buckets.days31to60;
+        acc.days61to90 += buckets.days61to90;
+        acc.days90plus += buckets.days90plus;
+        return acc;
+      },
+      { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
+    );
+    await prisma.aPAgingSnapshot.upsert({
+      where: { companyId_snapshotDate_frequency: { companyId, snapshotDate, frequency } },
+      update: totals,
+      create: {
+        companyId,
+        snapshotDate,
+        frequency,
+        ...totals,
+      },
+    });
+    return 1;
+  }
+
   const deriveApOutstandingAmount = (record: Record<string, unknown>): number => {
     const directOpenBalance = pickNumber(record, [
       'amountDueHome',
@@ -5272,6 +5904,331 @@ async function saveAPAging(
   });
 
   return 1;
+}
+
+async function resetAndSeedApOpenBillSnapshotFromPriorDay(params: {
+  companyId: string;
+  snapshotDate: Date;
+  frequency: 'daily' | 'weekly' | 'monthly';
+}): Promise<{ copied: number; priorSnapshotDate: Date | null }> {
+  const dayStart = startOfUtcDay(params.snapshotDate);
+  const lockKey = `ap_open_seed|${params.companyId}|${params.frequency}|${dayStart.toISOString()}`;
+  return await retryOnDeadlock('aPOpenBillSnapshot.seed', () =>
+    prisma.$transaction(
+      async (tx) => {
+        try {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        } catch {
+          // Best-effort on non-Postgres dev envs.
+        }
+        await (tx as any).aPOpenBillSnapshot.deleteMany({
+          where: { companyId: params.companyId, frequency: params.frequency, snapshotDate: dayStart },
+        });
+        const prior = await (tx as any).aPOpenBillSnapshot.findFirst({
+          where: {
+            companyId: params.companyId,
+            frequency: params.frequency,
+            snapshotDate: { lt: dayStart },
+            amountDueHome: { gt: 0 },
+          },
+          orderBy: [{ snapshotDate: 'desc' }],
+          select: { snapshotDate: true },
+        });
+        if (!prior?.snapshotDate) return { copied: 0, priorSnapshotDate: null };
+
+        let copied = 0;
+        let cursorId: string | null = null;
+        const take = 5000;
+        while (true) {
+          const batch = await (tx as any).aPOpenBillSnapshot.findMany({
+            where: {
+              companyId: params.companyId,
+              frequency: params.frequency,
+              snapshotDate: prior.snapshotDate,
+              amountDueHome: { gt: 0 },
+            },
+            ...(cursorId
+              ? {
+                  cursor: { id: cursorId },
+                  skip: 1,
+                }
+              : {}),
+            take,
+            orderBy: [{ id: 'asc' }],
+            select: {
+              id: true,
+              vendorId: true,
+              vendorName: true,
+              billNo: true,
+              billDate: true,
+              dueDate: true,
+              status: true,
+              currencyCode: true,
+              amountCurrency: true,
+              amountHome: true,
+              amountDueHome: true,
+              current: true,
+              days1to30: true,
+              days31to60: true,
+              days61to90: true,
+              days90plus: true,
+              sourcePlatform: true,
+              sourceProgram: true,
+              sourceTransaction: true,
+              cono: true,
+              divi: true,
+            },
+          });
+          if (batch.length === 0) break;
+          cursorId = batch[batch.length - 1].id;
+          const rowsToCreate = batch.map((row: any) => ({
+            id: randomUUID(),
+            companyId: params.companyId,
+            snapshotDate: dayStart,
+            frequency: params.frequency,
+            vendorId: row.vendorId,
+            vendorName: row.vendorName,
+            billNo: row.billNo,
+            billDate: row.billDate,
+            dueDate: row.dueDate,
+            status: row.status,
+            currencyCode: row.currencyCode,
+            amountCurrency: row.amountCurrency,
+            amountHome: row.amountHome,
+            amountDueHome: row.amountDueHome,
+            current: row.current,
+            days1to30: row.days1to30,
+            days31to60: row.days31to60,
+            days61to90: row.days61to90,
+            days90plus: row.days90plus,
+            sourcePlatform: row.sourcePlatform,
+            sourceProgram: row.sourceProgram,
+            sourceTransaction: row.sourceTransaction,
+            cono: row.cono,
+            divi: row.divi,
+          }));
+          await (tx as any).aPOpenBillSnapshot.createMany({ data: rowsToCreate, skipDuplicates: true });
+          copied += rowsToCreate.length;
+          if (batch.length < take) break;
+        }
+        return { copied, priorSnapshotDate: prior.snapshotDate };
+      },
+      { maxWait: 10000, timeout: 120000 }
+    )
+  );
+}
+
+async function saveAPOpenBillsNoFullPullsDeltaState(params: {
+  companyId: string;
+  snapshotDate: Date;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  records: Record<string, unknown>[];
+  context: { miProgram: string; transaction: string; cono?: string; divi?: string; resetSnapshot: boolean };
+}): Promise<number> {
+  const dayStart = startOfUtcDay(params.snapshotDate);
+  if (params.context.resetSnapshot) {
+    await resetAndSeedApOpenBillSnapshotFromPriorDay({
+      companyId: params.companyId,
+      snapshotDate: dayStart,
+      frequency: params.frequency,
+    });
+  }
+
+  const normalizeName = (value: string): string => String(value || '').trim().replace(/\s+/g, ' ');
+  const normalizeBillNo = (value: unknown): string =>
+    String(value || '')
+      .trim()
+      .replace(/\s+/g, '')
+      .toUpperCase();
+  const statusToken = (value: unknown): string =>
+    String(value || '')
+      .trim()
+      .toLowerCase();
+  const isClosedStatus = (token: string): boolean =>
+    token.includes('closed') ||
+    token.includes('paid') ||
+    token.includes('void') ||
+    token.includes('cancel') ||
+    token.includes('settled') ||
+    token.includes('history');
+
+  type Candidate = {
+    vendorId: string | null;
+    vendorName: string;
+    billNo: string;
+    billDate: Date | null;
+    dueDate: Date | null;
+    status: string | null;
+    currencyCode: string | null;
+    amountCurrency: number | null;
+    amountHome: number | null;
+    amountDueHome: number;
+    recordDate: Date | null;
+  };
+
+  const deduped = new Map<string, { candidate: Candidate; score: number; recordDateMs: number }>();
+  const scoreCandidate = (c: Candidate): number =>
+    (Number.isFinite(c.amountDueHome) && c.amountDueHome > 0 ? 4 : 0) +
+    (c.billDate ? 1 : 0) +
+    (c.dueDate ? 1 : 0) +
+    (c.currencyCode ? 1 : 0) +
+    (Number(c.amountHome || 0) > 0 ? 1 : 0);
+
+  for (let idx = 0; idx < params.records.length; idx += 1) {
+    const record = params.records[idx];
+    const vendorId = pickString(record, VENDOR_ID_KEYS) || null;
+    const vendorNameRaw =
+      pickString(record, ['UbVendName', 'VendaddrName', 'VendorName', ...VENDOR_NAME_KEYS]) ||
+      (vendorId ? `Vendor ${vendorId}` : 'Unknown Vendor');
+    const vendorName = normalizeName(vendorNameRaw);
+    const billNo = normalizeBillNo(
+      pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'voucher', 'Voucher', 'SINO'])
+    );
+    if (!vendorName || !billNo) continue;
+
+    const amountDueHomeRaw = pickNumber(record, [
+      'amountDueHome',
+      'amountDue',
+      'openAmount',
+      'openBalance',
+      'balance',
+      'Balance',
+      'DerAmtBal',
+      'UbOpening',
+    ]);
+    const amountDueHome = Number.isFinite(amountDueHomeRaw) ? Math.max(0, Number(amountDueHomeRaw)) : 0;
+    const billDate = resolveApBillDateFromRecord(record);
+    const dueDate = parseMaybeDate(pickString(record, ['dueDate', 'DUDT', 'DueDate', 'InvDate', 'DistDate'])) || null;
+    const status = pickString(record, ['status', 'STAT']) || null;
+    const currencyCode = pickString(record, ['currencyCode', 'currency', 'CUCD']) || null;
+    const amountCurrency = pickNumber(record, ['amountCurrency', 'billAmount', 'InvAmt', 'CUAM']) || null;
+    const amountHome = pickNumber(record, ['amountHome', 'homeAmount', 'InvAmt', 'ACAM']) || null;
+    const recordDate = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate', 'DistDate', 'InvDate', 'date'])) || null;
+
+    const candidate: Candidate = {
+      vendorId,
+      vendorName,
+      billNo,
+      billDate,
+      dueDate,
+      status,
+      currencyCode,
+      amountCurrency: amountCurrency !== 0 ? amountCurrency : null,
+      amountHome: amountHome !== 0 ? amountHome : null,
+      amountDueHome,
+      recordDate,
+    };
+    const key = `${vendorName.toLowerCase()}||${billNo}`;
+    const existing = deduped.get(key);
+    const recordDateMs = recordDate ? recordDate.getTime() : Number.NEGATIVE_INFINITY;
+    const score = scoreCandidate(candidate);
+    if (!existing) {
+      deduped.set(key, { candidate, score, recordDateMs });
+      continue;
+    }
+    const isNewer = recordDateMs > existing.recordDateMs;
+    const isSameMomentBetter = recordDateMs === existing.recordDateMs && score >= existing.score;
+    if (isNewer || isSameMomentBetter) deduped.set(key, { candidate, score, recordDateMs });
+  }
+
+  const openRows: Array<any> = [];
+  const closedKeys: Array<{ vendorName: string; billNo: string }> = [];
+  for (const { candidate } of Array.from(deduped.values())) {
+    const token = statusToken(candidate.status);
+    if (candidate.amountDueHome <= 0.0001 || isClosedStatus(token)) {
+      closedKeys.push({ vendorName: candidate.vendorName, billNo: candidate.billNo });
+      continue;
+    }
+    if (!isApDateWithinHistoryWindow(candidate.billDate)) continue;
+    const buckets = getAgingBucketValuesFromDueDate(candidate.amountDueHome, candidate.dueDate || candidate.billDate || null, dayStart);
+    openRows.push({
+      id: randomUUID(),
+      companyId: params.companyId,
+      snapshotDate: dayStart,
+      frequency: params.frequency,
+      vendorId: candidate.vendorId,
+      vendorName: candidate.vendorName,
+      billNo: candidate.billNo,
+      billDate: candidate.billDate,
+      dueDate: candidate.dueDate,
+      status: candidate.status || 'open',
+      currencyCode: candidate.currencyCode,
+      amountCurrency: candidate.amountCurrency,
+      amountHome: candidate.amountHome,
+      amountDueHome: candidate.amountDueHome,
+      current: buckets.current || null,
+      days1to30: buckets.days1to30 || null,
+      days31to60: buckets.days31to60 || null,
+      days61to90: buckets.days61to90 || null,
+      days90plus: buckets.days90plus || null,
+      sourcePlatform: 'INFOR_M3',
+      sourceProgram: params.context.miProgram,
+      sourceTransaction: params.context.transaction,
+      cono: params.context.cono || null,
+      divi: params.context.divi || null,
+    });
+  }
+
+  const deleteChunkSize = 200;
+  for (let i = 0; i < closedKeys.length; i += deleteChunkSize) {
+    const chunk = closedKeys.slice(i, i + deleteChunkSize);
+    const values = chunk.map((k) => Prisma.sql`(${k.billNo}, ${k.vendorName})`);
+    await prisma.$executeRaw(Prisma.sql`
+      WITH keys("billNo","vendorName") AS (VALUES ${Prisma.join(values)})
+      DELETE FROM "APOpenBillSnapshot" s
+      USING keys
+      WHERE s."companyId" = ${params.companyId}
+        AND s."frequency" = ${params.frequency}
+        AND s."snapshotDate" = ${dayStart}
+        AND s."billNo" = keys."billNo"
+        AND s."vendorName" = keys."vendorName"
+    `);
+  }
+
+  const upsertChunkSize = 200;
+  for (let i = 0; i < openRows.length; i += upsertChunkSize) {
+    const chunk = openRows.slice(i, i + upsertChunkSize);
+    const values = chunk.map((row) => Prisma.sql`(
+      ${row.id}, ${row.companyId}, ${row.snapshotDate}, ${row.frequency}, ${row.vendorId}, ${row.vendorName}, ${row.billNo},
+      ${row.billDate}, ${row.dueDate}, ${row.status}, ${row.currencyCode},
+      ${row.amountCurrency}, ${row.amountHome}, ${row.amountDueHome}, ${row.current}, ${row.days1to30}, ${row.days31to60}, ${row.days61to90}, ${row.days90plus},
+      ${row.sourcePlatform}, ${row.sourceProgram}, ${row.sourceTransaction}, ${row.cono}, ${row.divi}
+    )`);
+    await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "APOpenBillSnapshot" (
+        "id","companyId","snapshotDate","frequency","vendorId","vendorName","billNo","billDate","dueDate","status","currencyCode",
+        "amountCurrency","amountHome","amountDueHome","current","days1to30","days31to60","days61to90","days90plus",
+        "sourcePlatform","sourceProgram","sourceTransaction","cono","divi"
+      )
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("companyId","frequency","snapshotDate","billNo","vendorName")
+      DO UPDATE SET
+        "vendorId" = COALESCE(EXCLUDED."vendorId", "APOpenBillSnapshot"."vendorId"),
+        "billDate" = COALESCE(EXCLUDED."billDate", "APOpenBillSnapshot"."billDate"),
+        "dueDate" = COALESCE(EXCLUDED."dueDate", "APOpenBillSnapshot"."dueDate"),
+        "status" = COALESCE(EXCLUDED."status", "APOpenBillSnapshot"."status"),
+        "currencyCode" = COALESCE(EXCLUDED."currencyCode", "APOpenBillSnapshot"."currencyCode"),
+        "amountCurrency" = EXCLUDED."amountCurrency",
+        "amountHome" = EXCLUDED."amountHome",
+        "amountDueHome" = EXCLUDED."amountDueHome",
+        "current" = EXCLUDED."current",
+        "days1to30" = EXCLUDED."days1to30",
+        "days31to60" = EXCLUDED."days31to60",
+        "days61to90" = EXCLUDED."days61to90",
+        "days90plus" = EXCLUDED."days90plus",
+        "sourcePlatform" = EXCLUDED."sourcePlatform",
+        "sourceProgram" = EXCLUDED."sourceProgram",
+        "sourceTransaction" = EXCLUDED."sourceTransaction",
+        "cono" = COALESCE(EXCLUDED."cono", "APOpenBillSnapshot"."cono"),
+        "divi" = COALESCE(EXCLUDED."divi", "APOpenBillSnapshot"."divi")
+    `);
+  }
+
+  await (prisma as any).aPOpenBillSnapshot.deleteMany({
+    where: { companyId: params.companyId, frequency: params.frequency, snapshotDate: dayStart, amountDueHome: { lte: 0 } },
+  });
+
+  return openRows.length;
 }
 
 async function saveAPOpenBills(
@@ -5546,46 +6503,57 @@ async function saveProductSales(
     return preferred || null;
   };
   await prisma.productSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
-  const snapshotDayUtcMs = startOfUtcDay(snapshotDate).getTime();
-  const rows = records
-    .map((record) => {
-      if (frequency === 'daily') {
-        const salesRecordDate = firstRecordDate(record, [
-          'InvDate',
-          'invoiceDate',
-          'ShipDate',
-          'shipDate',
-          'OrderDate',
-          'orderDate',
-          'RecordDate',
-          'date',
-        ]);
-        if (!salesRecordDate) return null;
-        if (startOfUtcDay(salesRecordDate).getTime() !== snapshotDayUtcMs) return null;
-      }
-      const metrics = deriveSalesMetrics(record);
-      const quantitySold = metrics.quantity;
-      const revenue = metrics.revenue;
-      const cogs = metrics.cogs;
-      const grossMargin = revenue - cogs;
-      const itemCode = canonicalItemCode(record);
+
+  const itemAgg = new Map<string, {
+    itemId: string | null;
+    itemName: string;
+    sku: string | null;
+    quantitySold: number;
+    revenue: number;
+    cogs: number;
+  }>();
+
+  for (const record of records) {
+    const itemCode = canonicalItemCode(record);
+    const itemName = pickString(record, ['itemName', 'name', 'ITDS', 'Description']) || 'Unknown Item';
+    const key = itemCode || itemName;
+    if (!key) continue;
+    const metrics = deriveSalesMetrics(record);
+    const existing = itemAgg.get(key);
+    if (existing) {
+      existing.quantitySold += metrics.quantity;
+      existing.revenue += metrics.revenue;
+      existing.cogs += metrics.cogs;
+    } else {
+      itemAgg.set(key, {
+        itemId: itemCode,
+        itemName,
+        sku: itemCode,
+        quantitySold: metrics.quantity,
+        revenue: metrics.revenue,
+        cogs: metrics.cogs,
+      });
+    }
+  }
+
+  const rows = Array.from(itemAgg.values())
+    .filter((item) => item.itemName)
+    .map((item) => {
+      const grossMargin = item.revenue - item.cogs;
       return {
         companyId,
         snapshotDate,
         frequency,
-        // No cross-domain fallbacks: product identity must come from item fields only.
-        itemId: itemCode,
-        itemName: pickString(record, ['itemName', 'name', 'ITDS', 'Description']) || 'Unknown Item',
-        sku: itemCode,
-        quantitySold,
-        revenue,
-        cogs,
+        itemId: item.itemId,
+        itemName: item.itemName,
+        sku: item.sku,
+        quantitySold: item.quantitySold,
+        revenue: item.revenue,
+        cogs: item.cogs,
         grossMargin,
-        grossMarginPct: revenue > 0 ? (grossMargin / revenue) * 100 : null,
+        grossMarginPct: item.revenue > 0 ? (grossMargin / item.revenue) * 100 : null,
       };
-    })
-    .filter((row): row is NonNullable<typeof row> => !!row)
-    .filter((row) => row.itemName);
+    });
 
   if (rows.length === 0) return 0;
   await prisma.productSalesSnapshot.createMany({ data: rows });
@@ -6310,6 +7278,12 @@ export async function syncInforM3OperationalData(
     select: { accountingSystem: true },
   });
   const inforSystem = normalizeInforSystem(company?.accountingSystem);
+  const noFullPulls =
+    inforSystem === 'INFOR_CSI' &&
+    frequency === 'daily' &&
+    Boolean(syncWindow) &&
+    syncWindow?.mode !== 'backfill' &&
+    envTrue('INFOR_CSI_NO_FULL_PULLS');
   const programsBySystem =
     metadata.accountingProgramsBySystem && typeof metadata.accountingProgramsBySystem === 'object'
       ? (metadata.accountingProgramsBySystem as Record<string, unknown>)
@@ -6585,7 +7559,9 @@ export async function syncInforM3OperationalData(
             ? 2
             : MAX_CSI_PAGES_PER_REQUEST;
       const maxPagesPerRequest = Math.max(1, Math.floor(baseMaxPagesPerRequest * adaptivePageScale));
-      const sourceWindowPathResult = applyCsiSourceWindowAndSort(req.endpointPath, row, moduleType, syncWindow);
+      const sourceWindowPathResult = applyCsiSourceWindowAndSort(req.endpointPath, row, moduleType, syncWindow, {
+        noFullPulls,
+      });
       if (debugSync) {
         console.log(
           JSON.stringify({
@@ -6642,7 +7618,9 @@ export async function syncInforM3OperationalData(
         }
       }
       if (isSlVchHdrsProgramLike({ programId, row, endpointPath: req.endpointPath })) {
-        initialEndpointPath = buildCanonicalSlVchHdrsEndpointPath(req.endpointPath, syncWindow, row.site, inputBookmark);
+        initialEndpointPath = buildCanonicalSlVchHdrsEndpointPath(req.endpointPath, syncWindow, row.site, inputBookmark, {
+          noFullPulls,
+        });
         if (debugSync) {
           const initialShape = (() => {
             const [, queryString = ''] = initialEndpointPath.split('?');
@@ -6694,6 +7672,7 @@ export async function syncInforM3OperationalData(
           window: syncWindow,
           site: row.site,
           inputBookmark,
+          noFullPulls,
           requestTimeoutMs,
           headers: req.headers,
           maxPagesPerRequest,
@@ -7141,15 +8120,16 @@ export async function syncInforM3OperationalData(
       const isArApOpenFlow =
         ((moduleType === 'ar' || moduleType === 'ap') && arApFlow === 'open') || isArOpenSnapshotProgram;
       const keepFullArApPopulation =
-        isArOpenSnapshotProgram ||
-        isApOpenSnapshotProgram ||
-        isApOpenSupportProgram ||
-        (isArApOpenFlow && syncWindow?.mode === 'daily_overlap');
+        !noFullPulls &&
+        (isArOpenSnapshotProgram ||
+          isApOpenSnapshotProgram ||
+          isApOpenSupportProgram ||
+          (isArApOpenFlow && syncWindow?.mode === 'daily_overlap'));
       // Contract/backlog math from SLCoitems requires full line populations for rolling
       // daily-overlap runs. For backfill/manual slices, date-window filtering is required
       // to avoid replaying the same historical order lines into every business date.
       const isOrderLineProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
-      const keepFullOrderLinePopulation = isOrderLineProgram && syncWindow?.mode === 'daily_overlap';
+      const keepFullOrderLinePopulation = !noFullPulls && isOrderLineProgram && syncWindow?.mode === 'daily_overlap';
       const shouldApplyDateWindow =
         !keepFullArApPopulation && !keepFullOrderLinePopulation;
       const recordsAfterDateWindow = shouldApplyDateWindow
@@ -7306,7 +8286,15 @@ export async function syncInforM3OperationalData(
                   const skipOpenForProgram = preferCustDrftsForOpen || skipCustDrftsOpenForHistoricalSlice;
                   const openRowsCreated = skipOpenForProgram
                     ? 0
-                    : await saveAROpenInvoices(companyId, snapshotDate, frequency, records, context);
+                    : noFullPulls && isSlCustDrftsProgram
+                      ? await saveAROpenInvoicesNoFullPullsFromCustDrfts({
+                          companyId,
+                          snapshotDate,
+                          frequency,
+                          records,
+                          context,
+                        })
+                      : await saveAROpenInvoices(companyId, snapshotDate, frequency, records, context);
                   const agingRowsCreated = skipOpenForProgram
                     ? 0
                     : await saveARAging(companyId, snapshotDate, frequency, records);
@@ -7328,6 +8316,7 @@ export async function syncInforM3OperationalData(
                   transaction: req.transaction,
                   cono: row.cono,
                   divi: row.divi,
+                  resetSnapshot: !options?.bookmark,
                 };
                 const apProgramId = String(row.miProgram || '').trim().toUpperCase();
                 const forcePaymentProgram =
@@ -7336,7 +8325,15 @@ export async function syncInforM3OperationalData(
                 if (forcePaymentProgram || arApFlow === 'payments') {
                   moduleRecordsCreated = await saveAPPayments(companyId, records, context);
                 } else if (arApFlow === 'open') {
-                  const openRowsCreated = await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
+                  const openRowsCreated = noFullPulls
+                    ? await saveAPOpenBillsNoFullPullsDeltaState({
+                        companyId,
+                        snapshotDate,
+                        frequency,
+                        records,
+                        context,
+                      })
+                    : await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
                   const agingRowsCreated = await saveAPAging(companyId, snapshotDate, frequency, records);
                   moduleRecordsCreated = openRowsCreated + agingRowsCreated;
                 } else {
@@ -7408,6 +8405,7 @@ export async function syncInforM3OperationalData(
                     ? await saveCustomerOrderLines(companyId, snapshotDate, frequency, recordsAfterDateWindow, {
                         ...context,
                         resetSnapshot: !options?.bookmark,
+                        incrementalNoFullPulls: noFullPulls,
                         orderCustomerLookup,
                       })
                     : { persisted: 0, debug: null as any };
