@@ -1118,10 +1118,19 @@ export async function GET(request: NextRequest) {
           isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
         const orderLineFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
-        // Customer revenue is derived strictly from order-line invoicing deltas.
-        // No snapshot fallback or invoice proxy fallback.
-        data = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
-        const customerDataBasis: 'orderline_delta' = 'orderline_delta';
+        data = await prisma.customerSalesSnapshot.findMany({
+          where: {
+            companyId,
+            frequency: customerFrequencyForQuery,
+            snapshotDate: { gte: startDate, lte: endDate },
+          },
+          orderBy: { snapshotDate: 'asc' },
+          take: 50000,
+        });
+        const customerDataBasis: 'orderline_delta' | 'customer_sales_snapshot' = data.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
+        if (data.length === 0) {
+          data = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
+        }
 
         // Build real bookings from order headers/lines using orderDate periods.
         // Formula intent: SUM(QtyOrdered * Price) grouped by SLCohdrs.OrderDate period.
@@ -1169,12 +1178,13 @@ export async function GET(request: NextRequest) {
               bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + delta);
             }
           };
+          const bookingsLowerBound = ytdStart < startDate ? startDate : ytdStart;
           if (hasOrderDateColumn) {
             const orderRows = await bookingsOrderLineDelegate.findMany({
               where: {
                 companyId,
                 frequency: orderLineFrequencyForQuery,
-                snapshotDate: { gte: startDate, lte: endDate },
+                snapshotDate: { gte: bookingsLowerBound, lte: endDate },
                 orderDate: { lte: endDate },
               },
               select: {
@@ -1246,7 +1256,7 @@ export async function GET(request: NextRequest) {
               where: {
                 companyId,
                 frequency: orderLineFrequencyForQuery,
-                snapshotDate: { gte: startDate, lte: endDate },
+                snapshotDate: { gte: bookingsLowerBound, lte: endDate },
               },
               select: {
                 snapshotDate: true,
