@@ -2492,11 +2492,16 @@ export async function GET(request: NextRequest) {
               SUM(amount_due)::double precision AS "totalAR",
               SUM(
                 CASE
-                  WHEN invoice_age_days <= 30 THEN amount_due
+                  WHEN invoice_age_days = 0 THEN amount_due
+                  ELSE 0
+                END
+              )::double precision AS "current",
+              SUM(
+                CASE
+                  WHEN invoice_age_days >= 1 AND invoice_age_days <= 30 THEN amount_due
                   ELSE 0
                 END
               )::double precision AS "days1to30",
-              0::double precision AS "current",
               SUM(
                 CASE
                   WHEN invoice_age_days > 30 AND invoice_age_days <= 60 THEN amount_due
@@ -2516,6 +2521,7 @@ export async function GET(request: NextRequest) {
                 END
               )::double precision AS "days90plus"
             FROM base
+            WHERE EXTRACT(DOW FROM day) NOT IN (0, 6)
             GROUP BY day
           )
           SELECT
@@ -3406,12 +3412,12 @@ export async function GET(request: NextRequest) {
                 if (!Number.isFinite(grossAmount) || grossAmount <= 0) continue;
                 const openAmount = Math.max(grossAmount, 0);
                 if (openAmount <= OPEN_AMOUNT_EPSILON) continue;
-                const ageCandidates = [row.dueDate, row.billDate]
-                  .map((value: any) => (value ? new Date(value) : null))
-                  .filter((dt: Date | null): dt is Date => Boolean(dt) && !Number.isNaN(dt.getTime()));
-                const ageBasis = ageCandidates.length
-                  ? new Date(Math.max(...ageCandidates.map((dt) => dt.getTime())))
-                  : null;
+                const parseDateCandidate = (value: any): Date | null => {
+                  if (!value) return null;
+                  const dt = new Date(value);
+                  return Number.isNaN(dt.getTime()) ? null : dt;
+                };
+                const ageBasis = parseDateCandidate(row.dueDate) ?? parseDateCandidate(row.billDate);
                 const ageDays =
                   ageBasis && !Number.isNaN(ageBasis.getTime())
                     ? Math.floor((snapshotDate.getTime() - startOfUtcDay(ageBasis).getTime()) / (24 * 60 * 60 * 1000))
@@ -4546,7 +4552,15 @@ export async function GET(request: NextRequest) {
           }
           if (!lineState.has(lineKey)) {
             lineState.set(lineKey, { seen: true, lastQtyShipped: qtyShippedAbs });
-            continue; // first observation is baseline to avoid synthetic overcounts
+            if (qtyShippedAbs > 0) {
+              for (const alias of keyAliases) {
+                const acc = movementBySku.get(alias)!;
+                if (eventUtc.getTime() >= start90Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty90 += qtyShippedAbs;
+                if (eventUtc.getTime() >= start60Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty60 += qtyShippedAbs;
+                if (eventUtc.getTime() >= start30Utc.getTime() && eventUtc.getTime() <= asOfUtc.getTime()) acc.shippedQty30 += qtyShippedAbs;
+              }
+            }
+            continue;
           }
           const state = lineState.get(lineKey)!;
           const delta = qtyShippedAbs - state.lastQtyShipped;
