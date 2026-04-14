@@ -4417,7 +4417,6 @@ async function enrichCustomerOrderLineItemsFromRaw(options: {
     where: {
       companyId,
       platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
-      syncRunId,
       businessDate: dayStart,
       miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
     },
@@ -9055,8 +9054,7 @@ export async function transformInforM3RawRun(options: {
       const rows = await (prisma as any).inforRawRecord.findMany({
         where: {
           companyId,
-          platform: 'INFOR_M3',
-          syncRunId,
+          platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
           businessDate: snapshotDate,
         },
         select: {
