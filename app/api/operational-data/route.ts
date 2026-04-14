@@ -1209,6 +1209,7 @@ export async function GET(request: NextRequest) {
           totalInvoicedValue: 0,
           customerCount: 0,
         };
+        const bookingsOrderLineDelegate = (prisma as any).customerOrderLineSnapshot;
         if (bookingsOrderLineDelegate?.findFirst && bookingsOrderLineDelegate?.findMany) {
           const latestOrderSnapshot = await bookingsOrderLineDelegate.findFirst({
             where: {

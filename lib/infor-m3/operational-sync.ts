@@ -6498,37 +6498,49 @@ async function saveCustomerSales(
 ): Promise<number> {
   await prisma.customerSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
-  const rows = records
-    .map((record) => {
-      const customerName = pickString(record, CUSTOMER_NAME_KEYS) || 'Unknown Customer';
-      const explicitRevenue = pickNumber(record, [
-        'revenue',
-        'amount',
-        'salesAmount',
-        'NETA',
-        'Amount',
-        'Price',
-        'ExtPrice',
-        'DerOrderBalance',
-        'DerPaymentCheckAmount',
-      ]);
-      const quantity = pickNumber(record, ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'InvSeq']);
-      const unitPrice = pickNumber(record, ['unitPrice', 'price', 'Price', 'salesPrice', 'Upri']);
-      const revenue = explicitRevenue !== 0 ? explicitRevenue : quantity * unitPrice;
-      const explicitInvoiceCount = pickNumber(record, ['invoiceCount', 'count', 'IVNO_COUNT', 'InvSeq']);
-      const invoiceCount = Math.max(0, Math.round(explicitInvoiceCount > 0 ? explicitInvoiceCount : revenue !== 0 ? 1 : 0));
-      return {
-        companyId,
-        snapshotDate,
-        frequency,
-        customerId: pickString(record, CUSTOMER_ID_KEYS),
+  const customerAgg = new Map<string, {
+    customerId: string | null;
+    customerName: string;
+    revenue: number;
+    invoiceCount: number;
+  }>();
+
+  for (const record of records) {
+    const customerName =
+      pickCustomerDisplayName(record) ||
+      pickString(record, ['BillToName', 'CustName', 'DerCustName', ...CUSTOMER_NAME_KEYS]) ||
+      'Unknown Customer';
+    const customerId =
+      pickString(record, ['CustNum', 'custNum', 'CoCustNum', 'CustNo', ...CUSTOMER_ID_KEYS]) ||
+      parseCustomerIdFromComposite(pickString(record, ['DerCustNoName', 'customerComposite']));
+    const key = `${customerId || ''}|${customerName.toLowerCase()}`;
+    const metrics = deriveSalesMetrics(record);
+    const existing = customerAgg.get(key);
+    if (existing) {
+      existing.revenue += metrics.revenue;
+      existing.invoiceCount += metrics.revenue !== 0 ? 1 : 0;
+    } else {
+      customerAgg.set(key, {
+        customerId: customerId || null,
         customerName,
-        revenue,
-        invoiceCount,
-        avgInvoiceSize: invoiceCount > 0 ? revenue / invoiceCount : null,
-      };
-    })
-    .filter((row) => row.customerName);
+        revenue: metrics.revenue,
+        invoiceCount: metrics.revenue !== 0 ? 1 : 0,
+      });
+    }
+  }
+
+  const rows = Array.from(customerAgg.values())
+    .filter((row) => row.customerName)
+    .map((row) => ({
+      companyId,
+      snapshotDate,
+      frequency,
+      customerId: row.customerId,
+      customerName: row.customerName,
+      revenue: row.revenue,
+      invoiceCount: row.invoiceCount,
+      avgInvoiceSize: row.invoiceCount > 0 ? row.revenue / row.invoiceCount : null,
+    }));
 
   if (rows.length === 0) return 0;
   await prisma.customerSalesSnapshot.createMany({ data: rows });
@@ -9196,13 +9208,6 @@ export async function transformInforM3RawRun(options: {
         recordsCreated += await saveBalanceMovementsFromGl(companyId, frequency, glTrans, glAccountMasterById);
       }
 
-      const customerRecords = Array.from(rawByModuleProgram.values())
-        .filter((item) => item.moduleType === 'customer')
-        .flatMap((item) => item.records);
-      if (customerRecords.length > 0) {
-        recordsCreated += await saveCustomerSales(companyId, snapshotDate, frequency, customerRecords);
-      }
-
       const inventoryRecords = Array.from(rawByModuleProgram.values())
         .filter((item) => item.moduleType === 'inventory')
         .flatMap((item) => item.records);
@@ -9214,6 +9219,7 @@ export async function transformInforM3RawRun(options: {
       const salesRecords = salesProgramItems.flatMap((item) => item.records);
       if (salesRecords.length > 0) {
         recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, salesRecords);
+        recordsCreated += await saveCustomerSales(companyId, snapshotDate, frequency, salesRecords);
       }
       const salesInvoiceHeaderRecords = salesProgramItems
         .filter((item) => String(item.miProgram || '').toUpperCase() === 'SLINVHDRS')

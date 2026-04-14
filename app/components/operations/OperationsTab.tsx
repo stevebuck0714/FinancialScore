@@ -2034,9 +2034,7 @@ export default function OperationsTab({
       return <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading customer data...</div>;
     }
 
-    if (!customerData) return null;
-
-    const { records, summary } = customerData;
+    const { records = [], summary = {} } = customerData ?? {};
     const selectedStartForCustomer = parseDateValue(startDate);
     const selectedEndForCustomer = parseDateValue(endDate);
     const selectedStartKey = selectedStartForCustomer ? selectedStartForCustomer.toISOString().slice(0, 10) : null;
