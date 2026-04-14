@@ -127,7 +127,7 @@ const DEFAULT_CSI_PROGRAM_ROWS: InforProgramRow[] = [
   {
     module: 'Sales',
     miProgram: 'SLCoitems',
-    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?properties=*&recordCap=1000',
+    endpointPath: '/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?properties=CoNum,CoLine,CoRelease,CustNum,Item,Description,QtyOrdered,QtyShipped,QtyInvoiced,QtyReturned,Price,ExtPrice,Cost,MatlCost,ExtMatlCost,Disc,RepPrice,Whse,Stat,DueDate,PromiseDate,OrderDate,ShipDate,RecordDate,RowPointer&recordCap=1000',
     mongooseConfig: 'TMSManager',
     site: '',
     transactions: ['CSI_LOAD'],
