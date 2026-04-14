@@ -17,9 +17,23 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const { companyId } = await requireSiteAdminAuthorizedInforCompany(request, body);
-    const syncRunId = String(body.syncRunId || '').trim();
+    let syncRunId = String(body.syncRunId || '').trim();
     if (!syncRunId) {
-      return NextResponse.json({ ok: false, error: 'syncRunId is required.' }, { status: 400 });
+      const prisma = (await import('@/lib/prisma')).default;
+      const businessDateIso = String(body.businessDateIso || '').trim();
+      if (businessDateIso) {
+        const row = await prisma.$queryRaw<Array<{ syncRunId: string }>>`
+          SELECT "syncRunId" FROM "InforRawCompleteness"
+          WHERE "companyId" = ${companyId}
+            AND "businessDate"::date = ${businessDateIso}::date
+          ORDER BY "updatedAt" DESC
+          LIMIT 1
+        `;
+        if (row.length > 0) syncRunId = row[0].syncRunId;
+      }
+      if (!syncRunId) {
+        return NextResponse.json({ ok: false, error: 'syncRunId is required and could not be auto-resolved.' }, { status: 400 });
+      }
     }
 
     const result = await transformInforM3RawRun({
