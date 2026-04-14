@@ -29,10 +29,6 @@
       "schedule": "*/1 * * * *"
     },
     {
-      "path": "/api/cron/process-infor-pending-transforms",
-      "schedule": "*/2 * * * *"
-    },
-    {
       "path": "/api/cron/refresh-quickbooks-tokens",
       "schedule": "15 2 * * *"
     },
