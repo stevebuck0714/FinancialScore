@@ -5381,6 +5381,7 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
 
     const typeToken = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
     const invAmtRaw = Math.abs(pickNumber(record, ['InvAmt', 'invoiceAmount', 'Amount', 'amount', 'ACAM', 'CUAM']));
+    const derAmtBalRaw = Math.abs(pickNumber(record, ['DerAmtBal']));
     const paidAmtRaw = Math.abs(pickNumber(record, ['AmtPaid', 'paidAmount', 'UbPayment', 'PYAM']));
     const isVoucherRow = typeToken === 'V';
     const isTypedPaymentRow = typeToken === 'P' || typeToken === 'A';
@@ -5390,8 +5391,9 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
       paidAmtRaw > 0.0001 &&
       invAmtRaw <= 0.0001;
 
-    if (isVoucherRow && invAmtRaw > 0) {
-      const invAmt = invAmtRaw;
+    const voucherBookedAmt = invAmtRaw > 0 ? invAmtRaw : derAmtBalRaw;
+    if (isVoucherRow && voucherBookedAmt > 0) {
+      const invAmt = voucherBookedAmt;
       const existingBooked = bookedByVoucher.get(voucherNo);
       const nextBookedDate = billDate || recordDate || existingBooked?.bookedDate || null;
       if (!existingBooked) {
@@ -5855,7 +5857,11 @@ async function saveAPAging(
       'DerAmtBal',
       'UbOpening',
     ]);
-    return directOpenBalance;
+    if (directOpenBalance !== 0) return directOpenBalance;
+    const invAmt = pickNumber(record, ['InvAmt', 'invoiceAmount', 'invAmt', 'CUAM']);
+    const amtPaid = pickNumber(record, ['AmtPaid', 'amtPaid', 'amountPaid', 'UbPayment']);
+    if (invAmt > 0) return invAmt - amtPaid;
+    return 0;
   };
 
   // AP aging must be based on open-item rows only. Do not trust summary-level
@@ -6317,7 +6323,11 @@ async function saveAPOpenBills(
       'DerAmtBal',
       'UbOpening',
     ]);
-    return directOpenBalance;
+    if (directOpenBalance !== 0) return directOpenBalance;
+    const invAmt = pickNumber(record, ['InvAmt', 'invoiceAmount', 'invAmt', 'CUAM']);
+    const amtPaid = pickNumber(record, ['AmtPaid', 'amtPaid', 'amountPaid', 'UbPayment']);
+    if (invAmt > 0) return invAmt - amtPaid;
+    return 0;
   };
 
   const rows = records
@@ -9165,6 +9175,7 @@ export async function transformInforM3RawRun(options: {
       records: Record<string, unknown>[];
     }>();
 
+    const dedupByProgram = new Map<string, Map<string, Record<string, unknown>>>();
     let cursorId: string | null = null;
     while (true) {
       const rows = await (prisma as any).inforRawRecord.findMany({
@@ -9193,21 +9204,28 @@ export async function transformInforM3RawRun(options: {
         const transaction = String(row.transaction || 'CSI_LOAD').trim() || 'CSI_LOAD';
         const moduleType = classifyModuleFromProgramId(miProgram) ?? classifyModule(module);
         const key = `${moduleType}||${miProgram}||${transaction}`;
-        const existing = rawByModuleProgram.get(key);
-        if (existing) {
-          existing.records.push(payload);
+        if (!rawByModuleProgram.has(key)) {
+          rawByModuleProgram.set(key, { moduleType, module, miProgram, transaction, records: [] });
+        }
+
+        const itemId = String(payload['_ItemId'] || payload['RowPointer'] || payload['rowPointer'] || '').trim();
+        if (itemId) {
+          if (!dedupByProgram.has(key)) dedupByProgram.set(key, new Map());
+          dedupByProgram.get(key)!.set(itemId, payload);
         } else {
-          rawByModuleProgram.set(key, {
-            moduleType,
-            module,
-            miProgram,
-            transaction,
-            records: [payload],
-          });
+          rawByModuleProgram.get(key)!.records.push(payload);
         }
       }
       rawRecordsRead += rows.length;
       cursorId = String(rows[rows.length - 1].id);
+    }
+    for (const [key, itemMap] of Array.from(dedupByProgram.entries())) {
+      const group = rawByModuleProgram.get(key);
+      if (group) {
+        for (const payload of itemMap.values()) {
+          group.records.push(payload);
+        }
+      }
     }
 
     const glAccountMasterById = new Map<string, GlAccountMasterEntry>();
