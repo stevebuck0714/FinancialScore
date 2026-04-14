@@ -7607,7 +7607,7 @@ export async function syncInforM3OperationalData(
       const isHistoricalDailySliceRequest = frequency === 'daily' && Boolean(options?.snapshotDateOverride);
       const isFanoutHistoricalDailySlice = isHistoricalDailySliceRequest && options?.businessDayFanout === true;
       const isArBackfillWindow = moduleType === 'ar' && syncWindow?.mode === 'backfill';
-      const baseRequestTimeoutMs = moduleType === 'inventory' || isArBackfillWindow ? 120000 : 30000;
+      const baseRequestTimeoutMs = moduleType === 'inventory' || isArBackfillWindow || isSlCoitemsProgram ? 120000 : 30000;
       const requestTimeoutMs = Math.max(
         baseRequestTimeoutMs,
         Math.floor(baseRequestTimeoutMs * adaptiveTimeoutScale)
