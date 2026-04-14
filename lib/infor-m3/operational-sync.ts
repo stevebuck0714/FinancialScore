@@ -1623,6 +1623,8 @@ const SL_COITEMS_SAFE_PROPERTIES = [
   'Item',
   'Stat',
   'Price',
+  'Cost',
+  'MatlCost',
   'QtyOrdered',
   'QtyShipped',
   'QtyInvoiced',
