@@ -1810,6 +1810,25 @@ function classifyModule(moduleName: string): 'cash' | 'ar' | 'ap' | 'customer' |
   return 'other';
 }
 
+function classifyModuleFromProgramId(
+  programIdRaw: string | null | undefined
+): ReturnType<typeof classifyModule> | null {
+  const programId = String(programIdRaw || '').trim().toUpperCase();
+  if (!programId) return null;
+
+  if (programId === 'SLGLTRANS' || GL_ACCOUNT_MASTER_PROGRAM_IDS.has(programId)) return 'gl';
+  if (programId === 'SLARTRANS' || programId === 'SLCUSTDRFTS') return 'ar';
+  if (programId === 'SLAPTRX' || programId === 'SLVCHHDRS' || programId === 'SLAPPMTS' || programId === 'SLAPTRXP')
+    return 'ap';
+  if (programId === 'SLCUSTOMERS') return 'customer';
+  if (programId === 'SLBANKHDRS' || programId === 'SLBANKHDR') return 'cash';
+  if (programId === 'SLITEMLOCS' || programId === 'SLITEMS' || programId === 'SLITEMWHSES') return 'inventory';
+  if (programId === 'SLCOITEMS' || programId === 'SLCOS' || programId === 'SLCOHDRS' || programId === 'SLINVHDRS')
+    return 'sales';
+
+  return null;
+}
+
 function resolveRawCompletenessSourceKey(
   moduleType: 'cash' | 'ar' | 'ap' | 'customer' | 'sales' | 'inventory' | 'gl' | 'other'
 ): 'cash' | 'inventory' | 'sales' | 'ar' | 'ap' | null {
@@ -2093,8 +2112,34 @@ function shouldIncludePostedGlRecord(record: Record<string, unknown>): boolean {
   return true;
 }
 
-const SALES_QTY_KEYS = ['quantity', 'qty', 'QTY', 'quantitySold', 'QtyPackages', 'QtyShipped', 'qtyShipped', 'InvSeq'];
-const SALES_REVENUE_KEYS = ['revenue', 'amount', 'salesAmount', 'NETA', 'Amount', 'Price', 'ExtPrice', 'ExtAmt', 'LineAmount'];
+const SALES_QTY_KEYS = [
+  'quantity',
+  'qty',
+  'QTY',
+  'quantitySold',
+  'QtyPackages',
+  'QtyOrdered',
+  'qtyOrdered',
+  'QtyShipped',
+  'qtyShipped',
+  'QtyInvoiced',
+  'qtyInvoiced',
+  'InvSeq',
+];
+// NOTE: Price is a unit price in CSI order-line feeds; do not treat it as extended revenue.
+const SALES_REVENUE_KEYS = [
+  'revenue',
+  'amount',
+  'salesAmount',
+  'NETA',
+  'Amount',
+  'ExtPrice',
+  'ExtAmt',
+  'LineAmount',
+  'invoicedAmount',
+  'InvoicedAmount',
+  'InvoiceAmount',
+];
 const SALES_UNIT_PRICE_KEYS = ['unitPrice', 'price', 'Price', 'salesPrice', 'Upri'];
 const SALES_EXT_COST_KEYS = ['ExtCost', 'extendedCost', 'costAmount', 'LineCost', 'CostAmount', 'ExtMatlCost'];
 const SALES_UNIT_COST_KEYS = ['UnitCost', 'unitCost', 'MatlCost', 'Cost'];
@@ -3039,7 +3084,14 @@ async function saveARAging(
     return 1;
   }
 
-  const fromBuckets = records.reduce(
+  const fromBuckets = records.reduce<{
+    totalAR: number;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+  }>(
     (acc, record) => {
       acc.totalAR += pickNumber(record, ['totalAR', 'total', 'TOTAR']);
       acc.current += pickNumber(record, ['current', 'CURAR', 'currentAmount']);
@@ -4990,12 +5042,15 @@ async function upsertArContractSupportTables(
     if (!acc.customerId && row.customerId) acc.customerId = row.customerId;
   }
 
-  for (const [key, cash] of cashByCustomer.entries()) {
+  for (const [key, cash] of Array.from(cashByCustomer.entries())) {
     if (!contractByCustomer.has(key)) {
       contractByCustomer.set(key, {
         customerId: cash.customerId,
         customerName: cash.customerName,
+        contractValue: 0,
         invoicedToDate: 0,
+        remainingValue: 0,
+        accruedRevenueUnbilled: 0,
         arOutstanding: 0,
       });
     }
@@ -6515,7 +6570,7 @@ async function saveProductSales(
 
   for (const record of records) {
     const itemCode = canonicalItemCode(record);
-    const itemName = pickString(record, ['itemName', 'name', 'ITDS', 'Description']) || 'Unknown Item';
+    const itemName = pickString(record, ['itemName', 'name', 'ITDS', 'Description', 'Item']) || 'Unknown Item';
     const key = itemCode || itemName;
     if (!key) continue;
     const metrics = deriveSalesMetrics(record);
@@ -7532,9 +7587,9 @@ export async function syncInforM3OperationalData(
     for (let reqIndex = requestStartIndex; reqIndex < requests.length; reqIndex += 1) {
       const req = requests[reqIndex];
       const startedAt = Date.now();
-      const moduleType = classifyModule(row.module);
-      const syncType = `operational_${moduleType}_${req.transaction}`;
       const programId = resolveCsiProgramId(row, req.endpointPath);
+      const moduleType = classifyModuleFromProgramId(programId) ?? classifyModule(row.module);
+      const syncType = `operational_${moduleType}_${req.transaction}`;
       const isSlCoitemsProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
       const isSlArtransProgram = moduleType === 'ar' && programId === 'SLARTRANS';
       const isGlAcctPeriodBalancesProgram = moduleType === 'gl' && programId === 'GLACCTPERIODBALANCES';
@@ -9011,7 +9066,7 @@ export async function transformInforM3RawRun(options: {
         const module = String(row.module || '').trim();
         const miProgram = String(row.miProgram || '').trim().toUpperCase();
         const transaction = String(row.transaction || 'CSI_LOAD').trim() || 'CSI_LOAD';
-        const moduleType = classifyModule(module);
+        const moduleType = classifyModuleFromProgramId(miProgram) ?? classifyModule(module);
         const key = `${moduleType}||${miProgram}||${transaction}`;
         const existing = rawByModuleProgram.get(key);
         if (existing) {
