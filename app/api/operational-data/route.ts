@@ -76,6 +76,11 @@ const BUSINESS_TZ_OFFSET_HOURS = -4;
 const BUSINESS_TZ_OFFSET_MS = BUSINESS_TZ_OFFSET_HOURS * 60 * 60 * 1000;
 const BUSINESS_TZ_START_HOUR_UTC = -BUSINESS_TZ_OFFSET_HOURS;
 
+function isWeekendUtc(date: Date): boolean {
+  const dow = date.getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
 function startOfUtcDay(date: Date): Date {
   // Normalize to business-day boundaries in UTC-4 (fixed offset).
   const shifted = new Date(date.getTime() + BUSINESS_TZ_OFFSET_MS);
@@ -902,6 +907,7 @@ function buildDailyCashSeriesFromMovements(
     cursor.getTime() <= end.getTime();
     cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
   ) {
+    if (isWeekendUtc(cursor)) continue;
     const dayKey = dateKeyUtc(cursor);
     const balances = balancesByDate.get(dayKey);
     if (!balances) continue;
@@ -3370,7 +3376,9 @@ export async function GET(request: NextRequest) {
               const cursor = startOfUtcDay(new Date(startDate));
               const rangeEnd = startOfUtcDay(new Date(endDate));
               while (cursor.getTime() <= rangeEnd.getTime()) {
-                rangeKeys.push(new Date(cursor).toISOString());
+                if (!isWeekendUtc(cursor)) {
+                  rangeKeys.push(new Date(cursor).toISOString());
+                }
                 cursor.setUTCDate(cursor.getUTCDate() + 1);
               }
               if (rangeKeys.length) expandedSnapshotKeysAsc = rangeKeys;
@@ -4442,6 +4450,7 @@ export async function GET(request: NextRequest) {
           if (trendValueByDay.has(iso)) {
             carryAssetValue = Number(trendValueByDay.get(iso) || 0);
           }
+          if (isWeekendUtc(cursor)) continue;
           inventoryTrendDaily.push({
             snapshotDate: new Date(cursor),
             assetValue: carryAssetValue,
