@@ -64,14 +64,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: true, ran: false, message: 'No companies with pending transforms found.' });
     }
 
-    const hardStopMs = 270_000;
+    const maxDaysPerRun = 3;
     let totalProcessed = 0;
     let totalFailed = 0;
     let tickCount = 0;
     const allResults: Array<Record<string, unknown>> = [];
 
     for (const companyId of companies) {
-      while (Date.now() - startedAt < hardStopMs) {
+      while (tickCount < maxDaysPerRun) {
         tickCount += 1;
         try {
           const result = await processPendingInforRawTransforms({
