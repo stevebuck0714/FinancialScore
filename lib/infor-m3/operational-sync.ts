@@ -1364,7 +1364,7 @@ type SlLedgersKeyset = {
   site: string;
   transNum: string;
 };
-const AR_EOD_COLLECTIBLE_LOOKBACK_DAYS = 180;
+const AR_EOD_COLLECTIBLE_LOOKBACK_DAYS = 1095;
 
 function encodeSlInvHdrsKeysetBookmark(value: SlInvHdrsKeyset): string {
   const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
@@ -5380,30 +5380,39 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
     }
 
     const typeToken = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
-    if (typeToken === 'V') {
-      const invAmt = Math.abs(pickNumber(record, ['InvAmt', 'invoiceAmount', 'Amount', 'amount', 'ACAM', 'CUAM']));
-      if (invAmt > 0) {
-        const existingBooked = bookedByVoucher.get(voucherNo);
-        const nextBookedDate = billDate || recordDate || existingBooked?.bookedDate || null;
-        if (!existingBooked) {
-          bookedByVoucher.set(voucherNo, { bookedAmount: invAmt, bookedDate: nextBookedDate });
-        } else {
-          bookedByVoucher.set(voucherNo, {
-            bookedAmount: Math.max(existingBooked.bookedAmount, invAmt),
-            bookedDate:
-              existingBooked.bookedDate && nextBookedDate
-                ? (existingBooked.bookedDate < nextBookedDate ? existingBooked.bookedDate : nextBookedDate)
-                : existingBooked.bookedDate || nextBookedDate,
-          });
-        }
+    const invAmtRaw = Math.abs(pickNumber(record, ['InvAmt', 'invoiceAmount', 'Amount', 'amount', 'ACAM', 'CUAM']));
+    const paidAmtRaw = Math.abs(pickNumber(record, ['AmtPaid', 'paidAmount', 'UbPayment', 'PYAM']));
+    const isVoucherRow = typeToken === 'V';
+    const isTypedPaymentRow = typeToken === 'P' || typeToken === 'A';
+    const isUntypedPaymentRow =
+      !isVoucherRow &&
+      !isTypedPaymentRow &&
+      paidAmtRaw > 0.0001 &&
+      invAmtRaw <= 0.0001;
+
+    if (isVoucherRow && invAmtRaw > 0) {
+      const invAmt = invAmtRaw;
+      const existingBooked = bookedByVoucher.get(voucherNo);
+      const nextBookedDate = billDate || recordDate || existingBooked?.bookedDate || null;
+      if (!existingBooked) {
+        bookedByVoucher.set(voucherNo, { bookedAmount: invAmt, bookedDate: nextBookedDate });
+      } else {
+        bookedByVoucher.set(voucherNo, {
+          bookedAmount: Math.max(existingBooked.bookedAmount, invAmt),
+          bookedDate:
+            existingBooked.bookedDate && nextBookedDate
+              ? (existingBooked.bookedDate < nextBookedDate ? existingBooked.bookedDate : nextBookedDate)
+              : existingBooked.bookedDate || nextBookedDate,
+        });
       }
     }
 
-    if (typeToken === 'P' || typeToken === 'A') {
-      const paidAmt = Math.abs(pickNumber(record, ['AmtPaid', 'paidAmount', 'UbPayment', 'DerAmtBal', 'ACAM', 'PYAM']));
+    if (isTypedPaymentRow || isUntypedPaymentRow) {
+      const paidAmt = paidAmtRaw > 0.0001 ? paidAmtRaw : Math.abs(pickNumber(record, ['DerAmtBal', 'ACAM']));
       if (paidAmt > 0) {
         const paidDate = parseMaybeDate(pickString(record, ['DistDate', 'RecordDate', 'paymentDate', 'date', 'PYDT', 'RGDT']));
-        const dedupeKey = `${voucherNo}||${typeToken}||${paidDate ? paidDate.toISOString().slice(0, 10) : ''}||${paidAmt.toFixed(2)}||${
+        const typeForDedupe = isUntypedPaymentRow ? 'U' : typeToken;
+        const dedupeKey = `${voucherNo}||${typeForDedupe}||${paidDate ? paidDate.toISOString().slice(0, 10) : ''}||${paidAmt.toFixed(2)}||${
           invoiceReference || ''
         }`;
         if (!paymentDedupe.has(dedupeKey)) {
@@ -6496,43 +6505,92 @@ async function saveCustomerSales(
   companyId: string,
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly',
-  records: Record<string, unknown>[]
+  todayRecords: Record<string, unknown>[],
+  orderCustomerLookup: Map<string, { customerId: string | null; customerName: string; orderDate: Date | null }>
 ): Promise<number> {
   await prisma.customerSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
+
+  const lineKey = (r: Record<string, unknown>) => {
+    const coNum = normalizeOrderJoinKey(pickString(r, ['CoNum', 'CONUM', 'coNum']));
+    const coLine = String(pickString(r, ['CoLine', 'COLINE', 'coLine']) || '0').trim();
+    const coRelease = String(pickString(r, ['CoRelease', 'CORELEASE', 'coRelease']) || '0').trim();
+    return `${coNum}|${coLine}|${coRelease}`;
+  };
+
+  const prevBusinessDate = new Date(snapshotDate);
+  let attempts = 0;
+  do {
+    prevBusinessDate.setUTCDate(prevBusinessDate.getUTCDate() - 1);
+    attempts++;
+  } while ((prevBusinessDate.getUTCDay() === 0 || prevBusinessDate.getUTCDay() === 6) && attempts < 5);
+
+  const prevRows = await (prisma as any).inforRawRecord.findMany({
+    where: {
+      companyId,
+      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+      businessDate: startOfUtcDay(prevBusinessDate),
+      miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+    },
+    select: { payload: true },
+    take: 300000,
+  });
+
+  const prevByLine = new Map<string, { qtyInvoiced: number; qtyShipped: number }>();
+  for (const row of prevRows as any[]) {
+    const payload = asRawRecordPayload(row.payload);
+    if (!payload) continue;
+    const key = lineKey(payload);
+    prevByLine.set(key, {
+      qtyInvoiced: pickNumber(payload, ['QtyInvoiced', 'qtyInvoiced']),
+      qtyShipped: pickNumber(payload, ['QtyShipped', 'qtyShipped']),
+    });
+  }
 
   const customerAgg = new Map<string, {
     customerId: string | null;
     customerName: string;
     revenue: number;
+    cogs: number;
     invoiceCount: number;
   }>();
 
-  for (const record of records) {
-    const customerName =
-      pickCustomerDisplayName(record) ||
-      pickString(record, ['BillToName', 'CustName', 'DerCustName', ...CUSTOMER_NAME_KEYS]) ||
-      'Unknown Customer';
-    const customerId =
-      pickString(record, ['CustNum', 'custNum', 'CoCustNum', 'CustNo', ...CUSTOMER_ID_KEYS]) ||
-      parseCustomerIdFromComposite(pickString(record, ['DerCustNoName', 'customerComposite']));
-    const key = `${customerId || ''}|${customerName.toLowerCase()}`;
-    const metrics = deriveSalesMetrics(record);
-    const existing = customerAgg.get(key);
+  for (const record of todayRecords) {
+    const key = lineKey(record);
+    const todayInvoiced = pickNumber(record, ['QtyInvoiced', 'qtyInvoiced']);
+    const prev = prevByLine.get(key);
+    const prevInvoiced = prev?.qtyInvoiced ?? 0;
+    const delta = todayInvoiced - prevInvoiced;
+    if (delta <= 0) continue;
+
+    const price = pickNumber(record, SALES_UNIT_PRICE_KEYS);
+    const cost = pickNumber(record, ['Cost', 'MatlCost', ...SALES_UNIT_COST_KEYS]);
+    const revenue = delta * price;
+    const lineCogs = delta * cost;
+
+    const coNum = normalizeOrderJoinKey(pickString(record, ['CoNum', 'CONUM', 'coNum']));
+    const custInfo = orderCustomerLookup.get(coNum);
+    const customerName = custInfo?.customerName || 'Unknown Customer';
+    const customerId = custInfo?.customerId || null;
+    const aggKey = `${customerId || ''}|${customerName.toLowerCase()}`;
+
+    const existing = customerAgg.get(aggKey);
     if (existing) {
-      existing.revenue += metrics.revenue;
-      existing.invoiceCount += metrics.revenue !== 0 ? 1 : 0;
+      existing.revenue += revenue;
+      existing.cogs += lineCogs;
+      existing.invoiceCount += 1;
     } else {
-      customerAgg.set(key, {
-        customerId: customerId || null,
+      customerAgg.set(aggKey, {
+        customerId,
         customerName,
-        revenue: metrics.revenue,
-        invoiceCount: metrics.revenue !== 0 ? 1 : 0,
+        revenue,
+        cogs: lineCogs,
+        invoiceCount: 1,
       });
     }
   }
 
   const rows = Array.from(customerAgg.values())
-    .filter((row) => row.customerName)
+    .filter((row) => row.customerName && row.revenue > 0)
     .map((row) => ({
       companyId,
       snapshotDate,
@@ -6540,6 +6598,9 @@ async function saveCustomerSales(
       customerId: row.customerId,
       customerName: row.customerName,
       revenue: row.revenue,
+      cogs: row.cogs,
+      grossMargin: row.revenue - row.cogs,
+      grossMarginPct: row.revenue > 0 ? ((row.revenue - row.cogs) / row.revenue) * 100 : null,
       invoiceCount: row.invoiceCount,
       avgInvoiceSize: row.invoiceCount > 0 ? row.revenue / row.invoiceCount : null,
     }));
@@ -6573,6 +6634,42 @@ async function saveProductSales(
   };
   await prisma.productSalesSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
 
+  const lineKey = (r: Record<string, unknown>) => {
+    const coNum = normalizeOrderJoinKey(pickString(r, ['CoNum', 'CONUM', 'coNum']));
+    const coLine = String(pickString(r, ['CoLine', 'COLINE', 'coLine']) || '0').trim();
+    const coRelease = String(pickString(r, ['CoRelease', 'CORELEASE', 'coRelease']) || '0').trim();
+    return `${coNum}|${coLine}|${coRelease}`;
+  };
+
+  const prevBusinessDate = new Date(snapshotDate);
+  let attempts = 0;
+  do {
+    prevBusinessDate.setUTCDate(prevBusinessDate.getUTCDate() - 1);
+    attempts++;
+  } while ((prevBusinessDate.getUTCDay() === 0 || prevBusinessDate.getUTCDay() === 6) && attempts < 5);
+
+  const prevRows = await (prisma as any).inforRawRecord.findMany({
+    where: {
+      companyId,
+      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+      businessDate: startOfUtcDay(prevBusinessDate),
+      miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+    },
+    select: { payload: true },
+    take: 300000,
+  });
+
+  const prevByLine = new Map<string, { qtyInvoiced: number; qtyShipped: number }>();
+  for (const row of prevRows as any[]) {
+    const payload = asRawRecordPayload(row.payload);
+    if (!payload) continue;
+    const key = lineKey(payload);
+    prevByLine.set(key, {
+      qtyInvoiced: pickNumber(payload, ['QtyInvoiced', 'qtyInvoiced']),
+      qtyShipped: pickNumber(payload, ['QtyShipped', 'qtyShipped']),
+    });
+  }
+
   const itemAgg = new Map<string, {
     itemId: string | null;
     itemName: string;
@@ -6583,30 +6680,42 @@ async function saveProductSales(
   }>();
 
   for (const record of records) {
+    const key = lineKey(record);
+    const todayInvoiced = pickNumber(record, ['QtyInvoiced', 'qtyInvoiced']);
+    const prev = prevByLine.get(key);
+    const prevInvoiced = prev?.qtyInvoiced ?? 0;
+    const delta = todayInvoiced - prevInvoiced;
+    if (delta <= 0) continue;
+
+    const price = pickNumber(record, SALES_UNIT_PRICE_KEYS);
+    const cost = pickNumber(record, ['Cost', 'MatlCost', ...SALES_UNIT_COST_KEYS]);
+    const revenue = delta * price;
+    const lineCogs = delta * cost;
+
     const itemCode = canonicalItemCode(record);
     const itemName = pickString(record, ['itemName', 'name', 'ITDS', 'Description', 'Item']) || 'Unknown Item';
-    const key = itemCode || itemName;
-    if (!key) continue;
-    const metrics = deriveSalesMetrics(record);
-    const existing = itemAgg.get(key);
+    const aggKey = itemCode || itemName;
+    if (!aggKey) continue;
+
+    const existing = itemAgg.get(aggKey);
     if (existing) {
-      existing.quantitySold += metrics.quantity;
-      existing.revenue += metrics.revenue;
-      existing.cogs += metrics.cogs;
+      existing.quantitySold += delta;
+      existing.revenue += revenue;
+      existing.cogs += lineCogs;
     } else {
-      itemAgg.set(key, {
+      itemAgg.set(aggKey, {
         itemId: itemCode,
         itemName,
         sku: itemCode,
-        quantitySold: metrics.quantity,
-        revenue: metrics.revenue,
-        cogs: metrics.cogs,
+        quantitySold: delta,
+        revenue,
+        cogs: lineCogs,
       });
     }
   }
 
   const rows = Array.from(itemAgg.values())
-    .filter((item) => item.itemName)
+    .filter((item) => item.itemName && item.revenue > 0)
     .map((item) => {
       const grossMargin = item.revenue - item.cogs;
       return {
@@ -8432,7 +8541,10 @@ export async function syncInforM3OperationalData(
                     })
                   );
                 }
-                const salesRowsCreated = await saveProductSales(companyId, snapshotDate, frequency, records);
+                const isSlcoitemsProgram = String(salesProgramId || '').toUpperCase() === 'SLCOITEMS';
+                const salesRowsCreated = isSlcoitemsProgram
+                  ? await saveProductSales(companyId, snapshotDate, frequency, records)
+                  : 0;
                 if (debugSync) {
                   console.log(
                     JSON.stringify({
@@ -8467,6 +8579,7 @@ export async function syncInforM3OperationalData(
                       })
                     );
                   }
+                  await saveCustomerSales(companyId, snapshotDate, frequency, records, orderCustomerLookup);
                 }
                 const contractPersistResult =
                   salesProgram === 'SLCOITEMS'
@@ -9216,11 +9329,6 @@ export async function transformInforM3RawRun(options: {
       }
 
       const salesProgramItems = Array.from(rawByModuleProgram.values()).filter((item) => item.moduleType === 'sales');
-      const salesRecords = salesProgramItems.flatMap((item) => item.records);
-      if (salesRecords.length > 0) {
-        recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, salesRecords);
-        recordsCreated += await saveCustomerSales(companyId, snapshotDate, frequency, salesRecords);
-      }
       const salesInvoiceHeaderRecords = salesProgramItems
         .filter((item) => String(item.miProgram || '').toUpperCase() === 'SLINVHDRS')
         .flatMap((item) => item.records);
@@ -9277,6 +9385,8 @@ export async function transformInforM3RawRun(options: {
             orderDate: existing.orderDate || orderDate || null,
           });
         }
+        recordsCreated += await saveCustomerSales(companyId, snapshotDate, frequency, slcoitemsRecords, orderCustomerLookup);
+        recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, slcoitemsRecords);
         const contractPersistResult = await saveCustomerOrderLines(companyId, snapshotDate, frequency, slcoitemsRecords, {
           miProgram: 'SLCOITEMS',
           transaction: 'RAW_REPLAY',

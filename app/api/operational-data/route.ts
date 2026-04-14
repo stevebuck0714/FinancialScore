@@ -1117,75 +1117,149 @@ export async function GET(request: NextRequest) {
     let data;
 
     switch (type) {
-      case 'customers':
+      case 'customers': {
         const isInforCompany =
           normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
         const customerFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
         const orderLineFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isInforCompany && frequency !== 'daily' ? 'daily' : frequency;
-        data = await prisma.customerSalesSnapshot.findMany({
-          where: {
-            companyId,
-            frequency: customerFrequencyForQuery,
-            snapshotDate: { gte: startDate, lte: endDate },
-          },
-          orderBy: { snapshotDate: 'asc' },
-          take: 50000,
-        });
-        const customerDataBasis: 'orderline_delta' | 'customer_sales_snapshot' = data.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
-        if (data.length === 0) {
-          data = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
-        }
 
-        const mtdStart = startOfBusinessMonth(endDate);
-        const qtdStart = startOfBusinessQuarter(endDate);
-        const ytdStart = startOfBusinessYear(endDate);
-        const bookingsByCustomer = new Map<
-          string,
-          { customerId: string | null; customerName: string; mtd: number; qtd: number; ytd: number }
-        >();
-        const bookingsByMonth = new Map<string, number>();
-        for (const row of data as any[]) {
-          const snapshot = new Date(row.snapshotDate);
-          if (Number.isNaN(snapshot.getTime())) continue;
-          const rev = Math.max(0, Number(row.revenue || 0));
-          if (rev <= 0) continue;
-          const customerId = row.customerId ? String(row.customerId) : null;
-          const customerName = String(row.customerName || 'Unknown Customer');
-          const key = `${customerId || ''}|${customerName.toLowerCase()}`;
-          if (!bookingsByCustomer.has(key)) {
-            bookingsByCustomer.set(key, { customerId, customerName, mtd: 0, qtd: 0, ytd: 0 });
+        // --- Track 1: Sales snapshots + bookings aggregation ---
+        const fetchSalesAndBookings = async () => {
+          let salesData = await prisma.customerSalesSnapshot.findMany({
+            where: {
+              companyId,
+              frequency: customerFrequencyForQuery,
+              snapshotDate: { gte: startDate, lte: endDate },
+            },
+            orderBy: { snapshotDate: 'asc' },
+            take: 50000,
+          });
+          const basis: 'orderline_delta' | 'customer_sales_snapshot' = salesData.length > 0 ? 'customer_sales_snapshot' : 'orderline_delta';
+          if (salesData.length === 0) {
+            salesData = await deriveCustomerSalesFromOrderLineDeltas(companyId, orderLineFrequencyForQuery, startDate, endDate);
           }
-          const acc = bookingsByCustomer.get(key)!;
-          if (snapshot >= mtdStart && snapshot <= endDate) acc.mtd += rev;
-          if (snapshot >= qtdStart && snapshot <= endDate) acc.qtd += rev;
-          if (snapshot >= ytdStart && snapshot <= endDate) acc.ytd += rev;
-          const monthKey = businessMonthKey(snapshot);
-          bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + rev);
-        }
 
-        const bookingsCustomers = Array.from(bookingsByCustomer.values())
-          .filter((row) => Number(row.mtd || 0) > 0 || Number(row.qtd || 0) > 0 || Number(row.ytd || 0) > 0)
-          .sort((a, b) => b.ytd - a.ytd);
-        const bookingsTop5 = bookingsCustomers.slice(0, 5).reduce(
-          (acc, row) => {
-            acc.mtd += row.mtd;
-            acc.qtd += row.qtd;
-            acc.ytd += row.ytd;
+          const mtdStart = startOfBusinessMonth(endDate);
+          const qtdStart = startOfBusinessQuarter(endDate);
+          const ytdStart = startOfBusinessYear(endDate);
+          const bookingsByCustomer = new Map<
+            string,
+            { customerId: string | null; customerName: string; mtd: number; qtd: number; ytd: number }
+          >();
+          const bookingsByMonth = new Map<string, number>();
+          for (const row of salesData as any[]) {
+            const snapshot = new Date(row.snapshotDate);
+            if (Number.isNaN(snapshot.getTime())) continue;
+            const rev = Math.max(0, Number(row.revenue || 0));
+            if (rev <= 0) continue;
+            const customerId = row.customerId ? String(row.customerId) : null;
+            const customerName = String(row.customerName || 'Unknown Customer');
+            const key = `${customerId || ''}|${customerName.toLowerCase()}`;
+            if (!bookingsByCustomer.has(key)) {
+              bookingsByCustomer.set(key, { customerId, customerName, mtd: 0, qtd: 0, ytd: 0 });
+            }
+            const acc = bookingsByCustomer.get(key)!;
+            if (snapshot >= mtdStart && snapshot <= endDate) acc.mtd += rev;
+            if (snapshot >= qtdStart && snapshot <= endDate) acc.qtd += rev;
+            if (snapshot >= ytdStart && snapshot <= endDate) acc.ytd += rev;
+            const monthKey = businessMonthKey(snapshot);
+            bookingsByMonth.set(monthKey, Number(bookingsByMonth.get(monthKey) || 0) + rev);
+          }
+
+          const bookingsCustomers = Array.from(bookingsByCustomer.values())
+            .filter((row) => Number(row.mtd || 0) > 0 || Number(row.qtd || 0) > 0 || Number(row.ytd || 0) > 0)
+            .sort((a, b) => b.ytd - a.ytd);
+          const bookingsTop5 = bookingsCustomers.slice(0, 5).reduce(
+            (acc, row) => {
+              acc.mtd += row.mtd;
+              acc.qtd += row.qtd;
+              acc.ytd += row.ytd;
+              return acc;
+            },
+            { mtd: 0, qtd: 0, ytd: 0 }
+          );
+          const bookingsTotals = bookingsCustomers.reduce(
+            (acc, row) => {
+              acc.mtd += row.mtd;
+              acc.qtd += row.qtd;
+              acc.ytd += row.ytd;
+              return acc;
+            },
+            { mtd: 0, qtd: 0, ytd: 0 }
+          );
+
+          const revenueByMonth = new Map<string, number>();
+          for (const row of salesData as any[]) {
+            const snapshot = new Date(row.snapshotDate);
+            if (Number.isNaN(snapshot.getTime())) continue;
+            const monthKey = businessMonthKey(snapshot);
+            revenueByMonth.set(monthKey, Number(revenueByMonth.get(monthKey) || 0) + Number(row.revenue || 0));
+          }
+          const monthKeys = Array.from(new Set([...Array.from(bookingsByMonth.keys()), ...Array.from(revenueByMonth.keys())])).sort();
+          const bookingsMonthly = monthKeys.map((period, idx) => {
+            const bookings = Number(bookingsByMonth.get(period) || 0);
+            const prevBookings = idx > 0 ? Number(bookingsByMonth.get(monthKeys[idx - 1]) || 0) : 0;
+            const growthPct = prevBookings > 0 ? ((bookings - prevBookings) / prevBookings) * 100 : null;
+            return {
+              period,
+              periodStart: monthStartFromBusinessMonthKey(period).toISOString(),
+              bookings,
+              growthPct,
+            };
+          });
+          const bookingsVsRevenueBridge = monthKeys.map((period) => ({
+            period,
+            periodStart: monthStartFromBusinessMonthKey(period).toISOString(),
+            bookings: Number(bookingsByMonth.get(period) || 0),
+            revenue: Number(revenueByMonth.get(period) || 0),
+            delta: Number(bookingsByMonth.get(period) || 0) - Number(revenueByMonth.get(period) || 0),
+          }));
+          let rollingBacklog = 0;
+          const backlogSeries = bookingsVsRevenueBridge.map((row) => {
+            rollingBacklog = rollingBacklog + Number(row.bookings || 0) - Number(row.revenue || 0);
+            return {
+              period: row.period,
+              periodStart: row.periodStart,
+              backlog: rollingBacklog,
+            };
+          });
+
+          const customerTotals = (salesData as any[]).reduce((acc, record: any) => {
+            const customerId = String(record?.customerId || '').trim();
+            const customerName = String(record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
+            const key = customerId ? `id:${customerId}` : `name:${customerName.toLowerCase().replace(/\s+/g, ' ')}`;
+            if (!acc[key]) {
+              acc[key] = {
+                name: customerName,
+                totalRevenue: 0,
+                totalInvoices: 0,
+              };
+            }
+            acc[key].totalRevenue += Number(record?.revenue || 0);
+            acc[key].totalInvoices += Number(record?.invoiceCount || 0);
             return acc;
-          },
-          { mtd: 0, qtd: 0, ytd: 0 }
-        );
-        const bookingsTotals = bookingsCustomers.reduce(
-          (acc, row) => {
-            acc.mtd += row.mtd;
-            acc.qtd += row.qtd;
-            acc.ytd += row.ytd;
-            return acc;
-          },
-          { mtd: 0, qtd: 0, ytd: 0 }
-        );
+          }, {} as Record<string, { name: string; totalRevenue: number; totalInvoices: number }>);
+          const topCustomersSummary = Object.values(customerTotals)
+            .sort((a, b) => b.totalRevenue - a.totalRevenue)
+            .slice(0, 10);
+
+          return {
+            salesData,
+            basis,
+            bookingsCustomers,
+            bookingsTop5,
+            bookingsTotals,
+            bookingsMonthly,
+            bookingsVsRevenueBridge,
+            backlogSeries,
+            topCustomersSummary,
+          };
+        };
+
+        // --- Track 2: WIP from order line snapshots ---
+        const fetchWip = async () => {
         let wipAsOf: string | null = null;
         let wipTopCustomers: Array<{
           customerId: string | null;
@@ -1375,12 +1449,12 @@ export async function GET(request: NextRequest) {
                   companyId,
                   platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
                   miProgram: { in: ['SLCOITEMS', 'SLCoitems'] },
+                  businessDate: latestOrderSnapshotDate,
                 },
                 select: {
                   payload: true,
                 },
-                orderBy: [{ createdAt: 'desc' }],
-                take: 100000,
+                take: 200000,
               });
               for (const row of rawRows as any[]) {
                 const payload =
@@ -1584,62 +1658,11 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        const revenueByMonth = new Map<string, number>();
-        for (const row of data as any[]) {
-          const snapshot = new Date(row.snapshotDate);
-          if (Number.isNaN(snapshot.getTime())) continue;
-          const monthKey = businessMonthKey(snapshot);
-          revenueByMonth.set(monthKey, Number(revenueByMonth.get(monthKey) || 0) + Number(row.revenue || 0));
-        }
-        const monthKeys = Array.from(new Set([...Array.from(bookingsByMonth.keys()), ...Array.from(revenueByMonth.keys())])).sort();
-        const bookingsMonthly = monthKeys.map((period, idx) => {
-          const bookings = Number(bookingsByMonth.get(period) || 0);
-          const prevBookings = idx > 0 ? Number(bookingsByMonth.get(monthKeys[idx - 1]) || 0) : 0;
-          const growthPct = prevBookings > 0 ? ((bookings - prevBookings) / prevBookings) * 100 : null;
-          return {
-            period,
-            periodStart: monthStartFromBusinessMonthKey(period).toISOString(),
-            bookings,
-            growthPct,
-          };
-        });
-        const bookingsVsRevenueBridge = monthKeys.map((period) => ({
-          period,
-          periodStart: monthStartFromBusinessMonthKey(period).toISOString(),
-          bookings: Number(bookingsByMonth.get(period) || 0),
-          revenue: Number(revenueByMonth.get(period) || 0),
-          delta: Number(bookingsByMonth.get(period) || 0) - Number(revenueByMonth.get(period) || 0),
-        }));
-        let rollingBacklog = 0;
-        const backlogSeries = bookingsVsRevenueBridge.map((row) => {
-          rollingBacklog = rollingBacklog + Number(row.bookings || 0) - Number(row.revenue || 0);
-          return {
-            period: row.period,
-            periodStart: row.periodStart,
-            backlog: rollingBacklog,
-          };
-        });
+          return { wipAsOf, wipTopCustomers, wipTotals };
+        };
 
-        // Calculate top customers from the same in-memory dataset used for records.
-        // This keeps summary metrics consistent with fallback/derived customer rows.
-        const customerTotals = (data as any[]).reduce((acc, record: any) => {
-          const customerId = String(record?.customerId || '').trim();
-          const customerName = String(record?.customerName || 'Unknown Customer').trim() || 'Unknown Customer';
-          const key = customerId ? `id:${customerId}` : `name:${customerName.toLowerCase().replace(/\s+/g, ' ')}`;
-          if (!acc[key]) {
-            acc[key] = {
-              name: customerName,
-              totalRevenue: 0,
-              totalInvoices: 0,
-            };
-          }
-          acc[key].totalRevenue += Number(record?.revenue || 0);
-          acc[key].totalInvoices += Number(record?.invoiceCount || 0);
-          return acc;
-        }, {} as Record<string, { name: string; totalRevenue: number; totalInvoices: number }>);
-        const topCustomersSummary = Object.values(customerTotals)
-          .sort((a, b) => b.totalRevenue - a.totalRevenue)
-          .slice(0, 10);
+        // --- Track 3: AR overview (invoice details + open invoices) ---
+        const fetchArOverview = async () => {
         let customerOverview = {
           asOf: endDate.toISOString(),
           activeCustomers365: 0,
@@ -1863,6 +1886,9 @@ export async function GET(request: NextRequest) {
           }
         }
 
+          return { customerOverview };
+        };
+
         if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
@@ -1877,28 +1903,38 @@ export async function GET(request: NextRequest) {
           );
         }
 
+        // Run all three tracks in parallel
+        const [salesResult, wipResult, arResult] = await Promise.all([
+          fetchSalesAndBookings(),
+          fetchWip(),
+          fetchArOverview(),
+        ]);
+
+        data = salesResult.salesData;
+
         return NextResponse.json({
           records: data,
           summary: {
-            topCustomers: topCustomersSummary,
-            customerDataBasis,
+            topCustomers: salesResult.topCustomersSummary,
+            customerDataBasis: salesResult.basis,
             revenueLabel: 'Revenue',
-            customerOverview,
+            customerOverview: arResult.customerOverview,
             bookings: {
-              totals: bookingsTotals,
-              top5: bookingsTop5,
-              topCustomers: bookingsCustomers.slice(0, 10),
-              monthly: bookingsMonthly,
-              bridge: bookingsVsRevenueBridge,
-              backlogSeries,
+              totals: salesResult.bookingsTotals,
+              top5: salesResult.bookingsTop5,
+              topCustomers: salesResult.bookingsCustomers.slice(0, 10),
+              monthly: salesResult.bookingsMonthly,
+              bridge: salesResult.bookingsVsRevenueBridge,
+              backlogSeries: salesResult.backlogSeries,
             },
             wip: {
-              asOf: wipAsOf,
-              totals: wipTotals,
-              topCustomers: wipTopCustomers,
+              asOf: wipResult.wipAsOf,
+              totals: wipResult.wipTotals,
+              topCustomers: wipResult.wipTopCustomers,
             },
           },
         });
+      }
 
       case 'ar-aging':
         // Get AR aging data
@@ -3332,18 +3368,48 @@ export async function GET(request: NextRequest) {
             totalDue: Number(row.totalDue || 0),
           }));
           if (unpaidByVendor.length) {
-            computedApFromOpen = unpaidByVendor.reduce(
-              (acc, row) => {
-                acc.totalAP += Number(row.totalDue || 0);
-                acc.current += Number(row.current || 0);
-                acc.days1to30 += Number(row.days1to30 || 0);
-                acc.days31to60 += Number(row.days31to60 || 0);
-                acc.days61to90 += Number(row.days61to90 || 0);
-                acc.days90plus += Number(row.days90plus || 0);
-                return acc;
-              },
-              { totalAP: 0, current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 }
-            );
+            const apTotalsRows = await prisma.$queryRaw<
+              Array<{ current: number; days1to30: number; days31to60: number; days61to90: number; days90plus: number; totalAP: number }>
+            >`
+              WITH bills AS (
+                SELECT
+                  COALESCE("amountDueHome", 0)::double precision AS "amountDueHome",
+                  COALESCE("dueDate"::date, "billDate"::date) AS "ageBasisDate"
+                FROM "APOpenBillSnapshot"
+                WHERE "companyId" = ${companyId}
+                  AND "frequency" = ${apFrequencyForQuery}
+                  AND "snapshotDate" = ${latestOpenBillsSnapshotDate.snapshotDate}
+                  AND COALESCE("amountDueHome", 0) > ${OPEN_AMOUNT_EPSILON}
+              ),
+              aged AS (
+                SELECT
+                  "amountDueHome",
+                  CASE
+                    WHEN "ageBasisDate" IS NULL THEN 99999
+                    ELSE GREATEST(0, (${asOfDateForBuckets}::date - "ageBasisDate"))
+                  END::int AS age_days
+                FROM bills
+              )
+              SELECT
+                SUM(CASE WHEN age_days <= 0 THEN "amountDueHome" ELSE 0 END)::double precision AS "current",
+                SUM(CASE WHEN age_days BETWEEN 1 AND 30 THEN "amountDueHome" ELSE 0 END)::double precision AS "days1to30",
+                SUM(CASE WHEN age_days BETWEEN 31 AND 60 THEN "amountDueHome" ELSE 0 END)::double precision AS "days31to60",
+                SUM(CASE WHEN age_days BETWEEN 61 AND 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days61to90",
+                SUM(CASE WHEN age_days > 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days90plus",
+                SUM("amountDueHome")::double precision AS "totalAP"
+              FROM aged
+            `;
+            const apTotals = apTotalsRows[0];
+            computedApFromOpen = apTotals
+              ? {
+                  totalAP: Number(apTotals.totalAP || 0),
+                  current: Number(apTotals.current || 0),
+                  days1to30: Number(apTotals.days1to30 || 0),
+                  days31to60: Number(apTotals.days31to60 || 0),
+                  days61to90: Number(apTotals.days61to90 || 0),
+                  days90plus: Number(apTotals.days90plus || 0),
+                }
+              : null;
           }
 
           // Canonical AP trend replay from open vouchers is expensive on large tenants.
@@ -3616,11 +3682,15 @@ export async function GET(request: NextRequest) {
 
       case 'products':
         // Get product sales data
+        const isInforForProducts =
+          normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
+        const productFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
+          isInforForProducts && frequency !== 'daily' ? 'daily' : frequency;
         const productRowCap = Math.max(Math.min(boundedLimit * 30, 30000), 8000);
         data = await prisma.productSalesSnapshot.findMany({
           where: {
             companyId,
-            frequency,
+            frequency: productFrequencyForQuery,
             snapshotDate: dateFilter,
           },
           orderBy: [{ snapshotDate: 'desc' }, { itemName: 'asc' }],
@@ -3941,7 +4011,7 @@ export async function GET(request: NextRequest) {
             SUM(COALESCE("quantitySold", 0))::double precision AS "totalQuantity"
           FROM "ProductSalesSnapshot"
           WHERE "companyId" = ${companyId}
-            AND "frequency" = ${frequency}
+            AND "frequency" = ${productFrequencyForQuery}
             AND "snapshotDate" >= ${startDate}
             AND "snapshotDate" <= ${endDate}
           GROUP BY 1
