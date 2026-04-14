@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: true, ran: false, message: 'No companies with pending transforms found.' });
     }
 
-    const maxDaysPerRun = 3;
+    const maxDaysPerRun = 10;
     let totalProcessed = 0;
     let totalFailed = 0;
     let tickCount = 0;
