@@ -1073,11 +1073,14 @@ model CustomerSalesSnapshot {
   customerId     String?
   customerName   String
   revenue        Float
+  cogs           Float?   @default(0)
+  grossMargin    Float?
+  grossMarginPct Float?
   invoiceCount   Int
   avgInvoiceSize Float?
   bookings       Float?   @default(0)
   createdAt      DateTime @default(now())
-  
+
   @@index([companyId, snapshotDate(sort: Desc)])
   @@index([companyId, frequency, snapshotDate(sort: Desc)])
   @@index([companyId, customerId])
