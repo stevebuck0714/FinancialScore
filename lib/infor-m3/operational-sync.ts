@@ -6564,6 +6564,26 @@ async function saveCustomerSales(
     });
   }
 
+  const custItemCostLookup = new Map<string, number>();
+  const custItemMasterRows = await (prisma as any).inforRawRecord.findMany({
+    where: {
+      companyId,
+      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+      businessDate: startOfUtcDay(snapshotDate),
+      miProgram: { in: ['SLItems', 'SLITEMS'] },
+    },
+    select: { payload: true },
+    take: 300000,
+  });
+  for (const row of custItemMasterRows as any[]) {
+    const payload = asRawRecordPayload(row.payload);
+    if (!payload) continue;
+    const itemCode = String(pickString(payload, ['Item', 'item', 'ITNO']) || '').trim();
+    if (!itemCode) continue;
+    const unitCost = pickNumber(payload, ['CurUCost', 'CurMatCost', 'CurMatlCost', 'AvgUCost']);
+    if (unitCost > 0) custItemCostLookup.set(itemCode, unitCost);
+  }
+
   const customerAgg = new Map<string, {
     customerId: string | null;
     customerName: string;
@@ -6581,7 +6601,11 @@ async function saveCustomerSales(
     if (delta <= 0) continue;
 
     const price = pickNumber(record, SALES_UNIT_PRICE_KEYS);
-    const cost = pickNumber(record, ['Cost', 'MatlCost', ...SALES_UNIT_COST_KEYS]);
+    let cost = pickNumber(record, ['Cost', 'MatlCost', ...SALES_UNIT_COST_KEYS]);
+    if (cost <= 0) {
+      const itemCode = String(pickString(record, ['Item', 'item', 'ITNO']) || '').trim();
+      cost = custItemCostLookup.get(itemCode) ?? 0;
+    }
     const revenue = delta * price;
     const lineCogs = delta * cost;
 
@@ -6688,6 +6712,26 @@ async function saveProductSales(
     });
   }
 
+  const itemCostLookup = new Map<string, number>();
+  const itemMasterRows = await (prisma as any).inforRawRecord.findMany({
+    where: {
+      companyId,
+      platform: { in: ['INFOR_M3', 'INFOR_CSI'] },
+      businessDate: startOfUtcDay(snapshotDate),
+      miProgram: { in: ['SLItems', 'SLITEMS'] },
+    },
+    select: { payload: true },
+    take: 300000,
+  });
+  for (const row of itemMasterRows as any[]) {
+    const payload = asRawRecordPayload(row.payload);
+    if (!payload) continue;
+    const itemCode = String(pickString(payload, ['Item', 'item', 'ITNO']) || '').trim();
+    if (!itemCode) continue;
+    const unitCost = pickNumber(payload, ['CurUCost', 'CurMatCost', 'CurMatlCost', 'AvgUCost']);
+    if (unitCost > 0) itemCostLookup.set(itemCode, unitCost);
+  }
+
   const itemAgg = new Map<string, {
     itemId: string | null;
     itemName: string;
@@ -6706,7 +6750,11 @@ async function saveProductSales(
     if (delta <= 0) continue;
 
     const price = pickNumber(record, SALES_UNIT_PRICE_KEYS);
-    const cost = pickNumber(record, ['Cost', 'MatlCost', ...SALES_UNIT_COST_KEYS]);
+    let cost = pickNumber(record, ['Cost', 'MatlCost', ...SALES_UNIT_COST_KEYS]);
+    if (cost <= 0) {
+      const itemCode = String(pickString(record, ['Item', 'item', 'ITNO']) || '').trim();
+      cost = itemCostLookup.get(itemCode) ?? 0;
+    }
     const revenue = delta * price;
     const lineCogs = delta * cost;
 
