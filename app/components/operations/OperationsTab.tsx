@@ -2293,10 +2293,10 @@ export default function OperationsTab({
             .filter((row: any) => row.wipValue > 0)
             .sort((a: any, b: any) => b.wipValue - a.wipValue)
             .slice(0, 10);
-          const wipAsOfDate = parseDateValue(String(wipSummary?.asOf || ''));
+          const wipAsOfDate = parseDateValue(endDate);
           const wipAsOfLabel = wipAsOfDate
             ? formatDateSafeUtc(wipAsOfDate, { year: 'numeric', month: 'short', day: 'numeric' })
-            : 'N/A';
+            : formatDateSafeUtc(new Date(), { year: 'numeric', month: 'short', day: 'numeric' });
           const bookingsByCustomerName = new Map<string, { ytd: number }>(
             bookingsTopRows.map((row: any) => [String(row.customerName), { ytd: Number(row.ytd || 0) }])
           );
