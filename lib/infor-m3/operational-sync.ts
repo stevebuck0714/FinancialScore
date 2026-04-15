@@ -7824,11 +7824,9 @@ export async function syncInforM3OperationalData(
         baseRequestTimeoutMs,
         Math.floor(baseRequestTimeoutMs * adaptiveTimeoutScale)
       );
-      // Keep SLCoitems chunk duration bounded so each sync call returns promptly
-      // with a continuation cursor instead of appearing "stuck" on one huge page pull.
       const baseMaxPagesPerRequest =
         isSlCoitemsProgram
-          ? 8
+          ? MAX_CSI_PAGES_PER_REQUEST
           : isGlAcctPeriodBalancesProgram && isFanoutHistoricalDailySlice
             ? fanoutGlPeriodMaxPagesPerRequest
             : isFanoutHistoricalDailySlice
