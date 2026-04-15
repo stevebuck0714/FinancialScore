@@ -403,6 +403,18 @@ function buildTaskPayload(run: QueueRunRecord, cursor?: Record<string, unknown> 
   return payload;
 }
 
+function isOperationalInforFrequency(run: QueueRunRecord): boolean {
+  const f = String(run.frequency || '').toLowerCase();
+  return f === 'daily' || f === 'weekly' || f === 'monthly';
+}
+
+function resolveTransformFrequency(run: QueueRunRecord): 'daily' | 'weekly' | 'monthly' {
+  const f = String(run.frequency || '').toLowerCase();
+  if (f === 'weekly') return 'weekly';
+  if (f === 'monthly') return 'monthly';
+  return 'daily';
+}
+
 function buildSkippedCursorFromPayload(payload: Record<string, unknown>): Record<string, unknown> {
   const programOffset = Math.max(0, Math.floor(Number(payload.programOffset || 0)));
   const programBatchSize = Math.max(1, Math.floor(Number(payload.programBatchSize || 1)));
@@ -1223,13 +1235,13 @@ async function processTask(
     return { runId: task.runId, taskId: task.id, status: 'aborted', details: 'Task lease was already released.' };
   }
 
-  const shouldHydrateDeferredDailySnapshot =
+  const shouldHydrateDeferredSnapshot =
     String(task.run.platform || '') === 'INFOR_M3' &&
-    String(task.run.frequency || '').toLowerCase() === 'daily' &&
+    isOperationalInforFrequency(task.run) &&
     taskPayload.forceIngestOnly === true &&
     taskPayload.deferDailySnapshotHydration === true &&
     !hasMore;
-  if (shouldHydrateDeferredDailySnapshot) {
+  if (shouldHydrateDeferredSnapshot) {
     const businessDateIsoRaw =
       String(taskPayload.businessDateIso || '').trim() ||
       String(taskPayload.endDate || '').trim().slice(0, 10) ||
@@ -1255,7 +1267,7 @@ async function processTask(
             await transformInforM3RawRun({
               companyId: task.companyId,
               syncRunId: task.runId,
-              frequency: 'daily',
+              frequency: resolveTransformFrequency(task.run),
               businessDateIso,
               maxBusinessDates: 1,
             });
@@ -1278,6 +1290,14 @@ async function processTask(
       } catch {
         // Snapshot hydration is best-effort; queue progress should not regress on hydration failures.
       }
+    } else {
+      // Ingest finished this chunk but no single businessDateIso on the task (e.g. multi-day window).
+      // Drain pending transform rows for this company so snapshots still materialize without manual replay.
+      try {
+        await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 10 });
+      } catch {
+        // best-effort
+      }
     }
   }
 
@@ -1286,7 +1306,7 @@ async function processTask(
   const shouldRunCompletionHydrationPass =
     runCompletedInThisTask &&
     String(task.run.platform || '') === 'INFOR_M3' &&
-    String(task.run.frequency || '').toLowerCase() === 'daily' &&
+    isOperationalInforFrequency(task.run) &&
     taskPayload.forceIngestOnly === true &&
     taskPayload.deferDailySnapshotHydration === true;
   if (shouldRunCompletionHydrationPass) {
@@ -1301,18 +1321,33 @@ async function processTask(
         ORDER BY "businessDate" ASC
         LIMIT 31
       `;
+      const tf = resolveTransformFrequency(task.run);
       for (const row of incompleteRows) {
         const businessDateIso = new Date(row.businessDate).toISOString().slice(0, 10);
         await transformInforM3RawRun({
           companyId: task.companyId,
           syncRunId: task.runId,
-          frequency: 'daily',
+          frequency: tf,
           businessDateIso,
           maxBusinessDates: 1,
         });
       }
     } catch {
       // Completion hydration is best-effort and must not regress queue health.
+    }
+  }
+
+  // Catch-all: after any completed INFOR_M3 ingest run, process remaining pending transforms for this company.
+  if (
+    runCompletedInThisTask &&
+    String(task.run.platform || '') === 'INFOR_M3' &&
+    taskPayload.forceIngestOnly === true &&
+    taskPayload.deferDailySnapshotHydration === true
+  ) {
+    try {
+      await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 25 });
+    } catch {
+      // best-effort
     }
   }
 
