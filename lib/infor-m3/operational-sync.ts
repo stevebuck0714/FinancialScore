@@ -1364,7 +1364,7 @@ type SlLedgersKeyset = {
   site: string;
   transNum: string;
 };
-const AR_EOD_COLLECTIBLE_LOOKBACK_DAYS = 365;
+const AR_EOD_COLLECTIBLE_LOOKBACK_DAYS = 150;
 
 function encodeSlInvHdrsKeysetBookmark(value: SlInvHdrsKeyset): string {
   const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
@@ -3539,7 +3539,7 @@ async function saveAROpenInvoices(
 ): Promise<number> {
   const snapshotDayStart = startOfUtcDay(snapshotDate);
   const snapshotDayEnd = new Date(snapshotDayStart.getTime() + 24 * 60 * 60 * 1000);
-  const AR_MIN_INVOICE_DATE = new Date('2023-06-01T00:00:00.000Z');
+  const AR_MIN_INVOICE_DATE = new Date('2023-08-01T00:00:00.000Z');
   const collectibleWindowStart = new Date(
     Math.max(
       snapshotDayStart.getTime() - AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
@@ -5195,11 +5195,18 @@ function getAgingBucketValuesFromDueDate(
   return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: safeOutstanding };
 }
 
-const AP_MIN_BILL_DATE = new Date('2023-01-01T00:00:00.000Z');
+const AP_MIN_BILL_DATE = new Date('2023-06-01T00:00:00.000Z');
+const AP_LOOKBACK_DAYS = 365;
 
-function isApDateWithinHistoryWindow(value: Date | null | undefined): boolean {
+function isApDateWithinHistoryWindow(value: Date | null | undefined, snapshotDate?: Date): boolean {
   if (!value || Number.isNaN(value.getTime())) return false;
-  return value.getTime() >= AP_MIN_BILL_DATE.getTime();
+  const floor = snapshotDate
+    ? new Date(Math.max(
+        startOfUtcDay(snapshotDate).getTime() - AP_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+        AP_MIN_BILL_DATE.getTime()
+      ))
+    : AP_MIN_BILL_DATE;
+  return value.getTime() >= floor.getTime();
 }
 
 function resolveApBillDateFromRecord(record: Record<string, unknown>): Date | null {
@@ -5363,7 +5370,7 @@ async function deriveApLifecycleOpenRowsFromAvailableData(
 
   for (const record of records) {
     const billDate = resolveApBillDateFromRecord(record);
-    if (!isApDateWithinHistoryWindow(billDate)) continue;
+    if (!isApDateWithinHistoryWindow(billDate, snapshotDate)) continue;
     const voucherNo = normalizeVoucherToken(
       pickString(record, ['Voucher', 'voucher', 'billNo', 'billNumber', 'invoiceNo', 'InvNum', 'SINO'])
     );
