@@ -4229,8 +4229,14 @@ async function saveCustomerOrderLines(
     divi: string | null;
   }> = [];
 
+  const CLOSED_ORDER_LINE_STATUSES = new Set(['C', 'F']);
   for (let idx = 0; idx < records.length; idx += 1) {
     const record = records[idx];
+      const lineStat = String(pickString(record, ['Stat', 'STAT', 'stat', 'Status', 'status']) || '').trim().toUpperCase();
+      if (CLOSED_ORDER_LINE_STATUSES.has(lineStat)) {
+        skip('closed_or_filled');
+        continue;
+      }
       const customerComposite = pickString(record, ['DerCustNoName', 'customerComposite', 'CustNumName']);
       const orderIdRaw =
         pickString(record, ['CoNum', 'CONUM', 'coNum', 'orderNo', 'orderNumber', 'OrderNum', 'contractId', 'projectId']) || `ORDER-${idx + 1}`;

@@ -1342,7 +1342,7 @@ export async function GET(request: NextRequest) {
               )
             );
             const orderIdsForRawLookupSet = new Set(orderIdsForRawLookup);
-            const rawDetailByOrderLine = new Map<string, { item: string; stat: string | null }>();
+            const rawDetailByOrderLine = new Map<string, { item: string; stat: string | null; dueDate?: string | null; qtyShipped?: number }>();
             const normalizeToken = (value: unknown): string => {
               const raw = String(value ?? '').trim();
               if (!raw) return '';
@@ -1431,10 +1431,12 @@ export async function GET(request: NextRequest) {
                       const rawRelease = payload['CoRelease'] ?? payload['CORELEASE'] ?? payload['coRelease'] ?? '0';
                       const rawItem = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
                       const rawStat = String(payload['Stat'] ?? payload['STAT'] ?? '').trim() || null;
-                      if (!rawItem && !rawStat) continue;
+                      const rawDueDateStr2 = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
+                      const rawQtyShipped2 = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? 0);
+                      if (!rawItem && !rawStat && !rawDueDateStr2) continue;
                       const rawLineKey = buildOrderLineKey(rawOrderId, rawLine, rawRelease);
                       if (!rawDetailByOrderLine.has(rawLineKey)) {
-                        rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat });
+                        rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat, dueDate: rawDueDateStr2 || null, qtyShipped: rawQtyShipped2 });
                       }
                     }
                   }
@@ -1468,10 +1470,12 @@ export async function GET(request: NextRequest) {
                 const rawRelease = payload['CoRelease'] ?? payload['CORELEASE'] ?? payload['coRelease'] ?? '0';
                 const rawItem = String(payload['Item'] ?? payload['ITNO'] ?? '').trim();
                 const rawStat = String(payload['Stat'] ?? payload['STAT'] ?? '').trim() || null;
-                if (!rawItem && !rawStat) continue;
+                const rawDueDateStr = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
+                const rawQtyShipped = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? 0);
+                if (!rawItem && !rawStat && !rawDueDateStr) continue;
                 const rawLineKey = buildOrderLineKey(rawOrderId, rawLine, rawRelease);
                 if (!rawDetailByOrderLine.has(rawLineKey)) {
-                  rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat });
+                  rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat, dueDate: rawDueDateStr || null, qtyShipped: rawQtyShipped });
                 }
               }
             }
@@ -1503,16 +1507,16 @@ export async function GET(request: NextRequest) {
               const customerId = String(row?.customerId || '').trim() || null;
               const customerName = String(row?.customerName || '').trim() || (customerId ? `Customer ${customerId}` : 'Unknown Customer');
               const rawDetail = rawDetailByOrderLine.get(normalizedLineKey) || rawDetailByOrderLine.get(lineKey);
-              const item = rawDetail?.item || 'UNKNOWN_ITEM';
+              const snapshotItem = String(row?.itemName || row?.itemId || row?.sku || '').trim();
+              const item = rawDetail?.item || snapshotItem || 'UNKNOWN_ITEM';
               const stat = rawDetail?.stat || null;
               const orderDateRaw = row?.orderDate ? new Date(row.orderDate) : null;
               const orderDate =
                 orderDateRaw && !Number.isNaN(orderDateRaw.getTime()) ? orderDateRaw.toISOString().slice(0, 10) : null;
-              // Due date is not persisted on CustomerOrderLineSnapshot rows.
-              // Do not mirror order date; leave empty until true due-date enrichment is wired.
-              const dueDate: string | null = null;
+              const rawDueDate = rawDetail?.dueDate ? new Date(rawDetail.dueDate.replace(/\s+\d{2}:\d{2}:\d{2}\.\d+$/, '')) : null;
+              const dueDate = rawDueDate && !Number.isNaN(rawDueDate.getTime()) ? rawDueDate.toISOString().slice(0, 10) : null;
               const qtyOrdered = Math.max(Number(row?.qtyOrdered || 0), 0);
-              const qtyShipped = 0;
+              const qtyShipped = Math.max(Number(rawDetail?.qtyShipped || 0), 0);
               const qtyInvoiced = Math.max(Number(row?.qtyInvoiced || 0), 0);
               const contractValue = Math.max(Number(row?.contractValue || 0), 0);
               const invoicedValue = Math.max(Number(row?.invoicedAmount || 0), 0);
