@@ -9497,8 +9497,18 @@ export async function transformInforM3RawRun(options: {
             orderDate: existing.orderDate || orderDate || null,
           });
         }
-        recordsCreated += await saveCustomerSales(companyId, snapshotDate, frequency, slcoitemsRecords, orderCustomerLookup);
-        recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, slcoitemsRecords);
+        try {
+          recordsCreated += await saveCustomerSales(companyId, snapshotDate, frequency, slcoitemsRecords, orderCustomerLookup);
+        } catch (csError) {
+          const msg = csError instanceof Error ? csError.message : 'saveCustomerSales failed';
+          errors.push(`transform/saveCustomerSales: ${msg}`);
+        }
+        try {
+          recordsCreated += await saveProductSales(companyId, snapshotDate, frequency, slcoitemsRecords);
+        } catch (psError) {
+          const msg = psError instanceof Error ? psError.message : 'saveProductSales failed';
+          errors.push(`transform/saveProductSales: ${msg}`);
+        }
         const contractPersistResult = await saveCustomerOrderLines(companyId, snapshotDate, frequency, slcoitemsRecords, {
           miProgram: 'SLCOITEMS',
           transaction: 'RAW_REPLAY',
