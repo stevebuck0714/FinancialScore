@@ -7512,11 +7512,11 @@ export async function syncInforM3OperationalData(
   const forceIngestOnly = options?.ingestOnly === true;
   const rawIngestEnabled = rawIngestEnabledFromEnv || forceIngestOnly;
   const rawIngestOnly = rawIngestOnlyFromEnv || forceIngestOnly;
-  const rawIngestRecordCapRaw = Number(process.env.INFOR_RAW_INGEST_RECORD_CAP_PER_BATCH || 5000);
+  const rawIngestRecordCapRaw = Number(process.env.INFOR_RAW_INGEST_RECORD_CAP_PER_BATCH || 50000);
   const rawIngestRecordCap =
     Number.isFinite(rawIngestRecordCapRaw) && rawIngestRecordCapRaw > 0
-      ? Math.min(25000, Math.max(100, Math.floor(rawIngestRecordCapRaw)))
-      : 5000;
+      ? Math.min(100000, Math.max(100, Math.floor(rawIngestRecordCapRaw)))
+      : 50000;
   // Normalize to a UTC calendar day key so repeated runs do not create
   // mixed local-time snapshot variants (e.g. 00:00 and 07:00).
   // For explicit/manual windows, anchor snapshot day to the requested window
