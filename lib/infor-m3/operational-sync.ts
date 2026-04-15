@@ -8413,9 +8413,9 @@ export async function syncInforM3OperationalData(
       const recordsAfterDateWindow = shouldApplyDateWindow
         ? filterRecordsByDateWindow(recordsAfterSiteFilter, moduleType, syncWindow)
         : recordsAfterSiteFilter;
-      const rawRecordsForIngest = shouldApplyDateWindow
-        ? recordsAfterDateWindow
-        : recordsAfterSiteFilter;
+      // Raw ingest always stores the full (pre-date-filter) population so the
+      // transform path can reconstruct complete point-in-time snapshots.
+      const rawRecordsForIngest = recordsAfterSiteFilter;
       const shouldAggregateForRollup =
         !isOrderLineProgram && !requestedSite && siteDetected && (sitePolicy === 'required' || sitePolicy === 'optional');
       const records = shouldAggregateForRollup
