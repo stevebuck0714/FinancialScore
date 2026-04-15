@@ -1342,7 +1342,7 @@ export async function GET(request: NextRequest) {
               )
             );
             const orderIdsForRawLookupSet = new Set(orderIdsForRawLookup);
-            const rawDetailByOrderLine = new Map<string, { item: string; stat: string | null; dueDate?: string | null; qtyShipped?: number }>();
+            const rawDetailByOrderLine = new Map<string, { item: string; stat: string | null; dueDate?: string | null; qtyShipped?: number; qtyInvoiced?: number }>();
             const normalizeToken = (value: unknown): string => {
               const raw = String(value ?? '').trim();
               if (!raw) return '';
@@ -1406,7 +1406,7 @@ export async function GET(request: NextRequest) {
                         .join(' OR ');
                       const path =
                         `/APR_PRD/CSI/IDORequestService/ido/load/SLCoitems?recordCap=5000` +
-                        `&properties=${encodeURIComponent('CoNum,CoLine,CoRelease,Item,Stat')}` +
+                        `&properties=${encodeURIComponent('CoNum,CoLine,CoRelease,Item,Stat,QtyShipped,QtyInvoiced,DueDate')}` +
                         `&filter=${encodeURIComponent(filter)}`;
                       const response = await callInforIonApi(resolved.credentials, path, {
                         timeoutMs: 8000,
@@ -1433,10 +1433,11 @@ export async function GET(request: NextRequest) {
                       const rawStat = String(payload['Stat'] ?? payload['STAT'] ?? '').trim() || null;
                       const rawDueDateStr2 = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
                       const rawQtyShipped2 = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? 0);
+                      const rawQtyInvoiced2 = Number(payload['QtyInvoiced'] ?? payload['qtyInvoiced'] ?? 0);
                       if (!rawItem && !rawStat && !rawDueDateStr2) continue;
                       const rawLineKey = buildOrderLineKey(rawOrderId, rawLine, rawRelease);
                       if (!rawDetailByOrderLine.has(rawLineKey)) {
-                        rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat, dueDate: rawDueDateStr2 || null, qtyShipped: rawQtyShipped2 });
+                        rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat, dueDate: rawDueDateStr2 || null, qtyShipped: rawQtyShipped2, qtyInvoiced: rawQtyInvoiced2 });
                       }
                     }
                   }
@@ -1472,10 +1473,11 @@ export async function GET(request: NextRequest) {
                 const rawStat = String(payload['Stat'] ?? payload['STAT'] ?? '').trim() || null;
                 const rawDueDateStr = String(payload['DueDate'] ?? payload['dueDate'] ?? '').trim();
                 const rawQtyShipped = Number(payload['QtyShipped'] ?? payload['qtyShipped'] ?? 0);
+                const rawQtyInvoiced = Number(payload['QtyInvoiced'] ?? payload['qtyInvoiced'] ?? 0);
                 if (!rawItem && !rawStat && !rawDueDateStr) continue;
                 const rawLineKey = buildOrderLineKey(rawOrderId, rawLine, rawRelease);
                 if (!rawDetailByOrderLine.has(rawLineKey)) {
-                  rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat, dueDate: rawDueDateStr || null, qtyShipped: rawQtyShipped });
+                  rawDetailByOrderLine.set(rawLineKey, { item: rawItem || 'UNKNOWN_ITEM', stat: rawStat, dueDate: rawDueDateStr || null, qtyShipped: rawQtyShipped, qtyInvoiced: rawQtyInvoiced });
                 }
               }
             }
@@ -1552,24 +1554,41 @@ export async function GET(request: NextRequest) {
                 });
               }
             }
-            const unresolvedOrderIds = Array.from(
-              new Set(
-                Array.from(latestLineState.values())
-                  .filter((line) => String(line.item || '').trim() === 'UNKNOWN_ITEM' && Number(line.remainingValue || 0) > 0)
-                  .map((line) => String(line.orderId || '').trim())
-                  .filter((value) => value.length > 0)
-              )
-            );
+            // Hydrate stat (and item when missing) from live CSI for any line
+            // that still carries WIP and has no status or has an unknown item.
+            // Prioritize orders with the largest remaining WIP so the most
+            // impactful phantom-WIP lines get resolved first.
+            const wipByUnresolvedOrder = new Map<string, number>();
+            for (const line of latestLineState.values()) {
+              if (Number(line.remainingValue || 0) <= 0) continue;
+              const itemUnknown = String(line.item || '').trim() === 'UNKNOWN_ITEM';
+              const statMissing = !line.stat || String(line.stat).trim() === '';
+              if (!itemUnknown && !statMissing) continue;
+              const oid = String(line.orderId || '').trim();
+              if (!oid) continue;
+              wipByUnresolvedOrder.set(oid, (wipByUnresolvedOrder.get(oid) || 0) + line.remainingValue);
+            }
+            const unresolvedOrderIds = Array.from(wipByUnresolvedOrder.entries())
+              .sort((a, b) => b[1] - a[1])
+              .map(([oid]) => oid);
             if (unresolvedOrderIds.length > 0) {
               await hydrateRawDetailFromLiveCsi(unresolvedOrderIds);
               for (const line of latestLineState.values()) {
-                if (String(line.item || '').trim() !== 'UNKNOWN_ITEM') continue;
+                if (Number(line.remainingValue || 0) <= 0) continue;
                 const parsed = parseSnapshotLine(line.lineId);
                 const normalizedLineKey = buildOrderLineKey(line.orderId, parsed.line, parsed.release);
                 const rawDetail = rawDetailByOrderLine.get(normalizedLineKey);
                 if (!rawDetail) continue;
-                line.item = rawDetail.item || line.item;
-                line.stat = rawDetail.stat ?? line.stat ?? null;
+                if (String(line.item || '').trim() === 'UNKNOWN_ITEM' && rawDetail.item) {
+                  line.item = rawDetail.item;
+                }
+                if (rawDetail.stat) line.stat = rawDetail.stat;
+                if (rawDetail.qtyShipped && rawDetail.qtyShipped > line.qtyShipped) {
+                  line.qtyShipped = rawDetail.qtyShipped;
+                }
+                if (rawDetail.qtyInvoiced && rawDetail.qtyInvoiced > line.qtyInvoiced) {
+                  line.qtyInvoiced = rawDetail.qtyInvoiced;
+                }
               }
             }
             for (const line of latestLineState.values()) {
