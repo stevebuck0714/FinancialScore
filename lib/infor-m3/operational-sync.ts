@@ -7504,6 +7504,13 @@ export async function syncInforM3OperationalData(
     Number.isFinite(fanoutGlPeriodMaxPagesRaw) && fanoutGlPeriodMaxPagesRaw > 0
       ? Math.min(300, Math.max(fanoutMaxPagesPerRequest, Math.floor(fanoutGlPeriodMaxPagesRaw)))
       : 120;
+  // SLCoitems can exceed 20k rows (20 pages × recordCap 1000). Continuation chunks
+  // are easy to lose in raw-only queue runs; allow a higher per-request page budget.
+  const slCoitemsMaxPagesRaw = Number(process.env.SYNC_SLCOITEMS_MAX_PAGES_PER_REQUEST || 60);
+  const slCoitemsMaxPagesPerRequest =
+    Number.isFinite(slCoitemsMaxPagesRaw) && slCoitemsMaxPagesRaw > 0
+      ? Math.min(240, Math.max(MAX_CSI_PAGES_PER_REQUEST, Math.floor(slCoitemsMaxPagesRaw)))
+      : 60;
   const rawIngestEnabledFromEnv =
     String(process.env.INFOR_RAW_INGEST_ENABLED || '').trim().toLowerCase() === 'true';
   const rawIngestOnlyFromEnv =
@@ -7826,7 +7833,7 @@ export async function syncInforM3OperationalData(
       );
       const baseMaxPagesPerRequest =
         isSlCoitemsProgram
-          ? MAX_CSI_PAGES_PER_REQUEST
+          ? slCoitemsMaxPagesPerRequest
           : isGlAcctPeriodBalancesProgram && isFanoutHistoricalDailySlice
             ? fanoutGlPeriodMaxPagesPerRequest
             : isFanoutHistoricalDailySlice
