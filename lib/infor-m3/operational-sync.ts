@@ -3539,8 +3539,12 @@ async function saveAROpenInvoices(
 ): Promise<number> {
   const snapshotDayStart = startOfUtcDay(snapshotDate);
   const snapshotDayEnd = new Date(snapshotDayStart.getTime() + 24 * 60 * 60 * 1000);
+  const AR_MIN_INVOICE_DATE = new Date('2023-06-01T00:00:00.000Z');
   const collectibleWindowStart = new Date(
-    snapshotDayStart.getTime() - AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+    Math.max(
+      snapshotDayStart.getTime() - AR_EOD_COLLECTIBLE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+      AR_MIN_INVOICE_DATE.getTime()
+    )
   );
   const normalizeInvoiceNo = (value: string | null): string =>
     String(value || '')
