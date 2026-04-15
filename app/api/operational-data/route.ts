@@ -1479,6 +1479,7 @@ export async function GET(request: NextRequest) {
                 }
               }
             }
+            const ORDER_LINE_STATUSES_CLOSED_FOR_WIP = new Set(['C', 'F', 'I']);
             const latestLineState = new Map<
               string,
               {
@@ -1520,11 +1521,18 @@ export async function GET(request: NextRequest) {
               const qtyInvoiced = Math.max(Number(row?.qtyInvoiced || 0), 0);
               const contractValue = Math.max(Number(row?.contractValue || 0), 0);
               const invoicedValue = Math.max(Number(row?.invoicedAmount || 0), 0);
-              const remainingExplicit = Number(row?.remainingAmount || 0);
-              const remainingValue =
-                Number.isFinite(remainingExplicit) && remainingExplicit > 0
-                  ? remainingExplicit
-                  : Math.max(contractValue - invoicedValue, 0);
+              const remainingStored = Number(row?.remainingAmount ?? NaN);
+              let remainingValue = Number.isFinite(remainingStored)
+                ? Math.max(remainingStored, 0)
+                : Math.max(contractValue - invoicedValue, 0);
+              const statTrim = String(stat || '')
+                .trim()
+                .toUpperCase();
+              if (statTrim && ORDER_LINE_STATUSES_CLOSED_FOR_WIP.has(statTrim)) {
+                remainingValue = 0;
+              } else if (qtyOrdered > 0 && qtyInvoiced + 1e-4 >= qtyOrdered) {
+                remainingValue = 0;
+              }
               if (!latestLineState.has(lineKey)) {
                 latestLineState.set(lineKey, {
                   customerId,
@@ -1562,6 +1570,18 @@ export async function GET(request: NextRequest) {
                 if (!rawDetail) continue;
                 line.item = rawDetail.item || line.item;
                 line.stat = rawDetail.stat ?? line.stat ?? null;
+              }
+            }
+            for (const line of latestLineState.values()) {
+              const st = String(line.stat || '')
+                .trim()
+                .toUpperCase();
+              if (st && ORDER_LINE_STATUSES_CLOSED_FOR_WIP.has(st)) {
+                line.remainingValue = 0;
+                continue;
+              }
+              if (line.qtyOrdered > 0 && line.qtyInvoiced + 1e-4 >= line.qtyOrdered) {
+                line.remainingValue = 0;
               }
             }
             const byCustomer = new Map<

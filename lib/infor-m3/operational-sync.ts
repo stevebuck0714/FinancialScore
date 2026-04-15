@@ -1953,6 +1953,17 @@ function pickNumber(record: Record<string, unknown>, keys: string[]): number {
   return 0;
 }
 
+/** When absent, returns `undefined` so callers can distinguish "missing" from explicit zero. */
+function pickNumberIfPresent(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const raw = lookupRecordValue(record, key);
+    if (raw !== undefined && raw !== null && raw !== '') {
+      return toNumber(raw);
+    }
+  }
+  return undefined;
+}
+
 function pickString(record: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
     const raw = lookupRecordValue(record, key);
@@ -4233,7 +4244,8 @@ async function saveCustomerOrderLines(
     divi: string | null;
   }> = [];
 
-  const CLOSED_ORDER_LINE_STATUSES = new Set(['C', 'F']);
+  // SyteLine / M3: C=Closed, F=Filled; I often used when invoicing is complete.
+  const CLOSED_ORDER_LINE_STATUSES = new Set(['C', 'F', 'I']);
   for (let idx = 0; idx < records.length; idx += 1) {
     const record = records[idx];
       const lineStat = String(pickString(record, ['Stat', 'STAT', 'stat', 'Status', 'status']) || '').trim().toUpperCase();
@@ -4309,9 +4321,20 @@ async function saveCustomerOrderLines(
               : revenueByShipment > 0
                 ? revenueByShipment
                 : 0;
-      const explicitRemaining = pickNumber(record, ['RemainingAmount', 'remainingAmount', 'BacklogAmount', 'backlogAmount']);
-      const remainingAmount =
-        explicitRemaining !== 0 ? explicitRemaining : Math.max(contractValue - Math.max(invoicedAmount, 0), 0);
+      const explicitRemainingOpt = pickNumberIfPresent(record, [
+        'RemainingAmount',
+        'remainingAmount',
+        'BacklogAmount',
+        'backlogAmount',
+      ]);
+      let remainingAmount =
+        explicitRemainingOpt !== undefined
+          ? Math.max(explicitRemainingOpt, 0)
+          : Math.max(contractValue - Math.max(invoicedAmount, 0), 0);
+      // If the line is quantity-complete, backlog should not persist when invoice/amount fields lag.
+      if (qtyOrdered > 0 && qtyInvoiced + 1e-4 >= qtyOrdered) {
+        remainingAmount = 0;
+      }
       const explicitUnbilled = pickNumber(record, ['UnbilledAccrual', 'unbilledAccrual', 'accruedRevenueUnbilled', 'wipUnbilled']);
       const earnedRevenueSource = pickNumber(record, ['EarnedRevenue', 'earnedRevenue', 'wipEarned']);
       const earnedRevenue = earnedRevenueSource !== 0 ? earnedRevenueSource : Math.max(qtyShipped, 0) * unitPrice;
