@@ -2296,7 +2296,7 @@ export default function OperationsTab({
           const wipAsOfDate = parseDateValue(String(wipSummary?.asOf || ''));
           const wipAsOfLabel = wipAsOfDate
             ? formatDateSafeUtc(wipAsOfDate, { year: 'numeric', month: 'short', day: 'numeric' })
-            : customerAsOfLabel;
+            : 'N/A';
           const bookingsByCustomerName = new Map<string, { ytd: number }>(
             bookingsTopRows.map((row: any) => [String(row.customerName), { ytd: Number(row.ytd || 0) }])
           );

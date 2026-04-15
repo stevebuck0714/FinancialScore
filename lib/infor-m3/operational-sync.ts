@@ -4272,7 +4272,11 @@ async function saveCustomerOrderLines(
         orderLookup?.customerName ||
         pickCustomerDisplayName(record) ||
         pickString(record, ['BillToName', 'CustName', 'DerCustName', ...CUSTOMER_NAME_KEYS]) ||
-        `Unknown Customer ${idx + 1}`;
+        null;
+      if (!customerName || /^unknown\s+customer/i.test(customerName)) {
+        skip('missing_customer_name');
+        continue;
+      }
       const customerId =
         orderLookup?.customerId ||
         pickString(record, ['CustNum', 'custNum', 'CoCustNum', 'CustNo', ...CUSTOMER_ID_KEYS]) ||

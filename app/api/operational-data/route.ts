@@ -1301,11 +1301,12 @@ export async function GET(request: NextRequest) {
             orderBy: [{ snapshotDate: 'desc' }],
           });
           const latestOrderSnapshotDate = latestOrderSnapshot?.snapshotDate
-            ? startOfUtcDay(new Date(latestOrderSnapshot.snapshotDate))
+            ? new Date(latestOrderSnapshot.snapshotDate)
             : null;
           if (latestOrderSnapshotDate) {
             wipAsOf = latestOrderSnapshotDate.toISOString();
-            const snapshotDayEnd = new Date(latestOrderSnapshotDate.getTime() + 24 * 60 * 60 * 1000 - 1);
+            // Query the exact stored timestamp only (no day-range expansion that can pick up rogue batches)
+            const snapshotDayEnd = latestOrderSnapshotDate;
             const latestOrderRows = await bookingsOrderLineDelegate.findMany({
               where: {
                 companyId,
