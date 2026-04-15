@@ -8679,7 +8679,12 @@ export async function syncInforM3OperationalData(
                       })
                     );
                   }
-                  await saveCustomerSales(companyId, snapshotDate, frequency, records, orderCustomerLookup);
+                  try {
+                    await saveCustomerSales(companyId, snapshotDate, frequency, records, orderCustomerLookup);
+                  } catch (customerSalesError) {
+                    const csMsg = customerSalesError instanceof Error ? customerSalesError.message : 'saveCustomerSales failed';
+                    errors.push(`Sales/saveCustomerSales: ${csMsg}`);
+                  }
                 }
                 const contractPersistResult =
                   salesProgram === 'SLCOITEMS'
