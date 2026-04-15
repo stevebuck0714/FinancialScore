@@ -4,6 +4,8 @@ import { runOperationalSyncForConnection } from '@/lib/operational-sync/runner';
 import { extractDailyFinancialMappedLinesFromMetadata, extractDailyFinancialRecordsFromMetadata, ingestDailyFinancialSnapshots } from '@/lib/financial/daily-financial-ingest';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 
+export const maxDuration = 300;
+
 const OPERATIONAL_SYNC_TIME_ZONE = 'America/New_York';
 
 function normalizePullTime(value: unknown): string {

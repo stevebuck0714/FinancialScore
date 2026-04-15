@@ -269,7 +269,7 @@ export async function POST(request: NextRequest) {
     const requestedStagnantCursorCount = normalizeNonNegativeInt(body.stagnantCursorCount) ?? 0;
     const requestedSyncRunId =
       typeof body.syncRunId === 'string' && body.syncRunId.trim().length > 0 ? body.syncRunId.trim() : null;
-    const forceIngestOnly = body.forceIngestOnly !== false;
+    const forceIngestOnly = body.forceIngestOnly === true;
     const deferDailySnapshotHydration = forceIngestOnly || body.deferDailySnapshotHydration === true;
     const salesOnly = body.salesOnly === true || String(body.scope || '').trim().toLowerCase() === 'sales';
     const hasContinuationCursor = requestedProgramOffset > 0 || requestedRequestOffset > 0 || Boolean(requestedBookmark);

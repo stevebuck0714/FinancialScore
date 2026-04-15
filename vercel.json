@@ -13,6 +13,10 @@
     "app/api/cron/process-infor-pending-transforms/route.ts": {
       "memory": 3008,
       "maxDuration": 300
+    },
+    "app/api/cron/sync-operational-data/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
     }
   },
   "crons": [
