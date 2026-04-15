@@ -1364,7 +1364,7 @@ type SlLedgersKeyset = {
   site: string;
   transNum: string;
 };
-const AR_EOD_COLLECTIBLE_LOOKBACK_DAYS = 1095;
+const AR_EOD_COLLECTIBLE_LOOKBACK_DAYS = 365;
 
 function encodeSlInvHdrsKeysetBookmark(value: SlInvHdrsKeyset): string {
   const encoded = Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
@@ -4584,8 +4584,7 @@ function buildAgingBucketFromDueDate(
   const baseline = dueDate ? startOfUtcDay(dueDate) : invoiceDate ? startOfUtcDay(invoiceDate) : null;
   if (!baseline) return { daysOutstanding: null, agingBucket: '90+' };
   const days = Math.floor((startOfUtcDay(asOfDate).getTime() - baseline.getTime()) / (24 * 60 * 60 * 1000));
-  if (days <= 0) return { daysOutstanding: days, agingBucket: 'Current' };
-  if (days <= 30) return { daysOutstanding: days, agingBucket: '30' };
+  if (days <= 30) return { daysOutstanding: days, agingBucket: 'Current' };
   if (days <= 60) return { daysOutstanding: days, agingBucket: '60' };
   if (days <= 90) return { daysOutstanding: days, agingBucket: '90' };
   return { daysOutstanding: days, agingBucket: '90+' };
@@ -5187,7 +5186,6 @@ function getAgingBucketValuesFromDueDate(
   }
   const aging = buildAgingBucketFromDueDate(dueDate, dueDate, asOfDate);
   if (aging.agingBucket === 'Current') return { current: safeOutstanding, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
-  if (aging.agingBucket === '30') return { current: 0, days1to30: safeOutstanding, days31to60: 0, days61to90: 0, days90plus: 0 };
   if (aging.agingBucket === '60') return { current: 0, days1to30: 0, days31to60: safeOutstanding, days61to90: 0, days90plus: 0 };
   if (aging.agingBucket === '90') return { current: 0, days1to30: 0, days31to60: 0, days61to90: safeOutstanding, days90plus: 0 };
   return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: safeOutstanding };

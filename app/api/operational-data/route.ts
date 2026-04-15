@@ -2532,16 +2532,11 @@ export async function GET(request: NextRequest) {
               SUM(amount_due)::double precision AS "totalAR",
               SUM(
                 CASE
-                  WHEN invoice_age_days = 0 THEN amount_due
+                  WHEN invoice_age_days <= 30 THEN amount_due
                   ELSE 0
                 END
               )::double precision AS "current",
-              SUM(
-                CASE
-                  WHEN invoice_age_days >= 1 AND invoice_age_days <= 30 THEN amount_due
-                  ELSE 0
-                END
-              )::double precision AS "days1to30",
+              0::double precision AS "days1to30",
               SUM(
                 CASE
                   WHEN invoice_age_days > 30 AND invoice_age_days <= 60 THEN amount_due
@@ -3351,8 +3346,8 @@ export async function GET(request: NextRequest) {
             )
             SELECT
               "vendorName",
-              SUM(CASE WHEN age_days <= 0 THEN "amountDueHome" ELSE 0 END)::double precision AS "current",
-              SUM(CASE WHEN age_days BETWEEN 1 AND 30 THEN "amountDueHome" ELSE 0 END)::double precision AS "days1to30",
+              SUM(CASE WHEN age_days <= 30 THEN "amountDueHome" ELSE 0 END)::double precision AS "current",
+              0::double precision AS "days1to30",
               SUM(CASE WHEN age_days BETWEEN 31 AND 60 THEN "amountDueHome" ELSE 0 END)::double precision AS "days31to60",
               SUM(CASE WHEN age_days BETWEEN 61 AND 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days61to90",
               SUM(CASE WHEN age_days > 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days90plus",
