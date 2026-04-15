@@ -8403,11 +8403,11 @@ export async function syncInforM3OperationalData(
           isApOpenSnapshotProgram ||
           isApOpenSupportProgram ||
           (isArApOpenFlow && syncWindow?.mode === 'daily_overlap'));
-      // Contract/backlog math from SLCoitems requires full line populations for rolling
-      // daily-overlap runs. For backfill/manual slices, date-window filtering is required
-      // to avoid replaying the same historical order lines into every business date.
+      // CSI returns ALL current order lines regardless of date parameters.
+      // Date-window filtering must be skipped for SLCoitems in every sync mode
+      // because the data is always a full point-in-time snapshot, not date-scoped.
       const isOrderLineProgram = moduleType === 'sales' && programId === 'SLCOITEMS';
-      const keepFullOrderLinePopulation = !noFullPulls && isOrderLineProgram && syncWindow?.mode === 'daily_overlap';
+      const keepFullOrderLinePopulation = !noFullPulls && isOrderLineProgram;
       const shouldApplyDateWindow =
         !keepFullArApPopulation && !keepFullOrderLinePopulation;
       const recordsAfterDateWindow = shouldApplyDateWindow
@@ -8990,23 +8990,22 @@ export async function syncInforM3OperationalData(
           await flushBufferedApiSyncLogs(false, 'time');
         }
       } catch (logWriteError) {
-        // Keep the operational sync moving even if telemetry logging fails.
         const logWriteMessage =
           logWriteError instanceof Error ? logWriteError.message : 'Failed to buffer ApiSyncLog';
-        errors.push(`apiSyncLog_write: ${logWriteMessage}`);
-        if (debugSync) {
-          console.warn(
-            JSON.stringify({
-              event: 'sync_log_write_failed',
-              syncRunId,
-              moduleType,
-              programId,
-              absoluteProgramOffset,
-              reqIndex,
-              message: logWriteMessage,
-            })
-          );
-        }
+        errors.push(`rawIngest_or_log_write: ${logWriteMessage}`);
+        console.warn(
+          JSON.stringify({
+            event: 'raw_ingest_or_log_write_failed',
+            syncRunId,
+            moduleType,
+            programId,
+            absoluteProgramOffset,
+            reqIndex,
+            rawIngestEnabled,
+            rawIngestOnly,
+            message: logWriteMessage,
+          })
+        );
       }
 
       if (continuation) break;
