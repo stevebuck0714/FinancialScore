@@ -28,6 +28,7 @@ const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
 const RATE_LIMITS = {
   '/api/auth/login': { maxAttempts: 5, windowMs: 15 * 60 * 1000 }, // 5 per 15 minutes
   '/api/auth/reset-password': { maxAttempts: 3, windowMs: 60 * 60 * 1000 }, // 3 per hour
+  '/api/support-ticket/demo-upgrade': { maxAttempts: 20, windowMs: 60 * 60 * 1000 }, // public demo upgrade form
   '/api/payments': { maxAttempts: 3, windowMs: 60 * 60 * 1000 }, // 3 per hour
   // Sync status polling can be frequent (multiple open admin tabs + background refresh).
   // Keep protection in place but raise the ceiling to avoid blocking diagnostics in production.
@@ -201,7 +202,9 @@ export async function middleware(request: NextRequest) {
   ]
   
   // Check if this is a public route
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+  const isPublicRoute =
+    publicRoutes.some((route) => pathname.startsWith(route)) ||
+    pathname === '/api/support-ticket/demo-upgrade'
   const token = DISABLE_AUTH_SIGNIN ? null : await resolveAuthToken(request)
   const tokenDemoCompany = Boolean(token && (token as any).demoCompany)
   const tokenDemoExpiredFlag = Boolean(token && (token as any).demoExpired)

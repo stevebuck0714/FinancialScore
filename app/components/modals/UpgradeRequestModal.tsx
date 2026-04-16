@@ -123,9 +123,10 @@ export default function UpgradeRequestModal({
         'A Corelytics specialist will contact you within 1 business day to help you get started.',
       ].join('\n');
 
-      const response = await fetch('/api/support-ticket', {
+      const response = await fetch('/api/support-ticket/demo-upgrade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           subject: `Demo Upgrade Request - ${trimmedCompanyName}`,
           category: 'Demo Upgrade',

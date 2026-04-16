@@ -17,6 +17,8 @@ function getResendClient(): Resend | null {
 // Default sender email (use your verified domain or onboarding@resend.dev for testing)
 const DEFAULT_FROM = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 const NOTIFICATION_EMAIL = 'support@corelytics.com';
+/** Demo upgrade / sales notifications (e.g. Upgrade now modal) */
+const CORELYTICS_SALES_NOTIFY_EMAIL = 'arichards@corelytics.com';
 const DEFAULT_TRUST_DURATION_DAYS = parseInt(process.env.MFA_TRUST_DURATION_DAYS || '60', 10);
 
 interface PasswordResetEmailProps {
@@ -1081,7 +1083,7 @@ interface SupportTicketProps {
 }
 
 /**
- * Send support ticket to support@corelytics.com
+ * Send support ticket email. Demo Upgrade category notifies support@corelytics.com and arichards@corelytics.com.
  */
 export async function sendSupportTicket(ticket: SupportTicketProps) {
   const client = getResendClient();
@@ -1091,6 +1093,16 @@ export async function sendSupportTicket(ticket: SupportTicketProps) {
   }
 
   const routeRecipient = (ticket.routedToEmail || NOTIFICATION_EMAIL).trim().toLowerCase();
+  const toRecipients =
+    ticket.category === 'Demo Upgrade'
+      ? Array.from(
+          new Set(
+            [NOTIFICATION_EMAIL, CORELYTICS_SALES_NOTIFY_EMAIL, routeRecipient]
+              .map((e) => String(e || '').trim().toLowerCase())
+              .filter(Boolean),
+          ),
+        )
+      : [routeRecipient];
   const subject = `[Support Ticket] ${ticket.subject}`;
   const html = `
 <!DOCTYPE html>
@@ -1119,7 +1131,7 @@ export async function sendSupportTicket(ticket: SupportTicketProps) {
 
   const { data, error } = await client.emails.send({
     from: DEFAULT_FROM,
-    to: [routeRecipient],
+    to: toRecipients,
     replyTo: [ticket.contactEmail],
     subject,
     html,
@@ -1130,7 +1142,7 @@ export async function sendSupportTicket(ticket: SupportTicketProps) {
     throw new Error(`Failed to send support ticket: ${error.message}`);
   }
 
-  console.log('Support ticket sent to', routeRecipient, data);
+  console.log('Support ticket sent to', toRecipients.join(', '), data);
   return { success: true, data };
 }
 
