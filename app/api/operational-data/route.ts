@@ -5,6 +5,7 @@ import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from '@/lib/operations/sector-mock-data';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
+import { getCashBalanceSheetAnchorConfig } from '@/lib/financial/cash-balance-sheet-anchor';
 
 export const dynamic = 'force-dynamic';
 
@@ -131,6 +132,36 @@ function parseIsoDayKey(dayKey: string): Date {
   }
   // UTC-4 midnight is 04:00 UTC.
   return new Date(Date.UTC(year, month - 1, day, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+}
+
+/** GL posting dates from (exclusive) min(request range start, anchor) through max(request range end, anchor). */
+function getCashMovementDateFilterForSheetAnchor(
+  rangeStart: Date,
+  rangeEnd: Date,
+  anchorDay: Date
+): { gte: Date; lte: Date } {
+  const rs = startOfUtcDay(rangeStart);
+  const re = startOfUtcDay(rangeEnd);
+  const a = startOfUtcDay(anchorDay);
+  const minDay = rs.getTime() < a.getTime() ? rs : a;
+  const maxDay = re.getTime() > a.getTime() ? re : a;
+  return {
+    gte: new Date(minDay.getTime() + 24 * 60 * 60 * 1000),
+    lte: maxDay,
+  };
+}
+
+function computeDailyCashTotalsByDate(
+  rows: Array<{ snapshotDate: Date; cashBalance: number }>
+): Array<{ date: string; totalCash: number }> {
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    const k = dateKeyUtc(new Date(r.snapshotDate));
+    map.set(k, (map.get(k) || 0) + Number(r.cashBalance || 0));
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, totalCash]) => ({ date, totalCash }));
 }
 
 function shiftToBusinessTz(date: Date): Date {
@@ -907,7 +938,6 @@ function buildDailyCashSeriesFromMovements(
     cursor.getTime() <= end.getTime();
     cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
   ) {
-    if (isWeekendUtc(cursor)) continue;
     const dayKey = dateKeyUtc(cursor);
     const balances = balancesByDate.get(dayKey);
     if (!balances) continue;
@@ -4844,58 +4874,87 @@ export async function GET(request: NextRequest) {
           accountNumber: string | null;
         }> = [];
         if (cashMappedLineDelegate) {
-          const movementRows = await cashMappedLineDelegate.findMany({
-            where: {
-              companyId,
-              frequency: 'daily',
-              targetField: 'balance_movement:cash',
-              snapshotDate: dateFilter,
-            },
-            select: {
-              snapshotDate: true,
-              sourceAccountName: true,
-              sourceAccountId: true,
-              amount: true,
-            },
-            orderBy: [{ snapshotDate: 'asc' }],
-            take: Math.max(limit * 50, 5000),
-          });
+          const sheetAnchorCfg = getCashBalanceSheetAnchorConfig(companyId);
+          const anchorDayForMovements = sheetAnchorCfg
+            ? startOfUtcDay(new Date(`${sheetAnchorCfg.anchorDateIso}T12:00:00.000Z`))
+            : null;
+          const movementDateWhere =
+            sheetAnchorCfg && anchorDayForMovements
+              ? getCashMovementDateFilterForSheetAnchor(startDate, endDate, anchorDayForMovements)
+              : dateFilter;
+          const movementRows =
+            !sheetAnchorCfg ||
+            !anchorDayForMovements ||
+            movementDateWhere.gte.getTime() <= movementDateWhere.lte.getTime()
+              ? await cashMappedLineDelegate.findMany({
+                  where: {
+                    companyId,
+                    frequency: 'daily',
+                    targetField: 'balance_movement:cash',
+                    snapshotDate: movementDateWhere,
+                  },
+                  select: {
+                    snapshotDate: true,
+                    sourceAccountName: true,
+                    sourceAccountId: true,
+                    amount: true,
+                  },
+                  orderBy: [{ snapshotDate: 'asc' }],
+                  take: Math.max(limit * 50, 5000),
+                })
+              : [];
           if (movementRows.length > 0) {
-            const anchorHistory = await prisma.cashSnapshot.findMany({
-              where: {
-                companyId,
-                frequency: 'daily',
-                snapshotDate: { lte: endDate },
-              },
-              orderBy: [{ snapshotDate: 'desc' }, { createdAt: 'desc' }],
-              select: {
-                snapshotDate: true,
-                accountName: true,
-                accountId: true,
-                accountNumber: true,
-                cashBalance: true,
-              },
-              take: 10000,
-            });
-            if (anchorHistory.length > 0) {
-              // Build anchors from one consistent snapshot day. Mixing account rows
-              // across different days can distort reconstructed balances.
-              const anchorsByDay = new Map<string, Map<string, (typeof anchorHistory)[number]>>();
-              for (const row of anchorHistory) {
-                const accountName = String(row.accountName || '').trim();
-                if (!accountName || /^cash account \d+$/i.test(accountName)) continue;
-                const key = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
-                if (!key) continue;
-                const dayKey = dateKeyUtc(new Date(row.snapshotDate));
-                if (!anchorsByDay.has(dayKey)) anchorsByDay.set(dayKey, new Map<string, (typeof anchorHistory)[number]>());
-                const perDay = anchorsByDay.get(dayKey)!;
-                // anchorHistory is ordered snapshotDate desc, createdAt desc.
-                if (!perDay.has(key)) perDay.set(key, row);
-              }
-              const latestAnchorDay = Array.from(anchorsByDay.keys()).sort((a, b) => b.localeCompare(a))[0];
-              if (latestAnchorDay) {
-                const anchorRows = Array.from(anchorsByDay.get(latestAnchorDay)!.values());
-                syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
+            if (sheetAnchorCfg && anchorDayForMovements) {
+              const anchorRows = sheetAnchorCfg.accounts.map((a) => ({
+                snapshotDate: anchorDayForMovements,
+                accountName: a.accountName,
+                cashBalance: a.cashBalance,
+                accountId: a.accountId,
+                accountNumber: a.accountNumber,
+              }));
+              syntheticDaily = buildDailyCashSeriesFromMovements(
+                anchorRows,
+                movementRows,
+                startDate,
+                endDate
+              );
+            } else {
+              const anchorHistory = await prisma.cashSnapshot.findMany({
+                where: {
+                  companyId,
+                  frequency: 'daily',
+                  snapshotDate: { lte: endDate },
+                },
+                orderBy: [{ snapshotDate: 'desc' }, { createdAt: 'desc' }],
+                select: {
+                  snapshotDate: true,
+                  accountName: true,
+                  accountId: true,
+                  accountNumber: true,
+                  cashBalance: true,
+                },
+                take: 10000,
+              });
+              if (anchorHistory.length > 0) {
+                // Build anchors from one consistent snapshot day. Mixing account rows
+                // across different days can distort reconstructed balances.
+                const anchorsByDay = new Map<string, Map<string, (typeof anchorHistory)[number]>>();
+                for (const row of anchorHistory) {
+                  const accountName = String(row.accountName || '').trim();
+                  if (!accountName || /^cash account \d+$/i.test(accountName)) continue;
+                  const key = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
+                  if (!key) continue;
+                  const dayKey = dateKeyUtc(new Date(row.snapshotDate));
+                  if (!anchorsByDay.has(dayKey)) anchorsByDay.set(dayKey, new Map<string, (typeof anchorHistory)[number]>());
+                  const perDay = anchorsByDay.get(dayKey)!;
+                  // anchorHistory is ordered snapshotDate desc, createdAt desc.
+                  if (!perDay.has(key)) perDay.set(key, row);
+                }
+                const latestAnchorDay = Array.from(anchorsByDay.keys()).sort((a, b) => b.localeCompare(a))[0];
+                if (latestAnchorDay) {
+                  const anchorRows = Array.from(anchorsByDay.get(latestAnchorDay)!.values());
+                  syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
+                }
               }
             }
           }
@@ -5161,6 +5220,7 @@ export async function GET(request: NextRequest) {
           avgTotalCash: data.length > 0 
             ? data.reduce((sum, r) => sum + r.cashBalance, 0) / data.length 
             : 0,
+          dailyTotalCash: frequency === 'daily' ? computeDailyCashTotalsByDate(data) : undefined,
         };
 
         if (shouldUseMockData) {

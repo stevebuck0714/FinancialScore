@@ -2290,7 +2290,7 @@ function filterRecordsByDateWindow(
     ap: ['InvDate', 'invoiceDate', 'DistDate', 'DueDate', 'dueDate', 'RecordDate', 'date'],
     sales: ['OrderDate', 'orderDate', 'InvDate', 'invoiceDate', 'DueDate', 'dueDate', 'ShipDate', 'RecordDate', 'date'],
     inventory: ['ItemChangeDate', 'ChangeDate', 'RecordDate', 'SSDATE', 'date'],
-    gl: ['TransDate', 'transDate', 'RecordDate', 'date'],
+    gl: ['PostDate', 'PostingDate', 'TransDate', 'transDate', 'RecordDate', 'date'],
   };
   const keys = dateKeysByModule[moduleType] || [];
   if (keys.length === 0) return records;
@@ -2567,6 +2567,17 @@ async function saveCash(
   return rows.length;
 }
 
+/** Prefer GL posting date when present; otherwise transaction / record date. */
+function pickGlPostingOrTransDate(record: Record<string, unknown>): Date | null {
+  const posting = parseMaybeDate(
+    pickString(record, ['PostDate', 'PostingDate', 'GLPostDate', 'PostedDate', 'PostDateTime'])
+  );
+  if (posting) return posting;
+  return parseMaybeDate(
+    pickString(record, ['TransDate', 'transDate', 'CheckDate', 'FRDerDate', 'RecordDate', 'date'])
+  );
+}
+
 async function saveGLTransactionFacts(
   companyId: string,
   records: Record<string, unknown>[],
@@ -2577,8 +2588,8 @@ async function saveGLTransactionFacts(
   const rowsRaw = records
     .map((record) => {
       if (!shouldIncludePostedGlRecord(record)) return null;
-      // Financial fact date must use accounting effective date only.
-      const transDate = parseMaybeDate(pickString(record, ['TransDate', 'transDate']));
+      // Financial fact date: GL posting date when available (aligns with mapped movement buckets).
+      const transDate = pickGlPostingOrTransDate(record);
       const accountId =
         pickString(record, ['Acct', 'AcctNum', 'Account', 'AccountNo', 'GLAccount', 'ACNO', 'ACID']) ||
         pickString(record, ['accountId', 'accountCode', 'accountNumber']);
@@ -2946,9 +2957,7 @@ async function saveBalanceMovementsFromGl(
     }
     if (matchedTargetFields.size === 0) continue;
 
-    const transDate = parseMaybeDate(
-      pickString(record, ['TransDate', 'transDate', 'CheckDate', 'FRDerDate', 'RecordDate', 'date'])
-    );
+    const transDate = pickGlPostingOrTransDate(record);
     if (!transDate) continue;
     const snapshotDate = startOfUtcDay(transDate);
     const { signedAmount } = extractSignedGlAmount(record);
