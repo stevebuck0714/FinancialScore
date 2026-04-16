@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { requireSiteAdminAuthorizedInforCompany } from '@/lib/infor-m3/route-guards';
+import { readQboOperationalBackfill, readQboOperationalPendingLoad } from '@/lib/quickbooks-online/qbo-operational-metadata';
 
 export const dynamic = 'force-dynamic';
 
 type QuickBooksOnlineSettings = {
   syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
   syncTime: string;
+  /** Rolling 90-day (default) vs pending 3-year backfill on next client sync */
+  operationalLoadMode: 'rolling_90' | 'backfill_3y';
   operationalSyncMode: 'BACKFILL' | 'INCREMENTAL';
   initialSyncStartDate: string;
   incrementalSync: 'YES' | 'NO' | '';
@@ -24,6 +27,7 @@ type QuickBooksOnlineProgram = {
 const defaultSettings: QuickBooksOnlineSettings = {
   syncFrequency: 'daily',
   syncTime: '08:00',
+  operationalLoadMode: 'rolling_90',
   operationalSyncMode: 'BACKFILL',
   initialSyncStartDate: '',
   incrementalSync: 'YES',
@@ -56,10 +60,15 @@ function sanitizeSettings(value: unknown): QuickBooksOnlineSettings {
     return '';
   };
 
+  const loadModeRaw = asString(src.operationalLoadMode).toLowerCase();
+  const operationalLoadMode: 'rolling_90' | 'backfill_3y' =
+    loadModeRaw === 'backfill_3y' ? 'backfill_3y' : 'rolling_90';
+
   return {
     syncFrequency:
       syncFrequency === 'daily' || syncFrequency === 'weekly' || syncFrequency === 'monthly' ? syncFrequency : '',
     syncTime: asString(src.syncTime) || '08:00',
+    operationalLoadMode,
     operationalSyncMode: asString(src.operationalSyncMode).toUpperCase() === 'INCREMENTAL' ? 'INCREMENTAL' : 'BACKFILL',
     initialSyncStartDate: asString(src.initialSyncStartDate),
     incrementalSync: yesNo(src.incrementalSync),
@@ -143,7 +152,13 @@ export async function GET(request: NextRequest) {
       ...legacySettings,
       ...platformSettings,
     });
+    const pending = readQboOperationalPendingLoad(metadata);
+    const settingsWithLoad = {
+      ...settings,
+      operationalLoadMode: pending === 'backfill_3y_pending' ? 'backfill_3y' : settings.operationalLoadMode,
+    };
     const programs = sanitizePrograms(metadata.quickbooksOnlinePrograms || defaultPrograms);
+    const backfill = readQboOperationalBackfill(metadata);
 
     return NextResponse.json({
       ok: true,
@@ -151,8 +166,9 @@ export async function GET(request: NextRequest) {
       status: connection?.status || 'NOT_CONNECTED',
       lastSyncAt: connection?.lastSyncAt || null,
       errorMessage: connection?.errorMessage || null,
-      settings,
+      settings: settingsWithLoad,
       programs,
+      qboOperationalBackfill: backfill,
     });
   } catch (error: any) {
     const message = error?.message || 'Failed to load QuickBooks Online settings';
@@ -208,6 +224,7 @@ export async function POST(request: NextRequest) {
       quickbooksOnlinePrograms: programs,
       operationalPullTime: settings.syncTime || '08:00',
       operationalSyncMode: settings.operationalSyncMode,
+      qboOperationalPendingLoad: settings.operationalLoadMode === 'backfill_3y' ? 'backfill_3y' : null,
       operationalScheduleUpdatedAt: new Date().toISOString(),
       quickbooksOnlineLastUpdatedAt: new Date().toISOString(),
     };

@@ -11,7 +11,7 @@ import {
 } from '@/lib/financial-canonical';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { emitSyncStatus } from '@/lib/websocket-emit';
-import { runOperationalSyncForCompany } from '@/lib/operational-sync/runner';
+import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 import { decryptOAuthToken, encryptOAuthToken } from '@/lib/encryption';
 
 type FinancialImportMode = 'through' | 'only';
@@ -805,33 +805,62 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Trigger QBO monthly operational enrichment in the same user-run sync flow.
-    // This keeps AR/AP operational pages in lockstep with the primary QuickBooks sync action.
+    // QBO operational data: rolling 90-day refresh, or kick off / continue 3-year backfill (async chunks).
     let operationalSyncResult: {
       success: boolean;
       recordsCreated: number;
       errors: string[];
+      operationalMode?: string;
     } | null = null;
     let operationalErrorMessage: string | null = null;
     try {
-      operationalSyncResult = await runOperationalSyncForCompany(companyId, 'QUICKBOOKS', 'monthly');
-      if (!operationalSyncResult.success) {
-        const opError = `Operational monthly sync failed: ${operationalSyncResult.errors.join(' | ')}`.slice(0, 900);
-        operationalErrorMessage = opError;
-        await prisma.accountingConnection.update({
-          where: {
-            companyId_platform: {
-              companyId,
-              platform: 'QUICKBOOKS',
+      const op = await orchestrateQuickBooksOnlineOperationalSync(companyId);
+      if (op.kind === 'rolling_complete') {
+        operationalSyncResult = {
+          success: op.errors.length === 0,
+          recordsCreated: op.recordsCreated,
+          errors: op.errors,
+          operationalMode: 'rolling_90',
+        };
+        if (!operationalSyncResult.success) {
+          const opError = `Operational sync failed: ${operationalSyncResult.errors.join(' | ')}`.slice(0, 900);
+          operationalErrorMessage = opError;
+          await prisma.accountingConnection.update({
+            where: {
+              companyId_platform: {
+                companyId,
+                platform: 'QUICKBOOKS',
+              },
             },
-          },
-          data: {
-            errorMessage: opError,
-          },
-        });
+            data: {
+              errorMessage: opError,
+            },
+          });
+        }
+      } else if (op.kind === 'backfill_started') {
+        operationalSyncResult = {
+          success: true,
+          recordsCreated: 0,
+          errors: [],
+          operationalMode: 'backfill_started',
+        };
+      } else if (op.kind === 'backfill_in_progress') {
+        operationalSyncResult = {
+          success: true,
+          recordsCreated: 0,
+          errors: [],
+          operationalMode: 'backfill_in_progress',
+        };
+      } else {
+        operationalSyncResult = {
+          success: true,
+          recordsCreated: 0,
+          errors: [],
+          operationalMode: 'idle',
+        };
       }
     } catch (error: any) {
-      const opErrorMessage = `Operational monthly sync failed: ${error?.message || 'Unknown error'}`.slice(0, 900);
+      const opErrorMessage = `Operational sync failed: ${error?.message || 'Unknown error'}`.slice(0, 900);
       operationalErrorMessage = opErrorMessage;
       await prisma.accountingConnection.update({
         where: {
@@ -847,7 +876,7 @@ export async function POST(request: NextRequest) {
       operationalSyncResult = {
         success: false,
         recordsCreated: 0,
-        errors: [error?.message || 'Operational monthly sync failed'],
+        errors: [error?.message || 'Operational sync failed'],
       };
     }
 

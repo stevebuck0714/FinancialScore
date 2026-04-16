@@ -27,8 +27,12 @@ export class AdapterFactory {
 
   /**
    * Create an adapter for a specific accounting connection
+   * @param connectionMetadataMerge — shallow merge over persisted JSON (e.g. one-off QBO window overrides)
    */
-  static async createFromConnection(connectionId: string): Promise<AccountingAdapter> {
+  static async createFromConnection(
+    connectionId: string,
+    options?: { connectionMetadataMerge?: Record<string, unknown> }
+  ): Promise<AccountingAdapter> {
     // Fetch the connection from database
     const connection = await prisma.accountingConnection.findUnique({
       where: { id: connectionId },
@@ -42,6 +46,15 @@ export class AdapterFactory {
     if (!connection.accessToken) {
       throw new Error(`Connection ${connectionId} has no access token`);
     }
+
+    const baseMeta =
+      connection.connectionMetadata && typeof connection.connectionMetadata === 'object' && !Array.isArray(connection.connectionMetadata)
+        ? (connection.connectionMetadata as Record<string, unknown>)
+        : {};
+    const mergedMetadata =
+      options?.connectionMetadataMerge && typeof options.connectionMetadataMerge === 'object'
+        ? { ...baseMeta, ...options.connectionMetadataMerge }
+        : baseMeta;
     
     // Build adapter config
     const config: AdapterConfig = {
@@ -53,7 +66,7 @@ export class AdapterFactory {
       realmId: connection.realmId || undefined,
       tenantId: connection.tenantId || undefined,
       organizationId: connection.organizationId || undefined,
-      connectionMetadata: connection.connectionMetadata || undefined,
+      connectionMetadata: mergedMetadata,
     };
     
     // Return platform-specific adapter

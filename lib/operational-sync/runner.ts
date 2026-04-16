@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { AdapterFactory } from '@/lib/accounting-adapters';
+import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 import { syncInforM3OperationalData } from '@/lib/infor-m3/operational-sync';
 import { syncQuickBooksDesktopOperationalPayload, type QbDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
 import { syncDynamicsOperationalPayload, type DynamicsOperationalPayload } from '@/lib/dynamics-365/operational-sync';
@@ -193,23 +194,27 @@ export async function runOperationalSyncForConnection(
       }
       return syncQuickBooksDesktopOperationalPayload(connection.companyId, frequency, payload);
     }
-    const adapter = await AdapterFactory.createFromConnection(connection.id);
-    let isConnected = false;
-    try {
-      isConnected = await adapter.testConnection();
-    } catch (error: unknown) {
-      const message = errorMessage(error, 'Connection test failed');
-      return { success: false, recordsCreated: 0, errors: [message] };
+    const op = await orchestrateQuickBooksOnlineOperationalSync(connection.companyId);
+    if (op.kind === 'rolling_complete') {
+      await pruneCompanyOperationalData(connection.companyId);
+      return {
+        success: op.errors.length === 0,
+        recordsCreated: op.recordsCreated,
+        errors: normalizeErrors(op.errors),
+        moduleCounts: op.moduleCounts,
+      };
     }
-    if (!isConnected) {
-      return { success: false, recordsCreated: 0, errors: ['Connection test failed.'] };
+    if (op.kind === 'backfill_started' || op.kind === 'backfill_in_progress') {
+      return {
+        success: true,
+        recordsCreated: 0,
+        errors: [],
+      };
     }
-    const result = await adapter.syncAll(frequency);
-    await pruneCompanyOperationalData(connection.companyId);
     return {
-      success: result.success,
-      recordsCreated: result.recordsCreated,
-      errors: normalizeErrors(result.errors),
+      success: false,
+      recordsCreated: 0,
+      errors: ['QuickBooks Online connection is not available for operational sync.'],
     };
   }
 

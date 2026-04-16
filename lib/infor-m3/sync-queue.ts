@@ -4,7 +4,7 @@ import type { AccountingPlatform } from '@prisma/client';
 import type { InforOperationalAsyncRun } from '@/lib/infor-m3/async-run-state';
 import { processPendingInforRawTransforms, transformInforM3RawRun } from '@/lib/infor-m3/operational-sync';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
-import { runOperationalSyncForCompany } from '@/lib/operational-sync/runner';
+import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 
 const LEASE_SECONDS = 120;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -895,7 +895,25 @@ async function processTask(
       clearTimeout(timeoutHandle);
     }
   } else if (String(task.run.platform) === 'QUICKBOOKS') {
-    const qbResult = await runOperationalSyncForCompany(task.run.companyId, 'QUICKBOOKS', task.run.frequency);
+    const op = await orchestrateQuickBooksOnlineOperationalSync(task.run.companyId);
+    const qbResult =
+      op.kind === 'rolling_complete'
+        ? {
+            success: op.errors.length === 0,
+            recordsCreated: op.recordsCreated,
+            errors: op.errors,
+          }
+        : op.kind === 'idle'
+          ? {
+              success: false,
+              recordsCreated: 0,
+              errors: ['QuickBooks Online connection not available'],
+            }
+          : {
+              success: true,
+              recordsCreated: 0,
+              errors: [] as string[],
+            };
     data = {
       ok: qbResult.success,
       hasMore: false,
@@ -903,6 +921,7 @@ async function processTask(
       recordsCreated: qbResult.recordsCreated,
       errors: qbResult.errors,
       details: qbResult.errors.join(' | '),
+      operationalKind: op.kind,
     };
     rawText = JSON.stringify(data);
     responseStatus = qbResult.success ? 200 : 500;

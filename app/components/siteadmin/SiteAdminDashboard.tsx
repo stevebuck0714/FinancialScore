@@ -1675,6 +1675,7 @@ export default function SiteAdminDashboard(props: any) {
       {
         syncFrequency: 'daily' | 'weekly' | 'monthly' | '';
         syncTime: string;
+        operationalLoadMode: 'rolling_90' | 'backfill_3y';
         operationalSyncMode: 'BACKFILL' | 'INCREMENTAL';
         initialSyncStartDate: string;
         incrementalSync: 'YES' | 'NO' | '';
@@ -1813,6 +1814,7 @@ export default function SiteAdminDashboard(props: any) {
   const defaultQboSettings = {
     syncFrequency: 'daily' as 'daily' | 'weekly' | 'monthly' | '',
     syncTime: '08:00',
+    operationalLoadMode: 'rolling_90' as 'rolling_90' | 'backfill_3y',
     operationalSyncMode: 'BACKFILL' as 'BACKFILL' | 'INCREMENTAL',
     initialSyncStartDate: '',
     incrementalSync: 'YES' as 'YES' | 'NO' | '',
@@ -4252,21 +4254,21 @@ export default function SiteAdminDashboard(props: any) {
                                                       QuickBooks Online operational sync configuration
                                                     </div>
                                                     <div style={{ fontSize: '12px', color: '#166534' }}>
-                                                      Configure Phase 1 daily operational pulls for Customer, Vendor, Item, Invoice, Payment, Bill, and BillPayment.
+                                                      Operational data loads when the user runs QuickBooks sync: default 90-day refresh, or optional 3-year backfill (async monthly chunks after first sync).
                                                     </div>
                                                   </div>
                                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                      <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                                      <span style={{ fontWeight: 600 }}>Operational load *</span>
                                                       <select
-                                                        value={getQboSettings(company.id).syncFrequency}
-                                                        onChange={(e) => setQboSetting(company.id, 'syncFrequency', e.target.value)}
+                                                        value={getQboSettings(company.id).operationalLoadMode}
+                                                        onChange={(e) =>
+                                                          setQboSetting(company.id, 'operationalLoadMode', e.target.value as 'rolling_90' | 'backfill_3y')
+                                                        }
                                                         style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                                       >
-                                                        <option value="">Select</option>
-                                                        <option value="daily">Daily</option>
-                                                        <option value="weekly">Weekly</option>
-                                                        <option value="monthly">Monthly</option>
+                                                        <option value="rolling_90">90-day rolling (default)</option>
+                                                        <option value="backfill_3y">3-year backfill (starts on next client sync)</option>
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
@@ -4285,17 +4287,6 @@ export default function SiteAdminDashboard(props: any) {
                                                             </option>
                                                           );
                                                         })}
-                                                      </select>
-                                                    </label>
-                                                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                                      <span style={{ fontWeight: 600 }}>Operational History Window</span>
-                                                      <select
-                                                        value={getQboSettings(company.id).operationalSyncMode}
-                                                        onChange={(e) => setQboSetting(company.id, 'operationalSyncMode', e.target.value)}
-                                                        style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                                      >
-                                                        <option value="BACKFILL">Backfill (up to 3 years each run)</option>
-                                                        <option value="INCREMENTAL">Incremental (last 90 days)</option>
                                                       </select>
                                                     </label>
                                                     <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
@@ -7039,22 +7030,22 @@ export default function SiteAdminDashboard(props: any) {
                                       <div style={{ marginBottom: '8px', padding: '8px', background: '#dcfce7', border: '1px solid #86efac', borderRadius: '6px' }}>
                                         <div style={{ fontSize: '12px', fontWeight: '600', color: '#166534' }}>QuickBooks Online operational sync configuration</div>
                                         <div style={{ fontSize: '12px', color: '#166534' }}>
-                                          Configure Phase 1 daily operational pulls and save.
+                                          Operational data loads when the user runs QuickBooks sync (90-day default or 3-year backfill).
                                         </div>
                                       </div>
 
                                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '8px' }}>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                          <span style={{ fontWeight: 600 }}>Sync Frequency *</span>
+                                          <span style={{ fontWeight: 600 }}>Operational load *</span>
                                           <select
-                                            value={getQboSettings(businessCompany.id).syncFrequency}
-                                            onChange={(e) => setQboSetting(businessCompany.id, 'syncFrequency', e.target.value)}
+                                            value={getQboSettings(businessCompany.id).operationalLoadMode}
+                                            onChange={(e) =>
+                                              setQboSetting(businessCompany.id, 'operationalLoadMode', e.target.value as 'rolling_90' | 'backfill_3y')
+                                            }
                                             style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
                                           >
-                                            <option value="">Select</option>
-                                            <option value="daily">Daily</option>
-                                            <option value="weekly">Weekly</option>
-                                            <option value="monthly">Monthly</option>
+                                            <option value="rolling_90">90-day rolling (default)</option>
+                                            <option value="backfill_3y">3-year backfill (starts on next client sync)</option>
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
@@ -7073,17 +7064,6 @@ export default function SiteAdminDashboard(props: any) {
                                                 </option>
                                               );
                                             })}
-                                          </select>
-                                        </label>
-                                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>
-                                          <span style={{ fontWeight: 600 }}>Operational History Window</span>
-                                          <select
-                                            value={getQboSettings(businessCompany.id).operationalSyncMode}
-                                            onChange={(e) => setQboSetting(businessCompany.id, 'operationalSyncMode', e.target.value)}
-                                            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', fontSize: '12px', background: 'white' }}
-                                          >
-                                            <option value="BACKFILL">Backfill (up to 3 years each run)</option>
-                                            <option value="INCREMENTAL">Incremental (last 90 days)</option>
                                           </select>
                                         </label>
                                         <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#334155' }}>

@@ -1234,10 +1234,23 @@ export class QuickBooksAdapter implements AccountingAdapter {
     }
   }
   
+  private readOperationalWindowOverride(): { start: Date; end: Date } | null {
+    const meta = this.config.connectionMetadata;
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+    const raw = (meta as Record<string, unknown>).qboOperationalWindowOverride;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const o = raw as Record<string, unknown>;
+    if (typeof o.start !== 'string' || typeof o.end !== 'string') return null;
+    const start = this.tryParseDateString(o.start) ?? new Date(o.start);
+    const end = this.tryParseDateString(o.end) ?? new Date(o.end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    return { start: this.normalizeDay(start), end: this.normalizeDay(end) };
+  }
+
   /**
    * Sync all operational data and save to database
    */
-  async syncAll(frequency: 'daily' | 'weekly' | 'monthly'): Promise<SyncResult> {
+  async syncAll(frequencyParam: 'daily' | 'weekly' | 'monthly'): Promise<SyncResult> {
     const errors: string[] = [];
     let recordsCreated = 0;
     const moduleCounts = {
@@ -1250,12 +1263,18 @@ export class QuickBooksAdapter implements AccountingAdapter {
     };
     
     try {
-      const asOfDate = this.resolveSyncAnchorDate(frequency);
-      const isMonthly = frequency === 'monthly';
+      const windowOverride = this.readOperationalWindowOverride();
+      const frequency: 'daily' | 'weekly' | 'monthly' = windowOverride ? 'daily' : frequencyParam;
+      const asOfDate = windowOverride
+        ? windowOverride.end
+        : this.resolveSyncAnchorDate(frequencyParam);
+      const isMonthly = windowOverride ? false : frequencyParam === 'monthly';
       const monthWindow = this.getMonthBounds(asOfDate);
-      const detailsStartDate = isMonthly
-        ? monthWindow.start
-        : this.resolveCashHistoryStartDate(asOfDate, frequency);
+      const detailsStartDate = windowOverride
+        ? windowOverride.start
+        : isMonthly
+          ? monthWindow.start
+          : this.resolveCashHistoryStartDate(asOfDate, frequencyParam);
       const customersEnabled = this.isProgramEnabled('Customers');
       const vendorsEnabled = this.isProgramEnabled('Vendors');
       const arEnabled = this.isProgramEnabled('AR');
@@ -1274,8 +1293,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
       try {
         const cashBalances = await this.getCashBalances();
         if (frequency === 'daily') {
-          const startDate = this.resolveCashHistoryStartDate(asOfDate, frequency);
-          const cashHistory = await this.getDailyCashHistory(startDate, asOfDate, cashBalances);
+          const startDate = windowOverride
+            ? windowOverride.start
+            : this.resolveCashHistoryStartDate(asOfDate, frequencyParam);
+          const endDate = windowOverride ? windowOverride.end : asOfDate;
+          const cashHistory = await this.getDailyCashHistory(startDate, endDate, cashBalances);
           const dates = Array.from(cashHistory.keys()).sort();
 
           // Replace the full requested daily window so stale trailing days cannot persist.
@@ -1285,7 +1307,7 @@ export class QuickBooksAdapter implements AccountingAdapter {
               frequency,
               snapshotDate: {
                 gte: startDate,
-                lte: asOfDate,
+                lte: endDate,
               },
             },
           });
@@ -1524,8 +1546,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
       if (customersEnabled) {
         try {
         if (frequency === 'daily') {
-          const startDate = this.resolveCashHistoryStartDate(asOfDate, frequency);
-          const buckets = await this.getCustomerSalesDailyBuckets(startDate, asOfDate);
+          const startDate = windowOverride
+            ? windowOverride.start
+            : this.resolveCashHistoryStartDate(asOfDate, frequencyParam);
+          const endDate = windowOverride ? windowOverride.end : asOfDate;
+          const buckets = await this.getCustomerSalesDailyBuckets(startDate, endDate);
           for (const bucket of buckets) {
             await prisma.customerSalesSnapshot.deleteMany({
               where: {
@@ -1595,9 +1620,11 @@ export class QuickBooksAdapter implements AccountingAdapter {
       // 5. Sync Product Sales
       if (productsEnabled) {
         try {
-          const productSalesWindow = isMonthly
-            ? { start: monthWindow.start, end: monthWindow.end }
-            : { start: asOfDate, end: asOfDate };
+          const productSalesWindow = windowOverride
+            ? { start: windowOverride.start, end: windowOverride.end }
+            : isMonthly
+              ? { start: monthWindow.start, end: monthWindow.end }
+              : { start: asOfDate, end: asOfDate };
           const productSales = await this.getProductSales(productSalesWindow.start, productSalesWindow.end);
           await prisma.productSalesSnapshot.deleteMany({
             where: {
