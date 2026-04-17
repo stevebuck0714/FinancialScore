@@ -7356,7 +7356,7 @@ function FinancialScorePage() {
       console.log('Filtered company users:', users.filter(u => u.companyId === companyId && u.userType === 'company'));
       console.log('Filtered assessment users:', users.filter(u => u.companyId === companyId && u.userType === 'assessment'));
       
-      const { user, linkedExistingUser } = await usersApi.create({
+      const { user, linkedExistingUser, welcomeEmailSent, welcomeEmailError } = await usersApi.create({
         name,
         title,
         email,
@@ -7365,7 +7365,7 @@ function FinancialScorePage() {
         companyId: companyId,
         userType: userType.toUpperCase() as 'COMPANY' | 'ASSESSMENT'
       });
-      console.log('User created from API:', user);
+      console.log('User created from API:', user, { welcomeEmailSent, welcomeEmailError });
       
       // Normalize role and userType to lowercase
       const normalizedUser = {
@@ -7395,7 +7395,13 @@ function FinancialScorePage() {
       if (linkedExistingUser) {
         alert(`Access granted to existing user:\n\n${email}\n\nNo password was changed. The user keeps their existing login credentials.`);
       } else {
-        alert(`${userType === 'company' ? 'Company' : 'Assessment'} user created successfully!`);
+        const userLabel = userType === 'company' ? 'Company' : 'Assessment';
+        if (welcomeEmailSent) {
+          alert(`${userLabel} user created successfully!\n\nA welcome email with sign-in instructions was sent to ${email}.\n\nNote: The password was NOT included in the email. Please share it with the user separately.`);
+        } else {
+          const reason = welcomeEmailError ? `\n\nReason: ${welcomeEmailError}` : '';
+          alert(`${userLabel} user created successfully!\n\n⚠️ The welcome email could NOT be sent to ${email}.${reason}\n\nPlease provide the sign-in URL and credentials manually.`);
+        }
       }
     } catch (error) {
       console.error('Error creating user:', error);

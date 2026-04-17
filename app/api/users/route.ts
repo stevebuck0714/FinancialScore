@@ -6,6 +6,7 @@ import { requireAuth, validateCompanyAccess, isSiteAdmin, requireCompanyAccess }
 import { auditUserOperation, auditForbiddenAccess } from '@/lib/audit-logger';
 import { createUserSchema, validateInput } from '@/lib/validation-schemas';
 import { grantUserCompanyAccess } from '@/lib/user-company-access';
+import { sendWelcomeUserEmail } from '@/lib/email';
 
 const DEFAULT_ALLOWED_SECTIONS = [
   'ask-corelytics',
@@ -356,7 +357,7 @@ export async function POST(request: NextRequest) {
     // Get company's consultantId to link the user
     const company = await prisma.company.findUnique({
       where: { id: companyId },
-      select: { consultantId: true }
+      select: { consultantId: true, name: true }
     });
 
     const user = await prisma.user.create({
@@ -398,7 +399,46 @@ export async function POST(request: NextRequest) {
       companyId: user.companyId,
     });
 
-    return NextResponse.json({ user }, { status: 201 });
+    // Send welcome email with sign-in link (does not include the password for security).
+    let welcomeEmailSent = false;
+    let welcomeEmailError: string | null = null;
+    try {
+      const requester = await prisma.user.findUnique({
+        where: { id: userContext.userId },
+        select: { name: true, email: true },
+      });
+      const addedByNameOrEmail =
+        (requester?.name && requester.name.trim()) || requester?.email || 'A Corelytics administrator';
+
+      const baseUrl = String(
+        process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3002'
+      ).replace(/\/+$/, '');
+      const loginLink = `${baseUrl}/login`;
+
+      const result = await sendWelcomeUserEmail({
+        to: user.email,
+        userName: user.name || user.email,
+        companyName: company?.name || 'your company',
+        addedByNameOrEmail,
+        loginLink,
+        userType: (user.userType === 'ASSESSMENT' ? 'ASSESSMENT' : 'COMPANY'),
+      });
+
+      if (result.success) {
+        welcomeEmailSent = true;
+      } else {
+        welcomeEmailError =
+          (result as { reason?: string }).reason ||
+          ((result as { error?: unknown }).error instanceof Error
+            ? ((result as { error: Error }).error.message)
+            : 'Email delivery failed');
+      }
+    } catch (emailErr) {
+      welcomeEmailError = emailErr instanceof Error ? emailErr.message : 'Email delivery failed';
+      console.error('❌ Welcome email send failed for new user:', user.id, emailErr);
+    }
+
+    return NextResponse.json({ user, welcomeEmailSent, welcomeEmailError }, { status: 201 });
   } catch (error) {
     console.error('Error creating user:', error);
     return NextResponse.json(
