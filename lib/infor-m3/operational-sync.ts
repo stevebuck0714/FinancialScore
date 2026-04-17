@@ -1845,6 +1845,72 @@ function resolveRawCompletenessSourceKey(
   return null;
 }
 
+/**
+ * Hard floor for any business event date we will INGEST into InforRawRecord.
+ *
+ * Anything older than this is dropped at the ingest boundary so the prod DB
+ * never accumulates pre-cutoff history again. Existing pre-cutoff data is
+ * removed by `tmp/drop-pre-cutoff.ts`.
+ *
+ * Programs without a meaningful business date (reference data: customers,
+ * vendors, items, charts, banks, item locations, inventory headers) are
+ * NEVER filtered — they represent current state.
+ */
+const INFOR_RAW_MIN_BUSINESS_DATE_COMPACT = '20230101'; // YYYYMMDD
+
+const INFOR_RAW_DATE_FIELDS_BY_PROGRAM: Record<string, string[]> = {
+  SLARTRANS: ['InvDate', 'RecordDate'],
+  SLAPTRX: ['InvDate', 'DistDate', 'RecordDate'],
+  SLVCHHDRS: ['InvDate', 'RecordDate', 'DistDate'],
+  SLAPTRXPS: ['InvDate', 'DistDate', 'RecordDate'],
+  SLAPPMTS: ['CheckDate', 'DistDate', 'RecordDate'],
+  SLCOS: ['OrderDate', 'RecordDate'],
+  SLCOITEMS: ['OrderDate', 'DueDate', 'RecordDate'],
+  SLGLTRANS: ['TransDate', 'DistDate', 'RecordDate'],
+  SLLEDGERS: ['TransDate', 'RecordDate'],
+  GLACCTPERIODBALANCES: ['PeriodEnd', 'PeriodEndDate'],
+};
+
+/**
+ * Returns the YYYYMMDD prefix of the first non-empty CSI date field on the
+ * record, or null if none of the configured fields carry a value.
+ *
+ * CSI emits dates as fixed-width 'YYYYMMDD HH:MM:SS.ms' strings, so a simple
+ * substring on the leading 8 chars is sufficient and lexicographically
+ * comparable to other YYYYMMDD strings.
+ */
+function extractRecordBusinessDateYyyymmdd(
+  record: Record<string, unknown>,
+  miProgram: string | null | undefined
+): string | null {
+  const upper = String(miProgram || '').trim().toUpperCase();
+  const fields = INFOR_RAW_DATE_FIELDS_BY_PROGRAM[upper];
+  if (!fields || fields.length === 0) return null;
+  for (const field of fields) {
+    const value = record[field];
+    const token = typeof value === 'string' ? value.trim() : String(value || '').trim();
+    if (!token) continue;
+    const compact = token.slice(0, 8);
+    if (/^\d{8}$/.test(compact)) return compact;
+  }
+  return null;
+}
+
+/**
+ * True iff the record carries a business date AND that date is strictly less
+ * than INFOR_RAW_MIN_BUSINESS_DATE_COMPACT. Records without a configured
+ * business date (or missing the date in the payload) are NOT filtered — we
+ * only drop rows we can prove are pre-cutoff.
+ */
+function recordIsBeforeMinBusinessDate(
+  record: Record<string, unknown>,
+  miProgram: string | null | undefined
+): boolean {
+  const compact = extractRecordBusinessDateYyyymmdd(record, miProgram);
+  if (!compact) return false;
+  return compact < INFOR_RAW_MIN_BUSINESS_DATE_COMPACT;
+}
+
 function resolveRawSourceRecordId(record: Record<string, unknown>): string | null {
   // CSI emits a globally-stable identifier on every payload via `_ItemId`,
   // shaped like `PBT=[artran] art.DT=[2024-01-02 07:38:15.067] art.ID=[<uuid>]`.
@@ -9102,29 +9168,50 @@ export async function syncInforM3OperationalData(
             },
           });
           if (ingestedRecords.length > 0) {
-            const rawRows = ingestedRecords.map((record) => {
-              const payloadJson = JSON.stringify(record);
-              const sourceRecordHash = createHash('sha256').update(payloadJson).digest('hex');
-              return {
-                id: randomUUID(),
-                batchId,
-                companyId,
-                platform: 'INFOR_M3',
-                syncRunId,
-                businessDate: snapshotDate,
-                module: row.module || null,
-                miProgram: row.miProgram || null,
-                transaction: req.transaction || null,
-                sourceRecordId: resolveRawSourceRecordId(record),
-                sourceRecordHash,
-                payload: record as Prisma.InputJsonValue,
-                fetchedAt: new Date(),
-              };
-            });
-            await (prisma as any).inforRawRecord.createMany({
-              data: rawRows,
-              skipDuplicates: true,
-            });
+            // Drop records whose business date precedes our hard ingest floor.
+            // See INFOR_RAW_MIN_BUSINESS_DATE_COMPACT. Records without a
+            // configured business-date field (reference data) pass through.
+            const eligibleRecords = ingestedRecords.filter(
+              (record) => !recordIsBeforeMinBusinessDate(record, row.miProgram)
+            );
+            const skippedPreCutoff = ingestedRecords.length - eligibleRecords.length;
+            if (skippedPreCutoff > 0) {
+              console.log(
+                JSON.stringify({
+                  event: 'sync_record_skipped_pre_cutoff',
+                  syncRunId,
+                  miProgram: row.miProgram || null,
+                  cutoffYyyymmdd: INFOR_RAW_MIN_BUSINESS_DATE_COMPACT,
+                  skipped: skippedPreCutoff,
+                  ingested: eligibleRecords.length,
+                })
+              );
+            }
+            if (eligibleRecords.length > 0) {
+              const rawRows = eligibleRecords.map((record) => {
+                const payloadJson = JSON.stringify(record);
+                const sourceRecordHash = createHash('sha256').update(payloadJson).digest('hex');
+                return {
+                  id: randomUUID(),
+                  batchId,
+                  companyId,
+                  platform: 'INFOR_M3',
+                  syncRunId,
+                  businessDate: snapshotDate,
+                  module: row.module || null,
+                  miProgram: row.miProgram || null,
+                  transaction: req.transaction || null,
+                  sourceRecordId: resolveRawSourceRecordId(record),
+                  sourceRecordHash,
+                  payload: record as Prisma.InputJsonValue,
+                  fetchedAt: new Date(),
+                };
+              });
+              await (prisma as any).inforRawRecord.createMany({
+                data: rawRows,
+                skipDuplicates: true,
+              });
+            }
           }
           const sourceKey = resolveRawCompletenessSourceKey(moduleType);
           if (sourceKey && syncWindowStartIso) {
