@@ -260,6 +260,45 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    // Defensive guard: an explicit multi-day window with mode='manual' (or 'daily_overlap')
+    // is almost always an unintended single-chunk sync that will silently leave snapshots
+    // incomplete. Reject it and tell the caller to use 'business_day_backfill' instead.
+    // (Cursor continuations carry their own programOffset/bookmark and are exempt — those
+    //  are detected below as hasContinuationCursor; we re-derive the same check here so it
+    //  runs before the cursor variables are bound.)
+    {
+      const explicitStart = parseDate(body.startDate);
+      const explicitEnd = parseDate(body.endDate);
+      const carryingContinuation =
+        (normalizeNonNegativeInt(body.programOffset) ?? 0) > 0 ||
+        (normalizeNonNegativeInt(body.requestOffset) ?? 0) > 0 ||
+        (typeof body.bookmark === 'string' && body.bookmark.trim().length > 0);
+      if (
+        explicitStart &&
+        explicitEnd &&
+        explicitStart.getTime() < explicitEnd.getTime() &&
+        mode !== 'business_day_backfill' &&
+        mode !== 'backfill' &&
+        !carryingContinuation
+      ) {
+        const spanMs = explicitEnd.getTime() - explicitStart.getTime();
+        const spanDays = spanMs / (24 * 60 * 60 * 1000);
+        if (spanDays > 1.5) {
+          return NextResponse.json(
+            {
+              error:
+                "Explicit multi-day windows must use mode='business_day_backfill' so the run fans out one snapshot per business day. Single-shot manual/daily_overlap over a multi-day window only processes one chunk and leaves daily snapshots incomplete.",
+              details: {
+                providedMode: mode,
+                spanDays: Math.round(spanDays * 100) / 100,
+                hint: "Set mode='business_day_backfill' (the 'Run Historical Daily Backfill' option in the UI).",
+              },
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
     const programBatchSize = Math.min(normalizePositiveInt(body.programBatchSize) ?? 1, 10);
     const requestedProgramOffset = normalizeNonNegativeInt(body.programOffset) ?? 0;
     const requestedProgramEndOffset = normalizeNonNegativeInt(body.programEndOffset);

@@ -3605,12 +3605,14 @@ export default function SiteAdminDashboard(props: any) {
                                                               return;
                                                             }
                                                           }
+                                                          // Explicit date ranges (day or month) ALWAYS require day-level fan-out
+                                                          // ('business_day_backfill'). Single-shot 'manual' over a multi-day window
+                                                          // only processes one chunk and silently leaves snapshots incomplete
+                                                          // (this is the trap that broke the AR Jan 2026 backfill on 2026-04-17).
                                                           runInforM3OperationalSync(company.id, syncSettings.frequency, site, {
                                                             mode:
                                                               useCustomDayRange || useCustomMonthRange
-                                                                ? (syncSettings.syncMode === 'business_day_backfill'
-                                                                  ? 'business_day_backfill'
-                                                                  : 'manual')
+                                                                ? 'business_day_backfill'
                                                                 : syncSettings.syncMode,
                                                             backfillMonths:
                                                               useCustomDayRange || useCustomMonthRange ? undefined : syncSettings.backfillMonths,

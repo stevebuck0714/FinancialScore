@@ -1166,6 +1166,7 @@ model GLTransactionFact {
   id                String   @id @default(cuid())
   companyId         String
   transDate         DateTime
+  distDate          DateTime?
   accountId         String
   accountName       String?
   accountType       String?
@@ -1181,6 +1182,8 @@ model GLTransactionFact {
   sourcePlatform    String?  @default("INFOR_M3")
   sourceProgram     String?
   sourceTransaction String?
+  controlPeriod     Int?
+  controlYear       Int?
   cono              String?
   divi              String?
   createdAt         DateTime @default(now())
@@ -1189,7 +1192,35 @@ model GLTransactionFact {
   @@index([companyId, accountId, transDate(sort: Desc)])
   @@index([companyId, transNum])
   @@index([companyId, ref])
+  @@index([companyId, sourceProgram])
   @@unique([companyId, transDate, accountId, transNum, ref, description])
+}
+
+model APTransactionFact {
+  id              String   @id @default(cuid())
+  companyId       String
+  eventDate       DateTime    // DistDate — financial/accounting date
+  recordDate      DateTime?   // RecordDate — system entry timestamp
+  apAcct          String?
+  vendorId        String?
+  vendorName      String?
+  voucher         String
+  vouchSeq        String?
+  invoiceNum      String?
+  invoiceDate     DateTime?
+  distDate        DateTime?
+  transType       String
+  invoiceAmount   Float
+  normalizedAmount Float
+  exchangeRate    Float?
+  termsCode       String?
+  sourcePlatform  String?  @default("INFOR_CSI")
+  createdAt       DateTime @default(now())
+
+  @@unique([companyId, voucher, vouchSeq, transType])
+  @@index([companyId, eventDate(sort: Desc)])
+  @@index([companyId, apAcct, eventDate(sort: Desc)])
+  @@index([companyId, vendorId])
 }
 
 model ARInvoiceDetail {

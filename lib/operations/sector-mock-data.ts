@@ -1,7 +1,7 @@
 import { normalizeIndustrySectorCategory } from '@/lib/performance-analytics/industry-sector-category';
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
-type DataType = 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash';
+type DataType = 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'ap';
 
 type Bucket = { key: string; label: string };
 type SectorProfile = {
@@ -606,6 +606,53 @@ function buildCashResponse(req: MockRequest, profile: SectorProfile) {
   };
 }
 
+function buildApBalanceResponse(req: MockRequest, profile: SectorProfile) {
+  const apAccounts = [`${profile.vendorPrefix} — Trade AP`, `${profile.vendorPrefix} — Accrued`];
+  const dates = listDates(req.startDate, req.endDate, req.frequency);
+  const records = dates.flatMap((date, i) =>
+    apAccounts.map((name, idx) => ({
+      companyId: req.companyId,
+      snapshotDate: date.toISOString(),
+      frequency: req.frequency,
+      accountName: name,
+      accountNumber: `${30100 + idx}`,
+      apBalance: metric(420000 - idx * 90000, i + idx + 3, profile.scale),
+    }))
+  );
+  const latestDate = records[0]?.snapshotDate;
+  const latest = records.filter((r) => r.snapshotDate === latestDate);
+  const previousDate = records.find((r) => r.snapshotDate !== latestDate)?.snapshotDate;
+  const previous = previousDate ? records.filter((r) => r.snapshotDate === previousDate) : [];
+  const totalAP = latest.reduce((sum, row) => sum + row.apBalance, 0);
+  const prevTotal = previous.reduce((sum, row) => sum + row.apBalance, 0);
+  const changeAmount = totalAP - prevTotal;
+  const changePercent = prevTotal ? (changeAmount / prevTotal) * 100 : 0;
+  const accountSummaries = apAccounts.map((name) => {
+    const rows = records.filter((r) => r.accountName === name);
+    const balances = rows.map((r) => r.apBalance);
+    return {
+      accountName: name,
+      currentBalance: rows[0]?.apBalance || 0,
+      avgBalance: balances.reduce((sum, b) => sum + b, 0) / Math.max(balances.length, 1),
+      minBalance: Math.min(...balances),
+      maxBalance: Math.max(...balances),
+    };
+  });
+  return {
+    records: records.slice(0, req.limit || 1000),
+    summary: {
+      totalAP,
+      changeAmount,
+      changePercent,
+      accountCount: latest.length,
+      accounts: accountSummaries,
+      avgTotalAP: records.reduce((sum, row) => sum + row.apBalance, 0) / Math.max(records.length, 1),
+      anchorDateIso: null,
+      topLineBuckets: getTopLineBucketsForSector(req.sectorCategory),
+    },
+  };
+}
+
 export function buildOperationalMockResponse(req: MockRequest) {
   const code = normalizeSectorCategory(req.sectorCategory);
   const profile = SECTOR_PROFILES[code] || SECTOR_PROFILES['01'];
@@ -614,6 +661,7 @@ export function buildOperationalMockResponse(req: MockRequest) {
   if (req.type === 'ap-aging') return buildApResponse(req, profile);
   if (req.type === 'products') return buildProductResponse(req, profile);
   if (req.type === 'inventory') return buildInventoryResponse(req, profile);
+  if (req.type === 'ap') return buildApBalanceResponse(req, profile);
   return buildCashResponse(req, profile);
 }
 

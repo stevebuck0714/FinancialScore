@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { AdapterFactory } from '@/lib/accounting-adapters';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 import { syncInforM3OperationalData } from '@/lib/infor-m3/operational-sync';
+import { isInforSyncQueueEnabled, startQueueRun } from '@/lib/infor-m3/sync-queue';
 import { syncQuickBooksDesktopOperationalPayload, type QbDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
 import { syncDynamicsOperationalPayload, type DynamicsOperationalPayload } from '@/lib/dynamics-365/operational-sync';
 import { syncAcumaticaOperationalPayload, type AcumaticaOperationalPayload } from '@/lib/acumatica/operational-sync';
@@ -134,12 +135,49 @@ export async function runOperationalSyncForConnection(
   const frequency = normalizeFrequency(frequencyInput);
 
   if (connection.platform === 'INFOR_M3') {
+    const syncWindow = buildBoundedAutoSyncWindow(frequency, connection.connectionMetadata);
+
+    // Preferred path: enqueue a business_day_backfill so the rolling auto-sync window
+    // fans out one snapshot per business day (with snapshotDateOverride applied per
+    // day inside the worker). The old inline path used mode='manual' over a multi-day
+    // window which (a) only writes a single snapshot for "today" regardless of the
+    // window, and (b) can drop data if the cursor drain doesn't complete within the
+    // 300s cron budget. The queue worker (process-infor-sync-runs cron) handles
+    // chunking and retries reliably.
+    if (isInforSyncQueueEnabled()) {
+      try {
+        const startedRun = await startQueueRun({
+          companyId: connection.companyId,
+          platform: 'INFOR_M3',
+          frequency,
+          mode: 'business_day_backfill',
+          startDate: syncWindow.startDate.toISOString(),
+          endDate: syncWindow.endDate.toISOString(),
+        });
+        await pruneCompanyOperationalData(connection.companyId);
+        return {
+          success: true,
+          recordsCreated: 0, // queued; record counts are aggregated by the queue worker
+          errors: startedRun.alreadyRunning
+            ? ['Infor auto-sync queued behind an already-running backfill; will start when the prior run completes.']
+            : [],
+        };
+      } catch (queueError) {
+        // Fall through to legacy inline path if the queue handoff itself failed,
+        // so we still attempt today's data.
+        console.error(
+          '[operational-sync] Failed to enqueue Infor auto-sync; falling back to inline single-shot.',
+          queueError
+        );
+      }
+    }
+
+    // Legacy inline single-shot fallback (queue disabled or enqueue threw).
     const aggregatedErrors: string[] = [];
     let aggregatedRecordsCreated = 0;
     const maxContinuationBatches = 250;
     let continuationBatches = 0;
 
-    const syncWindow = buildBoundedAutoSyncWindow(frequency, connection.connectionMetadata);
     let result = await syncInforM3OperationalData(connection.companyId, frequency, undefined, syncWindow);
     aggregatedRecordsCreated += result.recordsCreated;
     aggregatedErrors.push(...normalizeErrors(result.errors));

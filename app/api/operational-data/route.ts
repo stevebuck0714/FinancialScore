@@ -6,6 +6,7 @@ import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from 
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getCashBalanceSheetAnchorConfig } from '@/lib/financial/cash-balance-sheet-anchor';
+import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 
 export const dynamic = 'force-dynamic';
 
@@ -162,6 +163,19 @@ function computeDailyCashTotalsByDate(
   return Array.from(map.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, totalCash]) => ({ date, totalCash }));
+}
+
+function computeDailyApTotalsByDate(
+  rows: Array<{ snapshotDate: Date; apBalance: number }>
+): Array<{ date: string; totalAp: number }> {
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    const k = dateKeyUtc(new Date(r.snapshotDate));
+    map.set(k, (map.get(k) || 0) + Number(r.apBalance || 0));
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, totalAp]) => ({ date, totalAp }));
 }
 
 function shiftToBusinessTz(date: Date): Date {
@@ -957,11 +971,166 @@ function buildDailyCashSeriesFromMovements(
   return rows;
 }
 
+/**
+ * Roll-forward AP from TB anchor using event-based sources:
+ *   1. APTransactionFact (voucher events from SLVCHHDRS) — normalizedAmount already signed
+ *   2. GLTransactionFact (APP payment entries) — signedAmount is positive (debit), negate for AP
+ *
+ * AP_day = anchor + SUM(voucher.normalizedAmount) + SUM(-payment.signedAmount)
+ *
+ * Events are keyed by `eventDate` / `transDate` (the accounting date from DistDate on vouchers,
+ * not the GL posting date), which aligns with the AP trial balance.
+ */
+function buildDailyApSeriesFromEvents(
+  anchorBalance: number,
+  anchorDate: Date,
+  voucherEvents: Array<{ eventDate: Date; normalizedAmount: number }>,
+  paymentEvents: Array<{ transDate: Date; signedAmount: number }>,
+  rangeStart: Date,
+  rangeEnd: Date
+): Array<{
+  snapshotDate: Date;
+  accountName: string;
+  apBalance: number;
+  accountId: string | null;
+  accountNumber: string | null;
+}> {
+  const anchor = startOfUtcDay(anchorDate);
+  const start = startOfUtcDay(rangeStart);
+  const end = startOfUtcDay(rangeEnd);
+
+  const deltaByDay = new Map<string, number>();
+  for (const v of voucherEvents) {
+    const key = dateKeyUtc(v.eventDate);
+    deltaByDay.set(key, (deltaByDay.get(key) || 0) + Number(v.normalizedAmount || 0));
+  }
+  for (const p of paymentEvents) {
+    const key = dateKeyUtc(p.transDate);
+    deltaByDay.set(key, (deltaByDay.get(key) || 0) + (-Number(p.signedAmount || 0)));
+  }
+
+  const balancesByDate = new Map<string, number>();
+  const anchorKey = dateKeyUtc(anchor);
+  balancesByDate.set(anchorKey, anchorBalance);
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  for (
+    let cursor = new Date(anchor.getTime() - DAY_MS);
+    cursor.getTime() >= start.getTime();
+    cursor = new Date(cursor.getTime() - DAY_MS)
+  ) {
+    const dayKey = dateKeyUtc(cursor);
+    const nextKey = dateKeyUtc(new Date(cursor.getTime() + DAY_MS));
+    const nextBal = balancesByDate.get(nextKey) || 0;
+    const deltaOnNext = deltaByDay.get(nextKey) || 0;
+    balancesByDate.set(dayKey, nextBal - deltaOnNext);
+  }
+
+  for (
+    let cursor = new Date(anchor.getTime() + DAY_MS);
+    cursor.getTime() <= end.getTime();
+    cursor = new Date(cursor.getTime() + DAY_MS)
+  ) {
+    const dayKey = dateKeyUtc(cursor);
+    const prevKey = dateKeyUtc(new Date(cursor.getTime() - DAY_MS));
+    const prevBal = balancesByDate.get(prevKey) || 0;
+    const delta = deltaByDay.get(dayKey) || 0;
+    balancesByDate.set(dayKey, prevBal + delta);
+  }
+
+  const rows: Array<{
+    snapshotDate: Date;
+    accountName: string;
+    apBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }> = [];
+  for (
+    let cursor = new Date(start);
+    cursor.getTime() <= end.getTime();
+    cursor = new Date(cursor.getTime() + DAY_MS)
+  ) {
+    const dayKey = dateKeyUtc(cursor);
+    if (!balancesByDate.has(dayKey)) continue;
+    rows.push({
+      snapshotDate: parseIsoDayKey(dayKey),
+      accountName: 'Accounts Payable',
+      apBalance: balancesByDate.get(dayKey) || 0,
+      accountId: '30100',
+      accountNumber: '30100',
+    });
+  }
+  return rows;
+}
+
 function startOfUtcWeek(date: Date): Date {
   const dayStart = startOfUtcDay(date);
   const day = dayStart.getUTCDay(); // 0=Sun, 1=Mon, ...
   const offset = day === 0 ? -6 : 1 - day; // Monday as week start
   return new Date(dayStart.getTime() + offset * 24 * 60 * 60 * 1000);
+}
+
+function aggregateApSeriesByFrequency(
+  rows: Array<{
+    snapshotDate: Date;
+    accountName: string;
+    apBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }>,
+  frequency: 'daily' | 'weekly' | 'monthly'
+): Array<{
+  snapshotDate: Date;
+  accountName: string;
+  apBalance: number;
+  accountId: string | null;
+  accountNumber: string | null;
+}> {
+  if (frequency === 'daily') return rows;
+  const bucketByKey = new Map<
+    string,
+    Map<
+      string,
+      {
+        snapshotDate: Date;
+        accountName: string;
+        apBalance: number;
+        accountId: string | null;
+        accountNumber: string | null;
+      }
+    >
+  >();
+
+  for (const row of rows) {
+    const rowDate = startOfUtcDay(new Date(row.snapshotDate));
+    const bucketDate = frequency === 'weekly' ? startOfUtcWeek(rowDate) : startOfMonth(rowDate);
+    const bucketKey = dateKeyUtc(bucketDate);
+    if (!bucketByKey.has(bucketKey)) bucketByKey.set(bucketKey, new Map());
+    const perAccount = bucketByKey.get(bucketKey)!;
+    const accountKey =
+      accountKeyFromParts(row.accountId, row.accountNumber, row.accountName) ||
+      `name:${normalizeAccountNameForKey(row.accountName)}`;
+    const existing = perAccount.get(accountKey);
+    if (!existing || new Date(row.snapshotDate).getTime() >= new Date(existing.snapshotDate).getTime()) {
+      perAccount.set(accountKey, row);
+    }
+  }
+
+  const aggregated: Array<{
+    snapshotDate: Date;
+    accountName: string;
+    apBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }> = [];
+  const sortedBucketKeys = Array.from(bucketByKey.keys()).sort((a, b) => a.localeCompare(b));
+  for (const bucketKey of sortedBucketKeys) {
+    const perAccount = bucketByKey.get(bucketKey)!;
+    const rowsInBucket = Array.from(perAccount.values()).sort((a, b) => a.accountName.localeCompare(b.accountName));
+    aggregated.push(...rowsInBucket);
+  }
+  return aggregated;
 }
 
 function aggregateCashSeriesByFrequency(
@@ -1031,7 +1200,7 @@ function aggregateCashSeriesByFrequency(
  * 
  * Query parameters:
  * - companyId: string (required)
- * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'daily-financials' | 'cash-flow-map'
+ * - type: 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'ap' | 'daily-financials' | 'cash-flow-map'
  * - startDate: ISO date string (optional) - defaults to 90 days ago
  * - endDate: ISO date string (optional) - defaults to today
  * - frequency: 'daily' | 'weekly' | 'monthly' (optional) - defaults to 'monthly'
@@ -1125,6 +1294,9 @@ export async function GET(request: NextRequest) {
     const normalizedAccountingSystem = String(company.accountingSystem || '').trim().toUpperCase();
     const isQuickBooksCompany =
       normalizedAccountingSystem === 'QUICKBOOKS' || normalizedAccountingSystem === 'QUICKBOOKS_DESKTOP';
+    /** GL balance_movement:* + TB anchors — Infor CSI / M3 only (not QuickBooks, not arbitrary ERPs). */
+    const isInforGlCompany =
+      normalizedAccountingSystem === 'INFOR_M3' || normalizedAccountingSystem === 'INFOR_CSI';
 
     // Build date filter. For INFOR daily operational reads, gate on business dates
     // that have completed raw->snapshot hydration to avoid stale/partial snapshots.
@@ -3223,6 +3395,11 @@ export async function GET(request: NextRequest) {
         });
 
       case 'ap-aging':
+        // AP aging uses voucher-level facts (APTransactionFact + APAgingSnapshot) anchored on
+        // DistDate, which is the correct financial date for vouchers and is unaffected by the
+        // GL-side ControlPeriod limitation. The ?type=ap account-balance roll-forward (case 'ap'
+        // above) is the surface that carries the documented drift.
+        // See docs/AP_RECONCILIATION_KNOWN_LIMITATIONS.md
         // Get AP aging data
         const apFrequencyForQuery: 'daily' | 'weekly' | 'monthly' =
           isQuickBooksCompany && frequency !== 'monthly' ? 'monthly' : frequency;
@@ -3293,9 +3470,9 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Calculate aging trends
-        const latestAP = data[0];
-        const apMetrics = latestAP
+        // Calculate aging trends (may be replaced when GL TB anchor is applied below).
+        let latestAP = data[0];
+        let apMetrics = latestAP
           ? {
               totalAP: latestAP.totalAP,
               currentPct: latestAP.totalAP > 0 ? (latestAP.current / latestAP.totalAP) * 100 : 0,
@@ -3697,6 +3874,115 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        let apGlAnchorApplied = false;
+        const apAnchorCfgForTrend = getApBalanceSheetAnchorConfig(companyId);
+        if (isInforGlCompany && apAnchorCfgForTrend) {
+          const anchorAccountForTrend = apAnchorCfgForTrend.accounts[0];
+          const anchorDayAp = startOfUtcDay(new Date(`${apAnchorCfgForTrend.anchorDateIso}T12:00:00.000Z`));
+          const apMovWhere = getCashMovementDateFilterForSheetAnchor(startDate, endDate, anchorDayAp);
+          if (apMovWhere.gte.getTime() <= apMovWhere.lte.getTime()) {
+            const apFactDelegateForTrend = (prisma as any).aPTransactionFact;
+            const glFactDelegateForTrend = (prisma as any).gLTransactionFact;
+            const trendVouchers: Array<{ eventDate: Date; normalizedAmount: number }> = apFactDelegateForTrend
+              ? await apFactDelegateForTrend.findMany({
+                  where: { companyId, OR: [{ apAcct: anchorAccountForTrend.accountId }, { apAcct: null }], eventDate: apMovWhere },
+                  select: { eventDate: true, normalizedAmount: true },
+                  orderBy: [{ eventDate: 'asc' }],
+                })
+              : [];
+            const trendPayments: Array<{ transDate: Date; signedAmount: number }> = glFactDelegateForTrend
+              ? await glFactDelegateForTrend.findMany({
+                  where: {
+                    companyId,
+                    accountId: anchorAccountForTrend.accountId,
+                    OR: [{ ref: { startsWith: 'APP' } }, { ref: { startsWith: 'APA' } }],
+                    transDate: apMovWhere,
+                  },
+                  select: { transDate: true, signedAmount: true },
+                  orderBy: [{ transDate: 'asc' }],
+                })
+              : [];
+            if (trendVouchers.length > 0 || trendPayments.length > 0) {
+              const dailyGlAp = buildDailyApSeriesFromEvents(
+                anchorAccountForTrend.apBalance,
+                anchorDayAp,
+                trendVouchers,
+                trendPayments,
+                startDate,
+                endDate
+              );
+              const glApTotalByDay = new Map<string, number>();
+              for (const row of dailyGlAp) {
+                const k = dateKeyUtc(new Date(row.snapshotDate));
+                glApTotalByDay.set(k, Number(glApTotalByDay.get(k) || 0) + Number(row.apBalance || 0));
+              }
+              if (glApTotalByDay.size > 0) {
+                apGlAnchorApplied = true;
+                const toPeriodKeyFromDayKey = (dayKey: string): string => {
+                  const [y, m, d] = dayKey.split('-').map((x) => Number(x));
+                  const cal = new Date(Date.UTC(y, m - 1, d));
+                  if (frequency === 'monthly') {
+                    return `${cal.getUTCFullYear()}-${String(cal.getUTCMonth() + 1).padStart(2, '0')}`;
+                  }
+                  if (frequency === 'weekly') {
+                    const day = cal.getUTCDay();
+                    const diffToMonday = day === 0 ? -6 : 1 - day;
+                    const weekStart = new Date(
+                      Date.UTC(cal.getUTCFullYear(), cal.getUTCMonth(), cal.getUTCDate() + diffToMonday)
+                    );
+                    return `${weekStart.getUTCFullYear()}-${String(weekStart.getUTCMonth() + 1).padStart(2, '0')}-${String(weekStart.getUTCDate()).padStart(2, '0')}`;
+                  }
+                  return dayKey;
+                };
+                const periodLatestGl = new Map<string, { snapshotDate: Date; total: number }>();
+                for (const dayKey of Array.from(glApTotalByDay.keys()).sort()) {
+                  const total = Number(glApTotalByDay.get(dayKey) || 0);
+                  const pk = toPeriodKeyFromDayKey(dayKey);
+                  const d = parseIsoDayKey(dayKey);
+                  const next = { snapshotDate: d, total };
+                  const existing = periodLatestGl.get(pk);
+                  if (!existing || next.snapshotDate.getTime() > existing.snapshotDate.getTime()) {
+                    periodLatestGl.set(pk, next);
+                  }
+                }
+                data = Array.from(periodLatestGl.values())
+                  .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
+                  .slice(0, limit)
+                  .map((row) => ({
+                    snapshotDate: row.snapshotDate,
+                    frequency: apFrequencyForQuery,
+                    totalAP: row.total,
+                    current: row.total,
+                    days1to30: 0,
+                    days31to60: 0,
+                    days61to90: 0,
+                    days90plus: 0,
+                  })) as any;
+                latestAP = data[0];
+                apMetrics = latestAP
+                  ? {
+                      totalAP: latestAP.totalAP,
+                      currentPct:
+                        latestAP.totalAP > 0 ? (latestAP.current / latestAP.totalAP) * 100 : 0,
+                      over30Pct:
+                        latestAP.totalAP > 0
+                          ? ((latestAP.days1to30 +
+                              latestAP.days31to60 +
+                              latestAP.days61to90 +
+                              latestAP.days90plus) /
+                              latestAP.totalAP) *
+                            100
+                          : 0,
+                      over90Pct:
+                        latestAP.totalAP > 0 ? (latestAP.days90plus / latestAP.totalAP) * 100 : 0,
+                      dpo: calculateDPO(data),
+                    }
+                  : apMetrics;
+              }
+            }
+          }
+        }
+
         if (shouldUseMockData) {
           return NextResponse.json(
             buildOperationalMockResponse({
@@ -3711,7 +3997,7 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        const effectiveApMetrics = computedApFromOpen
+        const effectiveApMetrics = computedApFromOpen && !apGlAnchorApplied
           ? {
               totalAP: Number(computedApFromOpen.totalAP || 0),
               currentPct:
@@ -5241,6 +5527,137 @@ export async function GET(request: NextRequest) {
           records: data,
           summary: cashMetrics,
         });
+
+      case 'ap': {
+        // KNOWN LIMITATION: monthly closing balance can drift vs CSI TB by an amount
+        // bounded by month-boundary voucher activity. Roll-forward sums GLTransactionFact
+        // by transDate; CSI's TB uses fiscal ControlPeriod, which SLGLTRANS payloads
+        // (9-field thin feed) do not include. SLLedgers (rich feed, has ControlPeriod)
+        // is incomplete for recent months on validated companies. Aggregate accuracy is
+        // strong (~0.2% over two months); single month-end may be off by ±cross-boundary
+        // voucher value. Fix path: complete the SLLedgers re-sync, then switch the AP
+        // roll-forward to a (ControlYear, ControlPeriod) filter.
+        // See docs/AP_RECONCILIATION_KNOWN_LIMITATIONS.md
+        let apData: Array<{
+          snapshotDate: Date;
+          accountName: string;
+          apBalance: number;
+          accountId: string | null;
+          accountNumber: string | null;
+        }> = [];
+        const apSheetAnchorCfg = getApBalanceSheetAnchorConfig(companyId);
+        if (apSheetAnchorCfg) {
+          const anchorAccount = apSheetAnchorCfg.accounts[0];
+          const anchorDay = startOfUtcDay(new Date(`${apSheetAnchorCfg.anchorDateIso}T12:00:00.000Z`));
+          const movementDateWhere = getCashMovementDateFilterForSheetAnchor(startDate, endDate, anchorDay);
+
+          const apFactDelegate = (prisma as any).aPTransactionFact;
+          const glFactDelegate = (prisma as any).gLTransactionFact;
+
+          const voucherEvents: Array<{ eventDate: Date; normalizedAmount: number }> = apFactDelegate
+            ? await apFactDelegate.findMany({
+                where: {
+                  companyId,
+                  OR: [{ apAcct: anchorAccount.accountId }, { apAcct: null }],
+                  eventDate: movementDateWhere,
+                },
+                select: { eventDate: true, normalizedAmount: true },
+                orderBy: [{ eventDate: 'asc' }],
+              })
+            : [];
+
+          const paymentEvents: Array<{ transDate: Date; signedAmount: number }> = glFactDelegate
+            ? await glFactDelegate.findMany({
+                where: {
+                  companyId,
+                  accountId: anchorAccount.accountId,
+                  OR: [{ ref: { startsWith: 'APP' } }, { ref: { startsWith: 'APA' } }],
+                  transDate: movementDateWhere,
+                },
+                select: { transDate: true, signedAmount: true },
+                orderBy: [{ transDate: 'asc' }],
+              })
+            : [];
+
+          if (voucherEvents.length > 0 || paymentEvents.length > 0) {
+            apData = buildDailyApSeriesFromEvents(
+              anchorAccount.apBalance,
+              anchorDay,
+              voucherEvents,
+              paymentEvents,
+              startDate,
+              endDate
+            );
+          }
+        }
+        if (apData.length > 0) {
+          apData = aggregateApSeriesByFrequency(apData, frequency);
+        }
+
+        const latestApDate =
+          apData.length > 0 ? Math.max(...apData.map((r) => r.snapshotDate.getTime())) : 0;
+        const latestAp = apData.filter((record) => record.snapshotDate.getTime() === latestApDate);
+        const totalAP = latestAp.reduce((sum, record) => sum + record.apBalance, 0);
+        const distinctApDates = Array.from(new Set(apData.map((r) => r.snapshotDate.getTime()))).sort(
+          (a, b) => b - a
+        );
+        const previousApDate = distinctApDates.length > 1 ? distinctApDates[1] : null;
+        const previousAp = previousApDate
+          ? apData.filter((record) => record.snapshotDate.getTime() === previousApDate)
+          : [];
+        const previousTotalAp = previousAp.reduce((sum, record) => sum + record.apBalance, 0);
+        const changeAmountAp = previousTotalAp ? totalAP - previousTotalAp : 0;
+        const changePercentAp = previousTotalAp ? (changeAmountAp / previousTotalAp) * 100 : 0;
+
+        const accountBalancesAp = apData.reduce((acc, record) => {
+          if (!acc[record.accountName]) {
+            acc[record.accountName] = [];
+          }
+          acc[record.accountName].push(record.apBalance);
+          return acc;
+        }, {} as Record<string, number[]>);
+
+        const accountSummariesAp = Object.entries(accountBalancesAp)
+          .map(([name, balances]) => ({
+            accountName: name,
+            currentBalance: latestAp.find((r) => r.accountName === name)?.apBalance || 0,
+            avgBalance: balances.length ? balances.reduce((sum, b) => sum + b, 0) / balances.length : 0,
+            minBalance: balances.length ? Math.min(...balances) : 0,
+            maxBalance: balances.length ? Math.max(...balances) : 0,
+          }))
+          .sort((a, b) => b.currentBalance - a.currentBalance);
+
+        const apMetrics = {
+          totalAP,
+          changeAmount: changeAmountAp,
+          changePercent: changePercentAp,
+          accountCount: latestAp.length,
+          accounts: accountSummariesAp,
+          avgTotalAP:
+            apData.length > 0 ? apData.reduce((sum, r) => sum + r.apBalance, 0) / apData.length : 0,
+          dailyTotalAP: frequency === 'daily' ? computeDailyApTotalsByDate(apData) : undefined,
+          anchorDateIso: apSheetAnchorCfg?.anchorDateIso ?? null,
+        };
+
+        if (shouldUseMockData) {
+          return NextResponse.json(
+            buildOperationalMockResponse({
+              type: 'ap',
+              companyId,
+              sectorCategory,
+              frequency,
+              startDate,
+              endDate,
+              limit,
+            })
+          );
+        }
+
+        return NextResponse.json({
+          records: apData,
+          summary: apMetrics,
+        });
+      }
 
       case 'daily-financials':
         // Financial snapshots used by Operations (daily/weekly/monthly).

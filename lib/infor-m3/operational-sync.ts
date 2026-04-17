@@ -886,6 +886,7 @@ const SL_VCHHDRS_SAFE_PROPERTIES = [
   'PreRegister',
   'InWorkflow',
   'PostFromPo',
+  'ApAcct',
 ];
 
 function buildSlVchHdrsAsOfFilter(window?: SyncWindow, site?: string): string | null {
@@ -1593,6 +1594,7 @@ const AP_IDO_CANDIDATES = ['SLAptrxps', 'SLAptrxp', 'SLAptrx', 'SLAptrxs', 'Aptr
 const GL_TRANSACTION_SAFE_PROPERTIES = [
   'Acct',
   'TransDate',
+  'DistDate',
   'DomAmount',
   'ForAmount',
   'Amount',
@@ -1819,7 +1821,7 @@ function classifyModuleFromProgramId(
   const programId = String(programIdRaw || '').trim().toUpperCase();
   if (!programId) return null;
 
-  if (programId === 'SLGLTRANS' || GL_ACCOUNT_MASTER_PROGRAM_IDS.has(programId)) return 'gl';
+  if (programId === 'SLGLTRANS' || programId === 'SLLEDGERS' || GL_ACCOUNT_MASTER_PROGRAM_IDS.has(programId)) return 'gl';
   if (programId === 'SLARTRANS' || programId === 'SLCUSTDRFTS') return 'ar';
   if (programId === 'SLAPTRX' || programId === 'SLVCHHDRS' || programId === 'SLAPPMTS' || programId === 'SLAPTRXP')
     return 'ap';
@@ -1844,7 +1846,15 @@ function resolveRawCompletenessSourceKey(
 }
 
 function resolveRawSourceRecordId(record: Record<string, unknown>): string | null {
+  // CSI emits a globally-stable identifier on every payload via `_ItemId`,
+  // shaped like `PBT=[artran] art.DT=[2024-01-02 07:38:15.067] art.ID=[<uuid>]`.
+  // We must prefer it so re-syncs of the same source row dedupe via the
+  // partial unique index `(companyId, platform, miProgram, sourceRecordId)`.
+  // Without `_ItemId` first, programs like SLArtrans / SLVchHdrs fell back to
+  // InvNum / Voucher — which is shared across the row's lifetime updates and
+  // produced 19x-207x duplication in InforRawRecord.
   const candidates = [
+    '_ItemId',
     'RowPointer',
     'rowPointer',
     'ID',
@@ -2589,7 +2599,9 @@ async function saveGLTransactionFacts(
     .map((record) => {
       if (!shouldIncludePostedGlRecord(record)) return null;
       // Financial fact date: GL posting date when available (aligns with mapped movement buckets).
-      const transDate = pickGlPostingOrTransDate(record);
+      const transDateRaw = pickGlPostingOrTransDate(record);
+      // Store at UTC midnight so repeated syncs cannot insert duplicates that differ only by time-of-day.
+      const transDate = transDateRaw ? startOfUtcDay(transDateRaw) : null;
       const accountId =
         pickString(record, ['Acct', 'AcctNum', 'Account', 'AccountNo', 'GLAccount', 'ACNO', 'ACID']) ||
         pickString(record, ['accountId', 'accountCode', 'accountNumber']);
@@ -2597,9 +2609,13 @@ async function saveGLTransactionFacts(
       const { signedAmount, debitAmount, creditAmount, drCrToken } = extractSignedGlAmount(record);
       if (!Number.isFinite(signedAmount) || signedAmount === 0) return null;
       const accountMaster = glAccountMasterById?.get(normalizeGlAccountKey(accountId));
+      const distDateRaw = parseMaybeDate(pickString(record, ['DistDate', 'distDate']));
+      const controlPeriodRaw = pickNumber(record, ['ControlPeriod', 'controlPeriod', 'FiscalPeriod', 'fiscalPeriod']);
+      const controlYearRaw = pickNumber(record, ['ControlYear', 'controlYear', 'FiscalYear', 'fiscalYear']);
       return {
         companyId,
         transDate,
+        distDate: distDateRaw ? startOfUtcDay(distDateRaw) : null,
         accountId: String(accountId),
         accountName:
           pickString(record, ['ChaDescription', 'ChtDescription', 'Description', 'AcctDesc', 'accountName', 'name']) ||
@@ -2613,11 +2629,13 @@ async function saveGLTransactionFacts(
         drCr: drCrToken || null,
         transNum: pickString(record, ['TransNum', 'transNum']) || null,
         ref: pickString(record, ['Ref', 'ref', 'reference']) || null,
-        description: pickString(record, ['Description', 'description', 'TransDesc']) || null,
+        description: pickString(record, ['Description', 'description', 'TransDesc']) ?? '',
         site: pickString(record, ['Site', 'site']) || null,
         sourcePlatform: 'INFOR_M3',
         sourceProgram: context.miProgram || null,
         sourceTransaction: context.transaction || null,
+        controlPeriod: Number.isFinite(controlPeriodRaw) && controlPeriodRaw > 0 ? controlPeriodRaw : null,
+        controlYear: Number.isFinite(controlYearRaw) && controlYearRaw > 0 ? controlYearRaw : null,
         cono: context.cono || null,
         divi: context.divi || null,
       };
@@ -2628,7 +2646,9 @@ async function saveGLTransactionFacts(
   const dedupedRows = new Map<string, Record<string, unknown>>();
   for (const row of rowsRaw) {
     const transDate =
-      row.transDate instanceof Date ? row.transDate.toISOString() : String(row.transDate || '');
+      row.transDate instanceof Date
+        ? startOfUtcDay(row.transDate).toISOString().slice(0, 10)
+        : String(row.transDate || '');
     const key = [
       String(row.companyId || companyId).trim(),
       transDate,
@@ -2661,11 +2681,13 @@ async function saveGLTransactionFacts(
     drCr: row.drCr == null ? null : String(row.drCr),
     transNum: row.transNum == null ? null : String(row.transNum),
     ref: row.ref == null ? null : String(row.ref),
-    description: row.description == null ? null : String(row.description),
+    description: row.description == null || row.description === '' ? '' : String(row.description),
     site: row.site == null ? null : String(row.site),
     sourcePlatform: row.sourcePlatform == null ? null : String(row.sourcePlatform),
     sourceProgram: row.sourceProgram == null ? null : String(row.sourceProgram),
     sourceTransaction: row.sourceTransaction == null ? null : String(row.sourceTransaction),
+    controlPeriod: row.controlPeriod == null ? null : Number(row.controlPeriod),
+    controlYear: row.controlYear == null ? null : Number(row.controlYear),
     cono: row.cono == null ? null : String(row.cono),
     divi: row.divi == null ? null : String(row.divi),
   }));
@@ -2690,6 +2712,8 @@ async function saveGLTransactionFacts(
         "sourcePlatform",
         "sourceProgram",
         "sourceTransaction",
+        "controlPeriod",
+        "controlYear",
         "cono",
         "divi"
       )
@@ -2712,6 +2736,8 @@ async function saveGLTransactionFacts(
         x."sourcePlatform",
         x."sourceProgram",
         x."sourceTransaction",
+        x."controlPeriod",
+        x."controlYear",
         x."cono",
         x."divi"
       FROM jsonb_to_recordset($1::jsonb) AS x(
@@ -2733,6 +2759,8 @@ async function saveGLTransactionFacts(
         "sourcePlatform" text,
         "sourceProgram" text,
         "sourceTransaction" text,
+        "controlPeriod" integer,
+        "controlYear" integer,
         "cono" text,
         "divi" text
       )
@@ -2740,7 +2768,7 @@ async function saveGLTransactionFacts(
         SELECT 1
         FROM "GLTransactionFact" g
         WHERE g."companyId" = x."companyId"
-          AND g."transDate" = x."transDate"
+          AND date_trunc('day', g."transDate") = date_trunc('day', x."transDate")
           AND g."accountId" = x."accountId"
           AND COALESCE(g."transNum",'') = COALESCE(x."transNum",'')
           AND COALESCE(g."ref",'') = COALESCE(x."ref",'')
@@ -3550,12 +3578,36 @@ async function saveAROpenInvoicesNoFullPullsFromCustDrfts(params: {
   return openRows.length;
 }
 
+/**
+ * Threshold parameters for the AR snapshot anti-corruption guard.
+ *
+ * The guard refuses to overwrite an existing AR snapshot when the proposed write
+ * would catastrophically shrink it. This protects historical truth that cannot be
+ * reconstructed from current raw data alone — `InforRawRecord` only retains ~6
+ * months of SLArtrans events, but `AROpenInvoiceSnapshot` carries forward older
+ * still-open invoices day-by-day. A degenerate rewrite (caused by sliced raw data
+ * + cascading carry-forward from a broken prior day) destroys those invoices
+ * permanently.
+ *
+ * Override via context.forceUnsafeSnapshotRewrite=true for emergency rebuilds.
+ */
+const AR_SNAPSHOT_GUARD_MIN_EXISTING_ROWS = 1000;     // Don't bother guarding tiny snapshots.
+const AR_SNAPSHOT_GUARD_MAX_SHRINK_RATIO = 0.5;        // Reject writes < 50% of existing.
+
 async function saveAROpenInvoices(
   companyId: string,
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly',
   records: Record<string, unknown>[],
-  context: { miProgram: string; transaction: string; cono?: string; divi?: string; resetSnapshot?: boolean }
+  context: {
+    miProgram: string;
+    transaction: string;
+    cono?: string;
+    divi?: string;
+    resetSnapshot?: boolean;
+    /** Bypass the anti-corruption guard. Use only for explicit emergency rebuilds. */
+    forceUnsafeSnapshotRewrite?: boolean;
+  }
 ): Promise<number> {
   const snapshotDayStart = startOfUtcDay(snapshotDate);
   const snapshotDayEnd = new Date(snapshotDayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -3863,6 +3915,60 @@ async function saveAROpenInvoices(
   }
 
   const snapshotLockKey = `ar_open_invoice_snapshot|${companyId}|${frequency}|${snapshotDayStart.toISOString()}`;
+
+  // Anti-corruption guard: when the caller wants to wipe-and-replace the day's
+  // snapshot, first check whether the proposed write would shrink an existing
+  // healthy snapshot below the safety threshold. If so, refuse to delete or
+  // write — the existing rows are likely irreplaceable historical truth that
+  // cannot be reconstructed from current raw data (see header comment on
+  // AR_SNAPSHOT_GUARD_* constants).
+  if (context.resetSnapshot && !context.forceUnsafeSnapshotRewrite) {
+    const existingAgg = await prisma.aROpenInvoiceSnapshot.aggregate({
+      where: {
+        companyId,
+        frequency,
+        snapshotDate: { gte: snapshotDayStart, lt: snapshotDayEnd },
+        amountDueHome: { gt: 0 },
+      },
+      _count: { _all: true },
+      _sum: { amountDueHome: true },
+    });
+    const existingRowCount = existingAgg._count._all;
+    const existingTotal = Number(existingAgg._sum.amountDueHome ?? 0);
+    const proposedRowCount = movementRows.length;
+    const proposedTotal = movementRows.reduce(
+      (acc, row) => acc + (Number(row.amountDueHome) > 0 ? Number(row.amountDueHome) : 0),
+      0
+    );
+    const wouldShrinkRows =
+      existingRowCount >= AR_SNAPSHOT_GUARD_MIN_EXISTING_ROWS &&
+      proposedRowCount < existingRowCount * AR_SNAPSHOT_GUARD_MAX_SHRINK_RATIO;
+    const wouldShrinkTotal =
+      existingTotal >= 100_000 &&
+      proposedTotal < existingTotal * AR_SNAPSHOT_GUARD_MAX_SHRINK_RATIO;
+    if (wouldShrinkRows || wouldShrinkTotal) {
+      const warning = JSON.stringify({
+        event: 'ar_snapshot_guard_skipped_unsafe_rewrite',
+        companyId,
+        frequency,
+        snapshotDate: snapshotDayStart.toISOString().slice(0, 10),
+        miProgram: context.miProgram,
+        existingRowCount,
+        proposedRowCount,
+        existingTotal,
+        proposedTotal,
+        reason: wouldShrinkRows ? 'rows_below_threshold' : 'total_below_threshold',
+        threshold: AR_SNAPSHOT_GUARD_MAX_SHRINK_RATIO,
+        hint: 'Pass forceUnsafeSnapshotRewrite=true to override after manual review.',
+      });
+      console.warn(warning);
+      // Throw so the run/task is marked errored and shows up in the UI rather than
+      // silently no-op'ing. This gives operators a loud signal that something is
+      // wrong (sliced raw, broken priors, ingest gap) before more days corrupt.
+      throw new Error(`AR snapshot guard refused unsafe rewrite: ${warning}`);
+    }
+  }
+
   if (context.resetSnapshot) {
     await retryOnDeadlock('aROpenInvoiceSnapshot.reset', () =>
       prisma.$transaction(async (tx) => {
@@ -6510,6 +6616,89 @@ async function saveAPOpenBills(
   return finalRows.length;
 }
 
+/**
+ * Persist AP voucher-header events from SLVCHHDRS into `APTransactionFact`.
+ * Each voucher is stored once (upsert by companyId+voucher+vouchSeq+transType).
+ *
+ * `normalizedAmount` follows AP liability convention:
+ *   VOUCHER/DEBIT  → +amount (AP increases, you owe more)
+ *   CREDIT MEMO    → −amount (AP decreases)
+ */
+async function saveAPTransactionFacts(
+  companyId: string,
+  records: Record<string, unknown>[]
+): Promise<number> {
+  if (records.length === 0) return 0;
+  const delegate = (prisma as any).aPTransactionFact;
+  if (!delegate) return 0;
+
+  const AP_TYPE_SIGN: Record<string, number> = {
+    v: 1,   // voucher (invoice) → AP increases
+    d: 1,   // debit memo → AP increases
+    c: -1,  // credit memo → AP decreases
+    a: 1,   // adjustment → keep original sign (sign * invAmt preserves negative adjustments)
+  };
+
+  const rows: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+
+  for (const record of records) {
+    const voucher = pickString(record, ['Voucher', 'voucher']);
+    if (!voucher) continue;
+    const rawType = String(pickString(record, ['Type', 'type']) || 'V').trim().toLowerCase();
+    const transType = rawType || 'v';
+    const sign = AP_TYPE_SIGN[transType] ?? 1;
+    const vouchSeq = pickString(record, ['VouchSeq', 'vouchSeq']) || '0';
+    const dedupKey = `${voucher}|${vouchSeq}|${transType}`;
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+
+    const invAmt = pickNumber(record, ['InvAmt', 'invAmt', 'InvoiceAmount']);
+    if (!Number.isFinite(invAmt) || invAmt === 0) continue;
+
+    const inWorkflow = pickString(record, ['InWorkflow', 'inWorkflow']);
+    if (inWorkflow === '1') continue;
+
+    const distDateRaw = parseMaybeDate(pickString(record, ['DistDate', 'distDate']));
+    const invDateRaw = parseMaybeDate(pickString(record, ['InvDate', 'invDate']));
+    const recordDateRaw = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate']));
+    const resolvedDate = distDateRaw || invDateRaw;
+    if (!resolvedDate || resolvedDate.getTime() < Date.UTC(2023, 0, 1)) continue;
+    const eventDate = startOfUtcDay(resolvedDate);
+
+    rows.push({
+      companyId,
+      eventDate,
+      recordDate: recordDateRaw ? startOfUtcDay(recordDateRaw) : null,
+      apAcct: pickString(record, ['ApAcct', 'apAcct']) || null,
+      vendorId: pickString(record, ['VendNum', 'vendNum', 'vendorId']) || null,
+      vendorName: pickString(record, ['VadName', 'vadName', 'vendorName']) || null,
+      voucher,
+      vouchSeq,
+      invoiceNum: pickString(record, ['InvNum', 'invNum']) || null,
+      invoiceDate: invDateRaw ? startOfUtcDay(invDateRaw) : null,
+      distDate: distDateRaw ? startOfUtcDay(distDateRaw) : null,
+      transType: transType.toUpperCase(),
+      invoiceAmount: invAmt,
+      normalizedAmount: sign * invAmt,
+      exchangeRate: pickNumber(record, ['ExchRate', 'exchRate']) || null,
+      termsCode: pickString(record, ['TermsCode', 'termsCode']) || null,
+      sourcePlatform: 'INFOR_CSI',
+    });
+  }
+
+  if (rows.length === 0) return 0;
+
+  let created = 0;
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const result = await delegate.createMany({ data: batch, skipDuplicates: true });
+    created += result?.count ?? batch.length;
+  }
+  return created;
+}
+
 async function saveAPPayments(
   companyId: string,
   records: Record<string, unknown>[],
@@ -8533,11 +8722,11 @@ export async function syncInforM3OperationalData(
                   cono: row.cono,
                   divi: row.divi,
                 };
-                const glFactRowsCreated =
-                  glProgram === 'SLGLTRANS'
+                const isGlFactSource = glProgram === 'SLGLTRANS' || glProgram === 'SLLEDGERS';
+                const glFactRowsCreated = isGlFactSource
                     ? await saveGLTransactionFacts(companyId, records, glContext, glAccountMasterById)
                     : 0;
-                if (glProgram === 'SLGLTRANS') {
+                if (glProgram === 'SLGLTRANS' || glProgram === 'SLLEDGERS') {
                 moduleRecordsCreated =
                   glFactRowsCreated +
                   (await saveBalanceMovementsFromGl(
@@ -8614,8 +8803,14 @@ export async function syncInforM3OperationalData(
                 const forcePaymentProgram =
                   apProgramId === 'SLAPPMTS' ||
                   apProgramId === 'SLAPTRXP';
+                const isSlVchHdrsProgram =
+                  apProgramId === 'SLVCHHDRS';
+                if (isSlVchHdrsProgram) {
+                  const apFactRows = await saveAPTransactionFacts(companyId, records);
+                  moduleRecordsCreated += apFactRows;
+                }
                 if (forcePaymentProgram || arApFlow === 'payments') {
-                  moduleRecordsCreated = await saveAPPayments(companyId, records, context);
+                  moduleRecordsCreated += await saveAPPayments(companyId, records, context);
                 } else if (arApFlow === 'open') {
                   const openRowsCreated = noFullPulls
                     ? await saveAPOpenBillsNoFullPullsDeltaState({
@@ -8627,9 +8822,9 @@ export async function syncInforM3OperationalData(
                       })
                     : await saveAPOpenBills(companyId, snapshotDate, frequency, records, context);
                   const agingRowsCreated = await saveAPAging(companyId, snapshotDate, frequency, records);
-                  moduleRecordsCreated = openRowsCreated + agingRowsCreated;
+                  moduleRecordsCreated += openRowsCreated + agingRowsCreated;
                 } else {
-                  moduleRecordsCreated = await saveAPAging(companyId, snapshotDate, frequency, records);
+                  moduleRecordsCreated += await saveAPAging(companyId, snapshotDate, frequency, records);
                 }
               }
               break;
@@ -9421,6 +9616,7 @@ export async function transformInforM3RawRun(options: {
       }
       const cumulativeApOpen = Array.from(cumulativeApOpenByKey.values());
       if (cumulativeApOpen.length > 0) {
+        recordsCreated += await saveAPTransactionFacts(companyId, cumulativeApOpen);
         recordsCreated += await saveAPOpenBills(companyId, snapshotDate, frequency, cumulativeApOpen, {
           miProgram: 'AP_OPEN',
           transaction: 'RAW_REPLAY',
@@ -9445,6 +9641,19 @@ export async function transformInforM3RawRun(options: {
           glAccountMasterById
         );
         recordsCreated += await saveBalanceMovementsFromGl(companyId, frequency, glTrans, glAccountMasterById);
+      }
+
+      const glLedgers = Array.from(rawByModuleProgram.values())
+        .filter((item) => item.moduleType === 'gl' && item.miProgram.toUpperCase() === 'SLLEDGERS')
+        .flatMap((item) => item.records);
+      if (glLedgers.length > 0) {
+        recordsCreated += await saveGLTransactionFacts(
+          companyId,
+          glLedgers,
+          { miProgram: 'SLLedgers', transaction: 'RAW_REPLAY' },
+          glAccountMasterById
+        );
+        recordsCreated += await saveBalanceMovementsFromGl(companyId, frequency, glLedgers, glAccountMasterById);
       }
 
       const inventoryRecords = Array.from(rawByModuleProgram.values())
