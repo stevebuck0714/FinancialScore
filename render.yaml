@@ -1,9 +1,12 @@
 # Render Background Worker for the Infor sync queue.
 #
-# This worker continuously drains InforSyncTask rows by calling the existing
-# Vercel route at https://dashboard.corelytics.com/api/infor-m3/operational-sync.
-# It replaces the throughput-limited Vercel cron job
-# (`/api/cron/process-infor-sync-runs`, capped at 1 tick/min and 5 min/tick).
+# Phase 2 (current): the worker calls the operational-sync handler IN-PROCESS
+# (no HTTP roundtrip to Vercel). This eliminates Vercel's 300s maxDuration cap
+# and the per-request cold-start tax, which is what was limiting backfill
+# throughput to ~2 chunks/min and triggering the periodic HTTP 500s seen on
+# /api/infor-m3/operational-sync. The Vercel route still exists as a fallback
+# for ad-hoc UI-driven syncs and for cutover safety; the queue prefers
+# in-process when INFOR_SYNC_INPROCESS_WORKER=true (set below).
 #
 # Deploys automatically from the `dev` branch.
 services:
@@ -47,3 +50,34 @@ services:
         value: "10"
       - key: INFOR_SYNC_TASK_FETCH_TIMEOUT_MS
         value: "295000"
+
+      # --- Phase 2: in-process direct execution -----------------------------
+      # When true, the queue dispatcher in lib/infor-m3/sync-queue.ts skips the
+      # HTTP fetch to /api/infor-m3/operational-sync and runs the handler
+      # directly via runOperationalSyncRequest(). Removes ~1-3s/chunk of HTTP
+      # + cold-start overhead and the 300s maxDuration ceiling.
+      - key: INFOR_SYNC_INPROCESS_WORKER
+        value: "true"
+
+      # With in-process mode, resolveAdaptiveFanoutDayProgramShardSize() honors
+      # this value verbatim instead of shrinking it for long historical
+      # windows. 8 programs/business-day means a 700-day backfill produces
+      # ~700 tasks instead of ~5,600 — roughly an 8x reduction in queue
+      # roundtrips and DB writes.
+      - key: INFOR_SYNC_FANOUT_DAY_PROGRAM_SHARD_SIZE
+        value: "8"
+
+      # In-process tasks are heavier (each chunk now does the full sync work
+      # the route used to do). Render Starter is 0.5 CPU / 512 MB; running 3
+      # IDOs concurrently fits comfortably and roughly triples throughput vs
+      # the default of 1.
+      - key: INFOR_SYNC_TICK_CONCURRENCY
+        value: "3"
+      - key: INFOR_SYNC_MAX_TASKS_PER_TICK
+        value: "12"
+
+      # Larger shards take longer per task; raise the per-task execution cap
+      # from the default (~5 min) to 9 min so an unusually slow business-day
+      # chunk doesn't get force-released back to the queue prematurely.
+      - key: INFOR_SYNC_TASK_EXECUTION_TIMEOUT_MS
+        value: "540000"

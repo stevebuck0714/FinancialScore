@@ -3,6 +3,10 @@ import prisma from '@/lib/prisma';
 import type { AccountingPlatform } from '@prisma/client';
 import type { InforOperationalAsyncRun } from '@/lib/infor-m3/async-run-state';
 import { processPendingInforRawTransforms, transformInforM3RawRun } from '@/lib/infor-m3/operational-sync';
+import {
+  isInforSyncInProcessWorkerEnabled,
+  runOperationalSyncRequest,
+} from '@/lib/infor-m3/operational-sync-handler';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 
@@ -232,6 +236,16 @@ function resolveFanoutDayProgramShardSize(): number {
 
 function resolveAdaptiveFanoutDayProgramShardSize(businessDayCount: number): number {
   const configured = resolveFanoutDayProgramShardSize();
+  // When the in-process worker is enabled (Render-hosted long-running process),
+  // we are no longer bound by Vercel's 300s maxDuration wall-time per task.
+  // The historical reason for shrinking shards on long windows was to keep one
+  // task within a single Vercel function invocation; that constraint goes away
+  // in-process, so we honor the configured shard size directly. This is the
+  // primary throughput win of Phase 2 — fewer queue tasks and far less HTTP /
+  // cold-start overhead per business day.
+  if (isInforSyncInProcessWorkerEnabled()) {
+    return configured;
+  }
   // Long explicit historical windows can exceed route wall-time when one task
   // pulls too many programs for a day. Split large windows into smaller shards
   // so each leased task can complete within one queue tick.
@@ -877,41 +891,60 @@ async function processTask(
   let rawText = '';
   let responseStatus = 200;
   if (String(task.run.platform) === 'INFOR_M3') {
-    const url = new URL('/api/infor-m3/operational-sync', baseUrl);
-    const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
-    const timeoutMs = resolveTaskFetchTimeoutMs();
-    const controller = new AbortController();
-    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-infor-sync-worker-secret': workerSecret,
-          ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
-        },
-        body: JSON.stringify(taskPayload),
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      responseStatus = response.status;
-      rawText = await response.text().catch(() => '');
+    if (isInforSyncInProcessWorkerEnabled()) {
+      // Phase 2 in-process path: bypass HTTP/Vercel entirely and call the same
+      // handler the route would have called. Auth is satisfied by the queue's
+      // worker secret + the trusted companyId on the task row (the route's
+      // requireSiteAdminAuthorizedInforCompany is intentionally skipped here).
       try {
-        data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
-      } catch {
-        data = {};
+        const result = await runOperationalSyncRequest(taskPayload, task.companyId);
+        responseStatus = result.status;
+        data = result.body;
+        rawText = JSON.stringify(data);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'In-process worker failed';
+        responseStatus = 500;
+        rawText = message;
+        data = { ok: false, error: `In-process worker failed: ${message}` };
       }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Worker fetch failed while processing queue task';
-      responseStatus = 504;
-      rawText = message;
-      data = {
-        ok: false,
-        error: `Queue worker request failed or timed out after ${timeoutMs}ms: ${message}`,
-      };
-    } finally {
-      clearTimeout(timeoutHandle);
+    } else {
+      const url = new URL('/api/infor-m3/operational-sync', baseUrl);
+      const vercelBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
+      const timeoutMs = resolveTaskFetchTimeoutMs();
+      const controller = new AbortController();
+      const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-infor-sync-worker-secret': workerSecret,
+            ...(vercelBypass ? { 'x-vercel-protection-bypass': vercelBypass } : {}),
+          },
+          body: JSON.stringify(taskPayload),
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        responseStatus = response.status;
+        rawText = await response.text().catch(() => '');
+        try {
+          data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+        } catch {
+          data = {};
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Worker fetch failed while processing queue task';
+        responseStatus = 504;
+        rawText = message;
+        data = {
+          ok: false,
+          error: `Queue worker request failed or timed out after ${timeoutMs}ms: ${message}`,
+        };
+      } finally {
+        clearTimeout(timeoutHandle);
+      }
     }
   } else if (String(task.run.platform) === 'QUICKBOOKS') {
     const op = await orchestrateQuickBooksOnlineOperationalSync(task.run.companyId);
