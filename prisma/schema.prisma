@@ -1216,12 +1216,21 @@ model APTransactionFact {
   exchangeRate    Float?
   termsCode       String?
   sourcePlatform  String?  @default("INFOR_CSI")
+  // Phase 4: harvest per-voucher payment events (Type=P) and adjustments
+  // (Type=A) from SLAptrxps. sourceItemId is the CSI _ItemId / aptrxp.ID
+  // UUID per payment line — needed because a single voucher can have
+  // multiple partial payments. Type=V rows from SLVchHdrs continue to
+  // use NULL sourceItemId (one row per voucher+vouchSeq), and the unique
+  // index uses NULLS NOT DISTINCT so those still collapse correctly.
+  sourceItemId    String?
+  sourceProgram   String?
   createdAt       DateTime @default(now())
 
-  @@unique([companyId, voucher, vouchSeq, transType])
+  @@unique([companyId, voucher, vouchSeq, transType, sourceItemId], map: "APTransactionFact_event_uniq")
   @@index([companyId, eventDate(sort: Desc)])
   @@index([companyId, apAcct, eventDate(sort: Desc)])
   @@index([companyId, vendorId])
+  @@index([companyId, sourceProgram])
 }
 
 model ARInvoiceDetail {

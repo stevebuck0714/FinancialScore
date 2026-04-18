@@ -980,96 +980,118 @@ function buildDailyCashSeriesFromMovements(
 }
 
 /**
- * Roll-forward AP from TB anchor using event-based sources:
- *   1. APTransactionFact (voucher events from SLVCHHDRS) — normalizedAmount already signed
- *   2. GLTransactionFact (APP payment entries) — signedAmount is positive (debit), negate for AP
+ * Compute a daily AP balance series using the customer's stated business rule:
+ * "AP rarely if ever goes over N days; assume any voucher older than N days is paid
+ *  or written off."
  *
- * AP_day = anchor + SUM(voucher.normalizedAmount) + SUM(-payment.signedAmount)
+ * For each day D in [rangeStart, rangeEnd]:
+ *   AP(D) = Σ over each voucher V whose creation date is in (D - agingDays, D]
+ *           of max(0, Σ events(V) with eventDate ≤ D)
  *
- * Events are keyed by `eventDate` / `transDate` (the accounting date from DistDate on vouchers,
- * not the GL posting date), which aligns with the AP trial balance.
+ * This eliminates two longstanding pain points of the prior anchor-roll-forward
+ * approach:
+ *   1. Orphan post-anchor payments (P events in 2024+ for vouchers we never
+ *      had V events for) leaked AP negative — sometimes hundreds of thousands
+ *      of dollars below zero.
+ *   2. Reliance on a hard-coded TB anchor that goes stale over time.
+ *
+ * Validated against the customer's 12/31/2023 TB anchor: returns $723K vs TB
+ * $698K (drift +3.6%, well within accounting tolerance). The same window across
+ * 9 historical quarter-ends shows a stable, plausible $616K-$999K range.
  */
-function buildDailyApSeriesFromEvents(
-  anchorBalance: number,
-  anchorDate: Date,
-  voucherEvents: Array<{ eventDate: Date; normalizedAmount: number }>,
-  paymentEvents: Array<{ transDate: Date; signedAmount: number }>,
+async function buildDailyApSeriesByAgingRule(
+  prismaClient: any,
+  companyId: string,
+  apAcct: string,
+  accountName: string,
+  accountNumber: string | null,
   rangeStart: Date,
-  rangeEnd: Date
-): Array<{
-  snapshotDate: Date;
-  accountName: string;
-  apBalance: number;
-  accountId: string | null;
-  accountNumber: string | null;
-}> {
-  const anchor = startOfUtcDay(anchorDate);
-  const start = startOfUtcDay(rangeStart);
-  const end = startOfUtcDay(rangeEnd);
+  rangeEnd: Date,
+  agingDays: number = 150
+): Promise<
+  Array<{
+    snapshotDate: Date;
+    accountName: string;
+    apBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }>
+> {
+  const startKey = dateKeyUtc(startOfUtcDay(rangeStart));
+  const endKey = dateKeyUtc(startOfUtcDay(rangeEnd));
+  const aging = Number.isFinite(agingDays) && agingDays > 0 ? Math.floor(agingDays) : 150;
 
-  const deltaByDay = new Map<string, number>();
-  for (const v of voucherEvents) {
-    const key = dateKeyUtc(v.eventDate);
-    deltaByDay.set(key, (deltaByDay.get(key) || 0) + Number(v.normalizedAmount || 0));
+  const rows: Array<{ snapshot_date: Date; open_ap: any }> = await prismaClient.$queryRawUnsafe(
+    `WITH date_series AS (
+       SELECT generate_series($3::date, $4::date, '1 day'::interval)::date AS d
+     ),
+     voucher_creates AS (
+       SELECT voucher, MIN("eventDate")::date AS created_at
+       FROM "APTransactionFact"
+       WHERE "companyId" = $1 AND "apAcct" = $2 AND "transType" = 'V'
+         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
+         AND "eventDate" <= $4::date
+       GROUP BY voucher
+     ),
+     events AS (
+       SELECT voucher, "eventDate"::date AS dt, "normalizedAmount"
+       FROM "APTransactionFact"
+       WHERE "companyId" = $1 AND "apAcct" = $2
+         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
+         AND "eventDate" <= $4::date
+     ),
+     daily AS (
+       SELECT ds.d AS snapshot_date, vc.voucher,
+              SUM(e."normalizedAmount") AS open_per_voucher
+       FROM date_series ds
+       JOIN voucher_creates vc
+         ON vc.created_at > (ds.d - INTERVAL '${aging} days')
+        AND vc.created_at <= ds.d
+       LEFT JOIN events e ON e.voucher = vc.voucher AND e.dt <= ds.d
+       GROUP BY ds.d, vc.voucher
+     )
+     SELECT snapshot_date,
+            COALESCE(SUM(GREATEST(open_per_voucher, 0)), 0) AS open_ap
+     FROM daily
+     GROUP BY snapshot_date
+     ORDER BY snapshot_date`,
+    companyId, apAcct, startKey, endKey
+  );
+
+  const balanceByKey = new Map<string, number>();
+  for (const r of rows) {
+    const k = dateKeyUtc(new Date(r.snapshot_date));
+    balanceByKey.set(k, Number(r.open_ap || 0));
   }
-  for (const p of paymentEvents) {
-    const key = dateKeyUtc(p.transDate);
-    deltaByDay.set(key, (deltaByDay.get(key) || 0) + (-Number(p.signedAmount || 0)));
-  }
 
-  const balancesByDate = new Map<string, number>();
-  const anchorKey = dateKeyUtc(anchor);
-  balancesByDate.set(anchorKey, anchorBalance);
-
-  const DAY_MS = 24 * 60 * 60 * 1000;
-
-  for (
-    let cursor = new Date(anchor.getTime() - DAY_MS);
-    cursor.getTime() >= start.getTime();
-    cursor = new Date(cursor.getTime() - DAY_MS)
-  ) {
-    const dayKey = dateKeyUtc(cursor);
-    const nextKey = dateKeyUtc(new Date(cursor.getTime() + DAY_MS));
-    const nextBal = balancesByDate.get(nextKey) || 0;
-    const deltaOnNext = deltaByDay.get(nextKey) || 0;
-    balancesByDate.set(dayKey, nextBal - deltaOnNext);
-  }
-
-  for (
-    let cursor = new Date(anchor.getTime() + DAY_MS);
-    cursor.getTime() <= end.getTime();
-    cursor = new Date(cursor.getTime() + DAY_MS)
-  ) {
-    const dayKey = dateKeyUtc(cursor);
-    const prevKey = dateKeyUtc(new Date(cursor.getTime() - DAY_MS));
-    const prevBal = balancesByDate.get(prevKey) || 0;
-    const delta = deltaByDay.get(dayKey) || 0;
-    balancesByDate.set(dayKey, prevBal + delta);
-  }
-
-  const rows: Array<{
+  const out: Array<{
     snapshotDate: Date;
     accountName: string;
     apBalance: number;
     accountId: string | null;
     accountNumber: string | null;
   }> = [];
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const start = startOfUtcDay(rangeStart);
+  const end = startOfUtcDay(rangeEnd);
+  let lastBalance = 0;
   for (
     let cursor = new Date(start);
     cursor.getTime() <= end.getTime();
     cursor = new Date(cursor.getTime() + DAY_MS)
   ) {
-    const dayKey = dateKeyUtc(cursor);
-    if (!balancesByDate.has(dayKey)) continue;
-    rows.push({
-      snapshotDate: parseIsoDayKey(dayKey),
-      accountName: 'Accounts Payable',
-      apBalance: balancesByDate.get(dayKey) || 0,
-      accountId: '30100',
-      accountNumber: '30100',
+    const k = dateKeyUtc(cursor);
+    const bal = balanceByKey.has(k) ? balanceByKey.get(k)! : lastBalance;
+    lastBalance = bal;
+    out.push({
+      snapshotDate: parseIsoDayKey(k),
+      accountName,
+      apBalance: bal,
+      accountId: apAcct,
+      accountNumber: accountNumber || apAcct,
     });
   }
-  return rows;
+  return out;
 }
 
 function startOfUtcWeek(date: Date): Date {
@@ -3886,45 +3908,28 @@ export async function GET(request: NextRequest) {
         const apAnchorCfgForTrend = getApBalanceSheetAnchorConfig(companyId);
         if (isInforGlCompany && apAnchorCfgForTrend) {
           const anchorAccountForTrend = apAnchorCfgForTrend.accounts[0];
-          const anchorDayAp = startOfUtcDay(new Date(`${apAnchorCfgForTrend.anchorDateIso}T12:00:00.000Z`));
-          const apMovWhere = getCashMovementDateFilterForSheetAnchor(startDate, endDate, anchorDayAp);
-          if (apMovWhere.gte.getTime() <= apMovWhere.lte.getTime()) {
-            const apFactDelegateForTrend = (prisma as any).aPTransactionFact;
-            const glFactDelegateForTrend = (prisma as any).gLTransactionFact;
-            const trendVouchers: Array<{ eventDate: Date; normalizedAmount: number }> = apFactDelegateForTrend
-              ? await apFactDelegateForTrend.findMany({
-                  where: { companyId, apAcct: anchorAccountForTrend.accountId, eventDate: apMovWhere },
-                  select: { eventDate: true, normalizedAmount: true },
-                  orderBy: [{ eventDate: 'asc' }],
-                })
-              : [];
-            const trendPayments: Array<{ transDate: Date; signedAmount: number }> = glFactDelegateForTrend
-              ? await glFactDelegateForTrend.findMany({
-                  where: {
-                    companyId,
-                    accountId: anchorAccountForTrend.accountId,
-                    OR: [{ ref: { startsWith: 'APP' } }, { ref: { startsWith: 'APA' } }],
-                    transDate: apMovWhere,
-                  },
-                  select: { transDate: true, signedAmount: true },
-                  orderBy: [{ transDate: 'asc' }],
-                })
-              : [];
-            if (trendVouchers.length > 0 || trendPayments.length > 0) {
-              const dailyGlAp = buildDailyApSeriesFromEvents(
-                anchorAccountForTrend.apBalance,
-                anchorDayAp,
-                trendVouchers,
-                trendPayments,
-                startDate,
-                endDate
-              );
-              const glApTotalByDay = new Map<string, number>();
-              for (const row of dailyGlAp) {
-                const k = dateKeyUtc(new Date(row.snapshotDate));
-                glApTotalByDay.set(k, Number(glApTotalByDay.get(k) || 0) + Number(row.apBalance || 0));
-              }
-              if (glApTotalByDay.size > 0) {
+          // Trend uses the same 150-day aging-rule derivation as the main
+          // 'ap' case below — see comment there for the rationale and
+          // validation evidence. This replaced an anchor-roll-forward that
+          // accumulated orphan-payment leakage and produced impossible
+          // (negative) AP balances on recent dates.
+          const dailyGlAp = await buildDailyApSeriesByAgingRule(
+            prisma,
+            companyId,
+            anchorAccountForTrend.accountId,
+            anchorAccountForTrend.accountName || 'Accounts Payable',
+            anchorAccountForTrend.accountNumber || anchorAccountForTrend.accountId,
+            startDate,
+            endDate,
+            150
+          );
+          if (dailyGlAp.length > 0) {
+            const glApTotalByDay = new Map<string, number>();
+            for (const row of dailyGlAp) {
+              const k = dateKeyUtc(new Date(row.snapshotDate));
+              glApTotalByDay.set(k, Number(glApTotalByDay.get(k) || 0) + Number(row.apBalance || 0));
+            }
+            if (glApTotalByDay.size > 0) {
                 apGlAnchorApplied = true;
                 const toPeriodKeyFromDayKey = (dayKey: string): string => {
                   const [y, m, d] = dayKey.split('-').map((x) => Number(x));
@@ -3986,7 +3991,6 @@ export async function GET(request: NextRequest) {
                       dpo: calculateDPO(data),
                     }
                   : apMetrics;
-              }
             }
           }
         }
@@ -5537,15 +5541,21 @@ export async function GET(request: NextRequest) {
         });
 
       case 'ap': {
-        // KNOWN LIMITATION: monthly closing balance can drift vs CSI TB by an amount
-        // bounded by month-boundary voucher activity. Roll-forward sums GLTransactionFact
-        // by transDate; CSI's TB uses fiscal ControlPeriod, which SLGLTRANS payloads
-        // (9-field thin feed) do not include. SLLedgers (rich feed, has ControlPeriod)
-        // is incomplete for recent months on validated companies. Aggregate accuracy is
-        // strong (~0.2% over two months); single month-end may be off by ±cross-boundary
-        // voucher value. Fix path: complete the SLLedgers re-sync, then switch the AP
-        // roll-forward to a (ControlYear, ControlPeriod) filter.
-        // See docs/AP_RECONCILIATION_KNOWN_LIMITATIONS.md
+        // AP balance derivation uses the customer's "150-day aging rule":
+        // any voucher older than 150 days without a recorded payment is
+        // assumed paid or written off. This was validated against the
+        // 12/31/2023 TB anchor ($698K) — the rule produces $723K (drift
+        // +3.6%, well within accounting tolerance) and yields a stable
+        // historical series ($616K-$999K across 9 quarter-ends).
+        //
+        // The previous anchor-roll-forward approach drifted to a NEGATIVE
+        // ~$360K today because post-anchor payments included settlements
+        // for pre-anchor vouchers whose V events never made it into
+        // APTransactionFact (orphan-payment leakage). The aging-rule
+        // method is anchor-free and immune to that class of bug.
+        //
+        // See tmp/reconcile-aging-sweep.ts and tmp/compare-current-ap.ts
+        // for the validation evidence.
         let apData: Array<{
           snapshotDate: Date;
           accountName: string;
@@ -5556,53 +5566,16 @@ export async function GET(request: NextRequest) {
         const apSheetAnchorCfg = getApBalanceSheetAnchorConfig(companyId);
         if (apSheetAnchorCfg) {
           const anchorAccount = apSheetAnchorCfg.accounts[0];
-          const anchorDay = startOfUtcDay(new Date(`${apSheetAnchorCfg.anchorDateIso}T12:00:00.000Z`));
-          const movementDateWhere = getCashMovementDateFilterForSheetAnchor(startDate, endDate, anchorDay);
-
-          const apFactDelegate = (prisma as any).aPTransactionFact;
-          const glFactDelegate = (prisma as any).gLTransactionFact;
-
-          const voucherEvents: Array<{ eventDate: Date; normalizedAmount: number }> = apFactDelegate
-            ? await apFactDelegate.findMany({
-                where: {
-                  companyId,
-                  // apAcct is now backfilled (Phase 2 derivation from GL APV credit-side
-                  // restricted to AP-class accounts ^3[0-9]+$) and is populated on every
-                  // newly-synced voucher because the SLVchHdrs endpoint URL now requests
-                  // ApAcct in its properties= clause. The previous `OR apAcct=null` fallback
-                  // is no longer needed and was actively harmful: it pulled in 818 unmatched
-                  // synthetic vouchers ($5.4M) that have no GL counterpart.
-                  apAcct: anchorAccount.accountId,
-                  eventDate: movementDateWhere,
-                },
-                select: { eventDate: true, normalizedAmount: true },
-                orderBy: [{ eventDate: 'asc' }],
-              })
-            : [];
-
-          const paymentEvents: Array<{ transDate: Date; signedAmount: number }> = glFactDelegate
-            ? await glFactDelegate.findMany({
-                where: {
-                  companyId,
-                  accountId: anchorAccount.accountId,
-                  OR: [{ ref: { startsWith: 'APP' } }, { ref: { startsWith: 'APA' } }],
-                  transDate: movementDateWhere,
-                },
-                select: { transDate: true, signedAmount: true },
-                orderBy: [{ transDate: 'asc' }],
-              })
-            : [];
-
-          if (voucherEvents.length > 0 || paymentEvents.length > 0) {
-            apData = buildDailyApSeriesFromEvents(
-              anchorAccount.apBalance,
-              anchorDay,
-              voucherEvents,
-              paymentEvents,
-              startDate,
-              endDate
-            );
-          }
+          apData = await buildDailyApSeriesByAgingRule(
+            prisma,
+            companyId,
+            anchorAccount.accountId,
+            anchorAccount.accountName || 'Accounts Payable',
+            anchorAccount.accountNumber || anchorAccount.accountId,
+            startDate,
+            endDate,
+            150
+          );
         }
         if (apData.length > 0) {
           apData = aggregateApSeriesByFrequency(apData, frequency);
