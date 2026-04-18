@@ -6786,6 +6786,99 @@ async function saveAPTransactionFacts(
   return created;
 }
 
+/**
+ * AR equivalent of saveAPTransactionFacts. Writes one ARTransactionFact row
+ * per SLArtrans event (Type=I/P/C/D). Sign normalization matches the
+ * read-side helper:
+ *   I, D -> +Amount (increases AR)
+ *   P, C -> -Amount (reduces AR)
+ *
+ * Idempotent via the (companyId, coNum, customerId, invoiceNum, invSeq,
+ * transType, sourceItemId) NULLS NOT DISTINCT unique index — re-syncing the
+ * same SLArtrans rows is safe.
+ */
+async function saveARTransactionFacts(
+  companyId: string,
+  records: Record<string, unknown>[]
+): Promise<number> {
+  if (records.length === 0) return 0;
+  const delegate = (prisma as any).aRTransactionFact;
+  if (!delegate) return 0;
+
+  // Default AR control account for tenants where SLArtrans does not return Acct.
+  // Today both Infor CSI tenants use 11100; can be made configurable later.
+  const AR_ACCT_DEFAULT = '11100';
+
+  const rows: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+
+  for (const record of records) {
+    const tt = String(pickString(record, ['Type', 'type']) || '').trim().toUpperCase();
+    if (!['I', 'P', 'C', 'D'].includes(tt)) continue;
+
+    const invoiceNum = pickString(record, ['InvNum', 'invNum']);
+    if (!invoiceNum) continue;
+
+    const invSeq = pickString(record, ['InvSeq', 'invSeq']) || '0';
+    const coNum = pickString(record, ['CoNum', 'coNum']);
+    const customerId = pickString(record, ['CustNum', 'custNum']);
+    const sourceItemId = pickString(record, ['_ItemId', 'ItemId', 'itemId']);
+    const dedupKey = `${coNum || ''}|${customerId || ''}|${invoiceNum}|${invSeq}|${tt}|${sourceItemId || ''}`;
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+
+    const amountRaw = pickNumber(record, ['Amount', 'amount']);
+    if (!Number.isFinite(amountRaw) || amountRaw === 0) continue;
+
+    const invDateRaw = parseMaybeDate(pickString(record, ['InvDate', 'invDate']));
+    const recordDateRaw = parseMaybeDate(pickString(record, ['RecordDate', 'recordDate']));
+    const dueDateRaw = parseMaybeDate(pickString(record, ['DueDate', 'dueDate']));
+    const resolvedDate = invDateRaw || recordDateRaw;
+    if (!resolvedDate || resolvedDate.getTime() < Date.UTC(2023, 0, 1)) continue;
+
+    const sign = (tt === 'P' || tt === 'C') ? -1 : 1;
+    const normalized = sign * Math.abs(amountRaw);
+
+    rows.push({
+      companyId,
+      eventDate: startOfUtcDay(resolvedDate),
+      recordDate: recordDateRaw ? startOfUtcDay(recordDateRaw) : null,
+      arAcct: pickString(record, ['Acct', 'acct']) || AR_ACCT_DEFAULT,
+      customerId: customerId || null,
+      customerName:
+        pickString(record, ['DerCustName', 'derCustName']) ||
+        pickString(record, ['UbCustName', 'ubCustName']) ||
+        pickString(record, ['CadName', 'cadName']) ||
+        null,
+      invoiceNum,
+      invSeq,
+      coNum: coNum || null,
+      applyToInvNum: pickString(record, ['ApplyToInvNum', 'applyToInvNum']) || null,
+      transType: tt,
+      invoiceDate: invDateRaw ? startOfUtcDay(invDateRaw) : null,
+      dueDate: dueDateRaw ? startOfUtcDay(dueDateRaw) : null,
+      amount: amountRaw,
+      normalizedAmount: normalized,
+      currencyCode: pickString(record, ['CurrCode', 'currCode']) || null,
+      payType: pickString(record, ['PayType', 'payType']) || null,
+      sourcePlatform: 'INFOR_CSI',
+      sourceProgram: 'SLArtrans',
+      sourceItemId: sourceItemId || null,
+    });
+  }
+
+  if (rows.length === 0) return 0;
+
+  let created = 0;
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const result = await delegate.createMany({ data: batch, skipDuplicates: true });
+    created += result?.count ?? batch.length;
+  }
+  return created;
+}
+
 async function saveAPPayments(
   companyId: string,
   records: Record<string, unknown>[],
@@ -8840,8 +8933,18 @@ export async function syncInforM3OperationalData(
                   divi: row.divi,
                   resetSnapshot: !options?.bookmark,
                 };
+                // SLArtrans rows always feed the ARTransactionFact event store,
+                // regardless of arApFlow. The read-side aging-rule helper in
+                // app/api/operational-data/route.ts (buildDailyArSeriesByAgingRule)
+                // depends on this table being kept current — analogous to how
+                // SLVchHdrs feeds APTransactionFact for AP. Idempotent via the
+                // table's NULLS NOT DISTINCT unique index, so re-runs are safe.
+                if (isSlArtransProgram) {
+                  const arFactRows = await saveARTransactionFacts(companyId, records);
+                  moduleRecordsCreated += arFactRows;
+                }
                 if (arApFlow === 'payments') {
-                  moduleRecordsCreated = await saveARPayments(companyId, records, context);
+                  moduleRecordsCreated += await saveARPayments(companyId, records, context);
                   if (!isHistoricalDailySlice) {
                     await upsertArContractSupportTables(companyId, snapshotDate, frequency);
                   }
@@ -8868,12 +8971,12 @@ export async function syncInforM3OperationalData(
                     : await saveARAging(companyId, snapshotDate, frequency, records);
                   const paymentRowsCreated =
                     isSlCustDrftsProgram ? 0 : await saveARPayments(companyId, records, context);
-                  moduleRecordsCreated = openRowsCreated + agingRowsCreated + paymentRowsCreated;
+                  moduleRecordsCreated += openRowsCreated + agingRowsCreated + paymentRowsCreated;
                   if (!isHistoricalDailySlice) {
                     await upsertArContractSupportTables(companyId, snapshotDate, frequency);
                   }
                 } else {
-                  moduleRecordsCreated = await saveARAging(companyId, snapshotDate, frequency, records);
+                  moduleRecordsCreated += await saveARAging(companyId, snapshotDate, frequency, records);
                 }
               }
               break;
