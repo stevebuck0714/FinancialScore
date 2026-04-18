@@ -3268,10 +3268,18 @@ export default function OperationsTab({
         record = lastSeenRecord;
         isForwardFilled = true;
       }
+      // 4-bucket scheme matching AP: anything below 30 days outstanding is
+      // "Current (0-30)". The sync writer (buildAgingBucketFromDueDate) puts
+      // the 0-30 value into record.current; legacy snapshots may have written
+      // it into record.days1to30 instead, so we defensively take the max.
+      // Without this, the chart silently drops the entire Current bucket
+      // (typically the largest portion of AR), making the chart look empty
+      // or "sporadic" when 90%+ of AR is current.
+      const currentBucket = record ? Math.max(Number(record.current || 0), Number(record.days1to30 || 0)) : null;
       return {
         periodKey: toIsoDay(period.anchor),
         month: formatArTrendDate(period.anchor),
-        'Open AR 1-30': record ? Number(record.days1to30 || 0) : null,
+        'Current (0-30)': currentBucket,
         'Open AR 31-60': record ? Number(record.days31to60 || 0) : null,
         'Open AR 61-90': record ? Number(record.days61to90 || 0) : null,
         'Open AR 90+': record ? Number(record.days90plus || 0) : null,
@@ -3288,14 +3296,14 @@ export default function OperationsTab({
           : 0;
     const arCollectionsTrend = chartData.map((row: any) => {
       const total = Number(row.total || 0);
-      const d1to30 = Number(row['Open AR 1-30'] || 0);
+      const dCurrent = Number(row['Current (0-30)'] || 0);
       const d31to60 = Number(row['Open AR 31-60'] || 0);
       const d61to90 = Number(row['Open AR 61-90'] || 0);
       const d90 = Number(row['Open AR 90+'] || 0);
-      // DSO proxy from aging mix midpoints (days): 15, 45, 75, 120.
+      // DSO proxy from aging mix midpoints (days): Current=15, 45, 75, 120.
       const dsoProxy =
         total > 0
-          ? (d1to30 * 15 + d31to60 * 45 + d61to90 * 75 + d90 * 120) / total
+          ? (dCurrent * 15 + d31to60 * 45 + d61to90 * 75 + d90 * 120) / total
           : 0;
       return {
         period: row.month,
@@ -3306,8 +3314,9 @@ export default function OperationsTab({
     });
     const arCollectionsRiskQueue = arCustomers
       .map((row) => {
+        // 4-bucket scheme: "overdue" (past-due) starts at 31 days. Below 30 is Current.
         const overdue =
-          Number(row.days1to30 || 0) + Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
+          Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
         const over90 = Number(row.days90plus || 0);
         const riskScore = overdue + over90 * 0.5;
         return {
@@ -3389,7 +3398,7 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="Open AR 1-30" stackId="a" fill={AR_TREND_COLORS[0]} />
+              <Bar dataKey="Current (0-30)" stackId="a" fill={AR_TREND_COLORS[0]} />
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="Open AR 61-90" stackId="a" fill={AR_TREND_COLORS[3]} />
               <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[1]} />
