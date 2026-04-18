@@ -1,0 +1,44 @@
+# Render Background Worker for the Infor sync queue.
+#
+# This worker continuously drains InforSyncTask rows by calling the existing
+# Vercel route at https://dashboard.corelytics.com/api/infor-m3/operational-sync.
+# It replaces the throughput-limited Vercel cron job
+# (`/api/cron/process-infor-sync-runs`, capped at 1 tick/min and 5 min/tick).
+#
+# Deploys automatically from the `dev` branch.
+services:
+  - type: worker
+    name: financial-score-sync-worker
+    runtime: node
+    plan: starter
+    region: ohio
+    branch: dev
+    autoDeploy: true
+    buildCommand: npm install --include=dev && npx prisma generate
+    startCommand: npx tsx lib/workers/sync-drain.ts
+    envVars:
+      # --- Required: set these in the Render dashboard (sync: false) ---
+      - key: DATABASE_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+      # --- Worker target + behavior ---
+      - key: WORKER_BASE_URL
+        value: https://dashboard.corelytics.com
+      - key: NODE_ENV
+        value: production
+      - key: WORKER_POLL_INTERVAL_MS
+        value: "1000"
+      - key: WORKER_IDLE_BACKOFF_MS
+        value: "5000"
+      - key: WORKER_HEARTBEAT_INTERVAL_MS
+        value: "60000"
+
+      # --- Queue tuning (mirror Vercel values; tweak in Render dashboard) ---
+      - key: INFOR_SYNC_QUEUE_ENABLED
+        value: "true"
+      - key: INFOR_SYNC_MAX_INFLIGHT_PER_SCOPE
+        value: "10"
+      - key: INFOR_SYNC_TASK_FETCH_TIMEOUT_MS
+        value: "295000"

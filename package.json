@@ -27,7 +27,8 @@
     "import:benchmarks": "tsx scripts/import-benchmarks.ts",
     "cleanup:devices": "tsx scripts/cleanup-expired-devices.ts",
     "test:infor-security": "tsx scripts/test-infor-security.ts",
-    "ops:chart-readiness": "tsx scripts/check-operational-chart-readiness.ts"
+    "ops:chart-readiness": "tsx scripts/check-operational-chart-readiness.ts",
+    "worker:sync": "tsx lib/workers/sync-drain.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
