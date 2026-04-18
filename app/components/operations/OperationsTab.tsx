@@ -11188,7 +11188,6 @@ Strategies to Improve the CCC
     }
 
     const data = billingCashData;
-    const isMockSource = data?.meta?.source === 'mock';
     const summary = data.summary || {};
     const billingCash: any[] = Array.isArray(data.billingCash) ? data.billingCash : [];
     const arByJob: any[] = Array.isArray(data.arByJob) ? data.arByJob : [];
@@ -11245,22 +11244,6 @@ Strategies to Improve the CCC
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {isMockSource && (
-          <div
-            style={{
-              padding: '8px 12px',
-              background: '#fef3c7',
-              border: '1px solid #fde68a',
-              borderRadius: '8px',
-              fontSize: '12px',
-              color: '#92400e',
-            }}
-          >
-            <strong>Mock data:</strong> Billing &amp; Cash is showing synthetic data until a Vista
-            Cloud connection is configured for this company. (Phase 1 — see design doc.)
-          </div>
-        )}
-
         {/* Top: Billing & cash summary KPIs + per-job table */}
         <div style={cardStyle}>
           <div
