@@ -3893,7 +3893,7 @@ export async function GET(request: NextRequest) {
             const glFactDelegateForTrend = (prisma as any).gLTransactionFact;
             const trendVouchers: Array<{ eventDate: Date; normalizedAmount: number }> = apFactDelegateForTrend
               ? await apFactDelegateForTrend.findMany({
-                  where: { companyId, OR: [{ apAcct: anchorAccountForTrend.accountId }, { apAcct: null }], eventDate: apMovWhere },
+                  where: { companyId, apAcct: anchorAccountForTrend.accountId, eventDate: apMovWhere },
                   select: { eventDate: true, normalizedAmount: true },
                   orderBy: [{ eventDate: 'asc' }],
                 })
@@ -5566,7 +5566,13 @@ export async function GET(request: NextRequest) {
             ? await apFactDelegate.findMany({
                 where: {
                   companyId,
-                  OR: [{ apAcct: anchorAccount.accountId }, { apAcct: null }],
+                  // apAcct is now backfilled (Phase 2 derivation from GL APV credit-side
+                  // restricted to AP-class accounts ^3[0-9]+$) and is populated on every
+                  // newly-synced voucher because the SLVchHdrs endpoint URL now requests
+                  // ApAcct in its properties= clause. The previous `OR apAcct=null` fallback
+                  // is no longer needed and was actively harmful: it pulled in 818 unmatched
+                  // synthetic vouchers ($5.4M) that have no GL counterpart.
+                  apAcct: anchorAccount.accountId,
                   eventDate: movementDateWhere,
                 },
                 select: { eventDate: true, normalizedAmount: true },

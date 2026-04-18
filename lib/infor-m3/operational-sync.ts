@@ -6751,6 +6751,12 @@ async function saveAPTransactionFacts(
       companyId,
       eventDate,
       recordDate: recordDateRaw ? startOfUtcDay(recordDateRaw) : null,
+      // ApAcct is requested in SL_VCHHDRS_SAFE_PROPERTIES and the saved
+      // connection-config endpointPath URLs (see tmp/update-slvchhdrs-properties.ts).
+      // When CSI returns the property, this populates apAcct so the AP roll-forward
+      // can filter strictly by AP account. For rows ingested before that fix, see
+      // tmp/backfill-ap-acct.ts which derives apAcct from the credit-side GL APV
+      // journal entry (restricted to AP-class accounts ^3[0-9]+$).
       apAcct: pickString(record, ['ApAcct', 'apAcct']) || null,
       vendorId: pickString(record, ['VendNum', 'vendNum', 'vendorId']) || null,
       vendorName: pickString(record, ['VadName', 'vadName', 'vendorName']) || null,
