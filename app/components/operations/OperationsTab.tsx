@@ -3251,9 +3251,23 @@ export default function OperationsTab({
         requestedPeriods.push({ key: periodKey(cursor), anchor: periodAnchor(cursor) });
       }
     }
+    // Forward-fill across weekends/holidays: AR snapshots are only written on
+    // business days, so requesting a daily series produces null bucket values
+    // (visual gaps) for Sat/Sun/holidays. The AR balance doesn't change when
+    // no AR activity posts, so we carry the prior business day's record across
+    // those periods. The first periods before any observed record stay null
+    // (we don't know the balance yet).
+    let lastSeenRecord: any = null;
     const chartData = requestedPeriods.map((period) => {
       const point = latestRecordByPeriod.get(period.key);
-      const record = point?.record || null;
+      let record = point?.record || null;
+      let isForwardFilled = false;
+      if (record) {
+        lastSeenRecord = record;
+      } else if (lastSeenRecord) {
+        record = lastSeenRecord;
+        isForwardFilled = true;
+      }
       return {
         periodKey: toIsoDay(period.anchor),
         month: formatArTrendDate(period.anchor),
@@ -3263,6 +3277,7 @@ export default function OperationsTab({
         'Open AR 90+': record ? Number(record.days90plus || 0) : null,
         total: record ? Number(record.totalAR || 0) : 0,
         hasData: Boolean(record),
+        isForwardFilled,
       };
     });
     const arXAxisInterval =
