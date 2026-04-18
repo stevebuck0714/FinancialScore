@@ -28,6 +28,11 @@ services:
         value: https://dashboard.corelytics.com
       - key: NODE_ENV
         value: production
+      # Explicit opt-in for production-database access from this Render runtime.
+      # Without this, lib/db-security.ts will reject the prod Neon URL even
+      # when DATABASE_URL is correct.
+      - key: RENDER_ALLOW_PRODUCTION_DB
+        value: "true"
       - key: WORKER_POLL_INTERVAL_MS
         value: "1000"
       - key: WORKER_IDLE_BACKOFF_MS

@@ -45,6 +45,22 @@ function isVercelProductionRuntime(): boolean {
   return process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production';
 }
 
+function isRenderProductionRuntime(): boolean {
+  // Render automatically sets RENDER=true and RENDER_SERVICE_ID on every
+  // managed service (web, worker, cron). Both must be present, and the
+  // operator must explicitly opt-in via RENDER_ALLOW_PRODUCTION_DB=true so
+  // that an accidental `RENDER=true` in a local shell can never reach prod.
+  return (
+    process.env.RENDER === 'true' &&
+    !!process.env.RENDER_SERVICE_ID &&
+    process.env.RENDER_ALLOW_PRODUCTION_DB === 'true'
+  );
+}
+
+function isAllowedProductionRuntime(): boolean {
+  return isVercelProductionRuntime() || isRenderProductionRuntime();
+}
+
 /**
  * Validates the current DATABASE_URL and returns database information
  * This should be called before any database operations
@@ -68,9 +84,10 @@ export function validateDatabaseConnection(): DatabaseInfo {
   if (isProduction) {
     databaseName = productionMatch || 'production';
     label = `PRODUCTION (${databaseName})`;
-    // Production DBs are ONLY allowed on Vercel production runtime.
+    // Production DBs are ONLY allowed on approved production runtimes
+    // (Vercel production or an opted-in Render service).
     // Local dev should NEVER be able to connect to production databases.
-    isAllowed = isVercelProductionRuntime();
+    isAllowed = isAllowedProductionRuntime();
   } else if (isStaging) {
     databaseName = stagingMatch || 'staging';
     label = `STAGING (${databaseName})`;
@@ -85,7 +102,7 @@ export function validateDatabaseConnection(): DatabaseInfo {
   } else if (databaseUrl.includes('neon.tech')) {
     // Generic neon.tech connection
     databaseName = 'neon-unknown';
-    if (isVercelProductionRuntime()) {
+    if (isAllowedProductionRuntime()) {
       // Emergency safety valve: do not brick production auth/login just because
       // the Neon hostname does not match configured aliases.
       label = 'UNKNOWN NEON DATABASE (PRODUCTION RUNTIME ALLOWED)';
@@ -124,13 +141,15 @@ export function enforceDatabaseSecurity(): void {
     // Staging database is allowed during build
     const databaseUrl = process.env.DATABASE_URL || '';
     const productionProjects = getProjectList(process.env.PRODUCTION_DB_PROJECTS, ['orange-poetry', 'aged-snow']);
-    if (findProject(databaseUrl, productionProjects) && !isVercelProductionRuntime()) {
+    if (findProject(databaseUrl, productionProjects) && !isAllowedProductionRuntime()) {
       const error = new Error(
         `🚨 SECURITY VIOLATION: Production database detected during build in non-production environment!\n` +
           `   NODE_ENV: ${process.env.NODE_ENV}\n` +
           `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
           `   VERCEL: ${process.env.VERCEL}\n` +
-          `   Production databases must ONLY be used on Vercel production runtime.`,
+          `   RENDER: ${process.env.RENDER}\n` +
+          `   RENDER_SERVICE_ID: ${process.env.RENDER_SERVICE_ID}\n` +
+          `   Production databases must ONLY be used on approved production runtimes (Vercel or opted-in Render).`,
       );
       console.error(error.message);
       throw error;
@@ -149,10 +168,13 @@ export function enforceDatabaseSecurity(): void {
         `   NODE_ENV: ${process.env.NODE_ENV}\n` +
         `   VERCEL_ENV: ${process.env.VERCEL_ENV}\n` +
         `   VERCEL: ${process.env.VERCEL}\n` +
+        `   RENDER: ${process.env.RENDER}\n` +
+        `   RENDER_SERVICE_ID: ${process.env.RENDER_SERVICE_ID}\n` +
+        `   RENDER_ALLOW_PRODUCTION_DB: ${process.env.RENDER_ALLOW_PRODUCTION_DB}\n` +
         `   Allowed production projects: ${dbInfo.productionProjects.join(', ') || '(none)'}\n` +
         `   Allowed staging projects: ${dbInfo.stagingProjects.join(', ') || '(none)'}\n` +
         `   This connection violates database isolation rules.\n` +
-        `   Production databases must ONLY be used on Vercel production runtime.\n` +
+        `   Production databases must ONLY be used on approved production runtimes (Vercel or opted-in Render).\n` +
         `   Local/dev/preview must NEVER connect to production databases.`,
     );
     console.error(error.message);
@@ -161,7 +183,7 @@ export function enforceDatabaseSecurity(): void {
   }
 
   // Additional cross-contamination checks
-  if (dbInfo.isProduction && !isVercelProductionRuntime()) {
+  if (dbInfo.isProduction && !isAllowedProductionRuntime()) {
     const error = new Error(
       `🚨 CRITICAL SECURITY ERROR: Production database detected in non-production environment!\n` +
         `   This would allow staging code to modify production data!\n` +
