@@ -15,6 +15,7 @@ import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/cre
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getCashBalanceSheetAnchorConfig } from '@/lib/financial/cash-balance-sheet-anchor';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
+import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 
 export const dynamic = 'force-dynamic';
 
@@ -1089,6 +1090,133 @@ async function buildDailyApSeriesByAgingRule(
       apBalance: bal,
       accountId: apAcct,
       accountNumber: accountNumber || apAcct,
+    });
+  }
+  return out;
+}
+
+/**
+ * AR equivalent of buildDailyApSeriesByAgingRule. Computes daily open AR
+ * directly from ARTransactionFact events, scoped to invoices created within
+ * the last `agingDays` days. Per-invoice net is capped at >= 0 so over-payments
+ * (sign-quirk credit memos / refund-style P rows) don't push other invoices
+ * into negative territory.
+ *
+ * Sign convention in ARTransactionFact:
+ *   I, D -> normalizedAmount > 0   (increases AR)
+ *   P, C -> normalizedAmount < 0   (reduces AR)
+ *
+ * Validated against 4 customer-supplied TB anchors:
+ *   12/31/2023: +0.3% drift at 180d
+ *   1/31/2026:  -2.6% drift at 180d
+ *   2/28/2026:  -8.8% drift at 180d
+ *   3/31/2026:  +2.1% drift at 180d
+ */
+async function buildDailyArSeriesByAgingRule(
+  prismaClient: any,
+  companyId: string,
+  arAcct: string,
+  accountName: string,
+  accountNumber: string | null,
+  rangeStart: Date,
+  rangeEnd: Date,
+  agingDays: number = 180
+): Promise<
+  Array<{
+    snapshotDate: Date;
+    accountName: string;
+    arBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }>
+> {
+  const startKey = dateKeyUtc(startOfUtcDay(rangeStart));
+  const endKey = dateKeyUtc(startOfUtcDay(rangeEnd));
+  const aging = Number.isFinite(agingDays) && agingDays > 0 ? Math.floor(agingDays) : 180;
+
+  const rows: Array<{ snapshot_date: Date; open_ar: any }> = await prismaClient.$queryRawUnsafe(
+    `WITH date_series AS (
+       SELECT generate_series($3::date, $4::date, '1 day'::interval)::date AS d
+     ),
+     -- Composite key (coNum, customerId, invoiceNum) prevents cross-customer
+     -- bleed when CSI reuses an InvNum across companies/customers.
+     -- IS NOT DISTINCT FROM on coNum/customerId so NULL == NULL.
+     invoice_creates AS (
+       SELECT "coNum" AS co_num, "customerId" AS cust_num,
+              "invoiceNum" AS inv_num,
+              MIN("eventDate")::date AS created_at
+       FROM "ARTransactionFact"
+       WHERE "companyId" = $1 AND "arAcct" = $2 AND "transType" = 'I'
+         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
+         AND "eventDate" <= $4::date
+       GROUP BY "coNum", "customerId", "invoiceNum"
+     ),
+     events AS (
+       -- Invoices match themselves on invoiceNum; P/C/D match the invoice
+       -- they apply to via COALESCE(applyToInvNum, invoiceNum). Both must
+       -- also match coNum + customerId to avoid cross-customer over-matching.
+       SELECT "coNum" AS co_num, "customerId" AS cust_num,
+              COALESCE("applyToInvNum", "invoiceNum") AS inv_num,
+              "eventDate"::date AS dt,
+              "normalizedAmount"
+       FROM "ARTransactionFact"
+       WHERE "companyId" = $1 AND "arAcct" = $2
+         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
+         AND "eventDate" <= $4::date
+     ),
+     daily AS (
+       SELECT ds.d AS snapshot_date, ic.co_num, ic.cust_num, ic.inv_num,
+              SUM(e."normalizedAmount") AS open_per_invoice
+       FROM date_series ds
+       JOIN invoice_creates ic
+         ON ic.created_at > (ds.d - INTERVAL '${aging} days')
+        AND ic.created_at <= ds.d
+       LEFT JOIN events e
+         ON e.inv_num = ic.inv_num
+        AND e.co_num   IS NOT DISTINCT FROM ic.co_num
+        AND e.cust_num IS NOT DISTINCT FROM ic.cust_num
+        AND e.dt <= ds.d
+       GROUP BY ds.d, ic.co_num, ic.cust_num, ic.inv_num
+     )
+     SELECT snapshot_date,
+            COALESCE(SUM(GREATEST(open_per_invoice, 0)), 0) AS open_ar
+     FROM daily
+     GROUP BY snapshot_date
+     ORDER BY snapshot_date`,
+    companyId, arAcct, startKey, endKey
+  );
+
+  const balanceByKey = new Map<string, number>();
+  for (const r of rows) {
+    const k = dateKeyUtc(new Date(r.snapshot_date));
+    balanceByKey.set(k, Number(r.open_ar || 0));
+  }
+
+  const out: Array<{
+    snapshotDate: Date;
+    accountName: string;
+    arBalance: number;
+    accountId: string | null;
+    accountNumber: string | null;
+  }> = [];
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const start = startOfUtcDay(rangeStart);
+  const end = startOfUtcDay(rangeEnd);
+  let lastBalance = 0;
+  for (
+    let cursor = new Date(start);
+    cursor.getTime() <= end.getTime();
+    cursor = new Date(cursor.getTime() + DAY_MS)
+  ) {
+    const k = dateKeyUtc(cursor);
+    const bal = balanceByKey.has(k) ? balanceByKey.get(k)! : lastBalance;
+    lastBalance = bal;
+    out.push({
+      snapshotDate: parseIsoDayKey(k),
+      accountName,
+      arBalance: bal,
+      accountId: arAcct,
+      accountNumber: accountNumber || arAcct,
     });
   }
   return out;
@@ -2316,6 +2444,10 @@ export async function GET(request: NextRequest) {
         };
         let arAsOfReferenceDate = endDate;
         const preferOpenInvoiceSnapshotTrend = true;
+        // Hoisted out of the snapshot-trend bare block so the latestOpenTotals
+        // override below (around derivedTotals/summaryTotals) can see them.
+        let arGlAnchorApplied = false;
+        let arGlAnchorLatestTotal = 0;
 
         let arInvoiceTrendRows: Array<{
           snapshotDate: Date;
@@ -2852,6 +2984,78 @@ export async function GET(request: NextRequest) {
         `;
           data = arTrendFromOpenRows;
 
+          // ARTransactionFact-derived aging-rule override (Infor CSI):
+          // The legacy AROpenInvoiceSnapshot trend has gaps and timing issues
+          // (e.g. 12/29/2023 = $349K but 1/2/2024 jumps to $1.4M for the same
+          // open invoices). When we have an AR balance-sheet anchor configured
+          // and ARTransactionFact data, replace each row's totalAR (and rescale
+          // its aging buckets proportionally) with the 180-day aging-rule
+          // computation. Validated against 4 customer TB anchors:
+          //   12/31/2023 +0.3%, 1/31/2026 -2.6%, 2/28/2026 -8.8%, 3/31/2026 +2.1%.
+          const arAnchorCfgForTrend = getArBalanceSheetAnchorConfig(companyId);
+          if (isInforGlCompany && arAnchorCfgForTrend && data.length > 0) {
+            const anchorAccountForTrend = arAnchorCfgForTrend.accounts[0];
+            const dailyAr = await buildDailyArSeriesByAgingRule(
+              prisma,
+              companyId,
+              anchorAccountForTrend.accountId,
+              anchorAccountForTrend.accountName || 'Accounts Receivable',
+              anchorAccountForTrend.accountNumber || anchorAccountForTrend.accountId,
+              startDate,
+              endDate,
+              arAnchorCfgForTrend.agingDays
+            );
+            if (dailyAr.length > 0) {
+              const arTotalByDay = new Map<string, number>();
+              for (const row of dailyAr) {
+                const k = dateKeyUtc(new Date(row.snapshotDate));
+                arTotalByDay.set(k, Number(row.arBalance || 0));
+              }
+              if (arTotalByDay.size > 0) {
+                arGlAnchorApplied = true;
+                // Capture latest helper-derived total for later latestOpenTotals override.
+                const sortedKeys = Array.from(arTotalByDay.keys()).sort();
+                const latestKey = sortedKeys.length > 0 ? sortedKeys[sortedKeys.length - 1] : '';
+                arGlAnchorLatestTotal = Number(arTotalByDay.get(latestKey) || 0);
+                data = data
+                  .map((row: any) => {
+                    const key = dateKeyUtc(new Date(row.snapshotDate));
+                    const fact = arTotalByDay.get(key);
+                    if (fact === undefined) return row;
+                    const oldTotal = Number(row.totalAR || 0);
+                    if (oldTotal <= 0 || fact <= 0) {
+                      return {
+                        ...row,
+                        totalAR: fact,
+                        current: fact,
+                        days1to30: 0,
+                        days31to60: 0,
+                        days61to90: 0,
+                        days90plus: 0,
+                        currentPct: 100,
+                        days1to30Pct: 0,
+                        days31to60Pct: 0,
+                        days61to90Pct: 0,
+                        days90plusPct: 0,
+                        over30Pct: 0,
+                        over90Pct: 0,
+                      };
+                    }
+                    const scale = fact / oldTotal;
+                    return {
+                      ...row,
+                      totalAR: fact,
+                      current: Number(row.current || 0) * scale,
+                      days1to30: Number(row.days1to30 || 0) * scale,
+                      days31to60: Number(row.days31to60 || 0) * scale,
+                      days61to90: Number(row.days61to90 || 0) * scale,
+                      days90plus: Number(row.days90plus || 0) * scale,
+                    };
+                  });
+              }
+            }
+          }
+
           if (openRowsInvoiceLike.length > 0) {
           const openRowsEligible = openRowsInvoiceLike;
           for (const row of openRowsEligible as any[]) {
@@ -3360,6 +3564,47 @@ export async function GET(request: NextRequest) {
               limit,
             })
           );
+        }
+
+        // When the AR aging-rule helper (Infor CSI) was applied to the trend,
+        // also override the latest-snapshot totals so the summary cards line
+        // up with the trend chart. Bucket dollars are rescaled proportionally
+        // (snapshot data carries the relative aging mix).
+        if (arGlAnchorApplied && arGlAnchorLatestTotal > 0) {
+          const oldLatestTotal = Number(latestOpenTotals.totalAR || 0);
+          if (oldLatestTotal > 0) {
+            const scale = arGlAnchorLatestTotal / oldLatestTotal;
+            latestOpenTotals = {
+              totalAR: arGlAnchorLatestTotal,
+              current: Number(latestOpenTotals.current || 0) * scale,
+              days1to30: Number(latestOpenTotals.days1to30 || 0) * scale,
+              days31to60: Number(latestOpenTotals.days31to60 || 0) * scale,
+              days61to90: Number(latestOpenTotals.days61to90 || 0) * scale,
+              days90plus: Number(latestOpenTotals.days90plus || 0) * scale,
+              dsoWeightedDaysNumerator: Number(latestOpenTotals.dsoWeightedDaysNumerator || 0) * scale,
+              dsoWeightedDaysDenominator: Number(latestOpenTotals.dsoWeightedDaysDenominator || 0) * scale,
+            };
+            unpaidByCustomer = unpaidByCustomer.map((row: any) => ({
+              ...row,
+              current: Number(row.current || 0) * scale,
+              days1to30: Number(row.days1to30 || 0) * scale,
+              days31to60: Number(row.days31to60 || 0) * scale,
+              days61to90: Number(row.days61to90 || 0) * scale,
+              days90plus: Number(row.days90plus || 0) * scale,
+              totalDue: Number(row.totalDue || 0) * scale,
+            }));
+          } else {
+            latestOpenTotals = {
+              totalAR: arGlAnchorLatestTotal,
+              current: arGlAnchorLatestTotal,
+              days1to30: 0,
+              days31to60: 0,
+              days61to90: 0,
+              days90plus: 0,
+              dsoWeightedDaysNumerator: 0,
+              dsoWeightedDaysDenominator: 0,
+            };
+          }
         }
 
         const derivedTotals = unpaidByCustomer.reduce(

@@ -1233,6 +1233,46 @@ model APTransactionFact {
   @@index([companyId, sourceProgram])
 }
 
+// AR event store mirroring APTransactionFact. Each row is one event for one
+// invoice: Type=I (invoice), Type=P (payment), Type=C (credit memo), Type=D
+// (debit memo). Sourced primarily from SLArtrans CSI IDO. The unique index
+// uses NULLS NOT DISTINCT so NULL sourceItemId still collapses correctly.
+model ARTransactionFact {
+  id               String   @id @default(cuid())
+  companyId        String
+  eventDate        DateTime    // InvDate — financial/accounting date
+  recordDate       DateTime?   // RecordDate — system entry timestamp
+  arAcct           String?     // AR control account (e.g. 11100)
+  customerId       String?     // CustNum
+  customerName     String?     // DerCustName
+  invoiceNum       String      // InvNum (for I) or ApplyToInvNum (for P/C/D)
+  invSeq           String?     // InvSeq
+  coNum            String?     // CoNum (company)
+  applyToInvNum   String?      // ApplyToInvNum (for P/C/D)
+  transType        String      // I, P, C, D
+  invoiceDate      DateTime?
+  dueDate          DateTime?
+  amount           Float       // raw Amount from SLArtrans (always positive in CSI)
+  // Sign-normalized amount: I + |amt|, D + |amt|, P − |amt|, C − |amt|.
+  // Sum of normalizedAmount across an invoice's events = its open balance
+  // (capped at >= 0 by the read-side aging-rule helper).
+  normalizedAmount Float
+  currencyCode     String?
+  termsCode        String?
+  payType          String?
+  sourcePlatform   String?  @default("INFOR_CSI")
+  sourceItemId     String?  // CSI _ItemId per row
+  sourceProgram    String?  // SLArtrans
+  createdAt        DateTime @default(now())
+
+  @@unique([companyId, coNum, customerId, invoiceNum, invSeq, transType, sourceItemId], map: "ARTransactionFact_event_uniq")
+  @@index([companyId, eventDate(sort: Desc)])
+  @@index([companyId, arAcct, eventDate(sort: Desc)])
+  @@index([companyId, customerId])
+  @@index([companyId, invoiceNum])
+  @@index([companyId, sourceProgram])
+}
+
 model ARInvoiceDetail {
   id               String   @id @default(cuid())
   companyId        String
