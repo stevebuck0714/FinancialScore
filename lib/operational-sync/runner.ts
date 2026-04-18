@@ -3,6 +3,7 @@ import { AdapterFactory } from '@/lib/accounting-adapters';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
 import { syncInforM3OperationalData } from '@/lib/infor-m3/operational-sync';
 import { isInforSyncQueueEnabled, startQueueRun } from '@/lib/infor-m3/sync-queue';
+import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { syncQuickBooksDesktopOperationalPayload, type QbDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
 import type { AccountingConnection, AccountingPlatform } from '@prisma/client';
 
@@ -90,6 +91,17 @@ function buildBoundedAutoSyncWindow(
   return { startDate, endDate, mode: 'manual' };
 }
 
+function readInforSiteFromMetadata(metadata: unknown): string | undefined {
+  // Mirror the resolution used by app/api/operational-data/route.ts (md['site'] ?? md['inforSite'] ?? md['defaultSite']).
+  // INFOR_CSI tenants store their default site on the AccountingConnection.connectionMetadata so that
+  // background workers (which have no UI input) can scope IDO calls correctly.
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+  const md = metadata as Record<string, unknown>;
+  const raw = md['site'] ?? md['inforSite'] ?? md['defaultSite'];
+  const value = String(raw ?? '').trim();
+  return value.length > 0 ? value : undefined;
+}
+
 function normalizeFrequency(value: unknown): SyncFrequency {
   if (typeof value !== 'string') return 'daily';
   const normalized = value.trim().toLowerCase();
@@ -132,6 +144,26 @@ export async function runOperationalSyncForConnection(
 
   if (connection.platform === 'INFOR_M3') {
     const syncWindow = buildBoundedAutoSyncWindow(frequency, connection.connectionMetadata);
+    const inforSite = readInforSiteFromMetadata(connection.connectionMetadata);
+    const company = await prisma.company.findUnique({
+      where: { id: connection.companyId },
+      select: { accountingSystem: true },
+    });
+    const inforSystem = normalizeInforSystem(company?.accountingSystem);
+
+    // INFOR_CSI requires an explicit `site` on every operational-sync chunk. Without one
+    // every queued chunk 400s with "CSI operational sync requires site." and the run
+    // chews through retries with chunkCount=0 / records=0. Refuse to enqueue here so the
+    // failure is surfaced as a single actionable sync alert instead of a stuck run.
+    if (inforSystem === 'INFOR_CSI' && !inforSite) {
+      const message =
+        'INFOR_CSI auto-sync requires a configured site on the connection metadata (set `site`, `inforSite`, or `defaultSite`). Skipping enqueue.';
+      return {
+        success: false,
+        recordsCreated: 0,
+        errors: [message],
+      };
+    }
 
     // Preferred path: enqueue a business_day_backfill so the rolling auto-sync window
     // fans out one snapshot per business day (with snapshotDateOverride applied per
@@ -146,6 +178,7 @@ export async function runOperationalSyncForConnection(
           companyId: connection.companyId,
           platform: 'INFOR_M3',
           frequency,
+          site: inforSite,
           mode: 'business_day_backfill',
           startDate: syncWindow.startDate.toISOString(),
           endDate: syncWindow.endDate.toISOString(),
@@ -174,7 +207,7 @@ export async function runOperationalSyncForConnection(
     const maxContinuationBatches = 250;
     let continuationBatches = 0;
 
-    let result = await syncInforM3OperationalData(connection.companyId, frequency, undefined, syncWindow);
+    let result = await syncInforM3OperationalData(connection.companyId, frequency, inforSite, syncWindow);
     aggregatedRecordsCreated += result.recordsCreated;
     aggregatedErrors.push(...normalizeErrors(result.errors));
 
@@ -187,7 +220,7 @@ export async function runOperationalSyncForConnection(
         break;
       }
 
-      result = await syncInforM3OperationalData(connection.companyId, frequency, undefined, syncWindow, {
+      result = await syncInforM3OperationalData(connection.companyId, frequency, inforSite, syncWindow, {
         programOffset: result.continuation.programOffset,
         requestOffset: result.continuation.requestOffset,
         bookmark: result.continuation.bookmark,
