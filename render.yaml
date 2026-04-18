@@ -25,6 +25,14 @@ services:
         sync: false
       - key: CRON_SECRET
         sync: false
+      # OAUTH_ENCRYPTION_KEY: 64-char hex secret used by lib/encryption.ts to
+      # decrypt Infor M3 OAuth tokens stored in Postgres. MUST match the value
+      # set in Vercel exactly — different keys will silently produce garbage
+      # plaintext and every Infor sync will fail with an auth error. Required
+      # only since Phase 2 (in-process worker); Phase 1 didn't need it because
+      # decryption happened in the Vercel route.
+      - key: OAUTH_ENCRYPTION_KEY
+        sync: false
 
       # --- Worker target + behavior ---
       - key: WORKER_BASE_URL
