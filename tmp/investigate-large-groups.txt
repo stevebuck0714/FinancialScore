@@ -1,0 +1,46 @@
+DB: ep-aged-snow-ah3zislt-pooler.c-3.us-east-1.aws.neon.tech
+Company: cmmcp278j0002kz0439rlixdj
+
+=== STRUCTURE OF 3+ GROUPS (by source program composition) ===
+  size=3  SLGLTRANS+SLLedgers+SLLedgers                                                       3,690 groups
+  size=4  SLGLTRANS+SLLedgers+SLLedgers+SLLedgers                                               811 groups
+  size=5  SLGLTRANS+SLLedgers+SLLedgers+SLLedgers+SLLedgers                                     115 groups
+  size=6  SLGLTRANS+SLLedgers+SLLedgers+SLLedgers+SLLedgers+SLLedgers                            18 groups
+  size=7  SLGLTRANS+SLLedgers+SLLedgers+SLLedgers+SLLedgers+SLLedgers+SLLedgers                   1 groups
+
+=== DO 3+ GROUPS HAVE DISTINCT (ref, description, signedAmount) WITHIN SAME SOURCE? ===
+  all identical within same source (DUPLICATE WITHIN SOURCE): 10,369 rows
+
+=== SAMPLE OF 3+ GROUPS (5 examples) ===
+
+  --- 2026-04-13 39185 676519 ---
+    [SLGLTRANS] amount=-40989  ref=""  cp=null  desc=""
+    [SLLedgers] amount=-40989  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-40989  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-40989  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-40989  ref=""  cp=4  desc=""
+
+  --- 2026-04-10 39185 676284 ---
+    [SLGLTRANS] amount=-168816.36  ref=""  cp=null  desc=""
+    [SLLedgers] amount=-168816.36  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-168816.36  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-168816.36  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-168816.36  ref=""  cp=4  desc=""
+
+  --- 2026-04-09 39185 676152 ---
+    [SLGLTRANS] amount=54641.07  ref=""  cp=null  desc=""
+    [SLLedgers] amount=54641.07  ref=""  cp=4  desc=""
+    [SLLedgers] amount=54641.07  ref=""  cp=4  desc=""
+    [SLLedgers] amount=54641.07  ref=""  cp=4  desc=""
+
+  --- 2026-04-08 39185 676151 ---
+    [SLGLTRANS] amount=-3725.4  ref=""  cp=null  desc=""
+    [SLLedgers] amount=-3725.4  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-3725.4  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-3725.4  ref=""  cp=4  desc=""
+    [SLLedgers] amount=-3725.4  ref=""  cp=4  desc=""
+
+  --- 2025-12-31 34675 662466 ---
+    [SLGLTRANS] amount=104.69  ref=""  cp=null  desc=""
+    [SLLedgers] amount=104.69  ref=""  cp=12  desc=""
+    [SLLedgers] amount=104.69  ref=""  cp=12  desc=""

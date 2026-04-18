@@ -1,0 +1,69 @@
+[2026-04-18 16:07:23] DB host: ep-aged-snow-ah3zislt-pooler.c-3.us-east-1.aws.neon.tech
+[2026-04-18 16:07:23] Company:  cmmcp278j0002kz0439rlixdj, Account: 30100
+
+=== DISTINCT (transDate, accountId, transNum) GROUP SIZES ===
+  1 rows/group           1124 groups (1,124 rows)
+  2 rows/group           7051 groups (14,102 rows)
+  TOTAL: 8,175 distinct (transDate, accountId, transNum) groups, 15,226 rows total
+
+=== GROUP-OF-2 STRUCTURE: source program pairs and signedAmount agreement ===
+  Sources: SLGLTRANS,SLLedgers
+    same signedAmount:    7,051    different:        0
+    same ref:             7,051    different:        0
+    same description:     7,051    different:        0
+
+=== SAMPLE PAIRS (5 examples of group-of-2 rows) ===
+
+  --- 2026-04-13 676180 ---
+    [SLGLTRANS]
+      amount=-931  ref=APV  403645  cp=null/null  distDate=null  site=LYN
+      desc=""
+    [SLLedgers]
+      amount=-931  ref=APV  403645  cp=4/2026  distDate=null  site=LYN
+      desc=""
+
+  --- 2026-04-13 676184 ---
+    [SLGLTRANS]
+      amount=931  ref=APP 9486503  cp=null/null  distDate=null  site=LYN
+      desc=""
+    [SLLedgers]
+      amount=931  ref=APP 9486503  cp=4/2026  distDate=null  site=LYN
+      desc=""
+
+  --- 2026-04-13 676528 ---
+    [SLGLTRANS]
+      amount=11133.39  ref=APP 1057301  cp=null/null  distDate=null  site=LYN
+      desc=""
+    [SLLedgers]
+      amount=11133.39  ref=APP 1057301  cp=4/2026  distDate=null  site=LYN
+      desc=""
+
+  --- 2026-04-10 676155 ---
+    [SLGLTRANS]
+      amount=18604.55  ref=APP 1850001  cp=null/null  distDate=null  site=LYN
+      desc=""
+    [SLLedgers]
+      amount=18604.55  ref=APP 1850001  cp=4/2026  distDate=null  site=LYN
+      desc=""
+
+  --- 2026-04-10 676157 ---
+    [SLGLTRANS]
+      amount=20841.7  ref=APP 1049001  cp=null/null  distDate=null  site=LYN
+      desc=""
+    [SLLedgers]
+      amount=20841.7  ref=APP 1049001  cp=4/2026  distDate=null  site=LYN
+      desc=""
+
+=== transNum NULL/empty risk check ===
+  transNum=SET: 15,226 rows
+
+=== ALL-ACCOUNTS group-size distribution (sample) ===
+  1 rows/group         16,835 groups (16,835 rows)
+  2 rows/group        111,464 groups (222,928 rows)
+  3 rows/group          3,690 groups (11,070 rows)
+  4 rows/group            811 groups (3,244 rows)
+  5 rows/group            115 groups (575 rows)
+  6 rows/group             18 groups (108 rows)
+  7 rows/group              1 groups (7 rows)
+
+[2026-04-18 16:07:25] DONE.

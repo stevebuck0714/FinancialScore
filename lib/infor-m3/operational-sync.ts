@@ -2830,19 +2830,34 @@ async function saveGLTransactionFacts(
         "cono" text,
         "divi" text
       )
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM "GLTransactionFact" g
-        WHERE g."companyId" = x."companyId"
-          AND date_trunc('day', g."transDate") = date_trunc('day', x."transDate")
-          AND g."accountId" = x."accountId"
-          AND COALESCE(g."transNum",'') = COALESCE(x."transNum",'')
-          AND COALESCE(g."ref",'') = COALESCE(x."ref",'')
-          AND COALESCE(g."description",'') = COALESCE(x."description",'')
-          AND COALESCE(g."signedAmount",0) = COALESCE(x."signedAmount",0)
-          AND COALESCE(g."debitAmount",0) = COALESCE(x."debitAmount",0)
-          AND COALESCE(g."creditAmount",0) = COALESCE(x."creditAmount",0)
-      )
+      -- Drop rows without a transNum: they cannot participate in the new
+      -- (companyId, transDate, accountId, transNum) unique key. Today this is
+      -- a no-op (verified 0/256,041 on prod, 0/12,838 on dev) but it guards
+      -- against a future IDO change that omits TransNum.
+      WHERE x."transNum" IS NOT NULL AND x."transNum" <> ''
+      ON CONFLICT ("companyId", "transDate", "accountId", "transNum") DO UPDATE
+        SET
+          -- Enrich existing rows with fiscal-period stamps when SLLedgers fills
+          -- in fields that an earlier SLGLTRANS row left null. Never overwrite
+          -- an already-populated value with NULL.
+          "controlPeriod" = COALESCE("GLTransactionFact"."controlPeriod", EXCLUDED."controlPeriod"),
+          "controlYear"   = COALESCE("GLTransactionFact"."controlYear",   EXCLUDED."controlYear"),
+          "distDate"      = COALESCE("GLTransactionFact"."distDate",      EXCLUDED."distDate"),
+          "accountName"   = COALESCE("GLTransactionFact"."accountName",   EXCLUDED."accountName"),
+          "accountType"   = COALESCE("GLTransactionFact"."accountType",   EXCLUDED."accountType"),
+          "accountCategory" = COALESCE("GLTransactionFact"."accountCategory", EXCLUDED."accountCategory"),
+          "description"   = CASE
+                              WHEN COALESCE("GLTransactionFact"."description", '') = ''
+                                THEN EXCLUDED."description"
+                              ELSE "GLTransactionFact"."description"
+                            END,
+          -- Promote sourceProgram to SLLedgers when it provides the richer payload
+          -- so downstream queries can prefer SLLedgers-sourced rows reliably.
+          "sourceProgram" = CASE
+                              WHEN EXCLUDED."sourceProgram" = 'SLLedgers'
+                                THEN 'SLLedgers'
+                              ELSE "GLTransactionFact"."sourceProgram"
+                            END
     `,
     JSON.stringify(sqlRows)
   );

@@ -1194,7 +1194,7 @@ model GLTransactionFact {
   @@index([companyId, transNum])
   @@index([companyId, ref])
   @@index([companyId, sourceProgram])
-  @@unique([companyId, transDate, accountId, transNum, ref, description])
+  @@unique([companyId, transDate, accountId, transNum])
 }
 
 model APTransactionFact {
