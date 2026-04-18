@@ -3,7 +3,12 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from '@/lib/operations/sector-mock-data';
-import { buildJobCostControlMock } from '@/lib/operations/construction-mock-data';
+import {
+  buildJobCostControlMock,
+  buildProjectPortfolioMock,
+  buildCommitmentsForecastMock,
+  buildBillingCashMock,
+} from '@/lib/operations/construction-mock-data';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getCashBalanceSheetAnchorConfig } from '@/lib/financial/cash-balance-sheet-anchor';
@@ -5896,16 +5901,55 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      case 'project-portfolio':
-      case 'commitments-forecast':
-      case 'billing-cash':
+      case 'project-portfolio': {
+        // M3: Mock-driven Project Portfolio. Reuses the same job set as Job
+        // Cost Control so both tabs present a consistent view of the same
+        // underlying portfolio. Vista-backed ingestion lands in M6.
+        const payload = buildProjectPortfolioMock(companyId);
         return NextResponse.json({
-          records: [],
-          summary: {
-            milestone: type === 'project-portfolio' ? 'M3' : type === 'commitments-forecast' ? 'M4' : 'M5',
-            note: `Construction tab '${type}' is scaffolded but not yet wired to mock or live data.`,
-          },
+          records: payload.jobProfitability,
+          jobProfitability: payload.jobProfitability,
+          riskFlags: payload.riskFlags,
+          schedule: payload.schedule,
+          scheduleSlippageImpact: payload.scheduleSlippageImpact,
+          topJobs: payload.topJobs,
+          bottomJobs: payload.bottomJobs,
+          summary: payload.summary,
+          meta: payload.meta,
         });
+      }
+
+      case 'commitments-forecast': {
+        // M4: Mock-driven Commitments & Forecast. Reuses the JCC job set so
+        // the same companyId presents a consistent portfolio across all four
+        // construction tabs. Vista-backed ingestion lands in M6.
+        const payload = buildCommitmentsForecastMock(companyId);
+        return NextResponse.json({
+          records: payload.eacForecast,
+          eacForecast: payload.eacForecast,
+          commitmentExposure: payload.commitmentExposure,
+          changeOrders: payload.changeOrders,
+          openCommitments: payload.openCommitments,
+          summary: payload.summary,
+          meta: payload.meta,
+        });
+      }
+
+      case 'billing-cash': {
+        // M5: Mock-driven Billing & Cash. Reuses JCC + CF data so vendors,
+        // customers, and AP/AR figures stay consistent across all four
+        // construction tabs. Vista-backed ingestion lands in M6.
+        const payload = buildBillingCashMock(companyId);
+        return NextResponse.json({
+          records: payload.billingCash,
+          billingCash: payload.billingCash,
+          arByJob: payload.arByJob,
+          apByJob: payload.apByJob,
+          priority: payload.priority,
+          summary: payload.summary,
+          meta: payload.meta,
+        });
+      }
 
       default:
         // Get all data types summary

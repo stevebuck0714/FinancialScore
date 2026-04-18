@@ -348,6 +348,15 @@ export default function OperationsTab({
   const [jobCostControlData, setJobCostControlData] = useState<any>(null);
   const [selectedJccJobId, setSelectedJccJobId] = useState<string>('__ALL__');
   const [jccLaborDetailExpanded, setJccLaborDetailExpanded] = useState<boolean>(false);
+  const [projectPortfolioData, setProjectPortfolioData] = useState<any>(null);
+  const [ppJobProfitabilitySortKey, setPpJobProfitabilitySortKey] = useState<
+    'jobName' | 'pmName' | 'revisedContractValue' | 'costToDate' | 'remainingCommitted' | 'eac' | 'projectedProfit' | 'marginPct'
+  >('marginPct');
+  const [ppJobProfitabilitySortDir, setPpJobProfitabilitySortDir] = useState<'asc' | 'desc'>('asc');
+  const [commitmentsForecastData, setCommitmentsForecastData] = useState<any>(null);
+  const [cfOpenCommitmentsFilter, setCfOpenCommitmentsFilter] = useState<'all' | 'past_due' | 'closing_soon' | 'po' | 'sub'>('all');
+  const [billingCashData, setBillingCashData] = useState<any>(null);
+  const [bcPriorityFilter, setBcPriorityFilter] = useState<'all' | 'collect' | 'pay'>('all');
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
@@ -885,6 +894,15 @@ export default function OperationsTab({
         break;
       case 'job-cost-control':
         setJobCostControlData(data);
+        break;
+      case 'project-portfolio':
+        setProjectPortfolioData(data);
+        break;
+      case 'commitments-forecast':
+        setCommitmentsForecastData(data);
+        break;
+      case 'billing-cash':
+        setBillingCashData(data);
         break;
     }
   };
@@ -8722,45 +8740,1758 @@ Strategies to Improve the CCC
     );
   };
 
-  const renderProjectPortfolio = () =>
-    renderConstructionTabPlaceholder(
-      'Project Portfolio',
-      'Executive view of company-wide job health and margin. Which jobs are making money, which are drifting, and where future exposure is sitting.',
-      [
-        'Portfolio Summary',
-        'Job Profitability',
-        'Risk Flags',
-        'Top / Bottom Jobs',
-        'Schedule Slippage Impact',
-      ],
-      'M3'
+  const renderProjectPortfolio = () => {
+    if (!projectPortfolioData) {
+      return (
+        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
+          Loading Project Portfolio…
+        </div>
+      );
+    }
+
+    const data = projectPortfolioData;
+    const isMockSource = data?.meta?.source === 'mock';
+    const summary = data.summary || {};
+    const jobs: any[] = Array.isArray(data.jobProfitability) ? data.jobProfitability : [];
+    const riskFlags: any[] = Array.isArray(data.riskFlags) ? data.riskFlags : [];
+    const topJobs: any[] = Array.isArray(data.topJobs) ? data.topJobs : [];
+    const bottomJobs: any[] = Array.isArray(data.bottomJobs) ? data.bottomJobs : [];
+    const slip = data.scheduleSlippageImpact || {
+      jobsOnTrack: 0,
+      jobsMinorSlip: 0,
+      jobsMajorSlip: 0,
+      jobsCriticalSlip: 0,
+      jobsAhead: 0,
+      avgSlippageDays: 0,
+      maxSlippageDays: 0,
+      totalSlippageImpact: 0,
+      topSlippingJobs: [],
+    };
+
+    const cardStyle: React.CSSProperties = {
+      background: '#fff',
+      border: '1px solid #e2e8f0',
+      borderRadius: '12px',
+      padding: '20px',
+    };
+    const cardTitleStyle: React.CSSProperties = {
+      margin: '0 0 12px 0',
+      fontSize: '13px',
+      fontWeight: 700,
+      color: '#0f172a',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+    };
+    const thStyle: React.CSSProperties = {
+      textAlign: 'left',
+      padding: '8px 10px',
+      fontSize: '11px',
+      fontWeight: 700,
+      color: '#475569',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      borderBottom: '1px solid #e2e8f0',
+      background: '#f8fafc',
+      cursor: 'default',
+    };
+    const tdStyle: React.CSSProperties = {
+      padding: '8px 10px',
+      fontSize: '13px',
+      color: '#0f172a',
+      borderBottom: '1px solid #f1f5f9',
+    };
+    const varianceColor = (v: number): string =>
+      v > 0 ? '#b91c1c' : v < 0 ? '#15803d' : '#475569';
+    const marginColor = (m: number): string =>
+      m < 0 ? '#b91c1c' : m < 5 ? '#b45309' : m < 10 ? '#0f172a' : '#15803d';
+    const severityPillStyle = (sev: string): React.CSSProperties => {
+      if (sev === 'critical') return { background: '#fee2e2', color: '#7f1d1d' };
+      if (sev === 'high') return { background: '#ffedd5', color: '#9a3412' };
+      if (sev === 'medium') return { background: '#fef3c7', color: '#92400e' };
+      return { background: '#e0e7ff', color: '#3730a3' };
+    };
+    const slipStatusPillStyle = (status: string): React.CSSProperties => {
+      if (status === 'critical_slip') return { background: '#fee2e2', color: '#7f1d1d' };
+      if (status === 'major_slip') return { background: '#ffedd5', color: '#9a3412' };
+      if (status === 'minor_slip') return { background: '#fef3c7', color: '#92400e' };
+      if (status === 'ahead') return { background: '#dcfce7', color: '#166534' };
+      return { background: '#e0e7ff', color: '#3730a3' };
+    };
+    const slipStatusLabel = (status: string): string => {
+      if (status === 'critical_slip') return 'Critical Slip';
+      if (status === 'major_slip') return 'Major Slip';
+      if (status === 'minor_slip') return 'Minor Slip';
+      if (status === 'ahead') return 'Ahead';
+      return 'On Track';
+    };
+
+    const sortedJobs = [...jobs].sort((a, b) => {
+      const k = ppJobProfitabilitySortKey;
+      const dir = ppJobProfitabilitySortDir === 'asc' ? 1 : -1;
+      const av = a[k];
+      const bv = b[k];
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av || '').localeCompare(String(bv || '')) * dir;
+    });
+
+    const sortIndicator = (key: string) =>
+      ppJobProfitabilitySortKey === key ? (ppJobProfitabilitySortDir === 'asc' ? ' ▲' : ' ▼') : '';
+
+    const handleSort = (key: typeof ppJobProfitabilitySortKey) => {
+      if (ppJobProfitabilitySortKey === key) {
+        setPpJobProfitabilitySortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setPpJobProfitabilitySortKey(key);
+        setPpJobProfitabilitySortDir('desc');
+      }
+    };
+
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {isMockSource && (
+          <div
+            style={{
+              padding: '8px 12px',
+              background: '#fef3c7',
+              border: '1px solid #fde68a',
+              borderRadius: '8px',
+              fontSize: '12px',
+              color: '#92400e',
+            }}
+          >
+            <strong>Mock data:</strong> Project Portfolio is showing synthetic data until a Vista
+            Cloud connection is configured for this company. (Phase 1 — see design doc.)
+          </div>
+        )}
+
+        {/* Top: Portfolio summary KPI strip */}
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Portfolio summary</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              {summary.jobCount || jobs.length} active jobs · As of {summary.asOfDate || '—'}
+            </div>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6, 1fr)',
+              gap: '12px',
+            }}
+          >
+            {[
+              { label: 'Total Revised Contract', value: formatCurrency(summary.totalRevisedContract || 0) },
+              { label: 'Total Cost to Date', value: formatCurrency(summary.totalCostToDate || 0) },
+              { label: 'Total Remaining Committed', value: formatCurrency(summary.totalRemainingCommitted || 0) },
+              { label: 'Total EAC', value: formatCurrency(summary.totalEac || 0) },
+              {
+                label: 'Total Projected Profit',
+                value: formatCurrency(summary.totalProjectedProfit || 0),
+                color: (summary.totalProjectedProfit || 0) < 0 ? '#b91c1c' : '#0f172a',
+              },
+              {
+                label: 'Avg Margin %',
+                value: `${(summary.avgMarginPct || 0).toFixed(1)}%`,
+                color: marginColor(summary.avgMarginPct || 0),
+              },
+            ].map((kpi) => (
+              <div
+                key={kpi.label}
+                style={{
+                  padding: '12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    marginBottom: '4px',
+                  }}
+                >
+                  {kpi.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: '17px',
+                    fontWeight: 700,
+                    color: (kpi as any).color || '#0f172a',
+                  }}
+                >
+                  {kpi.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Schedule Slippage Impact card */}
+        <div style={cardStyle}>
+          <div style={cardTitleStyle}>Schedule slippage impact</div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '16px',
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(5, 1fr)',
+                  gap: '8px',
+                  marginBottom: '12px',
+                }}
+              >
+                {[
+                  { label: 'On Track', value: slip.jobsOnTrack, color: '#3730a3' },
+                  { label: 'Minor Slip', value: slip.jobsMinorSlip, color: '#92400e' },
+                  { label: 'Major Slip', value: slip.jobsMajorSlip, color: '#9a3412' },
+                  { label: 'Critical', value: slip.jobsCriticalSlip, color: '#7f1d1d' },
+                  { label: 'Ahead', value: slip.jobsAhead, color: '#166534' },
+                ].map((b) => (
+                  <div
+                    key={b.label}
+                    style={{
+                      padding: '10px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '20px', fontWeight: 700, color: b.color }}>{b.value}</div>
+                    <div
+                      style={{
+                        fontSize: '10px',
+                        color: '#64748b',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        marginTop: '2px',
+                      }}
+                    >
+                      {b.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                {[
+                  {
+                    label: 'Avg Slippage (slipping jobs)',
+                    value: `${(slip.avgSlippageDays || 0).toFixed(1)} days`,
+                  },
+                  { label: 'Max Slippage', value: `${slip.maxSlippageDays || 0} days` },
+                  {
+                    label: 'Total Schedule Exposure',
+                    value: formatCurrency(slip.totalSlippageImpact || 0),
+                    color: '#b91c1c',
+                  },
+                ].map((b) => (
+                  <div
+                    key={b.label}
+                    style={{
+                      padding: '10px 12px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: '#64748b',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        marginBottom: '4px',
+                      }}
+                    >
+                      {b.label}
+                    </div>
+                    <div style={{ fontSize: '15px', fontWeight: 700, color: (b as any).color || '#0f172a' }}>
+                      {b.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: '#475569',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  marginBottom: '8px',
+                }}
+              >
+                Top slipping jobs by exposure
+              </div>
+              {(!slip.topSlippingJobs || slip.topSlippingJobs.length === 0) ? (
+                <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No data</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Job</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Slip (d)</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Exposure</th>
+                      <th style={thStyle}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slip.topSlippingJobs.slice(0, 5).map((s: any) => (
+                      <tr key={s.jobId}>
+                        <td style={tdStyle}>
+                          <div style={{ fontWeight: 600 }}>{s.jobId}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>{s.jobName}</div>
+                        </td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: 'right',
+                            color: s.slippageDays > 0 ? '#b91c1c' : s.slippageDays < 0 ? '#15803d' : '#475569',
+                          }}
+                        >
+                          {s.slippageDays > 0 ? '+' : ''}
+                          {s.slippageDays}
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(s.slippageImpact)}</td>
+                        <td style={tdStyle}>
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              ...slipStatusPillStyle(s.status),
+                            }}
+                          >
+                            {slipStatusLabel(s.status)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Job Profitability — full width, sortable */}
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Job profitability</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>{jobs.length} jobs · click headers to sort</div>
+          </div>
+          {jobs.length === 0 ? (
+            <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No data</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...thStyle, cursor: 'pointer' }} onClick={() => handleSort('jobName')}>
+                      Job{sortIndicator('jobName')}
+                    </th>
+                    <th style={{ ...thStyle, cursor: 'pointer' }} onClick={() => handleSort('pmName')}>
+                      PM{sortIndicator('pmName')}
+                    </th>
+                    <th
+                      style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }}
+                      onClick={() => handleSort('revisedContractValue')}
+                    >
+                      Revised Contract{sortIndicator('revisedContractValue')}
+                    </th>
+                    <th
+                      style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }}
+                      onClick={() => handleSort('costToDate')}
+                    >
+                      Cost to Date{sortIndicator('costToDate')}
+                    </th>
+                    <th
+                      style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }}
+                      onClick={() => handleSort('remainingCommitted')}
+                    >
+                      Remaining Committed{sortIndicator('remainingCommitted')}
+                    </th>
+                    <th
+                      style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }}
+                      onClick={() => handleSort('eac')}
+                    >
+                      EAC{sortIndicator('eac')}
+                    </th>
+                    <th
+                      style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }}
+                      onClick={() => handleSort('projectedProfit')}
+                    >
+                      Projected Profit{sortIndicator('projectedProfit')}
+                    </th>
+                    <th
+                      style={{ ...thStyle, textAlign: 'right', cursor: 'pointer' }}
+                      onClick={() => handleSort('marginPct')}
+                    >
+                      Margin %{sortIndicator('marginPct')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedJobs.map((j) => (
+                    <tr key={j.jobId}>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600 }}>{j.jobId}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>{j.jobName}</div>
+                      </td>
+                      <td style={tdStyle}>{j.pmName}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.revisedContractValue)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.costToDate)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.remainingCommitted)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.eac)}</td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          textAlign: 'right',
+                          color: j.projectedProfit < 0 ? '#b91c1c' : '#0f172a',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {formatCurrency(j.projectedProfit)}
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          textAlign: 'right',
+                          color: marginColor(j.marginPct),
+                          fontWeight: 600,
+                        }}
+                      >
+                        {(j.marginPct ?? 0).toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom: Top/Bottom Jobs (left) + Risk Flags (right) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.3fr)',
+            gap: '16px',
+          }}
+        >
+          {/* Top / Bottom Jobs */}
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Top &amp; bottom jobs</div>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#15803d',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                marginBottom: '6px',
+              }}
+            >
+              Top 5 by margin
+            </div>
+            {topJobs.length === 0 ? (
+              <div style={{ padding: '8px', color: '#64748b', fontSize: '13px' }}>No data</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Job</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Profit</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Margin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topJobs.map((j) => (
+                    <tr key={j.jobId}>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600 }}>{j.jobId}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>{j.jobName}</div>
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.projectedProfit)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', color: '#15803d', fontWeight: 600 }}>
+                        {(j.marginPct ?? 0).toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#b91c1c',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                marginBottom: '6px',
+              }}
+            >
+              Bottom 5 by margin
+            </div>
+            {bottomJobs.length === 0 ? (
+              <div style={{ padding: '8px', color: '#64748b', fontSize: '13px' }}>No data</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Job</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Profit</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Margin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bottomJobs.map((j) => (
+                    <tr key={j.jobId}>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600 }}>{j.jobId}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>{j.jobName}</div>
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          textAlign: 'right',
+                          color: j.projectedProfit < 0 ? '#b91c1c' : '#0f172a',
+                        }}
+                      >
+                        {formatCurrency(j.projectedProfit)}
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          textAlign: 'right',
+                          color: marginColor(j.marginPct),
+                          fontWeight: 600,
+                        }}
+                      >
+                        {(j.marginPct ?? 0).toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Risk Flags */}
+          <div style={cardStyle}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px',
+              }}
+            >
+              <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Risk flags</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                {riskFlags.length === 0 ? 'No flagged jobs' : `${riskFlags.length} flagged`}
+              </div>
+            </div>
+            {riskFlags.length === 0 ? (
+              <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
+                No jobs are flagged at the moment.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Severity</th>
+                      <th style={thStyle}>Job</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Margin</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Cost Var</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Commit Exp</th>
+                      <th style={thStyle}>Flags</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {riskFlags.map((r) => (
+                      <tr key={r.jobId}>
+                        <td style={tdStyle}>
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.04em',
+                              ...severityPillStyle(r.severity),
+                            }}
+                          >
+                            {r.severity}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
+                          <div style={{ fontWeight: 600 }}>{r.jobId}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>{r.jobName} · {r.pmName}</div>
+                        </td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: 'right',
+                            color: marginColor(r.marginPct),
+                            fontWeight: 600,
+                          }}
+                        >
+                          {(r.marginPct ?? 0).toFixed(1)}%
+                        </td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: 'right',
+                            color: varianceColor(r.costVariancePct),
+                          }}
+                        >
+                          {r.costVariancePct > 0 ? '+' : ''}
+                          {(r.costVariancePct ?? 0).toFixed(1)}%
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                          {(r.commitmentExposurePct ?? 0).toFixed(1)}%
+                        </td>
+                        <td style={tdStyle}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            {(r.flags || []).map((f: string) => (
+                              <span
+                                key={f}
+                                style={{
+                                  padding: '1px 6px',
+                                  background: '#f1f5f9',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: '4px',
+                                  fontSize: '10px',
+                                  color: '#475569',
+                                }}
+                              >
+                                {f}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCommitmentsForecast = () => {
+    if (!commitmentsForecastData) {
+      return (
+        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
+          Loading Commitments &amp; Forecast…
+        </div>
+      );
+    }
+
+    const data = commitmentsForecastData;
+    const isMockSource = data?.meta?.source === 'mock';
+    const summary = data.summary || {};
+    const eacForecast: any[] = Array.isArray(data.eacForecast) ? data.eacForecast : [];
+    const commitmentExposure: any[] = Array.isArray(data.commitmentExposure) ? data.commitmentExposure : [];
+    const changeOrders: any[] = Array.isArray(data.changeOrders) ? data.changeOrders : [];
+    const openCommitments: any[] = Array.isArray(data.openCommitments) ? data.openCommitments : [];
+
+    const cardStyle: React.CSSProperties = {
+      background: '#fff',
+      border: '1px solid #e2e8f0',
+      borderRadius: '12px',
+      padding: '20px',
+    };
+    const cardTitleStyle: React.CSSProperties = {
+      margin: '0 0 12px 0',
+      fontSize: '13px',
+      fontWeight: 700,
+      color: '#0f172a',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+    };
+    const thStyle: React.CSSProperties = {
+      textAlign: 'left',
+      padding: '8px 10px',
+      fontSize: '11px',
+      fontWeight: 700,
+      color: '#475569',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      borderBottom: '1px solid #e2e8f0',
+      background: '#f8fafc',
+    };
+    const tdStyle: React.CSSProperties = {
+      padding: '8px 10px',
+      fontSize: '13px',
+      color: '#0f172a',
+      borderBottom: '1px solid #f1f5f9',
+    };
+    const marginColor = (m: number): string =>
+      m < 0 ? '#b91c1c' : m < 5 ? '#b45309' : m < 10 ? '#0f172a' : '#15803d';
+    const exposureColor = (pct: number): string =>
+      pct >= 100 ? '#b91c1c' : pct >= 90 ? '#b45309' : pct >= 75 ? '#0f172a' : '#15803d';
+    const commitmentStatusPill = (status: string): React.CSSProperties => {
+      if (status === 'past_due') return { background: '#fee2e2', color: '#7f1d1d' };
+      if (status === 'closing_soon') return { background: '#fef3c7', color: '#92400e' };
+      return { background: '#e0e7ff', color: '#3730a3' };
+    };
+    const commitmentStatusLabel = (status: string): string => {
+      if (status === 'past_due') return 'Past Due';
+      if (status === 'closing_soon') return 'Closing Soon';
+      return 'Open';
+    };
+
+    // Filter open commitments
+    const filteredOpenCommitments = openCommitments.filter((r) => {
+      if (cfOpenCommitmentsFilter === 'all') return true;
+      if (cfOpenCommitmentsFilter === 'past_due') return r.status === 'past_due';
+      if (cfOpenCommitmentsFilter === 'closing_soon') return r.status === 'closing_soon';
+      if (cfOpenCommitmentsFilter === 'po') return r.commitmentType === 'Purchase Order';
+      if (cfOpenCommitmentsFilter === 'sub') return r.commitmentType === 'Subcontract';
+      return true;
+    });
+
+    // Change orders: only emit a row when the job actually has CO activity, but
+    // ALWAYS render the table per locked design decision (show "No data" if empty).
+    const changeOrdersWithActivity = changeOrders.filter(
+      (r) => r.approvedCOs !== 0 || r.pendingCOs !== 0
     );
 
-  const renderCommitmentsForecast = () =>
-    renderConstructionTabPlaceholder(
-      'Commitments & Forecast',
-      'Forward-looking view: what cost is still coming, what final margin will be, and how much contract value has changed.',
-      [
-        'EAC / Forecast Summary',
-        'Commitment Exposure',
-        'Change Order Impact',
-        'Open Commitments',
-      ],
-      'M4'
-    );
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {isMockSource && (
+          <div
+            style={{
+              padding: '8px 12px',
+              background: '#fef3c7',
+              border: '1px solid #fde68a',
+              borderRadius: '8px',
+              fontSize: '12px',
+              color: '#92400e',
+            }}
+          >
+            <strong>Mock data:</strong> Commitments &amp; Forecast is showing synthetic data until a Vista
+            Cloud connection is configured for this company. (Phase 1 — see design doc.)
+          </div>
+        )}
 
-  const renderBillingCash = () =>
-    renderConstructionTabPlaceholder(
-      'Billing & Cash',
-      'Connect operations to liquidity: are we getting paid, are vendors ahead of us, and which jobs are creating cash pressure.',
-      [
-        'Billing & Cash Summary',
-        'AR by Job',
-        'AP by Job',
-        'Collections / Payments Priority',
-      ],
-      'M5'
+        {/* Top: Forecast / EAC summary KPI strip */}
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>EAC / Forecast summary</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              {summary.jobCount || eacForecast.length} jobs · As of {summary.asOfDate || '—'}
+            </div>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6, 1fr)',
+              gap: '12px',
+              marginBottom: '16px',
+            }}
+          >
+            {[
+              { label: 'Total Revised Contract', value: formatCurrency(summary.totalRevisedContract || 0) },
+              { label: 'Total EAC', value: formatCurrency(summary.totalEac || 0) },
+              { label: 'Total Remaining Committed', value: formatCurrency(summary.totalRemainingCommitted || 0) },
+              {
+                label: 'Total Projected Profit',
+                value: formatCurrency(summary.totalProjectedProfit || 0),
+                color: (summary.totalProjectedProfit || 0) < 0 ? '#b91c1c' : '#0f172a',
+              },
+              {
+                label: 'Avg Margin %',
+                value: `${(summary.avgMarginPct || 0).toFixed(1)}%`,
+                color: marginColor(summary.avgMarginPct || 0),
+              },
+              {
+                label: 'Open Commitment Value',
+                value: formatCurrency(summary.totalOpenCommitmentValue || 0),
+              },
+            ].map((kpi) => (
+              <div
+                key={kpi.label}
+                style={{
+                  padding: '12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    marginBottom: '4px',
+                  }}
+                >
+                  {kpi.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: '17px',
+                    fontWeight: 700,
+                    color: (kpi as any).color || '#0f172a',
+                  }}
+                >
+                  {kpi.value}
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Per-job forecast table */}
+          {eacForecast.length === 0 ? (
+            <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No data</div>
+          ) : (
+            <div style={{ overflowX: 'auto', maxHeight: '380px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Job</th>
+                    <th style={thStyle}>PM</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Revised Contract</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Cost to Date</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Remaining Committed</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>EAC</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Projected Profit</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Margin %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...eacForecast]
+                    .sort((a, b) => a.marginPct - b.marginPct)
+                    .map((j) => (
+                      <tr key={j.jobId}>
+                        <td style={tdStyle}>
+                          <div style={{ fontWeight: 600 }}>{j.jobId}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>{j.jobName}</div>
+                        </td>
+                        <td style={tdStyle}>{j.pmName}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.revisedContractValue)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.costToDate)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.remainingCommitted)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(j.eac)}</td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: 'right',
+                            color: j.projectedProfit < 0 ? '#b91c1c' : '#0f172a',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {formatCurrency(j.projectedProfit)}
+                        </td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: 'right',
+                            color: marginColor(j.marginPct),
+                            fontWeight: 600,
+                          }}
+                        >
+                          {(j.marginPct ?? 0).toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Middle row: Commitment exposure (left) + Change order impact (right) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: '16px',
+          }}
+        >
+          {/* Commitment exposure */}
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Commitment exposure by job</div>
+            {commitmentExposure.length === 0 ? (
+              <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No data</div>
+            ) : (
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Job</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Budget</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Committed</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>% Committed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...commitmentExposure]
+                      .sort((a, b) => b.pctCommitted - a.pctCommitted)
+                      .map((r) => (
+                        <tr key={r.jobId}>
+                          <td style={tdStyle}>
+                            <div style={{ fontWeight: 600 }}>{r.jobId}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{r.jobName}</div>
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.budget)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.actual)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.committed)}</td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: exposureColor(r.pctCommitted),
+                              fontWeight: 600,
+                            }}
+                          >
+                            {(r.pctCommitted ?? 0).toFixed(1)}%
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Change order impact — ALWAYS rendered per design decision */}
+          <div style={cardStyle}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px',
+              }}
+            >
+              <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Change order impact</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                {changeOrdersWithActivity.length === 0
+                  ? 'No CO activity'
+                  : `${changeOrdersWithActivity.length} jobs with CO activity`}
+              </div>
+            </div>
+            {/* KPI strip */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '8px',
+                marginBottom: '12px',
+              }}
+            >
+              <div
+                style={{
+                  padding: '10px 12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              >
+                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Total Approved COs
+                </div>
+                <div
+                  style={{
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    color: (summary.totalApprovedCOs || 0) < 0 ? '#b91c1c' : '#15803d',
+                  }}
+                >
+                  {(summary.totalApprovedCOs || 0) > 0 ? '+' : ''}
+                  {formatCurrency(summary.totalApprovedCOs || 0)}
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: '10px 12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              >
+                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Total Pending COs
+                </div>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#b45309' }}>
+                  {formatCurrency(summary.totalPendingCOs || 0)}
+                </div>
+              </div>
+            </div>
+            {/* Detail table */}
+            {changeOrdersWithActivity.length === 0 ? (
+              <div
+                style={{
+                  padding: '24px 12px',
+                  textAlign: 'center',
+                  color: '#64748b',
+                  fontSize: '13px',
+                  background: '#f8fafc',
+                  border: '1px dashed #cbd5e1',
+                  borderRadius: '8px',
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: '4px' }}>No data</div>
+                <div style={{ fontSize: '12px' }}>
+                  No approved or pending change orders are recorded for the active jobs.
+                </div>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Job</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Original Contract</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Approved COs</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Pending COs</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Revised Contract</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...changeOrdersWithActivity]
+                      .sort((a, b) => b.approvedCOs + b.pendingCOs - (a.approvedCOs + a.pendingCOs))
+                      .map((r) => (
+                        <tr key={r.jobId}>
+                          <td style={tdStyle}>
+                            <div style={{ fontWeight: 600 }}>{r.jobId}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{r.jobName}</div>
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.originalContract)}</td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: r.approvedCOs < 0 ? '#b91c1c' : r.approvedCOs > 0 ? '#15803d' : '#475569',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {r.approvedCOs > 0 ? '+' : ''}
+                            {formatCurrency(r.approvedCOs)}
+                            {r.approvedCount > 0 && (
+                              <span style={{ fontSize: '11px', color: '#64748b', marginLeft: 4 }}>
+                                ({r.approvedCount})
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: r.pendingCOs > 0 ? '#b45309' : '#475569',
+                            }}
+                          >
+                            {formatCurrency(r.pendingCOs)}
+                            {r.pendingCount > 0 && (
+                              <span style={{ fontSize: '11px', color: '#64748b', marginLeft: 4 }}>
+                                ({r.pendingCount})
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>
+                            {formatCurrency(r.revisedContractValue)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom: Open commitments detail */}
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px',
+              flexWrap: 'wrap',
+              gap: '8px',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Open commitments</div>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', marginRight: '4px' }}>
+                {filteredOpenCommitments.length} of {openCommitments.length}
+                {summary.pastDueCommitmentCount > 0 && (
+                  <> · <span style={{ color: '#b91c1c', fontWeight: 600 }}>{summary.pastDueCommitmentCount} past due</span></>
+                )}
+              </div>
+              {([
+                { id: 'all', label: 'All' },
+                { id: 'past_due', label: 'Past Due' },
+                { id: 'closing_soon', label: 'Closing Soon' },
+                { id: 'po', label: 'POs' },
+                { id: 'sub', label: 'Subs' },
+              ] as const).map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => setCfOpenCommitmentsFilter(b.id)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    border: '1px solid',
+                    borderColor: cfOpenCommitmentsFilter === b.id ? '#1e40af' : '#cbd5e1',
+                    background: cfOpenCommitmentsFilter === b.id ? '#1e40af' : '#fff',
+                    color: cfOpenCommitmentsFilter === b.id ? '#fff' : '#475569',
+                    borderRadius: '999px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {filteredOpenCommitments.length === 0 ? (
+            <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
+              {openCommitments.length === 0
+                ? 'No open commitments.'
+                : 'No commitments match the current filter.'}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto', maxHeight: '480px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Type</th>
+                    <th style={thStyle}>Vendor</th>
+                    <th style={thStyle}>Job</th>
+                    <th style={thStyle}>Ref No.</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Original</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Incurred</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Remaining</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>% Incurred</th>
+                    <th style={thStyle}>Due</th>
+                    <th style={thStyle}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...filteredOpenCommitments]
+                    .sort((a, b) => {
+                      // Past-due first, then by remaining $ desc
+                      if (a.status === 'past_due' && b.status !== 'past_due') return -1;
+                      if (b.status === 'past_due' && a.status !== 'past_due') return 1;
+                      return b.remaining - a.remaining;
+                    })
+                    .slice(0, 100)
+                    .map((r) => (
+                      <tr key={r.commitmentId}>
+                        <td style={tdStyle}>
+                          <span
+                            style={{
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              background: r.commitmentType === 'Subcontract' ? '#dbeafe' : '#f1f5f9',
+                              color: r.commitmentType === 'Subcontract' ? '#1e40af' : '#475569',
+                            }}
+                          >
+                            {r.commitmentType === 'Subcontract' ? 'SUB' : 'PO'}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>{r.vendor}</td>
+                        <td style={tdStyle}>
+                          <div>{r.jobId}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>{r.jobName}</div>
+                        </td>
+                        <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '12px' }}>{r.refNo}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.original)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.incurred)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>{formatCurrency(r.remaining)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{(r.pctIncurred ?? 0).toFixed(0)}%</td>
+                        <td style={tdStyle}>{r.dueDate}</td>
+                        <td style={tdStyle}>
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              ...commitmentStatusPill(r.status),
+                            }}
+                          >
+                            {commitmentStatusLabel(r.status)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     );
+  };
+
+  const renderBillingCash = () => {
+    if (!billingCashData) {
+      return (
+        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
+          Loading Billing &amp; Cash…
+        </div>
+      );
+    }
+
+    const data = billingCashData;
+    const isMockSource = data?.meta?.source === 'mock';
+    const summary = data.summary || {};
+    const billingCash: any[] = Array.isArray(data.billingCash) ? data.billingCash : [];
+    const arByJob: any[] = Array.isArray(data.arByJob) ? data.arByJob : [];
+    const apByJob: any[] = Array.isArray(data.apByJob) ? data.apByJob : [];
+    const priority: any[] = Array.isArray(data.priority) ? data.priority : [];
+
+    const cardStyle: React.CSSProperties = {
+      background: '#fff',
+      border: '1px solid #e2e8f0',
+      borderRadius: '12px',
+      padding: '20px',
+    };
+    const cardTitleStyle: React.CSSProperties = {
+      margin: '0 0 12px 0',
+      fontSize: '13px',
+      fontWeight: 700,
+      color: '#0f172a',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+    };
+    const thStyle: React.CSSProperties = {
+      textAlign: 'left',
+      padding: '8px 10px',
+      fontSize: '11px',
+      fontWeight: 700,
+      color: '#475569',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      borderBottom: '1px solid #e2e8f0',
+      background: '#f8fafc',
+    };
+    const tdStyle: React.CSSProperties = {
+      padding: '8px 10px',
+      fontSize: '13px',
+      color: '#0f172a',
+      borderBottom: '1px solid #f1f5f9',
+    };
+    const netCashColor = (n: number): string =>
+      n < 0 ? '#b91c1c' : n < 50000 ? '#b45309' : '#15803d';
+    const billingPctColor = (pct: number): string => {
+      // Under 90% billed = under-billed (cash pressure), over 110% = over-billed (good cash)
+      if (pct < 85) return '#b91c1c';
+      if (pct < 95) return '#b45309';
+      if (pct > 115) return '#15803d';
+      return '#0f172a';
+    };
+    const agePctColor = (pct: number): string =>
+      pct >= 25 ? '#b91c1c' : pct >= 10 ? '#b45309' : '#0f172a';
+
+    const filteredPriority = priority.filter((r) => {
+      if (bcPriorityFilter === 'all') return true;
+      return r.type === bcPriorityFilter;
+    });
+
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {isMockSource && (
+          <div
+            style={{
+              padding: '8px 12px',
+              background: '#fef3c7',
+              border: '1px solid #fde68a',
+              borderRadius: '8px',
+              fontSize: '12px',
+              color: '#92400e',
+            }}
+          >
+            <strong>Mock data:</strong> Billing &amp; Cash is showing synthetic data until a Vista
+            Cloud connection is configured for this company. (Phase 1 — see design doc.)
+          </div>
+        )}
+
+        {/* Top: Billing & cash summary KPIs + per-job table */}
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Billing &amp; cash summary</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              {summary.jobCount || billingCash.length} jobs · As of {summary.asOfDate || '—'}
+            </div>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6, 1fr)',
+              gap: '12px',
+              marginBottom: '16px',
+            }}
+          >
+            {[
+              { label: 'Total Cost to Date', value: formatCurrency(summary.totalCostToDate || 0) },
+              { label: 'Total Billed to Date', value: formatCurrency(summary.totalBilledToDate || 0) },
+              { label: 'Total Cash Collected', value: formatCurrency(summary.totalCashCollected || 0) },
+              {
+                label: 'Net Cash Position',
+                value: formatCurrency(summary.netCashPosition || 0),
+                color: netCashColor(summary.netCashPosition || 0),
+              },
+              {
+                label: 'Under-Billed',
+                value: formatCurrency(summary.underBilledAmount || 0),
+                color: '#b91c1c',
+              },
+              {
+                label: 'Over-Billed',
+                value: formatCurrency(summary.overBilledAmount || 0),
+                color: '#15803d',
+              },
+            ].map((kpi) => (
+              <div
+                key={kpi.label}
+                style={{
+                  padding: '12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    marginBottom: '4px',
+                  }}
+                >
+                  {kpi.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: '17px',
+                    fontWeight: 700,
+                    color: (kpi as any).color || '#0f172a',
+                  }}
+                >
+                  {kpi.value}
+                </div>
+              </div>
+            ))}
+          </div>
+          {billingCash.length === 0 ? (
+            <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No data</div>
+          ) : (
+            <div style={{ overflowX: 'auto', maxHeight: '380px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Job</th>
+                    <th style={thStyle}>Customer</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Cost to Date</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Billed to Date</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>% Billed</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Cash Collected</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>AP Outstanding</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Net Cash</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...billingCash]
+                    .sort((a, b) => a.netCashPosition - b.netCashPosition)
+                    .map((r) => (
+                      <tr key={r.jobId}>
+                        <td style={tdStyle}>
+                          <div style={{ fontWeight: 600 }}>{r.jobId}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b' }}>{r.jobName}</div>
+                        </td>
+                        <td style={tdStyle}>{r.customer}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.costToDate)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.billedToDate)}</td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: 'right',
+                            color: billingPctColor(r.billingPctOfCost),
+                            fontWeight: 600,
+                          }}
+                        >
+                          {(r.billingPctOfCost ?? 0).toFixed(0)}%
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.cashCollected)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.apOutstanding)}</td>
+                        <td
+                          style={{
+                            ...tdStyle,
+                            textAlign: 'right',
+                            color: netCashColor(r.netCashPosition),
+                            fontWeight: 600,
+                          }}
+                        >
+                          {formatCurrency(r.netCashPosition)}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Middle row: AR by Job (left) + AP by Job (right) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            gap: '16px',
+          }}
+        >
+          {/* AR by Job */}
+          <div style={cardStyle}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px',
+              }}
+            >
+              <div style={{ ...cardTitleStyle, marginBottom: 0 }}>AR by job</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                Total AR <strong style={{ color: '#0f172a' }}>{formatCurrency(summary.totalAR || 0)}</strong>
+                {(summary.totalAROver60 || 0) > 0 && (
+                  <> · <span style={{ color: '#b91c1c' }}>
+                    {formatCurrency(summary.totalAROver60)} over 60d
+                  </span></>
+                )}
+              </div>
+            </div>
+            {arByJob.length === 0 ? (
+              <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No data</div>
+            ) : (
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Job / Customer</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Total AR</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Current</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>30</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>60</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>90+</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>% &gt;60d</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...arByJob]
+                      .filter((r) => r.totalAR > 0)
+                      .sort((a, b) => b.pctOver60 - a.pctOver60 || b.totalAR - a.totalAR)
+                      .map((r) => (
+                        <tr key={r.jobId}>
+                          <td style={tdStyle}>
+                            <div style={{ fontWeight: 600 }}>{r.jobId}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{r.customer}</div>
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>
+                            {formatCurrency(r.totalAR)}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.current)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.bucket30)}</td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: r.bucket60 > 0 ? '#b45309' : '#475569',
+                            }}
+                          >
+                            {formatCurrency(r.bucket60)}
+                          </td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: r.bucket90Plus > 0 ? '#b91c1c' : '#475569',
+                              fontWeight: r.bucket90Plus > 0 ? 600 : 400,
+                            }}
+                          >
+                            {formatCurrency(r.bucket90Plus)}
+                          </td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: agePctColor(r.pctOver60),
+                              fontWeight: 600,
+                            }}
+                          >
+                            {(r.pctOver60 ?? 0).toFixed(1)}%
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* AP by Job */}
+          <div style={cardStyle}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px',
+              }}
+            >
+              <div style={{ ...cardTitleStyle, marginBottom: 0 }}>AP by job</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                Total AP <strong style={{ color: '#0f172a' }}>{formatCurrency(summary.totalAP || 0)}</strong>
+                {(summary.totalAPOver60 || 0) > 0 && (
+                  <> · <span style={{ color: '#b91c1c' }}>
+                    {formatCurrency(summary.totalAPOver60)} over 60d
+                  </span></>
+                )}
+              </div>
+            </div>
+            {apByJob.length === 0 ? (
+              <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>No data</div>
+            ) : (
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Job / Top Vendor</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Total AP</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Current</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>30</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>60</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>90+</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>% &gt;60d</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...apByJob]
+                      .filter((r) => r.totalAP > 0)
+                      .sort((a, b) => b.pctOver60 - a.pctOver60 || b.totalAP - a.totalAP)
+                      .map((r) => (
+                        <tr key={r.jobId}>
+                          <td style={tdStyle}>
+                            <div style={{ fontWeight: 600 }}>{r.jobId}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{r.vendor}</div>
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>
+                            {formatCurrency(r.totalAP)}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.current)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.bucket30)}</td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: r.bucket60 > 0 ? '#b45309' : '#475569',
+                            }}
+                          >
+                            {formatCurrency(r.bucket60)}
+                          </td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: r.bucket90Plus > 0 ? '#b91c1c' : '#475569',
+                              fontWeight: r.bucket90Plus > 0 ? 600 : 400,
+                            }}
+                          >
+                            {formatCurrency(r.bucket90Plus)}
+                          </td>
+                          <td
+                            style={{
+                              ...tdStyle,
+                              textAlign: 'right',
+                              color: agePctColor(r.pctOver60),
+                              fontWeight: 600,
+                            }}
+                          >
+                            {(r.pctOver60 ?? 0).toFixed(1)}%
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom: Collections / Payments Priority */}
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px',
+              flexWrap: 'wrap',
+              gap: '8px',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Collections &amp; payments priority</div>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', marginRight: '4px' }}>
+                {filteredPriority.length} of {priority.length}
+              </div>
+              {([
+                { id: 'all', label: 'All' },
+                { id: 'collect', label: 'Collect (AR)' },
+                { id: 'pay', label: 'Pay (AP)' },
+              ] as const).map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => setBcPriorityFilter(b.id)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    border: '1px solid',
+                    borderColor: bcPriorityFilter === b.id ? '#1e40af' : '#cbd5e1',
+                    background: bcPriorityFilter === b.id ? '#1e40af' : '#fff',
+                    color: bcPriorityFilter === b.id ? '#fff' : '#475569',
+                    borderRadius: '999px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {filteredPriority.length === 0 ? (
+            <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
+              {priority.length === 0
+                ? 'No outstanding actions.'
+                : 'No items match the current filter.'}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto', maxHeight: '480px', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Action</th>
+                    <th style={thStyle}>Party</th>
+                    <th style={thStyle}>Job</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Balance</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Oldest Age</th>
+                    <th style={thStyle}>Reason</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Priority Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPriority.map((r) => (
+                    <tr key={r.id}>
+                      <td style={tdStyle}>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.04em',
+                            background: r.type === 'collect' ? '#dbeafe' : '#fef3c7',
+                            color: r.type === 'collect' ? '#1e40af' : '#92400e',
+                          }}
+                        >
+                          {r.type === 'collect' ? 'Collect' : 'Pay'}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>{r.party}</td>
+                      <td style={tdStyle}>
+                        <div style={{ fontWeight: 600 }}>{r.jobId}</div>
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>{r.jobName}</div>
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>
+                        {formatCurrency(r.balance)}
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          textAlign: 'right',
+                          color:
+                            r.oldestAgeDays >= 90
+                              ? '#b91c1c'
+                              : r.oldestAgeDays >= 60
+                              ? '#b45309'
+                              : '#475569',
+                          fontWeight: r.oldestAgeDays >= 60 ? 600 : 400,
+                        }}
+                      >
+                        {r.oldestAgeDays}+ d
+                      </td>
+                      <td style={{ ...tdStyle, fontSize: '12px', color: '#475569' }}>{r.reason}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace' }}>
+                        {Number(r.priorityScore).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const renderModuleTabContent = (moduleKey: string) => {
     if (moduleKey === 'forecast') {

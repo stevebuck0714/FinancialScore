@@ -1,37 +1,43 @@
-Add accounting-system plugin architecture, Vista Cloud, and construction-sector dashboard (M1-M2)
+Construction sector dashboard Phase 1: M3, M4, M5 mock-driven tabs
 
-Accounting systems:
-- New plugin/registry pattern under lib/accounting-systems/ with shared
-  FieldGrid + TwoColumnProgramsTable shells and a generic
-  /api/accounting-systems/[system]/settings route.
-- Migrated Sage Intacct, Acumatica, Odoo, and Dynamics 365 to plugins
-  (with alias support for legacy Company.accountingSystem values).
-- Added Viewpoint Vista Cloud plugin (X-Application-Key auth, Trimble
-  Direct REST API) with side-by-side credentials/programs layout and
-  matching AccountingPlatform enum migration.
-- Deleted legacy /api/{sage-intacct,acumatica,odoo,dynamics-365}/* routes
-  and their lib/*/operational-sync.ts payload syncers.
+Adds full mock-driven implementations for the three remaining
+construction-native tabs that were scaffolded in M1. All four tabs now
+share a single seeded job set per companyId so vendors, customers, and
+financial figures stay consistent across tabs.
 
-Construction sector dashboard:
-- Replaced 4 generic construction tabs with Job Cost Control, Project
-  Portfolio, Commitments & Forecast, and Billing & Cash (kept Cash, AR,
-  AP standalone).
-- M1: scaffolded buckets, module registry, OpsDataTypes, render stubs,
-  and 4 placeholder API branches.
-- M2: built Job Cost Control end-to-end -- seeded mock builder
-  (lib/operations/construction-mock-data.ts) and full UI with job picker
-  defaulting to All-Jobs rollup, profitability snapshot, daily cost vs
-  budget, cost code variance, cost by type, and labor detail with
-  equipment columns.
+M3 — Project Portfolio
+- buildProjectPortfolioMock() derives schedule + risk metrics from the
+  shared JCC job set.
+- UI: Portfolio summary KPI strip, Schedule Slippage Impact card (5
+  bucket counts + KPIs + top-5 slipping jobs by exposure), sortable
+  Job Profitability table, Top/Bottom Jobs (by margin), and a Risk
+  Flags table with severity-tiered chips (Negative Margin, Cost Drift,
+  High Commitment Exposure, Late-Stage Margin Risk, Early Cost Drift).
 
-AI Gateway / ZDR:
-- Added lib/ai-gateway.ts and routed openai-helpers, period-review, ask,
-  and document-embeddings calls through it.
-- docs/AI_PRIVACY.md captures the ZDR posture.
+M4 — Commitments & Forecast
+- buildCommitmentsForecastMock() emits per-job EAC forecast,
+  commitment exposure, change-order activity (most jobs have COs, some
+  don't), and a list of open POs/Subs across vendors.
+- UI: EAC summary KPI strip + per-job forecast table, Commitment
+  Exposure by job (color-coded % committed), Change Order Impact card
+  that always renders with a "No data" empty-state when no jobs have
+  CO activity (locked design decision), and an Open Commitments table
+  with filter pills (All/Past Due/Closing Soon/POs/Subs).
 
-Misc:
-- Added AP balance-sheet anchor module (lib/financial/ap-balance-sheet-anchor.ts).
-- Operational sync runner no longer dispatches the 4 plugin-native ERPs.
-- Added construction dashboard design doc and several intake/process docs.
-- Bundled tmp/ debug + backfill + validation scripts used during the AR/AP
-  reconciliation pass against the 12/31/2023 balance-sheet anchor.
+M5 — Billing & Cash
+- buildBillingCashMock() reuses JCC + CF outputs so vendors and
+  customers stay consistent. Derives billed-to-date, cash collected,
+  AP outstanding, and net cash per job; splits AR/AP into aging
+  buckets; and produces a priority action list (collect vs pay) sorted
+  by weighted aging score.
+- UI: Billing & Cash summary KPI strip + per-job table with %-billed
+  and net-cash color coding, AR by Job and AP by Job aging tables,
+  and a Collections & Payments Priority list with filter pills.
+
+Other:
+- API route adds three new cases to /api/operational-data wired to the
+  new mock builders.
+- All four construction tab placeholders are now replaced with the
+  full UI implementations.
+- M6 (Vista ingestion + Prisma snapshot tables) is the only remaining
+  construction-dashboard milestone.
