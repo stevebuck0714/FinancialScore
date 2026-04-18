@@ -312,6 +312,20 @@ export async function POST(request: NextRequest) {
     const serializedPrograms = JSON.stringify(programsToPersist);
     const updatedAtIso = new Date().toISOString();
 
+    // Diagnostic: log enabled/disabled counts so we can audit UI ↔ DB drift
+    // (e.g., when a backfill queues more programs than the operator expected).
+    const enabledCount = programsToPersist.filter((p) => p.enabled).length;
+    const disabledCount = programsToPersist.length - enabledCount;
+    const disabledNames = programsToPersist
+      .filter((p) => !p.enabled)
+      .map((p) => p.miProgram || p.endpointPath || p.module)
+      .filter(Boolean);
+    console.log(
+      `[/api/infor-m3/programs POST] companyId=${companyId} system=${targetSystem} ` +
+        `total=${programsToPersist.length} enabled=${enabledCount} disabled=${disabledCount}` +
+        (disabledNames.length ? ` disabledNames=${JSON.stringify(disabledNames)}` : '')
+    );
+
     // Performance: patch only accounting-program JSON paths instead of rewriting
     // the entire connectionMetadata document (which can be very large for CSI).
     const updatedRows = await prisma.$executeRaw`

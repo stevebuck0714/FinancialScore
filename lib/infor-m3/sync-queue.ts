@@ -247,6 +247,22 @@ function resolveFanoutProgramHint(): number {
   return Math.min(240, Math.max(8, Math.floor(raw)));
 }
 
+// Count only programs where `enabled` is not explicitly false. Disabled rows
+// are no-ops at the worker layer (operational-sync `parsePrograms` filters them
+// out), so including them in the fan-out only inflates the queue with tasks
+// that exit early. Treat missing `enabled` as enabled (legacy default).
+function countEnabledProgramRows(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  let count = 0;
+  for (const row of value) {
+    if (!row || typeof row !== 'object') continue;
+    const enabled = (row as Record<string, unknown>).enabled;
+    if (enabled === false) continue;
+    count += 1;
+  }
+  return count;
+}
+
 async function resolveFanoutProgramUpperBound(
   companyId: string,
   platform: AccountingPlatform
@@ -266,16 +282,19 @@ async function resolveFanoutProgramUpperBound(
       },
     });
     const metadata = asRecord(connection?.connectionMetadata);
-    const globalPrograms = Array.isArray(metadata.accountingPrograms) ? metadata.accountingPrograms.length : 0;
+    const globalEnabled = countEnabledProgramRows(metadata.accountingPrograms);
     const programsBySystem = asRecord(metadata.accountingProgramsBySystem);
-    const bySystemMax = Object.values(programsBySystem).reduce((maxCount, value) => {
-      const count = Array.isArray(value) ? value.length : 0;
-      return Math.max(maxCount, count);
-    }, 0);
-    const configuredCount = Math.max(globalPrograms, bySystemMax);
-    if (configuredCount <= 0) return envHint;
-    // Never under-scan configured programs during business-day fanout.
-    return Math.max(envHint, Math.max(8, configuredCount));
+    const bySystemMax = Object.values(programsBySystem).reduce(
+      (maxCount, value) => Math.max(maxCount, countEnabledProgramRows(value)),
+      0
+    );
+    const configuredCount = Math.max(globalEnabled, bySystemMax);
+    // When metadata has explicit enabled programs, scope fan-out to exactly
+    // those — the worker filters disabled rows anyway, so anything beyond the
+    // enabled count is pure no-op overhead. Fall back to the env hint only when
+    // no enabled programs are configured (worker will use DEFAULT_CSI rows).
+    if (configuredCount > 0) return configuredCount;
+    return envHint;
   } catch {
     return envHint;
   }
