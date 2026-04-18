@@ -65,6 +65,8 @@ function makeRng(seedKey: string): {
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 const round0 = (n: number): number => Math.round(n);
 
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
 // ──────────────────────────────────────────────────────────────────────────
 // Domain catalogs
 // ──────────────────────────────────────────────────────────────────────────
@@ -73,6 +75,25 @@ const PM_NAMES = [
   'D. Reyes', 'M. O\'Brien', 'L. Patel', 'C. Nakamura', 'A. Schultz',
   'J. Thompson', 'R. Bonilla', 'S. Whitaker',
 ] as const;
+
+const DIVISIONS = ['Commercial', 'Civil', 'Industrial', 'Residential'] as const;
+
+const CUSTOMERS: ReadonlyArray<{ id: string; name: string; division: typeof DIVISIONS[number] }> = [
+  { id: 'CU-1001', name: 'Bayview Development Corp', division: 'Commercial' },
+  { id: 'CU-1002', name: 'Northgate Realty Trust', division: 'Commercial' },
+  { id: 'CU-1003', name: 'Summit Property Group', division: 'Commercial' },
+  { id: 'CU-1004', name: 'Cornerstone Capital Partners', division: 'Commercial' },
+  { id: 'CU-1005', name: 'Metro Transit Authority', division: 'Civil' },
+  { id: 'CU-1006', name: 'County Public Works Dept', division: 'Civil' },
+  { id: 'CU-1007', name: 'State DOT – District 4', division: 'Civil' },
+  { id: 'CU-1008', name: 'Riverside Water District', division: 'Civil' },
+  { id: 'CU-1009', name: 'Pioneer Manufacturing Inc', division: 'Industrial' },
+  { id: 'CU-1010', name: 'Vanguard Logistics LLC', division: 'Industrial' },
+  { id: 'CU-1011', name: 'Atlas Energy Holdings', division: 'Industrial' },
+  { id: 'CU-1012', name: 'Heritage Homes Builders', division: 'Residential' },
+  { id: 'CU-1013', name: 'Lakeside Communities LLC', division: 'Residential' },
+  { id: 'CU-1014', name: 'Parkview Residences', division: 'Residential' },
+];
 
 const JOB_PREFIXES = [
   'Highland Plaza', 'Riverwalk Tower', 'Westgate Logistics',
@@ -133,13 +154,6 @@ const VENDORS_SUB = [
   'Kingfisher HVAC', 'Lighthouse Fire Protection',
 ] as const;
 
-const CUSTOMERS = [
-  'City of Riverside', 'County of Hampton', 'Highland Real Estate Trust',
-  'Pinnacle Health System', 'Summit Public Schools', 'Eastside Industrial REIT',
-  'Crestview Hospitality Group', 'Northgate Logistics', 'Lakeshore Properties LLC',
-  'Civic Capital Partners', 'Westgate Development Co.', 'Maple Heights Board of Ed',
-] as const;
-
 // ──────────────────────────────────────────────────────────────────────────
 // Types — exported so the API + UI share the contract
 // ──────────────────────────────────────────────────────────────────────────
@@ -158,6 +172,9 @@ export type JccJob = {
   pctComplete: number;
   startDate: string;
   estCompletionDate: string;
+  customerId: string;
+  customerName: string;
+  division: typeof DIVISIONS[number];
 };
 
 export type JccDailyCostRow = {
@@ -288,6 +305,7 @@ export function buildJobCostControlMock(
       pctComplete > 0.85 ? 'closing_out' : pctComplete < 0.15 ? 'just_started' : 'in_progress';
     const startOffsetDays = rng.int(120, 540);
     const completionOffsetDays = rng.int(30, 240);
+    const customer = rng.pick(CUSTOMERS);
 
     jobs.push({
       jobId: `JC-${(1000 + i).toString()}`,
@@ -303,6 +321,9 @@ export function buildJobCostControlMock(
       pctComplete: round2(pctComplete * 100),
       startDate: ymd(dateMinusDays(asOf, startOffsetDays)),
       estCompletionDate: ymd(dateMinusDays(asOf, -completionOffsetDays)),
+      customerId: customer.id,
+      customerName: customer.name,
+      division: customer.division,
     });
   }
 
@@ -553,11 +574,21 @@ export type ProjectPortfolioPayload = {
   };
   topJobs: PpTopBottomRow[];
   bottomJobs: PpTopBottomRow[];
+  rolling12: PpRolling12Row[];
   meta: {
     source: 'mock';
     seed: string;
     generatedAt: string;
   };
+};
+
+export type PpRolling12Row = {
+  monthKey: string;       // 'YYYY-MM'
+  monthLabel: string;     // 'Jan 25'
+  revenue: number;        // recognized revenue for the month
+  cogs: number;           // direct cost of revenue (labor + materials + subs + equipment)
+  expenses: number;       // indirect / SG&A allocated to the month
+  overhead: number;       // monthly overhead burden (subset of expenses, tracked separately)
 };
 
 export type BuildProjectPortfolioMockOptions = {
@@ -714,8 +745,88 @@ export function buildProjectPortfolioMock(
   const topJobs = toTopBottom(sortedByMargin.slice(0, 5));
   const bottomJobs = toTopBottom(sortedByMargin.slice(-5).reverse());
 
+  // ── Rolling 12-month revenue / COGS / expenses / overhead ───────────────
+  // Anchor to portfolio scale: ~55% of total revised contract value gets
+  // recognized over a trailing year for an active book of work. Distribute
+  // across months with mild seasonality (slower in winter, peak in summer)
+  // and a small Gaussian per month so the chart looks realistic.
+  const annualizedRevenue = jcc.summary.totalRevisedContract * 0.55;
+  const baseMonthlyRevenue = annualizedRevenue / 12;
+  // Construction sector: thin margins. Targets:
+  //   COGS ≈ 84% of revenue, SG&A ≈ 9% of revenue, overhead ≈ 5% of revenue
+  // (overhead is *part of* SG&A and visualized separately on the line chart).
+  const SEASONALITY = [0.88, 0.86, 0.95, 1.02, 1.08, 1.12, 1.13, 1.10, 1.06, 1.02, 0.94, 0.84];
+  const rolling12: PpRolling12Row[] = [];
+  // Anchor at the start of the month containing `asOf`, then walk back 11 months.
+  const anchor = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1));
+  for (let i = 11; i >= 0; i--) {
+    const m = new Date(anchor.getTime());
+    m.setUTCMonth(m.getUTCMonth() - i);
+    const monthIdx = m.getUTCMonth();
+    const seasonal = SEASONALITY[monthIdx];
+    const noise = 1 + (rng.norm(0, 0.06));         // ±6% month-to-month
+    const revenue = Math.max(0, baseMonthlyRevenue * seasonal * noise);
+
+    const cogsPct = 0.84 + rng.norm(0, 0.025);     // 79%–89%
+    const cogs = revenue * Math.max(0.5, Math.min(0.95, cogsPct));
+
+    // Total operating expenses (SG&A) — typically ~9% of revenue, noisy.
+    const expensesPct = 0.09 + rng.norm(0, 0.012);
+    const expenses = revenue * Math.max(0.04, Math.min(0.16, expensesPct));
+
+    // Overhead trends upward modestly through the year (rent escalations,
+    // headcount creep). Anchor it as a smooth sloping share of revenue.
+    const recencyBoost = (11 - i) * 0.0015;        // +0.15bp / month newer
+    const overheadPct = 0.05 + recencyBoost + rng.norm(0, 0.005);
+    const overhead = revenue * Math.max(0.025, Math.min(0.085, overheadPct));
+
+    const yyyy = m.getUTCFullYear();
+    const mm = String(monthIdx + 1).padStart(2, '0');
+    const monthKey = `${yyyy}-${mm}`;
+    const monthLabel = `${MONTH_SHORT[monthIdx]} ${String(yyyy).slice(-2)}`;
+    rolling12.push({
+      monthKey,
+      monthLabel,
+      revenue: round0(revenue),
+      cogs: round0(cogs),
+      expenses: round0(expenses),
+      overhead: round0(overhead),
+    });
+  }
+
+  // ── Month-to-date metrics (last bar of rolling12, prorated to as-of day) ─
+  // The last entry in rolling12 represents the current month at full-month
+  // run-rate. Scale by the fraction of the month that has elapsed so the
+  // MTD numbers feel realistic on any given day.
+  const currentMonth = rolling12[rolling12.length - 1];
+  const daysInMonth = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() + 1, 0)).getUTCDate();
+  const dayOfMonth = asOf.getUTCDate();
+  const mtdFraction = Math.min(1, Math.max(0.05, dayOfMonth / daysInMonth));
+  const mtdProjectRevenue = round0(currentMonth.revenue * mtdFraction);
+  const mtdProjectCost = round0((currentMonth.cogs + currentMonth.expenses) * mtdFraction);
+  const monthlyProjectProfit = mtdProjectRevenue - mtdProjectCost;
+  const monthlyProjectProfitMarginPct = mtdProjectRevenue > 0
+    ? round2((monthlyProjectProfit / mtdProjectRevenue) * 100)
+    : 0;
+
+  // ── Job count metrics ───────────────────────────────────────────────────
+  const currentMonthKey = currentMonth.monthKey;          // 'YYYY-MM'
+  const newJobsThisMonth = jcc.jobs.filter((j) =>
+    typeof j.startDate === 'string' && j.startDate.startsWith(currentMonthKey)
+  ).length;
+  // "Active" excludes jobs that are closing out (effectively wound down).
+  const totalActiveJobs = jcc.jobs.filter((j) => j.status !== 'closing_out').length;
+
   return {
-    summary: jcc.summary,
+    summary: {
+      ...jcc.summary,
+      mtdProjectRevenue,
+      mtdProjectCost,
+      monthlyProjectProfit,
+      monthlyProjectProfitMarginPct,
+      newJobsThisMonth,
+      totalActiveJobs,
+    },
     jobProfitability,
     riskFlags,
     schedule,
@@ -732,6 +843,7 @@ export function buildProjectPortfolioMock(
     },
     topJobs,
     bottomJobs,
+    rolling12,
     meta: {
       source: 'mock',
       seed: seedKey,
@@ -1095,15 +1207,11 @@ export function buildBillingCashMock(
   const seedKey = `bc::${companyId || 'anonymous'}::v1`;
   const rng = makeRng(seedKey);
 
-  // ── Customer per job (deterministic based on jobId hash) ────────────────
-  const customerByJob = new Map<string, string>();
-  for (const j of jcc.jobs) {
-    customerByJob.set(j.jobId, rng.pick(CUSTOMERS));
-  }
-
   // ── Billing & Cash summary (per job) ────────────────────────────────────
+  // Customer name comes straight from the JCC job so AR/AP/BC all share one
+  // customer per job and the construction tabs roll up consistently.
   const billingCash: BcBillingCashRow[] = jcc.jobs.map((j) => {
-    const customer = customerByJob.get(j.jobId) || rng.pick(CUSTOMERS);
+    const customer = j.customerName;
     // Billed to date ≈ cost to date × billing factor (1.0 ± 0.15) reflecting
     // a mix of under-/over-billed jobs.
     const billingFactor = Math.max(0.65, Math.min(1.35, rng.norm(1.02, 0.15)));
@@ -1330,6 +1438,559 @@ export function buildBillingCashMock(
     arByJob,
     apByJob,
     priority: priorityTrimmed,
+    meta: {
+      source: 'mock',
+      seed: seedKey,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// M5b: Construction AR (project-aware aging)
+// ──────────────────────────────────────────────────────────────────────────
+
+export type CaArAgingBuckets = {
+  totalAr: number;
+  current: number;
+  d30: number;
+  d60: number;
+  d90Plus: number;
+};
+
+export type CaArByCustomerRow = CaArAgingBuckets & {
+  customerId: string;
+  customerName: string;
+  division: typeof DIVISIONS[number];
+};
+
+export type CaArByProjectRow = CaArAgingBuckets & {
+  jobId: string;
+  jobName: string;
+  customerId: string;
+  customerName: string;
+  pmName: string;
+  division: typeof DIVISIONS[number];
+};
+
+export type CaArInvoiceRow = {
+  invoiceId: string;
+  jobId: string;
+  jobName: string;
+  customerId: string;
+  customerName: string;
+  pmName: string;
+  division: typeof DIVISIONS[number];
+  invoiceDate: string;
+  dueDate: string;
+  amount: number;
+  balance: number;
+  daysOutstanding: number;
+  agingBucket: 'current' | 'd30' | 'd60' | 'd90+';
+};
+
+export type CaArCollectionRow = {
+  customerId: string;
+  customerName: string;
+  jobId: string;
+  jobName: string;
+  pmName: string;
+  balance90Plus: number;
+  oldestInvoiceDate: string;
+  oldestDays: number;
+};
+
+export type ConstructionArPayload = {
+  summary: CaArAgingBuckets & { asOfDate: string };
+  byCustomer: CaArByCustomerRow[];
+  byProject: CaArByProjectRow[];
+  byInvoice: CaArInvoiceRow[];
+  collectionsPriority: CaArCollectionRow[];
+  filters: {
+    jobs: { jobId: string; jobName: string }[];
+    pms: string[];
+    divisions: string[];
+  };
+  meta: { source: 'mock'; seed: string; generatedAt: string };
+};
+
+export type BuildConstructionArMockOptions = {
+  jobCount?: number;
+  asOf?: Date;
+};
+
+const NET_TERMS_DAYS = 30;
+
+function bucketForDays(daysOutstanding: number): CaArInvoiceRow['agingBucket'] {
+  if (daysOutstanding <= NET_TERMS_DAYS) return 'current';
+  const past = daysOutstanding - NET_TERMS_DAYS;
+  if (past <= 30) return 'd30';
+  if (past <= 60) return 'd60';
+  return 'd90+';
+}
+
+export function buildConstructionArMock(
+  companyId: string,
+  options: BuildConstructionArMockOptions = {}
+): ConstructionArPayload {
+  const jcc = buildJobCostControlMock(companyId, {
+    jobCount: options.jobCount,
+    asOf: options.asOf,
+  });
+  const asOf = options.asOf ?? new Date();
+  const seedKey = `con-ar::${companyId || 'anonymous'}::v1`;
+  const rng = makeRng(seedKey);
+
+  const byInvoice: CaArInvoiceRow[] = [];
+
+  for (const job of jcc.jobs) {
+    // Number of open invoices scales with how far the job has progressed.
+    const baseInvoiceCount = Math.max(2, Math.round(job.pctComplete / 12)); // 2-9 invoices
+    const invoiceCount = Math.max(1, baseInvoiceCount + rng.int(-1, 3));
+
+    for (let i = 0; i < invoiceCount; i++) {
+      // Spread invoice dates across the trailing 150 days, weighted to recent.
+      const ageWeight = Math.pow(rng.next(), 1.4); // skews to small numbers (= recent)
+      const daysOutstanding = Math.max(1, Math.round(ageWeight * 150));
+      const invoiceDate = ymd(dateMinusDays(asOf, daysOutstanding));
+      const dueDate = ymd(dateMinusDays(asOf, daysOutstanding - NET_TERMS_DAYS));
+
+      // Invoice amount: rough share of contract value / invoiceCount, with noise.
+      const baseAmount = job.revisedContractValue / Math.max(8, invoiceCount * 2);
+      const amount = round0(Math.max(2_500, baseAmount * Math.max(0.4, rng.norm(1, 0.35))));
+
+      // Balance: fully paid (~50%), partially paid (~25%), unpaid (~25%).
+      const r = rng.next();
+      let balance: number;
+      if (r < 0.50) balance = 0;
+      else if (r < 0.75) balance = round0(amount * (0.20 + rng.next() * 0.55));
+      else balance = amount;
+
+      if (balance === 0) continue; // only carry open invoices on the AR ledger
+
+      byInvoice.push({
+        invoiceId: `INV-${job.jobId.replace('JC-', '')}-${(100 + i).toString()}`,
+        jobId: job.jobId,
+        jobName: job.jobName,
+        customerId: job.customerId,
+        customerName: job.customerName,
+        pmName: job.pmName,
+        division: job.division,
+        invoiceDate,
+        dueDate,
+        amount,
+        balance,
+        daysOutstanding,
+        agingBucket: bucketForDays(daysOutstanding),
+      });
+    }
+  }
+
+  // ── Aggregate: by project (jobId) ───────────────────────────────────────
+  const byProjectMap = new Map<string, CaArByProjectRow>();
+  for (const inv of byInvoice) {
+    let row = byProjectMap.get(inv.jobId);
+    if (!row) {
+      row = {
+        jobId: inv.jobId,
+        jobName: inv.jobName,
+        customerId: inv.customerId,
+        customerName: inv.customerName,
+        pmName: inv.pmName,
+        division: inv.division,
+        totalAr: 0, current: 0, d30: 0, d60: 0, d90Plus: 0,
+      };
+      byProjectMap.set(inv.jobId, row);
+    }
+    row.totalAr += inv.balance;
+    if (inv.agingBucket === 'current') row.current += inv.balance;
+    else if (inv.agingBucket === 'd30') row.d30 += inv.balance;
+    else if (inv.agingBucket === 'd60') row.d60 += inv.balance;
+    else row.d90Plus += inv.balance;
+  }
+  const byProject = [...byProjectMap.values()]
+    .map((r) => ({
+      ...r,
+      totalAr: round0(r.totalAr),
+      current: round0(r.current),
+      d30: round0(r.d30),
+      d60: round0(r.d60),
+      d90Plus: round0(r.d90Plus),
+    }))
+    .sort((a, b) => b.d90Plus - a.d90Plus || b.totalAr - a.totalAr);
+
+  // ── Aggregate: by customer ──────────────────────────────────────────────
+  const byCustomerMap = new Map<string, CaArByCustomerRow>();
+  for (const inv of byInvoice) {
+    let row = byCustomerMap.get(inv.customerId);
+    if (!row) {
+      row = {
+        customerId: inv.customerId,
+        customerName: inv.customerName,
+        division: inv.division,
+        totalAr: 0, current: 0, d30: 0, d60: 0, d90Plus: 0,
+      };
+      byCustomerMap.set(inv.customerId, row);
+    }
+    row.totalAr += inv.balance;
+    if (inv.agingBucket === 'current') row.current += inv.balance;
+    else if (inv.agingBucket === 'd30') row.d30 += inv.balance;
+    else if (inv.agingBucket === 'd60') row.d60 += inv.balance;
+    else row.d90Plus += inv.balance;
+  }
+  const byCustomer = [...byCustomerMap.values()]
+    .map((r) => ({
+      ...r,
+      totalAr: round0(r.totalAr),
+      current: round0(r.current),
+      d30: round0(r.d30),
+      d60: round0(r.d60),
+      d90Plus: round0(r.d90Plus),
+    }))
+    .sort((a, b) => b.d90Plus - a.d90Plus || b.totalAr - a.totalAr);
+
+  // ── Summary ─────────────────────────────────────────────────────────────
+  const summary = byInvoice.reduce(
+    (acc, inv) => {
+      acc.totalAr += inv.balance;
+      if (inv.agingBucket === 'current') acc.current += inv.balance;
+      else if (inv.agingBucket === 'd30') acc.d30 += inv.balance;
+      else if (inv.agingBucket === 'd60') acc.d60 += inv.balance;
+      else acc.d90Plus += inv.balance;
+      return acc;
+    },
+    { totalAr: 0, current: 0, d30: 0, d60: 0, d90Plus: 0 }
+  );
+
+  // ── Collections priority ────────────────────────────────────────────────
+  // Per (customer, job) combos with 90+ balance, ranked by 90+ desc.
+  const collectionsMap = new Map<string, CaArCollectionRow>();
+  for (const inv of byInvoice) {
+    if (inv.agingBucket !== 'd90+') continue;
+    const k = `${inv.customerId}::${inv.jobId}`;
+    let row = collectionsMap.get(k);
+    if (!row) {
+      row = {
+        customerId: inv.customerId,
+        customerName: inv.customerName,
+        jobId: inv.jobId,
+        jobName: inv.jobName,
+        pmName: inv.pmName,
+        balance90Plus: 0,
+        oldestInvoiceDate: inv.invoiceDate,
+        oldestDays: inv.daysOutstanding,
+      };
+      collectionsMap.set(k, row);
+    }
+    row.balance90Plus += inv.balance;
+    if (inv.daysOutstanding > row.oldestDays) {
+      row.oldestDays = inv.daysOutstanding;
+      row.oldestInvoiceDate = inv.invoiceDate;
+    }
+  }
+  const collectionsPriority = [...collectionsMap.values()]
+    .map((r) => ({ ...r, balance90Plus: round0(r.balance90Plus) }))
+    .sort((a, b) => b.balance90Plus - a.balance90Plus)
+    .slice(0, 25);
+
+  // ── Filter dropdown values ──────────────────────────────────────────────
+  const pms = [...new Set(jcc.jobs.map((j) => j.pmName))].sort();
+  const divisions = [...new Set(jcc.jobs.map((j) => j.division))].sort();
+  const filterJobs = jcc.jobs.map((j) => ({ jobId: j.jobId, jobName: j.jobName }));
+
+  return {
+    summary: {
+      totalAr: round0(summary.totalAr),
+      current: round0(summary.current),
+      d30: round0(summary.d30),
+      d60: round0(summary.d60),
+      d90Plus: round0(summary.d90Plus),
+      asOfDate: ymd(asOf),
+    },
+    byCustomer,
+    byProject,
+    byInvoice: byInvoice.sort((a, b) => b.daysOutstanding - a.daysOutstanding),
+    collectionsPriority,
+    filters: { jobs: filterJobs, pms, divisions },
+    meta: {
+      source: 'mock',
+      seed: seedKey,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// M5b: Construction AP (project-aware aging)
+// ──────────────────────────────────────────────────────────────────────────
+
+export type CaApAgingBuckets = {
+  totalAp: number;
+  current: number;
+  d30: number;
+  d60: number;
+  d90Plus: number;
+};
+
+export type CaApByVendorRow = CaApAgingBuckets & {
+  vendorId: string;
+  vendorName: string;
+  vendorType: 'subcontractor' | 'supplier';
+};
+
+export type CaApByProjectRow = CaApAgingBuckets & {
+  jobId: string;
+  jobName: string;
+  pmName: string;
+  division: typeof DIVISIONS[number];
+};
+
+export type CaApBillRow = {
+  billId: string;
+  jobId: string;
+  jobName: string;
+  vendorId: string;
+  vendorName: string;
+  vendorType: 'subcontractor' | 'supplier';
+  pmName: string;
+  division: typeof DIVISIONS[number];
+  billDate: string;
+  dueDate: string;
+  amount: number;
+  balance: number;
+  daysOutstanding: number;     // negative = not yet due (days until due)
+  agingBucket: 'current' | 'd30' | 'd60' | 'd90+';
+};
+
+export type CaApPaymentRow = {
+  vendorId: string;
+  vendorName: string;
+  jobId: string;
+  jobName: string;
+  pmName: string;
+  dueAmount: number;
+  dueDate: string;
+  daysPastDue: number;       // negative = days until due
+  reason: string;
+};
+
+export type ConstructionApPayload = {
+  summary: CaApAgingBuckets & { asOfDate: string };
+  byVendor: CaApByVendorRow[];
+  byProject: CaApByProjectRow[];
+  byBill: CaApBillRow[];
+  paymentPriority: CaApPaymentRow[];
+  filters: {
+    jobs: { jobId: string; jobName: string }[];
+    pms: string[];
+    divisions: string[];
+  };
+  meta: { source: 'mock'; seed: string; generatedAt: string };
+};
+
+export type BuildConstructionApMockOptions = {
+  jobCount?: number;
+  asOf?: Date;
+};
+
+export function buildConstructionApMock(
+  companyId: string,
+  options: BuildConstructionApMockOptions = {}
+): ConstructionApPayload {
+  const jcc = buildJobCostControlMock(companyId, {
+    jobCount: options.jobCount,
+    asOf: options.asOf,
+  });
+  const asOf = options.asOf ?? new Date();
+  const seedKey = `con-ap::${companyId || 'anonymous'}::v1`;
+  const rng = makeRng(seedKey);
+
+  // Build a vendor catalog with stable IDs (subs + suppliers).
+  type VendorMeta = { id: string; name: string; type: 'subcontractor' | 'supplier' };
+  const vendorCatalog: VendorMeta[] = [
+    ...VENDORS_SUB.map((name, i) => ({
+      id: `VS-${(2000 + i).toString()}`,
+      name,
+      type: 'subcontractor' as const,
+    })),
+    ...VENDORS_PO.map((name, i) => ({
+      id: `VP-${(3000 + i).toString()}`,
+      name,
+      type: 'supplier' as const,
+    })),
+  ];
+
+  const byBill: CaApBillRow[] = [];
+
+  for (const job of jcc.jobs) {
+    // Bills count grows with cost-to-date; subs typically dominate.
+    const billCount = Math.max(4, Math.round(job.costToDate / 120_000));
+    const cappedBillCount = Math.min(40, billCount);
+
+    for (let i = 0; i < cappedBillCount; i++) {
+      const vendor = rng.pick(vendorCatalog);
+      // Bill date: trailing 120 days, skewed recent.
+      const ageRoll = Math.pow(rng.next(), 1.3);
+      const ageDays = Math.max(0, Math.round(ageRoll * 120));
+      const billDate = ymd(dateMinusDays(asOf, ageDays));
+      // Due date: net-30 from bill date.
+      const daysOutstanding = ageDays - NET_TERMS_DAYS;
+      const dueDate = ymd(dateMinusDays(asOf, daysOutstanding));
+
+      // Amount: scaled by job cost / billCount with noise.
+      const baseAmount = job.costToDate / Math.max(6, cappedBillCount * 1.3);
+      const amount = round0(Math.max(1_500, baseAmount * Math.max(0.35, rng.norm(1, 0.4))));
+
+      // Balance: paid (~55%), partial (~20%), unpaid (~25%).
+      const r = rng.next();
+      let balance: number;
+      if (r < 0.55) balance = 0;
+      else if (r < 0.75) balance = round0(amount * (0.25 + rng.next() * 0.55));
+      else balance = amount;
+
+      if (balance === 0) continue;
+
+      byBill.push({
+        billId: `BILL-${job.jobId.replace('JC-', '')}-${(100 + i).toString()}`,
+        jobId: job.jobId,
+        jobName: job.jobName,
+        vendorId: vendor.id,
+        vendorName: vendor.name,
+        vendorType: vendor.type,
+        pmName: job.pmName,
+        division: job.division,
+        billDate,
+        dueDate,
+        amount,
+        balance,
+        daysOutstanding,
+        agingBucket: bucketForDays(Math.max(0, daysOutstanding) + NET_TERMS_DAYS),
+      });
+    }
+  }
+
+  // ── Aggregate: by project ───────────────────────────────────────────────
+  const byProjectMap = new Map<string, CaApByProjectRow>();
+  for (const bill of byBill) {
+    let row = byProjectMap.get(bill.jobId);
+    if (!row) {
+      row = {
+        jobId: bill.jobId,
+        jobName: bill.jobName,
+        pmName: bill.pmName,
+        division: bill.division,
+        totalAp: 0, current: 0, d30: 0, d60: 0, d90Plus: 0,
+      };
+      byProjectMap.set(bill.jobId, row);
+    }
+    row.totalAp += bill.balance;
+    if (bill.agingBucket === 'current') row.current += bill.balance;
+    else if (bill.agingBucket === 'd30') row.d30 += bill.balance;
+    else if (bill.agingBucket === 'd60') row.d60 += bill.balance;
+    else row.d90Plus += bill.balance;
+  }
+  const byProject = [...byProjectMap.values()]
+    .map((r) => ({
+      ...r,
+      totalAp: round0(r.totalAp),
+      current: round0(r.current),
+      d30: round0(r.d30),
+      d60: round0(r.d60),
+      d90Plus: round0(r.d90Plus),
+    }))
+    .sort((a, b) => b.totalAp - a.totalAp);
+
+  // ── Aggregate: by vendor ────────────────────────────────────────────────
+  const byVendorMap = new Map<string, CaApByVendorRow>();
+  for (const bill of byBill) {
+    let row = byVendorMap.get(bill.vendorId);
+    if (!row) {
+      row = {
+        vendorId: bill.vendorId,
+        vendorName: bill.vendorName,
+        vendorType: bill.vendorType,
+        totalAp: 0, current: 0, d30: 0, d60: 0, d90Plus: 0,
+      };
+      byVendorMap.set(bill.vendorId, row);
+    }
+    row.totalAp += bill.balance;
+    if (bill.agingBucket === 'current') row.current += bill.balance;
+    else if (bill.agingBucket === 'd30') row.d30 += bill.balance;
+    else if (bill.agingBucket === 'd60') row.d60 += bill.balance;
+    else row.d90Plus += bill.balance;
+  }
+  const byVendor = [...byVendorMap.values()]
+    .map((r) => ({
+      ...r,
+      totalAp: round0(r.totalAp),
+      current: round0(r.current),
+      d30: round0(r.d30),
+      d60: round0(r.d60),
+      d90Plus: round0(r.d90Plus),
+    }))
+    .sort((a, b) => b.totalAp - a.totalAp);
+
+  // ── Summary ─────────────────────────────────────────────────────────────
+  const summary = byBill.reduce(
+    (acc, b) => {
+      acc.totalAp += b.balance;
+      if (b.agingBucket === 'current') acc.current += b.balance;
+      else if (b.agingBucket === 'd30') acc.d30 += b.balance;
+      else if (b.agingBucket === 'd60') acc.d60 += b.balance;
+      else acc.d90Plus += b.balance;
+      return acc;
+    },
+    { totalAp: 0, current: 0, d30: 0, d60: 0, d90Plus: 0 }
+  );
+
+  // ── Payment priority ────────────────────────────────────────────────────
+  // Highest priority: 90+ past due (impacts vendor relationships, lien risk).
+  // Next: 60, 30. Then due in next 7 days.
+  const paymentPriority: CaApPaymentRow[] = byBill
+    .map((b) => {
+      let reason = '';
+      let priority = 0;
+      const daysPastDue = b.daysOutstanding;
+      if (b.agingBucket === 'd90+') { reason = 'Past due 90+ — lien / relationship risk'; priority = 4; }
+      else if (b.agingBucket === 'd60') { reason = 'Past due 60'; priority = 3; }
+      else if (b.agingBucket === 'd30') { reason = 'Past due 30'; priority = 2; }
+      else if (daysPastDue >= -7) { reason = 'Due within 7 days'; priority = 1; }
+      else { reason = ''; priority = 0; }
+      return { bill: b, daysPastDue, reason, priority };
+    })
+    .filter((x) => x.priority > 0)
+    .sort((a, b) => b.priority - a.priority || b.bill.balance - a.bill.balance)
+    .slice(0, 30)
+    .map((x) => ({
+      vendorId: x.bill.vendorId,
+      vendorName: x.bill.vendorName,
+      jobId: x.bill.jobId,
+      jobName: x.bill.jobName,
+      pmName: x.bill.pmName,
+      dueAmount: x.bill.balance,
+      dueDate: x.bill.dueDate,
+      daysPastDue: x.daysPastDue,
+      reason: x.reason,
+    }));
+
+  const pms = [...new Set(jcc.jobs.map((j) => j.pmName))].sort();
+  const divisions = [...new Set(jcc.jobs.map((j) => j.division))].sort();
+  const filterJobs = jcc.jobs.map((j) => ({ jobId: j.jobId, jobName: j.jobName }));
+
+  return {
+    summary: {
+      totalAp: round0(summary.totalAp),
+      current: round0(summary.current),
+      d30: round0(summary.d30),
+      d60: round0(summary.d60),
+      d90Plus: round0(summary.d90Plus),
+      asOfDate: ymd(asOf),
+    },
+    byVendor,
+    byProject,
+    byBill: byBill.sort((a, b) => b.daysOutstanding - a.daysOutstanding),
+    paymentPriority,
+    filters: { jobs: filterJobs, pms, divisions },
     meta: {
       source: 'mock',
       seed: seedKey,

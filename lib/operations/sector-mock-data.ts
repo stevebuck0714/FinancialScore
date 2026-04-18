@@ -51,10 +51,10 @@ const TOP_LINE_BUCKETS_BY_SECTOR: Record<string, Bucket[]> = {
   ],
   '23': [
     { key: 'cash', label: 'Cash' },
-    { key: 'ar', label: 'AR (progress billing, retainage, claims)' },
-    { key: 'ap', label: 'AP (subs, materials, equipment rental)' },
-    { key: 'job_cost_control', label: 'Job Cost Control' },
+    { key: 'construction_ar', label: 'AR' },
+    { key: 'construction_ap', label: 'AP' },
     { key: 'project_portfolio', label: 'Project Portfolio' },
+    { key: 'job_cost_control', label: 'Job Cost Control' },
     { key: 'commitments_forecast', label: 'Commitments & Forecast' },
     { key: 'billing_cash', label: 'Billing & Cash' },
   ],

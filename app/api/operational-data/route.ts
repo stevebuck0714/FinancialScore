@@ -8,6 +8,8 @@ import {
   buildProjectPortfolioMock,
   buildCommitmentsForecastMock,
   buildBillingCashMock,
+  buildConstructionArMock,
+  buildConstructionApMock,
 } from '@/lib/operations/construction-mock-data';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
@@ -5914,6 +5916,7 @@ export async function GET(request: NextRequest) {
           scheduleSlippageImpact: payload.scheduleSlippageImpact,
           topJobs: payload.topJobs,
           bottomJobs: payload.bottomJobs,
+          rolling12: payload.rolling12,
           summary: payload.summary,
           meta: payload.meta,
         });
@@ -5946,6 +5949,38 @@ export async function GET(request: NextRequest) {
           arByJob: payload.arByJob,
           apByJob: payload.apByJob,
           priority: payload.priority,
+          summary: payload.summary,
+          meta: payload.meta,
+        });
+      }
+
+      case 'construction-ar': {
+        // M5b: Project-aware AR for construction. Customers/jobs/PMs/divisions
+        // come straight from the JCC job set so all construction tabs roll up
+        // consistently against the same portfolio.
+        const payload = buildConstructionArMock(companyId);
+        return NextResponse.json({
+          records: payload.byInvoice,
+          byCustomer: payload.byCustomer,
+          byProject: payload.byProject,
+          byInvoice: payload.byInvoice,
+          collectionsPriority: payload.collectionsPriority,
+          filters: payload.filters,
+          summary: payload.summary,
+          meta: payload.meta,
+        });
+      }
+
+      case 'construction-ap': {
+        // M5b: Project-aware AP for construction (subs + suppliers).
+        const payload = buildConstructionApMock(companyId);
+        return NextResponse.json({
+          records: payload.byBill,
+          byVendor: payload.byVendor,
+          byProject: payload.byProject,
+          byBill: payload.byBill,
+          paymentPriority: payload.paymentPriority,
+          filters: payload.filters,
           summary: payload.summary,
           meta: payload.meta,
         });

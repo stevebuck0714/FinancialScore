@@ -42,6 +42,43 @@ const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group
   { key: 'customersRetentionProxy', label: 'Customers: Revenue Retention Proxy', group: 'Customers' },
   { key: 'customersInvoiceVelocity', label: 'Customers: Revenue vs Invoice Velocity', group: 'Customers' },
   { key: 'customersAtRiskQueue', label: 'Customers: At-Risk Accounts Queue', group: 'Customers' },
+  // ── Construction sector ('23') tab sub-sections ──────────────────────────
+  // Project Portfolio
+  { key: 'ppPortfolioSummary', label: 'Project Portfolio: Portfolio Summary', group: 'Project Portfolio' },
+  { key: 'ppMonthlyMetrics', label: 'Project Portfolio: MTD + Job Counts', group: 'Project Portfolio' },
+  { key: 'ppRevenueVsCostChart', label: 'Project Portfolio: Revenue vs Cost (12 mo)', group: 'Project Portfolio' },
+  { key: 'ppOverheadTrendChart', label: 'Project Portfolio: Overhead Trend (12 mo)', group: 'Project Portfolio' },
+  { key: 'ppScheduleSlippage', label: 'Project Portfolio: Schedule Slippage Impact', group: 'Project Portfolio' },
+  { key: 'ppJobProfitability', label: 'Project Portfolio: Job Profitability Table', group: 'Project Portfolio' },
+  { key: 'ppRiskFlags', label: 'Project Portfolio: Risk Flags', group: 'Project Portfolio' },
+  { key: 'ppTopBottomJobs', label: 'Project Portfolio: Top / Bottom Jobs', group: 'Project Portfolio' },
+  // Job Cost Control
+  { key: 'jccJobPicker', label: 'Job Cost Control: Job Picker', group: 'Job Cost Control' },
+  { key: 'jccProfitabilitySnapshot', label: 'Job Cost Control: Profitability Snapshot', group: 'Job Cost Control' },
+  { key: 'jccDailyCost', label: 'Job Cost Control: Daily Cost vs Budget', group: 'Job Cost Control' },
+  { key: 'jccCostCodeVariance', label: 'Job Cost Control: Cost Code Variance', group: 'Job Cost Control' },
+  { key: 'jccCostByType', label: 'Job Cost Control: Cost by Type', group: 'Job Cost Control' },
+  { key: 'jccLaborDetail', label: 'Job Cost Control: Labor + Equipment Detail', group: 'Job Cost Control' },
+  { key: 'jccJobSpecificAr', label: 'Job Cost Control: Job-Specific AR (drill)', group: 'Job Cost Control' },
+  { key: 'jccJobSpecificAp', label: 'Job Cost Control: Job-Specific AP (drill)', group: 'Job Cost Control' },
+  // Commitments & Forecast
+  { key: 'cfEacSummary', label: 'Commitments & Forecast: EAC Summary', group: 'Commitments & Forecast' },
+  { key: 'cfCommitmentExposure', label: 'Commitments & Forecast: Commitment Exposure', group: 'Commitments & Forecast' },
+  { key: 'cfChangeOrderImpact', label: 'Commitments & Forecast: Change Order Impact', group: 'Commitments & Forecast' },
+  { key: 'cfOpenCommitments', label: 'Commitments & Forecast: Open Commitments', group: 'Commitments & Forecast' },
+  // Billing & Cash
+  { key: 'bcSummary', label: 'Billing & Cash: Summary', group: 'Billing & Cash' },
+  { key: 'bcArByJob', label: 'Billing & Cash: AR by Job', group: 'Billing & Cash' },
+  { key: 'bcApByJob', label: 'Billing & Cash: AP by Job', group: 'Billing & Cash' },
+  { key: 'bcPriorityList', label: 'Billing & Cash: Priority List', group: 'Billing & Cash' },
+  // Construction AR (project-aware)
+  { key: 'caArSummary', label: 'AR: Aging Summary', group: 'Construction AR' },
+  { key: 'caArMainTable', label: 'AR: Main Table (toggle)', group: 'Construction AR' },
+  { key: 'caArCollectionsPriority', label: 'AR: Collections Priority', group: 'Construction AR' },
+  // Construction AP (project-aware)
+  { key: 'caApSummary', label: 'AP: Aging Summary', group: 'Construction AP' },
+  { key: 'caApMainTable', label: 'AP: Main Table (toggle)', group: 'Construction AP' },
+  { key: 'caApPaymentPriority', label: 'AP: Payment Priority', group: 'Construction AP' },
 ];
 
 const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
@@ -52,6 +89,13 @@ const OPERATIONAL_HUB_SECTIONS_BY_DATATYPE_GROUP: Record<string, string> = {
   inventory: 'Inventory',
   cash: 'Cash',
   'daily-financials': 'Daily Financials',
+  // Construction sector ('23') native tabs.
+  'project-portfolio': 'Project Portfolio',
+  'job-cost-control': 'Job Cost Control',
+  'commitments-forecast': 'Commitments & Forecast',
+  'billing-cash': 'Billing & Cash',
+  'construction-ar': 'Construction AR',
+  'construction-ap': 'Construction AP',
 };
 
 type OperationalHubCustomReport = {
@@ -3314,6 +3358,7 @@ export default function SiteAdminDashboard(props: any) {
                                               >
                                                 <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Company Name:</strong> {company?.name || 'Not found'}</div>
                                                 <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>ID:</strong> <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{company?.id}</span></div>
+                                                <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Sector:</strong> {company?.industrySectorCategory ? `${company.industrySectorCategory} - ${getSectorNameForCompany(company)}` : 'Not set'}</div>
                                                 <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Industry:</strong> {company?.industrySector ? `${company.industrySector} - ${INDUSTRY_SECTORS.find(s => s.id === company.industrySector)?.name || 'Unknown'}` : 'Not set'}</div>
                                                 <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Type:</strong> Consultant Business</div>
                                                 <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><strong>Address Street:</strong> {company?.addressStreet || 'Not provided'}</div>

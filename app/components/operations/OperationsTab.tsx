@@ -357,6 +357,20 @@ export default function OperationsTab({
   const [cfOpenCommitmentsFilter, setCfOpenCommitmentsFilter] = useState<'all' | 'past_due' | 'closing_soon' | 'po' | 'sub'>('all');
   const [billingCashData, setBillingCashData] = useState<any>(null);
   const [bcPriorityFilter, setBcPriorityFilter] = useState<'all' | 'collect' | 'pay'>('all');
+  // Construction AR (M5b) — view + filter state
+  const [constructionArData, setConstructionArData] = useState<any>(null);
+  const [caArView, setCaArView] = useState<'customer' | 'project' | 'invoice'>('customer');
+  const [caArFilterJob, setCaArFilterJob] = useState<string>('__ALL__');
+  const [caArFilterPm, setCaArFilterPm] = useState<string>('__ALL__');
+  const [caArFilterDivision, setCaArFilterDivision] = useState<string>('__ALL__');
+  const [caArFilterAging, setCaArFilterAging] = useState<'all' | 'current' | 'd30' | 'd60' | 'd90+'>('all');
+  // Construction AP (M5b) — view + filter state
+  const [constructionApData, setConstructionApData] = useState<any>(null);
+  const [caApView, setCaApView] = useState<'vendor' | 'project' | 'bill'>('vendor');
+  const [caApFilterJob, setCaApFilterJob] = useState<string>('__ALL__');
+  const [caApFilterPm, setCaApFilterPm] = useState<string>('__ALL__');
+  const [caApFilterDivision, setCaApFilterDivision] = useState<string>('__ALL__');
+  const [caApFilterDue, setCaApFilterDue] = useState<'all' | 'past_due' | 'due_7' | 'd30' | 'd60' | 'd90+'>('all');
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
@@ -628,6 +642,24 @@ export default function OperationsTab({
 
     return () => controller.abort();
   }, [industrySectorCategory]);
+
+  // When the user picks a specific job inside Job Cost Control, lazily pull
+  // the construction AR + AP datasets so the per-job AR/AP panels can render
+  // without forcing the user to visit those tabs first.
+  useEffect(() => {
+    if (selectedJccJobId === '__ALL__') return;
+    if (!constructionArData) {
+      void fetchOperationalTypeWithCache('construction-ar', { preferCache: true })
+        .then((d) => { if (d) setConstructionArData(d); })
+        .catch(() => { /* best-effort */ });
+    }
+    if (!constructionApData) {
+      void fetchOperationalTypeWithCache('construction-ap', { preferCache: true })
+        .then((d) => { if (d) setConstructionApData(d); })
+        .catch(() => { /* best-effort */ });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJccJobId]);
 
   useEffect(() => {
     if (activeTab !== 'overview' && activeTab !== 'dashboard' && mapModuleToDataType(activeTab)) {
@@ -903,6 +935,12 @@ export default function OperationsTab({
         break;
       case 'billing-cash':
         setBillingCashData(data);
+        break;
+      case 'construction-ar':
+        setConstructionArData(data);
+        break;
+      case 'construction-ap':
+        setConstructionApData(data);
         break;
     }
   };
@@ -8211,6 +8249,862 @@ Strategies to Improve the CCC
     </div>
   );
 
+  // ── Construction AR / AP shared style helpers ───────────────────────────
+  const caCardStyle: React.CSSProperties = {
+    background: '#fff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '12px',
+    padding: '20px',
+  };
+  const caCardTitleStyle: React.CSSProperties = {
+    margin: '0 0 12px 0',
+    fontSize: '13px',
+    fontWeight: 700,
+    color: '#0f172a',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  };
+  const caThStyle: React.CSSProperties = {
+    textAlign: 'left',
+    padding: '8px 10px',
+    fontSize: '11px',
+    fontWeight: 700,
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    borderBottom: '1px solid #e2e8f0',
+    background: '#f8fafc',
+  };
+  const caThRightStyle: React.CSSProperties = { ...caThStyle, textAlign: 'right' };
+  const caTdStyle: React.CSSProperties = {
+    padding: '8px 10px',
+    fontSize: '13px',
+    color: '#0f172a',
+    borderBottom: '1px solid #f1f5f9',
+  };
+  const caTdRightStyle: React.CSSProperties = { ...caTdStyle, textAlign: 'right' };
+  const caPillButton = (active: boolean): React.CSSProperties => ({
+    padding: '6px 14px',
+    border: '1px solid ' + (active ? '#2563eb' : '#cbd5e1'),
+    background: active ? '#2563eb' : '#fff',
+    color: active ? '#fff' : '#0f172a',
+    borderRadius: '999px',
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  });
+  const caSelectStyle: React.CSSProperties = {
+    padding: '6px 8px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '6px',
+    fontSize: '12px',
+    background: '#fff',
+    color: '#0f172a',
+    minWidth: '140px',
+  };
+
+  const renderConstructionAr = () => {
+    if (!constructionArData) {
+      return (
+        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
+          Loading AR…
+        </div>
+      );
+    }
+    const data = constructionArData;
+    const summary = data.summary || { totalAr: 0, current: 0, d30: 0, d60: 0, d90Plus: 0, asOfDate: '—' };
+    const filters = data.filters || { jobs: [], pms: [], divisions: [] };
+    const byCustomer: any[] = Array.isArray(data.byCustomer) ? data.byCustomer : [];
+    const byProject: any[] = Array.isArray(data.byProject) ? data.byProject : [];
+    const byInvoice: any[] = Array.isArray(data.byInvoice) ? data.byInvoice : [];
+    const collectionsPriority: any[] = Array.isArray(data.collectionsPriority) ? data.collectionsPriority : [];
+
+    const matchesFilters = (row: any): boolean => {
+      if (caArFilterJob !== '__ALL__' && row.jobId !== caArFilterJob) return false;
+      if (caArFilterPm !== '__ALL__' && row.pmName !== caArFilterPm) return false;
+      if (caArFilterDivision !== '__ALL__' && row.division !== caArFilterDivision) return false;
+      return true;
+    };
+    const matchesAging = (row: any): boolean => {
+      if (caArFilterAging === 'all') return true;
+      return row.agingBucket === caArFilterAging;
+    };
+
+    const filteredByProject = byProject.filter(matchesFilters);
+    const filteredByInvoice = byInvoice.filter(matchesFilters).filter(matchesAging);
+    // Customer rollup: when project-level filters are active, recompute on the
+    // fly so customer totals reflect the filter set (e.g. only show jobs run
+    // by a specific PM rolled up by customer).
+    const filteredByCustomer = (() => {
+      const isPristine =
+        caArFilterJob === '__ALL__' &&
+        caArFilterPm === '__ALL__' &&
+        caArFilterDivision === '__ALL__' &&
+        caArFilterAging === 'all';
+      if (isPristine) return byCustomer;
+      const map = new Map<string, any>();
+      for (const inv of filteredByInvoice) {
+        let row = map.get(inv.customerId);
+        if (!row) {
+          row = {
+            customerId: inv.customerId,
+            customerName: inv.customerName,
+            division: inv.division,
+            totalAr: 0, current: 0, d30: 0, d60: 0, d90Plus: 0,
+          };
+          map.set(inv.customerId, row);
+        }
+        row.totalAr += inv.balance;
+        if (inv.agingBucket === 'current') row.current += inv.balance;
+        else if (inv.agingBucket === 'd30') row.d30 += inv.balance;
+        else if (inv.agingBucket === 'd60') row.d60 += inv.balance;
+        else row.d90Plus += inv.balance;
+      }
+      return [...map.values()].sort((a, b) => b.d90Plus - a.d90Plus || b.totalAr - a.totalAr);
+    })();
+
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Top controls: view toggle + filters */}
+        <div style={caCardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {([
+                ['customer', 'By Customer'],
+                ['project', 'By Project'],
+                ['invoice', 'By Invoice'],
+              ] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setCaArView(k)}
+                  style={caPillButton(caArView === k)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <select
+                value={caArFilterJob}
+                onChange={(e) => setCaArFilterJob(e.target.value)}
+                style={caSelectStyle}
+              >
+                <option value="__ALL__">All jobs</option>
+                {filters.jobs.map((j: any) => (
+                  <option key={j.jobId} value={j.jobId}>{j.jobName}</option>
+                ))}
+              </select>
+              <select
+                value={caArFilterPm}
+                onChange={(e) => setCaArFilterPm(e.target.value)}
+                style={caSelectStyle}
+              >
+                <option value="__ALL__">All PMs</option>
+                {filters.pms.map((p: string) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select
+                value={caArFilterDivision}
+                onChange={(e) => setCaArFilterDivision(e.target.value)}
+                style={caSelectStyle}
+              >
+                <option value="__ALL__">All divisions</option>
+                {filters.divisions.map((d: string) => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <select
+                value={caArFilterAging}
+                onChange={(e) => setCaArFilterAging(e.target.value as any)}
+                style={caSelectStyle}
+              >
+                <option value="all">All aging</option>
+                <option value="current">Current</option>
+                <option value="d30">30 Days</option>
+                <option value="d60">60 Days</option>
+                <option value="d90+">90+ Days</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary table — always visible */}
+        <div style={caCardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...caCardTitleStyle, marginBottom: 0 }}>AR Aging Summary</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              As of {summary.asOfDate}
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
+            {[
+              { label: 'Total AR', value: summary.totalAr, color: '#0f172a' },
+              { label: 'Current', value: summary.current, color: '#0f172a' },
+              { label: '30 Days', value: summary.d30, color: '#0f172a' },
+              { label: '60 Days', value: summary.d60, color: '#b45309' },
+              { label: '90+ Days', value: summary.d90Plus, color: '#b91c1c' },
+            ].map((b) => (
+              <div
+                key={b.label}
+                style={{
+                  padding: '12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    marginBottom: '4px',
+                  }}
+                >
+                  {b.label}
+                </div>
+                <div style={{ fontSize: '17px', fontWeight: 700, color: b.color }}>
+                  {formatCurrency(b.value || 0)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Main table — swaps based on view */}
+        <div style={caCardStyle}>
+          <div style={caCardTitleStyle}>
+            {caArView === 'customer' && 'AR by Customer'}
+            {caArView === 'project' && 'AR by Project'}
+            {caArView === 'invoice' && 'AR by Invoice'}
+          </div>
+          <div style={{ overflowX: 'auto', maxHeight: '480px', overflowY: 'auto' }}>
+            {caArView === 'customer' && (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={caThStyle}>Customer</th>
+                    <th style={caThStyle}>Division</th>
+                    <th style={caThRightStyle}>Total AR</th>
+                    <th style={caThRightStyle}>Current</th>
+                    <th style={caThRightStyle}>30</th>
+                    <th style={caThRightStyle}>60</th>
+                    <th style={caThRightStyle}>90+</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredByCustomer.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ ...caTdStyle, textAlign: 'center', color: '#64748b' }}>
+                        No customers match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredByCustomer.map((c: any) => (
+                      <tr key={c.customerId}>
+                        <td style={{ ...caTdStyle, fontWeight: 600 }}>{c.customerName}</td>
+                        <td style={caTdStyle}>{c.division}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(c.totalAr)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(c.current)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(c.d30)}</td>
+                        <td style={{ ...caTdRightStyle, color: c.d60 > 0 ? '#b45309' : '#0f172a' }}>
+                          {formatCurrency(c.d60)}
+                        </td>
+                        <td
+                          style={{
+                            ...caTdRightStyle,
+                            color: c.d90Plus > 0 ? '#b91c1c' : '#0f172a',
+                            fontWeight: c.d90Plus > 0 ? 700 : 400,
+                          }}
+                        >
+                          {formatCurrency(c.d90Plus)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {caArView === 'project' && (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={caThStyle}>Job</th>
+                    <th style={caThStyle}>Customer</th>
+                    <th style={caThStyle}>PM</th>
+                    <th style={caThRightStyle}>Total AR</th>
+                    <th style={caThRightStyle}>Current</th>
+                    <th style={caThRightStyle}>30</th>
+                    <th style={caThRightStyle}>60</th>
+                    <th style={caThRightStyle}>90+</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredByProject.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ ...caTdStyle, textAlign: 'center', color: '#64748b' }}>
+                        No projects match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredByProject.map((p: any) => (
+                      <tr key={p.jobId}>
+                        <td style={{ ...caTdStyle, fontWeight: 600 }}>{p.jobName}</td>
+                        <td style={caTdStyle}>{p.customerName}</td>
+                        <td style={caTdStyle}>{p.pmName}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(p.totalAr)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(p.current)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(p.d30)}</td>
+                        <td style={{ ...caTdRightStyle, color: p.d60 > 0 ? '#b45309' : '#0f172a' }}>
+                          {formatCurrency(p.d60)}
+                        </td>
+                        <td
+                          style={{
+                            ...caTdRightStyle,
+                            color: p.d90Plus > 0 ? '#b91c1c' : '#0f172a',
+                            fontWeight: p.d90Plus > 0 ? 700 : 400,
+                          }}
+                        >
+                          {formatCurrency(p.d90Plus)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {caArView === 'invoice' && (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={caThStyle}>Invoice</th>
+                    <th style={caThStyle}>Job</th>
+                    <th style={caThStyle}>Customer</th>
+                    <th style={caThStyle}>Date</th>
+                    <th style={caThRightStyle}>Amount</th>
+                    <th style={caThRightStyle}>Balance</th>
+                    <th style={caThRightStyle}>Days</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredByInvoice.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ ...caTdStyle, textAlign: 'center', color: '#64748b' }}>
+                        No invoices match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredByInvoice.map((inv: any) => (
+                      <tr key={inv.invoiceId}>
+                        <td style={{ ...caTdStyle, fontWeight: 600 }}>{inv.invoiceId}</td>
+                        <td style={caTdStyle}>{inv.jobName}</td>
+                        <td style={caTdStyle}>{inv.customerName}</td>
+                        <td style={caTdStyle}>{inv.invoiceDate}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(inv.amount)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(inv.balance)}</td>
+                        <td
+                          style={{
+                            ...caTdRightStyle,
+                            color:
+                              inv.agingBucket === 'd90+' ? '#b91c1c' :
+                              inv.agingBucket === 'd60' ? '#b45309' :
+                              inv.agingBucket === 'd30' ? '#92400e' : '#0f172a',
+                            fontWeight: inv.agingBucket === 'd90+' ? 700 : 400,
+                          }}
+                        >
+                          {inv.daysOutstanding}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Action table — Collections Priority */}
+        <div style={caCardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...caCardTitleStyle, marginBottom: 0, color: '#b91c1c' }}>
+              Collections priority
+            </div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              Customer + job combos with 90+ day balances
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={caThStyle}>Customer</th>
+                  <th style={caThStyle}>Job</th>
+                  <th style={caThStyle}>PM</th>
+                  <th style={caThRightStyle}>90+ Balance</th>
+                  <th style={caThStyle}>Oldest Invoice</th>
+                  <th style={caThRightStyle}>Days</th>
+                </tr>
+              </thead>
+              <tbody>
+                {collectionsPriority.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ ...caTdStyle, textAlign: 'center', color: '#64748b' }}>
+                      No outstanding 90+ day balances. Nice work.
+                    </td>
+                  </tr>
+                ) : (
+                  collectionsPriority.map((c: any) => (
+                    <tr key={`${c.customerId}::${c.jobId}`}>
+                      <td style={{ ...caTdStyle, fontWeight: 600 }}>{c.customerName}</td>
+                      <td style={caTdStyle}>{c.jobName}</td>
+                      <td style={caTdStyle}>{c.pmName}</td>
+                      <td style={{ ...caTdRightStyle, color: '#b91c1c', fontWeight: 700 }}>
+                        {formatCurrency(c.balance90Plus)}
+                      </td>
+                      <td style={caTdStyle}>{c.oldestInvoiceDate}</td>
+                      <td style={{ ...caTdRightStyle, color: '#b91c1c' }}>{c.oldestDays}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderConstructionAp = () => {
+    if (!constructionApData) {
+      return (
+        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
+          Loading AP…
+        </div>
+      );
+    }
+    const data = constructionApData;
+    const summary = data.summary || { totalAp: 0, current: 0, d30: 0, d60: 0, d90Plus: 0, asOfDate: '—' };
+    const filters = data.filters || { jobs: [], pms: [], divisions: [] };
+    const byVendor: any[] = Array.isArray(data.byVendor) ? data.byVendor : [];
+    const byProject: any[] = Array.isArray(data.byProject) ? data.byProject : [];
+    const byBill: any[] = Array.isArray(data.byBill) ? data.byBill : [];
+    const paymentPriority: any[] = Array.isArray(data.paymentPriority) ? data.paymentPriority : [];
+
+    const matchesFilters = (row: any): boolean => {
+      if (caApFilterJob !== '__ALL__' && row.jobId !== caApFilterJob) return false;
+      if (caApFilterPm !== '__ALL__' && row.pmName !== caApFilterPm) return false;
+      if (caApFilterDivision !== '__ALL__' && row.division !== caApFilterDivision) return false;
+      return true;
+    };
+    const matchesDue = (row: any): boolean => {
+      if (caApFilterDue === 'all') return true;
+      if (caApFilterDue === 'past_due') return (row.daysOutstanding ?? 0) > 0;
+      if (caApFilterDue === 'due_7') return (row.daysOutstanding ?? 0) >= -7 && (row.daysOutstanding ?? 0) <= 0;
+      return row.agingBucket === caApFilterDue;
+    };
+
+    const filteredByProject = byProject.filter(matchesFilters);
+    const filteredByBill = byBill.filter(matchesFilters).filter(matchesDue);
+    // Recompute vendor rollup when filters are active.
+    const filteredByVendor = (() => {
+      const isPristine =
+        caApFilterJob === '__ALL__' &&
+        caApFilterPm === '__ALL__' &&
+        caApFilterDivision === '__ALL__' &&
+        caApFilterDue === 'all';
+      if (isPristine) return byVendor;
+      const map = new Map<string, any>();
+      for (const bill of filteredByBill) {
+        let row = map.get(bill.vendorId);
+        if (!row) {
+          row = {
+            vendorId: bill.vendorId,
+            vendorName: bill.vendorName,
+            vendorType: bill.vendorType,
+            totalAp: 0, current: 0, d30: 0, d60: 0, d90Plus: 0,
+          };
+          map.set(bill.vendorId, row);
+        }
+        row.totalAp += bill.balance;
+        if (bill.agingBucket === 'current') row.current += bill.balance;
+        else if (bill.agingBucket === 'd30') row.d30 += bill.balance;
+        else if (bill.agingBucket === 'd60') row.d60 += bill.balance;
+        else row.d90Plus += bill.balance;
+      }
+      return [...map.values()].sort((a, b) => b.totalAp - a.totalAp);
+    })();
+
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Top controls */}
+        <div style={caCardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {([
+                ['vendor', 'By Vendor'],
+                ['project', 'By Project'],
+                ['bill', 'By Bill'],
+              ] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setCaApView(k)}
+                  style={caPillButton(caApView === k)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <select
+                value={caApFilterJob}
+                onChange={(e) => setCaApFilterJob(e.target.value)}
+                style={caSelectStyle}
+              >
+                <option value="__ALL__">All jobs</option>
+                {filters.jobs.map((j: any) => (
+                  <option key={j.jobId} value={j.jobId}>{j.jobName}</option>
+                ))}
+              </select>
+              <select
+                value={caApFilterPm}
+                onChange={(e) => setCaApFilterPm(e.target.value)}
+                style={caSelectStyle}
+              >
+                <option value="__ALL__">All PMs</option>
+                {filters.pms.map((p: string) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select
+                value={caApFilterDivision}
+                onChange={(e) => setCaApFilterDivision(e.target.value)}
+                style={caSelectStyle}
+              >
+                <option value="__ALL__">All divisions</option>
+                {filters.divisions.map((d: string) => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <select
+                value={caApFilterDue}
+                onChange={(e) => setCaApFilterDue(e.target.value as any)}
+                style={caSelectStyle}
+              >
+                <option value="all">All due dates</option>
+                <option value="past_due">Past due</option>
+                <option value="due_7">Due in 7 days</option>
+                <option value="d30">30 Days</option>
+                <option value="d60">60 Days</option>
+                <option value="d90+">90+ Days</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary table */}
+        <div style={caCardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...caCardTitleStyle, marginBottom: 0 }}>AP Aging Summary</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              As of {summary.asOfDate}
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
+            {[
+              { label: 'Total AP', value: summary.totalAp, color: '#0f172a' },
+              { label: 'Current', value: summary.current, color: '#0f172a' },
+              { label: '30 Days', value: summary.d30, color: '#0f172a' },
+              { label: '60 Days', value: summary.d60, color: '#b45309' },
+              { label: '90+ Days', value: summary.d90Plus, color: '#b91c1c' },
+            ].map((b) => (
+              <div
+                key={b.label}
+                style={{
+                  padding: '12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    marginBottom: '4px',
+                  }}
+                >
+                  {b.label}
+                </div>
+                <div style={{ fontSize: '17px', fontWeight: 700, color: b.color }}>
+                  {formatCurrency(b.value || 0)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Main table */}
+        <div style={caCardStyle}>
+          <div style={caCardTitleStyle}>
+            {caApView === 'vendor' && 'AP by Vendor'}
+            {caApView === 'project' && 'AP by Project'}
+            {caApView === 'bill' && 'AP by Bill'}
+          </div>
+          <div style={{ overflowX: 'auto', maxHeight: '480px', overflowY: 'auto' }}>
+            {caApView === 'vendor' && (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={caThStyle}>Vendor</th>
+                    <th style={caThStyle}>Type</th>
+                    <th style={caThRightStyle}>Total AP</th>
+                    <th style={caThRightStyle}>Current</th>
+                    <th style={caThRightStyle}>30</th>
+                    <th style={caThRightStyle}>60</th>
+                    <th style={caThRightStyle}>90+</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredByVendor.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ ...caTdStyle, textAlign: 'center', color: '#64748b' }}>
+                        No vendors match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredByVendor.map((v: any) => (
+                      <tr key={v.vendorId}>
+                        <td style={{ ...caTdStyle, fontWeight: 600 }}>{v.vendorName}</td>
+                        <td style={{ ...caTdStyle, color: '#64748b', textTransform: 'capitalize' }}>
+                          {v.vendorType}
+                        </td>
+                        <td style={caTdRightStyle}>{formatCurrency(v.totalAp)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(v.current)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(v.d30)}</td>
+                        <td style={{ ...caTdRightStyle, color: v.d60 > 0 ? '#b45309' : '#0f172a' }}>
+                          {formatCurrency(v.d60)}
+                        </td>
+                        <td
+                          style={{
+                            ...caTdRightStyle,
+                            color: v.d90Plus > 0 ? '#b91c1c' : '#0f172a',
+                            fontWeight: v.d90Plus > 0 ? 700 : 400,
+                          }}
+                        >
+                          {formatCurrency(v.d90Plus)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {caApView === 'project' && (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={caThStyle}>Job</th>
+                    <th style={caThStyle}>PM</th>
+                    <th style={caThStyle}>Division</th>
+                    <th style={caThRightStyle}>Total AP</th>
+                    <th style={caThRightStyle}>Current</th>
+                    <th style={caThRightStyle}>30</th>
+                    <th style={caThRightStyle}>60</th>
+                    <th style={caThRightStyle}>90+</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredByProject.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ ...caTdStyle, textAlign: 'center', color: '#64748b' }}>
+                        No projects match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredByProject.map((p: any) => (
+                      <tr key={p.jobId}>
+                        <td style={{ ...caTdStyle, fontWeight: 600 }}>{p.jobName}</td>
+                        <td style={caTdStyle}>{p.pmName}</td>
+                        <td style={caTdStyle}>{p.division}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(p.totalAp)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(p.current)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(p.d30)}</td>
+                        <td style={{ ...caTdRightStyle, color: p.d60 > 0 ? '#b45309' : '#0f172a' }}>
+                          {formatCurrency(p.d60)}
+                        </td>
+                        <td
+                          style={{
+                            ...caTdRightStyle,
+                            color: p.d90Plus > 0 ? '#b91c1c' : '#0f172a',
+                            fontWeight: p.d90Plus > 0 ? 700 : 400,
+                          }}
+                        >
+                          {formatCurrency(p.d90Plus)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {caApView === 'bill' && (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={caThStyle}>Bill</th>
+                    <th style={caThStyle}>Job</th>
+                    <th style={caThStyle}>Vendor</th>
+                    <th style={caThStyle}>Date</th>
+                    <th style={caThRightStyle}>Amount</th>
+                    <th style={caThRightStyle}>Balance</th>
+                    <th style={caThRightStyle}>Days</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredByBill.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ ...caTdStyle, textAlign: 'center', color: '#64748b' }}>
+                        No bills match the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredByBill.map((bill: any) => (
+                      <tr key={bill.billId}>
+                        <td style={{ ...caTdStyle, fontWeight: 600 }}>{bill.billId}</td>
+                        <td style={caTdStyle}>{bill.jobName}</td>
+                        <td style={caTdStyle}>{bill.vendorName}</td>
+                        <td style={caTdStyle}>{bill.billDate}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(bill.amount)}</td>
+                        <td style={caTdRightStyle}>{formatCurrency(bill.balance)}</td>
+                        <td
+                          style={{
+                            ...caTdRightStyle,
+                            color:
+                              bill.agingBucket === 'd90+' ? '#b91c1c' :
+                              bill.agingBucket === 'd60' ? '#b45309' :
+                              bill.agingBucket === 'd30' ? '#92400e' :
+                              bill.daysOutstanding < 0 ? '#15803d' : '#0f172a',
+                            fontWeight: bill.agingBucket === 'd90+' ? 700 : 400,
+                          }}
+                        >
+                          {bill.daysOutstanding < 0
+                            ? `due in ${Math.abs(bill.daysOutstanding)}`
+                            : `${bill.daysOutstanding} past`}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Action table — Payment Priority */}
+        <div style={caCardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...caCardTitleStyle, marginBottom: 0, color: '#b91c1c' }}>
+              Payment priority
+            </div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              Past due bills + bills due within 7 days, ranked by urgency
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={caThStyle}>Vendor</th>
+                  <th style={caThStyle}>Job</th>
+                  <th style={caThStyle}>PM</th>
+                  <th style={caThRightStyle}>Due Amount</th>
+                  <th style={caThStyle}>Due Date</th>
+                  <th style={caThRightStyle}>Days</th>
+                  <th style={caThStyle}>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paymentPriority.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ ...caTdStyle, textAlign: 'center', color: '#64748b' }}>
+                      Nothing past due. Payments are current.
+                    </td>
+                  </tr>
+                ) : (
+                  paymentPriority.map((p: any, i: number) => (
+                    <tr key={`${p.vendorId}::${p.jobId}::${i}`}>
+                      <td style={{ ...caTdStyle, fontWeight: 600 }}>{p.vendorName}</td>
+                      <td style={caTdStyle}>{p.jobName}</td>
+                      <td style={caTdStyle}>{p.pmName}</td>
+                      <td style={{ ...caTdRightStyle, color: '#b91c1c', fontWeight: 700 }}>
+                        {formatCurrency(p.dueAmount)}
+                      </td>
+                      <td style={caTdStyle}>{p.dueDate}</td>
+                      <td
+                        style={{
+                          ...caTdRightStyle,
+                          color: p.daysPastDue > 60 ? '#b91c1c' : p.daysPastDue > 0 ? '#b45309' : '#15803d',
+                          fontWeight: p.daysPastDue > 0 ? 700 : 400,
+                        }}
+                      >
+                        {p.daysPastDue < 0 ? `in ${Math.abs(p.daysPastDue)}` : `${p.daysPastDue}`}
+                      </td>
+                      <td style={{ ...caTdStyle, color: '#475569', fontSize: '12px' }}>{p.reason}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderJobCostControl = () => {
     if (!jobCostControlData) {
       return (
@@ -8736,6 +9630,173 @@ Strategies to Improve the CCC
             </div>
           )}
         </div>
+
+        {/* Job-Specific AR + AP — only when drilled into a single job */}
+        {!isAll && (() => {
+          const jobArInvoices: any[] = constructionArData?.byInvoice
+            ? constructionArData.byInvoice.filter((inv: any) => inv.jobId === selectedJccJobId)
+            : [];
+          const jobApBills: any[] = constructionApData?.byBill
+            ? constructionApData.byBill.filter((b: any) => b.jobId === selectedJccJobId)
+            : [];
+          const arLoaded = !!constructionArData;
+          const apLoaded = !!constructionApData;
+          const arTotal = jobArInvoices.reduce((acc: number, inv: any) => acc + (inv.balance || 0), 0);
+          const apTotal = jobApBills.reduce((acc: number, b: any) => acc + (b.balance || 0), 0);
+
+          return (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '16px',
+                marginTop: '16px',
+              }}
+            >
+              {/* AR (Job-Specific) */}
+              <div style={cardStyle}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'baseline',
+                    marginBottom: '12px',
+                  }}
+                >
+                  <div style={{ ...cardTitleStyle, marginBottom: 0 }}>AR (Job-Specific)</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    {arLoaded
+                      ? `${jobArInvoices.length} open · ${formatCurrency(arTotal)}`
+                      : 'Loading…'}
+                  </div>
+                </div>
+                <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Invoice</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Amount</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Outstanding</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Days</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {!arLoaded ? (
+                        <tr>
+                          <td colSpan={4} style={{ ...tdStyle, textAlign: 'center', color: '#64748b' }}>
+                            Loading AR…
+                          </td>
+                        </tr>
+                      ) : jobArInvoices.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} style={{ ...tdStyle, textAlign: 'center', color: '#64748b' }}>
+                            No open AR for this job.
+                          </td>
+                        </tr>
+                      ) : (
+                        jobArInvoices.slice(0, 50).map((inv: any) => (
+                          <tr key={inv.invoiceId}>
+                            <td style={{ ...tdStyle, fontWeight: 600 }}>{inv.invoiceId}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>
+                              {formatCurrency(inv.amount)}
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>
+                              {formatCurrency(inv.balance)}
+                            </td>
+                            <td
+                              style={{
+                                ...tdStyle,
+                                textAlign: 'right',
+                                color:
+                                  inv.agingBucket === 'd90+' ? '#b91c1c' :
+                                  inv.agingBucket === 'd60' ? '#b45309' :
+                                  inv.agingBucket === 'd30' ? '#92400e' : '#0f172a',
+                                fontWeight: inv.agingBucket === 'd90+' ? 700 : 400,
+                              }}
+                            >
+                              {inv.daysOutstanding}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* AP (Job-Specific) */}
+              <div style={cardStyle}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'baseline',
+                    marginBottom: '12px',
+                  }}
+                >
+                  <div style={{ ...cardTitleStyle, marginBottom: 0 }}>AP (Job-Specific)</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    {apLoaded
+                      ? `${jobApBills.length} open · ${formatCurrency(apTotal)}`
+                      : 'Loading…'}
+                  </div>
+                </div>
+                <div style={{ overflowX: 'auto', maxHeight: '320px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Vendor</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Amount</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Remaining</th>
+                        <th style={thStyle}>Due</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {!apLoaded ? (
+                        <tr>
+                          <td colSpan={4} style={{ ...tdStyle, textAlign: 'center', color: '#64748b' }}>
+                            Loading AP…
+                          </td>
+                        </tr>
+                      ) : jobApBills.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} style={{ ...tdStyle, textAlign: 'center', color: '#64748b' }}>
+                            No open AP for this job.
+                          </td>
+                        </tr>
+                      ) : (
+                        jobApBills.slice(0, 50).map((bill: any) => (
+                          <tr key={bill.billId}>
+                            <td style={{ ...tdStyle, fontWeight: 600 }}>{bill.vendorName}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>
+                              {formatCurrency(bill.amount)}
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>
+                              {formatCurrency(bill.balance)}
+                            </td>
+                            <td
+                              style={{
+                                ...tdStyle,
+                                color:
+                                  bill.agingBucket === 'd90+' ? '#b91c1c' :
+                                  bill.agingBucket === 'd60' ? '#b45309' :
+                                  bill.agingBucket === 'd30' ? '#92400e' :
+                                  bill.daysOutstanding < 0 ? '#15803d' : '#0f172a',
+                                fontWeight: bill.agingBucket === 'd90+' ? 700 : 400,
+                              }}
+                            >
+                              {bill.dueDate}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
@@ -8750,12 +9811,12 @@ Strategies to Improve the CCC
     }
 
     const data = projectPortfolioData;
-    const isMockSource = data?.meta?.source === 'mock';
     const summary = data.summary || {};
     const jobs: any[] = Array.isArray(data.jobProfitability) ? data.jobProfitability : [];
     const riskFlags: any[] = Array.isArray(data.riskFlags) ? data.riskFlags : [];
     const topJobs: any[] = Array.isArray(data.topJobs) ? data.topJobs : [];
     const bottomJobs: any[] = Array.isArray(data.bottomJobs) ? data.bottomJobs : [];
+    const rolling12: any[] = Array.isArray(data.rolling12) ? data.rolling12 : [];
     const slip = data.scheduleSlippageImpact || {
       jobsOnTrack: 0,
       jobsMinorSlip: 0,
@@ -8848,22 +9909,6 @@ Strategies to Improve the CCC
 
     return (
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {isMockSource && (
-          <div
-            style={{
-              padding: '8px 12px',
-              background: '#fef3c7',
-              border: '1px solid #fde68a',
-              borderRadius: '8px',
-              fontSize: '12px',
-              color: '#92400e',
-            }}
-          >
-            <strong>Mock data:</strong> Project Portfolio is showing synthetic data until a Vista
-            Cloud connection is configured for this company. (Phase 1 — see design doc.)
-          </div>
-        )}
-
         {/* Top: Portfolio summary KPI strip */}
         <div style={cardStyle}>
           <div
@@ -8933,6 +9978,167 @@ Strategies to Improve the CCC
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Row 2: month-to-date + portfolio counts */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6, 1fr)',
+              gap: '12px',
+              marginTop: '12px',
+            }}
+          >
+            {[
+              { label: 'MTD Project Revenue', value: formatCurrency(summary.mtdProjectRevenue || 0) },
+              { label: 'MTD Project Cost', value: formatCurrency(summary.mtdProjectCost || 0) },
+              {
+                label: 'Monthly Project Profit',
+                value: formatCurrency(summary.monthlyProjectProfit || 0),
+                color: (summary.monthlyProjectProfit || 0) < 0 ? '#b91c1c' : '#0f172a',
+              },
+              {
+                label: 'Monthly Project Profit %',
+                value: `${(summary.monthlyProjectProfitMarginPct || 0).toFixed(1)}%`,
+                color: marginColor(summary.monthlyProjectProfitMarginPct || 0),
+              },
+              { label: 'New Jobs This Month', value: String(summary.newJobsThisMonth ?? 0) },
+              { label: 'Total Active Jobs', value: String(summary.totalActiveJobs ?? summary.jobCount ?? jobs.length) },
+            ].map((kpi) => (
+              <div
+                key={kpi.label}
+                style={{
+                  padding: '12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    marginBottom: '4px',
+                  }}
+                >
+                  {kpi.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: '17px',
+                    fontWeight: 700,
+                    color: (kpi as any).color || '#0f172a',
+                  }}
+                >
+                  {kpi.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Row 2: rolling 12-month performance — bar chart + overhead trend */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '16px',
+          }}
+        >
+          {/* Left: revenue (bar 1) vs COGS+Expenses stacked (bar 2) by month */}
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Revenue vs cost — rolling 12 months</div>
+            {rolling12.length === 0 ? (
+              <div style={{ padding: '24px', color: '#64748b', fontSize: '13px' }}>
+                No monthly performance data available.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart
+                  data={rolling12}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+                  barCategoryGap="18%"
+                  barGap={4}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis
+                    dataKey="monthLabel"
+                    tick={{ fontSize: 11, fill: '#475569' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#475569' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                    tickFormatter={(v: number) =>
+                      Math.abs(v) >= 1_000_000
+                        ? `$${(v / 1_000_000).toFixed(1)}M`
+                        : Math.abs(v) >= 1_000
+                          ? `$${(v / 1_000).toFixed(0)}K`
+                          : `$${v}`
+                    }
+                  />
+                  <Tooltip
+                    formatter={(value: any, name: any) => [formatCurrency(Number(value) || 0), name]}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="revenue" name="Revenue" fill="#2563eb" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="cogs" name="COGS" stackId="cost" fill="#f97316" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="expenses" name="Expenses" stackId="cost" fill="#fbbf24" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* Right: 12-month overhead line chart */}
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Overhead trend — rolling 12 months</div>
+            {rolling12.length === 0 ? (
+              <div style={{ padding: '24px', color: '#64748b', fontSize: '13px' }}>
+                No overhead data available.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={rolling12} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis
+                    dataKey="monthLabel"
+                    tick={{ fontSize: 11, fill: '#475569' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#475569' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                    tickFormatter={(v: number) =>
+                      Math.abs(v) >= 1_000_000
+                        ? `$${(v / 1_000_000).toFixed(2)}M`
+                        : Math.abs(v) >= 1_000
+                          ? `$${(v / 1_000).toFixed(0)}K`
+                          : `$${v}`
+                    }
+                  />
+                  <Tooltip
+                    formatter={(value: any) => [formatCurrency(Number(value) || 0), 'Overhead']}
+                    contentStyle={{ fontSize: 12 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="overhead"
+                    name="Overhead"
+                    stroke="#7c3aed"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, fill: '#7c3aed' }}
+                    activeDot={{ r: 5 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -10512,6 +11718,8 @@ Strategies to Improve the CCC
     if (dataType === 'project-portfolio') return renderProjectPortfolio();
     if (dataType === 'commitments-forecast') return renderCommitmentsForecast();
     if (dataType === 'billing-cash') return renderBillingCash();
+    if (dataType === 'construction-ar') return renderConstructionAr();
+    if (dataType === 'construction-ap') return renderConstructionAp();
     return (
       <div style={{ padding: '32px', color: '#64748b' }}>
         No renderer is configured for module <strong>{moduleKey}</strong>.

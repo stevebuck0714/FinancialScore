@@ -12,7 +12,9 @@ export type OpsDataType =
   | 'job-cost-control'
   | 'project-portfolio'
   | 'commitments-forecast'
-  | 'billing-cash';
+  | 'billing-cash'
+  | 'construction-ar'
+  | 'construction-ap';
 
 type ModuleDefinition = {
   key: string;
@@ -91,6 +93,8 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'project_portfolio', label: 'Project Portfolio', dataType: 'project-portfolio' },
   { key: 'commitments_forecast', label: 'Commitments & Forecast', dataType: 'commitments-forecast' },
   { key: 'billing_cash', label: 'Billing & Cash', dataType: 'billing-cash' },
+  { key: 'construction_ar', label: 'AR', dataType: 'construction-ar' },
+  { key: 'construction_ap', label: 'AP', dataType: 'construction-ap' },
 ];
 
 const MODULE_MAP: Record<string, ModuleDefinition> = MODULE_DEFINITIONS.reduce((acc, module) => {

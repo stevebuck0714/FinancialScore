@@ -445,6 +445,13 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     products: [],
     inventory: [],
     cash: [],
+    'daily-financials': [],
+    'job-cost-control': [],
+    'project-portfolio': [],
+    'commitments-forecast': [],
+    'billing-cash': [],
+    'construction-ar': [],
+    'construction-ap': [],
   };
 
   configuredModules.forEach((module) => {
@@ -475,6 +482,13 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
     products: productLabels[0] || 'Product Sales',
     inventory: inventoryLabels[0] || 'Inventory',
     cash: cashLabels[0] || 'Cash Balance',
+    'daily-financials': 'Daily Financials',
+    'job-cost-control': 'Job Cost Control',
+    'project-portfolio': 'Project Portfolio',
+    'commitments-forecast': 'Commitments & Forecast',
+    'billing-cash': 'Billing & Cash',
+    'construction-ar': 'AR',
+    'construction-ap': 'AP',
   };
 
   const extraWidgets: Array<{ type: OpsDataType; label: string }> = [
