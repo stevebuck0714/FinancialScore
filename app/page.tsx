@@ -8735,6 +8735,7 @@ function FinancialScorePage() {
       QUICKBOOKS_DESKTOP: 'QuickBooks Desktop',
       SAGE_INTACCT: 'Sage Intacct',
       SAP_S4HANA: 'SAP S/4HANA',
+      VISTA_CLOUD: 'Viewpoint Vista Cloud',
       XERO: 'Xero',
     };
     const accountingSystemLabel =
@@ -10532,6 +10533,8 @@ function FinancialScorePage() {
         return 'Sage';
       case 'SAGE_INTACCT':
         return 'Sage Intacct';
+      case 'VISTA_CLOUD':
+        return 'Viewpoint Vista Cloud';
       case 'XERO':
         return 'Xero';
       default:
@@ -12376,14 +12379,14 @@ function FinancialScorePage() {
               )}
 
               {selectedAccountingSystem &&
-                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'CSV_FILE'].includes(selectedAccountingSystem) && (
+                !['QUICKBOOKS', 'QUICKBOOKS_DESKTOP', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'SAGE', 'SAGE_INTACCT', 'NETSUITE', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'VISTA_CLOUD', 'CSV_FILE'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '13px', color: '#9a3412' }}>
                     {selectedAccountingSystemLabel} is not supported yet.
                   </div>
                 )}
 
               {selectedAccountingSystem &&
-                ['QUICKBOOKS_DESKTOP', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAGE_INTACCT'].includes(selectedAccountingSystem) && (
+                ['QUICKBOOKS_DESKTOP', 'DYNAMICS', 'DYNAMICS365', 'ACUMATICA', 'ODOO', 'SAGE_INTACCT', 'VISTA_CLOUD'].includes(selectedAccountingSystem) && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', fontSize: '13px', color: '#0c4a6e' }}>
                     {String(currentUser?.role || '').toUpperCase() === 'SITEADMIN' ? (
                       <>

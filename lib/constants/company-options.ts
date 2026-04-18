@@ -15,6 +15,7 @@ export const ACCOUNTING_SYSTEMS = [
   { value: 'QUICKBOOKS_DESKTOP', label: 'QuickBooks Desktop' },
   { value: 'SAGE', label: 'Sage' },
   { value: 'SAGE_INTACCT', label: 'Sage Intacct' },
+  { value: 'VISTA_CLOUD', label: 'Viewpoint Vista Cloud' },
   { value: 'XERO', label: 'Xero' },
 ] as const;
 

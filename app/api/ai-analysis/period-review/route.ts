@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { getOpenAiClient } from '@/lib/ai-gateway';
 import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
@@ -373,8 +374,9 @@ export async function POST(request: NextRequest) {
     if (externalSources.length === 0) notes.push('No external market sources were retrieved (SERPAPI_API_KEY missing or no results).');
     if (alerts.length === 0) notes.push('No negative trend alerts met the default thresholds (or operational data missing).');
 
-    // Ask model to draft full narrative report using internal + external inputs
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // Ask model to draft full narrative report using internal + external inputs.
+    // Routes through Vercel AI Gateway with per-request ZDR when AI_GATEWAY_API_KEY is set.
+    const openai = getOpenAiClient();
     const model = process.env.OPENAI_MODEL || 'gpt-4o';
 
     const system = [

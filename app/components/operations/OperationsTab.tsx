@@ -344,6 +344,10 @@ export default function OperationsTab({
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [cashData, setCashData] = useState<any>(null);
   const [selectedCashTrendAccount, setSelectedCashTrendAccount] = useState<string>('__TOTAL__');
+  // Construction sector ('23') native tabs (M2-M5).
+  const [jobCostControlData, setJobCostControlData] = useState<any>(null);
+  const [selectedJccJobId, setSelectedJccJobId] = useState<string>('__ALL__');
+  const [jccLaborDetailExpanded, setJccLaborDetailExpanded] = useState<boolean>(false);
   const [dailyFinancialData, setDailyFinancialData] = useState<any>(null);
   const [cashConversionFinancialData, setCashConversionFinancialData] = useState<any>(null);
   const [companyOperationalHubConfig, setCompanyOperationalHubConfig] = useState<any>(operationalHubConfig || null);
@@ -878,6 +882,9 @@ export default function OperationsTab({
         break;
       case 'daily-financials':
         setDailyFinancialData(data);
+        break;
+      case 'job-cost-control':
+        setJobCostControlData(data);
         break;
     }
   };
@@ -8126,6 +8133,635 @@ Strategies to Improve the CCC
     );
   };
 
+  // --- Construction sector ('23') tab stubs (M1 scaffolding) -------------
+  // Real mock builders + UI land in M2-M5. See
+  // docs/CONSTRUCTION_SECTOR_DASHBOARD_DESIGN.md for the build plan.
+  const renderConstructionTabPlaceholder = (
+    title: string,
+    summary: string,
+    bullets: string[],
+    milestone: string
+  ) => (
+    <div style={{ padding: '24px' }}>
+      <div
+        style={{
+          background: '#fff',
+          border: '1px solid #e2e8f0',
+          borderRadius: '12px',
+          padding: '24px',
+          maxWidth: '900px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <div
+            style={{
+              padding: '4px 10px',
+              background: '#fef3c7',
+              color: '#92400e',
+              borderRadius: '999px',
+              fontSize: '11px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+            }}
+          >
+            Coming in {milestone}
+          </div>
+          <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a', margin: 0 }}>{title}</h2>
+        </div>
+        <p style={{ fontSize: '14px', color: '#475569', lineHeight: 1.5, marginTop: 0 }}>{summary}</p>
+        <div style={{ marginTop: '16px' }}>
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 700,
+              color: '#0f172a',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              marginBottom: '8px',
+            }}
+          >
+            Tables on this tab
+          </div>
+          <ul style={{ marginTop: 0, paddingLeft: '20px', color: '#475569', fontSize: '13px', lineHeight: 1.7 }}>
+            {bullets.map((b) => (
+              <li key={b}>{b}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderJobCostControl = () => {
+    if (!jobCostControlData) {
+      return (
+        <div style={{ padding: '40px', color: '#64748b', fontSize: '14px' }}>
+          Loading Job Cost Control…
+        </div>
+      );
+    }
+
+    const data = jobCostControlData;
+    const allJobs: any[] = Array.isArray(data.jobs) ? data.jobs : [];
+    const isAll = selectedJccJobId === '__ALL__';
+    const selectedJob = !isAll ? allJobs.find((j) => j.jobId === selectedJccJobId) : null;
+    const isMockSource = data?.meta?.source === 'mock';
+
+    // Filter the lower tables to the selected job (or aggregate for All Jobs).
+    const dailyCostRows: any[] = isAll
+      ? (data.dailyCost || [])
+      : (data.dailyCost || []).filter((r: any) => r.jobId === selectedJccJobId);
+    const costCodeRows: any[] = isAll
+      ? (data.costCode || [])
+      : (data.costCode || []).filter((r: any) => r.jobId === selectedJccJobId);
+    const costByTypeRowsRaw: any[] = isAll
+      ? (data.costByType || [])
+      : (data.costByType || []).filter((r: any) => r.jobId === selectedJccJobId);
+    const laborDetailRows: any[] = isAll
+      ? (data.laborDetail || [])
+      : (data.laborDetail || []).filter((r: any) => r.jobId === selectedJccJobId);
+
+    // For "All Jobs", roll up costByType across jobs by cost type.
+    const costByTypeRows: any[] = isAll
+      ? (() => {
+          const map = new Map<string, any>();
+          for (const r of costByTypeRowsRaw) {
+            const e = map.get(r.costType) || {
+              costType: r.costType,
+              budget: 0,
+              actual: 0,
+              committed: 0,
+              variance: 0,
+              pctOfTotal: 0,
+            };
+            e.budget += r.budget;
+            e.actual += r.actual;
+            e.committed += r.committed;
+            e.variance += r.variance;
+            map.set(r.costType, e);
+          }
+          const rows = Array.from(map.values());
+          const denom = rows.reduce((acc, r) => acc + r.actual + r.committed, 0) || 1;
+          for (const r of rows) {
+            r.pctOfTotal = Math.round(((r.actual + r.committed) / denom) * 1000) / 10;
+          }
+          return rows;
+        })()
+      : costByTypeRowsRaw;
+
+    // Sort daily cost rows newest first, top 25 visible by default.
+    const dailyCostSorted = [...dailyCostRows].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const dailyCostVisible = dailyCostSorted.slice(0, 25);
+
+    // For All-Jobs profitability snapshot, use the summary; otherwise the selected job.
+    const snap = isAll
+      ? {
+          revisedContractValue: data.summary?.totalRevisedContract || 0,
+          costToDate: data.summary?.totalCostToDate || 0,
+          remainingCommitted: data.summary?.totalRemainingCommitted || 0,
+          eac: data.summary?.totalEac || 0,
+          projectedProfit: data.summary?.totalProjectedProfit || 0,
+          marginPct: data.summary?.avgMarginPct || 0,
+        }
+      : {
+          revisedContractValue: selectedJob?.revisedContractValue || 0,
+          costToDate: selectedJob?.costToDate || 0,
+          remainingCommitted: selectedJob?.remainingCommitted || 0,
+          eac: selectedJob?.eac || 0,
+          projectedProfit: selectedJob?.projectedProfit || 0,
+          marginPct: selectedJob?.marginPct || 0,
+        };
+
+    const statusPillStyle = (status: string): React.CSSProperties => {
+      if (status === 'over') return { background: '#fee2e2', color: '#991b1b' };
+      if (status === 'under') return { background: '#dcfce7', color: '#166534' };
+      return { background: '#e0e7ff', color: '#3730a3' };
+    };
+    const varianceColor = (v: number): string =>
+      v > 0 ? '#b91c1c' : v < 0 ? '#15803d' : '#475569';
+
+    const cardStyle: React.CSSProperties = {
+      background: '#fff',
+      border: '1px solid #e2e8f0',
+      borderRadius: '12px',
+      padding: '20px',
+    };
+    const cardTitleStyle: React.CSSProperties = {
+      margin: '0 0 12px 0',
+      fontSize: '13px',
+      fontWeight: 700,
+      color: '#0f172a',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+    };
+    const thStyle: React.CSSProperties = {
+      textAlign: 'left',
+      padding: '8px 10px',
+      fontSize: '11px',
+      fontWeight: 700,
+      color: '#475569',
+      textTransform: 'uppercase',
+      letterSpacing: '0.04em',
+      borderBottom: '1px solid #e2e8f0',
+      background: '#f8fafc',
+    };
+    const tdStyle: React.CSSProperties = {
+      padding: '8px 10px',
+      fontSize: '13px',
+      color: '#0f172a',
+      borderBottom: '1px solid #f1f5f9',
+    };
+
+    return (
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Mock-data ribbon */}
+        {isMockSource && (
+          <div
+            style={{
+              padding: '8px 12px',
+              background: '#fef3c7',
+              border: '1px solid #fde68a',
+              borderRadius: '8px',
+              fontSize: '12px',
+              color: '#92400e',
+            }}
+          >
+            <strong>Mock data:</strong> Job Cost Control is showing synthetic data until a Vista
+            Cloud connection is configured for this company. (Phase 1 — see design doc.)
+          </div>
+        )}
+
+        {/* Top row: job picker / header + profitability snapshot */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
+            gap: '16px',
+          }}
+        >
+          {/* Job picker + header card */}
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Job</div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '14px' }}>
+              <select
+                value={selectedJccJobId}
+                onChange={(e) => setSelectedJccJobId(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  background: '#fff',
+                  color: '#0f172a',
+                }}
+              >
+                <option value="__ALL__">All Jobs (rollup) — {allJobs.length} active</option>
+                {allJobs.map((j) => (
+                  <option key={j.jobId} value={j.jobId}>
+                    {j.jobId} — {j.jobName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {isAll ? (
+              <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                <div>
+                  <strong>{allJobs.length}</strong> active jobs across the portfolio.
+                </div>
+                <div>
+                  Average margin <strong>{(data.summary?.avgMarginPct ?? 0).toFixed(1)}%</strong>
+                </div>
+                <div>
+                  Total exposure (cost-to-date + remaining committed):{' '}
+                  <strong>
+                    {formatCurrency(
+                      (data.summary?.totalCostToDate || 0) +
+                        (data.summary?.totalRemainingCommitted || 0)
+                    )}
+                  </strong>
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
+                  As of {data.summary?.asOfDate || '—'}
+                </div>
+              </div>
+            ) : selectedJob ? (
+              <div style={{ fontSize: '13px', color: '#475569', lineHeight: 1.6 }}>
+                <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                  {selectedJob.jobName}
+                </div>
+                <div>PM: {selectedJob.pmName}</div>
+                <div>
+                  Status:{' '}
+                  <span style={{ textTransform: 'capitalize' }}>
+                    {String(selectedJob.status || '').replace(/_/g, ' ')}
+                  </span>{' '}
+                  · {selectedJob.pctComplete}% complete
+                </div>
+                <div>
+                  Started {selectedJob.startDate} · Est. completion {selectedJob.estCompletionDate}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Profitability snapshot */}
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Profitability snapshot</div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '12px',
+              }}
+            >
+              {[
+                { label: 'Revised Contract', value: formatCurrency(snap.revisedContractValue) },
+                { label: 'Cost to Date', value: formatCurrency(snap.costToDate) },
+                { label: 'Remaining Committed', value: formatCurrency(snap.remainingCommitted) },
+                { label: 'EAC', value: formatCurrency(snap.eac) },
+                {
+                  label: 'Projected Profit',
+                  value: formatCurrency(snap.projectedProfit),
+                  color: snap.projectedProfit < 0 ? '#b91c1c' : '#0f172a',
+                },
+                {
+                  label: 'Margin %',
+                  value: `${(snap.marginPct ?? 0).toFixed(1)}%`,
+                  color: snap.marginPct < 0 ? '#b91c1c' : snap.marginPct < 5 ? '#b45309' : '#15803d',
+                },
+              ].map((kpi) => (
+                <div
+                  key={kpi.label}
+                  style={{
+                    padding: '12px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: '#64748b',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    {kpi.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '17px',
+                      fontWeight: 700,
+                      color: (kpi as any).color || '#0f172a',
+                    }}
+                  >
+                    {kpi.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Daily cost vs budget — full width */}
+        <div style={cardStyle}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>Daily cost vs budget</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              {dailyCostRows.length === 0
+                ? 'No data'
+                : `Showing latest ${dailyCostVisible.length} of ${dailyCostRows.length} entries`}
+            </div>
+          </div>
+          {dailyCostRows.length === 0 ? (
+            <div style={{ padding: '24px', color: '#64748b', fontSize: '13px' }}>
+              No daily cost entries for this selection.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Date</th>
+                    {isAll && <th style={thStyle}>Job</th>}
+                    <th style={thStyle}>Cost Type</th>
+                    <th style={thStyle}>Sub Type</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Daily Cost</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Daily Budget</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Variance $</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>Variance %</th>
+                    <th style={thStyle}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyCostVisible.map((r, idx) => (
+                    <tr key={`${r.date}-${r.jobId}-${idx}`}>
+                      <td style={tdStyle}>{r.date}</td>
+                      {isAll && <td style={tdStyle}>{r.jobId}</td>}
+                      <td style={tdStyle}>{r.costType}</td>
+                      <td style={tdStyle}>{r.subType}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.dailyCost)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.dailyBudget)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
+                        {r.variance > 0 ? '+' : ''}
+                        {formatCurrency(r.variance)}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
+                        {r.variancePct > 0 ? '+' : ''}
+                        {Number(r.variancePct).toFixed(1)}%
+                      </td>
+                      <td style={tdStyle}>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            textTransform: 'capitalize',
+                            ...statusPillStyle(r.status),
+                          }}
+                        >
+                          {String(r.status || '').replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Cost code variance + Cost by type */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)',
+            gap: '16px',
+          }}
+        >
+          {/* Cost code variance */}
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>
+              Cost code variance{isAll ? ' (all jobs)' : ''}
+            </div>
+            {costCodeRows.length === 0 ? (
+              <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
+                No cost-code rows for this selection.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto', maxHeight: '420px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {isAll && <th style={thStyle}>Job</th>}
+                      <th style={thStyle}>Code</th>
+                      <th style={thStyle}>Description</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Budget</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Committed</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Total Exposure</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...costCodeRows]
+                      .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
+                      .slice(0, 60)
+                      .map((r, idx) => (
+                        <tr key={`${r.jobId}-${r.costCode}-${idx}`}>
+                          {isAll && <td style={tdStyle}>{r.jobId}</td>}
+                          <td style={tdStyle}>{r.costCode}</td>
+                          <td style={tdStyle}>{r.description}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.budget)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.actual)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.committed)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.totalExposure)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
+                            {r.variance > 0 ? '+' : ''}
+                            {formatCurrency(r.variance)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Cost by type */}
+          <div style={cardStyle}>
+            <div style={cardTitleStyle}>Cost by type</div>
+            {costByTypeRows.length === 0 ? (
+              <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
+                No cost-type rows for this selection.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Cost Type</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Budget</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Committed</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>% of Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {costByTypeRows.map((r) => (
+                      <tr key={r.costType}>
+                        <td style={tdStyle}>{r.costType}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.budget)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.actual)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.committed)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
+                          {r.variance > 0 ? '+' : ''}
+                          {formatCurrency(r.variance)}
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(r.pctOfTotal).toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Labor detail (expandable) — includes equipment columns */}
+        <div style={cardStyle}>
+          <button
+            onClick={() => setJccLaborDetailExpanded((v) => !v)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ ...cardTitleStyle, marginBottom: 0 }}>
+              Labor detail (with equipment)
+            </div>
+            <div style={{ fontSize: '12px', color: '#475569' }}>
+              {laborDetailRows.length} entries · {jccLaborDetailExpanded ? 'Hide ▴' : 'Show ▾'}
+            </div>
+          </button>
+          {jccLaborDetailExpanded && (
+            <div style={{ marginTop: '14px', overflowX: 'auto', maxHeight: '460px', overflowY: 'auto' }}>
+              {laborDetailRows.length === 0 ? (
+                <div style={{ padding: '12px', color: '#64748b', fontSize: '13px' }}>
+                  No labor entries for this selection.
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Date</th>
+                      {isAll && <th style={thStyle}>Job</th>}
+                      <th style={thStyle}>Labor Type</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Hours</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>OT Hours</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Cost</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Budget</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Equip Hrs</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Equip Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...laborDetailRows]
+                      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+                      .slice(0, 100)
+                      .map((r, idx) => (
+                        <tr key={`${r.date}-${r.jobId}-${r.laborType}-${idx}`}>
+                          <td style={tdStyle}>{r.date}</td>
+                          {isAll && <td style={tdStyle}>{r.jobId}</td>}
+                          <td style={tdStyle}>{r.laborType}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{Number(r.hours).toFixed(1)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>
+                            {r.otHours > 0 ? Number(r.otHours).toFixed(1) : '—'}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.cost)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{formatCurrency(r.budget)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right', color: varianceColor(r.variance) }}>
+                            {r.variance > 0 ? '+' : ''}
+                            {formatCurrency(r.variance)}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>
+                            {r.equipmentHours > 0 ? Number(r.equipmentHours).toFixed(1) : '—'}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>
+                            {r.equipmentCost > 0 ? formatCurrency(r.equipmentCost) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderProjectPortfolio = () =>
+    renderConstructionTabPlaceholder(
+      'Project Portfolio',
+      'Executive view of company-wide job health and margin. Which jobs are making money, which are drifting, and where future exposure is sitting.',
+      [
+        'Portfolio Summary',
+        'Job Profitability',
+        'Risk Flags',
+        'Top / Bottom Jobs',
+        'Schedule Slippage Impact',
+      ],
+      'M3'
+    );
+
+  const renderCommitmentsForecast = () =>
+    renderConstructionTabPlaceholder(
+      'Commitments & Forecast',
+      'Forward-looking view: what cost is still coming, what final margin will be, and how much contract value has changed.',
+      [
+        'EAC / Forecast Summary',
+        'Commitment Exposure',
+        'Change Order Impact',
+        'Open Commitments',
+      ],
+      'M4'
+    );
+
+  const renderBillingCash = () =>
+    renderConstructionTabPlaceholder(
+      'Billing & Cash',
+      'Connect operations to liquidity: are we getting paid, are vendors ahead of us, and which jobs are creating cash pressure.',
+      [
+        'Billing & Cash Summary',
+        'AR by Job',
+        'AP by Job',
+        'Collections / Payments Priority',
+      ],
+      'M5'
+    );
+
   const renderModuleTabContent = (moduleKey: string) => {
     if (moduleKey === 'forecast') {
       return renderForecast();
@@ -8141,6 +8777,10 @@ Strategies to Improve the CCC
     if (dataType === 'inventory') return renderInventory();
     if (dataType === 'cash') return renderCash();
     if (dataType === 'daily-financials') return renderDailyFinancials();
+    if (dataType === 'job-cost-control') return renderJobCostControl();
+    if (dataType === 'project-portfolio') return renderProjectPortfolio();
+    if (dataType === 'commitments-forecast') return renderCommitmentsForecast();
+    if (dataType === 'billing-cash') return renderBillingCash();
     return (
       <div style={{ padding: '32px', color: '#64748b' }}>
         No renderer is configured for module <strong>{moduleKey}</strong>.

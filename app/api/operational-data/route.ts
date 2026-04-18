@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { buildOperationalMockResponse, buildOperationalMockSummaryCounts } from '@/lib/operations/sector-mock-data';
+import { buildJobCostControlMock } from '@/lib/operations/construction-mock-data';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getCashBalanceSheetAnchorConfig } from '@/lib/financial/cash-balance-sheet-anchor';
@@ -5872,6 +5873,39 @@ export async function GET(request: NextRequest) {
             },
           });
         }
+
+      // ──────────────────────────────────────────────────────────────────
+      // Construction sector ('23') native types — M1 stubs.
+      // Real mock builders land in M2-M5 (lib/operations/construction-mock-data.ts),
+      // and Vista-backed snapshot reads land in M6.
+      // See docs/CONSTRUCTION_SECTOR_DASHBOARD_DESIGN.md.
+      // ──────────────────────────────────────────────────────────────────
+      case 'job-cost-control': {
+        // M2: Mock-driven Job Cost Control. Vista-backed snapshot read lands
+        // in M6 once a live customer is connected.
+        const payload = buildJobCostControlMock(companyId);
+        return NextResponse.json({
+          records: payload.jobs,
+          jobs: payload.jobs,
+          dailyCost: payload.dailyCost,
+          costCode: payload.costCode,
+          costByType: payload.costByType,
+          laborDetail: payload.laborDetail,
+          summary: payload.summary,
+          meta: payload.meta,
+        });
+      }
+
+      case 'project-portfolio':
+      case 'commitments-forecast':
+      case 'billing-cash':
+        return NextResponse.json({
+          records: [],
+          summary: {
+            milestone: type === 'project-portfolio' ? 'M3' : type === 'commitments-forecast' ? 'M4' : 'M5',
+            note: `Construction tab '${type}' is scaffolded but not yet wired to mock or live data.`,
+          },
+        });
 
       default:
         // Get all data types summary

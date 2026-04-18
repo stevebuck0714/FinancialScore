@@ -1,4 +1,18 @@
-export type OpsDataType = 'customers' | 'ar-aging' | 'ap-aging' | 'products' | 'inventory' | 'cash' | 'daily-financials';
+export type OpsDataType =
+  | 'customers'
+  | 'ar-aging'
+  | 'ap-aging'
+  | 'products'
+  | 'inventory'
+  | 'cash'
+  | 'daily-financials'
+  // Construction-sector (industrySectorCategory === '23') native modules.
+  // Backed by /api/operational-data?type=… mock for M2-M5 and by Vista Cloud
+  // snapshot tables in M6+. See docs/CONSTRUCTION_SECTOR_DASHBOARD_DESIGN.md.
+  | 'job-cost-control'
+  | 'project-portfolio'
+  | 'commitments-forecast'
+  | 'billing-cash';
 
 type ModuleDefinition = {
   key: string;
@@ -72,6 +86,11 @@ const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { key: 'programs_courses', label: 'Programs / Courses', dataType: 'products' },
   { key: 'services_procedures', label: 'Services / Procedures', dataType: 'products' },
   { key: 'rates_revenue', label: 'Rates & Revenue', dataType: 'customers' },
+  // --- Construction sector ('23') native modules ---
+  { key: 'job_cost_control', label: 'Job Cost Control', dataType: 'job-cost-control' },
+  { key: 'project_portfolio', label: 'Project Portfolio', dataType: 'project-portfolio' },
+  { key: 'commitments_forecast', label: 'Commitments & Forecast', dataType: 'commitments-forecast' },
+  { key: 'billing_cash', label: 'Billing & Cash', dataType: 'billing-cash' },
 ];
 
 const MODULE_MAP: Record<string, ModuleDefinition> = MODULE_DEFINITIONS.reduce((acc, module) => {

@@ -1,4 +1,8 @@
-import OpenAI from 'openai';
+import {
+  getAiProviderOptions,
+  getOpenAiClient,
+  resolveModelName,
+} from '@/lib/ai-gateway';
 
 function getEmbeddingModel(): string {
   return process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
@@ -10,11 +14,9 @@ export type EmbedResult = {
 };
 
 export async function embedTexts(texts: string[]): Promise<EmbedResult> {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not set (required for embeddings)');
-  }
-  const model = getEmbeddingModel();
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const model = resolveModelName(getEmbeddingModel());
+  const openai = getOpenAiClient();
+  const providerOptions = getAiProviderOptions();
 
   // Batch to keep request sizes reasonable.
   const BATCH_SIZE = 64;
@@ -25,7 +27,8 @@ export async function embedTexts(texts: string[]): Promise<EmbedResult> {
     const resp = await openai.embeddings.create({
       model,
       input: batch,
-    });
+      ...(providerOptions ? ({ providerOptions } as Record<string, unknown>) : {}),
+    } as Parameters<typeof openai.embeddings.create>[0]);
     for (const item of resp.data) {
       vectors.push(item.embedding as unknown as number[]);
     }
@@ -33,4 +36,3 @@ export async function embedTexts(texts: string[]): Promise<EmbedResult> {
 
   return { model, vectors };
 }
-

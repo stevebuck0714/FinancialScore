@@ -1,29 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { describeAiConfig, getAiTransport, getOpenAiClient } from '@/lib/ai-gateway';
 import { createModelText } from '@/lib/openai-helpers';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
-    console.log('Testing OpenAI connection...');
-    console.log('API Key present:', !!process.env.OPENAI_API_KEY);
-    console.log('API Key prefix:', process.env.OPENAI_API_KEY?.substring(0, 10));
+    const transport = getAiTransport();
+    const cfg = describeAiConfig();
+    console.log('Testing AI provider connection...');
+    console.log('Transport:', transport);
+    console.log('Base URL:', cfg.baseUrl);
+    console.log('ZDR enforced:', cfg.zdrEnforced);
 
-    if (!process.env.OPENAI_API_KEY) {
+    if (transport === 'unconfigured') {
       return NextResponse.json(
-        { error: 'OPENAI_API_KEY is not set in environment' },
+        {
+          error:
+            'No AI provider configured. Set AI_GATEWAY_API_KEY (preferred, with ZDR) or OPENAI_API_KEY.',
+        },
         { status: 500 }
       );
     }
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    const openai = getOpenAiClient();
+    const requestedModel = process.env.OPENAI_MODEL || 'gpt-4o';
+    console.log('Making test API call...');
 
-    console.log('Making test API call to OpenAI...');
-    
     const resp = await createModelText({
       openai,
-      model: process.env.OPENAI_MODEL || 'gpt-4o',
+      model: requestedModel,
       messages: [
         {
           role: 'user',
@@ -35,33 +39,35 @@ export async function GET(request: NextRequest) {
     });
 
     const response = resp.text || 'No response';
-    console.log('OpenAI response:', response);
+    console.log('AI response:', response);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
-      apiKeyConfigured: true,
-      response: response,
-      model: process.env.OPENAI_MODEL || 'gpt-4o',
+      transport,
+      baseUrl: cfg.baseUrl,
+      zdrEnforced: cfg.zdrEnforced,
+      requestedModel,
+      resolvedModel: cfg.defaultModelHint,
+      response,
       api: resp.api,
     });
-  } catch (error: any) {
-    console.error('OpenAI test error:', {
-      message: error.message,
-      name: error.name,
-      status: error.status,
-      code: error.code
+  } catch (error: unknown) {
+    const e = error as { message?: string; name?: string; status?: number; code?: string };
+    console.error('AI test error:', {
+      message: e.message,
+      name: e.name,
+      status: e.status,
+      code: e.code,
     });
-    
+
     return NextResponse.json(
-      { 
-        error: 'Failed to connect to OpenAI',
-        details: error.message,
-        errorType: error.name,
-        status: error.status
+      {
+        error: 'Failed to connect to AI provider',
+        details: e.message,
+        errorType: e.name,
+        status: e.status,
       },
       { status: 500 }
     );
   }
 }
-
-

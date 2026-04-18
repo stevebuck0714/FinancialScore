@@ -66,7 +66,7 @@ if (-not $IncludeSLArtrans) {
   Write-Host "Skipping SLArtrans (assumed already deduped). Pass -IncludeSLArtrans to include it." -ForegroundColor Yellow
 }
 
-$baseArgs = @('tsx', 'tmp/dedupe-infor-raw.ts')
+$baseArgs = @('tsx', 'tmp/dedupe-staged.ts')
 if (-not $DryRun) { $baseArgs += '--execute' }
 $baseArgs += @('--batch', '10000')
 

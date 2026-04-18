@@ -4,10 +4,6 @@ import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-onl
 import { syncInforM3OperationalData } from '@/lib/infor-m3/operational-sync';
 import { isInforSyncQueueEnabled, startQueueRun } from '@/lib/infor-m3/sync-queue';
 import { syncQuickBooksDesktopOperationalPayload, type QbDesktopOperationalPayload } from '@/lib/quickbooks-desktop/operational-sync';
-import { syncDynamicsOperationalPayload, type DynamicsOperationalPayload } from '@/lib/dynamics-365/operational-sync';
-import { syncAcumaticaOperationalPayload, type AcumaticaOperationalPayload } from '@/lib/acumatica/operational-sync';
-import { syncOdooOperationalPayload, type OdooOperationalPayload } from '@/lib/odoo/operational-sync';
-import { syncSageIntacctOperationalPayload, type SageIntacctOperationalPayload } from '@/lib/sage-intacct/operational-sync';
 import type { AccountingConnection, AccountingPlatform } from '@prisma/client';
 
 export type SyncFrequency = 'daily' | 'weekly' | 'monthly';
@@ -256,73 +252,10 @@ export async function runOperationalSyncForConnection(
     };
   }
 
-  if (connection.platform === 'DYNAMICS365') {
-    const metadata =
-      asRecord(connection.connectionMetadata);
-    const payload =
-      metadata.dynamicsOperationalPayload && typeof metadata.dynamicsOperationalPayload === 'object'
-        ? (metadata.dynamicsOperationalPayload as DynamicsOperationalPayload)
-        : null;
-    if (!payload) {
-      return {
-        success: false,
-        recordsCreated: 0,
-        errors: ['No Dynamics operational payload is available yet.'],
-      };
-    }
-    return syncDynamicsOperationalPayload(connection.companyId, frequency, payload);
-  }
-
-  if (connection.platform === 'ACUMATICA') {
-    const metadata =
-      asRecord(connection.connectionMetadata);
-    const payload =
-      metadata.acumaticaOperationalPayload && typeof metadata.acumaticaOperationalPayload === 'object'
-        ? (metadata.acumaticaOperationalPayload as AcumaticaOperationalPayload)
-        : null;
-    if (!payload) {
-      return {
-        success: false,
-        recordsCreated: 0,
-        errors: ['No Acumatica operational payload is available yet.'],
-      };
-    }
-    return syncAcumaticaOperationalPayload(connection.companyId, frequency, payload);
-  }
-
-  if (connection.platform === 'ODOO') {
-    const metadata =
-      asRecord(connection.connectionMetadata);
-    const payload =
-      metadata.odooOperationalPayload && typeof metadata.odooOperationalPayload === 'object'
-        ? (metadata.odooOperationalPayload as OdooOperationalPayload)
-        : null;
-    if (!payload) {
-      return {
-        success: false,
-        recordsCreated: 0,
-        errors: ['No Odoo operational payload is available yet.'],
-      };
-    }
-    return syncOdooOperationalPayload(connection.companyId, frequency, payload);
-  }
-
-  if (connection.platform === 'SAGE_INTACCT') {
-    const metadata =
-      asRecord(connection.connectionMetadata);
-    const payload =
-      metadata.sageIntacctOperationalPayload && typeof metadata.sageIntacctOperationalPayload === 'object'
-        ? (metadata.sageIntacctOperationalPayload as SageIntacctOperationalPayload)
-        : null;
-    if (!payload) {
-      return {
-        success: false,
-        recordsCreated: 0,
-        errors: ['No Sage Intacct operational payload is available yet.'],
-      };
-    }
-    return syncSageIntacctOperationalPayload(connection.companyId, frequency, payload);
-  }
+  // Dynamics 365, Acumatica, Odoo, and Sage Intacct currently have no live
+  // API-pull implementation. Their old "push payload" routes were removed when
+  // we migrated these systems onto the plugin framework. They fall through to
+  // notImplementedResult below so the caller gets a clear, truthful message.
 
   return notImplementedResult(connection.platform);
 }

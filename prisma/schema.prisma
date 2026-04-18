@@ -957,6 +957,7 @@ enum AccountingPlatform {
   NETSUITE
   DYNAMICS365
   INFOR_M3
+  VISTA_CLOUD
 }
 
 enum ConnectionStatus {

@@ -1,4 +1,10 @@
 import OpenAI from 'openai';
+import {
+  getApiBaseUrl,
+  getApiKey,
+  getAiProviderOptions,
+  resolveModelName,
+} from '@/lib/ai-gateway';
 
 type OpenAIChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
@@ -74,12 +80,14 @@ async function createResponsesTextViaFetch(params: {
   temperature: number;
   maxTokens?: number;
 }): Promise<{ text: string; finishReason?: string | null }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not set in environment');
+  const apiKey = getApiKey();
+  const baseUrl = getApiBaseUrl();
+  const providerOptions = getAiProviderOptions();
+  const resolvedModel = resolveModelName(params.model);
   const timeoutMs = getOpenAiTimeoutMs();
 
   const basePayload: Record<string, unknown> = {
-    model: params.model,
+    model: resolvedModel,
     ...(params.instructions ? { instructions: params.instructions } : {}),
     input: params.input,
     ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
@@ -87,21 +95,23 @@ async function createResponsesTextViaFetch(params: {
     // Responses API supports `text.format`; some SDKs/docs also mention `response_format`.
     text: { format: { type: 'json_object' } },
     response_format: { type: 'json_object' },
+    ...(providerOptions ? { providerOptions } : {}),
   };
 
   const minimalMessagePayload: Record<string, unknown> = {
-    model: params.model,
+    model: resolvedModel,
     ...(params.instructions ? { instructions: params.instructions } : {}),
     // Canonical "messages" shape tends to produce more consistent output than a raw string input.
     input: [{ role: 'user', content: params.input }],
     ...(typeof params.maxTokens === 'number' ? { max_output_tokens: params.maxTokens } : {}),
+    ...(providerOptions ? { providerOptions } : {}),
   };
 
   const doRequest = async (payload: Record<string, unknown>) => {
     let res: Response;
     try {
       res = await withTimeout(
-        fetch('https://api.openai.com/v1/responses', {
+        fetch(`${baseUrl}/responses`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -313,16 +323,18 @@ export async function createModelText(params: {
     // Otherwise, try chat completions.
   }
 
+  const chatProviderOptions = getAiProviderOptions();
   const completion = await withTimeout(
     openai.chat.completions.create({
-      model,
+      model: resolveModelName(model),
       messages,
       temperature,
       ...(typeof maxTokens === 'number' ? { max_tokens: maxTokens } : {}),
       // Helps JSON-heavy prompts; models that don't support it will error, but those
       // should be handled by the Responses path above.
       response_format: { type: 'json_object' } as { type: 'json_object' },
-    }),
+      ...(chatProviderOptions ? ({ providerOptions: chatProviderOptions } as Record<string, unknown>) : {}),
+    } as Parameters<typeof openai.chat.completions.create>[0]),
     timeoutMs,
     'OpenAI chat request',
   );

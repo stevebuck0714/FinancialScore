@@ -1,0 +1,37 @@
+Add accounting-system plugin architecture, Vista Cloud, and construction-sector dashboard (M1-M2)
+
+Accounting systems:
+- New plugin/registry pattern under lib/accounting-systems/ with shared
+  FieldGrid + TwoColumnProgramsTable shells and a generic
+  /api/accounting-systems/[system]/settings route.
+- Migrated Sage Intacct, Acumatica, Odoo, and Dynamics 365 to plugins
+  (with alias support for legacy Company.accountingSystem values).
+- Added Viewpoint Vista Cloud plugin (X-Application-Key auth, Trimble
+  Direct REST API) with side-by-side credentials/programs layout and
+  matching AccountingPlatform enum migration.
+- Deleted legacy /api/{sage-intacct,acumatica,odoo,dynamics-365}/* routes
+  and their lib/*/operational-sync.ts payload syncers.
+
+Construction sector dashboard:
+- Replaced 4 generic construction tabs with Job Cost Control, Project
+  Portfolio, Commitments & Forecast, and Billing & Cash (kept Cash, AR,
+  AP standalone).
+- M1: scaffolded buckets, module registry, OpsDataTypes, render stubs,
+  and 4 placeholder API branches.
+- M2: built Job Cost Control end-to-end -- seeded mock builder
+  (lib/operations/construction-mock-data.ts) and full UI with job picker
+  defaulting to All-Jobs rollup, profitability snapshot, daily cost vs
+  budget, cost code variance, cost by type, and labor detail with
+  equipment columns.
+
+AI Gateway / ZDR:
+- Added lib/ai-gateway.ts and routed openai-helpers, period-review, ask,
+  and document-embeddings calls through it.
+- docs/AI_PRIVACY.md captures the ZDR posture.
+
+Misc:
+- Added AP balance-sheet anchor module (lib/financial/ap-balance-sheet-anchor.ts).
+- Operational sync runner no longer dispatches the 4 plugin-native ERPs.
+- Added construction dashboard design doc and several intake/process docs.
+- Bundled tmp/ debug + backfill + validation scripts used during the AR/AP
+  reconciliation pass against the 12/31/2023 balance-sheet anchor.

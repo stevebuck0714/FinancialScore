@@ -8,6 +8,8 @@ import PasswordInput from '@/app/components/common/PasswordInput';
 import BillingDashboard from '@/app/components/billing/BillingDashboard';
 import { getTopLineBucketsForSector } from '@/lib/operations/sector-mock-data';
 import { getModuleLabel, mapModuleToDataType } from '@/lib/operations/module-registry';
+import AccountingSystemPanel from '@/app/components/accounting-systems/AccountingSystemPanel';
+import { isPluginAccountingSystem } from '@/lib/accounting-systems/registry';
 
 const OPERATIONAL_HUB_SECTION_OPTIONS: Array<{ key: string; label: string; group: string }> = [
   { key: 'productsPriceCostComparison', label: 'Products: Weekly Price-Cost Comparison', group: 'Products' },
@@ -158,6 +160,7 @@ export default function SiteAdminDashboard(props: any) {
     if (normalized === 'SAGE_INTACCT') return 'Sage Intacct';
     if (normalized === 'SAGE') return 'Sage';
     if (normalized === 'ODOO') return 'Odoo';
+    if (normalized === 'VISTA_CLOUD') return 'Viewpoint Vista Cloud';
     return String(value);
   };
 
@@ -2222,78 +2225,15 @@ export default function SiteAdminDashboard(props: any) {
       console.error('Failed to load QuickBooks Online settings:', error);
     }
   };
-  const loadDynamicsSettings = async (companyId: string) => {
-    try {
-      const response = await fetch(`/api/dynamics-365/settings?companyId=${companyId}`);
-      const data = await response.json();
-      if (!response.ok || !data?.ok) return;
-      if (data?.settings && typeof data.settings === 'object') {
-        setDynamicsSettingsByCompany((prev) => ({
-          ...prev,
-          [companyId]: { ...defaultDynamicsSettings, ...data.settings },
-        }));
-      }
-      if (Array.isArray(data?.programs)) {
-        setDynamicsPrograms(companyId, data.programs);
-      }
-    } catch (error) {
-      console.error('Failed to load Dynamics settings:', error);
-    }
-  };
-  const loadAcumaticaSettings = async (companyId: string) => {
-    try {
-      const response = await fetch(`/api/acumatica/settings?companyId=${companyId}`);
-      const data = await response.json();
-      if (!response.ok || !data?.ok) return;
-      if (data?.settings && typeof data.settings === 'object') {
-        setAcumaticaSettingsByCompany((prev) => ({
-          ...prev,
-          [companyId]: { ...defaultAcumaticaSettings, ...data.settings },
-        }));
-      }
-      if (Array.isArray(data?.programs)) {
-        setAcumaticaPrograms(companyId, data.programs);
-      }
-    } catch (error) {
-      console.error('Failed to load Acumatica settings:', error);
-    }
-  };
-  const loadSageIntacctSettings = async (companyId: string) => {
-    try {
-      const response = await fetch(`/api/sage-intacct/settings?companyId=${companyId}`);
-      const data = await response.json();
-      if (!response.ok || !data?.ok) return;
-      if (data?.settings && typeof data.settings === 'object') {
-        setSageIntacctSettingsByCompany((prev) => ({
-          ...prev,
-          [companyId]: { ...defaultSageIntacctSettings, ...data.settings },
-        }));
-      }
-      if (Array.isArray(data?.programs)) {
-        setSageIntacctPrograms(companyId, data.programs);
-      }
-    } catch (error) {
-      console.error('Failed to load Sage Intacct settings:', error);
-    }
-  };
-  const loadOdooSettings = async (companyId: string) => {
-    try {
-      const response = await fetch(`/api/odoo/settings?companyId=${companyId}`);
-      const data = await response.json();
-      if (!response.ok || !data?.ok) return;
-      if (data?.settings && typeof data.settings === 'object') {
-        setOdooSettingsByCompany((prev) => ({
-          ...prev,
-          [companyId]: { ...defaultOdooSettings, ...data.settings },
-        }));
-      }
-      if (Array.isArray(data?.programs)) {
-        setOdooPrograms(companyId, data.programs);
-      }
-    } catch (error) {
-      console.error('Failed to load Odoo settings:', error);
-    }
-  };
+  // Dynamics 365 / Acumatica / Sage Intacct / Odoo settings are now handled by
+  // the plugin framework (lib/accounting-systems/* + AccountingSystemPanel).
+  // The legacy load/save handlers below are no-ops kept only so the inactive
+  // legacy inline JSX further down still compiles. They never execute because
+  // the new panel renders in their place via isPluginAccountingSystem().
+  const loadDynamicsSettings = async (_companyId: string) => {};
+  const loadAcumaticaSettings = async (_companyId: string) => {};
+  const loadSageIntacctSettings = async (_companyId: string) => {};
+  const loadOdooSettings = async (_companyId: string) => {};
 
   const saveQbDesktopSettings = async (companyId: string) => {
     try {
@@ -2337,90 +2277,13 @@ export default function SiteAdminDashboard(props: any) {
       alert(`Failed to save QuickBooks Online settings: ${error?.message || 'Unknown error'}`);
     }
   };
-  const saveDynamicsSettings = async (companyId: string) => {
-    try {
-      const response = await fetch('/api/dynamics-365/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId,
-          settings: getDynamicsSettings(companyId),
-          programs: getDynamicsPrograms(companyId),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.details || data?.error || 'Failed to save Dynamics settings');
-      }
-      await loadDynamicsSettings(companyId);
-      alert('Dynamics settings saved for this company.');
-    } catch (error: any) {
-      alert(`Failed to save Dynamics settings: ${error?.message || 'Unknown error'}`);
-    }
-  };
-  const saveAcumaticaSettings = async (companyId: string) => {
-    try {
-      const response = await fetch('/api/acumatica/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId,
-          settings: getAcumaticaSettings(companyId),
-          programs: getAcumaticaPrograms(companyId),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.details || data?.error || 'Failed to save Acumatica settings');
-      }
-      await loadAcumaticaSettings(companyId);
-      alert('Acumatica settings saved for this company.');
-    } catch (error: any) {
-      alert(`Failed to save Acumatica settings: ${error?.message || 'Unknown error'}`);
-    }
-  };
-  const saveSageIntacctSettings = async (companyId: string) => {
-    try {
-      const response = await fetch('/api/sage-intacct/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId,
-          settings: getSageIntacctSettings(companyId),
-          programs: getSageIntacctPrograms(companyId),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.details || data?.error || 'Failed to save Sage Intacct settings');
-      }
-      await loadSageIntacctSettings(companyId);
-      alert('Sage Intacct settings saved for this company.');
-    } catch (error: any) {
-      alert(`Failed to save Sage Intacct settings: ${error?.message || 'Unknown error'}`);
-    }
-  };
-  const saveOdooSettings = async (companyId: string) => {
-    try {
-      const response = await fetch('/api/odoo/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId,
-          settings: getOdooSettings(companyId),
-          programs: getOdooPrograms(companyId),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.details || data?.error || 'Failed to save Odoo settings');
-      }
-      await loadOdooSettings(companyId);
-      alert('Odoo settings saved for this company.');
-    } catch (error: any) {
-      alert(`Failed to save Odoo settings: ${error?.message || 'Unknown error'}`);
-    }
-  };
+  // See note above — these saves are no-ops; the new AccountingSystemPanel
+  // owns persistence for all plugin-native systems via the generic route at
+  // /api/accounting-systems/[system]/settings.
+  const saveDynamicsSettings = async (_companyId: string) => {};
+  const saveAcumaticaSettings = async (_companyId: string) => {};
+  const saveSageIntacctSettings = async (_companyId: string) => {};
+  const saveOdooSettings = async (_companyId: string) => {};
 
   // Rehydrate integration/program settings when returning to Site Admin tabs.
   // This prevents stale in-memory state from showing old values until a hard refresh.
@@ -3877,7 +3740,16 @@ export default function SiteAdminDashboard(props: any) {
                                             </div>
                                           )}
 
-                                          <div style={{ display: 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
+                                          {isPluginAccountingSystem(company.accountingSystem) && (
+                                            <div style={{ marginBottom: '12px' }}>
+                                              <AccountingSystemPanel
+                                                companyId={company.id}
+                                                system={String(company.accountingSystem || '')}
+                                              />
+                                            </div>
+                                          )}
+
+                                          <div style={{ display: isPluginAccountingSystem(company.accountingSystem) ? 'none' : 'grid', gridTemplateColumns: '60% 40%', gap: '8px', marginBottom: '8px' }}>
                                             <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
                                                 <div>
@@ -6142,7 +6014,14 @@ export default function SiteAdminDashboard(props: any) {
                                   );
                                 })()}
 
-                                {['INFOR_M3', 'INFOR_CSI'].includes(String(businessCompany?.accountingSystem || '').toUpperCase()) ? (
+                                {isPluginAccountingSystem(businessCompany?.accountingSystem) ? (
+                                  <div style={{ marginBottom: '12px' }}>
+                                    <AccountingSystemPanel
+                                      companyId={businessCompany.id}
+                                      system={String(businessCompany.accountingSystem || '')}
+                                    />
+                                  </div>
+                                ) : ['INFOR_M3', 'INFOR_CSI'].includes(String(businessCompany?.accountingSystem || '').toUpperCase()) ? (
                                   <>
                                   <div style={{ marginBottom: '8px', padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '10px' }}>
