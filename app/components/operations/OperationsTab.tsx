@@ -4005,15 +4005,22 @@ export default function OperationsTab({
     const apOver90Pct = Number(summary?.over90Pct ?? 0);
     const apDpo = Number(summary?.dpo ?? 0);
     const latestRecord = records[0];
-    const apVendors = (summary?.breakdown || summary?.unpaidByVendor || []).map((row: any) => ({
-      vendorName: row.vendorName || row.name,
-      current: row.current || 0,
-      days1to30: row.days1to30 || 0,
-      days31to60: row.days31to60 || 0,
-      days61to90: row.days61to90 || 0,
-      days90plus: row.days90plus || 0,
-      totalDue: row.totalDue || row.total || (row.current || 0) + (row.days1to30 || 0) + (row.days31to60 || 0) + (row.days61to90 || 0) + (row.days90plus || 0),
-    }));
+    const apVendors = (summary?.breakdown || summary?.unpaidByVendor || []).map((row: any) => {
+      // 4-bucket scheme: anything below 30 days outstanding is "Current".
+      // Defensive max() handles legacy snapshots that mirrored `current` into `days1to30`.
+      const currentBucket = Math.max(Number(row.current || 0), Number(row.days1to30 || 0));
+      const d31to60 = Number(row.days31to60 || 0);
+      const d61to90 = Number(row.days61to90 || 0);
+      const d90plus = Number(row.days90plus || 0);
+      return {
+        vendorName: row.vendorName || row.name,
+        current: currentBucket,
+        days31to60: d31to60,
+        days61to90: d61to90,
+        days90plus: d90plus,
+        totalDue: row.totalDue || row.total || currentBucket + d31to60 + d61to90 + d90plus,
+      };
+    });
     const unpaidByVendor = apVendors
       .map((row) => ({ vendorName: row.vendorName, totalDue: row.totalDue }))
       .sort((a, b) => b.totalDue - a.totalDue)
@@ -4066,12 +4073,13 @@ export default function OperationsTab({
       .sort((a: any, b: any) => a.businessDay.getTime() - b.businessDay.getTime());
     const chartData = recordsForWindow.map((record: any) => ({
       month: formatDate(record.businessDay.toISOString()),
-      Current: record.current,
-      '1-30 Days': record.days1to30,
-      '31-60 Days': record.days31to60,
-      '61-90 Days': record.days61to90,
-      '90+ Days': record.days90plus,
-      total: record.totalAP
+      // 4-bucket scheme: anything below 30 days outstanding is "Current".
+      // Defensive max() handles legacy snapshots that mirrored `current` into `days1to30`.
+      Current: Math.max(Number(record.current || 0), Number(record.days1to30 || 0)),
+      '31-60 Days': Number(record.days31to60 || 0),
+      '61-90 Days': Number(record.days61to90 || 0),
+      '90+ Days': Number(record.days90plus || 0),
+      total: Number(record.totalAP || 0),
     }));
     const apCoverageLabel = `${formatDateInputLabel(startDate)} - ${formatDateInputLabel(endDate)}`;
     const apAsOfDate = parseDateSafeUtc(endDate) || new Date();
@@ -4085,7 +4093,8 @@ export default function OperationsTab({
       }));
     const apPastDueRiskQueue = apVendors
       .map((row) => {
-        const pastDue = Number(row.days1to30 || 0) + Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
+        // 4-bucket scheme: "past due" starts at 31 days (Current is 0-30).
+        const pastDue = Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
         const severePastDue = Number(row.days61to90 || 0) + Number(row.days90plus || 0);
         const riskScore = pastDue + severePastDue * 0.5;
         return {
@@ -4173,7 +4182,6 @@ export default function OperationsTab({
               />
               <Legend />
               <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
-              <Bar dataKey="1-30 Days" stackId="a" fill={AR_TREND_COLORS[1]} />
               <Bar dataKey="31-60 Days" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="61-90 Days" stackId="a" fill={AR_TREND_COLORS[3]} />
               <Bar dataKey="90+ Days" stackId="a" fill={AR_TREND_COLORS[4]} />
@@ -4256,7 +4264,6 @@ export default function OperationsTab({
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>1-30</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>91+</th>
@@ -4272,9 +4279,6 @@ export default function OperationsTab({
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right' }}>
                             {formatCurrency(row.current)}
-                          </td>
-                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f59e0b', textAlign: 'right' }}>
-                            {formatCurrency(row.days1to30)}
                           </td>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f97316', textAlign: 'right' }}>
                             {formatCurrency(row.days31to60)}
