@@ -1,43 +1,27 @@
-Construction sector dashboard Phase 1: M3, M4, M5 mock-driven tabs
+Phase 3: broaden AP payment-side ref filter to NOT-APV
 
-Adds full mock-driven implementations for the three remaining
-construction-native tabs that were scaffolded in M1. All four tabs now
-share a single seeded job set per companyId so vendors, customers, and
-financial figures stay consistent across tabs.
+Replaces the strict APP/APA payment allowlist with NOT-APV on the AP
+control account. The AP balance change is conceptually "everything
+posted to the AP control account except voucher creations" (which we
+already get from APTransactionFact). The previous narrow filter missed
+adjustments (Adj*, adj*), reversal pairs (Rev*/to*), and other manual
+journal entries that legitimately move the AP balance.
 
-M3 — Project Portfolio
-- buildProjectPortfolioMock() derives schedule + risk metrics from the
-  shared JCC job set.
-- UI: Portfolio summary KPI strip, Schedule Slippage Impact card (5
-  bucket counts + KPIs + top-5 slipping jobs by exposure), sortable
-  Job Profitability table, Top/Bottom Jobs (by margin), and a Risk
-  Flags table with severity-tiered chips (Negative Margin, Cost Drift,
-  High Commitment Exposure, Late-Stage Margin Risk, Early Cost Drift).
+Validated against prod TB checkpoints - drift trims by ~$4K at each
+checkpoint (Jan/Feb/Mar 2026: +$162K/+$269K/+$111K vs Phase 2's
++$166K/+$273K/+$115K). Small but strictly directionally correct.
 
-M4 — Commitments & Forecast
-- buildCommitmentsForecastMock() emits per-job EAC forecast,
-  commitment exposure, change-order activity (most jobs have COs, some
-  don't), and a list of open POs/Subs across vendors.
-- UI: EAC summary KPI strip + per-job forecast table, Commitment
-  Exposure by job (color-coded % committed), Change Order Impact card
-  that always renders with a "No data" empty-state when no jobs have
-  CO activity (locked design decision), and an Open Commitments table
-  with filter pills (All/Past Due/Closing Soon/POs/Subs).
+Phase 3 also explored a GL-only AP roll-forward as an alternative
+architecture. Rejected: the pre-Apr-2023 GL data gap means payments
+for vouchers created before our GL window hit the GL without their
+offsetting voucher creations, producing ~$1M of phantom AP reduction
+(drift -$946K to -$1.1M). Keeping the hybrid AP-fact + GL-payment
+architecture is the correct call.
 
-M5 — Billing & Cash
-- buildBillingCashMock() reuses JCC + CF outputs so vendors and
-  customers stay consistent. Derives billed-to-date, cash collected,
-  AP outstanding, and net cash per job; splits AR/AP into aging
-  buckets; and produces a priority action list (collect vs pay) sorted
-  by weighted aging score.
-- UI: Billing & Cash summary KPI strip + per-job table with %-billed
-  and net-cash color coding, AR by Job and AP by Job aging tables,
-  and a Collections & Payments Priority list with filter pills.
+The residual ~$110K-$270K Phase 3 drift is timing-related (vouchers
+and payments straddling month boundaries differently between our DB
+and CSI's TB) and represents <1% of monthly AP throughput. Further
+reduction would require a CSI-native period-balance feed which we do
+not currently have.
 
-Other:
-- API route adds three new cases to /api/operational-data wired to the
-  new mock builders.
-- All four construction tab placeholders are now replaced with the
-  full UI implementations.
-- M6 (Vista ingestion + Prisma snapshot tables) is the only remaining
-  construction-dashboard milestone.
+Diagnostic scripts retained in tmp/ for future reference.
