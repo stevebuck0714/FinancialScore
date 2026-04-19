@@ -27,11 +27,31 @@ function checkSecret(request: NextRequest, querySecret?: string | null): boolean
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  const stage = { current: 'init' };
+  try {
+    return await runProbe(request, stage);
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        ok: false,
+        stage: stage.current,
+        error: 'route_threw',
+        message: err?.message || String(err),
+        stack: err?.stack ? String(err.stack).split('\n').slice(0, 8) : undefined,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function runProbe(request: NextRequest, stage: { current: string }): Promise<NextResponse> {
+  stage.current = 'parse_query';
   const url = new URL(request.url);
   const companyId = String(url.searchParams.get('companyId') || '').trim();
   const secret = url.searchParams.get('secret');
   const lookbackDays = Math.max(1, Math.min(365, Number(url.searchParams.get('lookbackDays') || '60')));
 
+  stage.current = 'check_secret';
   if (!checkSecret(request, secret)) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
@@ -39,11 +59,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: 'companyId required' }, { status: 400 });
   }
 
+  stage.current = 'load_credentials';
   const credentials = await getInforM3CredentialsForCompany(companyId);
   if (!credentials) {
     return NextResponse.json({ ok: false, error: 'no Infor credentials for company' }, { status: 404 });
   }
 
+  stage.current = 'load_slvchhdrs_row';
   const slvchhdrsRow = (await prisma.$queryRawUnsafe<
     Array<{ endpointPath: string | null; site: string | null; mongooseConfig: string | null }>
   >(
@@ -93,6 +115,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     `&orderby=${encodeURIComponent(orderby)}` +
     `&recordCap=5`;
 
+  stage.current = 'call_infor_ion_api';
   const probedAt = new Date().toISOString();
   let result;
   try {
