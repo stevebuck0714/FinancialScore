@@ -2569,13 +2569,95 @@ export async function pruneCompanyOperationalData(companyId: string): Promise<vo
   ]);
 }
 
+/**
+ * Compute the running balance per account at a given as-of date, summed over
+ * GLTransactionFact (debit - credit). Returns a map keyed by accountId; missing
+ * accountIds are populated with 0.
+ *
+ * Used by the GL-derived CashSnapshot pipeline. We treat GL as the system of
+ * record because Infor's bank header IDOs (SLBankHdrs) return a snapshot of
+ * the *current* bank balance only — they cannot answer "what was the balance
+ * on a historical date" and, in practice, can drift from GL when bank-level
+ * adjustments aren't posted back to the bank record.
+ */
+async function computeCashBalancesFromGL(
+  companyId: string,
+  accountIds: string[],
+  asOfDate: Date
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (accountIds.length === 0) return out;
+  for (const id of accountIds) out.set(id, 0);
+
+  const rows = await prisma.$queryRaw<{ accountId: string; balance: number | null }[]>`
+    SELECT
+      "accountId",
+      SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
+    FROM "GLTransactionFact"
+    WHERE "companyId" = ${companyId}
+      AND "accountId" = ANY(${accountIds}::text[])
+      AND "transDate" <= ${asOfDate}
+    GROUP BY "accountId"
+  `;
+  for (const row of rows) {
+    out.set(row.accountId, Number(row.balance) || 0);
+  }
+  return out;
+}
+
+/**
+ * Resolve display metadata (name, latest seen number) for a set of cash
+ * accountIds from GLTransactionFact. Falls back to the AccountMapping's
+ * qbAccount label if no GL row exists for that account yet.
+ */
+async function resolveCashAccountDisplay(
+  companyId: string,
+  accountIds: string[],
+  mappingNames: Map<string, string>
+): Promise<Map<string, { accountName: string; accountNumber: string | null }>> {
+  const out = new Map<string, { accountName: string; accountNumber: string | null }>();
+  if (accountIds.length === 0) return out;
+
+  const rows = await prisma.$queryRaw<
+    { accountId: string; accountName: string | null }[]
+  >`
+    SELECT DISTINCT ON ("accountId") "accountId", "accountName"
+    FROM "GLTransactionFact"
+    WHERE "companyId" = ${companyId}
+      AND "accountId" = ANY(${accountIds}::text[])
+    ORDER BY "accountId", "transDate" DESC
+  `;
+  const glNameByAccount = new Map<string, string | null>();
+  for (const row of rows) glNameByAccount.set(row.accountId, row.accountName || null);
+
+  for (const accountId of accountIds) {
+    const glName = glNameByAccount.get(accountId) || null;
+    const mappingName = mappingNames.get(accountId) || null;
+    const accountName =
+      (mappingName && mappingName.trim()) ||
+      (glName && glName.trim()) ||
+      accountId;
+    out.set(accountId, { accountName, accountNumber: accountId });
+  }
+  return out;
+}
+
+/**
+ * Persist the cash snapshot for a single (companyId, snapshotDate, frequency)
+ * by deriving each cash-mapped account's balance from GLTransactionFact.
+ *
+ * The `records` argument (cash IDO payload, typically SLBankHdrs) is now
+ * intentionally ignored for balance values — see computeCashBalancesFromGL
+ * for the rationale. The argument is retained for call-site compatibility.
+ */
 async function saveCash(
   companyId: string,
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly',
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   records: Record<string, unknown>[]
 ): Promise<number> {
-  const assetCashMappings = await prisma.accountMapping.findMany({
+  const cashMappings = await prisma.accountMapping.findMany({
     where: {
       companyId,
       targetField: { in: ['cash', 'otherCA'] },
@@ -2587,60 +2669,102 @@ async function saveCash(
       qbAccountCode: true,
     },
   });
-  const normalizeToken = (value: string | null | undefined): string =>
-    String(value || '')
-      .trim()
-      .toLowerCase()
-      .replace(/^cash\s*-\s*/i, '');
-  const assetCashTokens = new Set<string>();
-  for (const mapping of assetCashMappings) {
-    for (const rawToken of [mapping.qbAccount, mapping.qbAccountId, mapping.qbAccountCode]) {
-      const token = normalizeToken(rawToken);
-      if (token) assetCashTokens.add(token);
+
+  // Build a stable set of accountId candidates from the mapping. We probe
+  // multiple mapping fields (qbAccountId, qbAccountCode, qbAccount) because
+  // Infor companies sometimes carry the GL account number in any of those
+  // slots depending on how the connection was originally configured.
+  const accountIdCandidates = new Set<string>();
+  const mappingNames = new Map<string, string>();
+  for (const mapping of cashMappings) {
+    for (const candidate of [mapping.qbAccountId, mapping.qbAccountCode, mapping.qbAccount]) {
+      const trimmed = String(candidate || '').trim();
+      if (trimmed) {
+        accountIdCandidates.add(trimmed);
+        if (mapping.qbAccount && !mappingNames.has(trimmed)) {
+          mappingNames.set(trimmed, String(mapping.qbAccount).trim());
+        }
+      }
     }
   }
 
   await prisma.cashSnapshot.deleteMany({ where: { companyId, frequency, snapshotDate } });
-  const rows = records
-    .map((record, idx) => {
-      const accountName =
-        pickString(record, [
-          'accountName',
-          'bankAccount',
-          'name',
-          'Name',
-          'ACNM',
-          'bankName',
-          'ChtDescription',
-          'ChaDescription',
-        ]) ||
-        `Cash Account ${idx + 1}`;
-      const accountId = pickString(record, ['accountId', 'accountNumber', 'ACID', 'bankId', 'Acct']);
-      const accountNumber = pickString(record, ['accountNumber', 'ACNO', 'Acct']);
-      const balance = pickNumber(record, ['balance', 'cashBalance', 'amount', 'BALA', 'BAL', 'DomBalance', 'ForBalance']);
-      const shouldNormalizeSign =
-        Number.isFinite(balance) &&
-        balance < 0 &&
-        [accountId, accountNumber, accountName]
-          .map((value) => normalizeToken(value))
-          .some((token) => token && assetCashTokens.has(token));
+
+  if (accountIdCandidates.size === 0) return 0;
+
+  const accountIds = Array.from(accountIdCandidates);
+  const [balances, displayMeta] = await Promise.all([
+    computeCashBalancesFromGL(companyId, accountIds, snapshotDate),
+    resolveCashAccountDisplay(companyId, accountIds, mappingNames),
+  ]);
+
+  const rows = accountIds
+    .map((accountId) => {
+      const balance = balances.get(accountId) ?? 0;
+      const display = displayMeta.get(accountId) || {
+        accountName: mappingNames.get(accountId) || accountId,
+        accountNumber: accountId,
+      };
       return {
         companyId,
         snapshotDate,
         frequency,
         accountId,
-        accountName,
-        accountNumber,
-        cashBalance: shouldNormalizeSign ? Math.abs(balance) : balance,
+        accountName: display.accountName,
+        accountNumber: display.accountNumber,
+        cashBalance: balance,
         changeAmount: null as number | null,
         changePercent: null as number | null,
       };
     })
-    .filter((row) => row.accountName && Number.isFinite(row.cashBalance));
+    .filter((row) => Number.isFinite(row.cashBalance));
 
   if (rows.length === 0) return 0;
   await prisma.cashSnapshot.createMany({ data: rows });
   return rows.length;
+}
+
+/**
+ * Recompute CashSnapshot rows from GLTransactionFact for every date in
+ * [startDate, endDate] inclusive, at the given frequency. Idempotent:
+ * existing snapshots for each (companyId, frequency, snapshotDate) are
+ * deleted and rewritten from current GL state.
+ *
+ * Returns the total number of CashSnapshot rows written across the range.
+ */
+export async function rebuildAllCashSnapshotsFromGL(
+  companyId: string,
+  startDate: Date,
+  endDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly' = 'daily'
+): Promise<{ datesProcessed: number; rowsWritten: number }> {
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
+    throw new Error('rebuildAllCashSnapshotsFromGL: invalid startDate');
+  }
+  if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) {
+    throw new Error('rebuildAllCashSnapshotsFromGL: invalid endDate');
+  }
+  if (startDate.getTime() > endDate.getTime()) {
+    throw new Error('rebuildAllCashSnapshotsFromGL: startDate must be <= endDate');
+  }
+
+  let datesProcessed = 0;
+  let rowsWritten = 0;
+  const cursor = new Date(
+    Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate())
+  );
+  const stop = new Date(
+    Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate())
+  );
+
+  while (cursor.getTime() <= stop.getTime()) {
+    const written = await saveCash(companyId, new Date(cursor.getTime()), frequency, []);
+    rowsWritten += written;
+    datesProcessed += 1;
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return { datesProcessed, rowsWritten };
 }
 
 /** Prefer GL posting date when present; otherwise transaction / record date. */
