@@ -15,6 +15,7 @@ import {
   cancelQueueRun,
   mapQueueRunToLegacy,
 } from '@/lib/infor-m3/sync-queue';
+import { isInforSyncInProcessWorkerEnabled } from '@/lib/infor-m3/operational-sync-handler';
 
 export const dynamic = 'force-dynamic';
 
@@ -200,8 +201,8 @@ export async function POST(request: NextRequest) {
     let mode = normalizeMode(body.mode);
     const backfillMonths = normalizePositiveInt(body.backfillMonths);
     const lookbackDays = normalizePositiveInt(body.lookbackDays);
-    const startDate = normalizeIsoDate(body.startDate);
-    const endDate = normalizeIsoDate(body.endDate);
+    let startDate = normalizeIsoDate(body.startDate);
+    let endDate = normalizeIsoDate(body.endDate);
     const salesOnly = body.salesOnly === true || String(body.scope || '').trim().toLowerCase() === 'sales';
 
     if (rawIngestOnlyMode && !allowRawIngestOnly) {
@@ -231,11 +232,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Large CSI backfills can exceed per-request limits if run as broad windows.
-    // Force resilient business-day chunking for daily CSI history runs.
+    // Force resilient business-day chunking for daily CSI history runs — UNLESS
+    // the in-process Render worker is enabled. Phase 2 (in-process) has no 300s
+    // Vercel maxDuration cap, so a single-shot 'backfill' over a multi-year
+    // window is the fastest path: each enabled IDO is fetched once with full
+    // pagination, instead of fanning out per business day and re-fetching the
+    // entire (non-date-filtered) IDO every day.
+    //
+    // Caller can also explicitly bypass the override with allowSingleShotBackfill=true
+    // even when in-process is off, e.g. for manual one-off recoveries.
     const hasCustomWindow = Boolean(startDate && endDate);
     let effectiveBackfillMonths = hasCustomWindow
       ? monthsBetweenInclusive(startDate as string, endDate as string)
       : backfillMonths;
+    const allowSingleShotBackfill =
+      body.allowSingleShotBackfill === true || isInforSyncInProcessWorkerEnabled();
     if (queuePlatform === 'INFOR_M3' && inforSystem === 'INFOR_CSI' && frequency === 'daily') {
       const requestedMode = mode;
       const looksLikeLargeManualWindow =
@@ -246,7 +257,14 @@ export async function POST(request: NextRequest) {
       const isCustomWindowHistory =
         hasCustomWindow && monthsBetweenInclusive(startDate as string, endDate as string) >= 2;
       const isImplicitHistory = !requestedMode && typeof backfillMonths === 'number' && backfillMonths >= 2;
-      if (isLargeBackfillMode || looksLikeLargeManualWindow || isImplicitHistory) {
+      // When in-process worker is on, an explicit mode='backfill' is honored as
+      // single-shot (no per-day fanout). Implicit history (no requested mode)
+      // and 'manual' over big windows still get rewritten to business_day_backfill
+      // to preserve daily snapshot rollup semantics.
+      const shouldForceBusinessDayChunking = allowSingleShotBackfill
+        ? looksLikeLargeManualWindow || isImplicitHistory
+        : isLargeBackfillMode || looksLikeLargeManualWindow || isImplicitHistory;
+      if (shouldForceBusinessDayChunking) {
         mode = 'business_day_backfill';
         if (!effectiveBackfillMonths) {
           effectiveBackfillMonths =
@@ -255,8 +273,23 @@ export async function POST(request: NextRequest) {
               : 36;
         }
       }
-      if (isCustomWindowHistory) {
+      if (isCustomWindowHistory && !allowSingleShotBackfill) {
         mode = 'business_day_backfill';
+      }
+      // For an explicit single-shot backfill with no custom window, derive a
+      // window from backfillMonths so syncInforM3OperationalData has dates to
+      // page over (otherwise it falls through to a 30-day daily_overlap window).
+      if (allowSingleShotBackfill && mode === 'backfill' && !hasCustomWindow) {
+        const months =
+          typeof backfillMonths === 'number' && Number.isFinite(backfillMonths) && backfillMonths > 0
+            ? Math.floor(backfillMonths)
+            : 36;
+        const end = new Date();
+        const start = new Date(end);
+        start.setMonth(start.getMonth() - months);
+        startDate = start.toISOString();
+        endDate = end.toISOString();
+        effectiveBackfillMonths = months;
       }
     }
 
