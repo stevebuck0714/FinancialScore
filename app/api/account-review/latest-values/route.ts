@@ -750,7 +750,10 @@ export async function GET(request: NextRequest) {
     const factValues = await collectValuesFromGlTransactionFacts(companyId, targetMonth);
     for (const [key, value] of factValues.entries()) {
       if (!bsAccountKeySet.has(key)) continue;
-      if (!valueByKey.has(key)) valueByKey.set(key, value);
+      // BS accounts must be EOM cumulative balances. Override any movement-based
+      // value written by SLGLTRANS-derived sources (#1, #2) so e.g. Inventory
+      // doesn't render the March consumption instead of the 3/31 balance.
+      valueByKey.set(key, value);
     }
 
     // QBO account review does not have GLTransactionFact-style account movement sources.
