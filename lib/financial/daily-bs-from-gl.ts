@@ -22,6 +22,16 @@
  * the YTD lower bound is `max(fiscalYearStart, anchorDate)` so we never
  * double-count activity already baked into the anchor.
  *
+ * Retained Earnings on any snapshotDate is computed as:
+ *   anchor.retainedEarnings
+ *   + GL postings to RE accounts in (anchorDate, snapshotDate]   ← closing JEs etc.
+ *   + prior-period NI in (anchorDate, fiscalYearStart)            ← unclosed prior-FY earnings
+ *   + YTD NI in [fiscalYearStart, snapshotDate]                   ← current-FY P&L
+ * The "prior-period NI" term handles companies that don't post year-end
+ * closing JEs — without it, an unclosed prior FY's earnings would vanish
+ * the moment the fiscal year rolls over (YTD restarts at zero, BS-window
+ * sum on RE accounts has nothing because no closing JE was posted).
+ *
  * Same architectural pattern as rebuildAllCashSnapshotsFromGL in
  * lib/infor-m3/operational-sync.ts, generalized to the full balance sheet
  * plus YTD P&L and a derived rolling Retained Earnings.
@@ -447,10 +457,47 @@ export async function computeDailyBalanceSheetFromGL(
       ? sumGLByAccount(companyId, accountIds, null, snapshotDate, anchor!.anchorDate)
       : sumGLByAccount(companyId, accountIds, fiscalYearStart, snapshotDate);
 
-  const [bsRaw, ytdRaw] = await Promise.all([bsRawPromise, ytdRawPromise]);
+  // Prior-period P&L aggregation (anchorDate, fiscalYearStart):
+  //
+  // Captures any net income earned between the anchor and the start of the
+  // current fiscal year that wasn't formally closed to RE via a year-end
+  // closing JE. Without this, an unclosed prior FY's P&L gets stranded:
+  // the BS-window sum on RE accounts misses it (no GL posting to RE),
+  // and the YTD-window sum starts at fiscalYearStart (excludes prior FY).
+  //
+  // When the prior FY *was* closed via JE, prior-FY revenue/expense
+  // balances net to ~0 over this window (closing JE cancels them), so
+  // priorPeriodNI ≈ 0 and the closing posting to RE is already in
+  // bsByField['retainedEarnings'] — this addition is a no-op.
+  // When the prior FY was *not* closed, priorPeriodNI is exactly the
+  // missing earnings.
+  //
+  // Window upper bound = (fiscalYearStart - 1ms) — strictly before
+  // fiscalYearStart so we don't double-count current-FY YTD activity.
+  const needsPriorPeriodNI =
+    useAnchor && anchor!.anchorDate.getTime() < fiscalYearStart.getTime();
+  const priorPeriodRawPromise = needsPriorPeriodNI
+    ? sumGLByAccount(
+        companyId,
+        accountIds,
+        null,
+        new Date(fiscalYearStart.getTime() - 1),
+        anchor!.anchorDate
+      )
+    : Promise.resolve(new Map<string, number>());
+
+  const [bsRaw, ytdRaw, priorPeriodRaw] = await Promise.all([
+    bsRawPromise,
+    ytdRawPromise,
+    priorPeriodRawPromise,
+  ]);
 
   const bsByField = aggregateByTargetField(bsRaw, accountIdToTarget);
   const ytdByField = aggregateByTargetField(ytdRaw, accountIdToTarget);
+  const priorPeriodByField = aggregateByTargetField(
+    priorPeriodRaw,
+    accountIdToTarget
+  );
 
   const get = (m: Map<string, number>, k: string) => m.get(k) || 0;
 
@@ -484,10 +531,26 @@ export async function computeDailyBalanceSheetFromGL(
   const additionalPaidInCapital =
     anchorVal('additionalPaidInCapital') + get(bsByField, 'additionalPaidInCapital');
   const treasuryStock = anchorVal('treasuryStock') + get(bsByField, 'treasuryStock');
-  // Booked RE = anchor RE + any GL postings to RE accounts in the delta window.
-  // For a clean FY-end anchor this delta is typically ~0 because closing
-  // entries went into the anchor; non-zero values here are honored.
-  const bookedRE = anchorVal('retainedEarnings') + get(bsByField, 'retainedEarnings');
+  // Prior-period NI (see comment above sumGLByAccount call): folds any
+  // unclosed prior-FY earnings into RE so they don't get stranded when
+  // the fiscal year rolls over without a closing JE.
+  const priorPeriodRevenue = get(priorPeriodByField, 'revenue');
+  const priorPeriodNonOpInc = get(priorPeriodByField, 'nonOperatingIncome');
+  let priorPeriodExpense = 0;
+  for (const f of EXPENSE_PNL_FIELDS) {
+    priorPeriodExpense += get(priorPeriodByField, f);
+  }
+  const priorPeriodNetIncome =
+    priorPeriodRevenue + priorPeriodNonOpInc - priorPeriodExpense;
+
+  // Booked RE = anchor RE + GL postings to RE accounts in the BS window
+  //           + any prior-FY NI that wasn't closed via GL.
+  // For a clean FY-end anchor or a fully-closed prior year this last term
+  // is ~0; for unclosed prior years it captures the carryover earnings.
+  const bookedRE =
+    anchorVal('retainedEarnings') +
+    get(bsByField, 'retainedEarnings') +
+    priorPeriodNetIncome;
 
   // YTD P&L (signed positive: revenue +, expense +)
   const revenue = get(ytdByField, 'revenue');
