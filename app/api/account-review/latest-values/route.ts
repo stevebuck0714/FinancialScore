@@ -404,6 +404,103 @@ async function collectValuesFromGlTransactionFacts(companyId: string, targetMont
   return valueByKey;
 }
 
+/**
+ * Trusted, per-account end-of-period balance for balance-sheet accounts.
+ *
+ * Picks the most recent BalanceSheetAccountAnchor <= month-end, then for each
+ * anchored account computes
+ *   value = openingBalance + SUM(GLTransactionFact.signedAmount)
+ *           where transDate > anchorDate AND transDate <= monthEnd
+ * which is the same anchor + delta pattern the daily balance sheet uses.
+ *
+ * Only emits id:* and name:* aliases. The caller decides precedence; this
+ * function never returns rollup target:* keys.
+ */
+async function collectValuesFromPerAccountAnchors(
+  companyId: string,
+  targetMonth: string | null,
+): Promise<{ values: Map<string, number>; anchorDate: Date | null; accountCount: number }> {
+  const valueByKey = new Map<string, number>();
+  const monthEnd = resolveMonthEndUtc(targetMonth);
+  if (!monthEnd) {
+    return { values: valueByKey, anchorDate: null, accountCount: 0 };
+  }
+
+  const anchorDateRows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{ anchorDate: Date }>>`
+      SELECT "anchorDate"
+      FROM "BalanceSheetAccountAnchor"
+      WHERE "companyId" = ${companyId}
+        AND "anchorDate" <= ${monthEnd}
+      ORDER BY "anchorDate" DESC
+      LIMIT 1
+    `,
+    'account-review.latest-values.collectValuesFromPerAccountAnchors.anchorDate',
+  );
+  const anchorDate = anchorDateRows[0]?.anchorDate ?? null;
+  if (!anchorDate) {
+    return { values: valueByKey, anchorDate: null, accountCount: 0 };
+  }
+
+  const rows = await withPrismaReconnectRetry(
+    () => prisma.$queryRaw<Array<{
+      accountId: string;
+      accountName: string | null;
+      accountCode: string | null;
+      openingBalance: number;
+      delta: number | null;
+    }>>`
+      WITH anchors AS (
+        SELECT
+          TRIM("accountId") AS "accountId",
+          NULLIF(TRIM(COALESCE("accountName", '')), '') AS "accountName",
+          NULLIF(TRIM(COALESCE("accountCode", '')), '') AS "accountCode",
+          "openingBalance"::double precision AS "openingBalance"
+        FROM "BalanceSheetAccountAnchor"
+        WHERE "companyId" = ${companyId}
+          AND "anchorDate" = ${anchorDate}
+      ),
+      deltas AS (
+        SELECT
+          TRIM(g."accountId") AS "accountId",
+          SUM(g."signedAmount")::double precision AS "delta"
+        FROM "GLTransactionFact" g
+        WHERE g."companyId" = ${companyId}
+          AND g."transDate" > ${anchorDate}
+          AND g."transDate" <= ${monthEnd}
+          AND TRIM(g."accountId") IN (SELECT "accountId" FROM anchors)
+        GROUP BY 1
+      )
+      SELECT
+        a."accountId",
+        a."accountName",
+        a."accountCode",
+        a."openingBalance",
+        d."delta"
+      FROM anchors a
+      LEFT JOIN deltas d ON d."accountId" = a."accountId"
+    `,
+    'account-review.latest-values.collectValuesFromPerAccountAnchors.compute',
+  );
+
+  let accountCount = 0;
+  for (const row of rows || []) {
+    const acct = String(row.accountId || '').trim();
+    if (!acct) continue;
+    const opening = normalizeNumber(row.openingBalance);
+    const delta = normalizeNumber(row.delta);
+    const value = opening + delta;
+    accountCount += 1;
+    setAccountValueByAliases(valueByKey, acct, value);
+    const code = String(row.accountCode || '').trim();
+    if (code) setAccountValueByAliases(valueByKey, code, value);
+    const name = String(row.accountName || '').trim().toLowerCase();
+    if (name) valueByKey.set(`name:${name}`, value);
+  }
+
+  return { values: valueByKey, anchorDate, accountCount };
+}
+
 async function collectMonthlyMovementFromGlTransactionFacts(companyId: string, targetMonth: string | null): Promise<Map<string, number>> {
   const valueByKey = new Map<string, number>();
   const monthStart = resolveMonthStartUtc(targetMonth);
@@ -756,6 +853,16 @@ export async function GET(request: NextRequest) {
       valueByKey.set(key, value);
     }
 
+    // Most authoritative BS source: per-account anchor + GL delta. Mirrors the
+    // anchor pattern used by lib/financial/daily-bs-from-gl.ts so per-account
+    // EOM balances include pre-ingest activity (cash, fixed assets,
+    // accumulated depreciation, etc. that have non-zero opening balances).
+    // Always overwrites prior sources for the keys it produces.
+    const perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
+    for (const [key, value] of perAccountAnchorResult.values.entries()) {
+      valueByKey.set(key, value);
+    }
+
     // QBO account review does not have GLTransactionFact-style account movement sources.
     // Fill account rows directly from latest mapped MonthlyFinancial fields.
     if (accountingSystem === 'QUICKBOOKS' || accountingSystem === 'QUICKBOOKS_DESKTOP') {
@@ -771,6 +878,12 @@ export async function GET(request: NextRequest) {
       targetMonth,
       count: valueByKey.size,
       values: Object.fromEntries(valueByKey.entries()),
+      perAccountAnchor: perAccountAnchorResult.anchorDate
+        ? {
+            anchorDate: perAccountAnchorResult.anchorDate.toISOString().slice(0, 10),
+            accountsWithAnchor: perAccountAnchorResult.accountCount,
+          }
+        : null,
     };
     latestValuesResponseCache.set(cacheKey, {
       cachedAt: Date.now(),

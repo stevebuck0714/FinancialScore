@@ -1787,3 +1787,38 @@ model BalanceSheetAnchor {
   @@unique([companyId, anchorDate])
   @@index([companyId, anchorDate(sort: Desc)])
 }
+
+// Per-account opening balance at a trusted external anchor date.
+// Companion to BalanceSheetAnchor (which only stores rollups). Each row
+// records the GL-signed opening balance for a single account so per-account
+// reports (Account Review, future drilldowns) can render
+// `openingBalance + GL_delta(this account, anchor < transDate <= asOf)`
+// instead of summing GL from time zero (which omits pre-ingest activity).
+//
+// Sign convention: GL-signed. Debits positive, credits negative. So a Cash
+// account opening at $50,000 debit balance is stored as +50000; an AP
+// account opening at $700,000 credit balance is stored as -700000; an
+// Accumulated Depreciation account opening at $10,000 credit is stored as
+// -10000. The display layer reads the sign to decide whether to render
+// "(CR)".
+//
+// Multiple anchor dates per company are allowed; consumers pick the most
+// recent anchorDate <= asOfDate.
+model BalanceSheetAccountAnchor {
+  id              String   @id @default(cuid())
+  companyId       String
+  anchorDate      DateTime // EOD balance-sheet date (UTC midnight)
+  accountId       String   // GL accountId as it appears in GLTransactionFact
+  accountName     String?  // human label captured at anchor time
+  accountCode     String?  // optional secondary identifier
+  openingBalance  Float    @default(0) // GL-signed (debit positive, credit negative)
+
+  source          String?  // provenance label (e.g. "INFOR_M3_TB_2023-12-31")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([companyId, anchorDate, accountId])
+  @@index([companyId, anchorDate(sort: Desc)])
+  @@index([companyId, accountId])
+}
