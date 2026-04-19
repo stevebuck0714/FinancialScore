@@ -503,11 +503,13 @@ function inferRowsBySource(glResponses: unknown[]): { chartRows: JsonRecord[]; l
 
     const programHint = sourceProgram.toUpperCase();
     if (programHint === 'SLCHARTS') {
-      chartRows.push(...rows);
+      // Avoid Array.push(...rows): V8 caps spread args (~65k–125k) which
+      // RangeErrors on large CSI ledger rebuilds (Atlantic Precision: 14k+).
+      for (const row of rows) chartRows.push(row);
       continue;
     }
     if (GL_TRANSACTION_PROGRAM_HINTS.has(programHint)) {
-      explicitGlTransactionRows.push(...rows);
+      for (const row of rows) explicitGlTransactionRows.push(row);
       continue;
     }
 
