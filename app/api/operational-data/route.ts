@@ -1112,6 +1112,77 @@ async function buildDailyApSeriesByAgingRule(
  * ground truth. Per-vendor / per-bill tables that need to tie to that chart
  * total should source from this helper, NOT from APOpenBillSnapshot.
  */
+// Atlantic uses a small fixed set of payment-terms codes on Infor M3.
+// Maps each code to net days (Days from invoice date until payment is due).
+// DUR = "Due Upon Receipt" → 0 days. New codes can be added here without
+// any other code changes.
+const TERMS_CODE_DAYS: Record<string, number> = {
+  N5: 5,
+  N30: 30,
+  N45: 45,
+  N60: 60,
+  N80: 80,
+  N90: 90,
+  DUR: 0,
+};
+
+// Final fallback when both voucher.termsCode and vendor.termsCode are
+// blank or unrecognized. N30 is the most common B2B default and gives a
+// 30-day grace window before vouchers start landing in past-due buckets.
+const DEFAULT_TERMS_DAYS = 30;
+const DEFAULT_TERMS_LABEL = 'default:N30';
+
+function termsCodeToDays(code: string | null | undefined): number | null {
+  if (!code) return null;
+  const trimmed = String(code).trim().toUpperCase();
+  if (!trimmed) return null;
+  return Object.prototype.hasOwnProperty.call(TERMS_CODE_DAYS, trimmed)
+    ? TERMS_CODE_DAYS[trimmed]
+    : null;
+}
+
+/**
+ * Derive a due date for an AP voucher using a 3-tier cascade:
+ *   1. voucher.termsCode (best — explicit on the voucher)
+ *   2. vendor.termsCode  (vendor master default — covers most blanks)
+ *   3. DEFAULT_TERMS_DAYS (final safety net — N30)
+ *
+ * Returns the derived due date plus the source label for transparency
+ * ('voucher:N30', 'vendor:N45', or 'default:N30'). When invoiceDate is
+ * missing we have no anchor to add days to, so we fall back to the
+ * voucher creation date — same imperfect behaviour as before that anchor
+ * for that one bucket.
+ */
+function deriveVoucherDueDate(params: {
+  invoiceDate: Date | null;
+  voucherCreatedAt: Date;
+  voucherTermsCode: string | null | undefined;
+  vendorTermsCode: string | null | undefined;
+}): { dueDate: Date; termsCodeUsed: string } {
+  const anchor = params.invoiceDate ? startOfUtcDay(params.invoiceDate) : startOfUtcDay(params.voucherCreatedAt);
+
+  const voucherDays = termsCodeToDays(params.voucherTermsCode);
+  if (voucherDays !== null) {
+    return {
+      dueDate: new Date(anchor.getTime() + voucherDays * 86400000),
+      termsCodeUsed: `voucher:${String(params.voucherTermsCode).trim().toUpperCase()}`,
+    };
+  }
+
+  const vendorDays = termsCodeToDays(params.vendorTermsCode);
+  if (vendorDays !== null) {
+    return {
+      dueDate: new Date(anchor.getTime() + vendorDays * 86400000),
+      termsCodeUsed: `vendor:${String(params.vendorTermsCode).trim().toUpperCase()}`,
+    };
+  }
+
+  return {
+    dueDate: new Date(anchor.getTime() + DEFAULT_TERMS_DAYS * 86400000),
+    termsCodeUsed: DEFAULT_TERMS_LABEL,
+  };
+}
+
 async function buildOpenVouchersByAgingRule(
   prismaClient: any,
   companyId: string,
@@ -1126,6 +1197,10 @@ async function buildOpenVouchersByAgingRule(
     voucherCreatedAt: Date;
     invoiceDate: Date | null;
     openBalance: number;
+    voucherTermsCode: string | null;
+    vendorTermsCode: string | null;
+    dueDate: Date;
+    termsCodeUsed: string;
   }>
 > {
   const asOfKey = dateKeyUtc(startOfUtcDay(asOfDate));
@@ -1138,6 +1213,8 @@ async function buildOpenVouchersByAgingRule(
     created_at: Date;
     invoice_date: Date | null;
     open_balance: any;
+    voucher_terms_code: string | null;
+    vendor_terms_code: string | null;
   }> = await prismaClient.$queryRawUnsafe(
     `WITH voucher_creates AS (
        SELECT
@@ -1163,13 +1240,25 @@ async function buildOpenVouchersByAgingRule(
          t.voucher,
          t."vendorId" AS vendor_id,
          t."vendorName" AS vendor_name,
-         t."invoiceDate" AS invoice_date
+         t."invoiceDate" AS invoice_date,
+         NULLIF(TRIM(t."termsCode"), '') AS voucher_terms_code
        FROM "APTransactionFact" t
        JOIN voucher_creates vc ON vc.voucher = t.voucher
        WHERE t."companyId" = $1
          AND t."apAcct" = $2
          AND t."transType" = 'V'
        ORDER BY t.voucher, t."eventDate" ASC
+     ),
+     vendor_terms AS (
+       SELECT DISTINCT ON ("vendorId")
+         "vendorId",
+         NULLIF(TRIM("termsCode"), '') AS vendor_terms_code
+       FROM "VendorSnapshot"
+       WHERE "companyId" = $1
+         AND "vendorId" IS NOT NULL
+         AND "termsCode" IS NOT NULL
+         AND TRIM("termsCode") <> ''
+       ORDER BY "vendorId", "snapshotDate" DESC
      ),
      open_per_voucher AS (
        SELECT
@@ -1186,23 +1275,42 @@ async function buildOpenVouchersByAgingRule(
        COALESCE(NULLIF(TRIM(vm.vendor_name), ''), 'Unknown Vendor') AS vendor_name,
        opv.created_at,
        vm.invoice_date,
-       opv.open_balance
+       opv.open_balance,
+       vm.voucher_terms_code,
+       vt.vendor_terms_code
      FROM open_per_voucher opv
      LEFT JOIN voucher_meta vm ON vm.voucher = opv.voucher
+     LEFT JOIN vendor_terms vt ON vt."vendorId" = vm.vendor_id
      WHERE opv.open_balance > 0`,
     companyId,
     apAcct,
     asOfKey
   );
 
-  return rows.map((r) => ({
-    voucher: String(r.voucher),
-    vendorId: r.vendor_id ? String(r.vendor_id) : null,
-    vendorName: String(r.vendor_name || 'Unknown Vendor'),
-    voucherCreatedAt: new Date(r.created_at),
-    invoiceDate: r.invoice_date ? new Date(r.invoice_date) : null,
-    openBalance: Number(r.open_balance || 0),
-  }));
+  return rows.map((r) => {
+    const voucherCreatedAt = new Date(r.created_at);
+    const invoiceDate = r.invoice_date ? new Date(r.invoice_date) : null;
+    const voucherTermsCode = r.voucher_terms_code ? String(r.voucher_terms_code) : null;
+    const vendorTermsCode = r.vendor_terms_code ? String(r.vendor_terms_code) : null;
+    const { dueDate, termsCodeUsed } = deriveVoucherDueDate({
+      invoiceDate,
+      voucherCreatedAt,
+      voucherTermsCode,
+      vendorTermsCode,
+    });
+    return {
+      voucher: String(r.voucher),
+      vendorId: r.vendor_id ? String(r.vendor_id) : null,
+      vendorName: String(r.vendor_name || 'Unknown Vendor'),
+      voucherCreatedAt,
+      invoiceDate,
+      openBalance: Number(r.open_balance || 0),
+      voucherTermsCode,
+      vendorTermsCode,
+      dueDate,
+      termsCodeUsed,
+    };
+  });
 }
 
 /**
@@ -4402,8 +4510,10 @@ export async function GET(request: NextRequest) {
                 // that SUM(unpaidByVendor.totalDue) ties to the latest trend
                 // chart total, because both come from the same SQL on the same
                 // apAcct over the same aging window. Buckets here are based on
-                // (asOfDate - voucherCreatedAt) since APTransactionFact has no
-                // dueDate; that's the same aging anchor the chart uses.
+                // (asOfDate - derivedDueDate). dueDate is derived inside
+                // buildOpenVouchersByAgingRule via the cascade voucher.termsCode
+                // → vendor.termsCode → N30 default, applied to invoiceDate
+                // (or voucherCreatedAt if invoiceDate is missing).
                 if (latestAP) {
                   try {
                     const apAsOfDateForVendors = startOfUtcDay(new Date(latestAP.snapshotDate));
@@ -4427,8 +4537,8 @@ export async function GET(request: NextRequest) {
                       };
                       const vendorMap = new Map<string, VendorAgg>();
                       for (const v of openVouchers) {
-                        const ageDays = Math.floor(
-                          (asOfMs - startOfUtcDay(v.voucherCreatedAt).getTime()) / 86400000
+                        const daysPastDue = Math.floor(
+                          (asOfMs - startOfUtcDay(v.dueDate).getTime()) / 86400000
                         );
                         const amt = Number(v.openBalance || 0);
                         if (!Number.isFinite(amt) || amt <= 0) continue;
@@ -4446,15 +4556,53 @@ export async function GET(request: NextRequest) {
                         }
                         const agg = vendorMap.get(key)!;
                         agg.totalDue += amt;
-                        if (ageDays < 0) agg.current += amt;
-                        else if (ageDays <= 30) agg.days1to30 += amt;
-                        else if (ageDays <= 60) agg.days31to60 += amt;
-                        else if (ageDays <= 90) agg.days61to90 += amt;
+                        if (daysPastDue < 0) agg.current += amt;
+                        else if (daysPastDue <= 30) agg.days1to30 += amt;
+                        else if (daysPastDue <= 60) agg.days31to60 += amt;
+                        else if (daysPastDue <= 90) agg.days61to90 += amt;
                         else agg.days90plus += amt;
                       }
                       unpaidByVendor = Array.from(vendorMap.values()).sort(
                         (a, b) => b.totalDue - a.totalDue
                       );
+
+                      // Per-bill (per-voucher) list sourced from the same
+                      // openVouchers rows. dueDate is the derived due date
+                      // from the termsCode cascade so the Unpaid Bills table
+                      // shows real (or vendor-default) dates and the Upcoming
+                      // Due Calendar can schedule against them.
+                      unpaidBills = openVouchers
+                        .filter((v) => Number(v.openBalance || 0) > 0)
+                        .sort((a, b) => Number(b.openBalance || 0) - Number(a.openBalance || 0))
+                        .slice(0, 500)
+                        .map((v) => ({
+                          vendorName: v.vendorName || 'Unknown Vendor',
+                          billNo: v.voucher,
+                          date: v.invoiceDate
+                            ? v.invoiceDate.toISOString().slice(0, 10)
+                            : v.voucherCreatedAt.toISOString().slice(0, 10),
+                          dueDate: v.dueDate.toISOString().slice(0, 10),
+                          amountDue: Number(v.openBalance || 0),
+                        }));
+
+                      // vendorBills uses the same per-voucher source so the
+                      // CA-AP per-vendor drilldowns also tie to the chart.
+                      vendorBills = openVouchers
+                        .filter((v) => Number(v.openBalance || 0) > 0)
+                        .sort((a, b) => Number(b.openBalance || 0) - Number(a.openBalance || 0))
+                        .slice(0, 500)
+                        .map((v) => ({
+                          vendorName: v.vendorName || 'Unknown Vendor',
+                          billNo: v.voucher,
+                          date: v.invoiceDate
+                            ? v.invoiceDate.toISOString().slice(0, 10)
+                            : v.voucherCreatedAt.toISOString().slice(0, 10),
+                          dueDate: v.dueDate.toISOString().slice(0, 10),
+                          currency: 'USD',
+                          amountCurrency: Number(v.openBalance || 0),
+                          amountHome: Number(v.openBalance || 0),
+                          amountDueHome: Number(v.openBalance || 0),
+                        }));
                     }
                   } catch (err) {
                     console.error('[ap-aging] per-vendor voucher rebuild failed', err);
