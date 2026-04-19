@@ -164,7 +164,7 @@ function buildAccountIdToTarget(
 type GlSumRow = { accountId: string; balance: number | null };
 
 /**
- * Sum GL `debit - credit` per account, with flexible window semantics:
+ * Sum GL `signedAmount` per account, with flexible window semantics:
  *
  *   - `lowerBoundExclusive` set & `lowerBoundInclusive` null  → transDate >  lowerBoundExclusive
  *   - `lowerBoundInclusive` set & `lowerBoundExclusive` null  → transDate >= lowerBoundInclusive
@@ -175,6 +175,15 @@ type GlSumRow = { accountId: string; balance: number | null };
  * The exclusive variant is used when an anchor pins the EOD balance for
  * `anchorDate` — we only want to add transactions that happened *after* that
  * day to derive the new balance.
+ *
+ * NOTE: We sum `signedAmount` (NOT NULL) rather than `debitAmount - creditAmount`
+ * because the dr/cr split is not reliably populated across all source
+ * programs. Specifically, SLGLTRANS rows on Infor M3 ingests carry
+ * signedAmount only and leave debitAmount/creditAmount NULL — using dr-cr
+ * silently dropped large chunks of GL activity (e.g. for company APR's AP
+ * account 30100 in 2024, all 95 SLGLTRANS rows worth $292K of AP increases
+ * were lost). `signedAmount` is the dr-cr-equivalent in standard
+ * debit-positive convention and matches dr-cr on rows where both are populated.
  */
 async function sumGLByAccount(
   companyId: string,
@@ -194,7 +203,7 @@ async function sumGLByAccount(
     rows = await prisma.$queryRaw<GlSumRow[]>`
       SELECT
         "accountId",
-        SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
+        SUM("signedAmount")::float AS balance
       FROM "GLTransactionFact"
       WHERE "companyId" = ${companyId}
         AND "accountId" = ANY(${accountIds}::text[])
@@ -206,7 +215,7 @@ async function sumGLByAccount(
     rows = await prisma.$queryRaw<GlSumRow[]>`
       SELECT
         "accountId",
-        SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
+        SUM("signedAmount")::float AS balance
       FROM "GLTransactionFact"
       WHERE "companyId" = ${companyId}
         AND "accountId" = ANY(${accountIds}::text[])
@@ -218,7 +227,7 @@ async function sumGLByAccount(
     rows = await prisma.$queryRaw<GlSumRow[]>`
       SELECT
         "accountId",
-        SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
+        SUM("signedAmount")::float AS balance
       FROM "GLTransactionFact"
       WHERE "companyId" = ${companyId}
         AND "accountId" = ANY(${accountIds}::text[])
