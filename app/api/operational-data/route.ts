@@ -1020,13 +1020,59 @@ async function buildDailyApSeriesByAgingRule(
     apBalance: number;
     accountId: string | null;
     accountNumber: string | null;
+    // Per-day 5-bucket aging using the same termsCode cascade as
+    // buildOpenVouchersByAgingRule (voucher → vendor → N30 default).
+    // current = not-yet-due (daysPastDue < 0). 1-30 includes day 0.
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+    // Past-due percentages computed from the buckets above.
+    over30Pct: number;
+    over90Pct: number;
+    // Days Payable Outstanding using actual credit purchases (the
+    // rolling 90-day sum of voucher creations on this apAcct) as the
+    // denominator. Formula: dpo = apBalance * 90 / purchases_90d.
+    // Falls back to 0 when purchases_90d is 0.
+    dpo: number;
   }>
 > {
   const startKey = dateKeyUtc(startOfUtcDay(rangeStart));
   const endKey = dateKeyUtc(startOfUtcDay(rangeEnd));
   const aging = Number.isFinite(agingDays) && agingDays > 0 ? Math.floor(agingDays) : 150;
 
-  const rows: Array<{ snapshot_date: Date; open_ap: any }> = await prismaClient.$queryRawUnsafe(
+  // Inlined termsCode-to-days cascade (voucher → vendor → N30 default).
+  // Mirrors TERMS_CODE_DAYS / DEFAULT_TERMS_DAYS so the SQL stays in
+  // sync with the JS helpers used by buildOpenVouchersByAgingRule.
+  const termsCaseExpr = `CASE
+    WHEN vm.voucher_terms_code = 'N5'  THEN 5
+    WHEN vm.voucher_terms_code = 'N30' THEN 30
+    WHEN vm.voucher_terms_code = 'N45' THEN 45
+    WHEN vm.voucher_terms_code = 'N60' THEN 60
+    WHEN vm.voucher_terms_code = 'N80' THEN 80
+    WHEN vm.voucher_terms_code = 'N90' THEN 90
+    WHEN vm.voucher_terms_code = 'DUR' THEN 0
+    WHEN vt.vendor_terms_code  = 'N5'  THEN 5
+    WHEN vt.vendor_terms_code  = 'N30' THEN 30
+    WHEN vt.vendor_terms_code  = 'N45' THEN 45
+    WHEN vt.vendor_terms_code  = 'N60' THEN 60
+    WHEN vt.vendor_terms_code  = 'N80' THEN 80
+    WHEN vt.vendor_terms_code  = 'N90' THEN 90
+    WHEN vt.vendor_terms_code  = 'DUR' THEN 0
+    ELSE ${DEFAULT_TERMS_DAYS}
+  END`;
+
+  const rows: Array<{
+    snapshot_date: Date;
+    open_ap: any;
+    current_amt: any;
+    d_1_30: any;
+    d_31_60: any;
+    d_61_90: any;
+    d_90_plus: any;
+    purchases_90d: any;
+  }> = await prismaClient.$queryRawUnsafe(
     `WITH date_series AS (
        SELECT generate_series($3::date, $4::date, '1 day'::interval)::date AS d
      ),
@@ -1038,6 +1084,36 @@ async function buildDailyApSeriesByAgingRule(
          AND "eventDate" <= $4::date
        GROUP BY voucher
      ),
+     voucher_meta AS (
+       SELECT DISTINCT ON (t.voucher)
+         t.voucher,
+         t."vendorId" AS vendor_id,
+         t."invoiceDate"::date AS invoice_date,
+         NULLIF(TRIM(t."termsCode"), '') AS voucher_terms_code
+       FROM "APTransactionFact" t
+       JOIN voucher_creates vc ON vc.voucher = t.voucher
+       WHERE t."companyId" = $1 AND t."apAcct" = $2 AND t."transType" = 'V'
+       ORDER BY t.voucher, t."eventDate" ASC
+     ),
+     vendor_terms AS (
+       SELECT DISTINCT ON ("vendorId")
+         "vendorId",
+         NULLIF(TRIM("termsCode"), '') AS vendor_terms_code
+       FROM "VendorSnapshot"
+       WHERE "companyId" = $1
+         AND "vendorId" IS NOT NULL
+         AND "termsCode" IS NOT NULL
+         AND TRIM("termsCode") <> ''
+       ORDER BY "vendorId", "snapshotDate" DESC
+     ),
+     voucher_due AS (
+       SELECT
+         vm.voucher,
+         COALESCE(vm.invoice_date, vc.created_at) + (${termsCaseExpr} || ' days')::interval AS due_date
+       FROM voucher_meta vm
+       JOIN voucher_creates vc ON vc.voucher = vm.voucher
+       LEFT JOIN vendor_terms vt ON vt."vendorId" = vm.vendor_id
+     ),
      events AS (
        SELECT voucher, "eventDate"::date AS dt, "normalizedAmount"
        FROM "APTransactionFact"
@@ -1045,28 +1121,99 @@ async function buildDailyApSeriesByAgingRule(
          AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
          AND "eventDate" <= $4::date
      ),
-     daily AS (
-       SELECT ds.d AS snapshot_date, vc.voucher,
-              SUM(e."normalizedAmount") AS open_per_voucher
+     daily_voucher AS (
+       SELECT
+         ds.d AS snapshot_date,
+         vc.voucher,
+         GREATEST(COALESCE(SUM(CASE WHEN e.dt <= ds.d THEN e."normalizedAmount" ELSE 0 END), 0), 0) AS open_per_voucher,
+         (ds.d - vd.due_date::date)::int AS days_past_due
        FROM date_series ds
        JOIN voucher_creates vc
          ON vc.created_at > (ds.d - INTERVAL '${aging} days')
         AND vc.created_at <= ds.d
-       LEFT JOIN events e ON e.voucher = vc.voucher AND e.dt <= ds.d
-       GROUP BY ds.d, vc.voucher
+       JOIN voucher_due vd ON vd.voucher = vc.voucher
+       LEFT JOIN events e ON e.voucher = vc.voucher
+       GROUP BY ds.d, vc.voucher, vd.due_date
+     ),
+     daily_buckets AS (
+       SELECT
+         snapshot_date,
+         SUM(open_per_voucher) AS open_ap,
+         SUM(CASE WHEN days_past_due <  0                         THEN open_per_voucher ELSE 0 END) AS current_amt,
+         SUM(CASE WHEN days_past_due >= 0  AND days_past_due <= 30 THEN open_per_voucher ELSE 0 END) AS d_1_30,
+         SUM(CASE WHEN days_past_due >  30 AND days_past_due <= 60 THEN open_per_voucher ELSE 0 END) AS d_31_60,
+         SUM(CASE WHEN days_past_due >  60 AND days_past_due <= 90 THEN open_per_voucher ELSE 0 END) AS d_61_90,
+         SUM(CASE WHEN days_past_due >  90                         THEN open_per_voucher ELSE 0 END) AS d_90_plus
+       FROM daily_voucher
+       WHERE open_per_voucher > 0
+       GROUP BY snapshot_date
+     ),
+     daily_purchases AS (
+       SELECT
+         ds.d AS snapshot_date,
+         COALESCE(SUM(t."normalizedAmount"), 0) AS purchases_90d
+       FROM date_series ds
+       LEFT JOIN "APTransactionFact" t
+         ON t."companyId" = $1
+        AND t."apAcct"    = $2
+        AND t."transType" = 'V'
+        AND t."eventDate" >  (ds.d - INTERVAL '90 days')
+        AND t."eventDate" <= ds.d
+       GROUP BY ds.d
      )
-     SELECT snapshot_date,
-            COALESCE(SUM(GREATEST(open_per_voucher, 0)), 0) AS open_ap
-     FROM daily
-     GROUP BY snapshot_date
-     ORDER BY snapshot_date`,
+     SELECT
+       ds.d AS snapshot_date,
+       COALESCE(db.open_ap,     0) AS open_ap,
+       COALESCE(db.current_amt, 0) AS current_amt,
+       COALESCE(db.d_1_30,      0) AS d_1_30,
+       COALESCE(db.d_31_60,     0) AS d_31_60,
+       COALESCE(db.d_61_90,     0) AS d_61_90,
+       COALESCE(db.d_90_plus,   0) AS d_90_plus,
+       COALESCE(dp.purchases_90d, 0) AS purchases_90d
+     FROM date_series ds
+     LEFT JOIN daily_buckets   db ON db.snapshot_date = ds.d
+     LEFT JOIN daily_purchases dp ON dp.snapshot_date = ds.d
+     ORDER BY ds.d`,
     companyId, apAcct, startKey, endKey
   );
 
-  const balanceByKey = new Map<string, number>();
+  type DailyMetrics = {
+    apBalance: number;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+    over30Pct: number;
+    over90Pct: number;
+    dpo: number;
+  };
+
+  const metricsByKey = new Map<string, DailyMetrics>();
   for (const r of rows) {
     const k = dateKeyUtc(new Date(r.snapshot_date));
-    balanceByKey.set(k, Number(r.open_ap || 0));
+    const apBalance = Number(r.open_ap || 0);
+    const current = Number(r.current_amt || 0);
+    const days1to30 = Number(r.d_1_30 || 0);
+    const days31to60 = Number(r.d_31_60 || 0);
+    const days61to90 = Number(r.d_61_90 || 0);
+    const days90plus = Number(r.d_90_plus || 0);
+    const purchases90d = Number(r.purchases_90d || 0);
+    const pastDue = days1to30 + days31to60 + days61to90 + days90plus;
+    const over30Pct = apBalance > 0 ? (pastDue / apBalance) * 100 : 0;
+    const over90Pct = apBalance > 0 ? (days90plus / apBalance) * 100 : 0;
+    const dpo = apBalance > 0 && purchases90d > 0 ? (apBalance * 90) / purchases90d : 0;
+    metricsByKey.set(k, {
+      apBalance,
+      current,
+      days1to30,
+      days31to60,
+      days61to90,
+      days90plus,
+      over30Pct,
+      over90Pct,
+      dpo,
+    });
   }
 
   const out: Array<{
@@ -1075,25 +1222,52 @@ async function buildDailyApSeriesByAgingRule(
     apBalance: number;
     accountId: string | null;
     accountNumber: string | null;
+    current: number;
+    days1to30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+    over30Pct: number;
+    over90Pct: number;
+    dpo: number;
   }> = [];
+
   const DAY_MS = 24 * 60 * 60 * 1000;
   const start = startOfUtcDay(rangeStart);
   const end = startOfUtcDay(rangeEnd);
-  let lastBalance = 0;
+  let last: DailyMetrics = {
+    apBalance: 0,
+    current: 0,
+    days1to30: 0,
+    days31to60: 0,
+    days61to90: 0,
+    days90plus: 0,
+    over30Pct: 0,
+    over90Pct: 0,
+    dpo: 0,
+  };
   for (
     let cursor = new Date(start);
     cursor.getTime() <= end.getTime();
     cursor = new Date(cursor.getTime() + DAY_MS)
   ) {
     const k = dateKeyUtc(cursor);
-    const bal = balanceByKey.has(k) ? balanceByKey.get(k)! : lastBalance;
-    lastBalance = bal;
+    const m = metricsByKey.has(k) ? metricsByKey.get(k)! : last;
+    last = m;
     out.push({
       snapshotDate: parseIsoDayKey(k),
       accountName,
-      apBalance: bal,
+      apBalance: m.apBalance,
       accountId: apAcct,
       accountNumber: accountNumber || apAcct,
+      current: m.current,
+      days1to30: m.days1to30,
+      days31to60: m.days31to60,
+      days61to90: m.days61to90,
+      days90plus: m.days90plus,
+      over30Pct: m.over30Pct,
+      over90Pct: m.over90Pct,
+      dpo: m.dpo,
     });
   }
   return out;
@@ -4437,12 +4611,41 @@ export async function GET(request: NextRequest) {
             150
           );
           if (dailyGlAp.length > 0) {
-            const glApTotalByDay = new Map<string, number>();
+            // Hold the full per-day metric record so we can pick the
+            // latest day per reporting period (week / month) for the
+            // Payment Cadence chart, AP aging trend chart, and KPIs.
+            // All of these are now sourced from the same SQL pass in
+            // buildDailyApSeriesByAgingRule and use the termsCode
+            // cascade for dueDate, so every column ties to every other.
+            type DailyApRecord = {
+              snapshotDate: Date;
+              apBalance: number;
+              current: number;
+              days1to30: number;
+              days31to60: number;
+              days61to90: number;
+              days90plus: number;
+              over30Pct: number;
+              over90Pct: number;
+              dpo: number;
+            };
+            const glApRecordByDay = new Map<string, DailyApRecord>();
             for (const row of dailyGlAp) {
               const k = dateKeyUtc(new Date(row.snapshotDate));
-              glApTotalByDay.set(k, Number(glApTotalByDay.get(k) || 0) + Number(row.apBalance || 0));
+              glApRecordByDay.set(k, {
+                snapshotDate: new Date(row.snapshotDate),
+                apBalance: Number(row.apBalance || 0),
+                current: Number(row.current || 0),
+                days1to30: Number(row.days1to30 || 0),
+                days31to60: Number(row.days31to60 || 0),
+                days61to90: Number(row.days61to90 || 0),
+                days90plus: Number(row.days90plus || 0),
+                over30Pct: Number(row.over30Pct || 0),
+                over90Pct: Number(row.over90Pct || 0),
+                dpo: Number(row.dpo || 0),
+              });
             }
-            if (glApTotalByDay.size > 0) {
+            if (glApRecordByDay.size > 0) {
                 apGlAnchorApplied = true;
                 const toPeriodKeyFromDayKey = (dayKey: string): string => {
                   const [y, m, d] = dayKey.split('-').map((x) => Number(x));
@@ -4460,29 +4663,30 @@ export async function GET(request: NextRequest) {
                   }
                   return dayKey;
                 };
-                const periodLatestGl = new Map<string, { snapshotDate: Date; total: number }>();
-                for (const dayKey of Array.from(glApTotalByDay.keys()).sort()) {
-                  const total = Number(glApTotalByDay.get(dayKey) || 0);
+                const periodLatestGl = new Map<string, DailyApRecord>();
+                for (const dayKey of Array.from(glApRecordByDay.keys()).sort()) {
+                  const rec = glApRecordByDay.get(dayKey)!;
                   const pk = toPeriodKeyFromDayKey(dayKey);
-                  const d = parseIsoDayKey(dayKey);
-                  const next = { snapshotDate: d, total };
                   const existing = periodLatestGl.get(pk);
-                  if (!existing || next.snapshotDate.getTime() > existing.snapshotDate.getTime()) {
-                    periodLatestGl.set(pk, next);
+                  if (!existing || rec.snapshotDate.getTime() > existing.snapshotDate.getTime()) {
+                    periodLatestGl.set(pk, rec);
                   }
                 }
                 data = Array.from(periodLatestGl.values())
                   .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
                   .slice(0, limit)
-                  .map((row) => ({
-                    snapshotDate: row.snapshotDate,
+                  .map((rec) => ({
+                    snapshotDate: rec.snapshotDate,
                     frequency: apFrequencyForQuery,
-                    totalAP: row.total,
-                    current: row.total,
-                    days1to30: 0,
-                    days31to60: 0,
-                    days61to90: 0,
-                    days90plus: 0,
+                    totalAP: rec.apBalance,
+                    current: rec.current,
+                    days1to30: rec.days1to30,
+                    days31to60: rec.days31to60,
+                    days61to90: rec.days61to90,
+                    days90plus: rec.days90plus,
+                    over30Pct: rec.over30Pct,
+                    over90Pct: rec.over90Pct,
+                    dpo: rec.dpo,
                   })) as any;
                 latestAP = data[0];
                 apMetrics = latestAP
@@ -4490,18 +4694,13 @@ export async function GET(request: NextRequest) {
                       totalAP: latestAP.totalAP,
                       currentPct:
                         latestAP.totalAP > 0 ? (latestAP.current / latestAP.totalAP) * 100 : 0,
-                      over30Pct:
-                        latestAP.totalAP > 0
-                          ? ((latestAP.days1to30 +
-                              latestAP.days31to60 +
-                              latestAP.days61to90 +
-                              latestAP.days90plus) /
-                              latestAP.totalAP) *
-                            100
-                          : 0,
-                      over90Pct:
-                        latestAP.totalAP > 0 ? (latestAP.days90plus / latestAP.totalAP) * 100 : 0,
-                      dpo: calculateDPO(data),
+                      over30Pct: Number(latestAP.over30Pct || 0),
+                      over90Pct: Number(latestAP.over90Pct || 0),
+                      // Use the per-day DPO computed from real 90-day rolling
+                      // credit purchases (transType='V' on the same apAcct).
+                      // The legacy calculateDPO() helper just returned ~30 by
+                      // construction, so it can't be trusted here.
+                      dpo: Number(latestAP.dpo || 0),
                     }
                   : apMetrics;
 
