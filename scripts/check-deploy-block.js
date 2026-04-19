@@ -170,12 +170,12 @@ WITH ranked AS (
   SELECT
     "id",
     ROW_NUMBER() OVER (
-      PARTITION BY "companyId", "qbAccountId"
+      PARTITION BY "companyId", "accountId"
       ORDER BY COALESCE("updatedAt", "createdAt") DESC, "createdAt" DESC, "id" DESC
     ) AS rn
   FROM "AccountMapping"
-  WHERE "qbAccountId" IS NOT NULL
-    AND NULLIF(TRIM("qbAccountId"), '') IS NOT NULL
+  WHERE "accountId" IS NOT NULL
+    AND NULLIF(TRIM("accountId"), '') IS NOT NULL
 )
 DELETE FROM "AccountMapping" m
 USING ranked r
@@ -199,7 +199,7 @@ WHERE m."id" = r."id"
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('');
     console.error('Could not remove duplicate AccountMapping rows before migration.');
-    console.error('Fix duplicates for ("companyId","qbAccountId") and re-run deploy.');
+    console.error('Fix duplicates for ("companyId","accountId") and re-run deploy.');
     console.error('');
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.error('');

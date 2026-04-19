@@ -179,9 +179,9 @@ async function main() {
   const mappings = await prisma.accountMapping.findMany({
     where: { companyId },
     select: {
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
+      accountName: true,
+      accountId: true,
+      accountCode: true,
       targetField: true,
     },
   });
