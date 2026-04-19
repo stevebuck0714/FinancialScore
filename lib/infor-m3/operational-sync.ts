@@ -2478,7 +2478,8 @@ function calculateAgingTotalsFromTransactions(
     const daysOutstanding = Math.floor((asOf - due) / (1000 * 60 * 60 * 24));
 
     totals.total += outstanding;
-    if (daysOutstanding <= 0) {
+    // Standard 5-bucket scheme: <0 = Current (not yet due); 0-30 = 1-30; etc.
+    if (daysOutstanding < 0) {
       totals.current += outstanding;
     } else if (daysOutstanding <= 30) {
       totals.days1to30 += outstanding;
@@ -3316,7 +3317,13 @@ async function saveARAging(
           return acc;
         }
 
-        const buckets = getAgingBucketValuesFromDueDate(amountDueHome, row.invoiceDate || row.dueDate || null, snapshotDate);
+        // AR aging is anchored to dueDate per the standard 5-bucket spec.
+        // Fall back to invoiceDate only when dueDate is missing on the row.
+        const buckets = getAgingBucketValuesFromDueDate(
+          amountDueHome,
+          row.dueDate || row.invoiceDate || null,
+          snapshotDate
+        );
         acc.current += buckets.current;
         acc.days1to30 += buckets.days1to30;
         acc.days31to60 += buckets.days31to60;
@@ -3361,9 +3368,9 @@ async function saveARAging(
   );
 
   const derived = calculateAgingTotalsFromTransactions(records, {
-    // Align AR aging to invoice-date basis for consistency with validated
-    // customer-facing open-invoice snapshots.
-    dueDateKeys: ['InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date'],
+    // AR aging is anchored to dueDate per the standard 5-bucket spec; fall back
+    // to invoice-date only when no dueDate field is present on the source row.
+    dueDateKeys: ['DueDate', 'dueDate', 'DUDT', 'InvDate', 'invoiceDate', 'IVDT', 'RecordDate', 'date'],
     balanceKeys: AR_AMOUNT_DUE_KEYS,
     amountKeys: ['Amount', 'amount', 'invoiceAmount', 'DerPaymentCheckAmount', 'DerOrderBalance'],
     openFlagKeys: ['Open', 'open', 'isOpen', 'IsOpen', 'OPEN'],
@@ -4927,17 +4934,28 @@ async function saveSalesInvoiceHeaders(
   return parsedRows.length;
 }
 
+// Standard 5-bucket aging scheme (AP + AR):
+//   Days Past Due  | Bucket
+//   < 0            | Current   (still within terms)
+//   0 - 30         | 1-30      (early-stage delinquency)
+//   31 - 60        | 31-60
+//   61 - 90        | 61-90
+//   > 90           | 90+
+// Days past due = asOfDate - dueDate. If dueDate is missing we fall back to
+// invoiceDate so we don't hide bills/invoices entirely; truly missing dates
+// land in 90+ as worst-case so they surface for cleanup.
 function buildAgingBucketFromDueDate(
   dueDate: Date | null,
   invoiceDate: Date | null,
   asOfDate: Date
-): { daysOutstanding: number | null; agingBucket: string } {
+): { daysOutstanding: number | null; agingBucket: 'Current' | '1-30' | '31-60' | '61-90' | '90+' } {
   const baseline = dueDate ? startOfUtcDay(dueDate) : invoiceDate ? startOfUtcDay(invoiceDate) : null;
   if (!baseline) return { daysOutstanding: null, agingBucket: '90+' };
   const days = Math.floor((startOfUtcDay(asOfDate).getTime() - baseline.getTime()) / (24 * 60 * 60 * 1000));
-  if (days <= 30) return { daysOutstanding: days, agingBucket: 'Current' };
-  if (days <= 60) return { daysOutstanding: days, agingBucket: '60' };
-  if (days <= 90) return { daysOutstanding: days, agingBucket: '90' };
+  if (days < 0) return { daysOutstanding: days, agingBucket: 'Current' };
+  if (days <= 30) return { daysOutstanding: days, agingBucket: '1-30' };
+  if (days <= 60) return { daysOutstanding: days, agingBucket: '31-60' };
+  if (days <= 90) return { daysOutstanding: days, agingBucket: '61-90' };
   return { daysOutstanding: days, agingBucket: '90+' };
 }
 
@@ -5529,17 +5547,27 @@ function normalizeInvoiceToken(value: unknown): string | null {
 function getAgingBucketValuesFromDueDate(
   outstanding: number,
   dueDate: Date | null,
-  asOfDate: Date
+  asOfDate: Date,
+  invoiceDate: Date | null = null
 ): { current: number; days1to30: number; days31to60: number; days61to90: number; days90plus: number } {
   const safeOutstanding = Math.max(0, Number(outstanding || 0));
   if (!safeOutstanding) {
     return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
   }
-  const aging = buildAgingBucketFromDueDate(dueDate, dueDate, asOfDate);
-  if (aging.agingBucket === 'Current') return { current: safeOutstanding, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
-  if (aging.agingBucket === '60') return { current: 0, days1to30: 0, days31to60: safeOutstanding, days61to90: 0, days90plus: 0 };
-  if (aging.agingBucket === '90') return { current: 0, days1to30: 0, days31to60: 0, days61to90: safeOutstanding, days90plus: 0 };
-  return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: safeOutstanding };
+  const aging = buildAgingBucketFromDueDate(dueDate, invoiceDate ?? dueDate, asOfDate);
+  switch (aging.agingBucket) {
+    case 'Current':
+      return { current: safeOutstanding, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+    case '1-30':
+      return { current: 0, days1to30: safeOutstanding, days31to60: 0, days61to90: 0, days90plus: 0 };
+    case '31-60':
+      return { current: 0, days1to30: 0, days31to60: safeOutstanding, days61to90: 0, days90plus: 0 };
+    case '61-90':
+      return { current: 0, days1to30: 0, days31to60: 0, days61to90: safeOutstanding, days90plus: 0 };
+    case '90+':
+    default:
+      return { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: safeOutstanding };
+  }
 }
 
 const AP_MIN_BILL_DATE = new Date('2023-06-01T00:00:00.000Z');

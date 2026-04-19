@@ -734,8 +734,9 @@ function deriveArBucketsFromRow(
     };
   }
 
-  // Age by due date first, then invoice date.
-  // AR view uses 1-30 as all <=30 (Current intentionally unused/zeroed).
+  // Standard 5-bucket AR aging anchored on dueDate (invoiceDate as fallback).
+  // Days past due = asOf - dueDate. <0 = Current; 0-30 = 1-30; 31-60 = 31-60;
+  // 61-90 = 61-90; >90 (or unknown anchor) = 90+.
   const dueDateRaw = row.dueDate ? new Date(row.dueDate) : null;
   const invoiceDateRaw = row.invoiceDate ? new Date(row.invoiceDate) : null;
   const agingAnchor =
@@ -748,14 +749,17 @@ function deriveArBucketsFromRow(
     return {
       totalAR: openAmount,
       current: 0,
-      days1to30: openAmount,
+      days1to30: 0,
       days31to60: 0,
       days61to90: 0,
-      days90plus: 0,
+      days90plus: openAmount,
     };
   }
   const dayMs = 24 * 60 * 60 * 1000;
   const invoiceAgeDays = Math.floor((startOfUtcDay(asOfDate).getTime() - startOfUtcDay(agingAnchor).getTime()) / dayMs);
+  if (invoiceAgeDays < 0) {
+    return { totalAR: openAmount, current: openAmount, days1to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+  }
   if (invoiceAgeDays <= 30) {
     return { totalAR: openAmount, current: 0, days1to30: openAmount, days31to60: 0, days61to90: 0, days90plus: 0 };
   }
@@ -2529,7 +2533,9 @@ export async function GET(request: NextRequest) {
                 )
               ) AS invoice_key,
               COALESCE(d."remainingBalance", 0)::double precision AS amount_due,
-              date_trunc('day', d."invoiceDate") AS invoice_day
+              -- AR aging anchor: dueDate per the standard 5-bucket spec, with
+              -- invoiceDate as fallback when dueDate is missing.
+              COALESCE(date_trunc('day', d."dueDate"), date_trunc('day', d."invoiceDate")) AS aging_anchor_day
             FROM canonical_snapshots cs
             INNER JOIN "ARInvoiceDetail" d
               ON d."asOfDate" = cs.snapshot_ts
@@ -2541,7 +2547,7 @@ export async function GET(request: NextRequest) {
               snapshot_ts,
               invoice_key,
               amount_due,
-              invoice_day,
+              aging_anchor_day,
               ROW_NUMBER() OVER (
                 PARTITION BY day, snapshot_ts, invoice_key
                 ORDER BY invoice_key
@@ -2554,14 +2560,9 @@ export async function GET(request: NextRequest) {
               snapshot_ts,
               amount_due,
               CASE
-                WHEN invoice_day IS NULL THEN NULL
-                ELSE GREATEST(
-                  FLOOR(
-                    EXTRACT(
-                      EPOCH FROM (day - invoice_day)
-                    ) / 86400
-                  ),
-                  0
+                WHEN aging_anchor_day IS NULL THEN NULL
+                ELSE FLOOR(
+                  EXTRACT(EPOCH FROM (day - aging_anchor_day)) / 86400
                 )::double precision
               END AS age_days
             FROM one_row_per_invoice
@@ -2573,11 +2574,13 @@ export async function GET(request: NextRequest) {
               day AS "snapshotDate",
               MAX(snapshot_ts) AS "snapshotTs",
               SUM(amount_due)::double precision AS "totalAR",
-              0::double precision AS "current",
-              SUM(CASE WHEN age_days IS NULL OR age_days <= 30 THEN amount_due ELSE 0 END)::double precision AS "days1to30",
+              SUM(CASE WHEN age_days < 0 THEN amount_due ELSE 0 END)::double precision AS "current",
+              SUM(CASE WHEN age_days >= 0 AND age_days <= 30 THEN amount_due ELSE 0 END)::double precision AS "days1to30",
               SUM(CASE WHEN age_days > 30 AND age_days <= 60 THEN amount_due ELSE 0 END)::double precision AS "days31to60",
               SUM(CASE WHEN age_days > 60 AND age_days <= 90 THEN amount_due ELSE 0 END)::double precision AS "days61to90",
-              SUM(CASE WHEN age_days > 90 THEN amount_due ELSE 0 END)::double precision AS "days90plus"
+              -- Truly unknown anchor (no dueDate, no invoiceDate) lands in 90+
+              -- as worst-case so it surfaces for cleanup rather than vanishing.
+              SUM(CASE WHEN age_days > 90 OR age_days IS NULL THEN amount_due ELSE 0 END)::double precision AS "days90plus"
             FROM base
             GROUP BY day
           )
@@ -2916,13 +2919,13 @@ export async function GET(request: NextRequest) {
             SELECT
               day,
               net_amount_due AS amount_due,
+              -- Standard AR aging: anchor on dueDate (fall back to invoiceDate
+              -- only when dueDate is missing). Allow negative ages so we can
+              -- distinguish Current (not yet due) from 1-30 (just past due).
               CASE
                 WHEN COALESCE(due_day, invoice_day) IS NULL THEN NULL
-                ELSE GREATEST(
-                  FLOOR(
-                    EXTRACT(EPOCH FROM (day - COALESCE(due_day, invoice_day))) / 86400
-                  ),
-                  0
+                ELSE FLOOR(
+                  EXTRACT(EPOCH FROM (day - COALESCE(due_day, invoice_day))) / 86400
                 )
               END AS invoice_age_days
             FROM invoice_net
@@ -2936,11 +2939,16 @@ export async function GET(request: NextRequest) {
               SUM(amount_due)::double precision AS "totalAR",
               SUM(
                 CASE
-                  WHEN invoice_age_days <= 30 THEN amount_due
+                  WHEN invoice_age_days < 0 THEN amount_due
                   ELSE 0
                 END
               )::double precision AS "current",
-              0::double precision AS "days1to30",
+              SUM(
+                CASE
+                  WHEN invoice_age_days >= 0 AND invoice_age_days <= 30 THEN amount_due
+                  ELSE 0
+                END
+              )::double precision AS "days1to30",
               SUM(
                 CASE
                   WHEN invoice_age_days > 30 AND invoice_age_days <= 60 THEN amount_due
@@ -3649,6 +3657,50 @@ export async function GET(request: NextRequest) {
             ? summaryTotals.dsoWeightedDaysNumerator / summaryTotals.dsoWeightedDaysDenominator
             : calculateDSO(data);
 
+        // Weighted AR Age (days):
+        //   Σ ( open_balance × max(0, today - dueDate) ) / Σ open_balance
+        // Computed server-side via SQL across the full latest snapshot (no row
+        // cap). Current/not-yet-due invoices contribute 0 to the numerator but
+        // still count in the denominator, so a healthy current book pulls the
+        // weighted age down toward 0. Falls back to invoiceDate when dueDate
+        // is missing (matches the bucket logic).
+        let weightedArAgeDays = 0;
+        try {
+          const weightedAgeSnapshot = await (prisma as any).aROpenInvoiceSnapshot?.findFirst({
+            where: { companyId, frequency: arFrequencyForQuery },
+            orderBy: { snapshotDate: 'desc' },
+            select: { snapshotDate: true },
+          });
+          if (weightedAgeSnapshot?.snapshotDate) {
+            const weightedAgeRows = await prisma.$queryRaw<
+              Array<{ weighted_age_days: number | null }>
+            >`
+              SELECT
+                CASE
+                  WHEN SUM("amountDueHome") > 0 THEN
+                    SUM(
+                      "amountDueHome" * GREATEST(
+                        0,
+                        EXTRACT(EPOCH FROM (
+                          CURRENT_DATE - COALESCE("dueDate"::date, "invoiceDate"::date)
+                        )) / 86400
+                      )
+                    ) / SUM("amountDueHome")
+                  ELSE 0
+                END::double precision AS "weighted_age_days"
+              FROM "AROpenInvoiceSnapshot"
+              WHERE "companyId" = ${companyId}
+                AND "frequency" = ${arFrequencyForQuery}
+                AND "snapshotDate" = ${weightedAgeSnapshot.snapshotDate}
+                AND COALESCE("amountDueHome", 0) > 0
+                AND COALESCE("dueDate", "invoiceDate") IS NOT NULL
+            `;
+            weightedArAgeDays = Number(weightedAgeRows?.[0]?.weighted_age_days ?? 0) || 0;
+          }
+        } catch {
+          weightedArAgeDays = 0;
+        }
+
         return NextResponse.json({
           records: data,
           summary: {
@@ -3661,6 +3713,7 @@ export async function GET(request: NextRequest) {
             over30Pct: Number(over30Pct),
             over90Pct: Number(over90Pct),
             dso: Number(dso || 0),
+            weightedArAgeDays: Number(weightedArAgeDays || 0),
             breakdown: unpaidByCustomer,
             unpaidByCustomer,
             unpaidInvoices,
@@ -3868,8 +3921,8 @@ export async function GET(request: NextRequest) {
             )
             SELECT
               "vendorName",
-              SUM(CASE WHEN age_days <= 30 THEN "amountDueHome" ELSE 0 END)::double precision AS "current",
-              0::double precision AS "days1to30",
+              SUM(CASE WHEN age_days < 0 THEN "amountDueHome" ELSE 0 END)::double precision AS "current",
+              SUM(CASE WHEN age_days BETWEEN 0 AND 30 THEN "amountDueHome" ELSE 0 END)::double precision AS "days1to30",
               SUM(CASE WHEN age_days BETWEEN 31 AND 60 THEN "amountDueHome" ELSE 0 END)::double precision AS "days31to60",
               SUM(CASE WHEN age_days BETWEEN 61 AND 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days61to90",
               SUM(CASE WHEN age_days > 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days90plus",
@@ -3912,8 +3965,8 @@ export async function GET(request: NextRequest) {
                 FROM bills
               )
               SELECT
-                SUM(CASE WHEN age_days <= 0 THEN "amountDueHome" ELSE 0 END)::double precision AS "current",
-                SUM(CASE WHEN age_days BETWEEN 1 AND 30 THEN "amountDueHome" ELSE 0 END)::double precision AS "days1to30",
+                SUM(CASE WHEN age_days < 0 THEN "amountDueHome" ELSE 0 END)::double precision AS "current",
+                SUM(CASE WHEN age_days BETWEEN 0 AND 30 THEN "amountDueHome" ELSE 0 END)::double precision AS "days1to30",
                 SUM(CASE WHEN age_days BETWEEN 31 AND 60 THEN "amountDueHome" ELSE 0 END)::double precision AS "days31to60",
                 SUM(CASE WHEN age_days BETWEEN 61 AND 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days61to90",
                 SUM(CASE WHEN age_days > 90 THEN "amountDueHome" ELSE 0 END)::double precision AS "days90plus",
@@ -4010,7 +4063,8 @@ export async function GET(request: NextRequest) {
                     ? Math.floor((snapshotDate.getTime() - startOfUtcDay(ageBasis).getTime()) / (24 * 60 * 60 * 1000))
                     : 99999;
                 bucket.totalAP += openAmount;
-                if (ageDays <= 0) bucket.current += openAmount;
+                // Standard 5-bucket scheme: <0 = Current; 0-30 = 1-30; etc.
+                if (ageDays < 0) bucket.current += openAmount;
                 else if (ageDays <= 30) bucket.days1to30 += openAmount;
                 else if (ageDays <= 60) bucket.days31to60 += openAmount;
                 else if (ageDays <= 90) bucket.days61to90 += openAmount;

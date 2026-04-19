@@ -1093,11 +1093,14 @@ model ARAgingSnapshot {
   snapshotDate DateTime // Changed from 'month'
   frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
   totalAR      Float
-  current      Float    // 0-30 days
-  days1to30    Float    // 31-60 days
-  days31to60   Float    // 61-90 days
-  days61to90   Float    // 91-120 days
-  days90plus   Float    // 121+ days
+  // 5-bucket aging based on Days Past Due = today - dueDate
+  // (falls back to invoiceDate when dueDate is null).
+  // Current is strictly not-yet-due (DPD < 0). 1-30 starts at DPD = 0.
+  current      Float    // Current / Not Yet Due (DPD < 0)
+  days1to30    Float    // 1-30 Days Past Due (0 <= DPD <= 30)
+  days31to60   Float    // 31-60 Days Past Due
+  days61to90   Float    // 61-90 Days Past Due
+  days90plus   Float    // 90+ Days Past Due
   createdAt    DateTime @default(now())
   
   @@index([companyId, snapshotDate(sort: Desc)])
@@ -1489,11 +1492,14 @@ model APAgingSnapshot {
   snapshotDate DateTime // Changed from 'month'
   frequency    String   @default("monthly") // 'daily', 'weekly', 'monthly'
   totalAP      Float
-  current      Float    // 0-30 days
-  days1to30    Float    // 31-60 days
-  days31to60   Float    // 61-90 days
-  days61to90   Float    // 91-120 days
-  days90plus   Float    // 121+ days
+  // 5-bucket aging based on Days Past Due = today - dueDate
+  // (falls back to billDate when dueDate is null).
+  // Current is strictly not-yet-due (DPD < 0). 1-30 starts at DPD = 0.
+  current      Float    // Current / Not Yet Due (DPD < 0)
+  days1to30    Float    // 1-30 Days Past Due (0 <= DPD <= 30)
+  days31to60   Float    // 31-60 Days Past Due
+  days61to90   Float    // 61-90 Days Past Due
+  days90plus   Float    // 90+ Days Past Due
   createdAt    DateTime @default(now())
   
   @@index([companyId, snapshotDate(sort: Desc)])

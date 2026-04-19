@@ -2996,6 +2996,7 @@ export default function OperationsTab({
     const arOver30Pct = Number(summary?.over30Pct ?? 0);
     const arOver90Pct = Number(summary?.over90Pct ?? 0);
     const arDso = Number(summary?.dso ?? 0);
+    const arWeightedAgeDays = Number(summary?.weightedArAgeDays ?? 0);
     const latestRecord = records[0];
     const arCustomers = (summary?.breakdown || summary?.unpaidByCustomer || []).map((row: any) => ({
       customerId: row.customerId || row.customerNumber || '-',
@@ -3136,6 +3137,7 @@ export default function OperationsTab({
           invoicedRevenue,
           arOutstanding,
           arCurrent: Number(row.current || 0),
+          ar1to30: Number(row.days1to30 || 0),
           ar31to60: Number(row.days31to60 || 0),
           ar61to90: Number(row.days61to90 || 0),
           ar90plus: Number(row.days90plus || 0),
@@ -3151,7 +3153,8 @@ export default function OperationsTab({
     const arAgingRows = [...contractAndCashFlowRows].sort(
       (a, b) =>
         b.arOutstanding - a.arOutstanding ||
-        b.ar90plus + b.ar61to90 + b.ar31to60 - (a.ar90plus + a.ar61to90 + a.ar31to60)
+        b.ar90plus + b.ar61to90 + b.ar31to60 + b.ar1to30 -
+          (a.ar90plus + a.ar61to90 + a.ar31to60 + a.ar1to30)
     );
     const customerOptions = Array.from(new Set(customerInvoiceRows.map((row) => row.customerName))).sort();
     const filteredCustomerInvoices =
@@ -3268,18 +3271,13 @@ export default function OperationsTab({
         record = lastSeenRecord;
         isForwardFilled = true;
       }
-      // 4-bucket scheme matching AP: anything below 30 days outstanding is
-      // "Current (0-30)". The sync writer (buildAgingBucketFromDueDate) puts
-      // the 0-30 value into record.current; legacy snapshots may have written
-      // it into record.days1to30 instead, so we defensively take the max.
-      // Without this, the chart silently drops the entire Current bucket
-      // (typically the largest portion of AR), making the chart look empty
-      // or "sporadic" when 90%+ of AR is current.
-      const currentBucket = record ? Math.max(Number(record.current || 0), Number(record.days1to30 || 0)) : null;
+      // Standard 5-bucket AR aging: Current (not yet due) and 1-30 (just past
+      // due) are tracked separately per spec.
       return {
         periodKey: toIsoDay(period.anchor),
         month: formatArTrendDate(period.anchor),
-        'Current (0-30)': currentBucket,
+        'Current': record ? Number(record.current || 0) : null,
+        'Open AR 1-30': record ? Number(record.days1to30 || 0) : null,
         'Open AR 31-60': record ? Number(record.days31to60 || 0) : null,
         'Open AR 61-90': record ? Number(record.days61to90 || 0) : null,
         'Open AR 90+': record ? Number(record.days90plus || 0) : null,
@@ -3296,27 +3294,34 @@ export default function OperationsTab({
           : 0;
     const arCollectionsTrend = chartData.map((row: any) => {
       const total = Number(row.total || 0);
-      const dCurrent = Number(row['Current (0-30)'] || 0);
+      const dCurrent = Number(row['Current'] || 0);
+      const d1to30 = Number(row['Open AR 1-30'] || 0);
       const d31to60 = Number(row['Open AR 31-60'] || 0);
       const d61to90 = Number(row['Open AR 61-90'] || 0);
       const d90 = Number(row['Open AR 90+'] || 0);
-      // DSO proxy from aging mix midpoints (days): Current=15, 45, 75, 120.
+      // DSO proxy from aging-mix midpoints. Current (not yet due) contributes
+      // 0 days; past-due buckets use bucket-midpoint days (1-30→15, 31-60→45,
+      // 61-90→75, 90+→120). This is a weighted-average days-past-due proxy.
       const dsoProxy =
         total > 0
-          ? (dCurrent * 15 + d31to60 * 45 + d61to90 * 75 + d90 * 120) / total
+          ? (dCurrent * 0 + d1to30 * 15 + d31to60 * 45 + d61to90 * 75 + d90 * 120) / total
           : 0;
       return {
         period: row.month,
         dso: dsoProxy,
+        // Standard "over X days past due": 1-30 counts as past due in this metric.
         over30Pct: total > 0 ? ((d31to60 + d61to90 + d90) / total) * 100 : 0,
         over90Pct: total > 0 ? (d90 / total) * 100 : 0,
       };
     });
     const arCollectionsRiskQueue = arCustomers
       .map((row) => {
-        // 4-bucket scheme: "overdue" (past-due) starts at 31 days. Below 30 is Current.
+        // 5-bucket scheme: anything past due (1-30 onward) contributes to overdue.
         const overdue =
-          Number(row.days31to60 || 0) + Number(row.days61to90 || 0) + Number(row.days90plus || 0);
+          Number(row.days1to30 || 0) +
+          Number(row.days31to60 || 0) +
+          Number(row.days61to90 || 0) +
+          Number(row.days90plus || 0);
         const over90 = Number(row.days90plus || 0);
         const riskScore = overdue + over90 * 0.5;
         return {
@@ -3339,7 +3344,7 @@ export default function OperationsTab({
 
         {/* KPI Cards */}
         {summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px' }}>
             <div style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Total Open AR</div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
@@ -3371,6 +3376,26 @@ export default function OperationsTab({
                 {arDso.toFixed(0)}
               </div>
             </div>
+            <div
+              style={{ background: 'white', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+              title="Weighted AR Age = Σ (open balance × days past due) / Σ open balance. Current/not-yet-due invoices contribute 0. Lower is better."
+            >
+              <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px' }}>Weighted Age (Days)</div>
+              <div
+                style={{
+                  fontSize: '28px',
+                  fontWeight: '700',
+                  color:
+                    arWeightedAgeDays >= 30
+                      ? '#ef4444'
+                      : arWeightedAgeDays >= 15
+                        ? '#f59e0b'
+                        : '#16a34a',
+                }}
+              >
+                {arWeightedAgeDays.toFixed(1)}
+              </div>
+            </div>
           </div>
         )}
 
@@ -3398,10 +3423,11 @@ export default function OperationsTab({
                 contentStyle={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px' }}
               />
               <Legend />
-              <Bar dataKey="Current (0-30)" stackId="a" fill={AR_TREND_COLORS[0]} />
+              <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
+              <Bar dataKey="Open AR 1-30" stackId="a" fill={AR_TREND_COLORS[1]} />
               <Bar dataKey="Open AR 31-60" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="Open AR 61-90" stackId="a" fill={AR_TREND_COLORS[3]} />
-              <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[1]} />
+              <Bar dataKey="Open AR 90+" stackId="a" fill={AR_TREND_COLORS[4]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -3650,10 +3676,10 @@ export default function OperationsTab({
           </div>
         </div>
 
-        {/* AR Aging Detail */}
+        {/* AR Aging by Customer (per-customer summary, complements the per-invoice table above) */}
         <div style={{ marginTop: '24px', background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-            AR Aging Detail
+            AR Aging by Customer
           </h3>
           {arAgingRows.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
@@ -3664,6 +3690,7 @@ export default function OperationsTab({
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Customer</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Open AR</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>1-30</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>90+</th>
@@ -3678,6 +3705,7 @@ export default function OperationsTab({
                         <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.customerName}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#1e293b', textAlign: 'right', fontWeight: '600' }}>{formatCurrency(row.arOutstanding)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#16a34a', textAlign: 'right' }}>{formatCurrency(row.arCurrent)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '12px', color: '#eab308', textAlign: 'right' }}>{formatCurrency(row.ar1to30)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#f97316', textAlign: 'right' }}>{formatCurrency(row.ar31to60)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ef4444', textAlign: 'right' }}>{formatCurrency(row.ar61to90)}</td>
                         <td style={{ padding: '6px 10px', fontSize: '12px', color: '#991b1b', textAlign: 'right' }}>{formatCurrency(row.ar90plus)}</td>
@@ -4030,19 +4058,24 @@ export default function OperationsTab({
     const apDpo = Number(summary?.dpo ?? 0);
     const latestRecord = records[0];
     const apVendors = (summary?.breakdown || summary?.unpaidByVendor || []).map((row: any) => {
-      // 4-bucket scheme: anything below 30 days outstanding is "Current".
-      // Defensive max() handles legacy snapshots that mirrored `current` into `days1to30`.
-      const currentBucket = Math.max(Number(row.current || 0), Number(row.days1to30 || 0));
+      // Standard 5-bucket scheme: Current (not yet due) and 1-30 (just past due)
+      // are tracked separately per AP aging spec.
+      const currentBucket = Number(row.current || 0);
+      const d1to30 = Number(row.days1to30 || 0);
       const d31to60 = Number(row.days31to60 || 0);
       const d61to90 = Number(row.days61to90 || 0);
       const d90plus = Number(row.days90plus || 0);
       return {
         vendorName: row.vendorName || row.name,
         current: currentBucket,
+        days1to30: d1to30,
         days31to60: d31to60,
         days61to90: d61to90,
         days90plus: d90plus,
-        totalDue: row.totalDue || row.total || currentBucket + d31to60 + d61to90 + d90plus,
+        totalDue:
+          row.totalDue ||
+          row.total ||
+          currentBucket + d1to30 + d31to60 + d61to90 + d90plus,
       };
     });
     const unpaidByVendor = apVendors
@@ -4097,9 +4130,9 @@ export default function OperationsTab({
       .sort((a: any, b: any) => a.businessDay.getTime() - b.businessDay.getTime());
     const chartData = recordsForWindow.map((record: any) => ({
       month: formatDate(record.businessDay.toISOString()),
-      // 4-bucket scheme: anything below 30 days outstanding is "Current".
-      // Defensive max() handles legacy snapshots that mirrored `current` into `days1to30`.
-      Current: Math.max(Number(record.current || 0), Number(record.days1to30 || 0)),
+      // Standard 5-bucket scheme: Current = not yet due (age < 0).
+      Current: Number(record.current || 0),
+      '1-30 Days': Number(record.days1to30 || 0),
       '31-60 Days': Number(record.days31to60 || 0),
       '61-90 Days': Number(record.days61to90 || 0),
       '90+ Days': Number(record.days90plus || 0),
@@ -4206,6 +4239,7 @@ export default function OperationsTab({
               />
               <Legend />
               <Bar dataKey="Current" stackId="a" fill={AR_TREND_COLORS[0]} />
+              <Bar dataKey="1-30 Days" stackId="a" fill={AR_TREND_COLORS[1]} />
               <Bar dataKey="31-60 Days" stackId="a" fill={AR_TREND_COLORS[2]} />
               <Bar dataKey="61-90 Days" stackId="a" fill={AR_TREND_COLORS[3]} />
               <Bar dataKey="90+ Days" stackId="a" fill={AR_TREND_COLORS[4]} />
@@ -4288,9 +4322,10 @@ export default function OperationsTab({
                     <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
                       <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Current</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>1-30</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>31-60</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>61-90</th>
-                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>91+</th>
+                      <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>90+</th>
                       <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
                     </tr>
                   </thead>
@@ -4303,6 +4338,9 @@ export default function OperationsTab({
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#16a34a', textAlign: 'right' }}>
                             {formatCurrency(row.current)}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontSize: '13px', color: '#0f766e', textAlign: 'right' }}>
+                            {formatCurrency(row.days1to30)}
                           </td>
                           <td style={{ padding: '6px 10px', fontSize: '13px', color: '#f97316', textAlign: 'right' }}>
                             {formatCurrency(row.days31to60)}
