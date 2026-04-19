@@ -49,6 +49,14 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
   const companyId = String(url.searchParams.get('companyId') || '').trim();
   const secret = url.searchParams.get('secret');
   const lookbackDays = Math.max(1, Math.min(365, Number(url.searchParams.get('lookbackDays') || '60')));
+  const candidatesParam = url.searchParams.get('candidates');
+  const candidatesList =
+    candidatesParam === null
+      ? ['DueDate', 'PayDate', 'DiscDate', 'NetDueDate']
+      : candidatesParam
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
 
   stage.current = 'check_secret';
   if (!checkSecret(request, secret)) {
@@ -81,8 +89,7 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
   // Match the canonical SLVchHdrs request shape we know returns records
   // (taken from a real successful Atlantic sync URL): full SAFE_PROPERTIES
   // + double-paren filter + loadtype=FIRST.
-  const candidateProps = [
-    // Standard SAFE_PROPERTIES
+  const safeProps = [
     'VendNum',
     'VadName',
     'Voucher',
@@ -100,12 +107,8 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
     'InWorkflow',
     'PostFromPo',
     'ApAcct',
-    // Probe candidates:
-    'DueDate',
-    'PayDate',
-    'DiscDate',
-    'NetDueDate',
   ];
+  const candidateProps = [...safeProps, ...candidatesList];
 
   const properties = candidateProps.join(',');
   const filter = `((RecordDate >= '${fmtCsi(start)}') and (RecordDate <= '${fmtCsi(today)}'))`;
@@ -162,7 +165,7 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
   }
 
   const fieldSummary: Array<{ key: string; present: boolean; populated: number; total: number }> = [];
-  for (const key of ['DueDate', 'PayDate', 'DiscDate', 'NetDueDate']) {
+  for (const key of candidatesList) {
     const present = allKeys.has(key);
     let populated = 0;
     let total = 0;
@@ -178,16 +181,25 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
     fieldSummary.push({ key, present, populated, total });
   }
 
+  // When 0 items, surface the raw body keys + a small slice so we can tell
+  // the difference between "Infor returned an empty Items array" vs
+  // "Infor returned an unexpected envelope shape".
+  const rawBodyKeys = body && typeof body === 'object' ? Object.keys(body).sort() : [];
+  const rawBodyPreview = items.length === 0 ? JSON.stringify(body).slice(0, 2000) : undefined;
+
   return NextResponse.json({
     ok: true,
     probedAt,
     httpStatus: result.status,
     url: result.url,
     endpointPath,
+    candidatesProbed: candidatesList,
     requestedProperties: candidateProps,
     returnedItemCount: items.length,
     keysPresent: Array.from(allKeys).sort(),
     candidateFieldSummary: fieldSummary,
     sampleItems: items.slice(0, 3),
+    rawBodyKeys,
+    rawBodyPreview,
   });
 }
