@@ -150,6 +150,17 @@ export async function middleware(request: NextRequest) {
     !!cronSecret &&
     !!workerSecret &&
     workerSecret === cronSecret
+  // Server-to-server admin/operational endpoints (rebuild-cash-snapshots,
+  // rebuild-daily-bs, etc.) authenticate via the same CRON_SECRET passed as
+  // the `x-cron-secret` header. The route handler still enforces the secret
+  // independently inside the request body — this header bypass only lets the
+  // call past the user-session middleware.
+  const adminCronHeader = String(request.headers.get('x-cron-secret') || '').trim()
+  const isTrustedAdminCronCall =
+    pathname.startsWith('/api/admin/') &&
+    !!cronSecret &&
+    !!adminCronHeader &&
+    adminCronHeader === cronSecret
   
   // Get client identifier for rate limiting
   const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0] || 
@@ -254,6 +265,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api') &&
     !isPublicRoute &&
     !isTrustedInternalSyncWorker &&
+    !isTrustedAdminCronCall &&
     !DISABLE_AUTH_SIGNIN
   ) {
     if (tokenDemoExpired) {

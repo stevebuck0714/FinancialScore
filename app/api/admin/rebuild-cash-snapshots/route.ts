@@ -35,7 +35,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     };
 
     const expectedSecret = process.env.CRON_SECRET || 'dev-secret-change-me';
-    if (!body.secret || body.secret !== expectedSecret) {
+    const headerSecret = String(request.headers.get('x-cron-secret') || '').trim();
+    const providedSecret = (body.secret && String(body.secret).trim()) || headerSecret;
+    if (!providedSecret || providedSecret !== expectedSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const companyId = String(body.companyId || '').trim();
