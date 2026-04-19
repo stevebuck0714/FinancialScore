@@ -132,22 +132,22 @@ function signForTargetField(field: string): number {
 }
 
 type AccountMappingRow = {
-  qbAccount: string | null;
-  qbAccountId: string | null;
-  qbAccountCode: string | null;
-  qbAccountClassification: string | null;
+  accountName: string | null;
+  accountId: string | null;
+  accountCode: string | null;
+  accountClassification: string | null;
   targetField: string;
 };
 
 type AccountTarget = {
   targetField: string;
   classification: string | null;
-  qbAccount: string | null;
+  accountName: string | null;
 };
 
 /**
- * Build a fast lookup from any candidate account identifier (qbAccountId,
- * qbAccountCode, qbAccount) → its mapped target field. Multiple mapping
+ * Build a fast lookup from any candidate account identifier (accountId,
+ * accountCode, accountName) → its mapped target field. Multiple mapping
  * rows may share the same identifier; first-write-wins keeps the lookup
  * deterministic. This mirrors the cash rebuilder's probing strategy because
  * Infor companies historically carried the GL account number in any of those
@@ -160,10 +160,10 @@ function buildAccountIdToTarget(
   for (const m of mappings) {
     const target: AccountTarget = {
       targetField: m.targetField,
-      classification: m.qbAccountClassification,
-      qbAccount: m.qbAccount,
+      classification: m.accountClassification,
+      accountName: m.accountName,
     };
-    for (const candidate of [m.qbAccountId, m.qbAccountCode, m.qbAccount]) {
+    for (const candidate of [m.accountId, m.accountCode, m.accountName]) {
       const trimmed = String(candidate || '').trim();
       if (trimmed && !out.has(trimmed)) out.set(trimmed, target);
     }
@@ -666,10 +666,10 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
       targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
     },
     select: {
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
-      qbAccountClassification: true,
+      accountName: true,
+      accountId: true,
+      accountCode: true,
+      accountClassification: true,
       targetField: true,
     },
   });

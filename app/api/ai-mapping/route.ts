@@ -178,8 +178,8 @@ export async function POST(request: NextRequest) {
 
     // Map each account using keyword rules
     const mappings: Array<{
-      qbAccount: string;
-      qbAccountClassification: string;
+      accountName: string;
+      accountClassification: string;
       targetField: string;
       confidence: string;
       reasoning: string;
@@ -208,8 +208,8 @@ export async function POST(request: NextRequest) {
       
       if (mapping) {
         mappings.push({
-          qbAccount: accountName,
-          qbAccountClassification: classification,
+          accountName: accountName,
+          accountClassification: classification,
           targetField: mapping.targetField,
           confidence: mapping.confidence,
           reasoning: mapping.reasoning
@@ -217,8 +217,8 @@ export async function POST(request: NextRequest) {
       } else {
         // If no keyword match, leave blank with low confidence for manual selection
         mappings.push({
-          qbAccount: accountName,
-          qbAccountClassification: classification,
+          accountName: accountName,
+          accountClassification: classification,
           targetField: '',
           confidence: 'low',
           reasoning: 'No keyword match found - please select manually'

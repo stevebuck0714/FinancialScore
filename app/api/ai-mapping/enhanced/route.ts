@@ -579,8 +579,8 @@ export async function POST(request: NextRequest) {
     console.log('[Enhanced AI Mapping] Processing', qbAccountsWithClass.length, 'accounts');
 
     const mappings: Array<{
-      qbAccount: string;
-      qbAccountClassification: string;
+      accountName: string;
+      accountClassification: string;
       targetField: string;
       confidence: string;
       reasoning: string;
@@ -694,8 +694,8 @@ export async function POST(request: NextRequest) {
         const rejectForClassification = shouldRejectTargetFieldForClassification(classification, remappedTargetField);
         if (rejectForClassification) {
           mappings.push({
-            qbAccount: accountName,
-            qbAccountClassification: classification,
+            accountName: accountName,
+            accountClassification: classification,
             targetField: 'unmapped',
             confidence: 'low',
             reasoning: `Rejected incompatible mapping "${remappedTargetField}" for account classification "${classification || accountType || 'unknown'}"`,
@@ -704,8 +704,8 @@ export async function POST(request: NextRequest) {
           continue;
         }
         mappings.push({
-          qbAccount: accountName,
-          qbAccountClassification: classification,
+          accountName: accountName,
+          accountClassification: classification,
           targetField: remappedTargetField,
           confidence: bestMapping.confidence,
           reasoning: bestMapping.reasoning,
@@ -714,8 +714,8 @@ export async function POST(request: NextRequest) {
       } else {
         // No match found - mark as unmapped
         mappings.push({
-          qbAccount: accountName,
-          qbAccountClassification: classification,
+          accountName: accountName,
+          accountClassification: classification,
           targetField: 'unmapped',
           confidence: 'low',
           reasoning: 'No keyword or learned match found - please select manually',

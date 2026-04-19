@@ -507,9 +507,9 @@ async function collectBalanceSheetValuesFromMonthlyFinancial(
           targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
         },
         select: {
-          qbAccount: true,
-          qbAccountId: true,
-          qbAccountCode: true,
+          accountName: true,
+          accountId: true,
+          accountCode: true,
           targetField: true,
         },
       }),
@@ -534,9 +534,9 @@ async function collectBalanceSheetValuesFromMonthlyFinancial(
       continue;
     }
     const mapping = targetMappings[0];
-    const accountId = String(mapping.qbAccountId || '').trim();
-    const accountCode = String(mapping.qbAccountCode || '').trim();
-    const accountName = String(mapping.qbAccount || '').trim().toLowerCase();
+    const accountId = String(mapping.accountId || '').trim();
+    const accountCode = String(mapping.accountCode || '').trim();
+    const accountName = String(mapping.accountName || '').trim().toLowerCase();
     if (accountId) setAccountValueByAliases(valueByKey, accountId, amount);
     if (accountCode) setAccountValueByAliases(valueByKey, accountCode, amount);
     if (accountName) valueByKey.set(`name:${accountName}`, amount);
@@ -577,9 +577,9 @@ async function collectAllMappedValuesFromMonthlyFinancial(
           targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
         },
         select: {
-          qbAccount: true,
-          qbAccountId: true,
-          qbAccountCode: true,
+          accountName: true,
+          accountId: true,
+          accountCode: true,
           targetField: true,
         },
       }),
@@ -609,9 +609,9 @@ async function collectAllMappedValuesFromMonthlyFinancial(
     }
 
     const mapping = targetMappings[0];
-    const accountId = String(mapping.qbAccountId || '').trim();
-    const accountCode = String(mapping.qbAccountCode || '').trim();
-    const accountName = String(mapping.qbAccount || '').trim().toLowerCase();
+    const accountId = String(mapping.accountId || '').trim();
+    const accountCode = String(mapping.accountCode || '').trim();
+    const accountName = String(mapping.accountName || '').trim().toLowerCase();
 
     if (accountId) setAccountValueByAliases(valueByKey, accountId, amount);
     if (accountCode) setAccountValueByAliases(valueByKey, accountCode, amount);
@@ -698,9 +698,9 @@ export async function GET(request: NextRequest) {
             targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
           },
           select: {
-            qbAccountId: true,
-            qbAccountCode: true,
-            qbAccount: true,
+            accountId: true,
+            accountCode: true,
+            accountName: true,
             targetField: true,
           },
         }),
@@ -710,15 +710,15 @@ export async function GET(request: NextRequest) {
     for (const mapping of mappings) {
       const normalizedTarget = normalizeTargetField(mapping.targetField);
       if (!BS_TARGET_FIELDS.has(normalizedTarget)) continue;
-      const id = String(mapping.qbAccountId || '').trim();
-      const code = String(mapping.qbAccountCode || '').trim();
+      const id = String(mapping.accountId || '').trim();
+      const code = String(mapping.accountCode || '').trim();
       if (id) {
         addAccountLookupAliases(bsAccountKeySet, id);
       }
       if (code) {
         addAccountLookupAliases(bsAccountKeySet, code);
       }
-      const name = String(mapping.qbAccount || '').trim().toLowerCase();
+      const name = String(mapping.accountName || '').trim().toLowerCase();
       if (name) bsAccountKeySet.add(`name:${name}`);
     }
 

@@ -647,9 +647,9 @@ function addToBreakdown(target: Record<string, unknown>, key: string, amount: nu
 }
 
 type MappingRow = {
-  qbAccount?: string | null;
-  qbAccountId?: string | null;
-  qbAccountCode?: string | null;
+  accountName?: string | null;
+  accountId?: string | null;
+  accountCode?: string | null;
   targetField?: string | null;
 };
 
@@ -835,12 +835,12 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
   for (const row of Array.isArray(params.accountMappings) ? params.accountMappings : []) {
     const targetField = String(row?.targetField || '').trim();
     if (!targetField || targetField.toLowerCase() === 'unmapped') continue;
-    const byName = normalizeMappingKey(row?.qbAccount);
+    const byName = normalizeMappingKey(row?.accountName);
     if (byName && !mappingByName.has(byName)) mappingByName.set(byName, targetField);
     const byCodeCandidates = extractAccountCodeCandidates(
-      row?.qbAccountCode,
-      row?.qbAccountId,
-      row?.qbAccount,
+      row?.accountCode,
+      row?.accountId,
+      row?.accountName,
     );
     for (const candidate of byCodeCandidates) {
       if (!mappingByCode.has(candidate)) mappingByCode.set(candidate, targetField);

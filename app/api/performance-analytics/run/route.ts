@@ -805,10 +805,10 @@ export async function POST(request: NextRequest) {
       'account mappings',
       prisma.accountMapping.findMany({
         where: { companyId },
-        select: { qbAccount: true },
+        select: { accountName: true },
       })
     );
-    const mappedAccounts = new Set(accountMappings.map((m: any) => String(m.qbAccount)));
+    const mappedAccounts = new Set(accountMappings.map((m: any) => String(m.accountName)));
 
     const covenantRows = await loadCovenants(companyId);
 

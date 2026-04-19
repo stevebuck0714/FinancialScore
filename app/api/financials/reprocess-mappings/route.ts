@@ -403,7 +403,7 @@ function getClassificationFamily(value: unknown): 'revenue' | 'cogs' | 'expense'
 }
 
 function summarizeMappingsForDiagnostics(
-  mappings: Array<{ targetField?: string | null; qbAccountClassification?: string | null }>,
+  mappings: Array<{ targetField?: string | null; accountClassification?: string | null }>,
 ) {
   let unmappedCount = 0;
   let sectorRevenueCount = 0;
@@ -417,7 +417,7 @@ function summarizeMappingsForDiagnostics(
     if (!target || target.toLowerCase() === 'unmapped') unmappedCount += 1;
     if (target.toLowerCase().startsWith('rev_')) sectorRevenueCount += 1;
     if (target.toLowerCase().startsWith('cogs_')) sectorCogsCount += 1;
-    const classFamily = getClassificationFamily(row?.qbAccountClassification);
+    const classFamily = getClassificationFamily(row?.accountClassification);
     if (classFamily === 'cogs') {
       cogsClassCount += 1;
       if (targetFamily === 'cogs') cogsClassMappedToCogsCount += 1;
@@ -594,10 +594,10 @@ export async function POST(request: NextRequest) {
       const mappings = await prisma.accountMapping.findMany({
         where: { companyId: String(companyId) },
         select: {
-          qbAccount: true,
-          qbAccountId: true,
-          qbAccountCode: true,
-          qbAccountClassification: true,
+          accountName: true,
+          accountId: true,
+          accountCode: true,
+          accountClassification: true,
           targetField: true,
         },
       });

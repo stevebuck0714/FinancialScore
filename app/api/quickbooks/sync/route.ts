@@ -496,9 +496,9 @@ export async function POST(request: NextRequest) {
       where: { companyId },
       select: {
         id: true,
-        qbAccount: true,
-        qbAccountId: true,
-        qbAccountCode: true,
+        accountName: true,
+        accountId: true,
+        accountCode: true,
         targetField: true,
         lobAllocations: true,
         allocationMethod: true,
@@ -519,20 +519,20 @@ export async function POST(request: NextRequest) {
 
       let updatedIdentityCount = 0;
       for (const mapping of accountMappings) {
-        const existingId = String(mapping.qbAccountId || '').trim();
-        const existingCode = String(mapping.qbAccountCode || '').trim();
+        const existingId = String(mapping.accountId || '').trim();
+        const existingCode = String(mapping.accountCode || '').trim();
         if (existingId && existingCode) continue;
-        const match = accountsByName.get(normalizeAccountNameForMatch(mapping.qbAccount));
+        const match = accountsByName.get(normalizeAccountNameForMatch(mapping.accountName));
         if (!match) continue;
         await prisma.accountMapping.update({
           where: { id: mapping.id },
           data: {
-            qbAccountId: existingId || match.id,
-            qbAccountCode: existingCode || match.code || match.id,
+            accountId: existingId || match.id,
+            accountCode: existingCode || match.code || match.id,
           },
         });
-        mapping.qbAccountId = existingId || match.id;
-        (mapping as any).qbAccountCode = existingCode || match.code || match.id;
+        mapping.accountId = existingId || match.id;
+        (mapping as any).accountCode = existingCode || match.code || match.id;
         updatedIdentityCount += 1;
       }
 

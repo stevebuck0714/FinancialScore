@@ -12,8 +12,8 @@ export interface AccountValue {
 }
 
 export interface AccountMapping {
-  qbAccount: string;
-  qbAccountId?: string | null;
+  accountName: string;
+  accountId?: string | null;
   targetField: string;
   lobAllocations?: Record<string, number> | null;
   allocationMethod?: string; // 'manual', 'headcount', etc.
@@ -76,8 +76,8 @@ export function applyLOBAllocations(
   const mappingMap = new Map<string, AccountMapping>();
   const mappingByIdMap = new Map<string, AccountMapping>();
   for (const mapping of accountMappings) {
-    mappingMap.set(mapping.qbAccount, mapping);
-    const mappingId = String(mapping.qbAccountId || '').trim();
+    mappingMap.set(mapping.accountName, mapping);
+    const mappingId = String(mapping.accountId || '').trim();
     if (mappingId) {
       mappingByIdMap.set(mappingId, mapping);
     }

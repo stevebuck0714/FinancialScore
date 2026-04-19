@@ -190,8 +190,8 @@ export default function LOBReportingTab({
   // Convert account mappings to the format expected by applyLOBAllocations
   const convertMappings = (mappings: any[]): AccountMapping[] => {
     return mappings.map(m => ({
-      qbAccount: m.qbAccount || '',
-      qbAccountId: m.qbAccountId,
+      accountName: m.accountName || '',
+      accountId: m.accountId,
       targetField: m.targetField || '',
       lobAllocations: m.lobAllocations,
       allocationMethod: m.allocationMethod

@@ -815,22 +815,22 @@ async function getAssetCashMappingTokens(companyId: string): Promise<Set<string>
     where: {
       companyId,
       targetField: { in: ['cash', 'otherCA'] },
-      qbAccountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
+      accountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
     },
     select: {
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
+      accountName: true,
+      accountId: true,
+      accountCode: true,
     },
   });
   const tokens = new Set<string>();
   for (const mapping of mappings) {
     if (
-      isExcludedCashControlAccount(mapping.qbAccountId, mapping.qbAccountCode, mapping.qbAccount)
+      isExcludedCashControlAccount(mapping.accountId, mapping.accountCode, mapping.accountName)
     ) {
       continue;
     }
-    for (const rawToken of [mapping.qbAccount, mapping.qbAccountId, mapping.qbAccountCode]) {
+    for (const rawToken of [mapping.accountName, mapping.accountId, mapping.accountCode]) {
       const token = normalizeAccountToken(rawToken);
       if (token) tokens.add(token);
     }
@@ -5997,18 +5997,18 @@ export async function GET(request: NextRequest) {
             where: {
               companyId,
               targetField: 'cash',
-              qbAccountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
+              accountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
             },
             select: {
-              qbAccount: true,
-              qbAccountId: true,
-              qbAccountCode: true,
+              accountName: true,
+              accountId: true,
+              accountCode: true,
             },
           });
           const cashAccountTokens = new Set<string>();
           for (const row of cashMappings) {
-            if (isExcludedCashControlAccount(row.qbAccountId, row.qbAccountCode, row.qbAccount)) continue;
-            for (const token of [row.qbAccountId, row.qbAccountCode, row.qbAccount]) {
+            if (isExcludedCashControlAccount(row.accountId, row.accountCode, row.accountName)) continue;
+            for (const token of [row.accountId, row.accountCode, row.accountName]) {
               const normalized = normalizeAccountToken(token);
               if (normalized) cashAccountTokens.add(normalized);
             }

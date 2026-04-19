@@ -224,9 +224,9 @@ export async function POST(request: NextRequest) {
     
     const mappingLookup = new Map();
     mappings.forEach(m => {
-      mappingLookup.set(m.qbAccount.toLowerCase(), m.targetField);
-      if (m.qbAccountCode) {
-        mappingLookup.set(m.qbAccountCode.toLowerCase(), m.targetField);
+      mappingLookup.set(m.accountName.toLowerCase(), m.targetField);
+      if (m.accountCode) {
+        mappingLookup.set(m.accountCode.toLowerCase(), m.targetField);
       }
     });
     

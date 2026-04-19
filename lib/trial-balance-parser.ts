@@ -640,7 +640,7 @@ function normalizeMappingTargetField(value: string | undefined): string {
  */
 export function processTrialBalanceToMonthly(
   parsedData: ParsedTrialBalance,
-  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: unknown }>
+  accountMappings: Array<{ accountName: string; targetField: string; lobAllocations?: unknown }>
 ): Array<Record<string, unknown>> {
   const monthlyRecords: Array<Record<string, unknown>> = [];
   
@@ -659,13 +659,13 @@ export function processTrialBalanceToMonthly(
   
   for (const mapping of accountMappings) {
     const normalizedTargetField = normalizeMappingTargetField(mapping.targetField);
-    const normalizedKey = normalizeAccountName(mapping.qbAccount);
+    const normalizedKey = normalizeAccountName(mapping.accountName);
     mappingLookup[normalizedKey] = {
       targetField: normalizedTargetField,
       lobAllocations: mapping.lobAllocations,
     };
     // Also keep the original key for backwards compatibility
-    mappingLookup[mapping.qbAccount] = {
+    mappingLookup[mapping.accountName] = {
       targetField: normalizedTargetField,
       lobAllocations: mapping.lobAllocations,
     };
@@ -866,7 +866,7 @@ export function processTrialBalanceToMonthly(
 
 export function processTrialBalanceToDailySnapshotsAndLines(
   parsedData: ParsedTrialBalance,
-  accountMappings: Array<{ qbAccount: string; targetField: string; lobAllocations?: unknown }>
+  accountMappings: Array<{ accountName: string; targetField: string; lobAllocations?: unknown }>
 ): {
   dailySnapshots: Array<Record<string, unknown>>;
   mappedLines: Array<{
@@ -902,9 +902,9 @@ export function processTrialBalanceToDailySnapshotsAndLines(
 
   for (const mapping of accountMappings) {
     const normalizedTargetField = normalizeMappingTargetField(mapping.targetField);
-    const normalizedKey = normalizeAccountName(mapping.qbAccount);
+    const normalizedKey = normalizeAccountName(mapping.accountName);
     mappingLookup[normalizedKey] = { targetField: normalizedTargetField, lobAllocations: mapping.lobAllocations };
-    mappingLookup[mapping.qbAccount] = { targetField: normalizedTargetField, lobAllocations: mapping.lobAllocations };
+    mappingLookup[mapping.accountName] = { targetField: normalizedTargetField, lobAllocations: mapping.lobAllocations };
   }
 
   for (const dateStr of parsedData.dates) {

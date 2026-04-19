@@ -1715,12 +1715,12 @@ function FinancialScorePage() {
 
   const normalizeMappingsForUi = (mappings: any[]): any[] =>
     (Array.isArray(mappings) ? mappings : []).map((m: any) => {
-      const normalizedId = String(m?.qbAccountId || '').trim();
-      const normalizedCode = String(m?.qbAccountCode || normalizedId || '').trim();
+      const normalizedId = String(m?.accountId || '').trim();
+      const normalizedCode = String(m?.accountCode || normalizedId || '').trim();
       return {
         ...m,
-        qbAccountId: normalizedId || undefined,
-        qbAccountCode: normalizedCode || undefined,
+        accountId: normalizedId || undefined,
+        accountCode: normalizedCode || undefined,
         targetField: normalizeMappingTargetField(m?.targetField),
       };
     });
@@ -1795,7 +1795,7 @@ function FinancialScorePage() {
   };
 
   const getDisplayAccountCode = (mapping: any): string => {
-    const preferred = [mapping?.qbAccountCode, mapping?.qbAccountId];
+    const preferred = [mapping?.accountCode, mapping?.accountId];
     for (const value of preferred) {
       const raw = String(value || '').trim();
       if (raw) return raw;
@@ -1805,10 +1805,10 @@ function FinancialScorePage() {
 
   const getMappingMatchKey = (mapping: any): string => {
     const code =
-      normalizeAccountCodeForMatch(mapping?.qbAccountCode) ||
-      normalizeAccountCodeForMatch(mapping?.qbAccountId);
+      normalizeAccountCodeForMatch(mapping?.accountCode) ||
+      normalizeAccountCodeForMatch(mapping?.accountId);
     if (code) return `code:${code}`;
-    const name = String(mapping?.qbAccount || '').trim().toLowerCase();
+    const name = String(mapping?.accountName || '').trim().toLowerCase();
     if (name) return `name:${name}`;
     return '';
   };
@@ -1825,8 +1825,8 @@ function FinancialScorePage() {
       const key = getMappingMatchKey(row);
       const prior = key ? existingByKey.get(key) : null;
       const mergedIdentity = {
-        qbAccountId: String(row?.qbAccountId || prior?.qbAccountId || '').trim() || undefined,
-        qbAccountCode: String(row?.qbAccountCode || prior?.qbAccountCode || '').trim() || undefined,
+        accountId: String(row?.accountId || prior?.accountId || '').trim() || undefined,
+        accountCode: String(row?.accountCode || prior?.accountCode || '').trim() || undefined,
       };
       const priorTarget = normalizeMappingTargetField(prior?.targetField);
       const hasPriorExplicitMapping = !!priorTarget && priorTarget !== 'unmapped';
@@ -1834,7 +1834,7 @@ function FinancialScorePage() {
         return {
           ...row,
           ...mergedIdentity,
-          qbAccountClassification: prior?.qbAccountClassification || row?.qbAccountClassification,
+          accountClassification: prior?.accountClassification || row?.accountClassification,
           allocationMethod: prior?.allocationMethod || row?.allocationMethod || 'manual',
           lobAllocations: prior?.lobAllocations ?? row?.lobAllocations,
         };
@@ -1843,7 +1843,7 @@ function FinancialScorePage() {
         ...row,
         ...mergedIdentity,
         targetField: priorTarget,
-        qbAccountClassification: prior?.qbAccountClassification || row?.qbAccountClassification,
+        accountClassification: prior?.accountClassification || row?.accountClassification,
         allocationMethod: prior?.allocationMethod || row?.allocationMethod || 'manual',
         lobAllocations: prior?.lobAllocations ?? row?.lobAllocations,
         confidence: prior?.confidence || row?.confidence || 'high',
@@ -3623,10 +3623,10 @@ function FinancialScorePage() {
             console.log(`? Loaded ${data.mappings.length} saved account mappings`);
             // Convert to aiMappings format
             const loadedMappings = data.mappings.map((m: any) => ({
-              qbAccount: m.qbAccount,
-              qbAccountId: m.qbAccountId,
-              qbAccountCode: m.qbAccountCode,
-              qbAccountClassification: m.qbAccountClassification,
+              accountName: m.accountName,
+              accountId: m.accountId,
+              accountCode: m.accountCode,
+              accountClassification: m.accountClassification,
               targetField: normalizeMappingTargetField(m.targetField),
               confidence: m.confidence || 'medium',
               lobAllocations: m.lobAllocations,
@@ -3697,7 +3697,7 @@ function FinancialScorePage() {
     }
 
     const collectAccounts = (statementData: any, statementType: 'profitAndLoss' | 'balanceSheet') => {
-      const collected: Array<{ qbAccount: string; qbAccountId: string; qbAccountCode: string; qbAccountClassification: string; targetField: string; confidence: string }> = [];
+      const collected: Array<{ accountName: string; accountId: string; accountCode: string; accountClassification: string; targetField: string; confidence: string }> = [];
       const seen = new Set<string>();
 
       const visitRows = (rows: any[], sectionName: string = '') => {
@@ -3728,10 +3728,10 @@ function FinancialScorePage() {
             seen.add(dedupeKey);
 
             collected.push({
-              qbAccount: accountName,
-              qbAccountId: accountId,
-              qbAccountCode: accountCode,
-              qbAccountClassification: classification,
+              accountName: accountName,
+              accountId: accountId,
+              accountCode: accountCode,
+              accountClassification: classification,
               targetField: 'unmapped',
               confidence: 'low',
             });
@@ -3745,7 +3745,7 @@ function FinancialScorePage() {
     };
 
     const collectAccountsFromChartOfAccounts = (chartData: any) => {
-      const collected: Array<{ qbAccount: string; qbAccountId: string; qbAccountCode: string; qbAccountClassification: string; targetField: string; confidence: string }> = [];
+      const collected: Array<{ accountName: string; accountId: string; accountCode: string; accountClassification: string; targetField: string; confidence: string }> = [];
       const rows = Array.isArray(chartData?.QueryResponse?.Account)
         ? chartData.QueryResponse.Account
         : [];
@@ -3757,10 +3757,10 @@ function FinancialScorePage() {
         const accountCode = String((row as any).AcctNum || accountId || '').trim();
         const classification = String((row as any).AccountType || (row as any).Classification || 'Other').trim() || 'Other';
         collected.push({
-          qbAccount: accountName,
-          qbAccountId: accountId,
-          qbAccountCode: accountCode,
-          qbAccountClassification: classification,
+          accountName: accountName,
+          accountId: accountId,
+          accountCode: accountCode,
+          accountClassification: classification,
           targetField: 'unmapped',
           confidence: 'low',
         });
@@ -6070,10 +6070,10 @@ function FinancialScorePage() {
     }
     const loadedMappings = Array.isArray(data.mappings)
       ? data.mappings.map((m: any) => ({
-          qbAccount: m.qbAccount,
-          qbAccountId: m.qbAccountId,
-          qbAccountCode: m.qbAccountCode,
-          qbAccountClassification: m.qbAccountClassification,
+          accountName: m.accountName,
+          accountId: m.accountId,
+          accountCode: m.accountCode,
+          accountClassification: m.accountClassification,
           targetField: normalizeMappingTargetField(m.targetField),
           confidence: m.confidence || 'medium',
           lobAllocations: m.lobAllocations,
@@ -14243,9 +14243,9 @@ function FinancialScorePage() {
                           try {
                             // Convert current accounts to format expected by AI mapping
                             const qbAccountsWithClass = aiMappings.map(acc => ({
-                              name: acc.qbAccount,
-                              classification: acc.qbAccountClassification,
-                              accountCode: acc.qbAccountCode,
+                              name: acc.accountName,
+                              classification: acc.accountClassification,
+                              accountCode: acc.accountCode,
                             }));
                             const currentSectorCategory = companies.find(c => c.id === selectedCompanyId)?.industrySectorCategory || '01';
                             const targetFieldOptions = getTargetFieldOptions(currentSectorCategory);
@@ -14314,7 +14314,7 @@ function FinancialScorePage() {
                         <span style={{ fontSize: '13px', fontWeight: '600', color: '#065f46', flexShrink: 0 }}>Accounts by Classification:</span>
                         {Object.entries(
                           aiMappings.reduce((acc: any, m) => {
-                            const type = getClassificationDisplayLabel(m.qbAccountClassification);
+                            const type = getClassificationDisplayLabel(m.accountClassification);
                             acc[type] = (acc[type] || 0) + 1;
                             return acc;
                           }, {})
@@ -15341,14 +15341,14 @@ function FinancialScorePage() {
                                 compareByIdThenName(
                                   getDisplayAccountCode(a.mapping),
                                   getDisplayAccountCode(b.mapping),
-                                  a.mapping?.qbAccount,
-                                  b.mapping?.qbAccount
+                                  a.mapping?.accountName,
+                                  b.mapping?.accountName
                                 )
                               )
                               .map(({ mapping, originalIndex }, idx: number) => {
-                              const idRaw = String(mapping.qbAccountId || '').trim();
-                              const codeRaw = String(mapping.qbAccountCode || '').trim();
-                              const nameRaw = String(mapping.qbAccount || '').trim();
+                              const idRaw = String(mapping.accountId || '').trim();
+                              const codeRaw = String(mapping.accountCode || '').trim();
+                              const nameRaw = String(mapping.accountName || '').trim();
                               const resolvedQboClassId =
                                 codeRaw ||
                                 idRaw ||
@@ -15374,10 +15374,10 @@ function FinancialScorePage() {
                                 byName !== undefined ? byName :
                                 null;
                               return (
-                              <tr key={`api-${mapping.qbAccountId || mapping.qbAccount || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <tr key={`api-${mapping.accountId || mapping.accountName || idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
                                   <select
-                                    value={getClassificationOptionValue(mapping.qbAccountClassification || mapping.sourceStatus || '')}
+                                    value={getClassificationOptionValue(mapping.accountClassification || mapping.sourceStatus || '')}
                                     onChange={(e) => {
                                       const selected = e.target.value;
                                       setAiMappings((prev) => {
@@ -15385,7 +15385,7 @@ function FinancialScorePage() {
                                         if (!updated[originalIndex]) return prev;
                                         updated[originalIndex] = {
                                           ...updated[originalIndex],
-                                          qbAccountClassification: encodeManualClassification(selected),
+                                          accountClassification: encodeManualClassification(selected),
                                         };
                                         return updated;
                                       });
@@ -15412,7 +15412,7 @@ function FinancialScorePage() {
                                 <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>
                                   {resolvedQboClassId || getDisplayAccountCode(mapping)}
                                 </td>
-                                <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.qbAccount || 'Unnamed account'}</td>
+                                <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{mapping.accountName || 'Unnamed account'}</td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue == null ? '#64748b' : latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
                                   {latestValue == null
                                     ? 'N/A'

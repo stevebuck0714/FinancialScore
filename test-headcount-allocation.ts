@@ -15,12 +15,12 @@ function testHeadcountAllocation() {
 
   const accountMappings: AccountMapping[] = [
     {
-      qbAccount: 'Revenue Account 1',
+      accountName: 'Revenue Account 1',
       targetField: 'revenue',
       allocationMethod: 'headcount' // This should use headcount percentages
     },
     {
-      qbAccount: 'Revenue Account 2',
+      accountName: 'Revenue Account 2',
       targetField: 'revenue',
       allocationMethod: 'manual',
       lobAllocations: { 'Analytics': 70, 'LP Product': 30 } // This should use manual allocations

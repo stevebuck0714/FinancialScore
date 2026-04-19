@@ -61,12 +61,12 @@ function normalize(v: unknown): string {
 }
 
 function buildMappingIdentityKey(mapping: {
-  qbAccount?: string | null;
-  qbAccountId?: string | null;
-  qbAccountCode?: string | null;
+  accountName?: string | null;
+  accountId?: string | null;
+  accountCode?: string | null;
 }): string {
-  const idOrCode = normalize(mapping.qbAccountId) || normalize(mapping.qbAccountCode);
-  const name = normalizeForCompare(String(mapping.qbAccount || ""));
+  const idOrCode = normalize(mapping.accountId) || normalize(mapping.accountCode);
+  const name = normalizeForCompare(String(mapping.accountName || ""));
   if (idOrCode && name) return `${idOrCode}|${name}`;
   return idOrCode || name;
 }
@@ -288,13 +288,13 @@ function isTargetFieldIncompatibleWithClassification(
 }
 
 function isLikelyEquityMapping(mapping: {
-  qbAccount?: string | null;
-  qbAccountCode?: string | null;
-  qbAccountClassification?: string | null;
+  accountName?: string | null;
+  accountCode?: string | null;
+  accountClassification?: string | null;
 }): boolean {
-  const classification = stripManualClassificationPrefix(mapping.qbAccountClassification).toLowerCase();
-  const accountName = String(mapping.qbAccount || "").toLowerCase();
-  const code = extractNormalizedAccountCode(mapping.qbAccountCode, mapping.qbAccount);
+  const classification = stripManualClassificationPrefix(mapping.accountClassification).toLowerCase();
+  const accountName = String(mapping.accountName || "").toLowerCase();
+  const code = extractNormalizedAccountCode(mapping.accountCode, mapping.accountName);
   const isEquityCode = Number.isFinite(code) && (code as number) >= 3000 && (code as number) < 4000;
   const isEquityByLabel =
     classification.includes("equity") ||
@@ -412,7 +412,7 @@ export async function GET(request: NextRequest) {
 
     const mappings = await prisma.accountMapping.findMany({
       where: { companyId },
-      orderBy: { qbAccount: "asc" },
+      orderBy: { accountName: "asc" },
     });
 
     // Get company context (LOB names + sector category)
@@ -452,16 +452,16 @@ export async function GET(request: NextRequest) {
       }
     }
     const findSourceMatch = (mapping: any): AccountSnapshotRow | undefined => {
-      const byId = snapshotById.get(normalize(mapping?.qbAccountId));
+      const byId = snapshotById.get(normalize(mapping?.accountId));
       if (byId) return byId;
-      const byName = snapshotByName.get(normalize(mapping?.qbAccount));
+      const byName = snapshotByName.get(normalize(mapping?.accountName));
       if (byName) return byName;
-      const byComparableName = snapshotByComparableName.get(normalizeForCompare(String(mapping?.qbAccount || "")));
+      const byComparableName = snapshotByComparableName.get(normalizeForCompare(String(mapping?.accountName || "")));
       if (byComparableName) return byComparableName;
       const normalizedCode = extractNormalizedAccountCode(
-        mapping?.qbAccountCode,
-        mapping?.qbAccountId,
-        mapping?.qbAccount,
+        mapping?.accountCode,
+        mapping?.accountId,
+        mapping?.accountName,
       );
       if (normalizedCode !== null) {
         const byCode = snapshotByNormalizedCode.get(normalizedCode);
@@ -474,20 +474,20 @@ export async function GET(request: NextRequest) {
     const sectorCategory = company?.industrySectorCategory || '01';
     const invalidMappings = mappings.filter((m: any) => {
       const sourceMatch = findSourceMatch(m);
-      const effectiveClassification = isManualClassification(m.qbAccountClassification)
-        ? m.qbAccountClassification
-        : (sourceMatch?.classification || m.qbAccountClassification);
+      const effectiveClassification = isManualClassification(m.accountClassification)
+        ? m.accountClassification
+        : (sourceMatch?.classification || m.accountClassification);
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       if (!normalizedTargetField) return false;
       const invalidForSector = !allowedTargetFields.has(normalizedTargetField);
       const semanticallyInvalid =
-        (isLikelyEquityMapping({ ...m, qbAccountClassification: effectiveClassification }) &&
+        (isLikelyEquityMapping({ ...m, accountClassification: effectiveClassification }) &&
           isRevenueTargetField(normalizedTargetField)) ||
         isTargetFieldIncompatibleWithClassification(
           normalizedTargetField,
           effectiveClassification,
-          m.qbAccount,
-          m.qbAccountCode || m.qbAccountId,
+          m.accountName,
+          m.accountCode || m.accountId,
         );
       return invalidForSector || semanticallyInvalid;
     });
@@ -500,18 +500,18 @@ export async function GET(request: NextRequest) {
     };
     const sanitizedMappings = mappings.map((m: any) => {
       const sourceMatch = findSourceMatch(m);
-      const effectiveClassification = isManualClassification(m.qbAccountClassification)
-        ? m.qbAccountClassification
-        : (sourceMatch?.classification || m.qbAccountClassification);
+      const effectiveClassification = isManualClassification(m.accountClassification)
+        ? m.accountClassification
+        : (sourceMatch?.classification || m.accountClassification);
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const semanticallyInvalid =
-        (isLikelyEquityMapping({ ...m, qbAccountClassification: effectiveClassification }) &&
+        (isLikelyEquityMapping({ ...m, accountClassification: effectiveClassification }) &&
           isRevenueTargetField(normalizedTargetField)) ||
         isTargetFieldIncompatibleWithClassification(
           normalizedTargetField,
           effectiveClassification,
-          m.qbAccount,
-          m.qbAccountCode || m.qbAccountId,
+          m.accountName,
+          m.accountCode || m.accountId,
         );
       const effectiveTargetField = normalizedTargetField;
       const isUnmapped =
@@ -520,9 +520,9 @@ export async function GET(request: NextRequest) {
       if (snapshot.length > 0 && !sourceMatch) {
         sourceStatus = "inactive";
       } else if (sourceMatch) {
-        const nameChanged = normalize(sourceMatch.accountName) !== normalize(m.qbAccount);
+        const nameChanged = normalize(sourceMatch.accountName) !== normalize(m.accountName);
         const classChanged =
-          normalize(sourceMatch.classification || "") !== normalize(m.qbAccountClassification || "");
+          normalize(sourceMatch.classification || "") !== normalize(m.accountClassification || "");
         if (nameChanged || classChanged) sourceStatus = "changed";
       }
       if (sourceStatus === "new") statusCounts.new += 1;
@@ -533,18 +533,18 @@ export async function GET(request: NextRequest) {
       if (!effectiveTargetField || effectiveTargetField === "unmapped" || allowedTargetFields.has(effectiveTargetField)) {
         return {
           ...m,
-          qbAccountId: m.qbAccountId || sourceMatch?.accountId || null,
-          qbAccountCode: m.qbAccountCode || sourceMatch?.accountCode || sourceMatch?.accountId || null,
-          qbAccountClassification: effectiveClassification,
+          accountId: m.accountId || sourceMatch?.accountId || null,
+          accountCode: m.accountCode || sourceMatch?.accountCode || sourceMatch?.accountId || null,
+          accountClassification: effectiveClassification,
           targetField: effectiveTargetField,
           sourceStatus,
         };
       }
       return {
         ...m,
-        qbAccountId: m.qbAccountId || sourceMatch?.accountId || null,
-        qbAccountCode: m.qbAccountCode || sourceMatch?.accountCode || sourceMatch?.accountId || null,
-        qbAccountClassification: effectiveClassification,
+        accountId: m.accountId || sourceMatch?.accountId || null,
+        accountCode: m.accountCode || sourceMatch?.accountCode || sourceMatch?.accountId || null,
+        accountClassification: effectiveClassification,
         invalidTargetField: m.targetField,
         targetField: "",
         validationWarning: semanticallyInvalid ? "classification_mismatch" : "invalid_target_field",
@@ -575,9 +575,9 @@ export async function GET(request: NextRequest) {
       userDefinedAllocations: [], // Not available in current schema
       industrySectorCategory: company?.industrySectorCategory || '01',
       invalidMappings: invalidMappings.map((m: any) => ({
-        qbAccount: m.qbAccount,
+        accountName: m.accountName,
         invalidTargetField: m.targetField,
-        qbAccountClassification: m.qbAccountClassification,
+        accountClassification: m.accountClassification,
       })),
       invalidMappingsCount: invalidMappings.length,
       sourceSummary: {
@@ -649,9 +649,9 @@ export async function POST(request: NextRequest) {
         (isLikelyEquityMapping(m) && isRevenueTargetField(normalizedTargetField)) ||
         isTargetFieldIncompatibleWithClassification(
           normalizedTargetField,
-          m.qbAccountClassification,
-          m.qbAccount,
-          m.qbAccountCode || m.qbAccountId,
+          m.accountClassification,
+          m.accountName,
+          m.accountCode || m.accountId,
         );
       const isExplicitlyMapped = normalizedTargetField && normalizedTargetField !== "unmapped";
       if (isExplicitlyMapped && !allowedTargetFields.has(normalizedTargetField)) {
@@ -698,37 +698,37 @@ export async function POST(request: NextRequest) {
       where: { companyId },
       select: {
         id: true,
-        qbAccount: true,
-        qbAccountId: true,
-        qbAccountCode: true,
-        qbAccountClassification: true,
+        accountName: true,
+        accountId: true,
+        accountCode: true,
+        accountClassification: true,
       },
     });
     const existingByComparableName = new Map(
-      existingMappingsAll.map((row) => [normalizeForCompare(String(row.qbAccount || "")), row]),
+      existingMappingsAll.map((row) => [normalizeForCompare(String(row.accountName || "")), row]),
     );
     for (const m of sanitizedUniqueMappings) {
       const normalizedTargetField = normalizeTargetFieldValue(m.targetField, sectorCategory);
       const targetField =
         normalizedTargetField && normalizedTargetField !== "" ? normalizedTargetField : "unmapped";
-      const incomingAccountId = String(m.qbAccountId || "").trim() || null;
-      const incomingAccountCode = String(m.qbAccountCode || "").trim() || null;
-      const incomingAccountName = String(m.qbAccount || "").trim();
+      const incomingAccountId = String(m.accountId || "").trim() || null;
+      const incomingAccountCode = String(m.accountCode || "").trim() || null;
+      const incomingAccountName = String(m.accountName || "").trim();
       const existing = await prisma.accountMapping.findFirst({
         where: {
           companyId,
           OR: [
-            ...(incomingAccountId ? [{ qbAccountId: incomingAccountId }] : []),
-            ...(incomingAccountCode ? [{ qbAccountCode: incomingAccountCode, qbAccount: incomingAccountName }] : []),
-            ...(!incomingAccountId && !incomingAccountCode && incomingAccountName ? [{ qbAccount: incomingAccountName }] : []),
+            ...(incomingAccountId ? [{ accountId: incomingAccountId }] : []),
+            ...(incomingAccountCode ? [{ accountCode: incomingAccountCode, accountName: incomingAccountName }] : []),
+            ...(!incomingAccountId && !incomingAccountCode && incomingAccountName ? [{ accountName: incomingAccountName }] : []),
           ],
         },
         select: {
           id: true,
-          qbAccount: true,
-          qbAccountId: true,
-          qbAccountCode: true,
-          qbAccountClassification: true,
+          accountName: true,
+          accountId: true,
+          accountCode: true,
+          accountClassification: true,
         },
       });
       const nameFallbackExisting =
@@ -736,17 +736,17 @@ export async function POST(request: NextRequest) {
           ? existingByComparableName.get(normalizeForCompare(incomingAccountName))
           : null;
       const matchedExisting = existing || nameFallbackExisting || null;
-      const existingAccountId = String(matchedExisting?.qbAccountId || "").trim() || null;
-      const existingAccountCode = String(matchedExisting?.qbAccountCode || "").trim() || null;
-      const sourceMatch = quickBooksByName.get(normalize(m.qbAccount));
+      const existingAccountId = String(matchedExisting?.accountId || "").trim() || null;
+      const existingAccountCode = String(matchedExisting?.accountCode || "").trim() || null;
+      const sourceMatch = quickBooksByName.get(normalize(m.accountName));
       const sourceAccountId = sourceMatch?.accountId ? String(sourceMatch.accountId).trim() : null;
       const sourceAccountCode = sourceMatch?.accountCode ? String(sourceMatch.accountCode).trim() : null;
       const baseMappingData = {
-        qbAccountId: incomingAccountId || existingAccountId || sourceAccountId,
-        qbAccountCode:
+        accountId: incomingAccountId || existingAccountId || sourceAccountId,
+        accountCode:
           incomingAccountCode || existingAccountCode || sourceAccountCode || incomingAccountId || existingAccountId || sourceAccountId,
-        qbAccountClassification:
-          m.qbAccountClassification || matchedExisting?.qbAccountClassification || null,
+        accountClassification:
+          m.accountClassification || matchedExisting?.accountClassification || null,
         targetField,
       };
       const extendedMappingData = {
@@ -760,7 +760,7 @@ export async function POST(request: NextRequest) {
           await prisma.accountMapping.create({
             data: {
               companyId,
-              qbAccount: m.qbAccount,
+              accountName: m.accountName,
               ...extendedMappingData,
             },
           });
@@ -777,7 +777,7 @@ export async function POST(request: NextRequest) {
           await prisma.accountMapping.create({
             data: {
               companyId,
-              qbAccount: m.qbAccount,
+              accountName: m.accountName,
               ...baseMappingData,
             },
           });
@@ -827,9 +827,9 @@ export async function POST(request: NextRequest) {
       duplicates: mappings.length - uniqueMappings.length,
       invalidCount: invalidMappings.length,
       invalidMappings: invalidMappings.slice(0, 10).map((m: any) => ({
-        qbAccount: m.qbAccount,
+        accountName: m.accountName,
         invalidTargetField: m.invalidTargetField,
-        classification: m.qbAccountClassification,
+        classification: m.accountClassification,
       })),
       verified: verification.length,
     });

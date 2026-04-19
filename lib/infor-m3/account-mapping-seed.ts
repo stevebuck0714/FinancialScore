@@ -277,10 +277,10 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
     where: { companyId },
     select: {
       id: true,
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
-      qbAccountClassification: true,
+      accountName: true,
+      accountId: true,
+      accountCode: true,
+      accountClassification: true,
     },
   });
 
@@ -288,12 +288,12 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   const byCode = new Map<string, (typeof existing)[number]>();
   const byIdentity = new Map<string, (typeof existing)[number]>();
   for (const row of existing) {
-    const idKey = normalizeIdentityToken(row.qbAccountId);
-    const codeKey = normalizeIdentityToken(row.qbAccountCode);
+    const idKey = normalizeIdentityToken(row.accountId);
+    const codeKey = normalizeIdentityToken(row.accountCode);
     const identityKey = buildAccountIdentityKey({
-      accountId: row.qbAccountId,
-      accountCode: row.qbAccountCode,
-      accountName: row.qbAccount,
+      accountId: row.accountId,
+      accountCode: row.accountCode,
+      accountName: row.accountName,
     });
     if (idKey) byId.set(idKey, row);
     if (codeKey) byCode.set(codeKey, row);
@@ -307,10 +307,10 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   const changedAccounts: string[] = [];
   const rowsToCreate: Array<{
     companyId: string;
-    qbAccount: string;
-    qbAccountId: string;
-    qbAccountCode: string | null;
-    qbAccountClassification: string | null;
+    accountName: string;
+    accountId: string;
+    accountCode: string | null;
+    accountClassification: string | null;
     targetField: string;
     allocationMethod: string;
     confidence: string;
@@ -318,10 +318,10 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
   const rowsToUpdate: Array<{
     id: string;
     data: {
-      qbAccount: string;
-      qbAccountId: string;
-      qbAccountCode: string | null;
-      qbAccountClassification: string | null;
+      accountName: string;
+      accountId: string;
+      accountCode: string | null;
+      accountClassification: string | null;
     };
   }> = [];
   const sourceIdSet = new Set(sourceAccounts.map((a) => a.accountId.trim().toLowerCase()));
@@ -344,10 +344,10 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
       }
       rowsToCreate.push({
         companyId,
-        qbAccount: source.accountName,
-        qbAccountId: source.accountId,
-        qbAccountCode: source.accountCode,
-        qbAccountClassification: source.classification,
+        accountName: source.accountName,
+        accountId: source.accountId,
+        accountCode: source.accountCode,
+        accountClassification: source.classification,
         targetField: 'unmapped',
         allocationMethod: 'manual',
         confidence: 'low',
@@ -359,18 +359,18 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
     }
 
     const next = {
-      qbAccount: source.accountName,
-      qbAccountId: source.accountId,
-      qbAccountCode: source.accountCode,
-      qbAccountClassification: isManualClassification(existingRow.qbAccountClassification)
-        ? existingRow.qbAccountClassification
+      accountName: source.accountName,
+      accountId: source.accountId,
+      accountCode: source.accountCode,
+      accountClassification: isManualClassification(existingRow.accountClassification)
+        ? existingRow.accountClassification
         : source.classification,
     };
     const changed =
-      (existingRow.qbAccount || '') !== (next.qbAccount || '') ||
-      (existingRow.qbAccountId || '') !== (next.qbAccountId || '') ||
-      (existingRow.qbAccountCode || '') !== (next.qbAccountCode || '') ||
-      (existingRow.qbAccountClassification || '') !== (next.qbAccountClassification || '');
+      (existingRow.accountName || '') !== (next.accountName || '') ||
+      (existingRow.accountId || '') !== (next.accountId || '') ||
+      (existingRow.accountCode || '') !== (next.accountCode || '') ||
+      (existingRow.accountClassification || '') !== (next.accountClassification || '');
 
     if (!changed) {
       unchanged += 1;
@@ -399,17 +399,17 @@ export async function seedInforAccountMappings(companyId: string, payload: unkno
 
   const inactiveAccounts = existing
     .filter((row) => {
-      const idKey = row.qbAccountId ? row.qbAccountId.trim().toLowerCase() : '';
+      const idKey = row.accountId ? row.accountId.trim().toLowerCase() : '';
       const identityKey = buildAccountIdentityKey({
-        accountId: row.qbAccountId,
-        accountCode: row.qbAccountCode,
-        accountName: row.qbAccount,
+        accountId: row.accountId,
+        accountCode: row.accountCode,
+        accountName: row.accountName,
       });
       if (idKey && sourceIdSet.has(idKey)) return false;
       if (identityKey && sourceIdentitySet.has(identityKey)) return false;
       return true;
     })
-    .map((row) => row.qbAccount);
+    .map((row) => row.accountName);
 
   return {
     extracted: sourceAccounts.length,

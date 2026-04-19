@@ -10,8 +10,8 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export interface LearnedMapping {
-  qbAccount: string;
-  qbAccountClassification: string;
+  accountName: string;
+  accountClassification: string;
   targetField: string;
   confidence: number; // 0-100
   reasoning: string;
@@ -54,7 +54,7 @@ export class MappingLearner {
       return {
         targetField: similarMatch.targetField,
         confidence: similarMatch.confidence,
-        reasoning: `Similar to "${similarMatch.qbAccount}" (${similarMatch.confidence}% match)`,
+        reasoning: `Similar to "${similarMatch.accountName}" (${similarMatch.confidence}% match)`,
         source: 'similar'
       };
     }
@@ -67,9 +67,9 @@ export class MappingLearner {
    */
   private async getExactMatch(accountName: string): Promise<LearnedMapping | null> {
     const mappings = await prisma.accountMapping.groupBy({
-      by: ['qbAccount', 'targetField'],
+      by: ['accountName', 'targetField'],
       where: {
-        qbAccount: {
+        accountName: {
           equals: accountName,
           mode: 'insensitive'
         },
@@ -95,8 +95,8 @@ export class MappingLearner {
     const confidence = Math.round((mostCommon._count.id / totalUsages) * 100);
 
     return {
-      qbAccount: mostCommon.qbAccount,
-      qbAccountClassification: '',
+      accountName: mostCommon.accountName,
+      accountClassification: '',
       targetField: mostCommon.targetField,
       confidence,
       reasoning: `Historical data`,
@@ -114,7 +114,7 @@ export class MappingLearner {
   ): Promise<LearnedMapping | null> {
     // Get all unique mappings (exclude unmapped accounts)
     const allMappings = await prisma.accountMapping.groupBy({
-      by: ['qbAccount', 'qbAccountClassification', 'targetField'],
+      by: ['accountName', 'accountClassification', 'targetField'],
       where: {
         targetField: {
           not: 'unmapped'
@@ -134,8 +134,8 @@ export class MappingLearner {
       similarity: this.calculateSimilarity(
         accountName,
         accountClassification,
-        mapping.qbAccount,
-        mapping.qbAccountClassification || ''
+        mapping.accountName,
+        mapping.accountClassification || ''
       )
     }));
 
@@ -149,8 +149,8 @@ export class MappingLearner {
     const best = similar[0];
 
     return {
-      qbAccount: best.qbAccount,
-      qbAccountClassification: best.qbAccountClassification || '',
+      accountName: best.accountName,
+      accountClassification: best.accountClassification || '',
       targetField: best.targetField,
       confidence: best.similarity,
       reasoning: `Similar accounts`,
@@ -243,13 +243,13 @@ export class MappingLearner {
    */
   async learnFromMapping(
     companyId: string,
-    qbAccount: string,
-    qbAccountClassification: string,
+    accountName: string,
+    accountClassification: string,
     targetField: string
   ): Promise<void> {
     // The mapping is already saved in the database by the API
     // This method can be used for additional learning logic if needed
-    console.log(`[ML] Learned: "${qbAccount}" -> ${targetField} for company ${companyId}`);
+    console.log(`[ML] Learned: "${accountName}" -> ${targetField} for company ${companyId}`);
   }
 
   /**
@@ -263,11 +263,11 @@ export class MappingLearner {
     const totalMappings = await prisma.accountMapping.count();
 
     const uniqueAccountsResult = await prisma.accountMapping.groupBy({
-      by: ['qbAccount']
+      by: ['accountName']
     });
 
     const topMappingsResult = await prisma.accountMapping.groupBy({
-      by: ['qbAccount', 'targetField'],
+      by: ['accountName', 'targetField'],
       _count: {
         id: true
       },
@@ -283,7 +283,7 @@ export class MappingLearner {
       totalMappings,
       uniqueAccounts: uniqueAccountsResult.length,
       topMappings: topMappingsResult.map(m => ({
-        account: m.qbAccount,
+        account: m.accountName,
         targetField: m.targetField,
         count: m._count.id
       }))

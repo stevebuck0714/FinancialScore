@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     // Create a mapping lookup
     const mappingLookup = new Map();
     mappings.forEach(m => {
-      mappingLookup.set(m.qbAccount.toLowerCase(), m.targetField);
+      mappingLookup.set(m.accountName.toLowerCase(), m.targetField);
     });
 
     // Decrypt tokens

@@ -2608,7 +2608,7 @@ async function computeCashBalancesFromGL(
 /**
  * Resolve display metadata (name, latest seen number) for a set of cash
  * accountIds from GLTransactionFact. Falls back to the AccountMapping's
- * qbAccount label if no GL row exists for that account yet.
+ * accountName label if no GL row exists for that account yet.
  */
 async function resolveCashAccountDisplay(
   companyId: string,
@@ -2661,28 +2661,28 @@ async function saveCash(
     where: {
       companyId,
       targetField: { in: ['cash', 'otherCA'] },
-      qbAccountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
+      accountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
     },
     select: {
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
+      accountName: true,
+      accountId: true,
+      accountCode: true,
     },
   });
 
   // Build a stable set of accountId candidates from the mapping. We probe
-  // multiple mapping fields (qbAccountId, qbAccountCode, qbAccount) because
+  // multiple mapping fields (accountId, accountCode, accountName) because
   // Infor companies sometimes carry the GL account number in any of those
   // slots depending on how the connection was originally configured.
   const accountIdCandidates = new Set<string>();
   const mappingNames = new Map<string, string>();
   for (const mapping of cashMappings) {
-    for (const candidate of [mapping.qbAccountId, mapping.qbAccountCode, mapping.qbAccount]) {
+    for (const candidate of [mapping.accountId, mapping.accountCode, mapping.accountName]) {
       const trimmed = String(candidate || '').trim();
       if (trimmed) {
         accountIdCandidates.add(trimmed);
-        if (mapping.qbAccount && !mappingNames.has(trimmed)) {
-          mappingNames.set(trimmed, String(mapping.qbAccount).trim());
+        if (mapping.accountName && !mappingNames.has(trimmed)) {
+          mappingNames.set(trimmed, String(mapping.accountName).trim());
         }
       }
     }
@@ -3018,9 +3018,9 @@ async function saveBalanceMovementsFromGl(
         targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
       },
       select: {
-        qbAccount: true,
-        qbAccountId: true,
-        qbAccountCode: true,
+        accountName: true,
+        accountId: true,
+        accountCode: true,
         targetField: true,
       },
     });
@@ -3028,9 +3028,9 @@ async function saveBalanceMovementsFromGl(
     // tokens across all platforms (including Infor). Keep these aliases local to avoid
     // leaking QuickBooks terminology into Infor error paths.
     accountMappings = rawMappings.map((row) => ({
-      sourceAccountName: row.qbAccount,
-      sourceAccountId: row.qbAccountId,
-      sourceAccountCode: row.qbAccountCode,
+      sourceAccountName: row.accountName,
+      sourceAccountId: row.accountId,
+      sourceAccountCode: row.accountCode,
       targetField: row.targetField,
     }));
   } catch (error) {

@@ -5,10 +5,10 @@ import { createPortal } from 'react-dom';
 import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 
 interface AccountMapping {
-  qbAccount: string;
-  qbAccountCode?: string;
-  qbAccountId?: string;
-  qbAccountClassification?: string;
+  accountName: string;
+  accountCode?: string;
+  accountId?: string;
+  accountClassification?: string;
   targetField: string;
   confidence?: string;
   lobAllocations?: { [lobName: string]: number };
@@ -275,19 +275,19 @@ export default function AccountMappingTable({
     // accounting classification (Revenue/COGS/Expense/Asset/Liability/Equity),
     // even when target fields are temporarily mis-mapped.
     const sourceClassification = normalizeClassification(
-      mapping.qbAccountClassification,
-      mapping.qbAccount,
+      mapping.accountClassification,
+      mapping.accountName,
       undefined,
-      String(mapping.qbAccountCode || mapping.qbAccountId || ''),
+      String(mapping.accountCode || mapping.accountId || ''),
     );
     if (sourceClassification !== 'other') return sourceClassification;
 
     // Fallback to target field classification only when source is unknown.
     return normalizeClassification(
-      mapping.qbAccountClassification,
-      mapping.qbAccount,
+      mapping.accountClassification,
+      mapping.accountName,
       mapping.targetField,
-      String(mapping.qbAccountCode || mapping.qbAccountId || ''),
+      String(mapping.accountCode || mapping.accountId || ''),
     );
   };
 
@@ -305,12 +305,12 @@ export default function AccountMappingTable({
       return '';
     };
     return extractNumericCode(
-      mapping.qbAccountCode,
-      mapping.qbAccountId,
+      mapping.accountCode,
+      mapping.accountId,
       rawMapping.accountCode,
       rawMapping.accountId,
       rawMapping.acctId,
-      mapping.qbAccount,
+      mapping.accountName,
     );
   };
 
@@ -326,7 +326,7 @@ export default function AccountMappingTable({
       if (aHasNum !== bHasNum) return aHasNum ? -1 : 1;
       const idCompare = aId.localeCompare(bId, undefined, { numeric: true, sensitivity: 'base' });
       if (idCompare !== 0) return idCompare;
-      return String(a.qbAccount || '').localeCompare(String(b.qbAccount || ''), undefined, { sensitivity: 'base' });
+      return String(a.accountName || '').localeCompare(String(b.accountName || ''), undefined, { sensitivity: 'base' });
     });
 
   // Group mappings by normalized classification
@@ -390,7 +390,7 @@ export default function AccountMappingTable({
     return (
       <tr key={globalIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
         <td style={{ padding: '8px 10px', color: '#1e293b', fontWeight: '500', fontSize: '13px' }}>
-          {mapping.qbAccount}
+          {mapping.accountName}
           {mapping.sourceStatus && mapping.sourceStatus !== 'mapped' && (
             <span
               style={{

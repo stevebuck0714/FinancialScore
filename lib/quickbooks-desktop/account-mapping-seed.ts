@@ -172,18 +172,18 @@ export async function seedQuickBooksDesktopAccountMappings(
     where: { companyId },
     select: {
       id: true,
-      qbAccount: true,
-      qbAccountId: true,
-      qbAccountCode: true,
-      qbAccountClassification: true,
+      accountName: true,
+      accountId: true,
+      accountCode: true,
+      accountClassification: true,
     },
   });
 
   const byId = new Map<string, (typeof existing)[number]>();
   const byName = new Map<string, (typeof existing)[number]>();
   for (const row of existing) {
-    if (row.qbAccountId) byId.set(row.qbAccountId.trim().toLowerCase(), row);
-    byName.set(row.qbAccount.trim().toLowerCase(), row);
+    if (row.accountId) byId.set(row.accountId.trim().toLowerCase(), row);
+    byName.set(row.accountName.trim().toLowerCase(), row);
   }
 
   let created = 0;
@@ -203,10 +203,10 @@ export async function seedQuickBooksDesktopAccountMappings(
       await prisma.accountMapping.create({
         data: {
           companyId,
-          qbAccount: source.accountName,
-          qbAccountId: source.accountId,
-          qbAccountCode: source.accountCode,
-          qbAccountClassification: source.classification,
+          accountName: source.accountName,
+          accountId: source.accountId,
+          accountCode: source.accountCode,
+          accountClassification: source.classification,
           targetField: 'unmapped',
           allocationMethod: 'manual',
           confidence: 'low',
@@ -218,16 +218,16 @@ export async function seedQuickBooksDesktopAccountMappings(
     }
 
     const next = {
-      qbAccount: source.accountName,
-      qbAccountId: source.accountId,
-      qbAccountCode: source.accountCode,
-      qbAccountClassification: source.classification,
+      accountName: source.accountName,
+      accountId: source.accountId,
+      accountCode: source.accountCode,
+      accountClassification: source.classification,
     };
     const changed =
-      (existingRow.qbAccount || '') !== (next.qbAccount || '') ||
-      (existingRow.qbAccountId || '') !== (next.qbAccountId || '') ||
-      (existingRow.qbAccountCode || '') !== (next.qbAccountCode || '') ||
-      (existingRow.qbAccountClassification || '') !== (next.qbAccountClassification || '');
+      (existingRow.accountName || '') !== (next.accountName || '') ||
+      (existingRow.accountId || '') !== (next.accountId || '') ||
+      (existingRow.accountCode || '') !== (next.accountCode || '') ||
+      (existingRow.accountClassification || '') !== (next.accountClassification || '');
     if (!changed) {
       unchanged += 1;
       continue;
@@ -243,13 +243,13 @@ export async function seedQuickBooksDesktopAccountMappings(
 
   const inactiveAccounts = existing
     .filter((row) => {
-      const idKey = row.qbAccountId ? row.qbAccountId.trim().toLowerCase() : '';
-      const nameKey = row.qbAccount.trim().toLowerCase();
+      const idKey = row.accountId ? row.accountId.trim().toLowerCase() : '';
+      const nameKey = row.accountName.trim().toLowerCase();
       if (idKey && sourceIdSet.has(idKey)) return false;
       if (sourceNameSet.has(nameKey)) return false;
       return true;
     })
-    .map((row) => row.qbAccount);
+    .map((row) => row.accountName);
 
   return {
     extracted: sourceAccounts.length,

@@ -659,22 +659,22 @@ model InforRawCompleteness {
 }
 
 model AccountMapping {
-  id                      String   @id @default(cuid())
-  companyId               String
-  qbAccount               String
-  qbAccountId             String?
-  qbAccountCode           String?
-  qbAccountClassification String?
-  targetField             String
-  allocationMethod        String   @default("manual")
-  confidence              String   @default("medium")
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-  lobAllocations          Json?
-  company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id                    String   @id @default(cuid())
+  companyId             String
+  accountName           String
+  accountId             String?
+  accountCode           String?
+  accountClassification String?
+  targetField           String
+  allocationMethod      String   @default("manual")
+  confidence            String   @default("medium")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  lobAllocations        Json?
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@unique([companyId, qbAccountId])
-  @@index([companyId, qbAccount])
+  @@unique([companyId, accountId])
+  @@index([companyId, accountName])
   @@index([companyId])
 }
 
