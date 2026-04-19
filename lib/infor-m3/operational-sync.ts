@@ -9265,33 +9265,61 @@ export async function syncInforM3OperationalData(
               `${companyId}|${syncRunId}|${moduleType}|${programId || ''}|${req.transaction}|${effectiveEndpointPath}|${rawRecordsForIngest.length}|${requestDurationMs}|${response.status}`
             )
             .digest('hex');
-          await (prisma as any).inforRawBatch.create({
-            data: {
-              id: batchId,
-              companyId,
-              platform: 'INFOR_M3',
-              syncRunId,
-              frequency,
-              mode: syncWindow?.mode || null,
-              windowStart: syncWindow?.startDate || null,
-              windowEnd: syncWindow?.endDate || null,
-              businessDate: snapshotDate,
-              module: row.module || null,
-              miProgram: row.miProgram || null,
-              transaction: req.transaction || null,
-              endpointPath: persistedEndpointPath,
-              pageNo: pagesFetched,
-              bookmarkIn: inputBookmark,
-              bookmarkOut,
-              recordCount: ingestedRecords.length,
-              httpStatus: response.status,
-              durationMs: requestDurationMs,
-              payloadHash,
-              status: statusText,
-              errorMessage: statusText === 'success' ? null : payloadMsg || null,
-            },
-          });
-          if (ingestedRecords.length > 0) {
+          let rawBatchAlreadyPersisted = false;
+          try {
+            await (prisma as any).inforRawBatch.create({
+              data: {
+                id: batchId,
+                companyId,
+                platform: 'INFOR_M3',
+                syncRunId,
+                frequency,
+                mode: syncWindow?.mode || null,
+                windowStart: syncWindow?.startDate || null,
+                windowEnd: syncWindow?.endDate || null,
+                businessDate: snapshotDate,
+                module: row.module || null,
+                miProgram: row.miProgram || null,
+                transaction: req.transaction || null,
+                endpointPath: persistedEndpointPath,
+                pageNo: pagesFetched,
+                bookmarkIn: inputBookmark,
+                bookmarkOut,
+                recordCount: ingestedRecords.length,
+                httpStatus: response.status,
+                durationMs: requestDurationMs,
+                payloadHash,
+                status: statusText,
+                errorMessage: statusText === 'success' ? null : payloadMsg || null,
+              },
+            });
+          } catch (rawBatchCreateError) {
+            // P2002 = unique constraint on
+            // (companyId, platform, syncRunId, module, miProgram, transaction, businessDate, pageNo, bookmarkIn).
+            // This fires on chunk-level retries: a previous attempt of THIS exact
+            // (syncRunId, miProgram, transaction, pageNo, bookmarkIn) already
+            // persisted the batch + its records before crashing. Treat as
+            // idempotent success and skip the child records insert (which would
+            // otherwise FK-fail against the abandoned batchId).
+            const code = (rawBatchCreateError as { code?: string })?.code;
+            if (code === 'P2002') {
+              rawBatchAlreadyPersisted = true;
+              console.log(
+                JSON.stringify({
+                  event: 'sync_raw_batch_already_present',
+                  syncRunId,
+                  miProgram: row.miProgram || null,
+                  transaction: req.transaction || null,
+                  pageNo: pagesFetched,
+                  bookmarkIn: inputBookmark,
+                  recordCount: ingestedRecords.length,
+                })
+              );
+            } else {
+              throw rawBatchCreateError;
+            }
+          }
+          if (!rawBatchAlreadyPersisted && ingestedRecords.length > 0) {
             // Drop records whose business date precedes our hard ingest floor.
             // See INFOR_RAW_MIN_BUSINESS_DATE_COMPACT. Records without a
             // configured business-date field (reference data) pass through.
@@ -9338,7 +9366,7 @@ export async function syncInforM3OperationalData(
             }
           }
           const sourceKey = resolveRawCompletenessSourceKey(moduleType);
-          if (sourceKey && syncWindowStartIso) {
+          if (sourceKey && syncWindowStartIso && !rawBatchAlreadyPersisted) {
             await prisma.$executeRaw`
               INSERT INTO "InforRawCompleteness"
                 ("id","companyId","platform","syncRunId","businessDate","sourceKey","isComplete","lastBatchId","statusMessage","lastSeenAt","createdAt","updatedAt")
