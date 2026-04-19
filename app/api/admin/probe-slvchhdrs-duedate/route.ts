@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
 import { getInforM3CredentialsForCompany } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
 
@@ -65,27 +64,14 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
     return NextResponse.json({ ok: false, error: 'no Infor credentials for company' }, { status: 404 });
   }
 
-  stage.current = 'load_slvchhdrs_row';
-  const slvchhdrsRow = (await prisma.$queryRawUnsafe<
-    Array<{ endpointPath: string | null; site: string | null; mongooseConfig: string | null }>
-  >(
-    `SELECT "endpointPath", site, "mongooseConfig"
-       FROM "InforProgram"
-      WHERE "companyId" = $1
-        AND UPPER("miProgram") = 'SLVCHHDRS'
-      LIMIT 1`,
-    companyId
-  ))[0];
+  stage.current = 'build_request';
+  const headers: Record<string, string> = {
+    'X-Infor-MongooseConfig': String(url.searchParams.get('mongooseConfig') || 'TMSManager'),
+  };
+  const siteOverride = String(url.searchParams.get('site') || '').trim();
+  if (siteOverride) headers['X-Infor-Site'] = siteOverride;
 
-  const headers: Record<string, string> = {};
-  if (slvchhdrsRow?.mongooseConfig) headers['X-Infor-MongooseConfig'] = slvchhdrsRow.mongooseConfig;
-  if (slvchhdrsRow?.site) headers['X-Infor-Site'] = slvchhdrsRow.site;
-
-  let basePath = '/APR_PRD/CSI/IDORequestService/ido/load/SLVchHdrs';
-  if (slvchhdrsRow?.endpointPath) {
-    const m = String(slvchhdrsRow.endpointPath).split('?')[0];
-    if (/\/IDORequestService\/ido\/load\/SLVchHdrs/i.test(m)) basePath = m;
-  }
+  const basePath = String(url.searchParams.get('basePath') || '/APR_PRD/CSI/IDORequestService/ido/load/SLVchHdrs');
 
   const today = new Date();
   const start = new Date(today.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
