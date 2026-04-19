@@ -680,6 +680,7 @@ export default function DashboardView({
                         <option value="EBITDA">EBITDA</option>
                         <option value="Net Income">Net Income</option>
                         <option value="Cash">Cash</option>
+                        <option value="Accounts Receivable">Accounts Receivable</option>
                         <option value="Current Assets">Current Assets</option>
                         <option value="Fixed Assets">Fixed Assets</option>
                         <option value="Total Assets">Total Assets</option>
@@ -726,7 +727,7 @@ export default function DashboardView({
                   {/* Display selected trend analysis items */}
                   {selectedDashboardWidgets.filter(w => 
                     ['Revenue', 'Gross Profit', 'Total Operating Expenses', 'EBIT', 'EBITDA', 'Net Income',
-                     'Cash', 'Current Assets', 'Fixed Assets', 'Total Assets', 'Accounts Payable', 'Long Term Debt', 'Total Equity'].includes(w) ||
+                     'Cash', 'Accounts Receivable', 'Current Assets', 'Fixed Assets', 'Total Assets', 'Accounts Payable', 'Long Term Debt', 'Total Equity'].includes(w) ||
                      w.startsWith('Expense % - ')
                   ).length > 0 && (
                     <div style={{ marginTop: '16px' }}>
@@ -734,7 +735,7 @@ export default function DashboardView({
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                         {selectedDashboardWidgets.filter(w => 
                           ['Revenue', 'Gross Profit', 'Total Operating Expenses', 'EBIT', 'EBITDA', 'Net Income',
-                           'Cash', 'Current Assets', 'Fixed Assets', 'Total Assets', 'Accounts Payable', 'Long Term Debt', 'Total Equity'].includes(w) ||
+                           'Cash', 'Accounts Receivable', 'Current Assets', 'Fixed Assets', 'Total Assets', 'Accounts Payable', 'Long Term Debt', 'Total Equity'].includes(w) ||
                            w.startsWith('Expense % - ')
                         ).map(widget => (
                           <div
@@ -1248,6 +1249,9 @@ export default function DashboardView({
                 }
                 if (widget === 'Cash') {
                   return <LineChart key={widget} title="Cash" data={monthly.map(m => ({ month: m.month, value: m.cash || 0 }))} color="#84cc16" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
+                }
+                if (widget === 'Accounts Receivable') {
+                  return <LineChart key={widget} title="Accounts Receivable" data={monthly.map(m => ({ month: m.month, value: m.ar || 0 }))} color="#0ea5e9" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
                 }
                 if (widget === 'Current Assets') {
                   return <LineChart key={widget} title="Current Assets" data={monthly.map(m => ({ month: m.month, value: m.tca || ((m.cash || 0) + (m.ar || 0) + (m.inventory || 0) + (m.otherCA || 0)) }))} color="#5eead4" compact formatter={(v) => '$' + (v / 1000).toFixed(0) + 'K'} />;
