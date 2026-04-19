@@ -1100,6 +1100,112 @@ async function buildDailyApSeriesByAgingRule(
 }
 
 /**
+ * Voucher-level companion to buildDailyApSeriesByAgingRule. For a single
+ * as-of date, returns one row per still-open voucher with vendor info,
+ * voucher creation date (eventDate of the Type='V' row), invoice date, and
+ * remaining open balance. Uses the IDENTICAL aging rule as the daily-total
+ * helper (vouchers created within `agingDays` of the as-of date, summing all
+ * APTransactionFact events for that voucher through the as-of date, capped
+ * at >= 0). Sums for any subset of these rows are guaranteed to roll up to
+ * the daily total returned by buildDailyApSeriesByAgingRule for the same
+ * as-of date — which is what the AP page trend chart and KPI cards use as
+ * ground truth. Per-vendor / per-bill tables that need to tie to that chart
+ * total should source from this helper, NOT from APOpenBillSnapshot.
+ */
+async function buildOpenVouchersByAgingRule(
+  prismaClient: any,
+  companyId: string,
+  apAcct: string,
+  asOfDate: Date,
+  agingDays: number = 150
+): Promise<
+  Array<{
+    voucher: string;
+    vendorId: string | null;
+    vendorName: string;
+    voucherCreatedAt: Date;
+    invoiceDate: Date | null;
+    openBalance: number;
+  }>
+> {
+  const asOfKey = dateKeyUtc(startOfUtcDay(asOfDate));
+  const aging = Number.isFinite(agingDays) && agingDays > 0 ? Math.floor(agingDays) : 150;
+
+  const rows: Array<{
+    voucher: string;
+    vendor_id: string | null;
+    vendor_name: string | null;
+    created_at: Date;
+    invoice_date: Date | null;
+    open_balance: any;
+  }> = await prismaClient.$queryRawUnsafe(
+    `WITH voucher_creates AS (
+       SELECT
+         voucher,
+         MIN("eventDate")::date AS created_at
+       FROM "APTransactionFact"
+       WHERE "companyId" = $1
+         AND "apAcct" = $2
+         AND "transType" = 'V'
+         AND "eventDate" >= ($3::date - INTERVAL '${aging} days')
+         AND "eventDate" <= $3::date
+       GROUP BY voucher
+     ),
+     events AS (
+       SELECT voucher, "normalizedAmount"
+       FROM "APTransactionFact"
+       WHERE "companyId" = $1
+         AND "apAcct" = $2
+         AND "eventDate" <= $3::date
+     ),
+     voucher_meta AS (
+       SELECT DISTINCT ON (t.voucher)
+         t.voucher,
+         t."vendorId" AS vendor_id,
+         t."vendorName" AS vendor_name,
+         t."invoiceDate" AS invoice_date
+       FROM "APTransactionFact" t
+       JOIN voucher_creates vc ON vc.voucher = t.voucher
+       WHERE t."companyId" = $1
+         AND t."apAcct" = $2
+         AND t."transType" = 'V'
+       ORDER BY t.voucher, t."eventDate" ASC
+     ),
+     open_per_voucher AS (
+       SELECT
+         vc.voucher,
+         vc.created_at,
+         GREATEST(COALESCE(SUM(e."normalizedAmount"), 0), 0) AS open_balance
+       FROM voucher_creates vc
+       LEFT JOIN events e ON e.voucher = vc.voucher
+       GROUP BY vc.voucher, vc.created_at
+     )
+     SELECT
+       opv.voucher,
+       vm.vendor_id,
+       COALESCE(NULLIF(TRIM(vm.vendor_name), ''), 'Unknown Vendor') AS vendor_name,
+       opv.created_at,
+       vm.invoice_date,
+       opv.open_balance
+     FROM open_per_voucher opv
+     LEFT JOIN voucher_meta vm ON vm.voucher = opv.voucher
+     WHERE opv.open_balance > 0`,
+    companyId,
+    apAcct,
+    asOfKey
+  );
+
+  return rows.map((r) => ({
+    voucher: String(r.voucher),
+    vendorId: r.vendor_id ? String(r.vendor_id) : null,
+    vendorName: String(r.vendor_name || 'Unknown Vendor'),
+    voucherCreatedAt: new Date(r.created_at),
+    invoiceDate: r.invoice_date ? new Date(r.invoice_date) : null,
+    openBalance: Number(r.open_balance || 0),
+  }));
+}
+
+/**
  * AR equivalent of buildDailyApSeriesByAgingRule. Computes daily open AR
  * directly from ARTransactionFact events, scoped to invoices created within
  * the last `agingDays` days. Per-invoice net is capped at >= 0 so over-payments
@@ -4290,6 +4396,70 @@ export async function GET(request: NextRequest) {
                       dpo: calculateDPO(data),
                     }
                   : apMetrics;
+
+                // Per-vendor breakdown sourced from the SAME APTransactionFact
+                // voucher-level data the trend chart trusts. This guarantees
+                // that SUM(unpaidByVendor.totalDue) ties to the latest trend
+                // chart total, because both come from the same SQL on the same
+                // apAcct over the same aging window. Buckets here are based on
+                // (asOfDate - voucherCreatedAt) since APTransactionFact has no
+                // dueDate; that's the same aging anchor the chart uses.
+                if (latestAP) {
+                  try {
+                    const apAsOfDateForVendors = startOfUtcDay(new Date(latestAP.snapshotDate));
+                    const openVouchers = await buildOpenVouchersByAgingRule(
+                      prisma,
+                      companyId,
+                      anchorAccountForTrend.accountId,
+                      apAsOfDateForVendors,
+                      150
+                    );
+                    if (openVouchers.length > 0) {
+                      const asOfMs = apAsOfDateForVendors.getTime();
+                      type VendorAgg = {
+                        vendorName: string;
+                        current: number;
+                        days1to30: number;
+                        days31to60: number;
+                        days61to90: number;
+                        days90plus: number;
+                        totalDue: number;
+                      };
+                      const vendorMap = new Map<string, VendorAgg>();
+                      for (const v of openVouchers) {
+                        const ageDays = Math.floor(
+                          (asOfMs - startOfUtcDay(v.voucherCreatedAt).getTime()) / 86400000
+                        );
+                        const amt = Number(v.openBalance || 0);
+                        if (!Number.isFinite(amt) || amt <= 0) continue;
+                        const key = v.vendorName || 'Unknown Vendor';
+                        if (!vendorMap.has(key)) {
+                          vendorMap.set(key, {
+                            vendorName: key,
+                            current: 0,
+                            days1to30: 0,
+                            days31to60: 0,
+                            days61to90: 0,
+                            days90plus: 0,
+                            totalDue: 0,
+                          });
+                        }
+                        const agg = vendorMap.get(key)!;
+                        agg.totalDue += amt;
+                        if (ageDays < 0) agg.current += amt;
+                        else if (ageDays <= 30) agg.days1to30 += amt;
+                        else if (ageDays <= 60) agg.days31to60 += amt;
+                        else if (ageDays <= 90) agg.days61to90 += amt;
+                        else agg.days90plus += amt;
+                      }
+                      unpaidByVendor = Array.from(vendorMap.values()).sort(
+                        (a, b) => b.totalDue - a.totalDue
+                      );
+                    }
+                  } catch (err) {
+                    console.error('[ap-aging] per-vendor voucher rebuild failed', err);
+                  }
+                }
             }
           }
         }
@@ -4308,7 +4478,14 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        const effectiveApMetrics = computedApFromOpen && !apGlAnchorApplied
+        // When the GL anchor is applied (Infor companies with an AP anchor
+        // configured), the chart and KPIs share that single source of truth.
+        // Only fall back to computedApFromOpen (APOpenBillSnapshot SQL) when
+        // no GL anchor is in play — that's the case for QuickBooks tenants
+        // and any company without an AP balance-sheet anchor configured.
+        const effectiveApMetrics = apGlAnchorApplied
+          ? apMetrics
+          : computedApFromOpen
           ? {
               totalAP: Number(computedApFromOpen.totalAP || 0),
               currentPct:
