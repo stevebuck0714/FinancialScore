@@ -3,12 +3,24 @@
  * directly from GLTransactionFact (the system of record for posted activity)
  * by way of AccountMapping.targetField → DailyFinancialSnapshot column.
  *
- * Why this exists:
- *   The daily-financials ingest path in lib/financial/daily-financial-ingest.ts
- *   is fed by upstream IDO snapshots that carry "current" balances, which
- *   drift from GL whenever the bank/AR/AP modules don't post back to the GL
- *   on the same day. This rebuilder replays GL into the daily snapshots from
- *   first principles for any historical window.
+ * Two computation modes:
+ *
+ * 1) **Anchored** (preferred). When a `BalanceSheetAnchor` row exists with
+ *    `anchorDate <= snapshotDate`, each balance-sheet line is computed as
+ *      `anchor[field] + GL_delta(accounts mapped to field, anchorDate < transDate <= snapshotDate)`
+ *    This avoids drift from incomplete historical GL loads or pre-system
+ *    carryover entries — the anchor pins the BS to a trusted external
+ *    reference (e.g. the Infor M3 Balance Sheet run for 12/31/2023).
+ *
+ * 2) **All-time GL sum** (fallback). When no anchor exists at-or-before
+ *    `snapshotDate`, each BS line is computed as the cumulative GL
+ *    `debit - credit` from the beginning of time through `snapshotDate`.
+ *    Same behavior as the original implementation. Useful for
+ *    pre-anchor dates or for companies that haven't set an anchor yet.
+ *
+ * YTD P&L is always derived from GL deltas. When an anchor is in effect
+ * the YTD lower bound is `max(fiscalYearStart, anchorDate)` so we never
+ * double-count activity already baked into the anchor.
  *
  * Same architectural pattern as rebuildAllCashSnapshotsFromGL in
  * lib/infor-m3/operational-sync.ts, generalized to the full balance sheet
@@ -62,6 +74,27 @@ const ALL_PNL_FIELDS = new Set<string>(PNL_SUM_FIELDS as readonly string[]);
 const EXPENSE_PNL_FIELDS = new Set<string>(
   Array.from(ALL_PNL_FIELDS).filter((f) => !INCOME_PNL_FIELDS.has(f))
 );
+
+// Anchor columns we care about (everything except RE — RE is handled
+// specially because we layer YTD P&L on top of the booked RE anchor).
+const ANCHOR_BS_FIELDS = [
+  'cash',
+  'ar',
+  'inventory',
+  'otherCA',
+  'fixedAssets',
+  'otherAssets',
+  'ap',
+  'loc',
+  'otherCL',
+  'ltd',
+  'ownersCapital',
+  'ownersDraw',
+  'commonStock',
+  'preferredStock',
+  'additionalPaidInCapital',
+  'treasuryStock',
+] as const;
 
 /**
  * Sign factor that converts GL `debit - credit` into the value we want stored
@@ -130,40 +163,69 @@ function buildAccountIdToTarget(
 
 type GlSumRow = { accountId: string; balance: number | null };
 
+/**
+ * Sum GL `debit - credit` per account, with flexible window semantics:
+ *
+ *   - `lowerBoundExclusive` set & `lowerBoundInclusive` null  → transDate >  lowerBoundExclusive
+ *   - `lowerBoundInclusive` set & `lowerBoundExclusive` null  → transDate >= lowerBoundInclusive
+ *   - both null                                              → no lower bound (running balance from time zero)
+ *
+ * `endInclusive` is always inclusive: `transDate <= endInclusive`.
+ *
+ * The exclusive variant is used when an anchor pins the EOD balance for
+ * `anchorDate` — we only want to add transactions that happened *after* that
+ * day to derive the new balance.
+ */
 async function sumGLByAccount(
   companyId: string,
   accountIds: string[],
-  startDateInclusive: Date | null,
-  endDateInclusive: Date
+  lowerBoundInclusive: Date | null,
+  endInclusive: Date,
+  lowerBoundExclusive: Date | null = null
 ): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   if (accountIds.length === 0) return out;
 
-  // Two query shapes: one with a lower bound (YTD P&L), one without (BS
-  // running balance from beginning of time). Keeping them as separate
-  // template-literal calls preserves Prisma parameter typing.
-  const rows: GlSumRow[] = startDateInclusive
-    ? await prisma.$queryRaw<GlSumRow[]>`
-        SELECT
-          "accountId",
-          SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
-        FROM "GLTransactionFact"
-        WHERE "companyId" = ${companyId}
-          AND "accountId" = ANY(${accountIds}::text[])
-          AND "transDate" >= ${startDateInclusive}
-          AND "transDate" <= ${endDateInclusive}
-        GROUP BY "accountId"
-      `
-    : await prisma.$queryRaw<GlSumRow[]>`
-        SELECT
-          "accountId",
-          SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
-        FROM "GLTransactionFact"
-        WHERE "companyId" = ${companyId}
-          AND "accountId" = ANY(${accountIds}::text[])
-          AND "transDate" <= ${endDateInclusive}
-        GROUP BY "accountId"
-      `;
+  // Three query shapes (no lower bound, inclusive lower, exclusive lower).
+  // Each is its own template-literal call to preserve Prisma parameter typing
+  // and keep the SQL trivially auditable.
+  let rows: GlSumRow[];
+  if (lowerBoundExclusive) {
+    rows = await prisma.$queryRaw<GlSumRow[]>`
+      SELECT
+        "accountId",
+        SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
+      FROM "GLTransactionFact"
+      WHERE "companyId" = ${companyId}
+        AND "accountId" = ANY(${accountIds}::text[])
+        AND "transDate" > ${lowerBoundExclusive}
+        AND "transDate" <= ${endInclusive}
+      GROUP BY "accountId"
+    `;
+  } else if (lowerBoundInclusive) {
+    rows = await prisma.$queryRaw<GlSumRow[]>`
+      SELECT
+        "accountId",
+        SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
+      FROM "GLTransactionFact"
+      WHERE "companyId" = ${companyId}
+        AND "accountId" = ANY(${accountIds}::text[])
+        AND "transDate" >= ${lowerBoundInclusive}
+        AND "transDate" <= ${endInclusive}
+      GROUP BY "accountId"
+    `;
+  } else {
+    rows = await prisma.$queryRaw<GlSumRow[]>`
+      SELECT
+        "accountId",
+        SUM(COALESCE("debitAmount", 0) - COALESCE("creditAmount", 0))::float AS balance
+      FROM "GLTransactionFact"
+      WHERE "companyId" = ${companyId}
+        AND "accountId" = ANY(${accountIds}::text[])
+        AND "transDate" <= ${endInclusive}
+      GROUP BY "accountId"
+    `;
+  }
 
   for (const row of rows) {
     out.set(row.accountId, Number(row.balance) || 0);
@@ -272,6 +334,74 @@ function computeFiscalYearStart(
 }
 
 /**
+ * Anchor record we need for the rebuild — only the BS balance lines plus
+ * `anchorDate`. Loaded once per rebuild and cached for every date in the
+ * window since anchors are immutable for the rebuild's duration.
+ */
+export type AnchorRecord = {
+  anchorDate: Date;
+  cash: number;
+  ar: number;
+  inventory: number;
+  otherCA: number;
+  fixedAssets: number;
+  otherAssets: number;
+  ap: number;
+  loc: number;
+  otherCL: number;
+  ltd: number;
+  ownersCapital: number;
+  ownersDraw: number;
+  commonStock: number;
+  preferredStock: number;
+  retainedEarnings: number;
+  additionalPaidInCapital: number;
+  treasuryStock: number;
+};
+
+/**
+ * Resolve the anchor that applies to this snapshotDate, if any.
+ *
+ * Picks the most-recent anchor with `anchorDate <= snapshotDate`. A company
+ * may carry multiple anchors over time (one per fiscal-year-end is the
+ * recommended cadence) — this lets us re-anchor each year-end and keep the
+ * intra-year math anchored to the most recent trusted statement.
+ */
+async function findAnchorForDate(
+  companyId: string,
+  snapshotDate: Date
+): Promise<AnchorRecord | null> {
+  const row = await prisma.balanceSheetAnchor.findFirst({
+    where: {
+      companyId,
+      anchorDate: { lte: snapshotDate },
+    },
+    orderBy: { anchorDate: 'desc' },
+  });
+  if (!row) return null;
+  return {
+    anchorDate: row.anchorDate,
+    cash: row.cash,
+    ar: row.ar,
+    inventory: row.inventory,
+    otherCA: row.otherCA,
+    fixedAssets: row.fixedAssets,
+    otherAssets: row.otherAssets,
+    ap: row.ap,
+    loc: row.loc,
+    otherCL: row.otherCL,
+    ltd: row.ltd,
+    ownersCapital: row.ownersCapital,
+    ownersDraw: row.ownersDraw,
+    commonStock: row.commonStock,
+    preferredStock: row.preferredStock,
+    retainedEarnings: row.retainedEarnings,
+    additionalPaidInCapital: row.additionalPaidInCapital,
+    treasuryStock: row.treasuryStock,
+  };
+}
+
+/**
  * Compute one DailyFinancialSnapshot row for a single (companyId, snapshotDate).
  *
  * Returns the column values only — the caller is responsible for the upsert
@@ -281,45 +411,74 @@ export async function computeDailyBalanceSheetFromGL(
   companyId: string,
   snapshotDate: Date,
   fiscalYearStart: Date,
-  accountIdToTarget: Map<string, AccountTarget>
+  accountIdToTarget: Map<string, AccountTarget>,
+  anchor: AnchorRecord | null = null
 ): Promise<ComputedSnapshot> {
   const accountIds = Array.from(accountIdToTarget.keys());
   if (accountIds.length === 0) return emptySnapshot();
 
-  const [bsRaw, ytdRaw] = await Promise.all([
-    sumGLByAccount(companyId, accountIds, null, snapshotDate),
-    sumGLByAccount(companyId, accountIds, fiscalYearStart, snapshotDate),
-  ]);
+  const useAnchor = anchor !== null && anchor.anchorDate.getTime() <= snapshotDate.getTime();
+
+  // BS source-of-truth aggregation:
+  //   - anchored:   sum GL deltas in (anchorDate, snapshotDate]
+  //   - unanchored: sum all GL through snapshotDate (running balance)
+  const bsRawPromise = useAnchor
+    ? sumGLByAccount(companyId, accountIds, null, snapshotDate, anchor!.anchorDate)
+    : sumGLByAccount(companyId, accountIds, null, snapshotDate);
+
+  // YTD P&L aggregation:
+  //   - anchored & anchor inside current FY (rare): start from anchor exclusive
+  //   - anchored & anchor at/before fyStart:        start from fyStart inclusive
+  //                                                  (clean for FY-end anchors —
+  //                                                   anchor 12/31 + fyStart 1/1
+  //                                                   give the same window)
+  //   - unanchored:                                 start from fyStart inclusive
+  const ytdRawPromise =
+    useAnchor && anchor!.anchorDate.getTime() > fiscalYearStart.getTime()
+      ? sumGLByAccount(companyId, accountIds, null, snapshotDate, anchor!.anchorDate)
+      : sumGLByAccount(companyId, accountIds, fiscalYearStart, snapshotDate);
+
+  const [bsRaw, ytdRaw] = await Promise.all([bsRawPromise, ytdRawPromise]);
 
   const bsByField = aggregateByTargetField(bsRaw, accountIdToTarget);
   const ytdByField = aggregateByTargetField(ytdRaw, accountIdToTarget);
 
   const get = (m: Map<string, number>, k: string) => m.get(k) || 0;
 
+  // Anchor base value for a BS field (zero when unanchored or field not in anchor).
+  const anchorVal = (field: string): number => {
+    if (!useAnchor || !anchor) return 0;
+    return (anchor as unknown as Record<string, number>)[field] || 0;
+  };
+
   // ---- Balance sheet ----
-  const cash = get(bsByField, 'cash');
-  const ar = get(bsByField, 'ar');
-  const inventory = get(bsByField, 'inventory');
-  const otherCA = get(bsByField, 'otherCA');
-  const fixedAssets = get(bsByField, 'fixedAssets');
-  const otherAssets = get(bsByField, 'otherAssets');
+  const cash = anchorVal('cash') + get(bsByField, 'cash');
+  const ar = anchorVal('ar') + get(bsByField, 'ar');
+  const inventory = anchorVal('inventory') + get(bsByField, 'inventory');
+  const otherCA = anchorVal('otherCA') + get(bsByField, 'otherCA');
+  const fixedAssets = anchorVal('fixedAssets') + get(bsByField, 'fixedAssets');
+  const otherAssets = anchorVal('otherAssets') + get(bsByField, 'otherAssets');
   const tca = cash + ar + inventory + otherCA;
   const totalAssets = tca + fixedAssets + otherAssets;
 
-  const ap = get(bsByField, 'ap');
-  const loc = get(bsByField, 'loc');
-  const otherCL = get(bsByField, 'otherCL');
-  const ltd = get(bsByField, 'ltd');
+  const ap = anchorVal('ap') + get(bsByField, 'ap');
+  const loc = anchorVal('loc') + get(bsByField, 'loc');
+  const otherCL = anchorVal('otherCL') + get(bsByField, 'otherCL');
+  const ltd = anchorVal('ltd') + get(bsByField, 'ltd');
   const tcl = ap + loc + otherCL;
   const totalLiab = tcl + ltd;
 
-  const ownersCapital = get(bsByField, 'ownersCapital');
-  const ownersDraw = get(bsByField, 'ownersDraw');
-  const commonStock = get(bsByField, 'commonStock');
-  const preferredStock = get(bsByField, 'preferredStock');
-  const additionalPaidInCapital = get(bsByField, 'additionalPaidInCapital');
-  const treasuryStock = get(bsByField, 'treasuryStock');
-  const bookedRE = get(bsByField, 'retainedEarnings');
+  const ownersCapital = anchorVal('ownersCapital') + get(bsByField, 'ownersCapital');
+  const ownersDraw = anchorVal('ownersDraw') + get(bsByField, 'ownersDraw');
+  const commonStock = anchorVal('commonStock') + get(bsByField, 'commonStock');
+  const preferredStock = anchorVal('preferredStock') + get(bsByField, 'preferredStock');
+  const additionalPaidInCapital =
+    anchorVal('additionalPaidInCapital') + get(bsByField, 'additionalPaidInCapital');
+  const treasuryStock = anchorVal('treasuryStock') + get(bsByField, 'treasuryStock');
+  // Booked RE = anchor RE + any GL postings to RE accounts in the delta window.
+  // For a clean FY-end anchor this delta is typically ~0 because closing
+  // entries went into the anchor; non-zero values here are honored.
+  const bookedRE = anchorVal('retainedEarnings') + get(bsByField, 'retainedEarnings');
 
   // YTD P&L (signed positive: revenue +, expense +)
   const revenue = get(ytdByField, 'revenue');
@@ -392,6 +551,11 @@ export type RebuildDailyBSOptions = {
  * in [startDate, endDate] inclusive, at the given frequency. Idempotent:
  * existing snapshots for each (companyId, snapshotDate, frequency) are
  * upserted with current GL state.
+ *
+ * If the company has any `BalanceSheetAnchor` rows, the rebuild uses the
+ * most-recent anchor with `anchorDate <= snapshotDate` as a starting point
+ * (anchor + GL deltas). Dates strictly before the earliest anchor fall back
+ * to the all-time-GL-sum behavior.
  */
 export async function rebuildDailyFinancialSnapshotsFromGL(
   opts: RebuildDailyBSOptions
@@ -400,6 +564,7 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   rowsWritten: number;
   mappedAccountCount: number;
   unmappedTargetFields: string[];
+  anchorsApplied: number;
 }> {
   const companyId = String(opts.companyId || '').trim();
   if (!companyId) throw new Error('rebuildDailyFinancialSnapshotsFromGL: companyId required');
@@ -457,6 +622,41 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
     )
   );
 
+  // Pre-load all anchors for this company (typically a handful of rows) so
+  // every iteration can pick the right one without an extra DB round-trip.
+  const allAnchorRows = await prisma.balanceSheetAnchor.findMany({
+    where: { companyId },
+    orderBy: { anchorDate: 'desc' },
+  });
+  const allAnchors: AnchorRecord[] = allAnchorRows.map((row) => ({
+    anchorDate: row.anchorDate,
+    cash: row.cash,
+    ar: row.ar,
+    inventory: row.inventory,
+    otherCA: row.otherCA,
+    fixedAssets: row.fixedAssets,
+    otherAssets: row.otherAssets,
+    ap: row.ap,
+    loc: row.loc,
+    otherCL: row.otherCL,
+    ltd: row.ltd,
+    ownersCapital: row.ownersCapital,
+    ownersDraw: row.ownersDraw,
+    commonStock: row.commonStock,
+    preferredStock: row.preferredStock,
+    retainedEarnings: row.retainedEarnings,
+    additionalPaidInCapital: row.additionalPaidInCapital,
+    treasuryStock: row.treasuryStock,
+  }));
+
+  function anchorForDate(d: Date): AnchorRecord | null {
+    for (const a of allAnchors) {
+      // allAnchors is desc by anchorDate, so first hit is the latest applicable.
+      if (a.anchorDate.getTime() <= d.getTime()) return a;
+    }
+    return null;
+  }
+
   // Normalize the iteration cursor to UTC midnight so snapshotDate values
   // collide cleanly with the unique index (companyId, snapshotDate, frequency).
   const startUtc = new Date(
@@ -476,14 +676,19 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
 
   let datesProcessed = 0;
   let rowsWritten = 0;
+  let anchorsApplied = 0;
   const cursor = new Date(startUtc.getTime());
   while (cursor.getTime() <= endUtc.getTime()) {
     const fiscalYearStart = computeFiscalYearStart(cursor, fyMonth, fyDay);
+    const anchor = anchorForDate(cursor);
+    if (anchor) anchorsApplied++;
+
     const snapshot = await computeDailyBalanceSheetFromGL(
       companyId,
       cursor,
       fiscalYearStart,
-      accountIdToTarget
+      accountIdToTarget,
+      anchor
     );
 
     // Always upsert — even when accountIdToTarget is empty we still write a
@@ -519,5 +724,9 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
     rowsWritten,
     mappedAccountCount: accountIdToTarget.size,
     unmappedTargetFields,
+    anchorsApplied,
   };
 }
+
+// Re-export for callers that want to load an anchor directly (e.g. preview).
+export { findAnchorForDate };

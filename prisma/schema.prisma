@@ -1739,3 +1739,45 @@ model DailyFinancialMappedLine {
   @@index([companyId, sourceAccountName])
   @@unique([companyId, snapshotDate, frequency, sourceAccountName, targetField])
 }
+
+// One-time-known balance-sheet anchor for a company, sourced from a trusted
+// external balance sheet (e.g. Infor M3 BS run for 12/31 of a fiscal year).
+// Used by the daily-bs-from-gl rebuilder as a starting point: for any
+// snapshotDate >= anchorDate, each balance-sheet line is computed as
+// `anchor[field] + GL_delta(field, anchorDate < transDate <= snapshotDate)`
+// instead of summing GL from the beginning of time. This avoids historical
+// GL drift from incomplete loads or pre-system carryover entries.
+//
+// Multiple anchors per company are allowed (one per anchorDate); the rebuild
+// picks the most recent anchor with anchorDate <= snapshotDate.
+model BalanceSheetAnchor {
+  id                      String   @id @default(cuid())
+  companyId               String
+  anchorDate              DateTime // EOD balance-sheet date (UTC midnight)
+
+  cash                    Float    @default(0)
+  ar                      Float    @default(0)
+  inventory               Float    @default(0)
+  otherCA                 Float    @default(0)
+  fixedAssets             Float    @default(0)
+  otherAssets             Float    @default(0)
+  ap                      Float    @default(0)
+  loc                     Float    @default(0)
+  otherCL                 Float    @default(0)
+  ltd                     Float    @default(0)
+  ownersCapital           Float    @default(0)
+  ownersDraw              Float    @default(0)
+  commonStock             Float    @default(0)
+  preferredStock          Float    @default(0)
+  retainedEarnings        Float    @default(0)
+  additionalPaidInCapital Float    @default(0)
+  treasuryStock           Float    @default(0)
+
+  source                  String?  // free-form provenance (e.g. "INFOR_M3_BS_2023-12-31")
+  notes                   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([companyId, anchorDate])
+  @@index([companyId, anchorDate(sort: Desc)])
+}
