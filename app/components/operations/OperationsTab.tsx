@@ -3583,7 +3583,12 @@ export default function OperationsTab({
               </div>
             )}
           </div>
+        </div>
 
+        {/* Unpaid Invoices + AR Aging by Customer side-by-side. AR Aging
+            gets 60% of the width because it has more columns (5 buckets +
+            Open AR + Cust ID); Unpaid Invoices gets 40% (4 columns). */}
+        <div style={{ display: 'grid', gridTemplateColumns: '4fr 6fr', gap: '24px', marginTop: '24px' }}>
           {/* Unpaid Invoices Summary */}
           <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
@@ -3674,13 +3679,12 @@ export default function OperationsTab({
               </div>
             )}
           </div>
-        </div>
 
-        {/* AR Aging by Customer (per-customer summary, complements the per-invoice table above) */}
-        <div style={{ marginTop: '24px', background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-            AR Aging by Customer
-          </h3>
+          {/* AR Aging by Customer (per-customer summary, complements the per-invoice table above) */}
+          <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+              AR Aging by Customer
+            </h3>
           {arAgingRows.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -3755,6 +3759,7 @@ export default function OperationsTab({
               </div>
             </div>
           )}
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '11fr 9fr', gap: '24px', marginTop: '24px' }}>
@@ -4086,8 +4091,14 @@ export default function OperationsTab({
     const unpaidBills = (summary?.unpaidBills || []).map((row: any) => ({
       vendorName: row.vendorName || row.vendor,
       billNo: row.billNo || row.billNumber,
+      invoiceNum: row.invoiceNum || null,
       date: row.date,
       dueDate: row.dueDate,
+      // Source label from the API's termsCode cascade — 'voucher:N30',
+      // 'vendor:N45', or 'default:N30'. Surfaced in the Upcoming Due
+      // Calendar so users can see which due dates are real vs. derived
+      // from the N30 fallback.
+      dueDateSource: row.dueDateSource || null,
       amountDue: row.amountDue || row.balance || 0,
     }))
       .filter((row: any) => Number(row.amountDue || 0) > 0)
@@ -4165,18 +4176,33 @@ export default function OperationsTab({
       .filter((row) => row.pastDue > 0)
       .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, 10);
+    // Anchor "today" for the calendar to the latest AP snapshot date
+    // (the date unpaidBills was computed against). Using endDate from the
+    // picker would let daysUntil drift if endDate != latestAP.snapshotDate
+    // (e.g. when the user shifts the window or sync hasn't caught up).
+    const latestApSnapshotDate =
+      recordsForWindow.length > 0
+        ? recordsForWindow[recordsForWindow.length - 1].businessDay
+        : apAsOfDate;
+    const upcomingAsOfMs = latestApSnapshotDate.getTime();
     const upcomingDueCalendar = unpaidBills
       .map((row) => {
         const due = parseDateValue(row.dueDate);
-        const daysUntil = due ? Math.ceil((due.getTime() - apAsOfDate.getTime()) / 86400000) : null;
+        const daysUntil = due ? Math.ceil((due.getTime() - upcomingAsOfMs) / 86400000) : null;
         return {
           ...row,
           daysUntil,
         };
       })
-      .filter((row) => row.daysUntil !== null && row.daysUntil <= 30)
-      .sort((a, b) => Number(a.daysUntil || 0) - Number(b.daysUntil || 0))
-      .slice(0, 12);
+      // "Next 30 Days" = strictly upcoming (today through +30). Past-due
+      // bills (daysUntil < 0) are intentionally excluded — they live in
+      // the AP Past-Due Risk Queue, not in the upcoming calendar.
+      .filter((row) => row.daysUntil !== null && row.daysUntil >= 0 && row.daysUntil <= 30)
+      .sort((a, b) => Number(a.daysUntil || 0) - Number(b.daysUntil || 0));
+    const upcomingDueTotal = upcomingDueCalendar.reduce(
+      (sum, row) => sum + Number(row.amountDue || 0),
+      0
+    );
 
     return (
       <div style={{ padding: '8px 32px 32px' }}>
@@ -4644,40 +4670,68 @@ export default function OperationsTab({
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
             Upcoming Due Calendar (Next 30 Days)
           </h3>
-          <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
-            As of: {apAsOfLabel} | Coverage: {apCoverageLabel}
+          <div style={{ marginBottom: '4px', fontSize: '11px', color: '#64748b' }}>
+            As of: {formatDateUtcMinus4(latestApSnapshotDate)} | Coverage: {apCoverageLabel}
+          </div>
+          <div style={{ marginBottom: '8px', fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+            Due dates derived from termsCode cascade (voucher → vendor → N30 default). The Source column shows which tier was used for each row.
           </div>
           {upcomingDueCalendar.length === 0 ? (
             <div style={{ height: '160px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
               No bills due in the next 30 days.
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto', maxHeight: '480px', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb' }}>
+                  <tr style={{ borderBottom: '2px solid #1d4ed8', background: '#2563eb', position: 'sticky', top: 0, zIndex: 1 }}>
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Vendor</th>
-                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Bill</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Voucher</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Invoice #</th>
                     <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Due Date</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Days Until Due</th>
                     <th style={{ textAlign: 'right', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Amount Due</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: 'white' }}>Source</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {upcomingDueCalendar.map((row, index) => (
-                    <tr key={`${row.vendorName}-${row.billNo}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
-                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.billNo}</td>
-                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.dueDate}</td>
-                      <td style={{ padding: '6px 10px', fontSize: '13px', color: Number(row.daysUntil || 0) < 0 ? '#dc2626' : '#1e293b', textAlign: 'right', fontWeight: 600 }}>
-                        {Number(row.daysUntil || 0)}
-                      </td>
-                      <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 600 }}>
-                        {formatCurrency(Number(row.amountDue || 0))}
-                      </td>
-                    </tr>
-                  ))}
+                  {upcomingDueCalendar.map((row, index) => {
+                    const source = String(row.dueDateSource || '');
+                    const isDefault = source.startsWith('default:');
+                    const sourceColor = isDefault ? '#94a3b8' : '#475569';
+                    return (
+                      <tr key={`${row.vendorName}-${row.billNo}-${index}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{row.vendorName}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.billNo}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{row.invoiceNum || '-'}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#64748b' }}>{formatDateUtcMinus4(row.dueDate)}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 600 }}>
+                          {Number(row.daysUntil || 0)}
+                        </td>
+                        <td style={{ padding: '6px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 600 }}>
+                          {formatCurrency(Number(row.amountDue || 0))}
+                        </td>
+                        <td
+                          style={{ padding: '6px 10px', fontSize: '12px', color: sourceColor, fontStyle: isDefault ? 'italic' : 'normal' }}
+                          title={isDefault ? 'No termsCode on voucher or vendor — defaulted to N30' : 'Derived from termsCode'}
+                        >
+                          {source || '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: '2px solid #1d4ed8', background: '#f1f5f9' }}>
+                    <td colSpan={5} style={{ padding: '8px 10px', fontSize: '13px', color: '#1e293b', fontWeight: 700 }}>
+                      Total ({upcomingDueCalendar.length} bill{upcomingDueCalendar.length === 1 ? '' : 's'})
+                    </td>
+                    <td style={{ padding: '8px 10px', fontSize: '13px', color: '#1e293b', textAlign: 'right', fontWeight: 700 }}>
+                      {formatCurrency(upcomingDueTotal)}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}

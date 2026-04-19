@@ -1366,6 +1366,7 @@ async function buildOpenVouchersByAgingRule(
 ): Promise<
   Array<{
     voucher: string;
+    invoiceNum: string | null;
     vendorId: string | null;
     vendorName: string;
     voucherCreatedAt: Date;
@@ -1382,6 +1383,7 @@ async function buildOpenVouchersByAgingRule(
 
   const rows: Array<{
     voucher: string;
+    invoice_num: string | null;
     vendor_id: string | null;
     vendor_name: string | null;
     created_at: Date;
@@ -1412,6 +1414,7 @@ async function buildOpenVouchersByAgingRule(
      voucher_meta AS (
        SELECT DISTINCT ON (t.voucher)
          t.voucher,
+         NULLIF(TRIM(t."invoiceNum"), '') AS invoice_num,
          t."vendorId" AS vendor_id,
          t."vendorName" AS vendor_name,
          t."invoiceDate" AS invoice_date,
@@ -1445,6 +1448,7 @@ async function buildOpenVouchersByAgingRule(
      )
      SELECT
        opv.voucher,
+       vm.invoice_num,
        vm.vendor_id,
        COALESCE(NULLIF(TRIM(vm.vendor_name), ''), 'Unknown Vendor') AS vendor_name,
        opv.created_at,
@@ -1474,6 +1478,7 @@ async function buildOpenVouchersByAgingRule(
     });
     return {
       voucher: String(r.voucher),
+      invoiceNum: r.invoice_num ? String(r.invoice_num) : null,
       vendorId: r.vendor_id ? String(r.vendor_id) : null,
       vendorName: String(r.vendor_name || 'Unknown Vendor'),
       voucherCreatedAt,
@@ -4777,10 +4782,16 @@ export async function GET(request: NextRequest) {
                         .map((v) => ({
                           vendorName: v.vendorName || 'Unknown Vendor',
                           billNo: v.voucher,
+                          invoiceNum: v.invoiceNum,
                           date: v.invoiceDate
                             ? v.invoiceDate.toISOString().slice(0, 10)
                             : v.voucherCreatedAt.toISOString().slice(0, 10),
                           dueDate: v.dueDate.toISOString().slice(0, 10),
+                          // Source label for the dueDate cascade so the UI can
+                          // show users which dates are real vs. derived from
+                          // the N30 default fallback. Values look like
+                          // 'voucher:N30', 'vendor:N45', or 'default:N30'.
+                          dueDateSource: v.termsCodeUsed,
                           amountDue: Number(v.openBalance || 0),
                         }));
 
@@ -4793,10 +4804,12 @@ export async function GET(request: NextRequest) {
                         .map((v) => ({
                           vendorName: v.vendorName || 'Unknown Vendor',
                           billNo: v.voucher,
+                          invoiceNum: v.invoiceNum,
                           date: v.invoiceDate
                             ? v.invoiceDate.toISOString().slice(0, 10)
                             : v.voucherCreatedAt.toISOString().slice(0, 10),
                           dueDate: v.dueDate.toISOString().slice(0, 10),
+                          dueDateSource: v.termsCodeUsed,
                           currency: 'USD',
                           amountCurrency: Number(v.openBalance || 0),
                           amountHome: Number(v.openBalance || 0),
