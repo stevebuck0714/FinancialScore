@@ -4203,96 +4203,19 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        let apGlAnchorApplied = false;
-        const apAnchorCfgForTrend = getApBalanceSheetAnchorConfig(companyId);
-        if (isInforGlCompany && apAnchorCfgForTrend) {
-          const anchorAccountForTrend = apAnchorCfgForTrend.accounts[0];
-          // Trend uses the same 150-day aging-rule derivation as the main
-          // 'ap' case below — see comment there for the rationale and
-          // validation evidence. This replaced an anchor-roll-forward that
-          // accumulated orphan-payment leakage and produced impossible
-          // (negative) AP balances on recent dates.
-          const dailyGlAp = await buildDailyApSeriesByAgingRule(
-            prisma,
-            companyId,
-            anchorAccountForTrend.accountId,
-            anchorAccountForTrend.accountName || 'Accounts Payable',
-            anchorAccountForTrend.accountNumber || anchorAccountForTrend.accountId,
-            startDate,
-            endDate,
-            150
-          );
-          if (dailyGlAp.length > 0) {
-            const glApTotalByDay = new Map<string, number>();
-            for (const row of dailyGlAp) {
-              const k = dateKeyUtc(new Date(row.snapshotDate));
-              glApTotalByDay.set(k, Number(glApTotalByDay.get(k) || 0) + Number(row.apBalance || 0));
-            }
-            if (glApTotalByDay.size > 0) {
-                apGlAnchorApplied = true;
-                const toPeriodKeyFromDayKey = (dayKey: string): string => {
-                  const [y, m, d] = dayKey.split('-').map((x) => Number(x));
-                  const cal = new Date(Date.UTC(y, m - 1, d));
-                  if (frequency === 'monthly') {
-                    return `${cal.getUTCFullYear()}-${String(cal.getUTCMonth() + 1).padStart(2, '0')}`;
-                  }
-                  if (frequency === 'weekly') {
-                    const day = cal.getUTCDay();
-                    const diffToMonday = day === 0 ? -6 : 1 - day;
-                    const weekStart = new Date(
-                      Date.UTC(cal.getUTCFullYear(), cal.getUTCMonth(), cal.getUTCDate() + diffToMonday)
-                    );
-                    return `${weekStart.getUTCFullYear()}-${String(weekStart.getUTCMonth() + 1).padStart(2, '0')}-${String(weekStart.getUTCDate()).padStart(2, '0')}`;
-                  }
-                  return dayKey;
-                };
-                const periodLatestGl = new Map<string, { snapshotDate: Date; total: number }>();
-                for (const dayKey of Array.from(glApTotalByDay.keys()).sort()) {
-                  const total = Number(glApTotalByDay.get(dayKey) || 0);
-                  const pk = toPeriodKeyFromDayKey(dayKey);
-                  const d = parseIsoDayKey(dayKey);
-                  const next = { snapshotDate: d, total };
-                  const existing = periodLatestGl.get(pk);
-                  if (!existing || next.snapshotDate.getTime() > existing.snapshotDate.getTime()) {
-                    periodLatestGl.set(pk, next);
-                  }
-                }
-                data = Array.from(periodLatestGl.values())
-                  .sort((a, b) => b.snapshotDate.getTime() - a.snapshotDate.getTime())
-                  .slice(0, limit)
-                  .map((row) => ({
-                    snapshotDate: row.snapshotDate,
-                    frequency: apFrequencyForQuery,
-                    totalAP: row.total,
-                    current: row.total,
-                    days1to30: 0,
-                    days31to60: 0,
-                    days61to90: 0,
-                    days90plus: 0,
-                  })) as any;
-                latestAP = data[0];
-                apMetrics = latestAP
-                  ? {
-                      totalAP: latestAP.totalAP,
-                      currentPct:
-                        latestAP.totalAP > 0 ? (latestAP.current / latestAP.totalAP) * 100 : 0,
-                      over30Pct:
-                        latestAP.totalAP > 0
-                          ? ((latestAP.days1to30 +
-                              latestAP.days31to60 +
-                              latestAP.days61to90 +
-                              latestAP.days90plus) /
-                              latestAP.totalAP) *
-                            100
-                          : 0,
-                      over90Pct:
-                        latestAP.totalAP > 0 ? (latestAP.days90plus / latestAP.totalAP) * 100 : 0,
-                      dpo: calculateDPO(data),
-                    }
-                  : apMetrics;
-            }
-          }
-        }
+        // NOTE: The AP page deliberately does NOT swap in a GL-balance-anchored
+        // AP series here. Doing so would make the trend chart and KPI cards
+        // reflect GL-derived totals while every per-vendor / per-bill /
+        // upcoming-due / past-due-risk table on the page continues to read from
+        // APOpenBillSnapshot, producing totals that don't tie to the tables
+        // below them. Mirror the AR page model: every surface on this endpoint
+        // is anchored to the open-bill ground truth (APOpenBillSnapshot for
+        // the breakdown / tables, APAgingSnapshot for the trend records, both
+        // backfilled from the same source).
+        //
+        // The GL-anchored AP series is still produced by the ?type=ap account
+        // balance roll-forward (case 'ap' below) for the GL/balance-sheet
+        // surfaces that need it.
 
         if (shouldUseMockData) {
           return NextResponse.json(
@@ -4308,7 +4231,7 @@ export async function GET(request: NextRequest) {
           );
         }
 
-        const effectiveApMetrics = computedApFromOpen && !apGlAnchorApplied
+        const effectiveApMetrics = computedApFromOpen
           ? {
               totalAP: Number(computedApFromOpen.totalAP || 0),
               currentPct:
