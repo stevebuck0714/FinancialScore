@@ -78,14 +78,29 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
   const fmtCsi = (d: Date) =>
     `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
 
+  // Match the canonical SLVchHdrs request shape we know returns records
+  // (taken from a real successful Atlantic sync URL): full SAFE_PROPERTIES
+  // + double-paren filter + loadtype=FIRST.
   const candidateProps = [
-    'Voucher',
+    // Standard SAFE_PROPERTIES
     'VendNum',
+    'VadName',
+    'Voucher',
+    'VouchSeq',
     'InvNum',
     'InvDate',
     'DistDate',
     'RecordDate',
+    'Type',
+    'InvAmt',
+    'DiscPct',
     'TermsCode',
+    'ExchRate',
+    'PreRegister',
+    'InWorkflow',
+    'PostFromPo',
+    'ApAcct',
+    // Probe candidates:
     'DueDate',
     'PayDate',
     'DiscDate',
@@ -93,13 +108,14 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
   ];
 
   const properties = candidateProps.join(',');
-  const filter = `(RecordDate >= '${fmtCsi(start)}' and RecordDate <= '${fmtCsi(today)}')`;
+  const filter = `((RecordDate >= '${fmtCsi(start)}') and (RecordDate <= '${fmtCsi(today)}'))`;
   const orderby = 'RecordDate desc, Voucher desc';
   const endpointPath =
-    `${basePath}?properties=${encodeURIComponent(properties)}` +
-    `&filter=${encodeURIComponent(filter)}` +
+    `${basePath}?filter=${encodeURIComponent(filter)}` +
+    `&recordCap=5` +
     `&orderby=${encodeURIComponent(orderby)}` +
-    `&recordCap=5`;
+    `&properties=${encodeURIComponent(properties)}` +
+    `&loadtype=FIRST`;
 
   stage.current = 'call_infor_ion_api';
   const probedAt = new Date().toISOString();
