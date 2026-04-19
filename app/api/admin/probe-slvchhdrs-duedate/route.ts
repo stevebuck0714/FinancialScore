@@ -93,7 +93,7 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
   ];
 
   const properties = candidateProps.join(',');
-  const filter = `(RecordDate >= '${fmtCsi(start)}') and (RecordDate <= '${fmtCsi(today)}')`;
+  const filter = `(RecordDate >= '${fmtCsi(start)}' and RecordDate <= '${fmtCsi(today)}')`;
   const orderby = 'RecordDate desc, Voucher desc';
   const endpointPath =
     `${basePath}?properties=${encodeURIComponent(properties)}` +
