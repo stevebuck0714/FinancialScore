@@ -67,9 +67,16 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
   }
 
   stage.current = 'load_credentials';
-  const credentials = await getInforM3CredentialsForCompany(companyId);
+  // SLVchHdrs URL prefix is /APR_PRD/CSI/... so default the credential
+  // profile to INFOR_CSI. Override via ?system=INFOR_M3 if needed.
+  const systemParam = String(url.searchParams.get('system') || 'INFOR_CSI').trim().toUpperCase();
+  const inforSystem = systemParam === 'INFOR_M3' ? 'INFOR_M3' : 'INFOR_CSI';
+  const credentials = await getInforM3CredentialsForCompany(companyId, inforSystem as any);
   if (!credentials) {
-    return NextResponse.json({ ok: false, error: 'no Infor credentials for company' }, { status: 404 });
+    return NextResponse.json(
+      { ok: false, error: 'no Infor credentials for company', inforSystem },
+      { status: 404 }
+    );
   }
 
   stage.current = 'build_request';
@@ -193,6 +200,7 @@ async function runProbe(request: NextRequest, stage: { current: string }): Promi
     httpStatus: result.status,
     url: result.url,
     endpointPath,
+    inforSystem,
     candidatesProbed: candidatesList,
     requestedProperties: candidateProps,
     returnedItemCount: items.length,
