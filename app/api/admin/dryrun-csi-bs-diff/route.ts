@@ -139,28 +139,68 @@ async function loadCsiLedgerRowsFromFact(
   throughMonth: string,
   maxMonths: number,
 ): Promise<JsonRecord[]> {
+  // Mirrors loadHistoricalCsiLedgerFacts() in app/api/financials/reprocess-mappings/route.ts
+  // — same column projection and same row shape, so the builder sees identical
+  // input to what the live reprocess produces when it falls through to FACT.
   const [year, month] = throughMonth.split('-').map((x) => Number(x));
   const through = new Date(Date.UTC(year, month, 0, 23, 59, 59));
   const earliest = new Date(Date.UTC(year, month - 1 - (maxMonths - 1), 1));
-  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      transDate: Date;
+      accountId: string;
+      accountName: string | null;
+      signedAmount: number;
+      debitAmount: number | null;
+      creditAmount: number | null;
+      sourceProgram: string | null;
+      drCr: string | null;
+      transNum: string | null;
+      ref: string | null;
+      description: string | null;
+    }>
+  >`
     SELECT
-      "accountId" AS "Acct",
-      "controlYear" AS "ControlYear",
-      "controlPeriod" AS "ControlPeriod",
-      "transNum" AS "TransNum",
-      "voucher" AS "Voucher",
-      "vouchSeq" AS "VouchSeq",
-      "reference" AS "Ref",
-      "transDate" AS "TransDate",
-      "recordDate" AS "RecordDate",
-      "domAmount" AS "DomAmount",
-      "rowPointer" AS "RowPointer"
+      id,
+      "transDate",
+      "accountId",
+      "accountName",
+      "signedAmount",
+      "debitAmount",
+      "creditAmount",
+      "sourceProgram",
+      "drCr",
+      "transNum",
+      ref,
+      description
     FROM "GLTransactionFact"
     WHERE "companyId" = ${companyId}
       AND "transDate" >= ${earliest}
       AND "transDate" <= ${through}
+    ORDER BY "transDate" ASC
   `;
-  return rows;
+  return (Array.isArray(rows) ? rows : []).map((row: any) => {
+    const d = row?.transDate ? new Date(row.transDate) : null;
+    const controlYear = d && !Number.isNaN(d.getTime()) ? d.getUTCFullYear() : null;
+    const controlPeriod = d && !Number.isNaN(d.getTime()) ? d.getUTCMonth() + 1 : null;
+    return {
+      RowPointer: String(row?.id || ''),
+      TransDate: d ? d.toISOString() : null,
+      ControlYear: controlYear,
+      ControlPeriod: controlPeriod,
+      Acct: String(row?.accountId || ''),
+      Description: String(row?.accountName || row?.description || ''),
+      SignedAmount: Number(row?.signedAmount || 0),
+      DomAmount: Number(row?.signedAmount || 0),
+      Debit: Number(row?.debitAmount || 0),
+      Credit: Number(row?.creditAmount || 0),
+      DrCr: String(row?.drCr || ''),
+      TransNum: String(row?.transNum || ''),
+      Ref: String(row?.ref || ''),
+      __miProgram: String(row?.sourceProgram || 'GLTRANSACTIONFACT').trim().toUpperCase(),
+    } as Record<string, unknown>;
+  });
 }
 
 async function summarizeFactLedger(
