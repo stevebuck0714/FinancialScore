@@ -260,6 +260,52 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => Math.abs(b.sumAmount) - Math.abs(a.sumAmount));
   }
 
+  // Raw Infor M3 sync coverage for the day — by miProgram. If the sales
+  // programs (SLCohdrs / SLCoitems) have zero rows for businessDate=day,
+  // the upstream sync simply hasn't pulled it yet (sync gap), as opposed
+  // to "M3 actually had no sales that day" or "GL posting lag".
+  let rawBatchesByProgram: Array<{ miProgram: string; module: string | null; batchCount: number; recordSum: number }> = [];
+  try {
+    const rawBatches: any[] = await (prisma as any).inforRawBatch.groupBy({
+      by: ['miProgram', 'module'],
+      where: {
+        companyId,
+        businessDate: { gte: start, lte: end },
+      },
+      _count: { _all: true },
+      _sum: { recordCount: true },
+    });
+    rawBatchesByProgram = rawBatches.map((r: any) => ({
+      miProgram: String(r.miProgram || ''),
+      module: r.module || null,
+      batchCount: Number(r._count?._all || 0),
+      recordSum: Number(r._sum?.recordCount || 0),
+    }));
+    rawBatchesByProgram.sort((a, b) => b.recordSum - a.recordSum);
+  } catch {
+    // best-effort — model may not exist on every env
+  }
+
+  let rawRecordsByProgram: Array<{ miProgram: string; module: string | null; rowCount: number }> = [];
+  try {
+    const rawRecords: any[] = await (prisma as any).inforRawRecord.groupBy({
+      by: ['miProgram', 'module'],
+      where: {
+        companyId,
+        businessDate: { gte: start, lte: end },
+      },
+      _count: { _all: true },
+    });
+    rawRecordsByProgram = rawRecords.map((r: any) => ({
+      miProgram: String(r.miProgram || ''),
+      module: r.module || null,
+      rowCount: Number(r._count?._all || 0),
+    }));
+    rawRecordsByProgram.sort((a, b) => b.rowCount - a.rowCount);
+  } catch {
+    // best-effort
+  }
+
   // Recent DFS import runs that touched this date — tells us which platform
   // / run wrote the current value into DFS (operational-sync vs raw ingest
   // vs daily-bs-from-gl rebuild).
@@ -378,6 +424,10 @@ export async function GET(request: NextRequest) {
         sourcePlatform: l.sourcePlatform,
         sourceRunId: l.sourceRunId,
       })),
+    },
+    rawSyncCoverage: {
+      batchesByProgram: rawBatchesByProgram,
+      recordsByProgram: rawRecordsByProgram,
     },
     dailyFinancialImportRuns: importRuns.map((r: any) => ({
       platform: r.platform,
