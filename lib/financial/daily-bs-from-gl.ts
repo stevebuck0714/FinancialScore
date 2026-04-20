@@ -500,6 +500,102 @@ function emptySnapshot(): ComputedSnapshot {
   return zero as unknown as ComputedSnapshot;
 }
 
+/**
+ * Compute the P&L *daily movement* (revenue, cogsTotal, expense rollup, plus
+ * each subcategory) for a single (companyId, day) by reading
+ * `GLTransactionFact` directly and routing each `AccountMapping.targetField`
+ * through `resolveDfsColumnsForTargetField`.
+ *
+ * This is the same source-of-truth path the GL rebuild uses, exposed as a
+ * focused helper so the daily operational sync (`operational-sync.ts`) can
+ * stop deriving its `revenueFromGl`/`cogsFromGl`/`expenseFromGl` totals from
+ * the partially-populated `DailyFinancialMappedLine` table. mappedLines is a
+ * best-effort breakdown that misses accounts (e.g. Atlantic Precision Jan
+ * 2026: GL has $700k COGS but mappedLines only captured $282k), which caps
+ * the snapshot via `Math.max(revenueFromOps, revenueFromGl)` at the lower
+ * incomplete value.
+ *
+ * Returned values follow DFS natural-balance convention (revenue positive,
+ * cogs/expense positive). The window is [`dayStart`, `dayEnd`] inclusive.
+ */
+export async function computeDailyPnlMovementsFromGL(
+  companyId: string,
+  dayStart: Date,
+  dayEnd: Date
+): Promise<{
+  revenue: number;
+  cogsTotal: number;
+  expense: number;
+  byColumn: Map<string, number>;
+}> {
+  const mappings = (await prisma.accountMapping.findMany({
+    where: { companyId },
+    select: {
+      accountId: true,
+      accountCode: true,
+      accountName: true,
+      accountClassification: true,
+      targetField: true,
+    },
+  })) as AccountMappingRow[];
+  const accountIdToTarget = buildAccountIdToTarget(mappings);
+  const accountIds = Array.from(accountIdToTarget.keys());
+  if (accountIds.length === 0) {
+    return { revenue: 0, cogsTotal: 0, expense: 0, byColumn: new Map() };
+  }
+
+  const glSums = await sumGLByAccount(companyId, accountIds, dayStart, dayEnd);
+  const byColumn = aggregateByTargetField(glSums, accountIdToTarget);
+
+  const revenue = byColumn.get('revenue') || 0;
+  const cogsTotal = byColumn.get('cogsTotal') || 0;
+
+  // Operating expense rollup: sum the per-bucket OPEX subcategories plus the
+  // bare `expense` rollup column. Critically we EXCLUDE:
+  //   - revenue / nonOperatingIncome           (income, not expense)
+  //   - cogsTotal and every cogs* subcategory  (separate roll-up; cogs
+  //                                             accounts populate BOTH
+  //                                             cogsTotal and the matching
+  //                                             cogs subcategory, so summing
+  //                                             them would double-count and
+  //                                             they're already covered by
+  //                                             `cogsTotal` above)
+  //   - nonOperatingExpense / extraordinaryItems
+  //                                             (non-operating, lives in
+  //                                              its own DFS columns and the
+  //                                              UI sums them separately
+  //                                              under "Other Income/Expense")
+  const OPEX_FIELDS_TO_SUM = new Set<string>([
+    'expense',
+    'payroll',
+    'ownerBasePay',
+    'benefits',
+    'insurance',
+    'professionalFees',
+    'subcontractors',
+    'rent',
+    'taxLicense',
+    'stateIncomeTaxes',
+    'federalIncomeTaxes',
+    'phoneComm',
+    'infrastructure',
+    'autoTravel',
+    'salesExpense',
+    'marketing',
+    'trainingCert',
+    'mealsEntertainment',
+    'interestExpense',
+    'depreciationAmortization',
+    'otherExpense',
+  ]);
+  let expense = 0;
+  for (const f of OPEX_FIELDS_TO_SUM) {
+    expense += byColumn.get(f) || 0;
+  }
+
+  return { revenue, cogsTotal, expense, byColumn };
+}
+
 function aggregateByTargetField(
   glSums: Map<string, number>,
   accountIdToTarget: Map<string, AccountTarget>

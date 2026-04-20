@@ -4,6 +4,7 @@ import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback, type InforM3Credentials } from '@/lib/infor-m3/credentials';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { createHash, randomUUID } from 'node:crypto';
+import { computeDailyPnlMovementsFromGL } from '@/lib/financial/daily-bs-from-gl';
 
 type InforProgramRow = {
   module: string;
@@ -7760,22 +7761,23 @@ export async function upsertDailyFinancialSnapshotFromOperationalTables(
   const inventory = Array.from(inventoryBySku.values()).reduce((sum, value) => sum + Number(value || 0), 0);
   const revenueFromOps = Number(productAgg?._sum?.revenue || 0);
   const cogsFromOps = Number(productAgg?._sum?.cogs || 0);
-  const revenueFromGl = sumGlByPredicate((field) => field.startsWith('rev'));
-  const cogsFromGl = sumGlByPredicate(
-    (field) => field === 'cogstotal' || field.startsWith('cogs') || field.includes('costofgoods')
-  );
-  const expenseFromGl = sumGlByPredicate(
-    (field) =>
-      field === 'expense' ||
-      field === 'otherexpense' ||
-      field.includes('expense') ||
-      field.includes('payroll') ||
-      field.includes('rent') ||
-      field.includes('insurance') ||
-      field.includes('tax') ||
-      field.includes('interest') ||
-      field.includes('depreciation')
-  );
+
+  // Derive same-day GL P&L from `GLTransactionFact` directly using the slug
+  // resolver (`resolveDfsColumnsForTargetField`). This replaces the previous
+  // approach that read from `DailyFinancialMappedLine`, which is a partial
+  // breakdown table that misses accounts (e.g. Atlantic Precision Jan 2026:
+  // GL truth had $1,316k revenue / $700k COGS, but mappedLines only captured
+  // $1,236k / $282k). Because the daily snapshot is written via
+  //   revenue   = max(revenueFromOps, revenueFromGl)
+  //   cogsTotal = max(cogsFromOps,   cogsFromGl)
+  // pulling the GL value from an incomplete table silently caps DFS at the
+  // lower number — the same root cause as the COGS display bug. Sourcing
+  // from GLTransactionFact via the resolver gives us the same truth the GL
+  // rebuild uses.
+  const dayPnlFromGl = await computeDailyPnlMovementsFromGL(companyId, dayStart, dayEnd);
+  const revenueFromGl = dayPnlFromGl.revenue;
+  const cogsFromGl = dayPnlFromGl.cogsTotal;
+  const expenseFromGl = dayPnlFromGl.expense;
 
   const revenue = hasExactSalesForDay ? Math.max(revenueFromOps, revenueFromGl) : revenueFromGl;
   const cogsTotal = hasExactSalesForDay ? Math.max(cogsFromOps, cogsFromGl) : cogsFromGl;
