@@ -16,6 +16,12 @@ export const maxDuration = 300;
  *   frequency?: 'daily'|'weekly'|'monthly'   (default 'daily')
  *   fiscalYearStartMonth?: number        // 1-12, default 1 (calendar)
  *   fiscalYearStartDay?: number          // 1-31, default 1
+ *   pnlUpdateMode?: 'preserve'|'overwrite' // default 'preserve' — see
+ *                                          // RebuildDailyBSOptions docstring.
+ *                                          // 'overwrite' is for the one-time
+ *                                          // corrective backfill that repairs
+ *                                          // rows poisoned by an earlier
+ *                                          // YTD-into-daily-slot bug.
  * }
  *
  * Recomputes DailyFinancialSnapshot rows for every date in [startDate, endDate]
@@ -39,6 +45,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       frequency?: string;
       fiscalYearStartMonth?: number;
       fiscalYearStartDay?: number;
+      pnlUpdateMode?: string;
     };
 
     const expectedSecret = process.env.CRON_SECRET || 'dev-secret-change-me';
@@ -93,6 +100,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         ? Number(body.fiscalYearStartDay)
         : 1;
 
+    const pnlModeRaw = String(body.pnlUpdateMode || 'preserve').trim().toLowerCase();
+    const pnlUpdateMode: 'preserve' | 'overwrite' =
+      pnlModeRaw === 'overwrite' ? 'overwrite' : 'preserve';
+
     const startedAt = Date.now();
     const result = await rebuildDailyFinancialSnapshotsFromGL({
       companyId,
@@ -101,6 +112,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       frequency: frequency as 'daily' | 'weekly' | 'monthly',
       fiscalYearStartMonth: fyMonth,
       fiscalYearStartDay: fyDay,
+      pnlUpdateMode,
     });
     const elapsedMs = Date.now() - startedAt;
 
@@ -113,6 +125,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       endDate: endStr,
       fiscalYearStartMonth: fyMonth,
       fiscalYearStartDay: fyDay,
+      pnlUpdateMode,
       datesProcessed: result.datesProcessed,
       rowsWritten: result.rowsWritten,
       mappedAccountCount: result.mappedAccountCount,

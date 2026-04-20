@@ -278,7 +278,7 @@ type ComputedSnapshot = {
   totalEquity: number;
   totalLAndE: number;
 
-  // P&L (YTD as-of snapshotDate)
+  // P&L (single-day movement on snapshotDate; multi-day if pnlPeriodStart used)
   revenue: number;
   expense: number;
   cogsPayroll: number;
@@ -425,13 +425,31 @@ async function findAnchorForDate(
  *
  * Returns the column values only — the caller is responsible for the upsert
  * (so the same helper can power both per-date rebuilds and ad-hoc previews).
+ *
+ * P&L semantics (`out.revenue`, `out.cogsTotal`, every PNL_SUM_FIELDS member):
+ * the values returned are the *single-day movement* between
+ * `pnlPeriodStart` (inclusive, default = snapshotDate at 00:00:00 UTC) and
+ * `snapshotDate` (inclusive, end of day). This matches the schema contract
+ * for `DailyFinancialSnapshot` ("Income statement activity fields (daily
+ * movement)") and matches the value `operational-sync.ts` writes from
+ * `ProductSalesSnapshot.revenue` for that day.
+ *
+ * NOTE: Earlier versions of this helper wrote *YTD* P&L into these fields,
+ * which produced wildly inflated daily numbers for any day that the GL-
+ * rebuild path was the last writer (e.g. Atlantic Precision 2026-03-10:
+ * $2.7M YTD revenue dumped into a "daily" slot). The YTD aggregation is
+ * still computed below but only for retained-earnings math.
+ *
+ * For a multi-day P&L window (e.g. monthly rebuild), pass `pnlPeriodStart`
+ * = first calendar day of the period and `snapshotDate` = last day.
  */
 export async function computeDailyBalanceSheetFromGL(
   companyId: string,
   snapshotDate: Date,
   fiscalYearStart: Date,
   accountIdToTarget: Map<string, AccountTarget>,
-  anchor: AnchorRecord | null = null
+  anchor: AnchorRecord | null = null,
+  pnlPeriodStart: Date | null = null
 ): Promise<ComputedSnapshot> {
   const accountIds = Array.from(accountIdToTarget.keys());
   if (accountIds.length === 0) return emptySnapshot();
@@ -486,16 +504,56 @@ export async function computeDailyBalanceSheetFromGL(
       )
     : Promise.resolve(new Map<string, number>());
 
-  const [bsRaw, ytdRaw, priorPeriodRaw] = await Promise.all([
+  // Daily-delta P&L window (this is what the schema's "daily movement"
+  // fields actually represent). Defaults to the calendar day containing
+  // snapshotDate; multi-day callers can override via pnlPeriodStart.
+  const dayStart = pnlPeriodStart
+    ? new Date(
+        Date.UTC(
+          pnlPeriodStart.getUTCFullYear(),
+          pnlPeriodStart.getUTCMonth(),
+          pnlPeriodStart.getUTCDate(),
+          0, 0, 0, 0
+        )
+      )
+    : new Date(
+        Date.UTC(
+          snapshotDate.getUTCFullYear(),
+          snapshotDate.getUTCMonth(),
+          snapshotDate.getUTCDate(),
+          0, 0, 0, 0
+        )
+      );
+  const dayEnd = new Date(
+    Date.UTC(
+      snapshotDate.getUTCFullYear(),
+      snapshotDate.getUTCMonth(),
+      snapshotDate.getUTCDate(),
+      23, 59, 59, 999
+    )
+  );
+  const dailyPnlRawPromise = sumGLByAccount(
+    companyId,
+    accountIds,
+    dayStart,
+    dayEnd
+  );
+
+  const [bsRaw, ytdRaw, priorPeriodRaw, dailyPnlRaw] = await Promise.all([
     bsRawPromise,
     ytdRawPromise,
     priorPeriodRawPromise,
+    dailyPnlRawPromise,
   ]);
 
   const bsByField = aggregateByTargetField(bsRaw, accountIdToTarget);
   const ytdByField = aggregateByTargetField(ytdRaw, accountIdToTarget);
   const priorPeriodByField = aggregateByTargetField(
     priorPeriodRaw,
+    accountIdToTarget
+  );
+  const dailyPnlByField = aggregateByTargetField(
+    dailyPnlRaw,
     accountIdToTarget
   );
 
@@ -571,8 +629,12 @@ export async function computeDailyBalanceSheetFromGL(
     treasuryStock;
   const totalLAndE = totalLiab + totalEquity;
 
-  // ---- P&L bucket fields (YTD) — every PNL_SUM_FIELDS field gets written
-  //      so the snapshot row always has a complete shape ----
+  // ---- P&L bucket fields (DAILY DELTA) — every PNL_SUM_FIELDS field gets
+  //      written so the snapshot row always has a complete shape. Note we
+  //      use `dailyPnlByField` here, not `ytdByField`. The YTD aggregation
+  //      is only used above for retained-earnings/netIncome math; writing
+  //      it into these per-day columns would inflate every row to YTD-
+  //      through-snapshotDate (the bug this fix corrects). ----
   const out = emptySnapshot();
   out.cash = cash;
   out.ar = ar;
@@ -599,10 +661,11 @@ export async function computeDailyBalanceSheetFromGL(
   out.totalLAndE = totalLAndE;
 
   for (const f of PNL_SUM_FIELDS) {
-    (out as unknown as Record<string, number>)[f] = get(ytdByField, f);
+    (out as unknown as Record<string, number>)[f] = get(dailyPnlByField, f);
   }
-  // revenue/nonOperatingIncome already covered by the loop; the explicit
-  // names above (revenue/nonOperatingIncome) were just for the netIncome math.
+  // revenue/nonOperatingIncome handled via the loop above using daily-delta
+  // values; the YTD `revenue` / `nonOperatingIncome` locals near line 556
+  // were only consumed by the retained-earnings math.
 
   return out;
 }
@@ -616,7 +679,54 @@ export type RebuildDailyBSOptions = {
   fiscalYearStartMonth?: number;
   /** 1-31, default 1 */
   fiscalYearStartDay?: number;
+  /**
+   * Controls whether the rebuild overwrites P&L fields on *existing*
+   * `DailyFinancialSnapshot` rows. New rows always get the freshly-computed
+   * daily-delta P&L (so the row is never structurally incomplete).
+   *
+   * - `'preserve'` (default): leave P&L on existing rows untouched. This is
+   *   the safe production default — `operational-sync.ts` is the system-of-
+   *   record for daily revenue/COGS (it writes from `ProductSalesSnapshot`
+   *   which can carry signal not yet posted to GL), so the rebuild should
+   *   not silently clobber its values.
+   *
+   * - `'overwrite'`: force-write daily-delta P&L over every row in the
+   *   window. Used by the one-time corrective backfill that repairs rows
+   *   poisoned by an earlier YTD-into-daily-slot bug. Should not be the
+   *   default for routine rebuilds (e.g. mapping-save propagation).
+   */
+  pnlUpdateMode?: 'preserve' | 'overwrite';
 };
+
+// Fields the rebuild owns on update: balance-sheet snapshot lines plus the
+// derived totals. P&L lives on `operational-sync.ts` and is governed by
+// `pnlUpdateMode`. Source-platform metadata is also written so we can trace
+// which writer last touched a row.
+const REBUILD_BS_UPDATE_FIELDS: ReadonlyArray<keyof ComputedSnapshot> = [
+  'cash',
+  'ar',
+  'inventory',
+  'otherCA',
+  'tca',
+  'fixedAssets',
+  'otherAssets',
+  'totalAssets',
+  'ap',
+  'loc',
+  'otherCL',
+  'tcl',
+  'ltd',
+  'totalLiab',
+  'ownersCapital',
+  'ownersDraw',
+  'commonStock',
+  'preferredStock',
+  'retainedEarnings',
+  'additionalPaidInCapital',
+  'treasuryStock',
+  'totalEquity',
+  'totalLAndE',
+];
 
 /**
  * Recompute DailyFinancialSnapshot rows from GLTransactionFact for every date
@@ -653,6 +763,7 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   const frequency: Frequency = opts.frequency || 'daily';
   const fyMonth = Number(opts.fiscalYearStartMonth || 1);
   const fyDay = Number(opts.fiscalYearStartDay || 1);
+  const pnlUpdateMode: 'preserve' | 'overwrite' = opts.pnlUpdateMode || 'preserve';
   if (!(fyMonth >= 1 && fyMonth <= 12)) {
     throw new Error('rebuildDailyFinancialSnapshotsFromGL: fiscalYearStartMonth must be 1-12');
   }
@@ -764,7 +875,21 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
     );
 
     // Always upsert — even when accountIdToTarget is empty we still write a
-    // zeroed row to keep the daily series gapless.
+    // zeroed row to keep the daily series gapless. Note the `update` payload
+    // is intentionally narrower than `create`: existing P&L is preserved
+    // unless `pnlUpdateMode === 'overwrite'` (see option doc).
+    const updatePayload: Record<string, unknown> = {
+      sourcePlatform: 'INFOR_M3_GL_REBUILD',
+    };
+    for (const f of REBUILD_BS_UPDATE_FIELDS) {
+      updatePayload[f as string] = (snapshot as unknown as Record<string, number>)[f as string];
+    }
+    if (pnlUpdateMode === 'overwrite') {
+      for (const f of PNL_SUM_FIELDS) {
+        updatePayload[f] = (snapshot as unknown as Record<string, number>)[f];
+      }
+    }
+
     await prisma.dailyFinancialSnapshot.upsert({
       where: {
         companyId_snapshotDate_frequency: {
@@ -773,10 +898,7 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
           frequency,
         },
       },
-      update: {
-        ...snapshot,
-        sourcePlatform: 'INFOR_M3_GL_REBUILD',
-      },
+      update: updatePayload,
       create: {
         companyId,
         snapshotDate: cursor,
