@@ -85,6 +85,168 @@ const EXPENSE_PNL_FIELDS = new Set<string>(
   Array.from(ALL_PNL_FIELDS).filter((f) => !INCOME_PNL_FIELDS.has(f))
 );
 
+// ---------------------------------------------------------------------------
+// Target-field translation
+//
+// AccountMapping.targetField uses two naming conventions interchangeably:
+//   1. Bare DFS column names: 'revenue', 'cogsOther', 'fixedAssets', 'ar', etc.
+//   2. Slug names:            'rev_finished_goods_sales',
+//                             'rev_aftermarket_and_service_revenue',
+//                             'cogs_other_cogs',
+//                             'cogs_direct_production_labor',
+//                             'cogs_scrap_yield_loss', etc.
+//
+// The monthly builder (lib/infor-m3/csi-monthly-financial-builder.ts) handles
+// both conventions via prefix checks (`startsWith('rev_')` /
+// `startsWith('cogs_')`). The earlier version of this file did NOT — it used
+// `targetField` literally as the bucket key, so any mapping using the slug
+// form was silently dropped. For Atlantic Precision this hid all
+// `rev_finished_goods_sales` and `cogs_*` activity from every DFS row whose
+// last writer was the GL rebuild.
+//
+// `resolveDfsColumnsForTargetField` below translates a raw targetField to
+// one or more DFS columns to receive the signed contribution. For COGS /
+// expense subcategories it returns the rollup column AND the specific
+// subcategory column (cogsTotal + cogsOther, expense + payroll, etc.) so
+// totals stay consistent with the per-bucket lines.
+// ---------------------------------------------------------------------------
+
+// Token → DFS column name. Tokens are the lowercased, alphanumeric-only form
+// of the targetField (so 'cogsOther', 'cogs_other', 'COGS-OTHER' all collapse
+// to 'cogsother'). Mirrors BUCKET_KEY_BY_TARGET_FIELD in the monthly builder.
+const TOKEN_TO_DFS_COLUMN: Record<string, string> = {
+  // P&L
+  revenue: 'revenue',
+  cogstotal: 'cogsTotal',
+  cogspayroll: 'cogsPayroll',
+  cogsownerpay: 'cogsOwnerPay',
+  cogscontractors: 'cogsContractors',
+  cogsmaterials: 'cogsMaterials',
+  cogscommissions: 'cogsCommissions',
+  cogsother: 'cogsOther',
+  expense: 'expense',
+  payroll: 'payroll',
+  ownerbasepay: 'ownerBasePay',
+  benefits: 'benefits',
+  insurance: 'insurance',
+  professionalfees: 'professionalFees',
+  subcontractors: 'subcontractors',
+  rent: 'rent',
+  taxlicense: 'taxLicense',
+  stateincometaxes: 'stateIncomeTaxes',
+  federalincometaxes: 'federalIncomeTaxes',
+  phonecomm: 'phoneComm',
+  infrastructure: 'infrastructure',
+  autotravel: 'autoTravel',
+  salesexpense: 'salesExpense',
+  marketing: 'marketing',
+  trainingcert: 'trainingCert',
+  mealsentertainment: 'mealsEntertainment',
+  interestexpense: 'interestExpense',
+  depreciationamortization: 'depreciationAmortization',
+  otherexpense: 'otherExpense',
+  nonoperatingincome: 'nonOperatingIncome',
+  nonoperatingexpense: 'nonOperatingExpense',
+  extraordinaryitems: 'extraordinaryItems',
+  // BS — assets
+  cash: 'cash',
+  ar: 'ar',
+  inventory: 'inventory',
+  otherca: 'otherCA',
+  fixedassets: 'fixedAssets',
+  otherassets: 'otherAssets',
+  // BS — liabilities
+  ap: 'ap',
+  loc: 'loc',
+  othercl: 'otherCL',
+  ltd: 'ltd',
+  // BS — equity
+  ownerscapital: 'ownersCapital',
+  ownersdraw: 'ownersDraw',
+  commonstock: 'commonStock',
+  preferredstock: 'preferredStock',
+  retainedearnings: 'retainedEarnings',
+  additionalpaidincapital: 'additionalPaidInCapital',
+  treasurystock: 'treasuryStock',
+};
+
+// Slug-prefix tokens we additionally recognize as cogs subcategories. Mirrors
+// the explicit names the COA emits via the mapping UI.
+const COGS_SLUG_SUBCATEGORY: Record<string, string> = {
+  cogs_payroll: 'cogsPayroll',
+  cogs_owner_pay: 'cogsOwnerPay',
+  cogs_contractors: 'cogsContractors',
+  cogs_materials: 'cogsMaterials',
+  cogs_commissions: 'cogsCommissions',
+  cogs_other_cogs: 'cogsOther',
+  cogs_other: 'cogsOther',
+  cogs_direct_production_labor: 'cogsPayroll',
+  cogs_scrap_yield_loss: 'cogsOther',
+};
+
+function tokenize(raw: string): string {
+  return String(raw || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/**
+ * Resolve a raw `AccountMapping.targetField` value into one or more DFS column
+ * names that should each receive the (signed) contribution. Returns an empty
+ * array when the targetField doesn't map to any known column — the caller
+ * should drop the contribution (and ideally surface it as "unmapped" for
+ * mapping-quality dashboards).
+ */
+export function resolveDfsColumnsForTargetField(rawTargetField: string): readonly string[] {
+  const trimmed = String(rawTargetField || '').trim();
+  if (!trimmed) return [];
+  const lower = trimmed.toLowerCase();
+  const token = tokenize(trimmed);
+
+  // 1) Direct hit on a known DFS column (bare-name convention).
+  const direct = TOKEN_TO_DFS_COLUMN[token];
+  if (direct) {
+    if (direct === 'cogsTotal') return [direct];
+    if (
+      direct === 'cogsPayroll' ||
+      direct === 'cogsOwnerPay' ||
+      direct === 'cogsContractors' ||
+      direct === 'cogsMaterials' ||
+      direct === 'cogsCommissions' ||
+      direct === 'cogsOther'
+    ) {
+      return ['cogsTotal', direct];
+    }
+    if (direct === 'expense') return [direct];
+    return [direct];
+  }
+
+  // 2) Revenue slug convention: rev_finished_goods_sales,
+  //    rev_aftermarket_and_service_revenue, etc.
+  if (lower === 'revenue' || lower.startsWith('rev_') || lower.startsWith('rev-')) {
+    return ['revenue'];
+  }
+
+  // 3) COGS slug convention: cogs_other_cogs, cogs_direct_production_labor, etc.
+  if (
+    lower === 'cogstotal' ||
+    lower === 'costofgoodssold' ||
+    lower.startsWith('cogs_') ||
+    lower.startsWith('cogs-')
+  ) {
+    const sub = COGS_SLUG_SUBCATEGORY[lower];
+    if (sub) return ['cogsTotal', sub];
+    return ['cogsTotal'];
+  }
+
+  // 4) Expense slug convention (rare — expense buckets generally use bare
+  //    names, but be defensive).
+  if (lower.startsWith('expense_') || lower.startsWith('exp_')) {
+    return ['expense', 'otherExpense'];
+  }
+
+  // Unknown — caller will treat as unmapped.
+  return [];
+}
+
 // Anchor columns we care about (everything except RE — RE is handled
 // specially because we layer YTD P&L on top of the booked RE anchor).
 const ANCHOR_BS_FIELDS = [
@@ -128,6 +290,24 @@ function signForTargetField(field: string): number {
   if (EQUITY_TARGET_FIELDS.has(field)) return -1;
   if (INCOME_PNL_FIELDS.has(field)) return -1;
   if (EXPENSE_PNL_FIELDS.has(field)) return 1;
+  return 1;
+}
+
+// Sign factor keyed by the resolved DFS column name (post-translation). This
+// is the version used by `aggregateByTargetField` once we've routed slug
+// targetFields like `rev_finished_goods_sales` to their DFS column
+// (`revenue`). Without this, `signForTargetField('rev_finished_goods_sales')`
+// would return the default +1 (debit-positive) and produce the wrong sign on
+// revenue contributions.
+function signForDfsColumn(column: string): number {
+  if (ASSET_TARGET_FIELDS.has(column)) return 1;
+  if (LIABILITY_TARGET_FIELDS.has(column)) return -1;
+  if (EQUITY_TARGET_FIELDS.has(column)) return -1;
+  if (INCOME_PNL_FIELDS.has(column)) return -1;
+  if (EXPENSE_PNL_FIELDS.has(column)) return 1;
+  // cogsTotal and the cogs* subcategories are debit-balance natural
+  // (expense-side); cogsTotal isn't in EXPENSE_PNL_FIELDS so handle here.
+  if (column === 'cogsTotal' || column.startsWith('cogs')) return 1;
   return 1;
 }
 
@@ -328,12 +508,22 @@ function aggregateByTargetField(
   for (const [accountId, raw] of glSums.entries()) {
     const target = accountIdToTarget.get(accountId);
     if (!target) continue;
-    const sign = signForTargetField(target.targetField);
-    const adjusted = (Number(raw) || 0) * sign;
-    byField.set(
-      target.targetField,
-      (byField.get(target.targetField) || 0) + adjusted
-    );
+    // Resolve the raw targetField (which can be a slug like
+    // 'rev_finished_goods_sales') into one or more DFS column names.
+    // Empty array = unknown targetField → contribution dropped.
+    const dfsColumns = resolveDfsColumnsForTargetField(target.targetField);
+    if (dfsColumns.length === 0) continue;
+
+    // Each contribution lands in EVERY resolved column with the sign of
+    // that column's natural balance. For COGS that means cogsTotal AND the
+    // matching subcategory both receive the same daily delta — keeping
+    // them internally consistent.
+    const rawNum = Number(raw) || 0;
+    for (const column of dfsColumns) {
+      const sign = signForDfsColumn(column);
+      const adjusted = rawNum * sign;
+      byField.set(column, (byField.get(column) || 0) + adjusted);
+    }
   }
   return byField;
 }
@@ -791,17 +981,16 @@ export async function rebuildDailyFinancialSnapshotsFromGL(
   // Useful early signal that the COA contains a category we haven't accounted
   // for yet (e.g. a new equity line). These rows will silently be ignored if
   // we can't classify them, so the rebuild caller wants visibility.
-  const knownFields = new Set<string>([
-    ...ASSET_TARGET_FIELDS,
-    ...LIABILITY_TARGET_FIELDS,
-    ...EQUITY_TARGET_FIELDS,
-    ...ALL_PNL_FIELDS,
-  ]);
+  // We use the same resolver the aggregator uses so this list reflects what
+  // is actually being dropped (not what's "unfamiliar by string match" — the
+  // resolver routes slug names like `rev_finished_goods_sales` to `revenue`,
+  // so they are NOT unmapped even though they don't appear in any of the
+  // *_TARGET_FIELDS sets).
   const unmappedTargetFields = Array.from(
     new Set(
       mappings
         .map((m) => String(m.targetField || '').trim())
-        .filter((f) => f && !knownFields.has(f))
+        .filter((f) => f && resolveDfsColumnsForTargetField(f).length === 0)
     )
   );
 
