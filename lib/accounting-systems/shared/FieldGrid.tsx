@@ -30,12 +30,15 @@ const labelStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
+  maxWidth: '100%',
+  boxSizing: 'border-box',
   padding: '8px 10px',
   border: '1px solid #cbd5e1',
   borderRadius: '6px',
   fontSize: '13px',
   background: '#fff',
   color: '#0f172a',
+  minWidth: 0,
 };
 
 const helpStyle: React.CSSProperties = {
@@ -64,10 +67,12 @@ export default function FieldGrid<TSettings extends Record<string, unknown>>({
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: '14px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: '14px' }}>
       {fields.map((f) => {
         const value = (settings[f.key] ?? '') as string;
-        const cellStyle: React.CSSProperties = f.fullWidth ? { gridColumn: '1 / -1' } : {};
+        const cellStyle: React.CSSProperties = f.fullWidth
+          ? { gridColumn: '1 / -1', minWidth: 0 }
+          : { minWidth: 0 };
         const monoOverride: React.CSSProperties = f.monospace
           ? { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }
           : {};

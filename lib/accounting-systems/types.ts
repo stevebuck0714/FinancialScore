@@ -69,6 +69,14 @@ export type ProgramsContainerProps<TProgram> = {
   programs: TProgram[];
   onChange: (next: TProgram[]) => void;
   disabled?: boolean;
+
+  /**
+   * Per-program last-sync timestamps keyed by the program's primary identity
+   * (for Sage Intacct: objectName). Populated by the shell from
+   * `connectionMetadata.lastSyncedPerObject` so plugins can show freshness
+   * badges without having to re-fetch.
+   */
+  lastSyncedByObject?: Record<string, string | undefined>;
 };
 
 /**
@@ -113,6 +121,30 @@ export type AccountingSystemModule<TSettings = unknown, TProgram = unknown> = {
     credentialsWidth?: string;
     /** Width of the programs column in side-by-side mode (e.g. '60%'). */
     programsWidth?: string;
+    /**
+     * When true (and variant === 'side-by-side'), the Sync Schedule card —
+     * together with the manual sync action buttons — is rendered as a
+     * full-width row ABOVE the integration/programs grid instead of being
+     * stacked under integration in the left column.
+     */
+    scheduleAbove?: boolean;
+  };
+
+  /**
+   * Optional manual sync controls surfaced in the shared shell. When a
+   * capability is enabled, the shell renders the corresponding button
+   * (Connect/Disconnect/Sync Now/Backfill…) in the Sync Schedule card.
+   *
+   * The shell is responsible for the UI surface; wiring each button to a
+   * plugin-specific endpoint is added incrementally and is independent of
+   * this flag (a button declared here without a backing endpoint will be
+   * rendered as a disabled "Coming soon" placeholder).
+   */
+  capabilities?: {
+    connect?: boolean;
+    disconnect?: boolean;
+    syncNow?: boolean;
+    backfill?: boolean;
   };
 
   /** Initial settings used when no row exists yet for a company. */

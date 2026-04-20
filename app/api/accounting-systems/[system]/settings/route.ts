@@ -96,6 +96,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       ...(pickMetadata(metadata.sharedSchedule)),
     });
 
+    const lastSyncedByObjectRaw = pickMetadata(metadata.lastSyncedPerObject);
+    const lastSyncedByObject: Record<string, string> = {};
+    for (const [k, v] of Object.entries(lastSyncedByObjectRaw)) {
+      if (typeof v === 'string') lastSyncedByObject[k] = v;
+    }
+
     return NextResponse.json({
       ok: true,
       companyId,
@@ -107,6 +113,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       settings,
       programs,
       schedule,
+      lastSyncedByObject,
     });
   } catch (error: unknown) {
     const e = error as { message?: string };
