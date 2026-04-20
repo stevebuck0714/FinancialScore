@@ -1,4 +1,5 @@
 'use client';
+/** Used by `app/page-simple.tsx`. Main `app/page.tsx` inlines this logic next to `FinancialScorePage` to avoid a separate chunk that failed to load under `dynamic(Promise.resolve(FinancialScorePage))`. */
 
 import { useEffect, useRef } from 'react';
 

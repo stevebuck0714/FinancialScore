@@ -23,7 +23,7 @@ type Props = {
 };
 
 const sectionTitle = (title: string) => (
-  <div style={{ fontSize: '16px', fontWeight: 800, color: '#1e293b', margin: '16px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
+  <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', margin: '16px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
     {title}
   </div>
 );
@@ -61,16 +61,27 @@ export default function ValuationEbitdaSection6Preview(props: Props) {
             break-before: page;
             page-break-before: always;
           }
+          .valuation-ebitda-print-root table,
+          .valuation-ebitda-print-root svg,
+          .valuation-ebitda-print-root .ebitda-chart-block,
+          .valuation-ebitda-print-root .recharts-wrapper {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .valuation-ebitda-print-root thead {
+            display: table-header-group;
+          }
+          .valuation-ebitda-print-root tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
         }
       `}</style>
       <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-        <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Corelytics Valuation Report</div>
-        <div style={{ fontSize: '24px', color: '#1e293b', fontWeight: 800, marginTop: '4px' }}>6. EBITDA Valuation</div>
-        <div style={{ fontSize: '14px', color: '#475569', marginTop: '4px' }}>
+        <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>Corelytics Valuation Report</div>
+        <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800, marginTop: '6px' }}>EBITDA Valuation</div>
+        <div style={{ fontSize: '16px', color: '#475569', marginTop: '4px', lineHeight: 1.45 }}>
           Prepared for: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')}
-        </div>
-        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
-          Data source: Company financial data ({latestFinancialSource || 'connected source'}) — aligned with EBITDA Valuation workspace
         </div>
       </div>
 
@@ -218,8 +229,12 @@ export default function ValuationEbitdaSection6Preview(props: Props) {
             </div>
             {model.customerQualityInsights.hasData && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <LineChart title="Top 1 Customer % (Last 36 Months)" data={model.customerQualityInsights.top1Series} color="#f59e0b" compact formatter={(v) => `${v.toFixed(1)}%`} />
-                <LineChart title="Top 5 Customers % (Last 36 Months)" data={model.customerQualityInsights.top5Series} color="#ef4444" compact formatter={(v) => `${v.toFixed(1)}%`} />
+                <div className="ebitda-chart-block">
+                  <LineChart title="Top 1 Customer % (Last 36 Months)" data={model.customerQualityInsights.top1Series} color="#f59e0b" compact formatter={(v) => `${v.toFixed(1)}%`} />
+                </div>
+                <div className="ebitda-chart-block">
+                  <LineChart title="Top 5 Customers % (Last 36 Months)" data={model.customerQualityInsights.top5Series} color="#ef4444" compact formatter={(v) => `${v.toFixed(1)}%`} />
+                </div>
               </div>
             )}
           </div>
@@ -263,25 +278,29 @@ export default function ValuationEbitdaSection6Preview(props: Props) {
                 </div>
               ))}
             </div>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc', marginBottom: '10px' }}>
+            <div className="ebitda-chart-block" style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', background: '#f8fafc', marginBottom: '10px' }}>
               <div style={{ fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '10px' }}>EBITDA margin and total revenue</div>
               <EbitdaMarginComboChart data={model.annualRevenueEbitdaData} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <LineChart
-                title="Cash Conversion % (Last 36 Months)"
-                data={model.cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.cashConversionPct }))}
-                color="#0ea5e9"
-                compact
-                formatter={(v) => `${v.toFixed(1)}%`}
-              />
-              <LineChart
-                title="Free Cash Flow (Last 36 Months)"
-                data={model.cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
-                color="#f59e0b"
-                compact
-                formatter={(v) => `$${Math.round(v / 1000)}K`}
-              />
+              <div className="ebitda-chart-block">
+                <LineChart
+                  title="Cash Conversion % (Last 36 Months)"
+                  data={model.cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.cashConversionPct }))}
+                  color="#0ea5e9"
+                  compact
+                  formatter={(v) => `${v.toFixed(1)}%`}
+                />
+              </div>
+              <div className="ebitda-chart-block">
+                <LineChart
+                  title="Free Cash Flow (Last 36 Months)"
+                  data={model.cashFlowQualitySeries.slice(-36).map((r) => ({ month: r.month, value: r.freeCashFlow }))}
+                  color="#f59e0b"
+                  compact
+                  formatter={(v) => `$${Math.round(v / 1000)}K`}
+                />
+              </div>
             </div>
           </div>
         )}

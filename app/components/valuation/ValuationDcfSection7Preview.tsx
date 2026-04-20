@@ -31,7 +31,7 @@ type Props = {
 };
 
 const sectionTitle = (title: string) => (
-  <div style={{ fontSize: '16px', fontWeight: 800, color: '#1e293b', margin: '16px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
+  <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', margin: '16px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '6px' }}>
     {title}
   </div>
 );
@@ -76,13 +76,10 @@ export default function ValuationDcfSection7Preview(props: Props) {
         }
       `}</style>
       <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-        <div style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Corelytics Valuation Report</div>
-        <div style={{ fontSize: '24px', color: '#1e293b', fontWeight: 800, marginTop: '4px' }}>7. DCF Valuation</div>
-        <div style={{ fontSize: '14px', color: '#475569', marginTop: '4px' }}>
+        <div style={{ fontSize: '20px', color: '#0f172a', fontWeight: 800, letterSpacing: '-0.02em' }}>Corelytics Valuation Report</div>
+        <div style={{ fontSize: '18px', color: '#1e293b', fontWeight: 800, marginTop: '6px' }}>DCF Valuation</div>
+        <div style={{ fontSize: '16px', color: '#475569', marginTop: '4px', lineHeight: 1.45 }}>
           Prepared for: <strong>{companyName || 'Selected Company'}</strong> | Generated: {new Date().toLocaleDateString('en-US')}
-        </div>
-        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
-          Data source: Company financial data ({latestFinancialSource || 'connected source'}) — aligned with DCF Valuation workspace
         </div>
       </div>
 
