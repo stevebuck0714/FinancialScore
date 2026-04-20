@@ -16,6 +16,7 @@ import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getCashBalanceSheetAnchorConfig } from '@/lib/financial/cash-balance-sheet-anchor';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
+import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
 
 export const dynamic = 'force-dynamic';
 
@@ -4094,8 +4095,52 @@ export async function GET(request: NextRequest) {
           weightedArAgeDays = 0;
         }
 
+        // True DSO series, anchored to DailyFinancialSnapshot (the same trusted
+        // feed Daily Financials and Working Capital read from). This replaces
+        // the legacy weighted-invoice-age value (which was mislabeled as "DSO"
+        // and never populated per-day, so the Pulse Preview sparkline showed a
+        // flat 0.0 line). Falls back to the legacy `dso` computed above only
+        // when DFS has no rows in this window.
+        let dsoSummaryFromDaily: number | null = null;
+        const dsoByDateKey = new Map<string, number>();
+        try {
+          const dsoSeries = await computeDsoSeriesFromDaily({
+            companyId,
+            startDate,
+            endDate,
+            lookbackDays: 90,
+            frequency: 'daily',
+          });
+          for (const point of dsoSeries) {
+            dsoByDateKey.set(point.snapshotDate, Number(point.dso || 0));
+          }
+          if (dsoSeries.length > 0) {
+            dsoSummaryFromDaily = Number(dsoSeries[dsoSeries.length - 1].dso || 0);
+          }
+        } catch {
+          // best-effort: leave Pulse on the legacy fallback rather than 500
+        }
+        const dsoYyyyMmDd = (val: any): string => {
+          const d = new Date(val);
+          if (Number.isNaN(d.getTime())) return '';
+          return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        };
+        const dataWithDso = Array.isArray(data)
+          ? data.map((row: any) => {
+              if (!row || typeof row !== 'object') return row;
+              const key = dsoYyyyMmDd(row.snapshotDate ?? row.snapshotTs);
+              if (!key) return row;
+              if (!dsoByDateKey.has(key)) return row;
+              return { ...row, dso: dsoByDateKey.get(key) };
+            })
+          : data;
+        const summaryDso =
+          dsoSummaryFromDaily !== null && Number.isFinite(dsoSummaryFromDaily)
+            ? dsoSummaryFromDaily
+            : Number(dso || 0);
+
         return NextResponse.json({
-          records: data,
+          records: dataWithDso,
           summary: {
             totalAR: Number(summaryTotals.totalAR || 0),
             totalOpenAR: Number(summaryTotals.totalAR || 0),
@@ -4105,7 +4150,7 @@ export async function GET(request: NextRequest) {
             currentPct: Number(currentPct),
             over30Pct: Number(over30Pct),
             over90Pct: Number(over90Pct),
-            dso: Number(dso || 0),
+            dso: Number(summaryDso || 0),
             weightedArAgeDays: Number(weightedArAgeDays || 0),
             breakdown: unpaidByCustomer,
             unpaidByCustomer,
@@ -6525,6 +6570,18 @@ export async function GET(request: NextRequest) {
           take: limit,
         });
 
+        // Daily Financials is a business-day view: drop Saturday/Sunday rows so
+        // the table does not show stale weekend carry-forward snapshots. Other
+        // frequencies (weekly/monthly) are already period-aligned and unaffected.
+        if (financialFrequencyForQuery === 'daily' && Array.isArray(data) && data.length) {
+          data = data.filter((row: any) => {
+            const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+            if (!snapshot || Number.isNaN(snapshot.getTime())) return true;
+            const weekday = snapshot.getUTCDay();
+            return weekday !== 0 && weekday !== 6;
+          });
+        }
+
         if (!data.length) {
           return NextResponse.json({
             records: [],
@@ -6548,7 +6605,7 @@ export async function GET(request: NextRequest) {
         const latestNet = latestRevenue - latestExpense;
         const previousNet = Number(previousDaily.revenue || 0) - Number(previousDaily.expense || 0);
         const netChange = latestNet - previousNet;
-        const mappedLines = dailyMappedLineDelegate
+        let mappedLines: any[] = dailyMappedLineDelegate
           ? await dailyMappedLineDelegate.findMany({
               where: {
                 companyId,
@@ -6559,6 +6616,14 @@ export async function GET(request: NextRequest) {
               take: Math.max(limit * 200, 3000),
             })
           : [];
+        if (financialFrequencyForQuery === 'daily' && mappedLines.length) {
+          mappedLines = mappedLines.filter((row: any) => {
+            const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+            if (!snapshot || Number.isNaN(snapshot.getTime())) return true;
+            const weekday = snapshot.getUTCDay();
+            return weekday !== 0 && weekday !== 6;
+          });
+        }
         const statementRecords = aggregateDailyStatementRows(data, statementRollup);
 
         return NextResponse.json({
