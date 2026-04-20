@@ -9,6 +9,7 @@ import {
 } from '@/lib/infor-m3/operational-sync-handler';
 import { notifyAdminsOfSyncFailure } from '@/lib/sync-alerts';
 import { orchestrateQuickBooksOnlineOperationalSync } from '@/lib/quickbooks-online/operational-orchestrator';
+import { syncMonthlyFinancialBsFromDailySnapshot } from '@/lib/financials/sync-monthly-bs-from-daily';
 
 const LEASE_SECONDS = 120;
 const DEFAULT_MAX_ATTEMPTS = 6;
@@ -1417,6 +1418,23 @@ async function processTask(
   ) {
     try {
       await processPendingInforRawTransforms({ companyId: task.companyId, maxDaysPerTick: 25 });
+    } catch {
+      // best-effort
+    }
+  }
+
+  // Phase 2 sync: after any completed INFOR_M3 run, propagate the freshly-built
+  // DailyFinancialSnapshot end-of-month rows into MonthlyFinancial.bs* columns
+  // on the most recent FinancialRecord. This keeps Data Review's BS aligned
+  // with Daily Financials/Ops by construction, including after mapping changes
+  // (which take effect on the next sync). Best-effort: must never regress
+  // queue health.
+  if (
+    runCompletedInThisTask &&
+    String(task.run.platform || '') === 'INFOR_M3'
+  ) {
+    try {
+      await syncMonthlyFinancialBsFromDailySnapshot(task.companyId);
     } catch {
       // best-effort
     }
