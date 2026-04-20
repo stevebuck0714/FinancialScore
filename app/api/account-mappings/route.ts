@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getAllowedTargetFieldSet, getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
+import { rebuildDailyFinancialSnapshotsFromGL } from "@/lib/financial/daily-bs-from-gl";
+import { syncMonthlyFinancialBsFromDailySnapshot } from "@/lib/financials/sync-monthly-bs-from-daily";
 
 export const dynamic = "force-dynamic";
+// Mapping save can trigger a downstream DFS rebuild (Infor tenants only)
+// which takes ~10-30s for a full multi-year window. Bump beyond default.
+export const maxDuration = 120;
 
 function normalizeForCompare(value: string): string {
   return String(value || "")
@@ -818,6 +823,70 @@ export async function POST(request: NextRequest) {
       `Verification: ${verification.length} mappings now in database for company ${companyId}`,
     );
 
+    // For Infor (M3 / CSI) tenants, propagate the new mappings into financial
+    // snapshots immediately so Daily Financials and Data Review reflect the
+    // change without waiting for the next scheduled sync. This is two steps:
+    //   1) Rebuild DailyFinancialSnapshot rows from GLTransactionFact using
+    //      the freshly-saved AccountMapping rows.
+    //   2) Sync MonthlyFinancial.bs* columns from those rebuilt DFS EOM rows
+    //      so Data Review's BS lines update.
+    // Best-effort: any failure is reported in the response payload but does
+    // not fail the mapping save itself.
+    let propagation:
+      | {
+          ok: boolean;
+          rebuilt?: { datesProcessed: number; rowsWritten: number; mappedAccountCount: number };
+          bsSync?: { monthsUpdated: number; monthsSkippedNoDfs: number; errors: number };
+          error?: string;
+          skipped?: string;
+        }
+      | null = null;
+    const isInforCompany =
+      accountingSystem === "INFOR_M3" || accountingSystem === "INFOR_CSI";
+    if (isInforCompany) {
+      try {
+        const monthlyBounds = await prisma.monthlyFinancial.aggregate({
+          where: { companyId },
+          _min: { monthDate: true },
+          _max: { monthDate: true },
+        });
+        const minMonth = monthlyBounds._min.monthDate;
+        const maxMonth = monthlyBounds._max.monthDate;
+        if (minMonth && maxMonth) {
+          const startDate = new Date(
+            Date.UTC(minMonth.getUTCFullYear(), minMonth.getUTCMonth(), 1, 0, 0, 0),
+          );
+          const endDate = new Date(
+            Date.UTC(maxMonth.getUTCFullYear(), maxMonth.getUTCMonth() + 1, 0, 23, 59, 59),
+          );
+          const rebuilt = await rebuildDailyFinancialSnapshotsFromGL({
+            companyId,
+            startDate,
+            endDate,
+            frequency: "daily",
+          });
+          const bsSync = await syncMonthlyFinancialBsFromDailySnapshot(companyId);
+          propagation = {
+            ok: true,
+            rebuilt: {
+              datesProcessed: rebuilt.datesProcessed,
+              rowsWritten: rebuilt.rowsWritten,
+              mappedAccountCount: rebuilt.mappedAccountCount,
+            },
+            bsSync: {
+              monthsUpdated: bsSync.monthsUpdated,
+              monthsSkippedNoDfs: bsSync.monthsSkippedNoDfs,
+              errors: bsSync.errors,
+            },
+          };
+        } else {
+          propagation = { ok: false, skipped: "no_monthly_bounds" };
+        }
+      } catch (err: any) {
+        propagation = { ok: false, error: String(err?.message || err) };
+      }
+    }
+
     return NextResponse.json({
       success: true,
       count: created + updated,
@@ -832,6 +901,7 @@ export async function POST(request: NextRequest) {
         classification: m.accountClassification,
       })),
       verified: verification.length,
+      propagation,
     });
   } catch (error: any) {
     console.error("Error saving mappings:", error);
