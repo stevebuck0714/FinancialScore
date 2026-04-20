@@ -276,9 +276,12 @@ export async function GET(request: NextRequest) {
         runType: true,
         status: true,
         snapshotDate: true,
-        createdAt: true,
+        startedAt: true,
+        finishedAt: true,
+        recordsIngested: true,
+        errorMessage: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { startedAt: 'desc' },
       take: 25,
     });
   }
@@ -381,7 +384,10 @@ export async function GET(request: NextRequest) {
       runType: r.runType,
       status: r.status,
       snapshotDate: r.snapshotDate,
-      createdAt: r.createdAt,
+      startedAt: r.startedAt,
+      finishedAt: r.finishedAt,
+      recordsIngested: Number(r.recordsIngested || 0),
+      errorMessage: r.errorMessage || null,
     })),
     operationalSales: {
       productSalesSnapshot: {
