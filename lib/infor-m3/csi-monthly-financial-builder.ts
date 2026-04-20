@@ -694,6 +694,90 @@ function normalizeMappingKey(value: unknown): string {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+// Resolves a lowercased target-field token (e.g. "fixedassets", "ownerscapital")
+// to the corresponding camelCase property on the MonthlyFinancial bucket
+// produced by initMonthRow. Without this map, code paths that did
+// `lower in bucket` would silently miss every multi-word camelCase field and
+// dump amounts into a fallback bucket (otherCA / otherCL / additionalPaidInCapital
+// / otherExpense), producing zeros on Data Review for Fixed Assets, Other Assets,
+// Owners Capital, Common Stock, Retained Earnings, etc.
+const BUCKET_KEY_BY_TARGET_FIELD: Record<string, keyof ReturnType<typeof initMonthRow>> = {
+  // Income statement
+  revenue: 'revenue',
+  cogstotal: 'cogsTotal',
+  cogspayroll: 'cogsPayroll',
+  cogsownerpay: 'cogsOwnerPay',
+  cogscontractors: 'cogsContractors',
+  cogsmaterials: 'cogsMaterials',
+  cogscommissions: 'cogsCommissions',
+  cogsother: 'cogsOther',
+  payroll: 'payroll',
+  ownerbasepay: 'ownerBasePay',
+  benefits: 'benefits',
+  insurance: 'insurance',
+  professionalfees: 'professionalFees',
+  subcontractors: 'subcontractors',
+  rent: 'rent',
+  taxlicense: 'taxLicense',
+  stateincometaxes: 'stateIncomeTaxes',
+  federalincometaxes: 'federalIncomeTaxes',
+  phonecomm: 'phoneComm',
+  infrastructure: 'infrastructure',
+  autotravel: 'autoTravel',
+  salesexpense: 'salesExpense',
+  marketing: 'marketing',
+  trainingcert: 'trainingCert',
+  mealsentertainment: 'mealsEntertainment',
+  interestexpense: 'interestExpense',
+  depreciationamortization: 'depreciationAmortization',
+  otherexpense: 'otherExpense',
+  expense: 'expense',
+  nonoperatingincome: 'nonOperatingIncome',
+  nonoperatingexpense: 'nonOperatingExpense',
+  extraordinaryitems: 'extraordinaryItems',
+  // Balance sheet — assets
+  cash: 'cash',
+  ar: 'ar',
+  inventory: 'inventory',
+  otherca: 'otherCA',
+  tca: 'tca',
+  fixedassets: 'fixedAssets',
+  otherassets: 'otherAssets',
+  totalassets: 'totalAssets',
+  // Balance sheet — liabilities
+  ap: 'ap',
+  loc: 'loc',
+  othercl: 'otherCL',
+  tcl: 'tcl',
+  ltd: 'ltd',
+  totalliab: 'totalLiab',
+  // Balance sheet — equity
+  ownerscapital: 'ownersCapital',
+  ownersdraw: 'ownersDraw',
+  commonstock: 'commonStock',
+  preferredstock: 'preferredStock',
+  retainedearnings: 'retainedEarnings',
+  additionalpaidincapital: 'additionalPaidInCapital',
+  treasurystock: 'treasuryStock',
+  totalequity: 'totalEquity',
+  totallande: 'totalLAndE',
+};
+
+function resolveBucketKey(
+  bucket: ReturnType<typeof initMonthRow>,
+  lowerTarget: string,
+): keyof ReturnType<typeof initMonthRow> | null {
+  const mapped = BUCKET_KEY_BY_TARGET_FIELD[lowerTarget];
+  if (mapped && mapped in bucket && typeof (bucket as Record<string, unknown>)[mapped] === 'number') {
+    return mapped;
+  }
+  // Backward-compatible fallback: accept already-camelCase target fields too.
+  if (lowerTarget in bucket && typeof (bucket as Record<string, unknown>)[lowerTarget] === 'number') {
+    return lowerTarget as keyof ReturnType<typeof initMonthRow>;
+  }
+  return null;
+}
+
 function isExpenseTargetField(targetField: string): boolean {
   const normalized = String(targetField || '').trim().toLowerCase();
   return new Set([
@@ -726,6 +810,20 @@ function isExpenseTargetField(targetField: string): boolean {
   ]).has(normalized);
 }
 
+export function __test_only__initMonthRow(month: string) {
+  return initMonthRow(month);
+}
+
+export function __test_only__applyMappedAmount(
+  bucket: ReturnType<typeof initMonthRow>,
+  targetField: string,
+  expenseMovement: number,
+  revenueMovement: number,
+  endingBalance: number,
+): boolean {
+  return applyMappedAmount(bucket, targetField, expenseMovement, revenueMovement, endingBalance);
+}
+
 function applyMappedAmount(
   bucket: ReturnType<typeof initMonthRow>,
   targetField: string,
@@ -752,16 +850,18 @@ function applyMappedAmount(
     lower.startsWith('cogs')
   ) {
     bucket.cogsTotal += amountExpense;
-    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
-      (bucket as unknown as Record<string, number>)[lower] += amountExpense;
+    const cogsKey = resolveBucketKey(bucket, lower);
+    if (cogsKey && cogsKey !== 'cogsTotal') {
+      (bucket as unknown as Record<string, number>)[cogsKey as string] += amountExpense;
     }
     addToBreakdown(bucket.cogsBreakdown as Record<string, unknown>, lower.startsWith('cogs_') ? normalized : 'cogs_other_cogs', amountExpense);
     return true;
   }
   if (isExpenseTargetField(lower)) {
     bucket.expense += amountExpense;
-    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
-      (bucket as unknown as Record<string, number>)[lower] += amountExpense;
+    const expenseKey = resolveBucketKey(bucket, lower);
+    if (expenseKey && expenseKey !== 'expense') {
+      (bucket as unknown as Record<string, number>)[expenseKey as string] += amountExpense;
     } else {
       bucket.otherExpense += amountExpense;
     }
@@ -769,27 +869,30 @@ function applyMappedAmount(
     return true;
   }
   if (lower === 'cash' || lower === 'ar' || lower === 'inventory' || lower === 'otherca' || lower === 'fixedassets' || lower === 'otherassets' || lower === 'totalassets') {
-    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
-      (bucket as unknown as Record<string, number>)[lower] += amountBalance;
-    } else {
+    const assetKey = resolveBucketKey(bucket, lower);
+    if (assetKey && assetKey !== 'totalAssets') {
+      (bucket as unknown as Record<string, number>)[assetKey as string] += amountBalance;
+    } else if (!assetKey) {
       bucket.otherCA += amountBalance;
     }
     bucket.totalAssets += amountBalance;
     return true;
   }
   if (lower === 'ap' || lower === 'loc' || lower === 'othercl' || lower === 'tcl' || lower === 'ltd' || lower === 'totalliab') {
-    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
-      (bucket as unknown as Record<string, number>)[lower] += amountBalance;
-    } else {
+    const liabKey = resolveBucketKey(bucket, lower);
+    if (liabKey && liabKey !== 'totalLiab') {
+      (bucket as unknown as Record<string, number>)[liabKey as string] += amountBalance;
+    } else if (!liabKey) {
       bucket.otherCL += amountBalance;
     }
     bucket.totalLiab += amountBalance;
     return true;
   }
   if (lower === 'ownerscapital' || lower === 'ownersdraw' || lower === 'commonstock' || lower === 'preferredstock' || lower === 'retainedearnings' || lower === 'additionalpaidincapital' || lower === 'treasurystock' || lower === 'totalequity') {
-    if (lower in bucket && typeof (bucket as Record<string, unknown>)[lower] === 'number') {
-      (bucket as unknown as Record<string, number>)[lower] += amountBalance;
-    } else {
+    const equityKey = resolveBucketKey(bucket, lower);
+    if (equityKey && equityKey !== 'totalEquity') {
+      (bucket as unknown as Record<string, number>)[equityKey as string] += amountBalance;
+    } else if (!equityKey) {
       bucket.additionalPaidInCapital += amountBalance;
     }
     bucket.totalEquity += amountBalance;
@@ -1015,7 +1118,25 @@ export function buildCsiMonthlyDataFromGlResponses(params: {
         if (accountName.includes('cash') || accountName.includes('bank')) bucket.cash += amount;
         else if (accountName.includes('receivable') || accountName.includes('a/r')) bucket.ar += amount;
         else if (accountName.includes('inventory')) bucket.inventory += amount;
-        else if (accountName.includes('fixed')) bucket.fixedAssets += amount;
+        else if (
+          accountName.includes('fixed') ||
+          accountName.includes('property') ||
+          accountName.includes('equipment') ||
+          accountName.includes('building') ||
+          accountName.includes('vehicle') ||
+          accountName.includes('machinery') ||
+          accountName.includes('accumulated depreciation') ||
+          accountName.includes('depreciation') ||
+          accountName.includes('amortization')
+        ) bucket.fixedAssets += amount;
+        else if (
+          accountName.includes('intangible') ||
+          accountName.includes('goodwill') ||
+          accountName.includes('deposit') ||
+          accountName.includes('long-term') ||
+          accountName.includes('long term') ||
+          accountName.includes('other asset')
+        ) bucket.otherAssets += amount;
         else bucket.otherCA += amount;
       } else if (accountType === 'liability') {
         bucket.totalLiab += amount;

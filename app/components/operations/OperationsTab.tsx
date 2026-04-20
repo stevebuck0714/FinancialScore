@@ -7157,16 +7157,40 @@ export default function OperationsTab({
         return acc;
       }, {});
 
+    // Prefer authoritative DailyFinancialSnapshot totals (driven by the GL
+    // rebuild) over summing per-account `mappedLines`. mappedLines is a
+    // best-effort breakdown that can be incomplete for some accounts and
+    // would otherwise systematically under-report Total Revenue / Total COGS.
+    // Fall back to the detail sum only when the snapshot row itself is empty.
     const revenueByDate = buildSeriesFromDateKeys((dateKey) => {
-      const detailTotal = revenueDetailFields.length > 0 ? sumNormalizedFieldsForDate(revenueDetailFields, dateKey) : 0;
       const snapshotTotal = Number(statementDayByKey[dateKey]?.revenue || 0);
-      return detailTotal !== 0 ? detailTotal : snapshotTotal;
+      if (snapshotTotal !== 0) return snapshotTotal;
+      return revenueDetailFields.length > 0 ? sumNormalizedFieldsForDate(revenueDetailFields, dateKey) : 0;
     });
     const cogsTotalByDate = buildSeriesFromDateKeys((dateKey) => {
-      const detailTotal = cogsDetailFields.length > 0 ? sumNormalizedFieldsForDate(cogsDetailFields, dateKey) : 0;
       const snapshotTotal = Number(statementDayByKey[dateKey]?.cogsTotal || 0);
-      return detailTotal !== 0 ? detailTotal : snapshotTotal;
+      if (snapshotTotal !== 0) return snapshotTotal;
+      return cogsDetailFields.length > 0 ? sumNormalizedFieldsForDate(cogsDetailFields, dateKey) : 0;
     });
+    // Reconciliation rows: when the per-account detail (from mappedLines) does
+    // not sum to the authoritative snapshot total, surface the gap so the user
+    // can see that Total COGS / Total Revenue legitimately reflect DFS.
+    const revenueUnallocatedByDate = buildSeriesFromDateKeys((dateKey) => {
+      if (revenueDetailFields.length === 0) return 0;
+      const detailTotal = sumNormalizedFieldsForDate(revenueDetailFields, dateKey);
+      const total = Number(revenueByDate[dateKey] || 0);
+      const delta = total - detailTotal;
+      return Math.abs(delta) > 0.005 ? delta : 0;
+    });
+    const cogsUnallocatedByDate = buildSeriesFromDateKeys((dateKey) => {
+      if (cogsDetailFields.length === 0) return 0;
+      const detailTotal = sumNormalizedFieldsForDate(cogsDetailFields, dateKey);
+      const total = Number(cogsTotalByDate[dateKey] || 0);
+      const delta = total - detailTotal;
+      return Math.abs(delta) > 0.005 ? delta : 0;
+    });
+    const hasRevenueUnallocated = Object.values(revenueUnallocatedByDate).some((value) => Number(value || 0) !== 0);
+    const hasCogsUnallocated = Object.values(cogsUnallocatedByDate).some((value) => Number(value || 0) !== 0);
     const expenseFieldByDate = (field: string, dateKey: string): number => {
       const mappedRaw = getMappedValue(field, dateKey);
       if (mappedRaw !== 0) return mappedRaw;
@@ -7174,11 +7198,27 @@ export default function OperationsTab({
       if (aliasMapped !== 0) return aliasMapped;
       return Number((statementDayByKey[dateKey] as any)?.[field] || 0);
     };
-    const totalOperatingExpensesByDate = buildSeriesFromDateKeys((dateKey) =>
-      operatingExpenseFields.length > 0
+    // Same reconciliation rule as revenue/COGS: prefer the authoritative
+    // DailyFinancialSnapshot.expense roll-up over summing per-account fields,
+    // because mappedLines/per-bucket data can be incomplete.
+    const totalOperatingExpensesByDate = buildSeriesFromDateKeys((dateKey) => {
+      const snapshotTotal = Number(statementDayByKey[dateKey]?.expense || 0);
+      if (snapshotTotal !== 0) return snapshotTotal;
+      return operatingExpenseFields.length > 0
         ? operatingExpenseFields.reduce((sum, field) => sum + expenseFieldByDate(field, dateKey), 0)
-        : Number(statementDayByKey[dateKey]?.expense || 0)
-    );
+        : 0;
+    });
+    const opexUnallocatedByDate = buildSeriesFromDateKeys((dateKey) => {
+      if (operatingExpenseFields.length === 0) return 0;
+      const detailTotal = operatingExpenseFields.reduce(
+        (sum, field) => sum + expenseFieldByDate(field, dateKey),
+        0
+      );
+      const total = Number(totalOperatingExpensesByDate[dateKey] || 0);
+      const delta = total - detailTotal;
+      return Math.abs(delta) > 0.005 ? delta : 0;
+    });
+    const hasOpexUnallocated = Object.values(opexUnallocatedByDate).some((value) => Number(value || 0) !== 0);
     const grossProfitByDate = buildSeriesFromDateKeys(
       (dateKey) => Number(revenueByDate[dateKey] || 0) - Number(cogsTotalByDate[dateKey] || 0)
     );
@@ -7231,12 +7271,26 @@ export default function OperationsTab({
         styleType: 'normal' as const,
         valuesByDate: normalizedLineIndex[field] || {},
       })),
+      ...(hasRevenueUnallocated
+        ? [{
+            label: '  Other / Unallocated Revenue',
+            styleType: 'normal' as const,
+            valuesByDate: revenueUnallocatedByDate,
+          }]
+        : []),
       { label: 'Cost of Goods Sold', styleType: 'section', suppressValues: true },
       ...dynamicCogsFields.map((field) => ({
         label: `  ${getDynamicFieldDisplayName(field)}`,
         styleType: 'normal' as const,
         valuesByDate: normalizedLineIndex[field] || {},
       })),
+      ...(hasCogsUnallocated
+        ? [{
+            label: '  Other / Unallocated COGS',
+            styleType: 'normal' as const,
+            valuesByDate: cogsUnallocatedByDate,
+          }]
+        : []),
       { label: 'Total COGS', styleType: 'subtotal', valuesByDate: cogsTotalByDate },
       { label: 'GROSS PROFIT', styleType: 'subtotal', valuesByDate: grossProfitByDate },
       { label: 'Operating Expenses', styleType: 'section', suppressValues: true },
@@ -7245,6 +7299,13 @@ export default function OperationsTab({
         styleType: 'normal' as const,
         valuesByDate: buildSeriesFromDateKeys((dateKey) => expenseFieldByDate(field, dateKey)),
       })),
+      ...(hasOpexUnallocated
+        ? [{
+            label: '  Other / Unallocated Operating Expenses',
+            styleType: 'normal' as const,
+            valuesByDate: opexUnallocatedByDate,
+          }]
+        : []),
       { label: 'Total Operating Expenses', styleType: 'subtotal', valuesByDate: totalOperatingExpensesByDate },
       { label: 'Operating Income', styleType: 'subtotal', valuesByDate: operatingIncomeByDate },
       { label: 'Other Income/(Expense)', styleType: 'section', suppressValues: true },
