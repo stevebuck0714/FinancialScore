@@ -209,6 +209,48 @@ export async function GET(request: NextRequest) {
     select: { revenue: true, cogsTotal: true, expense: true, ar: true, snapshotDate: true },
   });
 
+  // Operational sales source cross-check: ProductSalesSnapshot is what
+  // operational-sync.ts uses as `revenueFromOps` and the DFS revenue field
+  // is `Math.max(revenueFromOps, revenueFromGl)`. If GL says zero but DFS
+  // says $X, then $X is parked here.
+  const productSalesAgg = await (prisma as any).productSalesSnapshot.aggregate({
+    where: { companyId, frequency: 'daily', snapshotDate: { gte: start, lte: end } },
+    _sum: { revenue: true, cogs: true },
+    _count: { _all: true },
+  });
+  const customerSalesAgg = await (prisma as any).customerSalesSnapshot.aggregate({
+    where: { companyId, frequency: 'daily', snapshotDate: { gte: start, lte: end } },
+    _sum: { revenue: true, cogs: true },
+    _count: { _all: true },
+  });
+  const topCustomerSalesRows = await (prisma as any).customerSalesSnapshot.findMany({
+    where: { companyId, frequency: 'daily', snapshotDate: { gte: start, lte: end } },
+    select: {
+      snapshotDate: true,
+      customerId: true,
+      customerName: true,
+      revenue: true,
+      cogs: true,
+      invoiceCount: true,
+    },
+    orderBy: { revenue: 'desc' },
+    take: 15,
+  });
+  const topProductSalesRows = await (prisma as any).productSalesSnapshot.findMany({
+    where: { companyId, frequency: 'daily', snapshotDate: { gte: start, lte: end } },
+    select: {
+      snapshotDate: true,
+      itemId: true,
+      itemName: true,
+      sku: true,
+      revenue: true,
+      cogs: true,
+      quantity: true,
+    },
+    orderBy: { revenue: 'desc' },
+    take: 15,
+  });
+
   return NextResponse.json({
     companyId,
     date: dateStr,
@@ -242,6 +284,35 @@ export async function GET(request: NextRequest) {
           ar: Number(dfs.ar || 0),
         }
       : null,
+    operationalSales: {
+      productSalesSnapshot: {
+        rowCount: Number(productSalesAgg?._count?._all || 0),
+        sumRevenue: Number(productSalesAgg?._sum?.revenue || 0),
+        sumCogs: Number(productSalesAgg?._sum?.cogs || 0),
+      },
+      customerSalesSnapshot: {
+        rowCount: Number(customerSalesAgg?._count?._all || 0),
+        sumRevenue: Number(customerSalesAgg?._sum?.revenue || 0),
+        sumCogs: Number(customerSalesAgg?._sum?.cogs || 0),
+      },
+      topCustomersByRevenue: topCustomerSalesRows.map((r: any) => ({
+        snapshotDate: r.snapshotDate,
+        customerId: r.customerId,
+        customerName: r.customerName,
+        revenue: Number(r.revenue || 0),
+        cogs: Number(r.cogs || 0),
+        invoiceCount: Number(r.invoiceCount || 0),
+      })),
+      topProductsByRevenue: topProductSalesRows.map((r: any) => ({
+        snapshotDate: r.snapshotDate,
+        itemId: r.itemId,
+        itemName: r.itemName,
+        sku: r.sku,
+        revenue: Number(r.revenue || 0),
+        cogs: Number(r.cogs || 0),
+        quantity: Number(r.quantity || 0),
+      })),
+    },
     accounts: accountsOut,
   });
 }
