@@ -163,6 +163,85 @@ async function loadCsiLedgerRowsFromFact(
   return rows;
 }
 
+async function summarizeFactLedger(
+  companyId: string,
+  throughMonth: string,
+  maxMonths: number,
+): Promise<{ totalCount: number; bySourceProgram: Record<string, number>; minDate: string | null; maxDate: string | null }> {
+  const [year, month] = throughMonth.split('-').map((x) => Number(x));
+  const through = new Date(Date.UTC(year, month, 0, 23, 59, 59));
+  const earliest = new Date(Date.UTC(year, month - 1 - (maxMonths - 1), 1));
+  const counts = await prisma.$queryRaw<Array<{ sourceProgram: string | null; cnt: bigint }>>`
+    SELECT COALESCE("sourceProgram", '<null>') AS "sourceProgram", COUNT(*)::bigint AS cnt
+    FROM "GLTransactionFact"
+    WHERE "companyId" = ${companyId}
+      AND "transDate" >= ${earliest}
+      AND "transDate" <= ${through}
+    GROUP BY "sourceProgram"
+  `;
+  const bounds = await prisma.$queryRaw<Array<{ minDate: Date | null; maxDate: Date | null; total: bigint }>>`
+    SELECT MIN("transDate") AS "minDate", MAX("transDate") AS "maxDate", COUNT(*)::bigint AS total
+    FROM "GLTransactionFact"
+    WHERE "companyId" = ${companyId}
+      AND "transDate" >= ${earliest}
+      AND "transDate" <= ${through}
+  `;
+  const bySourceProgram: Record<string, number> = {};
+  for (const row of counts) bySourceProgram[String(row.sourceProgram || '<null>')] = Number(row.cnt);
+  const b = bounds[0] || { minDate: null, maxDate: null, total: 0n };
+  return {
+    totalCount: Number(b.total || 0n),
+    bySourceProgram,
+    minDate: b.minDate ? new Date(b.minDate as any).toISOString() : null,
+    maxDate: b.maxDate ? new Date(b.maxDate as any).toISOString() : null,
+  };
+}
+
+function summarizeGlResponses(glResponsesRaw: JsonRecord[]): {
+  total: number;
+  byProgram: Record<string, { entries: number; itemsTotal: number }>;
+  sample: Array<Record<string, unknown>>;
+} {
+  const byProgram: Record<string, { entries: number; itemsTotal: number }> = {};
+  for (const entry of glResponsesRaw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      const k = '<not-an-object>';
+      byProgram[k] = byProgram[k] || { entries: 0, itemsTotal: 0 };
+      byProgram[k].entries += 1;
+      continue;
+    }
+    const e = entry as JsonRecord;
+    const program = String(e.miProgram || e.program || '').trim().toUpperCase() || '<no-program>';
+    const response = e.response && typeof e.response === 'object' && !Array.isArray(e.response) ? (e.response as JsonRecord) : null;
+    const items = response && Array.isArray(response.Items) ? (response.Items as unknown[]) : [];
+    byProgram[program] = byProgram[program] || { entries: 0, itemsTotal: 0 };
+    byProgram[program].entries += 1;
+    byProgram[program].itemsTotal += items.length;
+  }
+  const sample: Array<Record<string, unknown>> = [];
+  for (const entry of glResponsesRaw.slice(0, 5)) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      sample.push({ kind: typeof entry });
+      continue;
+    }
+    const e = entry as JsonRecord;
+    const response = e.response && typeof e.response === 'object' && !Array.isArray(e.response) ? (e.response as JsonRecord) : null;
+    const items = response && Array.isArray(response.Items) ? (response.Items as unknown[]) : [];
+    const firstItem = items[0] && typeof items[0] === 'object' && !Array.isArray(items[0]) ? Object.keys(items[0] as JsonRecord).slice(0, 20) : null;
+    sample.push({
+      module: e.module ?? null,
+      miProgram: e.miProgram ?? null,
+      program: e.program ?? null,
+      createdAt: e.createdAt ?? null,
+      topLevelKeys: Object.keys(e).slice(0, 20),
+      responseKeys: response ? Object.keys(response).slice(0, 20) : null,
+      itemsCount: items.length,
+      firstItemKeys: firstItem,
+    });
+  }
+  return { total: glResponsesRaw.length, byProgram, sample };
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const stage = { current: 'init' };
   try {
@@ -295,11 +374,21 @@ async function runDryRun(request: NextRequest, stage: { current: string }): Prom
 
   stage.current = 'build_gl_responses';
   const glResponsesRaw = Array.isArray(payload.glResponses) ? (payload.glResponses as JsonRecord[]) : [];
+  const glResponsesSummary = summarizeGlResponses(glResponsesRaw);
   const nonLedgers = glResponsesRaw.filter((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return true;
     const program = String((entry as JsonRecord).miProgram || (entry as JsonRecord).program || '').trim().toUpperCase();
     return program !== 'SLLEDGERS' && program !== 'SLGLTRANS';
   });
+
+  stage.current = 'summarize_fact_ledger';
+  const factSummary = await summarizeFactLedger(companyId, throughMonth, maxMonths).catch((err) => ({
+    error: err?.message || String(err),
+    totalCount: 0,
+    bySourceProgram: {} as Record<string, number>,
+    minDate: null as string | null,
+    maxDate: null as string | null,
+  }));
   const glResponsesForBuild =
     ledgerSource.length > 0
       ? [
@@ -442,6 +531,18 @@ async function runDryRun(request: NextRequest, stage: { current: string }): Prom
     },
     builtStats: built.stats,
     monthsBuilt: builtRows.map((r) => String(r.month || '')),
+    payloadDiagnostics: {
+      connectionMetadataKeys: Object.keys(metadata).slice(0, 50),
+      payloadKeyPicked: payload === metadata[payloadPrimary] ? payloadPrimary : payloadFallback,
+      payloadKeys: Object.keys(payload).slice(0, 50),
+      glResponses: {
+        total: glResponsesSummary.total,
+        nonLedgerCount: nonLedgers.length,
+        byProgram: glResponsesSummary.byProgram,
+        sample: glResponsesSummary.sample,
+      },
+      factLedger: factSummary,
+    },
     summary: {
       measuredMonths: measured,
       avgRelGapTotalAssets: avgRelGap,
