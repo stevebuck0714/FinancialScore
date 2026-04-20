@@ -203,11 +203,85 @@ export async function GET(request: NextRequest) {
         }))
     : [];
 
-  // DFS cross-check.
+  // DFS cross-check + provenance.
   const dfs = await prisma.dailyFinancialSnapshot.findFirst({
     where: { companyId, frequency: 'daily', snapshotDate: start },
-    select: { revenue: true, cogsTotal: true, expense: true, ar: true, snapshotDate: true },
+    select: {
+      revenue: true,
+      cogsTotal: true,
+      expense: true,
+      ar: true,
+      snapshotDate: true,
+      sourcePlatform: true,
+      sourceRunId: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   });
+
+  // Per-account breakdown for the same day from DailyFinancialMappedLine.
+  // This is what the Daily Financials UI uses for the line-by-line P&L
+  // breakdown ("Finished Goods Sales: $0" etc.). If the aggregate revenue
+  // is $2.7M but the mapped-line rows show none of it, we know exactly
+  // where the number is/isn't living.
+  const mappedLineDelegate: any = (prisma as any).dailyFinancialMappedLine;
+  let mappedLines: any[] = [];
+  let mappedLinesByTarget: Array<{ targetField: string; rowCount: number; sumAmount: number }> = [];
+  if (mappedLineDelegate?.findMany) {
+    mappedLines = await mappedLineDelegate.findMany({
+      where: {
+        companyId,
+        frequency: 'daily',
+        snapshotDate: { gte: start, lte: end },
+      },
+      select: {
+        snapshotDate: true,
+        sourceAccountName: true,
+        sourceAccountId: true,
+        sourceAccountType: true,
+        targetField: true,
+        amount: true,
+        sourcePlatform: true,
+        sourceRunId: true,
+      },
+      orderBy: { amount: 'desc' },
+      take: 200,
+    });
+    const byTarget = new Map<string, { rowCount: number; sumAmount: number }>();
+    for (const line of mappedLines) {
+      const t = String(line.targetField || '');
+      const b = byTarget.get(t) || { rowCount: 0, sumAmount: 0 };
+      b.rowCount += 1;
+      b.sumAmount += Number(line.amount || 0);
+      byTarget.set(t, b);
+    }
+    mappedLinesByTarget = Array.from(byTarget.entries())
+      .map(([targetField, v]) => ({ targetField, ...v }))
+      .sort((a, b) => Math.abs(b.sumAmount) - Math.abs(a.sumAmount));
+  }
+
+  // Recent DFS import runs that touched this date — tells us which platform
+  // / run wrote the current value into DFS (operational-sync vs raw ingest
+  // vs daily-bs-from-gl rebuild).
+  const importRunDelegate: any = (prisma as any).dailyFinancialImportRun;
+  let importRuns: any[] = [];
+  if (importRunDelegate?.findMany) {
+    importRuns = await importRunDelegate.findMany({
+      where: {
+        companyId,
+        snapshotDate: { gte: start, lte: end },
+      },
+      select: {
+        platform: true,
+        runType: true,
+        status: true,
+        snapshotDate: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 25,
+    });
+  }
 
   // Operational sales source cross-check: ProductSalesSnapshot is what
   // operational-sync.ts uses as `revenueFromOps` and the DFS revenue field
@@ -282,8 +356,33 @@ export async function GET(request: NextRequest) {
           cogsTotal: Number(dfs.cogsTotal || 0),
           expense: Number(dfs.expense || 0),
           ar: Number(dfs.ar || 0),
+          sourcePlatform: (dfs as any).sourcePlatform || null,
+          sourceRunId: (dfs as any).sourceRunId || null,
+          createdAt: (dfs as any).createdAt || null,
+          updatedAt: (dfs as any).updatedAt || null,
         }
       : null,
+    dailyFinancialMappedLines: {
+      rowCount: mappedLines.length,
+      byTargetField: mappedLinesByTarget,
+      sampleRows: mappedLines.slice(0, 30).map((l: any) => ({
+        snapshotDate: l.snapshotDate,
+        sourceAccountName: l.sourceAccountName,
+        sourceAccountId: l.sourceAccountId,
+        sourceAccountType: l.sourceAccountType,
+        targetField: l.targetField,
+        amount: Number(l.amount || 0),
+        sourcePlatform: l.sourcePlatform,
+        sourceRunId: l.sourceRunId,
+      })),
+    },
+    dailyFinancialImportRuns: importRuns.map((r: any) => ({
+      platform: r.platform,
+      runType: r.runType,
+      status: r.status,
+      snapshotDate: r.snapshotDate,
+      createdAt: r.createdAt,
+    })),
     operationalSales: {
       productSalesSnapshot: {
         rowCount: Number(productSalesAgg?._count?._all || 0),
