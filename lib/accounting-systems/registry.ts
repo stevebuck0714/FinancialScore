@@ -40,7 +40,9 @@ for (const m of modules) {
  * should fall back to legacy inline handling for those.
  */
 export function getAccountingSystemModule(systemKey: unknown): AccountingSystemModule<any, any> | null {
-  const normalized = String(systemKey || '').trim().toUpperCase();
+  // Accept any of: 'SAGE_INTACCT', 'sage_intacct', 'sage-intacct', 'sageintacct'.
+  // Underscores and hyphens are interchangeable in URL paths.
+  const normalized = String(systemKey || '').trim().toUpperCase().replace(/-/g, '_');
   if (!normalized) return null;
   return byKey.get(normalized) ?? null;
 }

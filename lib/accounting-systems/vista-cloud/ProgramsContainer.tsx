@@ -46,10 +46,26 @@ const inputCell: React.CSSProperties = {
   color: '#0f172a',
 };
 
+function relativeTime(iso: string | undefined): string {
+  if (!iso) return '—';
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return '—';
+  const deltaSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (deltaSec < 60) return `${deltaSec}s ago`;
+  const deltaMin = Math.round(deltaSec / 60);
+  if (deltaMin < 60) return `${deltaMin}m ago`;
+  const deltaHr = Math.round(deltaMin / 60);
+  if (deltaHr < 24) return `${deltaHr}h ago`;
+  const deltaDay = Math.round(deltaHr / 24);
+  if (deltaDay < 30) return `${deltaDay}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export default function VistaCloudProgramsContainer({
   programs,
   onChange,
   disabled,
+  lastSyncedByObject,
 }: ProgramsContainerProps<VistaCloudProgram>) {
   const update = (index: number, patch: Partial<VistaCloudProgram>) => {
     onChange(programs.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -121,32 +137,29 @@ export default function VistaCloudProgramsContainer({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
           <thead>
             <tr>
-              <th style={{ ...cellHeader, width: '70px' }}>Enabled</th>
               <th style={{ ...cellHeader, width: '170px' }}>Module</th>
               <th style={cellHeader}>Resource (label)</th>
               <th style={cellHeader}>Resource Path</th>
-              <th style={{ ...cellHeader, width: '100px' }}>History (mo)</th>
-              <th style={{ ...cellHeader, width: '60px' }}></th>
+              <th style={{ ...cellHeader, width: '64px', textAlign: 'center' }}>Enabled</th>
+              <th style={{ ...cellHeader, width: '72px', textAlign: 'right', paddingRight: '12px' }}>Synced</th>
+              <th style={{ ...cellHeader, width: '64px', textAlign: 'right', paddingRight: '12px' }}>Hist&nbsp;(mo)</th>
+              <th style={{ ...cellHeader, width: '36px' }}></th>
             </tr>
           </thead>
           <tbody>
             {programs.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ ...cellBody, textAlign: 'center', color: '#94a3b8', padding: '16px' }}>
+                <td colSpan={7} style={{ ...cellBody, textAlign: 'center', color: '#94a3b8', padding: '16px' }}>
                   No resources configured. Click <strong>+ Add Resource</strong> or <strong>Reset to defaults</strong>.
                 </td>
               </tr>
             )}
-            {programs.map((row, idx) => (
-              <tr key={idx}>
-                <td style={{ ...cellBody, textAlign: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={row.enabled}
-                    onChange={(e) => update(idx, { enabled: e.target.checked })}
-                    disabled={disabled}
-                  />
-                </td>
+            {programs.map((row, idx) => {
+              // Sync route keys per-program last-synced state by `<module>/<resourcePath>`
+              // so e.g. ar/invoices and ap/invoices don't collide.
+              const lastSynced = lastSyncedByObject?.[`${row.module}/${row.resourcePath}`];
+              return (
+              <tr key={idx} style={{ opacity: row.enabled ? 1 : 0.55 }}>
                 <td style={cellBody}>
                   <select
                     value={row.module}
@@ -179,14 +192,38 @@ export default function VistaCloudProgramsContainer({
                     disabled={disabled}
                   />
                 </td>
-                <td style={cellBody}>
+                <td style={{ ...cellBody, textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={row.enabled}
+                    onChange={(e) => update(idx, { enabled: e.target.checked })}
+                    disabled={disabled}
+                    title={row.enabled ? 'Enabled — included in syncs' : 'Disabled — skipped by syncs'}
+                    style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}
+                  />
+                </td>
+                <td
+                  style={{
+                    ...cellBody,
+                    fontSize: '11px',
+                    color: lastSynced ? '#475569' : '#94a3b8',
+                    textAlign: 'right',
+                    paddingRight: '12px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span title={lastSynced ? new Date(lastSynced).toLocaleString() : 'Never synced'}>
+                    {relativeTime(lastSynced)}
+                  </span>
+                </td>
+                <td style={{ ...cellBody, paddingRight: '12px' }}>
                   <input
                     type="number"
                     min={1}
                     max={120}
                     value={row.historyMonths}
                     onChange={(e) => update(idx, { historyMonths: Math.max(1, Number(e.target.value) || 12) })}
-                    style={{ ...inputCell, textAlign: 'right' }}
+                    style={{ ...inputCell, textAlign: 'right', padding: '6px 6px' }}
                     disabled={disabled}
                   />
                 </td>
@@ -209,7 +246,8 @@ export default function VistaCloudProgramsContainer({
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

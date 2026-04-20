@@ -202,7 +202,7 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
       setErrorMsg(null);
       try {
         const resp = await fetch(
-          `/api/accounting-systems/${plugin.key.toLowerCase()}/settings?companyId=${encodeURIComponent(companyId)}`,
+          `/api/accounting-systems/${plugin.key.toLowerCase().replace(/_/g, '-')}/settings?companyId=${encodeURIComponent(companyId)}`,
           { credentials: 'include' }
         );
         const data: LoadResponse = await resp.json().catch(() => ({ ok: false, error: 'Invalid response' }));
@@ -246,7 +246,7 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
     setErrorMsg(null);
     setSuccessMsg(null);
     try {
-      const resp = await fetch(`/api/accounting-systems/${plugin.key.toLowerCase()}/settings`, {
+      const resp = await fetch(`/api/accounting-systems/${plugin.key.toLowerCase().replace(/_/g, '-')}/settings`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -285,7 +285,7 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
           : action === 'disconnect'
           ? 'disconnect'
           : 'sync';
-      const resp = await fetch(`/api/accounting-systems/${plugin.key.toLowerCase()}/${path}`, {
+      const resp = await fetch(`/api/accounting-systems/${plugin.key.toLowerCase().replace(/_/g, '-')}/${path}`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -310,8 +310,15 @@ export default function AccountingSystemPanel({ companyId, system }: Props) {
         setStatus(data.programsFailed && data.programsFailed > 0 ? 'ERROR' : 'ACTIVE');
         if (Array.isArray(data.outcomes)) {
           const updates: Record<string, string> = {};
-          for (const o of data.outcomes as Array<{ objectName?: string; ok?: boolean; syncedAt?: string }>) {
-            if (o.ok && o.objectName && o.syncedAt) updates[o.objectName] = o.syncedAt;
+          for (const o of data.outcomes as Array<{
+            key?: string;
+            objectName?: string;
+            resourcePath?: string;
+            ok?: boolean;
+            syncedAt?: string;
+          }>) {
+            const lookupKey = o.key || o.objectName || o.resourcePath;
+            if (o.ok && lookupKey && o.syncedAt) updates[lookupKey] = o.syncedAt;
           }
           if (Object.keys(updates).length > 0) {
             setLastSyncedByObject((prev) => ({ ...prev, ...updates }));

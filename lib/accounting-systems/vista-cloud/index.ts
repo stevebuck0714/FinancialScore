@@ -12,6 +12,9 @@ import {
 import IntegrationContainer from './IntegrationContainer';
 import ProgramsContainer from './ProgramsContainer';
 
+export type { VistaCloudSettings } from './settings';
+export type { VistaCloudProgram } from './programs';
+
 const vistaCloud: AccountingSystemModule<VistaCloudSettings, VistaCloudProgram> = {
   key: 'VISTA_CLOUD',
   label: 'Viewpoint Vista Cloud',
@@ -22,6 +25,13 @@ const vistaCloud: AccountingSystemModule<VistaCloudSettings, VistaCloudProgram> 
     variant: 'side-by-side',
     credentialsWidth: '40%',
     programsWidth: '60%',
+    scheduleAbove: true,
+  },
+  capabilities: {
+    connect: true,
+    disconnect: true,
+    syncNow: true,
+    backfill: true,
   },
   defaultSettings: DEFAULT_VISTA_CLOUD_SETTINGS,
   defaultPrograms: DEFAULT_VISTA_CLOUD_PROGRAMS,

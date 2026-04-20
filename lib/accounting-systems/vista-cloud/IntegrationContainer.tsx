@@ -14,12 +14,15 @@ const labelStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
+  maxWidth: '100%',
+  boxSizing: 'border-box',
   padding: '8px 10px',
   border: '1px solid #cbd5e1',
   borderRadius: '6px',
   fontSize: '13px',
   background: '#fff',
   color: '#0f172a',
+  minWidth: 0,
 };
 
 const helpStyle: React.CSSProperties = {
@@ -38,8 +41,8 @@ export default function VistaCloudIntegrationContainer({
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-      <div style={{ gridColumn: '1 / -1' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '14px' }}>
+      <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
         <label style={labelStyle}>Subscriber Code *</label>
         <input
           type="text"
@@ -52,7 +55,7 @@ export default function VistaCloudIntegrationContainer({
         <div style={helpStyle}>Tenant identifier issued by Trimble during Vista API onboarding.</div>
       </div>
 
-      <div>
+      <div style={{ minWidth: 0 }}>
         <label style={labelStyle}>X-Application-Key (Production) *</label>
         <input
           type="password"
@@ -66,7 +69,7 @@ export default function VistaCloudIntegrationContainer({
         <div style={helpStyle}>Sent in the <code>X-Application-Key</code> header on every request.</div>
       </div>
 
-      <div>
+      <div style={{ minWidth: 0 }}>
         <label style={labelStyle}>X-Application-Key (Test)</label>
         <input
           type="password"
@@ -80,7 +83,7 @@ export default function VistaCloudIntegrationContainer({
         <div style={helpStyle}>Optional — only if Trimble issued a separate sandbox key.</div>
       </div>
 
-      <div style={{ gridColumn: '1 / -1' }}>
+      <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
         <label style={labelStyle}>API Base URL</label>
         <input
           type="text"
@@ -96,7 +99,7 @@ export default function VistaCloudIntegrationContainer({
         </div>
       </div>
 
-      <div>
+      <div style={{ minWidth: 0 }}>
         <label style={labelStyle}>API Version</label>
         <input
           type="text"
@@ -108,7 +111,7 @@ export default function VistaCloudIntegrationContainer({
         />
       </div>
 
-      <div>
+      <div style={{ minWidth: 0 }}>
         <label style={labelStyle}>Default Environment</label>
         <select
           value={settings.defaultEnvironment}
