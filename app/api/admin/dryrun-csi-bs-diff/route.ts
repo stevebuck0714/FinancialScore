@@ -274,6 +274,7 @@ async function runDryRun(request: NextRequest, stage: { current: string }): Prom
   const throughMonthParam = String(url.searchParams.get('throughMonth') || '').trim();
   const maxMonths = Math.max(1, Math.min(60, Number(url.searchParams.get('maxMonths') || '36')));
   const tailMonths = Math.max(1, Math.min(36, Number(url.searchParams.get('tailMonths') || '6')));
+  const forceFactLedger = String(url.searchParams.get('forceFactLedger') || '').trim().toLowerCase() === 'true';
 
   stage.current = 'resolve_company';
   let companyId = companyIdParam;
@@ -362,15 +363,23 @@ async function runDryRun(request: NextRequest, stage: { current: string }): Prom
   const throughMonth = resolveThroughMonth(payload, throughMonthParam);
 
   stage.current = 'load_ledgers';
-  const historical = await loadHistoricalCsiLedgerItems(companyId);
-  let factRows: JsonRecord[] = [];
-  if (historical.items.length === 0) {
-    factRows = await loadCsiLedgerRowsFromFact(companyId, throughMonth, maxMonths);
+  let ledgerSource: JsonRecord[] = [];
+  let ledgerProgram = 'SLGLTRANS';
+  let ledgerSourceLabel = 'none';
+  if (forceFactLedger) {
+    ledgerSource = await loadCsiLedgerRowsFromFact(companyId, throughMonth, maxMonths);
+    ledgerSourceLabel = 'GLTransactionFact_forced';
+  } else {
+    const historical = await loadHistoricalCsiLedgerItems(companyId);
+    if (historical.items.length > 0) {
+      ledgerSource = historical.items;
+      ledgerProgram = historical.program;
+      ledgerSourceLabel = `apiSyncLog:${historical.program}`;
+    } else {
+      ledgerSource = await loadCsiLedgerRowsFromFact(companyId, throughMonth, maxMonths);
+      ledgerSourceLabel = 'GLTransactionFact_fallback';
+    }
   }
-  const ledgerSource: JsonRecord[] = historical.items.length > 0 ? historical.items : factRows;
-  const ledgerProgram = historical.items.length > 0 ? historical.program : 'SLGLTRANS';
-  const ledgerSourceLabel =
-    historical.items.length > 0 ? `apiSyncLog:${historical.program}` : 'GLTransactionFact_fallback';
 
   stage.current = 'build_gl_responses';
   const glResponsesRaw = Array.isArray(payload.glResponses) ? (payload.glResponses as JsonRecord[]) : [];
@@ -522,6 +531,7 @@ async function runDryRun(request: NextRequest, stage: { current: string }): Prom
       throughMonth,
       maxMonths,
       tailMonths,
+      forceFactLedger,
       mappingCount: mappings.length,
       ledgerRowCount: ledgerSource.length,
       ledgerSource: ledgerSourceLabel,
