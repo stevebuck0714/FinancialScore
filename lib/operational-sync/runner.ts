@@ -99,7 +99,24 @@ function readInforSiteFromMetadata(metadata: unknown): string | undefined {
   const md = metadata as Record<string, unknown>;
   const raw = md['site'] ?? md['inforSite'] ?? md['defaultSite'];
   const value = String(raw ?? '').trim();
-  return value.length > 0 ? value : undefined;
+  if (value.length > 0) return value;
+
+  // Fallback: derive from accountingPrograms[].site when every configured program agrees on a single site.
+  // This rescues CSI tenants whose per-program site is configured (via the admin program editor) but whose
+  // top-level connection metadata never had `site` written. Refuse to guess when programs disagree, so a
+  // multi-site tenant still gets the explicit "configure site" alert instead of silently picking one.
+  const programs = Array.isArray(md.accountingPrograms) ? (md.accountingPrograms as unknown[]) : [];
+  const programSites = new Set<string>();
+  for (const program of programs) {
+    if (!program || typeof program !== 'object') continue;
+    const programSite = String((program as Record<string, unknown>).site ?? '').trim();
+    if (programSite.length > 0) programSites.add(programSite);
+  }
+  if (programSites.size === 1) {
+    const [only] = programSites;
+    return only;
+  }
+  return undefined;
 }
 
 function normalizeFrequency(value: unknown): SyncFrequency {
