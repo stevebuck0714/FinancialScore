@@ -13,11 +13,6 @@ import {
 } from '@/lib/operations/construction-mock-data';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
-import {
-  getCashBalanceSheetAnchorConfig,
-  getCashAccountAllowlistSet,
-  isAllowedCashAccount,
-} from '@/lib/financial/cash-balance-sheet-anchor';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
@@ -147,23 +142,6 @@ function parseIsoDayKey(dayKey: string): Date {
   }
   // UTC-4 midnight is 04:00 UTC.
   return new Date(Date.UTC(year, month - 1, day, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
-}
-
-/** GL posting dates from (exclusive) min(request range start, anchor) through max(request range end, anchor). */
-function getCashMovementDateFilterForSheetAnchor(
-  rangeStart: Date,
-  rangeEnd: Date,
-  anchorDay: Date
-): { gte: Date; lte: Date } {
-  const rs = startOfUtcDay(rangeStart);
-  const re = startOfUtcDay(rangeEnd);
-  const a = startOfUtcDay(anchorDay);
-  const minDay = rs.getTime() < a.getTime() ? rs : a;
-  const maxDay = re.getTime() > a.getTime() ? re : a;
-  return {
-    gte: new Date(minDay.getTime() + 24 * 60 * 60 * 1000),
-    lte: maxDay,
-  };
 }
 
 function computeDailyCashTotalsByDate(
@@ -817,176 +795,6 @@ function isInvoiceLikeArOpenRow(row: { status?: string | null; invoiceNo?: strin
   // If status is missing/unknown but invoice number exists and is not a credit memo,
   // keep it so we don't drop legitimate invoice-like documents.
   return Boolean(invoiceNo);
-}
-
-async function getAssetCashMappingTokens(companyId: string): Promise<Set<string>> {
-  const mappings = await prisma.accountMapping.findMany({
-    where: {
-      companyId,
-      targetField: { in: ['cash', 'otherCA'] },
-      accountClassification: { in: ['A', 'Asset', 'ASSET', 'asset'] },
-    },
-    select: {
-      accountName: true,
-      accountId: true,
-      accountCode: true,
-    },
-  });
-  const tokens = new Set<string>();
-  for (const mapping of mappings) {
-    if (
-      isExcludedCashControlAccount(mapping.accountId, mapping.accountCode, mapping.accountName)
-    ) {
-      continue;
-    }
-    for (const rawToken of [mapping.accountName, mapping.accountId, mapping.accountCode]) {
-      const token = normalizeAccountToken(rawToken);
-      if (token) tokens.add(token);
-    }
-  }
-  return tokens;
-}
-
-function buildDailyCashSeriesFromMovements(
-  anchorRows: Array<{
-    snapshotDate: Date;
-    accountName: string;
-    cashBalance: number;
-    accountId?: string | null;
-    accountNumber?: string | null;
-  }>,
-  movementRows: Array<{
-    snapshotDate: Date;
-    sourceAccountName: string;
-    sourceAccountId?: string | null;
-    amount: number;
-  }>,
-  rangeStart: Date,
-  rangeEnd: Date
-): Array<{
-  snapshotDate: Date;
-  accountName: string;
-  cashBalance: number;
-  accountId: string | null;
-  accountNumber: string | null;
-}> {
-  if (!anchorRows.length) return [];
-  const anchorDate = startOfUtcDay(anchorRows[0].snapshotDate);
-  const start = startOfUtcDay(rangeStart);
-  const end = startOfUtcDay(rangeEnd);
-
-  const movementByDateAccount = new Map<string, Map<string, number>>();
-  const accountDisplayNames = new Map<string, string>();
-  for (const row of movementRows) {
-    const dayKey = dateKeyUtc(row.snapshotDate);
-    if (!movementByDateAccount.has(dayKey)) movementByDateAccount.set(dayKey, new Map<string, number>());
-    const perAccount = movementByDateAccount.get(dayKey)!;
-    const accountName = String(row.sourceAccountName || '').trim();
-    if (isExcludedCashControlAccount(row.sourceAccountId, null, accountName)) continue;
-    const accountKey = accountKeyFromParts(row.sourceAccountId, null, accountName);
-    if (!accountKey) continue;
-    if (accountName && !accountDisplayNames.has(accountKey)) accountDisplayNames.set(accountKey, accountName);
-    perAccount.set(accountKey, Number(perAccount.get(accountKey) || 0) + Number(row.amount || 0));
-  }
-
-  const accountUniverse = new Set<string>();
-  const anchorBalances = new Map<string, number>();
-  for (const row of anchorRows) {
-    const accountName = String(row.accountName || '').trim();
-    if (!accountName) continue;
-    if (/^cash account \d+$/i.test(accountName)) continue;
-    if (isExcludedCashControlAccount(row.accountId, row.accountNumber, accountName)) continue;
-    const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, accountName);
-    if (!accountKey) continue;
-    accountUniverse.add(accountKey);
-    anchorBalances.set(accountKey, Number(row.cashBalance || 0));
-    if (!accountDisplayNames.has(accountKey)) accountDisplayNames.set(accountKey, accountName);
-  }
-  for (const row of movementRows) {
-    const accountName = String(row.sourceAccountName || '').trim();
-    if (!accountName) continue;
-    if (/^cash account \d+$/i.test(accountName)) continue;
-    if (isExcludedCashControlAccount(row.sourceAccountId, null, accountName)) continue;
-    const accountKey = accountKeyFromParts(row.sourceAccountId, null, accountName);
-    if (!accountKey) continue;
-    accountUniverse.add(accountKey);
-    if (!anchorBalances.has(accountKey)) anchorBalances.set(accountKey, 0);
-    if (!accountDisplayNames.has(accountKey)) accountDisplayNames.set(accountKey, accountName);
-  }
-
-  if (accountUniverse.size === 0) return [];
-
-  const balancesByDate = new Map<string, Map<string, number>>();
-  const anchorKey = dateKeyUtc(anchorDate);
-  balancesByDate.set(anchorKey, new Map(anchorBalances));
-
-  // Backfill prior dates from anchor using movement deltas.
-  for (
-    let cursor = new Date(anchorDate.getTime() - 24 * 60 * 60 * 1000);
-    cursor.getTime() >= start.getTime();
-    cursor = new Date(cursor.getTime() - 24 * 60 * 60 * 1000)
-  ) {
-    const dayKey = dateKeyUtc(cursor);
-    const nextKey = dateKeyUtc(new Date(cursor.getTime() + 24 * 60 * 60 * 1000));
-    const nextBalances = balancesByDate.get(nextKey) || new Map<string, number>();
-    const movementOnNext = movementByDateAccount.get(nextKey) || new Map<string, number>();
-    const reconstructed = new Map<string, number>();
-    for (const accountKey of accountUniverse) {
-      const nextValue = Number(nextBalances.get(accountKey) || 0);
-      const deltaOnNext = Number(movementOnNext.get(accountKey) || 0);
-      reconstructed.set(accountKey, nextValue - deltaOnNext);
-    }
-    balancesByDate.set(dayKey, reconstructed);
-  }
-
-  // Roll forward dates after anchor.
-  for (
-    let cursor = new Date(anchorDate.getTime() + 24 * 60 * 60 * 1000);
-    cursor.getTime() <= end.getTime();
-    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
-  ) {
-    const dayKey = dateKeyUtc(cursor);
-    const prevKey = dateKeyUtc(new Date(cursor.getTime() - 24 * 60 * 60 * 1000));
-    const prevBalances = balancesByDate.get(prevKey) || new Map<string, number>();
-    const movementOnDay = movementByDateAccount.get(dayKey) || new Map<string, number>();
-    const rolled = new Map<string, number>();
-    for (const accountKey of accountUniverse) {
-      const prevValue = Number(prevBalances.get(accountKey) || 0);
-      const delta = Number(movementOnDay.get(accountKey) || 0);
-      rolled.set(accountKey, prevValue + delta);
-    }
-    balancesByDate.set(dayKey, rolled);
-  }
-
-  const rows: Array<{
-    snapshotDate: Date;
-    accountName: string;
-    cashBalance: number;
-    accountId: string | null;
-    accountNumber: string | null;
-  }> = [];
-  for (
-    let cursor = new Date(start);
-    cursor.getTime() <= end.getTime();
-    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
-  ) {
-    const dayKey = dateKeyUtc(cursor);
-    const balances = balancesByDate.get(dayKey);
-    if (!balances) continue;
-    for (const accountKey of accountUniverse) {
-      const accountName = accountDisplayNames.get(accountKey) || accountKey;
-      const accountId = accountKey.startsWith('id:') ? accountKey.slice(3) : null;
-      const accountNumber = accountKey.startsWith('num:') ? accountKey.slice(4) : null;
-      rows.push({
-        snapshotDate: parseIsoDayKey(dayKey),
-        accountName,
-        cashBalance: Number(balances.get(accountKey) || 0),
-        accountId,
-        accountNumber,
-      });
-    }
-  }
-  return rows;
 }
 
 /**
@@ -1681,68 +1489,6 @@ function aggregateApSeriesByFrequency(
     snapshotDate: Date;
     accountName: string;
     apBalance: number;
-    accountId: string | null;
-    accountNumber: string | null;
-  }> = [];
-  const sortedBucketKeys = Array.from(bucketByKey.keys()).sort((a, b) => a.localeCompare(b));
-  for (const bucketKey of sortedBucketKeys) {
-    const perAccount = bucketByKey.get(bucketKey)!;
-    const rowsInBucket = Array.from(perAccount.values()).sort((a, b) => a.accountName.localeCompare(b.accountName));
-    aggregated.push(...rowsInBucket);
-  }
-  return aggregated;
-}
-
-function aggregateCashSeriesByFrequency(
-  rows: Array<{
-    snapshotDate: Date;
-    accountName: string;
-    cashBalance: number;
-    accountId: string | null;
-    accountNumber: string | null;
-  }>,
-  frequency: 'daily' | 'weekly' | 'monthly'
-): Array<{
-  snapshotDate: Date;
-  accountName: string;
-  cashBalance: number;
-  accountId: string | null;
-  accountNumber: string | null;
-}> {
-  if (frequency === 'daily') return rows;
-  const bucketByKey = new Map<
-    string,
-    Map<
-      string,
-      {
-        snapshotDate: Date;
-        accountName: string;
-        cashBalance: number;
-        accountId: string | null;
-        accountNumber: string | null;
-      }
-    >
-  >();
-
-  for (const row of rows) {
-    const rowDate = startOfUtcDay(new Date(row.snapshotDate));
-    const bucketDate = frequency === 'weekly' ? startOfUtcWeek(rowDate) : startOfMonth(rowDate);
-    const bucketKey = dateKeyUtc(bucketDate);
-    if (!bucketByKey.has(bucketKey)) bucketByKey.set(bucketKey, new Map());
-    const perAccount = bucketByKey.get(bucketKey)!;
-    const accountKey =
-      accountKeyFromParts(row.accountId, row.accountNumber, row.accountName) ||
-      `name:${normalizeAccountNameForKey(row.accountName)}`;
-    const existing = perAccount.get(accountKey);
-    if (!existing || new Date(row.snapshotDate).getTime() >= new Date(existing.snapshotDate).getTime()) {
-      perAccount.set(accountKey, row);
-    }
-  }
-
-  const aggregated: Array<{
-    snapshotDate: Date;
-    accountName: string;
-    cashBalance: number;
     accountId: string | null;
     accountNumber: string | null;
   }> = [];
@@ -6175,451 +5921,142 @@ export async function GET(request: NextRequest) {
           summary: inventoryMetrics,
         });
 
-      case 'cash':
-        // Canonical cash series comes from GL-derived cash movements.
-        data = [];
-        // Optional per-company allowlist of cash accounts. When present, the
-        // cash position chart and bank-account table only include these
-        // accounts. This filters out non-cash GL accounts (e.g. prepaids,
-        // contra-assets) that were tagged as cash by source mappings.
-        const cashAccountAllowlist = getCashAccountAllowlistSet(companyId);
-        const observedCashHistory = await prisma.cashSnapshot.findMany({
-          where: {
-            companyId,
-            frequency: 'daily',
-            snapshotDate: dateFilter,
-          },
-          orderBy: [{ snapshotDate: 'asc' }, { createdAt: 'desc' }],
-          select: {
-            snapshotDate: true,
-            accountName: true,
-            accountId: true,
-            accountNumber: true,
-            cashBalance: true,
-          },
-          take: Math.max(limit * 200, 20000),
-        });
-        let observedDaily: Array<{
-          snapshotDate: Date;
-          accountName: string;
-          cashBalance: number;
-          accountId: string | null;
-          accountNumber: string | null;
-        }> = [];
-        if (observedCashHistory.length > 0) {
-          const seenByDateAccount = new Set<string>();
-          for (const row of observedCashHistory) {
-            const accountName = String(row.accountName || '').trim();
-            if (!accountName || /^cash account \d+$/i.test(accountName)) continue;
-            if (isExcludedCashControlAccount(row.accountId, row.accountNumber, accountName)) continue;
-            // Per-company cash account allowlist: exclude non-cash GL
-            // accounts (e.g. prepaids, contra-assets) that the source
-            // tagged as cash. When no allowlist is configured for the
-            // company, this is a no-op.
-            if (!isAllowedCashAccount(row, cashAccountAllowlist)) continue;
-            const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, accountName);
-            if (!accountKey) continue;
-            const dayKey = dateKeyUtc(new Date(row.snapshotDate));
-            const dedupeKey = `${dayKey}|${accountKey}`;
-            // Query ordering keeps newest created row first for each day/account.
-            if (seenByDateAccount.has(dedupeKey)) continue;
-            seenByDateAccount.add(dedupeKey);
-            observedDaily.push({
-              snapshotDate: parseIsoDayKey(dayKey),
-              accountName,
-              cashBalance: Number(row.cashBalance || 0),
-              accountId: row.accountId ? String(row.accountId) : null,
-              accountNumber: row.accountNumber ? String(row.accountNumber) : null,
-            });
-          }
-          observedDaily = observedDaily.sort((a, b) => {
-            const dt = a.snapshotDate.getTime() - b.snapshotDate.getTime();
-            if (dt !== 0) return dt;
-            return a.accountName.localeCompare(b.accountName);
-          });
-        }
-        const cashMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
-        let syntheticDaily: Array<{
-          snapshotDate: Date;
-          accountName: string;
-          cashBalance: number;
-          accountId: string | null;
-          accountNumber: string | null;
-        }> = [];
-        if (cashMappedLineDelegate) {
-          const sheetAnchorCfg = getCashBalanceSheetAnchorConfig(companyId);
-          const anchorDayForMovements = sheetAnchorCfg
-            ? startOfUtcDay(new Date(`${sheetAnchorCfg.anchorDateIso}T12:00:00.000Z`))
-            : null;
-          const movementDateWhere =
-            sheetAnchorCfg && anchorDayForMovements
-              ? getCashMovementDateFilterForSheetAnchor(startDate, endDate, anchorDayForMovements)
-              : dateFilter;
-          const movementRows =
-            !sheetAnchorCfg ||
-            !anchorDayForMovements ||
-            movementDateWhere.gte.getTime() <= movementDateWhere.lte.getTime()
-              ? await cashMappedLineDelegate.findMany({
-                  where: {
-                    companyId,
-                    frequency: 'daily',
-                    targetField: 'balance_movement:cash',
-                    snapshotDate: movementDateWhere,
-                  },
-                  select: {
-                    snapshotDate: true,
-                    sourceAccountName: true,
-                    sourceAccountId: true,
-                    amount: true,
-                  },
-                  orderBy: [{ snapshotDate: 'asc' }],
-                  take: Math.max(limit * 50, 5000),
-                })
-              : [];
-          // Drop movements for non-cash GL accounts when an allowlist is set,
-          // so the synthetic roll-forward is built only from real cash activity.
-          const filteredMovementRows = cashAccountAllowlist
-            ? movementRows.filter((row: { sourceAccountId: string | null }) =>
-                isAllowedCashAccount(
-                  { sourceAccountId: row.sourceAccountId },
-                  cashAccountAllowlist
-                )
-              )
-            : movementRows;
-          if (filteredMovementRows.length > 0) {
-            if (sheetAnchorCfg && anchorDayForMovements) {
-              const anchorRows = sheetAnchorCfg.accounts
-                .filter((a) => isAllowedCashAccount(a, cashAccountAllowlist))
-                .map((a) => ({
-                  snapshotDate: anchorDayForMovements,
-                  accountName: a.accountName,
-                  cashBalance: a.cashBalance,
-                  accountId: a.accountId,
-                  accountNumber: a.accountNumber,
-                }));
-              syntheticDaily = buildDailyCashSeriesFromMovements(
-                anchorRows,
-                filteredMovementRows,
-                startDate,
-                endDate
-              );
-            } else {
-              const anchorHistory = await prisma.cashSnapshot.findMany({
-                where: {
-                  companyId,
-                  frequency: 'daily',
-                  snapshotDate: { lte: endDate },
-                },
-                orderBy: [{ snapshotDate: 'desc' }, { createdAt: 'desc' }],
-                select: {
-                  snapshotDate: true,
-                  accountName: true,
-                  accountId: true,
-                  accountNumber: true,
-                  cashBalance: true,
-                },
-                take: 10000,
-              });
-              if (anchorHistory.length > 0) {
-                // Build anchors from one consistent snapshot day. Mixing account rows
-                // across different days can distort reconstructed balances.
-                const anchorsByDay = new Map<string, Map<string, (typeof anchorHistory)[number]>>();
-                for (const row of anchorHistory) {
-                  const accountName = String(row.accountName || '').trim();
-                  if (!accountName || /^cash account \d+$/i.test(accountName)) continue;
-                  if (!isAllowedCashAccount(row, cashAccountAllowlist)) continue;
-                  const key = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
-                  if (!key) continue;
-                  const dayKey = dateKeyUtc(new Date(row.snapshotDate));
-                  if (!anchorsByDay.has(dayKey)) anchorsByDay.set(dayKey, new Map<string, (typeof anchorHistory)[number]>());
-                  const perDay = anchorsByDay.get(dayKey)!;
-                  // anchorHistory is ordered snapshotDate desc, createdAt desc.
-                  if (!perDay.has(key)) perDay.set(key, row);
-                }
-                const latestAnchorDay = Array.from(anchorsByDay.keys()).sort((a, b) => b.localeCompare(a))[0];
-                if (latestAnchorDay) {
-                  const anchorRows = Array.from(anchorsByDay.get(latestAnchorDay)!.values());
-                  syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, filteredMovementRows, startDate, endDate);
-                }
-              }
-            }
-            if (cashAccountAllowlist) {
-              syntheticDaily = syntheticDaily.filter((row) =>
-                isAllowedCashAccount(row, cashAccountAllowlist)
-              );
-            }
-          }
-        }
-        if (observedDaily.length > 0 || syntheticDaily.length > 0) {
-          const dayMs = 24 * 60 * 60 * 1000;
-          const expectedWindowDays = Math.max(
-            1,
-            Math.floor((startOfUtcDay(endDate).getTime() - startOfUtcDay(startDate).getTime()) / dayMs) + 1
-          );
-          const uniqueDayCount = (
-            rows: Array<{
-              snapshotDate: Date;
-              accountName: string;
-              cashBalance: number;
-              accountId: string | null;
-              accountNumber: string | null;
-            }>
-          ): number => {
-            const seen = new Set<string>();
-            for (const row of rows) {
-              seen.add(dateKeyUtc(new Date(row.snapshotDate)));
-            }
-            return seen.size;
-          };
-          const uniqueBalanceCount = (
-            rows: Array<{
-              snapshotDate: Date;
-              accountName: string;
-              cashBalance: number;
-              accountId: string | null;
-              accountNumber: string | null;
-            }>
-          ): number => {
-            const values = new Set<string>();
-            for (const row of rows) values.add(Number(row.cashBalance || 0).toFixed(4));
-            return values.size;
-          };
+      case 'cash': {
+        // Canonical cash series for the Cash Position trend chart and
+        // bank-account summary. We use `DailyFinancialSnapshot.cash`
+        // (computed in lib/financial/daily-bs-from-gl.ts) as the single
+        // source of truth. That column is GL-derived from
+        // `GLTransactionFact.signedAmount` rolled forward from the
+        // configured BS anchor across every account whose AccountMapping
+        // targetField = 'cash' — including clearing / undeposited-funds
+        // accounts that hold deposits before they post to the named bank
+        // accounts. Empirically this matches bank-statement totals far
+        // better than the prior CashSnapshot-vs-DailyFinancialMappedLine
+        // merge for Atlantic Precision, where the bookkeeper enters bank
+        // deposits with multi-week lag and the bank-account-only roll-up
+        // understated cash by $20K-$50K mid-month.
+        //
+        // The Daily Financials tab already renders this same value; this
+        // change unifies the two surfaces so they never disagree.
+        const cashSnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
+        const dailyCashRows = cashSnapshotDelegate
+          ? await cashSnapshotDelegate.findMany({
+              where: {
+                companyId,
+                frequency: 'daily',
+                snapshotDate: dateFilter,
+              },
+              orderBy: { snapshotDate: 'asc' },
+              select: {
+                snapshotDate: true,
+                cash: true,
+              },
+              take: Math.max(limit * 50, 5000),
+            })
+          : [];
 
-          const mergeKeyForCashRow = (
-            row: {
-              accountName: string;
-              accountId: string | null;
-              accountNumber: string | null;
-            }
-          ): string => {
-            return (
-              accountKeyFromParts(row.accountId, row.accountNumber, row.accountName) ||
-              (() => {
-                const nameKey = normalizeAccountNameForKey(String(row.accountName || ''));
-                return nameKey ? `name:${nameKey}` : String(row.accountName || '').trim().toLowerCase();
-              })()
+        // Aggregate to the requested frequency (weekly/monthly use the
+        // last daily value inside each bucket, matching the rest of the
+        // operations API).
+        const toCashPeriodKey = (dt: Date): string => {
+          const d = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
+          if (frequency === 'monthly') {
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          }
+          if (frequency === 'weekly') {
+            const day = d.getUTCDay();
+            const diffToMonday = day === 0 ? -6 : 1 - day;
+            const weekStart = new Date(
+              Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diffToMonday)
             );
-          };
-
-          const observedByAccount = new Map<string, typeof observedDaily>();
-          for (const row of observedDaily) {
-            const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
-            if (!accountKey) continue;
-            if (!observedByAccount.has(accountKey)) observedByAccount.set(accountKey, []);
-            observedByAccount.get(accountKey)!.push(row);
+            return `${weekStart.getUTCFullYear()}-${String(weekStart.getUTCMonth() + 1).padStart(
+              2,
+              '0'
+            )}-${String(weekStart.getUTCDate()).padStart(2, '0')}`;
           }
-          const syntheticByAccount = new Map<string, typeof syntheticDaily>();
-          for (const row of syntheticDaily) {
-            const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
-            if (!accountKey) continue;
-            if (!syntheticByAccount.has(accountKey)) syntheticByAccount.set(accountKey, []);
-            syntheticByAccount.get(accountKey)!.push(row);
-          }
-
-          // Merge by normalized account name so movement-derived rows can replace
-          // stale observed rows even when account IDs are inconsistent/missing.
-          const observedByMergeKey = new Map<string, typeof observedDaily>();
-          for (const rows of observedByAccount.values()) {
-            for (const row of rows) {
-              const mergeKey = mergeKeyForCashRow(row);
-              if (!observedByMergeKey.has(mergeKey)) observedByMergeKey.set(mergeKey, []);
-              observedByMergeKey.get(mergeKey)!.push(row);
-            }
-          }
-          const syntheticByMergeKey = new Map<string, typeof syntheticDaily>();
-          for (const rows of syntheticByAccount.values()) {
-            for (const row of rows) {
-              const mergeKey = mergeKeyForCashRow(row);
-              if (!syntheticByMergeKey.has(mergeKey)) syntheticByMergeKey.set(mergeKey, []);
-              syntheticByMergeKey.get(mergeKey)!.push(row);
-            }
-          }
-
-          const allAccountKeys = new Set<string>([
-            ...Array.from(observedByMergeKey.keys()),
-            ...Array.from(syntheticByMergeKey.keys()),
-          ]);
-          const chosenRows: typeof observedDaily = [];
-
-          for (const accountKey of allAccountKeys) {
-            const observedRows = observedByMergeKey.get(accountKey) || [];
-            const syntheticRows = syntheticByMergeKey.get(accountKey) || [];
-
-            // When a per-company cash allowlist is active, the bank-feed
-            // CashSnapshot is treated as truth on any day it exists for an
-            // account, and the synthetic GL roll-forward is only used to
-            // fill gaps. This avoids mid-week wobble caused by reversing
-            // GL entries (accruals, intracompany transfers) that net to
-            // zero by week's end but make Mon–Thu values jump around.
-            //
-            // Without an allowlist, fall back to the prior behavior:
-            // prefer GL movement-derived history when available, since
-            // for some Infor CSI tenants snapshot-only balances from
-            // bank headers can be flat/static across long ranges.
-            let selectedRows: typeof observedRows;
-            if (cashAccountAllowlist) {
-              const observedDayKeys = new Set<string>();
-              for (const r of observedRows) {
-                observedDayKeys.add(dateKeyUtc(new Date(r.snapshotDate)));
-              }
-              const gapFillFromSynthetic = syntheticRows.filter(
-                (r) => !observedDayKeys.has(dateKeyUtc(new Date(r.snapshotDate)))
-              );
-              selectedRows = [...observedRows, ...gapFillFromSynthetic];
-            } else {
-              selectedRows = syntheticRows.length > 0 ? syntheticRows : observedRows;
-            }
-
-            const identityRow =
-              [...observedRows, ...syntheticRows].find((row) => row.accountId || row.accountNumber) ||
-              observedRows[0] ||
-              syntheticRows[0];
-            for (const row of selectedRows) {
-              chosenRows.push({
-                snapshotDate: row.snapshotDate,
-                accountName: identityRow?.accountName || row.accountName,
-                cashBalance: row.cashBalance,
-                accountId: identityRow?.accountId || row.accountId,
-                accountNumber: identityRow?.accountNumber || row.accountNumber,
-              });
-            }
-          }
-
-          const dedupedByDateAccount = new Map<
-            string,
-            {
-              snapshotDate: Date;
-              accountName: string;
-              cashBalance: number;
-              accountId: string | null;
-              accountNumber: string | null;
-            }
-          >();
-          for (const row of chosenRows) {
-            const accountKey = mergeKeyForCashRow(row);
-            if (!accountKey) continue;
-            const dayKey = dateKeyUtc(new Date(row.snapshotDate));
-            dedupedByDateAccount.set(`${dayKey}|${accountKey}`, row);
-          }
-          const mergedDaily = Array.from(dedupedByDateAccount.values()).sort((a, b) => {
-            const dt = a.snapshotDate.getTime() - b.snapshotDate.getTime();
-            if (dt !== 0) return dt;
-            return a.accountName.localeCompare(b.accountName);
-          });
-          data = aggregateCashSeriesByFrequency(mergedDaily, frequency) as any;
-        }
-        const assetCashTokens = await getAssetCashMappingTokens(companyId);
-        if (assetCashTokens.size > 0) {
-          data = data.map((record) => {
-            const balance = Number(record.cashBalance || 0);
-            if (!Number.isFinite(balance) || balance >= 0) return record;
-            const matchesAssetMappedAccount = [record.accountId, record.accountNumber, record.accountName]
-              .map((value) => normalizeAccountToken(String(value || '')))
-              .some((token) => token && assetCashTokens.has(token));
-            if (!matchesAssetMappedAccount) return record;
-            return { ...record, cashBalance: Math.abs(balance) };
-          });
-        }
-
-        const isGenericCashName = (name: string): boolean =>
-          /^cash account \d+$/i.test(name) || /^account \d+$/i.test(name);
-        const canonicalizedByDayAccount = new Map<
-          string,
-          {
-            snapshotDate: Date;
-            accountName: string;
-            cashBalance: number;
-            accountId: string | null;
-            accountNumber: string | null;
-          }
-        >();
-        const scoreCashRecord = (record: {
-          accountName: string;
-          cashBalance: number;
-          accountId?: string | null;
-          accountNumber?: string | null;
-        }): number => {
-          const hasStructuredId = Boolean(String(record.accountNumber || '').trim() || String(record.accountId || '').trim());
-          const hasSpecificName = !isGenericCashName(String(record.accountName || '').trim());
-          const hasNonZeroBalance = Math.abs(Number(record.cashBalance || 0)) > 0;
-          return (hasStructuredId ? 4 : 0) + (hasSpecificName ? 2 : 0) + (hasNonZeroBalance ? 1 : 0);
+          return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(
+            d.getUTCDate()
+          ).padStart(2, '0')}`;
         };
-        for (const record of data) {
-          const accountKey =
-            accountKeyFromParts(record.accountId, record.accountNumber, record.accountName) ||
-            normalizeAccountNameForKey(String(record.accountName || ''));
-          if (!accountKey) continue;
-          const dayKey = dateKeyUtc(new Date(record.snapshotDate));
-          const compositeKey = `${dayKey}|${accountKey}`;
-          const existing = canonicalizedByDayAccount.get(compositeKey);
-          if (!existing) {
-            canonicalizedByDayAccount.set(compositeKey, record);
-            continue;
-          }
-          const existingScore = scoreCashRecord(existing);
-          const currentScore = scoreCashRecord(record);
-          if (currentScore > existingScore) {
-            canonicalizedByDayAccount.set(compositeKey, record);
-            continue;
-          }
-          if (currentScore === existingScore) {
-            const currentAbs = Math.abs(Number(record.cashBalance || 0));
-            const existingAbs = Math.abs(Number(existing.cashBalance || 0));
-            if (currentAbs > existingAbs) {
-              canonicalizedByDayAccount.set(compositeKey, record);
-            }
+        const periodLatest = new Map<string, { snapshotDate: Date; cash: number }>();
+        for (const row of dailyCashRows) {
+          const snapshotDate = new Date(row.snapshotDate);
+          const key = toCashPeriodKey(snapshotDate);
+          const existing = periodLatest.get(key);
+          if (!existing || existing.snapshotDate.getTime() <= snapshotDate.getTime()) {
+            periodLatest.set(key, { snapshotDate, cash: Number(row.cash || 0) });
           }
         }
-        data = Array.from(canonicalizedByDayAccount.values()).sort(
-          (a, b) =>
-            new Date(a.snapshotDate).getTime() - new Date(b.snapshotDate).getTime() ||
-            String(a.accountName || '').localeCompare(String(b.accountName || ''))
-        );
+
+        // Emit one synthetic "Total Cash" row per period. The trend chart
+        // sums `cashBalance` per snapshotDate, so a single row per date
+        // produces the correct total. The per-account breakdown collapses
+        // to a single entry — acceptable since the underlying GL-derived
+        // total already nets across every cash-mapped account and we no
+        // longer pretend to publish per-bank-account daily values from a
+        // source that wasn't reliable for them.
+        data = Array.from(periodLatest.values())
+          .sort((a, b) => a.snapshotDate.getTime() - b.snapshotDate.getTime())
+          .map((entry) => ({
+            snapshotDate: entry.snapshotDate,
+            accountName: 'Total Cash (GL)',
+            cashBalance: entry.cash,
+            accountId: null as string | null,
+            accountNumber: null as string | null,
+          }));
 
         console.log(`💰 Cash API - frequency: ${frequency}, records returned: ${data.length}`);
 
-        // Calculate cash metrics
-        const latestCash = data.filter(
-          (record) =>
-            record.snapshotDate.getTime() === Math.max(...data.map((r) => r.snapshotDate.getTime()))
+        // ----- summary metrics (same shape as before) -----
+        const cashRows = data as Array<{
+          snapshotDate: Date;
+          accountName: string;
+          cashBalance: number;
+          accountId: string | null;
+          accountNumber: string | null;
+        }>;
+        const distinctCashDates: number[] = Array.from(
+          new Set<number>(cashRows.map((r) => r.snapshotDate.getTime()))
+        ).sort((a, b) => b - a);
+        const latestCashTs = distinctCashDates[0];
+        const previousCashTs = distinctCashDates[1] ?? null;
+        const latestCash = cashRows.filter(
+          (record) => latestCashTs != null && record.snapshotDate.getTime() === latestCashTs
         );
-
         const totalCash = latestCash.reduce((sum, record) => sum + record.cashBalance, 0);
-        const previousCash = data.filter(
-          (record) => {
-            const dates = [...new Set(data.map(r => r.snapshotDate.getTime()))].sort((a, b) => b - a);
-            return record.snapshotDate.getTime() === dates[1];
-          }
-        );
+        const previousCash =
+          previousCashTs != null
+            ? cashRows.filter((record) => record.snapshotDate.getTime() === previousCashTs)
+            : [];
         const previousTotal = previousCash.reduce((sum, record) => sum + record.cashBalance, 0);
         const changeAmount = previousTotal ? totalCash - previousTotal : 0;
         const changePercent = previousTotal ? (changeAmount / previousTotal) * 100 : 0;
         const hasCashObservation = latestCash.length > 0;
-        const estimatedRunwayWeeks =
-          !hasCashObservation
-            ? null
-            : Math.abs(changeAmount) > 0
-              ? (totalCash / Math.abs(changeAmount)) * 4.33
-              : totalCash > 0
-                ? 999
-                : null;
+        const estimatedRunwayWeeks = !hasCashObservation
+          ? null
+          : Math.abs(changeAmount) > 0
+            ? (totalCash / Math.abs(changeAmount)) * 4.33
+            : totalCash > 0
+              ? 999
+              : null;
 
-        // Calculate average cash balance over the period
-        const accountBalances = data.reduce((acc, record) => {
-          if (!acc[record.accountName]) {
-            acc[record.accountName] = [];
-          }
-          acc[record.accountName].push(record.cashBalance);
-          return acc;
-        }, {} as Record<string, number[]>);
-
-        const accountSummaries = Object.entries(accountBalances).map(([name, balances]) => ({
-          accountName: name,
-          currentBalance: latestCash.find(r => r.accountName === name)?.cashBalance || 0,
-          avgBalance: balances.reduce((sum, b) => sum + b, 0) / balances.length,
-          minBalance: Math.min(...balances),
-          maxBalance: Math.max(...balances),
-        })).sort((a, b) => b.currentBalance - a.currentBalance);
+        const balancesByAccount: Record<string, number[]> = {};
+        for (const record of cashRows) {
+          const key = record.accountName;
+          if (!balancesByAccount[key]) balancesByAccount[key] = [];
+          balancesByAccount[key].push(record.cashBalance);
+        }
+        const accountSummaries = Object.entries(balancesByAccount)
+          .map(([name, balances]) => ({
+            accountName: name,
+            currentBalance: latestCash.find((r) => r.accountName === name)?.cashBalance || 0,
+            avgBalance: balances.length
+              ? balances.reduce((sum, b) => sum + b, 0) / balances.length
+              : 0,
+            minBalance: balances.length ? Math.min(...balances) : 0,
+            maxBalance: balances.length ? Math.max(...balances) : 0,
+          }))
+          .sort((a, b) => b.currentBalance - a.currentBalance);
 
         const cashMetrics = {
           totalCash,
@@ -6629,10 +6066,10 @@ export async function GET(request: NextRequest) {
           runwaySource: estimatedRunwayWeeks !== null ? 'derived_from_cash_change' : 'unavailable',
           accountCount: latestCash.length,
           accounts: accountSummaries,
-          avgTotalCash: data.length > 0 
-            ? data.reduce((sum, r) => sum + r.cashBalance, 0) / data.length 
-            : 0,
-          dailyTotalCash: frequency === 'daily' ? computeDailyCashTotalsByDate(data) : undefined,
+          avgTotalCash:
+            data.length > 0 ? data.reduce((sum, r) => sum + r.cashBalance, 0) / data.length : 0,
+          dailyTotalCash:
+            frequency === 'daily' ? computeDailyCashTotalsByDate(data) : undefined,
         };
 
         if (shouldUseMockData) {
@@ -6653,6 +6090,7 @@ export async function GET(request: NextRequest) {
           records: data,
           summary: cashMetrics,
         });
+      }
 
       case 'ap': {
         // AP balance derivation uses the customer's "150-day aging rule":
