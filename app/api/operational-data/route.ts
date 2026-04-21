@@ -6560,11 +6560,25 @@ export async function GET(request: NextRequest) {
           requestedFinancialFrequency === 'weekly' || requestedFinancialFrequency === 'monthly'
             ? (requestedFinancialFrequency as 'weekly' | 'monthly')
             : 'daily';
+        // Daily Financials is GL-derived: it must include every day with GL
+        // activity, even days that never received an operational raw sync
+        // (e.g., MLK Day 2026-01-19 for Atlantic Precision — a company
+        // holiday with no Infor raw sync, but the GL still posted $79k of
+        // revenue / $47k of COGS that day from back-dated journal entries).
+        //
+        // The shared `dateFilter` above intersects with `InforRawCompleteness`
+        // for Infor companies in daily mode, which silently drops those
+        // GL-only days and under-reports rolled-up revenue / COGS by the
+        // exact amount the GL posted to them. For this view we want every
+        // DFS row in the date window, regardless of raw-sync completeness;
+        // weekends are still filtered out below because those carry forward
+        // stale prior-day balances rather than reflecting any GL activity.
+        const dailyFinancialsDateFilter = { gte: startDate, lte: endDate };
         data = await dailySnapshotDelegate.findMany({
           where: {
             companyId,
             frequency: financialFrequencyForQuery,
-            snapshotDate: dateFilter,
+            snapshotDate: dailyFinancialsDateFilter,
           },
           orderBy: { snapshotDate: 'desc' },
           take: limit,
@@ -6610,7 +6624,10 @@ export async function GET(request: NextRequest) {
               where: {
                 companyId,
                 frequency: financialFrequencyForQuery,
-                snapshotDate: dateFilter,
+                // Same reasoning as `data` above: keep every day in the
+                // window, including GL-only days excluded from
+                // InforRawCompleteness.
+                snapshotDate: dailyFinancialsDateFilter,
               },
               orderBy: [{ snapshotDate: 'desc' }, { sourceAccountName: 'asc' }],
               take: Math.max(limit * 200, 3000),
