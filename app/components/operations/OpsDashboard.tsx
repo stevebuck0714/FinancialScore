@@ -62,23 +62,53 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   const [widgetOrder, setWidgetOrder] = useState<string[]>([]);
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
 
+  // Default window for the daily charts: show the most recent 90
+  // *weekday* observations. We over-fetch calendar days so that
+  // (a) we tolerate sync lag (data load is often 1-3 days behind today)
+  // and (b) we still have ≥90 weekdays after dropping Sat/Sun.
+  // 90 weekdays ≈ 126 calendar days; 150 gives ~3 weeks of slack.
+  const DAILY_WEEKDAY_WINDOW = 90;
+  const DAILY_FETCH_CALENDAR_DAYS = 150;
+
   // Helper to get date range based on frequency
   const getDateRange = (frequency: string) => {
     const end = new Date();
     const start = new Date();
-    
+
     if (frequency === 'daily') {
-      start.setDate(start.getDate() - 90);
+      start.setDate(start.getDate() - DAILY_FETCH_CALENDAR_DAYS);
     } else if (frequency === 'weekly') {
       start.setDate(start.getDate() - (16 * 7));
     } else {
       start.setMonth(start.getMonth() - 12);
     }
-    
+
     return {
       startDate: toLocalInputDate(start),
       endDate: toLocalInputDate(end)
     };
+  };
+
+  // Trim a daily record stream to the last N weekday observations
+  // ending at the most recent snapshot in the dataset (NOT today).
+  // Weekend rows (Sat/Sun) are dropped before slicing so the chart
+  // renders gap-free Mon-Fri only. Non-daily frequencies pass through.
+  const trimDailyToWeekdayWindow = <T extends { snapshotDate: string }>(
+    records: T[] | undefined | null,
+    frequency: string,
+    windowDays: number = DAILY_WEEKDAY_WINDOW,
+  ): T[] => {
+    if (!records || records.length === 0) return [];
+    if (frequency !== 'daily') return records;
+    const annotated = records
+      .map((rec) => ({ rec, parsed: parseDateSafeUtc(rec.snapshotDate) }))
+      .filter((entry): entry is { rec: T; parsed: Date } => entry.parsed !== null)
+      .filter(({ parsed }) => {
+        const dow = parsed.getUTCDay();
+        return dow !== 0 && dow !== 6;
+      })
+      .sort((a, b) => a.parsed.getTime() - b.parsed.getTime());
+    return annotated.slice(-windowDays).map(({ rec }) => rec);
   };
 
   // Format currency
@@ -363,7 +393,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
   // Prepare chart data
   const prepareCustomerChartData = () => {
     if (!customerData?.records) return [];
-    const periodTrend = customerData.records.reduce((acc: any, record: any) => {
+    const records = trimDailyToWeekdayWindow(customerData.records, customerFreq);
+    const periodTrend = records.reduce((acc: any, record: any) => {
       const period = formatDate(record.snapshotDate, customerFreq);
       if (!acc[period]) {
         acc[period] = { period, revenue: 0 };
@@ -376,7 +407,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
   const prepareArChartData = () => {
     if (!arData?.records) return [];
-    return arData.records.map((record: any) => ({
+    const records = trimDailyToWeekdayWindow(arData.records, arFreq);
+    return records.map((record: any) => ({
       period: formatDate(record.snapshotDate, arFreq),
       totalAR: record.totalAR,
       current: record.current,
@@ -386,7 +418,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
   const prepareApChartData = () => {
     if (!apData?.records) return [];
-    return apData.records.map((record: any) => ({
+    const records = trimDailyToWeekdayWindow(apData.records, apFreq);
+    return records.map((record: any) => ({
       period: formatDate(record.snapshotDate, apFreq),
       totalAP: record.totalAP,
       current: record.current,
@@ -396,7 +429,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
   const prepareProductChartData = () => {
     if (!productData?.records) return [];
-    const periodTrend = productData.records.reduce((acc: any, record: any) => {
+    const records = trimDailyToWeekdayWindow(productData.records, productFreq);
+    const periodTrend = records.reduce((acc: any, record: any) => {
       const period = formatDate(record.snapshotDate, productFreq);
       if (!acc[period]) {
         acc[period] = { period, revenue: 0 };
@@ -409,8 +443,9 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
   const prepareInventoryChartData = () => {
     if (!inventoryData?.records) return [];
+    const records = trimDailyToWeekdayWindow(inventoryData.records, inventoryFreq);
     const periodValue: any = {};
-    inventoryData.records.forEach((record: any) => {
+    records.forEach((record: any) => {
       const period = formatDate(record.snapshotDate, inventoryFreq);
       if (!periodValue[period]) {
         periodValue[period] = { period, value: 0 };
@@ -422,7 +457,8 @@ export default function OpsDashboard({ selectedCompanyId, companyName, industryS
 
   const prepareCashChartData = () => {
     if (!cashData?.records) return [];
-    const periodTrend = cashData.records.reduce((acc: any, record: any) => {
+    const records = trimDailyToWeekdayWindow(cashData.records, cashFreq);
+    const periodTrend = records.reduce((acc: any, record: any) => {
       const period = formatDate(record.snapshotDate, cashFreq);
       if (!acc[period]) {
         acc[period] = { period, totalCash: 0 };
