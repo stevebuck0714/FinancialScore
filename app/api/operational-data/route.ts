@@ -6584,19 +6584,32 @@ export async function GET(request: NextRequest) {
           take: limit,
         });
 
-        // Daily Financials is a business-day view: drop Saturday/Sunday rows so
-        // the table does not show stale weekend carry-forward snapshots. Other
-        // frequencies (weekly/monthly) are already period-aligned and unaffected.
+        // Daily Financials is a business-day view in the per-day table: a
+        // weekend row whose only signal is carry-forward BS values from the
+        // prior business day is noise, not activity. For the per-day display
+        // (`records`) we drop weekend rows that have NO P&L activity. We do
+        // NOT filter weekends out of the rollup-aggregator input — month-end
+        // accruals and other JEs legitimately post on Saturdays/Sundays
+        // (e.g., Atlantic Precision 1/31/2026 carries ~$28.8k of OPEX from
+        // Saturday accruals). Filtering those out of the rollup makes the
+        // Monthly/Quarterly/Annual columns under-report by exactly that
+        // amount vs. the underlying GL.
+        const isWeekendNoActivity = (row: any): boolean => {
+          const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
+          if (!snapshot || Number.isNaN(snapshot.getTime())) return false;
+          const weekday = snapshot.getUTCDay();
+          if (weekday !== 0 && weekday !== 6) return false;
+          const revenue = Number(row?.revenue || 0);
+          const cogsTotal = Number(row?.cogsTotal || 0);
+          const expense = Number(row?.expense || 0);
+          return revenue === 0 && cogsTotal === 0 && expense === 0;
+        };
+        const dailyDataForAggregator: any[] = Array.isArray(data) ? data.slice() : [];
         if (financialFrequencyForQuery === 'daily' && Array.isArray(data) && data.length) {
-          data = data.filter((row: any) => {
-            const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
-            if (!snapshot || Number.isNaN(snapshot.getTime())) return true;
-            const weekday = snapshot.getUTCDay();
-            return weekday !== 0 && weekday !== 6;
-          });
+          data = data.filter((row: any) => !isWeekendNoActivity(row));
         }
 
-        if (!data.length) {
+        if (!data.length && !dailyDataForAggregator.length) {
           return NextResponse.json({
             records: [],
             statementRecords: [],
@@ -6612,12 +6625,12 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        const latestDaily = data[0];
+        const latestDaily = data[0] || dailyDataForAggregator[0];
         const previousDaily = data[1] || latestDaily;
-        const latestRevenue = Number(latestDaily.revenue || 0);
-        const latestExpense = Number(latestDaily.expense || 0);
+        const latestRevenue = Number(latestDaily?.revenue || 0);
+        const latestExpense = Number(latestDaily?.expense || 0);
         const latestNet = latestRevenue - latestExpense;
-        const previousNet = Number(previousDaily.revenue || 0) - Number(previousDaily.expense || 0);
+        const previousNet = Number(previousDaily?.revenue || 0) - Number(previousDaily?.expense || 0);
         const netChange = latestNet - previousNet;
         let mappedLines: any[] = dailyMappedLineDelegate
           ? await dailyMappedLineDelegate.findMany({
@@ -6634,14 +6647,21 @@ export async function GET(request: NextRequest) {
             })
           : [];
         if (financialFrequencyForQuery === 'daily' && mappedLines.length) {
+          // Mirror the per-day table's "weekends with activity stay" rule
+          // for the per-account breakdown. A mapped line on a weekend is
+          // real GL activity; only drop weekend lines whose value is zero.
           mappedLines = mappedLines.filter((row: any) => {
             const snapshot = row?.snapshotDate ? new Date(row.snapshotDate) : null;
             if (!snapshot || Number.isNaN(snapshot.getTime())) return true;
             const weekday = snapshot.getUTCDay();
-            return weekday !== 0 && weekday !== 6;
+            if (weekday !== 0 && weekday !== 6) return true;
+            return Number(row?.amount || 0) !== 0;
           });
         }
-        const statementRecords = aggregateDailyStatementRows(data, statementRollup);
+        const statementRecords = aggregateDailyStatementRows(
+          financialFrequencyForQuery === 'daily' ? dailyDataForAggregator : data,
+          statementRollup
+        );
 
         return NextResponse.json({
           records: data,
@@ -6651,9 +6671,9 @@ export async function GET(request: NextRequest) {
             latestRevenue,
             latestExpense,
             latestNet,
-            latestCash: Number(latestDaily.cash || 0),
-            latestAR: Number(latestDaily.ar || 0),
-            latestAP: Number(latestDaily.ap || 0),
+            latestCash: Number(latestDaily?.cash || 0),
+            latestAR: Number(latestDaily?.ar || 0),
+            latestAP: Number(latestDaily?.ap || 0),
             netChange,
             days: data.length,
             statementPeriods: statementRecords.length,
