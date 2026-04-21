@@ -3251,15 +3251,20 @@ export default function OperationsTab({
         cursor <= selectedEndUtc;
         cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 1))
       ) {
+        // Skip Sat/Sun for daily AR charts. AR snapshots are only written
+        // on business days; rendering weekends produced flat forward-filled
+        // values that visually inflated the X axis. Weekly/monthly modes
+        // are anchored on Monday/1st-of-month and are unaffected.
+        const dow = cursor.getUTCDay();
+        if (dow === 0 || dow === 6) continue;
         requestedPeriods.push({ key: periodKey(cursor), anchor: periodAnchor(cursor) });
       }
     }
-    // Forward-fill across weekends/holidays: AR snapshots are only written on
-    // business days, so requesting a daily series produces null bucket values
-    // (visual gaps) for Sat/Sun/holidays. The AR balance doesn't change when
-    // no AR activity posts, so we carry the prior business day's record across
-    // those periods. The first periods before any observed record stay null
-    // (we don't know the balance yet).
+    // Forward-fill across holidays: AR snapshots are only written on business
+    // days, so a daily series may still have gaps on Mon-Fri holidays. The AR
+    // balance doesn't change when no AR activity posts, so we carry the prior
+    // business day's record across those periods. Periods before any observed
+    // record stay null (we don't know the balance yet).
     let lastSeenRecord: any = null;
     const chartData = requestedPeriods.map((period) => {
       const point = latestRecordByPeriod.get(period.key);
