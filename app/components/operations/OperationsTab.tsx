@@ -5102,7 +5102,13 @@ export default function OperationsTab({
                 <XAxis dataKey="name" stroke="#64748b" style={{ fontSize: '11px' }} />
                 <YAxis yAxisId="left" stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
                 <YAxis yAxisId="right" orientation="right" stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
-                <Tooltip />
+                <Tooltip
+                  formatter={(value: any, name: any) => {
+                    const num = Number(value || 0);
+                    if (name === 'Cumulative %') return [`${Math.round(num)}%`, name];
+                    return [formatCurrency(Math.round(num)), name];
+                  }}
+                />
                 <Legend />
                 <Bar yAxisId="left" dataKey="revenue" fill="#2563eb" name="Revenue" />
                 <Line yAxisId="right" type="monotone" dataKey="cumulativePct" stroke="#f97316" strokeWidth={2} dot={false} name="Cumulative %" />
@@ -5251,7 +5257,12 @@ export default function OperationsTab({
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="step" stroke="#64748b" style={{ fontSize: '11px' }} />
                 <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                <Tooltip
+                  formatter={(value: any, name: any) => [
+                    formatCurrency(Math.round(Number(value || 0))),
+                    name,
+                  ]}
+                />
                 <Bar
                   dataKey="value"
                   name="Margin Impact"
