@@ -203,12 +203,24 @@ export async function computeMonthlyPnlBreakdownsFromGL(
     }
 
     // Breakdown JSON: record EXACTLY ONCE per account, on the chosen
-    // breakdown column. Always positive (legacy CSI builder convention).
+    // breakdown column. Use the SIGNED contribution (rawNum * signForDfs)
+    // — NOT Math.abs — so per-account net credits (refunds, period
+    // adjustments, return JEs) correctly reduce the breakdown bucket
+    // they belong to. Math.abs would flip those into positive
+    // contributions and inflate the breakdown total above the rollup
+    // scalar (e.g. Atlantic Precision Jan 2026: cogs breakdown sum
+    // came in $19,416 above DFS truth $700,057 because a few cogs
+    // accounts had net-credit months that abs'd into positive
+    // contributions instead of subtracting). For typical
+    // debit-balance cogs/opex and credit-balance revenue postings
+    // this still yields positive numbers matching the legacy CSI
+    // builder convention, since `signForDfsColumn` already inverts
+    // revenue.
     const breakdownColumn = pickBreakdownColumn(dfsColumns);
     if (!breakdownColumn) continue;
     const breakdown = pickBreakdownKey(target.targetField, breakdownColumn);
     if (!breakdown) continue;
-    const breakdownAmount = Math.abs(rawNum * signForDfsColumn(breakdownColumn));
+    const breakdownAmount = rawNum * signForDfsColumn(breakdownColumn);
     if (breakdownAmount === 0) continue;
 
     if (breakdown.bucket === 'revenue') {
