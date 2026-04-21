@@ -5203,14 +5203,31 @@ export async function GET(request: NextRequest) {
             const day = productIsoDay(line.snapshotDate);
             const amount = Math.abs(Number(line.amount || 0));
             if (!Number.isFinite(amount) || amount === 0) continue;
-            const text = `${String(line.targetField || '')} ${String(line.sourceAccountName || '')}`.toLowerCase();
+            // Restrict the bridge to revenue-side accounts. Without this guard,
+            // expense / COGS lines whose name includes a freight or misc keyword
+            // (e.g. inbound freight cost mapped to cogs_other_cogs, or bank
+            // fees mapped to otherExpense) leak into a chart that is supposed
+            // to track freight BILLED to customers and other operating REVENUE.
+            const targetField = String(line.targetField || '').toLowerCase();
+            const isRevenueAccount = targetField.includes(':rev_');
+            if (!isRevenueAccount) continue;
+            const text = `${targetField} ${String(line.sourceAccountName || '')}`.toLowerCase();
             const isFreight =
               text.includes('freight') || text.includes('shipping') || text.includes('delivery');
+            // Treat anything mapped to an "other revenue" / scrap revenue bucket
+            // as other revenue even when the source account name does not match
+            // a keyword (the bucket itself already encodes the intent).
+            const isOtherRevenueBucket =
+              targetField.includes('scrap_and_other_revenue') ||
+              targetField.includes('other_revenue');
             const isOtherRevenue =
+              isOtherRevenueBucket ||
               text.includes('other revenue') ||
               text.includes('misc') ||
               text.includes('surcharge') ||
-              text.includes('handling');
+              text.includes('handling') ||
+              text.includes('scrap') ||
+              text.includes('rebate');
             if (isFreight) {
               freightByDay.set(day, Number(freightByDay.get(day) || 0) + amount);
             } else if (isOtherRevenue) {

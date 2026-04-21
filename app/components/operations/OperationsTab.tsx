@@ -410,6 +410,12 @@ export default function OperationsTab({
   >('assetValue');
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
   const [inventoryCostTrendModalOpen, setInventoryCostTrendModalOpen] = useState(false);
+  // Info modal for the six bottom Products charts. A single string identifies
+  // the active chart so we share one modal element rather than wiring six.
+  const [productChartInfoKey, setProductChartInfoKey] = useState<string | null>(null);
+  // Same pattern for the Customers tab \u2014 one shared "What is this?" modal
+  // keyed by the panel that triggered it.
+  const [customerChartInfoKey, setCustomerChartInfoKey] = useState<string | null>(null);
   const [inventoryCostTrendLoading, setInventoryCostTrendLoading] = useState(false);
   const [inventoryCostTrendError, setInventoryCostTrendError] = useState<string | null>(null);
   const [inventoryCostTrendSku, setInventoryCostTrendSku] = useState<string>('');
@@ -2288,6 +2294,185 @@ export default function OperationsTab({
       avgInvoice: Number(row.invoices || 0) > 0 ? Number(row.revenue || 0) / Number(row.invoices || 1) : 0,
     }));
 
+    // Plain-language explanations for each analytical panel on the Customers
+    // tab. Keyed so a single info modal can serve every panel and so the chart
+    // heading, link, and modal title stay in lockstep.
+    const customerChartInfo: Record<
+      string,
+      { title: string; sections: Array<{ heading?: string; body: string | string[] }> }
+    > = {
+      customersWipByCustomer: {
+        title: 'WIP by Customer (Unbilled)',
+        sections: [
+          {
+            body:
+              'Lists how much work-in-progress (orders shipped or delivered but not yet invoiced) sits against each customer at the As-of date.',
+          },
+          {
+            heading: 'Why it matters',
+            body: [
+              'Unbilled WIP is revenue you\u2019ve already earned but haven\u2019t turned into AR \u2014 it ties up cash and lengthens the cash-conversion cycle.',
+              'Concentrations against one customer signal billing process gaps or contract disputes worth investigating.',
+            ],
+          },
+          {
+            heading: 'Data source',
+            body:
+              'Aggregated from open customer orders / shipments that have not been matched to an invoice. The four KPI tiles summarize total WIP, customer count, oldest order age, and average days unbilled.',
+          },
+        ],
+      },
+      customersTopByRevenue: {
+        title: 'Top Customers by Revenue',
+        sections: [
+          {
+            body:
+              'Ranks customers by recognized revenue over the period selected in the Year/Quarter/Month dropdown above the table.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'Revenue is summed from invoiced sales attributed to the customer in the chosen period.',
+              'Use the period selector to compare a single year, quarter, or month, or pick "All" to use the dashboard\u2019s coverage range.',
+              'Click into a row to drill into a specific customer\u2019s history (where available).',
+            ],
+          },
+        ],
+      },
+      customersRevenueDistribution: {
+        title: 'Revenue Distribution by Customer',
+        sections: [
+          {
+            body:
+              'Shows what share of total revenue comes from each top customer over the selected period \u2014 the visual companion to the Top Customers table.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'Each slice is one customer; size = share of total revenue.',
+              'A small "Other" slice means revenue is concentrated in a few accounts. A large "Other" slice means the book is well-diversified.',
+            ],
+          },
+        ],
+      },
+      customersConcentrationRisk: {
+        title: 'Customer Concentration Risk',
+        sections: [
+          {
+            body:
+              'Flags how dependent the business is on its largest customers, and whether that dependence is in a healthy range.',
+          },
+          {
+            heading: 'Metrics',
+            body: [
+              'Top 1 Revenue Share \u2014 share of total revenue from the single largest customer. Warning > 20%, Investigate > 30%.',
+              'Top 5 Revenue Share \u2014 combined share of the top five. Warning > 50%, Investigate > 65%.',
+              'Top 10 Revenue Share \u2014 combined share of the top ten. Warning > 70%, Investigate > 85%.',
+            ],
+          },
+          {
+            heading: 'Why it matters',
+            body:
+              'High concentration magnifies the impact of losing or repricing a single account. Lenders, insurers, and acquirers all look at these ratios.',
+          },
+        ],
+      },
+      customersRetentionProxy: {
+        title: 'Revenue Retention Proxy (Top Accounts)',
+        sections: [
+          {
+            body:
+              'Compares revenue from the company\u2019s top accounts in the current period against a same-length baseline period to approximate customer retention without needing a churn flag.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'Gray bar = baseline-period revenue for that customer.',
+              'Blue bar = current-period revenue for the same customer.',
+              'Blue significantly shorter than gray = a top account is shrinking; reach out before it churns.',
+              'Blue much taller than gray = the account is expanding.',
+            ],
+          },
+          {
+            heading: 'Why "proxy"',
+            body:
+              'Without explicit churn events we infer retention by comparing revenue across equivalent windows. It\u2019s a directional signal, not an exact retention rate.',
+          },
+        ],
+      },
+      customersInvoiceVelocity: {
+        title: 'Revenue vs Invoice Velocity',
+        sections: [
+          {
+            body:
+              'Tracks two related billing dynamics over time: how much revenue you\u2019re recognizing each month and how big the average invoice is.',
+          },
+          {
+            heading: 'Series',
+            body: [
+              'Blue bars (left axis) \u2014 monthly revenue.',
+              'Green line (right axis) \u2014 average invoice value (revenue \u00F7 invoice count) for that month.',
+            ],
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'Revenue rising while average invoice is flat \u2192 growth driven by more invoices (more transactions / more customers).',
+              'Revenue rising while average invoice rises \u2192 growth driven by larger deal sizes.',
+              'Revenue flat while average invoice falls \u2192 you\u2019re writing more, smaller invoices for the same money \u2014 watch billing efficiency.',
+            ],
+          },
+        ],
+      },
+      customersAtRiskQueue: {
+        title: 'At-Risk Accounts Queue',
+        sections: [
+          {
+            body:
+              'A prioritized worklist of customers most likely to underperform or churn, combining declining revenue trend with high unbilled / WIP backlog.',
+          },
+          {
+            heading: 'Columns',
+            body: [
+              'YTD Bookings \u2014 year-to-date booked or invoiced revenue for the customer.',
+              'WIP / Unbilled \u2014 dollars of work delivered but not yet invoiced.',
+              'WIP Mix % \u2014 unbilled WIP as a share of bookings; high values flag billing or contract issues.',
+              'Trend \u2014 percent change in revenue versus the prior comparable window. Negative values are red.',
+            ],
+          },
+          {
+            heading: 'How to use it',
+            body:
+              'Treat the top of the queue as your weekly outreach list \u2014 a falling trend combined with rising unbilled WIP usually means an issue is brewing on the account.',
+          },
+        ],
+      },
+    };
+
+    const renderCustomerChartInfoLink = (key: string) => (
+      <button
+        type="button"
+        onClick={() => setCustomerChartInfoKey(key)}
+        style={{
+          marginLeft: '12px',
+          background: 'transparent',
+          border: 'none',
+          padding: '0 2px',
+          color: '#2563eb',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          textDecoration: 'underline',
+          textUnderlineOffset: '2px',
+          whiteSpace: 'nowrap',
+        }}
+        aria-label="What does this chart show?"
+        title="What does this chart show?"
+      >
+        What is this?
+      </button>
+    );
+
     return (
       <div style={{ padding: '8px 32px 32px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '16px' }}>
@@ -2573,9 +2758,12 @@ export default function OperationsTab({
               )}
               <div style={{ background: 'white', padding: '16px 20px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '12px', flexWrap: 'wrap' }}>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                    WIP by Customer (Unbilled)
-                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                      WIP by Customer (Unbilled)
+                    </h3>
+                    {renderCustomerChartInfoLink('customersWipByCustomer')}
+                  </div>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>As of: {wipAsOfLabel}</div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))', gap: '8px', marginBottom: '12px' }}>
@@ -2708,9 +2896,12 @@ export default function OperationsTab({
               {/* Top Customers Table */}
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                  <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                    Top Customers by Revenue
-                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                      Top Customers by Revenue
+                    </h3>
+                    {renderCustomerChartInfoLink('customersTopByRevenue')}
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <select
                       value={customerRevenuePeriodMode}
@@ -2796,9 +2987,12 @@ export default function OperationsTab({
 
               {/* Customer Revenue Distribution Chart */}
               <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', marginBottom: '6px' }}>
-                  Revenue Distribution by Customer
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '12px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
+                    Revenue Distribution by Customer
+                  </h3>
+                  {renderCustomerChartInfoLink('customersRevenueDistribution')}
+                </div>
                 <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                   <div style={{ flex: 1.4 }}>
                     <ResponsiveContainer width="100%" height={280}>
@@ -2844,9 +3038,12 @@ export default function OperationsTab({
               >
               {isSectionEnabled('customersConcentrationRisk') && (
                 <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                  Customer Concentration Risk
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                    Customer Concentration Risk
+                  </h3>
+                  {renderCustomerChartInfoLink('customersConcentrationRisk')}
+                </div>
                 <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
                   As of: {customerAsOfLabel} | Coverage: {customerCoverageLabel}
                 </div>
@@ -2879,9 +3076,12 @@ export default function OperationsTab({
 
               {isSectionEnabled('customersRetentionProxy') && (
                 <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                  Revenue Retention Proxy (Top Accounts)
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                    Revenue Retention Proxy (Top Accounts)
+                  </h3>
+                  {renderCustomerChartInfoLink('customersRetentionProxy')}
+                </div>
                 <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
                   Date range: {selectedDateRangeLabel} | Current vs baseline-period proxy for top accounts.
                 </div>
@@ -2911,9 +3111,12 @@ export default function OperationsTab({
               >
               {isSectionEnabled('customersInvoiceVelocity') && (
                 <div style={{ background: 'white', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                  Revenue vs Invoice Velocity
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                    Revenue vs Invoice Velocity
+                  </h3>
+                  {renderCustomerChartInfoLink('customersInvoiceVelocity')}
+                </div>
                 <div style={{ marginBottom: '12px', fontSize: '11px', color: '#64748b' }}>
                   Date range: {selectedDateRangeLabel} | Tracks revenue and average invoice value over time.
                 </div>
@@ -2934,9 +3137,12 @@ export default function OperationsTab({
 
               {isSectionEnabled('customersAtRiskQueue') && (
                 <div style={{ background: 'white', padding: '8px 24px 24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                  At-Risk Accounts Queue
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+                    At-Risk Accounts Queue
+                  </h3>
+                  {renderCustomerChartInfoLink('customersAtRiskQueue')}
+                </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
                   Prioritized by declining trend and unbilled backlog mix.
                 </div>
@@ -2979,6 +3185,89 @@ export default function OperationsTab({
             </>
           );
         })()}
+
+        {customerChartInfoKey && customerChartInfo[customerChartInfoKey] && (
+          <div
+            onClick={() => setCustomerChartInfoKey(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.35)',
+              zIndex: 60,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 'min(640px, 100%)',
+                maxHeight: '80vh',
+                overflow: 'auto',
+                background: '#fff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '20px',
+                boxShadow: '0 12px 32px rgba(15,23,42,0.18)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
+                  {customerChartInfo[customerChartInfoKey].title}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setCustomerChartInfoKey(null)}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    background: '#fff',
+                    color: '#334155',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {customerChartInfo[customerChartInfoKey].sections.map((section, sectionIdx) => (
+                  <div key={`customer-info-section-${sectionIdx}`}>
+                    {section.heading && (
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          color: '#475569',
+                          marginBottom: '6px',
+                        }}
+                      >
+                        {section.heading}
+                      </div>
+                    )}
+                    {Array.isArray(section.body) ? (
+                      <ul style={{ margin: 0, paddingLeft: '18px', color: '#0f172a', fontSize: '13px', lineHeight: 1.55 }}>
+                        {section.body.map((item, itemIdx) => (
+                          <li key={`customer-info-section-${sectionIdx}-item-${itemIdx}`} style={{ marginBottom: '4px' }}>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div style={{ color: '#0f172a', fontSize: '13px', lineHeight: 1.55 }}>{section.body}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -4815,10 +5104,53 @@ export default function OperationsTab({
       marginPct: Number(row.marginPctThisWeek || 0),
       contribution: Math.max(1, Math.abs(Number(row.marginAmountThisWeek || 0))),
     }));
-    const lossMakers = [...weeklyMarginModel.comparisonRows]
-      .filter((row) => (row.marginPctThisWeek ?? 0) < 0 || (row.spreadThisWeek ?? 0) < 0)
-      .sort((a, b) => (a.marginAmountThisWeek ?? 0) - (b.marginAmountThisWeek ?? 0))
-      .slice(0, 10);
+    // Loss makers are aggregated across the full selected coverage window so
+    // the table matches the date-range header rather than only the latest week.
+    // We re-use the productWeekly rows (already scoped to the chosen window in
+    // buildWeeklyProductMarginModel) and sum revenue/margin per item+site so
+    // intermittent losers across the period are surfaced.
+    const lossMakers = (() => {
+      const map = new Map<
+        string,
+        {
+          itemName: string;
+          sku: string;
+          site: string;
+          customer: string;
+          revenueThisWeek: number;
+          marginAmountThisWeek: number;
+          marginPctThisWeek: number | null;
+        }
+      >();
+      for (const row of weeklyMarginModel.productWeekly) {
+        const key = `${row.itemName}||${row.sku}||${row.site}`;
+        const existing = map.get(key) || {
+          itemName: row.itemName,
+          sku: row.sku,
+          site: row.site,
+          customer: row.customer,
+          revenueThisWeek: 0,
+          marginAmountThisWeek: 0,
+          marginPctThisWeek: null as number | null,
+        };
+        existing.revenueThisWeek += Number(row.netRevenue || 0);
+        existing.marginAmountThisWeek += Number(row.marginAmount || 0);
+        map.set(key, existing);
+      }
+      return Array.from(map.values())
+        .map((row) => ({
+          ...row,
+          marginPctThisWeek:
+            row.revenueThisWeek === 0
+              ? null
+              : (row.marginAmountThisWeek / row.revenueThisWeek) * 100,
+        }))
+        .filter(
+          (row) => row.marginAmountThisWeek < 0 || (row.marginPctThisWeek ?? 0) < 0
+        )
+        .sort((a, b) => a.marginAmountThisWeek - b.marginAmountThisWeek)
+        .slice(0, 10);
+    })();
     const productScopeOptions = [...weeklyMarginModel.comparisonRows]
       .sort((a, b) => b.revenueThisWeek - a.revenueThisWeek)
       .map((row) => ({
@@ -4836,12 +5168,20 @@ export default function OperationsTab({
       acc[row.weekStart] = row;
       return acc;
     }, {});
+    // Each weekly bucket is keyed to the Monday that starts the ISO week
+    // (see weekStartIso() in lib/operations/product-margin-weekly.ts).
+    // Weekend dates therefore never appear on the x-axis: any Sat/Sun activity
+    // is rolled up into the preceding Monday's bucket.
     const scopedSeries = weeklyMarginModel.weeks.map((row) => {
       if (productScopeMode === 'total') {
-        const derivedPrice =
-          row.units > 0 ? row.netRevenue / row.units : row.netRevenue !== 0 ? row.netRevenue : 0;
-        const derivedCost =
-          row.units > 0 ? row.cogs / row.units : row.cogs !== 0 ? row.cogs : 0;
+        // Per-unit price / cost / spread are only meaningful when the bucket
+        // contains units sold. Returning null for unit-less weeks lets the
+        // chart draw a gap (and connectNulls bridge it) instead of falsely
+        // collapsing the trend to $0 on inactive weeks.
+        const derivedPrice = row.units > 0 ? row.netRevenue / row.units : null;
+        const derivedCost = row.units > 0 ? row.cogs / row.units : null;
+        const derivedSpread =
+          derivedPrice != null && derivedCost != null ? derivedPrice - derivedCost : null;
         return {
           weekStart: row.weekStart,
           units: row.units,
@@ -4854,10 +5194,15 @@ export default function OperationsTab({
           otherRevenue: row.otherRevenue,
           price: derivedPrice,
           cost: derivedCost,
-          spread: derivedPrice - derivedCost,
+          spread: derivedSpread,
         };
       }
       const scoped = scopedSeriesByWeek[row.weekStart];
+      // Preserve nullable per-unit metrics from the per-product row so the
+      // chart skips weeks where the SKU had no units rather than zeroing.
+      const scopedPrice = scoped?.pricePerUnit;
+      const scopedCost = scoped?.costPerUnit;
+      const scopedSpread = scoped?.spreadPerUnit;
       return {
         weekStart: row.weekStart,
         units: Number(scoped?.units || 0),
@@ -4868,9 +5213,9 @@ export default function OperationsTab({
         returnsMagnitude: Number(scoped?.returnsMagnitude || 0),
         freightBilled: Number(scoped?.freightBilled || 0),
         otherRevenue: Number(scoped?.otherRevenue || 0),
-        price: Number(scoped?.pricePerUnit || 0),
-        cost: Number(scoped?.costPerUnit || 0),
-        spread: Number(scoped?.spreadPerUnit || 0),
+        price: scopedPrice != null ? Number(scopedPrice) : null,
+        cost: scopedCost != null ? Number(scopedCost) : null,
+        spread: scopedSpread != null ? Number(scopedSpread) : null,
       };
     });
     const priceCostTrendData = scopedSeries;
@@ -4948,6 +5293,179 @@ export default function OperationsTab({
       <div style={{ marginTop: '4px', marginBottom: '10px', fontSize: '11px', color: '#64748b' }}>
         As of: {asOfDateLabel} | Coverage: {coverageLabel}
       </div>
+    );
+
+    // Plain-language explanations of each of the six bottom Products charts.
+    // Keyed by the same identifier used by the section toggles so that the
+    // What-is-this link, the modal title, and the chart heading all stay in
+    // sync. Body is rendered as a list of paragraphs / bullet groups.
+    const productChartInfo: Record<
+      string,
+      { title: string; sections: Array<{ heading?: string; body: string | string[] }> }
+    > = {
+      productsPareto: {
+        title: 'Top Products by Revenue (Pareto)',
+        sections: [
+          {
+            body:
+              'Ranks the highest-revenue products in the latest week of the selected coverage range so you can see which SKUs drive the business.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'Bars show each top product\u2019s revenue in the latest week.',
+              'The orange line is the cumulative share of revenue \u2014 the classic 80/20 curve. A steep early rise means a few SKUs concentrate most of the volume.',
+            ],
+          },
+          {
+            heading: 'Data window',
+            body: 'Latest week within the selected coverage range. Top 10 SKUs by revenue.',
+          },
+        ],
+      },
+      productsScatter: {
+        title: 'Product Profitability Scatter',
+        sections: [
+          {
+            body:
+              'Plots every product the company sold in the latest week so you can spot high-revenue / low-margin SKUs and small-but-profitable niches at a glance.',
+          },
+          {
+            heading: 'How to read it',
+            body: [
+              'X-axis: revenue this week.',
+              'Y-axis: gross margin %.',
+              'Bubble size: absolute margin $ contribution \u2014 bigger dots move the bottom line more.',
+              'Top-right is the sweet spot (high revenue, healthy margin); bottom-right warrants attention (high revenue but thin or negative margin).',
+            ],
+          },
+          {
+            heading: 'Data window',
+            body: 'Latest week within the selected coverage range; one dot per (item, site, customer) combination with reported activity.',
+          },
+        ],
+      },
+      productsPriceCostTrend: {
+        title: 'Price-Cost Trend',
+        sections: [
+          {
+            body:
+              'Tracks weekly average selling price, average unit cost, and the gap (spread) between them so you can see whether margins are expanding or compressing over time.',
+          },
+          {
+            heading: 'Series',
+            body: [
+              'Avg Price/Unit = SUM(revenue) / SUM(units sold) per week.',
+              'Avg Cost/Unit = SUM(COGS) / SUM(units sold) per week (uses inventory average cost as a fallback when transactional COGS is missing).',
+              'Spread/Unit = price minus cost \u2014 the per-unit gross profit.',
+            ],
+          },
+          {
+            heading: 'Time buckets',
+            body:
+              'Each x-axis tick is the Monday that starts an ISO week (Mon\u2013Sun). Weeks with zero units are skipped (the line bridges the gap rather than dropping to $0). Weekend dates never appear because Sat/Sun activity rolls into the prior Monday.',
+          },
+          {
+            heading: 'Scope',
+            body:
+              '"Total" sums every product across all sites; switch to "Product" to see the same trend for a single SKU using the scope selector above.',
+          },
+        ],
+      },
+      productsPriceCostWaterfall: {
+        title: 'Price-Cost Waterfall',
+        sections: [
+          {
+            body:
+              'Decomposes the change in margin dollars from the prior week to the latest week into the four levers that moved it.',
+          },
+          {
+            heading: 'Bars',
+            body: [
+              'Price Impact \u2014 (this-week price \u2212 prior-week price) \u00D7 prior-week units.',
+              'Cost Impact \u2014 \u2212(this-week cost \u2212 prior-week cost) \u00D7 prior-week units (lower cost is positive).',
+              'Returns Impact \u2014 \u2212(change in returns magnitude). Higher returns hurt margin.',
+              'Mix/Volume Impact \u2014 the residual that price/cost/returns don\u2019t explain (caused by selling a different mix of SKUs or different total volume).',
+              'Total Margin Delta \u2014 the sum of the four levers; matches the actual week-over-week margin change.',
+            ],
+          },
+          {
+            heading: 'Colors',
+            body: 'Green bars improved margin; red bars eroded it.',
+          },
+        ],
+      },
+      productsBottomLossMakers: {
+        title: 'Bottom Products (Loss Makers)',
+        sections: [
+          {
+            body:
+              'Lists the products that lost money over the entire selected coverage window so intermittent or slowly bleeding losers don\u2019t hide behind a single good week.',
+          },
+          {
+            heading: 'How items qualify',
+            body: [
+              'Aggregated per (item, SKU, site) across every week in the selected coverage window.',
+              'Shown when total margin $ is negative or the implied margin % goes negative.',
+              'Sorted most-negative first; top 10 are displayed.',
+            ],
+          },
+          {
+            heading: 'Why this differs from the latest-week view',
+            body:
+              'Earlier versions only inspected the most recent week, which often disagreed with the date range header. The table now matches the As-of / Coverage range exactly.',
+          },
+        ],
+      },
+      productsFreightOtherTracker: {
+        title: 'Freight and Other Revenue Tracker',
+        sections: [
+          {
+            body:
+              'Weekly trend of revenue streams that sit alongside core product sales \u2014 useful for spotting accessorial revenue trends and return spikes that would otherwise hide inside the gross revenue number.',
+          },
+          {
+            heading: 'Series',
+            body: [
+              'Freight (separate) \u2014 freight billed to customers, sourced from GL accounts mapped to a revenue bucket whose name or source account contains "freight" / "shipping" / "delivery".',
+              'Other Revenue (separate) \u2014 operating revenue mapped to a "scrap and other revenue" / "other revenue" bucket, plus revenue accounts whose source contains "misc" / "surcharge" / "handling" / "scrap" / "rebate".',
+              'Returns (abs) \u2014 the magnitude of any product rows recorded as negative revenue in the period.',
+            ],
+          },
+          {
+            heading: 'When the chart is empty',
+            body:
+              'If your chart of accounts doesn\u2019t map dedicated revenue accounts for freight billed, miscellaneous income, or returns, the bridge has nothing to plot and an explanation appears in place of the chart. The fix is on the COA mapping side, not in this view.',
+          },
+        ],
+      },
+    };
+
+    // Renders the small "What is this?" link in the upper-right of each chart
+    // tile. It is rendered alongside the existing <h3> inside a flex row so we
+    // do not have to restructure each chart container.
+    const renderChartInfoLink = (key: string) => (
+      <button
+        type="button"
+        onClick={() => setProductChartInfoKey(key)}
+        style={{
+          marginLeft: '12px',
+          background: 'transparent',
+          border: 'none',
+          padding: '0 2px',
+          color: '#2563eb',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          textDecoration: 'underline',
+          textUnderlineOffset: '2px',
+          whiteSpace: 'nowrap',
+        }}
+        aria-label="What does this chart show?"
+        title="What does this chart show?"
+      >
+        What is this?
+      </button>
     );
 
     return (
@@ -5094,7 +5612,10 @@ export default function OperationsTab({
           >
           {isSectionEnabled('productsPareto') && (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Top Products by Revenue (Pareto)</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Top Products by Revenue (Pareto)</h3>
+              {renderChartInfoLink('productsPareto')}
+            </div>
             {renderCoverageMeta()}
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={paretoData}>
@@ -5119,7 +5640,10 @@ export default function OperationsTab({
 
           {isSectionEnabled('productsScatter') && (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Product Profitability Scatter</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Product Profitability Scatter</h3>
+              {renderChartInfoLink('productsScatter')}
+            </div>
             {renderCoverageMeta()}
             <ResponsiveContainer width="100%" height={280}>
               <ScatterChart>
@@ -5227,9 +5751,12 @@ export default function OperationsTab({
           >
           {isSectionEnabled('productsPriceCostTrend') && (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
-              Price-Cost Trend ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
+                Price-Cost Trend ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
+              </h3>
+              {renderChartInfoLink('productsPriceCostTrend')}
+            </div>
             {renderCoverageMeta()}
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={priceCostTrendData}>
@@ -5238,9 +5765,9 @@ export default function OperationsTab({
                 <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
                 <Tooltip formatter={(value: any) => formatCurrencyWithCents(Number(value || 0))} />
                 <Legend />
-                <Line type="monotone" dataKey="price" stroke="#0f766e" strokeWidth={2} dot={false} name="Avg Price/Unit" />
-                <Line type="monotone" dataKey="cost" stroke="#dc2626" strokeWidth={2} dot={false} name="Avg Cost/Unit" />
-                <Line type="monotone" dataKey="spread" stroke="#1d4ed8" strokeWidth={2} dot={false} name="Spread/Unit" />
+                <Line type="monotone" dataKey="price" stroke="#0f766e" strokeWidth={2} dot={false} connectNulls name="Avg Price/Unit" />
+                <Line type="monotone" dataKey="cost" stroke="#dc2626" strokeWidth={2} dot={false} connectNulls name="Avg Cost/Unit" />
+                <Line type="monotone" dataKey="spread" stroke="#1d4ed8" strokeWidth={2} dot={false} connectNulls name="Spread/Unit" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -5248,9 +5775,12 @@ export default function OperationsTab({
 
           {isSectionEnabled('productsPriceCostWaterfall') && (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
-              Price-Cost Waterfall ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
+                Price-Cost Waterfall ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
+              </h3>
+              {renderChartInfoLink('productsPriceCostWaterfall')}
+            </div>
             {renderCoverageMeta()}
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={waterfallData}>
@@ -5290,7 +5820,10 @@ export default function OperationsTab({
           >
           {isSectionEnabled('productsBottomLossMakers') && (
             <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>Bottom Products (Loss Makers)</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Bottom Products (Loss Makers)</h3>
+              {renderChartInfoLink('productsBottomLossMakers')}
+            </div>
             {renderCoverageMeta()}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -5308,7 +5841,7 @@ export default function OperationsTab({
                   {lossMakers.length === 0 ? (
                     <tr>
                       <td colSpan={6} style={{ padding: '12px', fontSize: '13px', color: '#64748b' }}>
-                        No active loss makers in this weekly window.
+                        No loss makers in the selected coverage window.
                       </td>
                     </tr>
                   ) : (
@@ -5337,27 +5870,143 @@ export default function OperationsTab({
           </div>
           )}
 
-          {isSectionEnabled('productsFreightOtherTracker') && (
-            <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginTop: 0, fontSize: '16px', color: '#1e293b', marginBottom: '12px' }}>
-              Freight and Other Revenue Tracker ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
-            </h3>
-            {renderCoverageMeta()}
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={scopedSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="weekStart" stroke="#64748b" style={{ fontSize: '11px' }} />
-                <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
-                <Legend />
-                <Line type="monotone" dataKey="freightBilled" stroke="#f59e0b" strokeWidth={2} dot={false} name="Freight (separate)" />
-                <Line type="monotone" dataKey="otherRevenue" stroke="#7c3aed" strokeWidth={2} dot={false} name="Other Revenue (separate)" />
-                <Line type="monotone" dataKey="returnsMagnitude" stroke="#dc2626" strokeWidth={2} dot={false} name="Returns (abs)" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          )}
+          {isSectionEnabled('productsFreightOtherTracker') && (() => {
+            // Detect whether the GL bridge produced any signal in this window.
+            // When all three series are flat zero the chart would render as an
+            // empty grid, which reads as a bug; surface an explanation instead.
+            const hasFreightOtherSignal = scopedSeries.some(
+              (row: any) =>
+                Number(row?.freightBilled || 0) !== 0 ||
+                Number(row?.otherRevenue || 0) !== 0 ||
+                Number(row?.returnsMagnitude || 0) !== 0
+            );
+            return (
+              <div style={{ background: 'white', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>
+                    Freight and Other Revenue Tracker ({productScopeMode === 'total' ? 'Total' : `Product: ${effectiveScopeSku || 'N/A'}`})
+                  </h3>
+                  {renderChartInfoLink('productsFreightOtherTracker')}
+                </div>
+                {renderCoverageMeta()}
+                {hasFreightOtherSignal ? (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={scopedSeries}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="weekStart" stroke="#64748b" style={{ fontSize: '11px' }} />
+                      <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${(Number(value) / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
+                      <Legend />
+                      <Line type="monotone" dataKey="freightBilled" stroke="#f59e0b" strokeWidth={2} dot={false} name="Freight (separate)" />
+                      <Line type="monotone" dataKey="otherRevenue" stroke="#7c3aed" strokeWidth={2} dot={false} name="Other Revenue (separate)" />
+                      <Line type="monotone" dataKey="returnsMagnitude" stroke="#dc2626" strokeWidth={2} dot={false} name="Returns (abs)" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div
+                    style={{
+                      padding: '40px 16px',
+                      textAlign: 'center',
+                      color: '#64748b',
+                      fontSize: '13px',
+                      lineHeight: 1.5,
+                      background: '#f8fafc',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    No freight-billed, other-revenue, or returns breakout was detected in this window.
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#94a3b8' }}>
+                      Map dedicated revenue accounts (e.g. <em>Freight on Invoice</em>, <em>Misc Income</em>, <em>Scrap Revenue</em>) or returns to enable this trend.
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
+        )}
+
+        {productChartInfoKey && productChartInfo[productChartInfoKey] && (
+          <div
+            onClick={() => setProductChartInfoKey(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.35)',
+              zIndex: 60,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+            }}
+          >
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: 'min(640px, 100%)',
+                maxHeight: '80vh',
+                overflow: 'auto',
+                background: '#fff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '20px',
+                boxShadow: '0 12px 32px rgba(15,23,42,0.18)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
+                  {productChartInfo[productChartInfoKey].title}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setProductChartInfoKey(null)}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    background: '#fff',
+                    color: '#334155',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {productChartInfo[productChartInfoKey].sections.map((section, sectionIdx) => (
+                  <div key={`info-section-${sectionIdx}`}>
+                    {section.heading && (
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          color: '#475569',
+                          marginBottom: '6px',
+                        }}
+                      >
+                        {section.heading}
+                      </div>
+                    )}
+                    {Array.isArray(section.body) ? (
+                      <ul style={{ margin: 0, paddingLeft: '18px', color: '#0f172a', fontSize: '13px', lineHeight: 1.55 }}>
+                        {section.body.map((item, itemIdx) => (
+                          <li key={`info-section-${sectionIdx}-item-${itemIdx}`} style={{ marginBottom: '4px' }}>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div style={{ color: '#0f172a', fontSize: '13px', lineHeight: 1.55 }}>{section.body}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         )}
 
       </div>
