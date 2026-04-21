@@ -4,7 +4,7 @@ import { callInforIonApi } from '@/lib/infor-m3/client';
 import { getInforM3CredentialsWithOptionalEnvFallback, type InforM3Credentials } from '@/lib/infor-m3/credentials';
 import { normalizeInforSystem } from '@/lib/infor-m3/system';
 import { createHash, randomUUID } from 'node:crypto';
-import { computeDailyPnlMovementsFromGL } from '@/lib/financial/daily-bs-from-gl';
+import { computeDailyPnlMovementsFromGL, rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
 
 type InforProgramRow = {
   module: string;
@@ -7629,6 +7629,89 @@ function toIsoDayOrNull(value: Date | null | undefined): string | null {
 }
 
 export async function upsertDailyFinancialSnapshotFromOperationalTables(
+  companyId: string,
+  snapshotDate: Date,
+  frequency: 'daily' | 'weekly' | 'monthly'
+): Promise<DailyFinancialSnapshotHydrationOutcome> {
+  // The historical body of this function composed the daily balance sheet by
+  // summing `DailyFinancialMappedLine` rows (`targetField LIKE 'balance_movement:%'`)
+  // cumulatively up to end-of-day. For tenants whose mapped-line table contains
+  // multiple writes per (account, date) — or rows whose semantics are deltas
+  // rather than balances — that produced wildly inflated values (e.g. Atlantic
+  // Precision 2026-04-20: otherCurrentLiabilities of $14.27M vs the trusted
+  // $138K, breaking the BS by $13.4M).
+  //
+  // The trusted path is `rebuildDailyFinancialSnapshotsFromGL`, which derives
+  // each line directly from `GLTransactionFact` via `AccountMapping.targetField`,
+  // anchored against `BalanceSheetAnchor` when available. Every "good" daily row
+  // for Atlantic Precision (2026-04-13..04-19, 04-21) was written by that path;
+  // only the catchup-written 04-20 row used the legacy composer and was wrong.
+  //
+  // We delegate to that path here so the operational sync's nightly + manual
+  // finalize step writes the same correct snapshot the admin rebuild endpoint
+  // and the post-mapping-change hook write. `pnlUpdateMode: 'preserve'` keeps
+  // any operationally-written daily P&L values (revenue/COGS sourced from
+  // ProductSalesSnapshot via Math.max(ops, gl)) in place — only the BS columns
+  // are refreshed on existing rows.
+  const targetSnapshotDate = toIsoDayOrNull(snapshotDate) || String(snapshotDate);
+  const dailySnapshotDelegate = (prisma as any).dailyFinancialSnapshot;
+  if (!dailySnapshotDelegate) {
+    return {
+      written: false,
+      targetSnapshotDate,
+      sourceDates: { cash: null, inventory: null, sales: null, ar: null, ap: null },
+      staleOrMissingSources: ['dailyFinancialSnapshotModel'],
+      reason: 'DailyFinancialSnapshot model delegate not available.',
+    };
+  }
+  const dayStart = startOfUtcDay(snapshotDate);
+
+  try {
+    const result = await rebuildDailyFinancialSnapshotsFromGL({
+      companyId,
+      startDate: dayStart,
+      endDate: dayStart,
+      frequency,
+      pnlUpdateMode: 'preserve',
+    });
+    return {
+      written: result.rowsWritten > 0,
+      targetSnapshotDate,
+      // sourceDates / staleOrMissingSources are legacy concepts from the
+      // operational-table composer; the GL rebuild path always writes a row
+      // (zero-filled if no GL activity exists yet) so there are no "stale"
+      // sources to surface here. We populate the same shape so callers that
+      // log warnings on missing sources don't produce false positives.
+      sourceDates: {
+        cash: targetSnapshotDate,
+        inventory: targetSnapshotDate,
+        sales: targetSnapshotDate,
+        ar: targetSnapshotDate,
+        ap: targetSnapshotDate,
+      },
+      staleOrMissingSources: [],
+      reason:
+        result.unmappedTargetFields.length > 0
+          ? `Daily snapshot rebuilt from GLTransactionFact via mapped accounts. Unmapped target fields ignored: ${result.unmappedTargetFields.join(', ')}.`
+          : 'Daily snapshot rebuilt from GLTransactionFact via mapped accounts (anchored when available).',
+    };
+  } catch (error) {
+    return {
+      written: false,
+      targetSnapshotDate,
+      sourceDates: { cash: null, inventory: null, sales: null, ar: null, ap: null },
+      staleOrMissingSources: ['glRebuild'],
+      reason: `GL rebuild failed for ${targetSnapshotDate}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+}
+
+// Legacy helper retained for reference / future re-enable once the
+// DailyFinancialMappedLine balance-movement semantics are auditable. Currently
+// unused — the exported entry point above delegates to GL rebuild instead.
+async function _legacyComposeDailyFinancialSnapshotFromOperationalTables(
   companyId: string,
   snapshotDate: Date,
   frequency: 'daily' | 'weekly' | 'monthly'
