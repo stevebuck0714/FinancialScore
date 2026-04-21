@@ -4141,6 +4141,14 @@ export default function OperationsTab({
         if (!record.businessDay) return false;
         if (selectedStartUtc && record.businessDay < selectedStartUtc) return false;
         if (selectedEndUtc && record.businessDay > selectedEndUtc) return false;
+        // Drop Sat/Sun from daily AP charts (AP Aging Trend + Payment
+        // Cadence). Weekly snapshots are anchored on a single day-of-week
+        // and monthly are anchored on month-end, so this only filters
+        // when the user picks the Daily frequency.
+        if (frequency === 'daily') {
+          const dow = record.businessDay.getUTCDay();
+          if (dow === 0 || dow === 6) return false;
+        }
         return true;
       })
       .sort((a: any, b: any) => a.businessDay.getTime() - b.businessDay.getTime());
