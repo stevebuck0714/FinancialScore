@@ -154,10 +154,34 @@ export async function computeMonthlyPnlBreakdownsFromGL(
     return { scalars, revenueBreakdown, cogsBreakdown, expenseBreakdown };
   }
 
-  // Track which subcategories already received a contribution from a
-  // breakdown-keyable account so we don't double-count when the cogs
-  // rollup also lands.
-  const cogsSubcategorySeen = new Set<string>();
+  // For each account, pick the SINGLE column we'll use to record the
+  // breakdown JSON entry — separate from the scalar accumulation, which
+  // legitimately double-records into the rollup AND subcategory columns.
+  //
+  // Resolution order, mirroring how the legacy CSI builder bucketed an
+  // account into a breakdown:
+  //   - revenue accounts:     ['revenue']                      → 'revenue'
+  //   - cogs-subcategory acct: ['cogsTotal', 'cogsOther', ...] → subcat
+  //   - cogs generic acct:     ['cogsTotal']                   → 'cogsTotal'
+  //   - opex-subcategory acct: ['expense', 'payroll', ...]     → subcat
+  //   - opex generic acct:     ['expense']                     → 'expense'
+  //
+  // master-data's /api/master-data sums cogsBreakdown / revenueBreakdown
+  // values directly into the displayed cogsTotal / revenue numbers via
+  // its `hasSectorCogs` / `hasSectorRevenue` branches. Recording into
+  // BOTH the rollup AND the subcategory column would double the
+  // displayed totals (Atlantic Precision Jan 2026: COGS shown as
+  // ~$1.44M = 2× the GL truth $700K).
+  const pickBreakdownColumn = (dfsColumns: readonly string[]): string | null => {
+    if (dfsColumns.length === 0) return null;
+    if (dfsColumns.length === 1) return dfsColumns[0];
+    // Multi-column resolution always pairs a rollup with a subcategory.
+    // Prefer the subcategory.
+    for (const col of dfsColumns) {
+      if (col !== 'expense' && col !== 'cogsTotal') return col;
+    }
+    return dfsColumns[0];
+  };
 
   for (const [accountId, raw] of glSums.entries()) {
     const target = lookup.get(accountId);
@@ -168,62 +192,31 @@ export async function computeMonthlyPnlBreakdownsFromGL(
     const rawNum = Number(raw) || 0;
     if (rawNum === 0) continue;
 
+    // Scalars: accumulate into every resolved column with that column's
+    // natural sign. This mirrors how `daily-bs-from-gl` populates DFS so
+    // the MonthlyFinancial scalar columns stay consistent with DFS
+    // (cogsTotal AND each cogs subcategory both get the contribution).
     for (const column of dfsColumns) {
-      const sign = signForDfsColumn(column);
-      const adjusted = rawNum * sign;
+      if (!ALLOWED_SCALAR_COLUMNS.has(column)) continue;
+      const adjusted = rawNum * signForDfsColumn(column);
+      scalars[column] = (scalars[column] || 0) + adjusted;
+    }
 
-      // Scalars: only accumulate columns we expose in MonthlyFinancial.
-      if (ALLOWED_SCALAR_COLUMNS.has(column)) {
-        scalars[column] = (scalars[column] || 0) + adjusted;
-      }
+    // Breakdown JSON: record EXACTLY ONCE per account, on the chosen
+    // breakdown column. Always positive (legacy CSI builder convention).
+    const breakdownColumn = pickBreakdownColumn(dfsColumns);
+    if (!breakdownColumn) continue;
+    const breakdown = pickBreakdownKey(target.targetField, breakdownColumn);
+    if (!breakdown) continue;
+    const breakdownAmount = Math.abs(rawNum * signForDfsColumn(breakdownColumn));
+    if (breakdownAmount === 0) continue;
 
-      // Breakdown JSON: keyed by the original targetField slug so the
-      // shape matches the legacy CSI builder. Note we always store
-      // POSITIVE amounts (Math.abs) — every breakdown-consuming UI
-      // (Data Review, LOB Reporting, etc.) sums these as costs/revenue
-      // magnitudes, mirroring the legacy `applyMappedAmount` behavior.
-      if (column === 'cogsTotal') {
-        // The cogsTotal contribution from a non-subcategory account
-        // (e.g. a generic "Cost of Sales" mapping) — record it once.
-        const breakdown = pickBreakdownKey(target.targetField, column);
-        if (breakdown) {
-          (cogsBreakdown as Record<string, number>)[breakdown.key] =
-            ((cogsBreakdown as Record<string, number>)[breakdown.key] || 0) + Math.abs(adjusted);
-        }
-        continue;
-      }
-      if (COGS_SUBCATEGORY_COLUMNS.has(column)) {
-        if (cogsSubcategorySeen.has(`${accountId}|${column}`)) continue;
-        cogsSubcategorySeen.add(`${accountId}|${column}`);
-        const breakdown = pickBreakdownKey(target.targetField, column);
-        if (breakdown) {
-          (cogsBreakdown as Record<string, number>)[breakdown.key] =
-            ((cogsBreakdown as Record<string, number>)[breakdown.key] || 0) + Math.abs(adjusted);
-        }
-        continue;
-      }
-      if (column === 'expense') {
-        // Skip — the subcategory column iteration below will record the
-        // breakdown entry. The `expense` column is the rollup; recording
-        // here would double-count against the subcategory entry.
-        continue;
-      }
-      if (OPEX_SUBCATEGORY_COLUMNS.has(column)) {
-        const breakdown = pickBreakdownKey(target.targetField, column);
-        if (breakdown) {
-          (expenseBreakdown as Record<string, number>)[breakdown.key] =
-            ((expenseBreakdown as Record<string, number>)[breakdown.key] || 0) + Math.abs(adjusted);
-        }
-        continue;
-      }
-      if (column === 'revenue') {
-        const breakdown = pickBreakdownKey(target.targetField, column);
-        if (breakdown) {
-          (revenueBreakdown as Record<string, number>)[breakdown.key] =
-            ((revenueBreakdown as Record<string, number>)[breakdown.key] || 0) + Math.abs(adjusted);
-        }
-        continue;
-      }
+    if (breakdown.bucket === 'revenue') {
+      revenueBreakdown[breakdown.key] = (revenueBreakdown[breakdown.key] || 0) + breakdownAmount;
+    } else if (breakdown.bucket === 'cogs') {
+      cogsBreakdown[breakdown.key] = (cogsBreakdown[breakdown.key] || 0) + breakdownAmount;
+    } else if (breakdown.bucket === 'expense') {
+      expenseBreakdown[breakdown.key] = (expenseBreakdown[breakdown.key] || 0) + breakdownAmount;
     }
   }
 
