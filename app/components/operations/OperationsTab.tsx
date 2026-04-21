@@ -6103,6 +6103,10 @@ export default function OperationsTab({
       effectiveCashTrendAccount === '__TOTAL__' ? 'Total Cash' : effectiveCashTrendAccount;
 
     // Aggregate data by exact snapshot date for trend chart.
+    // For daily frequency, weekend snapshots (Sat/Sun) are dropped so the
+    // Cash Balance Trend, 13-Week Cash Trend, and Cash Bridge charts render
+    // Mon-Fri only. Weekly/monthly snapshots are not filtered (a month-end
+    // landing on a weekend is still a valid bucket).
     const periodTrend = records.reduce((acc: any, record: any) => {
       const recordAccountName = String(record.accountName || '').trim();
       if (effectiveCashTrendAccount !== '__TOTAL__' && recordAccountName !== effectiveCashTrendAccount) {
@@ -6110,6 +6114,10 @@ export default function OperationsTab({
       }
       const parsed = parseDateValue(record.snapshotDate);
       if (!parsed) return acc;
+      if (frequency === 'daily') {
+        const dow = parsed.getUTCDay();
+        if (dow === 0 || dow === 6) return acc;
+      }
       const key = parsed.getTime();
       if (!acc[key]) {
         acc[key] = { key, snapshotDate: parsed, period: formatDate(record.snapshotDate), totalCash: 0 };
