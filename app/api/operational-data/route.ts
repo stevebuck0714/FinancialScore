@@ -4545,39 +4545,64 @@ export async function GET(request: NextRequest) {
         const apMonthStart = startOfMonth(endDate);
         const apLastMonthStart = addMonths(apMonthStart, -1);
         const apTrailing12Start = addMonths(apMonthStart, -11);
-        const apPaymentRows = await (prisma as any).aPPaymentFact.findMany({
-          where: {
-            companyId,
-            paymentDate: {
-              gte: apTrailing12Start,
-              lte: endDate,
-            },
-          },
-          orderBy: [{ paymentDate: 'desc' }],
-          take: Math.max(limit * 5, 2000),
-        });
 
-        if (apPaymentRows.length) {
-          const grouped = apPaymentRows.reduce((acc: Record<string, any>, row: any) => {
-            const name = row.vendorName || 'Unknown Vendor';
-            if (!acc[name]) {
-              acc[name] = {
-                vendorName: name,
-                currentMonth: 0,
-                lastMonth: 0,
-                last12Months: 0,
-              };
-            }
-            const dt = new Date(row.paymentDate);
-            const amount = Number(row.paidAmountHome || 0);
-            if (dt >= apMonthStart && dt <= endDate) acc[name].currentMonth += amount;
-            if (dt >= apLastMonthStart && dt < apMonthStart) acc[name].lastMonth += amount;
-            if (dt >= apTrailing12Start && dt <= endDate) acc[name].last12Months += amount;
-            return acc;
-          }, {});
-          paidBills = Object.values(grouped)
-            .sort((a: any, b: any) => b.last12Months - a.last12Months)
-            .slice(0, 25) as any[];
+        // Aggregate "Paid Bills by Vendor" via SQL with two key adjustments:
+        //
+        //   1. Drop $0 rows. Infor's SLAptrxps stream emits voucher-header
+        //      records (no actual payment amount) into APPaymentFact. Including
+        //      them inflates the vendor list with rows where every column reads
+        //      "$0".
+        //
+        //   2. Collapse natural-key duplicates (vendorName, paymentDate,
+        //      billNo, paidAmountHome). The Infor sync reinserts payment
+        //      events on every run with no unique constraint to suppress
+        //      copies; one production company had 25,222 identical copies of
+        //      a single FedEx event. Aggregating in JS over a row-capped
+        //      findMany also truncated 12-month totals into "looks like the
+        //      last 1-2 months". Doing the dedup + bucketed sums in a single
+        //      SQL pass eliminates both problems and removes the previous
+        //      take=2000 ceiling.
+        const aggregatedPaidBills = await prisma.$queryRaw<
+          Array<{
+            vendorName: string;
+            currentMonth: number;
+            lastMonth: number;
+            last12Months: number;
+          }>
+        >`
+          WITH dedup AS (
+            SELECT
+              "vendorName",
+              "paymentDate",
+              COALESCE("billNo", '') AS "billNo",
+              "paidAmountHome"
+            FROM "APPaymentFact"
+            WHERE "companyId" = ${companyId}
+              AND "paymentDate" >= ${apTrailing12Start}
+              AND "paymentDate" <= ${endDate}
+              AND "paidAmountHome" <> 0
+            GROUP BY "vendorName", "paymentDate", "billNo", "paidAmountHome"
+          )
+          SELECT
+            "vendorName",
+            COALESCE(SUM(CASE WHEN "paymentDate" >= ${apMonthStart} AND "paymentDate" <= ${endDate}
+                              THEN "paidAmountHome" ELSE 0 END), 0)::float8 AS "currentMonth",
+            COALESCE(SUM(CASE WHEN "paymentDate" >= ${apLastMonthStart} AND "paymentDate" < ${apMonthStart}
+                              THEN "paidAmountHome" ELSE 0 END), 0)::float8 AS "lastMonth",
+            COALESCE(SUM("paidAmountHome"), 0)::float8 AS "last12Months"
+          FROM dedup
+          GROUP BY "vendorName"
+          ORDER BY "last12Months" DESC
+          LIMIT 25
+        `;
+
+        if (aggregatedPaidBills.length) {
+          paidBills = aggregatedPaidBills.map((row) => ({
+            vendorName: String(row.vendorName || 'Unknown Vendor'),
+            currentMonth: Number(row.currentMonth || 0),
+            lastMonth: Number(row.lastMonth || 0),
+            last12Months: Number(row.last12Months || 0),
+          })) as any[];
         }
 
         // Fallback vendor/AP detail from mapped AP lines when AP open-bill/payment facts are unavailable.
