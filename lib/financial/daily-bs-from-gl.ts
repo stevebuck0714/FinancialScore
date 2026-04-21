@@ -216,6 +216,40 @@ export function resolveDfsColumnsForTargetField(rawTargetField: string): readonl
       return ['cogsTotal', direct];
     }
     if (direct === 'expense') return [direct];
+    // Operating expense subcategories: route to BOTH the `expense` rollup
+    // column AND the subcategory column, mirroring the COGS pattern above
+    // (cogs_* → ['cogsTotal', cogsSubcategory]). Without this the
+    // `expense` rollup stays at 0 in DFS and the UI's "prefer DFS rollup
+    // over per-bucket sum" branch falls through to summing mappedLines —
+    // which is incomplete for many accounts and silently under-reports
+    // Total Operating Expenses (Atlantic Precision Jan 2026: short by
+    // ~$45,866 vs the M3 truth of $449,356).
+    //
+    // Excludes: stateIncomeTaxes / federalIncomeTaxes (taxes, separate
+    // line in the income statement); nonOperatingIncome /
+    // nonOperatingExpense / extraordinaryItems (below-the-line).
+    if (
+      direct === 'payroll' ||
+      direct === 'ownerBasePay' ||
+      direct === 'benefits' ||
+      direct === 'insurance' ||
+      direct === 'professionalFees' ||
+      direct === 'subcontractors' ||
+      direct === 'rent' ||
+      direct === 'taxLicense' ||
+      direct === 'phoneComm' ||
+      direct === 'infrastructure' ||
+      direct === 'autoTravel' ||
+      direct === 'salesExpense' ||
+      direct === 'marketing' ||
+      direct === 'trainingCert' ||
+      direct === 'mealsEntertainment' ||
+      direct === 'interestExpense' ||
+      direct === 'depreciationAmortization' ||
+      direct === 'otherExpense'
+    ) {
+      return ['expense', direct];
+    }
     return [direct];
   }
 
@@ -547,51 +581,20 @@ export async function computeDailyPnlMovementsFromGL(
   const glSums = await sumGLByAccount(companyId, accountIds, dayStart, dayEnd);
   const byColumn = aggregateByTargetField(glSums, accountIdToTarget);
 
+  // Read the rollup columns directly. `resolveDfsColumnsForTargetField`
+  // routes:
+  //   revenue accounts          → 'revenue'
+  //   COGS accounts             → ['cogsTotal', cogs_subcategory]
+  //   OPEX accounts             → ['expense',   opex_subcategory]
+  // so the rollup columns are always populated when the underlying
+  // subcategories are. Summing the OPEX subcategories would double-count
+  // against the rollup; we take the rollup directly. Non-operating /
+  // tax / extraordinary lines are deliberately excluded — they're shown
+  // separately on the income statement and tracked in their own DFS
+  // columns.
   const revenue = byColumn.get('revenue') || 0;
   const cogsTotal = byColumn.get('cogsTotal') || 0;
-
-  // Operating expense rollup: sum the per-bucket OPEX subcategories plus the
-  // bare `expense` rollup column. Critically we EXCLUDE:
-  //   - revenue / nonOperatingIncome           (income, not expense)
-  //   - cogsTotal and every cogs* subcategory  (separate roll-up; cogs
-  //                                             accounts populate BOTH
-  //                                             cogsTotal and the matching
-  //                                             cogs subcategory, so summing
-  //                                             them would double-count and
-  //                                             they're already covered by
-  //                                             `cogsTotal` above)
-  //   - nonOperatingExpense / extraordinaryItems
-  //                                             (non-operating, lives in
-  //                                              its own DFS columns and the
-  //                                              UI sums them separately
-  //                                              under "Other Income/Expense")
-  const OPEX_FIELDS_TO_SUM = new Set<string>([
-    'expense',
-    'payroll',
-    'ownerBasePay',
-    'benefits',
-    'insurance',
-    'professionalFees',
-    'subcontractors',
-    'rent',
-    'taxLicense',
-    'stateIncomeTaxes',
-    'federalIncomeTaxes',
-    'phoneComm',
-    'infrastructure',
-    'autoTravel',
-    'salesExpense',
-    'marketing',
-    'trainingCert',
-    'mealsEntertainment',
-    'interestExpense',
-    'depreciationAmortization',
-    'otherExpense',
-  ]);
-  let expense = 0;
-  for (const f of OPEX_FIELDS_TO_SUM) {
-    expense += byColumn.get(f) || 0;
-  }
+  const expense = byColumn.get('expense') || 0;
 
   return { revenue, cogsTotal, expense, byColumn };
 }
@@ -880,10 +883,21 @@ export async function computeDailyBalanceSheetFromGL(
   // the fiscal year rolls over without a closing JE.
   const priorPeriodRevenue = get(priorPeriodByField, 'revenue');
   const priorPeriodNonOpInc = get(priorPeriodByField, 'nonOperatingIncome');
-  let priorPeriodExpense = 0;
-  for (const f of EXPENSE_PNL_FIELDS) {
-    priorPeriodExpense += get(priorPeriodByField, f);
-  }
+  // Sum the rollup expense columns ONLY (cogsTotal, expense, plus the
+  // below-the-line buckets). We must NOT sum subcategory columns
+  // (cogs_*, payroll, benefits, ...) because the resolver routes each
+  // contributing account into BOTH the rollup and its subcategory; adding
+  // them again would double-count and inflate priorPeriodExpense, which
+  // would understate priorPeriodNetIncome and (via bookedRE) understate
+  // retainedEarnings on every snapshot.
+  const sumExpenseRollups = (m: Map<string, number>): number =>
+    get(m, 'cogsTotal') +
+    get(m, 'expense') +
+    get(m, 'nonOperatingExpense') +
+    get(m, 'extraordinaryItems') +
+    get(m, 'stateIncomeTaxes') +
+    get(m, 'federalIncomeTaxes');
+  const priorPeriodExpense = sumExpenseRollups(priorPeriodByField);
   const priorPeriodNetIncome =
     priorPeriodRevenue + priorPeriodNonOpInc - priorPeriodExpense;
 
@@ -896,11 +910,11 @@ export async function computeDailyBalanceSheetFromGL(
     get(bsByField, 'retainedEarnings') +
     priorPeriodNetIncome;
 
-  // YTD P&L (signed positive: revenue +, expense +)
+  // YTD P&L (signed positive: revenue +, expense +). Same rollup-only
+  // sum as priorPeriodExpense above — see comment there.
   const revenue = get(ytdByField, 'revenue');
   const nonOperatingIncome = get(ytdByField, 'nonOperatingIncome');
-  let totalExpense = 0;
-  for (const f of EXPENSE_PNL_FIELDS) totalExpense += get(ytdByField, f);
+  const totalExpense = sumExpenseRollups(ytdByField);
   const ytdNetIncome = revenue + nonOperatingIncome - totalExpense;
 
   const retainedEarnings = bookedRE + ytdNetIncome;
