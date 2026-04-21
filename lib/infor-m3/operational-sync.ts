@@ -7032,12 +7032,38 @@ async function saveARTransactionFacts(
   return created;
 }
 
+/**
+ * Stable natural-key hash for an APPaymentFact row. Mirrors the SQL backfill
+ * in 20260420180000_dedupe_ap_payment_fact_natural_key/migration.sql so that
+ * Postgres' `APPaymentFact_companyId_sourceItemId_key` unique index (with
+ * NULLS NOT DISTINCT) can collapse repeat-sync inserts.
+ *
+ * Format: md5( paymentDateUtc 'YYYY-MM-DD' | vendorName | billNo | amount )
+ */
+function computeApPaymentSourceItemId(input: {
+  paymentDate: Date;
+  vendorName: string | null | undefined;
+  billNo: string | null | undefined;
+  paidAmountHome: number;
+}): string {
+  const datePart = input.paymentDate.toISOString().slice(0, 10);
+  const vendorPart = (input.vendorName || '').toString();
+  const billPart = (input.billNo || '').toString();
+  // Match Postgres ROUND(numeric, 2) + 'FM999999999999990.00' formatting.
+  const amountPart = (Math.round(Number(input.paidAmountHome) * 100) / 100).toFixed(2);
+  return createHash('md5')
+    .update(`${datePart}|${vendorPart}|${billPart}|${amountPart}`)
+    .digest('hex');
+}
+
 async function saveAPPayments(
   companyId: string,
   records: Record<string, unknown>[],
   context: { miProgram: string; transaction: string; cono?: string; divi?: string }
 ): Promise<number> {
-  const rows = records
+  // Stage 1: pull each Infor record into a normalized row shape and compute
+  // the natural-key sourceItemId. Drop rows we couldn't normalize.
+  const stagedRows = records
     .map((record, idx) => {
       const billDate = resolveApBillDateFromRecord(record);
       if (!isApDateWithinHistoryWindow(billDate)) return null;
@@ -7047,41 +7073,73 @@ async function saveAPPayments(
       if (!paymentDate) return null;
       const vendorName =
         pickString(record, ['UbVendName', 'VendaddrName', 'VendorName', ...VENDOR_NAME_KEYS]) || `Unknown Vendor ${idx + 1}`;
+      const paidAmountHome = pickNumber(record, [
+        'paidAmountHome',
+        'paidAmount',
+        'AmtPaid',
+        'UbPayment',
+        'DerDomAmtApplied',
+        'DerForAmtApplied',
+        'DerAmtBal',
+        'DomCheckAmt',
+        'ForCheckAmt',
+        'DerDomCheckAmount',
+        'amount',
+        'ACAM',
+        'PYAM',
+      ]);
+      if (!Number.isFinite(paidAmountHome)) return null;
+      const billNo = pickString(record, [
+        'billNo',
+        'billNumber',
+        'invoiceNo',
+        'InvNum',
+        'Voucher',
+        'voucher',
+        'SINO',
+      ]);
+      const sourceItemId = computeApPaymentSourceItemId({
+        paymentDate,
+        vendorName,
+        billNo,
+        paidAmountHome,
+      });
       return {
         companyId,
         paymentDate,
         vendorId: pickString(record, VENDOR_ID_KEYS),
         vendorName,
-        billNo: pickString(record, ['billNo', 'billNumber', 'invoiceNo', 'InvNum', 'Voucher', 'voucher', 'SINO']),
+        billNo,
         currencyCode: pickString(record, ['currencyCode', 'currency', 'CUCD']),
         paidAmountCurrency: pickNumber(record, ['paidAmountCurrency', 'CUAM']) || null,
-        paidAmountHome: pickNumber(record, [
-          'paidAmountHome',
-          'paidAmount',
-          'AmtPaid',
-          'UbPayment',
-          'DerDomAmtApplied',
-          'DerForAmtApplied',
-          'DerAmtBal',
-          'DomCheckAmt',
-          'ForCheckAmt',
-          'DerDomCheckAmount',
-          'amount',
-          'ACAM',
-          'PYAM',
-        ]),
+        paidAmountHome,
         sourcePlatform: 'INFOR_M3',
+        sourceItemId,
         sourceProgram: context.miProgram,
         sourceTransaction: context.transaction,
         cono: context.cono || null,
         divi: context.divi || null,
       };
     })
-    .filter((row): row is NonNullable<typeof row> => !!row && Number.isFinite(row.paidAmountHome));
+    .filter((row): row is NonNullable<typeof row> => row !== null);
 
-  if (!rows.length) return 0;
-  await (prisma as any).aPPaymentFact.createMany({ data: rows });
-  return rows.length;
+  if (!stagedRows.length) return 0;
+
+  // Stage 2: dedupe within the batch by sourceItemId. The DB unique index
+  // would catch these via skipDuplicates anyway, but pre-deduping keeps the
+  // insert payload small (single sync run can yield thousands of internal
+  // duplicates from a SLAptrxps full pull replaying the same voucher).
+  const uniqueRows = Array.from(
+    new Map(stagedRows.map((row) => [row.sourceItemId, row])).values()
+  );
+
+  // Stage 3: insert with skipDuplicates so the unique index suppresses any
+  // rows that already exist in the table from a prior sync.
+  const result = await (prisma as any).aPPaymentFact.createMany({
+    data: uniqueRows,
+    skipDuplicates: true,
+  });
+  return result?.count ?? uniqueRows.length;
 }
 
 async function saveCustomerSales(

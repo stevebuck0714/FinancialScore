@@ -1474,12 +1474,17 @@ model APPaymentFact {
   paidAmountCurrency Float?
   paidAmountHome     Float
   sourcePlatform     String?  @default("INFOR_M3")
+  // Stable natural-key hash used to dedupe re-inserts from repeated syncs.
+  // Computed as md5( paymentDateUtc | vendorName | billNo | paidAmountHome ).
+  // Enforced by APPaymentFact_companyId_sourceItemId_key (NULLS NOT DISTINCT).
+  sourceItemId       String?
   sourceProgram      String?
   sourceTransaction  String?
   cono               String?
   divi               String?
   createdAt          DateTime @default(now())
 
+  @@unique([companyId, sourceItemId], map: "APPaymentFact_companyId_sourceItemId_key")
   @@index([companyId, paymentDate(sort: Desc)])
   @@index([companyId, vendorId, paymentDate(sort: Desc)])
   @@index([companyId, vendorName, paymentDate(sort: Desc)])
