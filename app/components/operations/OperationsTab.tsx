@@ -5178,8 +5178,16 @@ export default function OperationsTab({
         // contains units sold. Returning null for unit-less weeks lets the
         // chart draw a gap (and connectNulls bridge it) instead of falsely
         // collapsing the trend to $0 on inactive weeks.
-        const derivedPrice = row.units > 0 ? row.netRevenue / row.units : null;
-        const derivedCost = row.units > 0 ? row.cogs / row.units : null;
+        const derivedPrice = row.units > 0 && row.netRevenue !== 0 ? row.netRevenue / row.units : null;
+        // Treat (units > 0, revenue > 0, cogs == 0) as a data-coverage gap
+        // rather than "free product". Some snapshot dates land in the DB
+        // before the source ERP has posted material costs, so cogs reads
+        // as 0 even though revenue and units are populated. Drawing
+        // cost = $0 in that case visually crashes the trend line and
+        // inflates the spread; nulling it out lets connectNulls bridge
+        // the gap and keeps the price/spread series honest.
+        const cogsLooksMissing = row.units > 0 && row.netRevenue !== 0 && row.cogs === 0;
+        const derivedCost = cogsLooksMissing ? null : row.units > 0 ? row.cogs / row.units : null;
         const derivedSpread =
           derivedPrice != null && derivedCost != null ? derivedPrice - derivedCost : null;
         return {
@@ -5195,19 +5203,27 @@ export default function OperationsTab({
           price: derivedPrice,
           cost: derivedCost,
           spread: derivedSpread,
+          cogsLooksMissing,
         };
       }
       const scoped = scopedSeriesByWeek[row.weekStart];
       // Preserve nullable per-unit metrics from the per-product row so the
       // chart skips weeks where the SKU had no units rather than zeroing.
+      // Same data-coverage-gap rule as the total branch above.
+      const scopedUnits = Number(scoped?.units || 0);
+      const scopedRevenue = Number(scoped?.netRevenue || 0);
+      const scopedCogs = Number(scoped?.cogs || 0);
+      const cogsLooksMissing = scopedUnits > 0 && scopedRevenue !== 0 && scopedCogs === 0;
       const scopedPrice = scoped?.pricePerUnit;
-      const scopedCost = scoped?.costPerUnit;
-      const scopedSpread = scoped?.spreadPerUnit;
+      const scopedCostRaw = scoped?.costPerUnit;
+      const scopedCost = cogsLooksMissing ? null : scopedCostRaw;
+      const scopedSpread =
+        scopedPrice != null && scopedCost != null ? Number(scopedPrice) - Number(scopedCost) : null;
       return {
         weekStart: row.weekStart,
-        units: Number(scoped?.units || 0),
-        netRevenue: Number(scoped?.netRevenue || 0),
-        cogs: Number(scoped?.cogs || 0),
+        units: scopedUnits,
+        netRevenue: scopedRevenue,
+        cogs: scopedCogs,
         marginAmount: Number(scoped?.marginAmount || 0),
         returns: Number(scoped?.returns || 0),
         returnsMagnitude: Number(scoped?.returnsMagnitude || 0),
@@ -5215,7 +5231,8 @@ export default function OperationsTab({
         otherRevenue: Number(scoped?.otherRevenue || 0),
         price: scopedPrice != null ? Number(scopedPrice) : null,
         cost: scopedCost != null ? Number(scopedCost) : null,
-        spread: scopedSpread != null ? Number(scopedSpread) : null,
+        spread: scopedSpread,
+        cogsLooksMissing,
       };
     });
     const priceCostTrendData = scopedSeries;
@@ -5758,18 +5775,60 @@ export default function OperationsTab({
               {renderChartInfoLink('productsPriceCostTrend')}
             </div>
             {renderCoverageMeta()}
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={priceCostTrendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="weekStart" stroke="#64748b" style={{ fontSize: '11px' }} />
-                <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
-                <Tooltip formatter={(value: any) => formatCurrencyWithCents(Number(value || 0))} />
-                <Legend />
-                <Line type="monotone" dataKey="price" stroke="#0f766e" strokeWidth={2} dot={false} connectNulls name="Avg Price/Unit" />
-                <Line type="monotone" dataKey="cost" stroke="#dc2626" strokeWidth={2} dot={false} connectNulls name="Avg Cost/Unit" />
-                <Line type="monotone" dataKey="spread" stroke="#1d4ed8" strokeWidth={2} dot={false} connectNulls name="Spread/Unit" />
-              </LineChart>
-            </ResponsiveContainer>
+            {(() => {
+              // Pick a Y-axis tick precision that matches the smallest plotted
+              // value. Atlantic-style per-unit prices (~$0.30) need cents;
+              // larger per-unit values (>= $50) read fine as whole dollars.
+              const plotted = priceCostTrendData.flatMap((r: any) => [r?.price, r?.cost, r?.spread])
+                .filter((v: any) => v != null && Number.isFinite(v))
+                .map((v: any) => Math.abs(Number(v)));
+              const minMag = plotted.length ? Math.min(...plotted) : 0;
+              const tickFormatter = (value: any) => {
+                const n = Number(value || 0);
+                if (minMag === 0) return `$${n.toFixed(2)}`;
+                if (minMag < 1) return `$${n.toFixed(2)}`;
+                if (minMag < 10) return `$${n.toFixed(2)}`;
+                if (minMag < 100) return `$${n.toFixed(1)}`;
+                return `$${n.toFixed(0)}`;
+              };
+              const gapWeeks = priceCostTrendData
+                .filter((r: any) => r?.cogsLooksMissing)
+                .map((r: any) => r.weekStart);
+              return (
+                <>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={priceCostTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="weekStart" stroke="#64748b" style={{ fontSize: '11px' }} />
+                      <YAxis stroke="#64748b" style={{ fontSize: '11px' }} tickFormatter={tickFormatter} />
+                      <Tooltip formatter={(value: any) => formatCurrencyWithCents(Number(value || 0))} />
+                      <Legend />
+                      <Line type="monotone" dataKey="price" stroke="#0f766e" strokeWidth={2} dot={false} connectNulls name="Avg Price/Unit" />
+                      <Line type="monotone" dataKey="cost" stroke="#dc2626" strokeWidth={2} dot={false} connectNulls name="Avg Cost/Unit" />
+                      <Line type="monotone" dataKey="spread" stroke="#1d4ed8" strokeWidth={2} dot={false} connectNulls name="Spread/Unit" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  {gapWeeks.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '8px 10px',
+                        background: '#fffbeb',
+                        border: '1px solid #fde68a',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        color: '#78350f',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      Cost / spread are shown as a gap for {gapWeeks.length} week{gapWeeks.length === 1 ? '' : 's'} ({gapWeeks.slice(0, 4).join(', ')}{gapWeeks.length > 4 ? `, +${gapWeeks.length - 4} more` : ''}).
+                      Those snapshots have units sold and revenue but COGS = $0 in the source data, which usually means inventory cost had not been posted in the ERP at sync time.
+                      Re-running the product sync after costs are applied will fill the gap.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
           )}
 

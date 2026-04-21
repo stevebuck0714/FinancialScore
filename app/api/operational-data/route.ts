@@ -5181,7 +5181,38 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // GL allocation bridge for freight and other-revenue proxy lines.
+        // Allocation bridge for freight + other-revenue proxy lines.
+        //
+        // Two complementary signal sources are consulted, both bucketed to
+        // ISO weeks so freight/misc activity gets attached even when the
+        // product snapshot calendar is sparser than the invoice calendar
+        // (Atlantic, for example, posts product snapshots ~7 days in a 90-day
+        // window while invoices land on ~50 days).
+        //
+        //   1. GL mapped lines (DailyFinancialMappedLine) for revenue-side
+        //      accounts whose name or target bucket implies freight billed
+        //      / scrap / misc / other revenue. This is the canonical path
+        //      for any company whose chart of accounts cleanly separates
+        //      these categories.
+        //
+        //   2. Raw invoice headers (InforRawRecord miProgram=SLInvHdrs).
+        //      Infor CSI invoice headers carry per-invoice `Freight` and
+        //      `MiscCharges` fields directly — that is the ground truth for
+        //      customer-billed freight and misc revenue, and it is present
+        //      regardless of how the GL accounts are mapped. Used as a
+        //      per-week fallback when the GL bridge produces zero for that
+        //      week (so we never double-count when both signals are
+        //      available, but we never silently drop activity that lives
+        //      only in the raw invoice payload either).
+        const weekStartIsoOf = (value: Date | string): string => {
+          const d = new Date(value);
+          const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+          const day = utc.getUTCDay();
+          const diffToMonday = day === 0 ? -6 : 1 - day;
+          utc.setUTCDate(utc.getUTCDate() + diffToMonday);
+          return utc.toISOString().split('T')[0];
+        };
+
         const productMappedLineDelegate = (prisma as any).dailyFinancialMappedLine;
         if (!productWindowTruncated && productMappedLineDelegate?.findMany) {
           const mappedRows = await productMappedLineDelegate.findMany({
@@ -5197,10 +5228,10 @@ export async function GET(request: NextRequest) {
               amount: true,
             },
           });
-          const freightByDay = new Map<string, number>();
-          const otherRevenueByDay = new Map<string, number>();
+          const freightByWeek = new Map<string, number>();
+          const otherRevenueByWeek = new Map<string, number>();
           for (const line of mappedRows) {
-            const day = productIsoDay(line.snapshotDate);
+            const week = weekStartIsoOf(line.snapshotDate);
             const amount = Math.abs(Number(line.amount || 0));
             if (!Number.isFinite(amount) || amount === 0) continue;
             // Restrict the bridge to revenue-side accounts. Without this guard,
@@ -5229,40 +5260,147 @@ export async function GET(request: NextRequest) {
               text.includes('scrap') ||
               text.includes('rebate');
             if (isFreight) {
-              freightByDay.set(day, Number(freightByDay.get(day) || 0) + amount);
+              freightByWeek.set(week, Number(freightByWeek.get(week) || 0) + amount);
             } else if (isOtherRevenue) {
-              otherRevenueByDay.set(day, Number(otherRevenueByDay.get(day) || 0) + amount);
+              otherRevenueByWeek.set(week, Number(otherRevenueByWeek.get(week) || 0) + amount);
             }
           }
 
-          const rowIndexesByDay = new Map<string, number[]>();
+          // Raw invoice fallback: pull SLInvHdrs.Freight + SLInvHdrs.MiscCharges
+          // from InforRawRecord for any week where the GL bridge is silent.
+          // Cheap-ish: jsonb path extraction with the businessDate bound and a
+          // companyId/miProgram-prefixed index keep this responsive.
+          try {
+            const rawDelegate = (prisma as any).inforRawRecord;
+            if (rawDelegate?.findMany) {
+              const rawFreight = await prisma.$queryRaw<Array<{
+                weekStart: string;
+                sum_freight: number;
+                sum_misc: number;
+              }>>`
+                WITH src AS (
+                  SELECT
+                    COALESCE(
+                      NULLIF(LEFT(payload->>'InvDate', 8), '')::date,
+                      "businessDate"::date
+                    ) AS d,
+                    COALESCE((payload->>'Freight')::double precision, 0)     AS freight,
+                    COALESCE((payload->>'MiscCharges')::double precision, 0) AS misc
+                  FROM "InforRawRecord"
+                  WHERE "companyId" = ${companyId}
+                    AND "miProgram" = 'SLInvHdrs'
+                    AND "businessDate" >= ${startDate}
+                    AND "businessDate" <= ${endDate}
+                )
+                SELECT
+                  to_char(
+                    (d - ((EXTRACT(ISODOW FROM d)::int - 1) || ' days')::interval)::date,
+                    'YYYY-MM-DD'
+                  ) AS "weekStart",
+                  SUM(freight)::double precision AS sum_freight,
+                  SUM(misc)::double precision    AS sum_misc
+                FROM src
+                WHERE d IS NOT NULL
+                  AND d >= ${startDate}::date
+                  AND d <= ${endDate}::date
+                  AND (freight <> 0 OR misc <> 0)
+                GROUP BY 1
+              `;
+              for (const row of rawFreight) {
+                const week = String(row.weekStart);
+                const fr = Math.abs(Number(row.sum_freight || 0));
+                const mc = Math.abs(Number(row.sum_misc || 0));
+                // Only fill in when the GL bridge said nothing for this week,
+                // otherwise prefer the GL number (it usually reflects post-
+                // adjustment net activity that the raw invoice header alone
+                // cannot represent — credits, voids, etc.).
+                if (fr > 0 && !(Number(freightByWeek.get(week) || 0) > 0)) {
+                  freightByWeek.set(week, fr);
+                }
+                if (mc > 0 && !(Number(otherRevenueByWeek.get(week) || 0) > 0)) {
+                  otherRevenueByWeek.set(week, mc);
+                }
+              }
+            }
+          } catch (rawFallbackErr) {
+            // Raw fallback is best-effort: if Infor raw records are missing
+            // (e.g. non-Infor companies) or the jsonb cast fails, just keep
+            // whatever the GL bridge produced and move on.
+            console.warn('[operational-data] freight raw-invoice fallback skipped:', rawFallbackErr);
+          }
+
+          const rowIndexesByWeek = new Map<string, number[]>();
           for (let idx = 0; idx < recordsV1.length; idx += 1) {
             const row = recordsV1[idx];
-            const day = productIsoDay(row.snapshotDate);
-            if (!rowIndexesByDay.has(day)) rowIndexesByDay.set(day, []);
-            rowIndexesByDay.get(day)!.push(idx);
+            const week = weekStartIsoOf(row.snapshotDate);
+            if (!rowIndexesByWeek.has(week)) rowIndexesByWeek.set(week, []);
+            rowIndexesByWeek.get(week)!.push(idx);
           }
-          for (const [day, indexes] of rowIndexesByDay.entries()) {
+
+          // Allocate freight / other-revenue to product rows in the same
+          // ISO week, weighted by row revenue.
+          for (const [week, indexes] of rowIndexesByWeek.entries()) {
             if (!indexes.length) continue;
-            const totalFreight = Number(freightByDay.get(day) || 0);
-            const totalOtherRevenue = Number(otherRevenueByDay.get(day) || 0);
+            const totalFreight = Number(freightByWeek.get(week) || 0);
+            const totalOtherRevenue = Number(otherRevenueByWeek.get(week) || 0);
             if (totalFreight <= 0 && totalOtherRevenue <= 0) continue;
             const bases = indexes.map((idx) => Math.max(0, Number(recordsV1[idx].revenue || 0)));
             const totalBase = bases.reduce((sum, n) => sum + n, 0);
             if (totalBase > 0) {
               indexes.forEach((idx, i) => {
                 const weight = bases[i] / totalBase;
-                if (totalFreight > 0) recordsV1[idx].freightAllocated = weight * totalFreight;
-                if (totalOtherRevenue > 0) recordsV1[idx].otherRevenueAllocated = weight * totalOtherRevenue;
+                if (totalFreight > 0)
+                  recordsV1[idx].freightAllocated =
+                    Number(recordsV1[idx].freightAllocated || 0) + weight * totalFreight;
+                if (totalOtherRevenue > 0)
+                  recordsV1[idx].otherRevenueAllocated =
+                    Number(recordsV1[idx].otherRevenueAllocated || 0) + weight * totalOtherRevenue;
               });
             } else {
               const freightEven = totalFreight > 0 ? totalFreight / indexes.length : 0;
               const otherEven = totalOtherRevenue > 0 ? totalOtherRevenue / indexes.length : 0;
               indexes.forEach((idx) => {
-                if (freightEven > 0) recordsV1[idx].freightAllocated = freightEven;
-                if (otherEven > 0) recordsV1[idx].otherRevenueAllocated = otherEven;
+                if (freightEven > 0)
+                  recordsV1[idx].freightAllocated =
+                    Number(recordsV1[idx].freightAllocated || 0) + freightEven;
+                if (otherEven > 0)
+                  recordsV1[idx].otherRevenueAllocated =
+                    Number(recordsV1[idx].otherRevenueAllocated || 0) + otherEven;
               });
             }
+          }
+
+          // Some companies (e.g. Infor CSI users) record full daily invoice
+          // activity but only refresh ProductSalesSnapshot a few times per
+          // window. Any freight / other-revenue ISO week that has no
+          // product row to anchor to would otherwise be silently dropped
+          // from the trend, even though the activity is real (and visible
+          // in the raw SLInvHdrs payload). Synthesize a single zero-revenue
+          // placeholder record for each orphan week so the activity lands
+          // in the right ISO-week bucket on the chart.
+          const allActivityWeeks = new Set<string>([
+            ...freightByWeek.keys(),
+            ...otherRevenueByWeek.keys(),
+          ]);
+          for (const week of allActivityWeeks) {
+            if (rowIndexesByWeek.has(week)) continue;
+            const totalFreight = Number(freightByWeek.get(week) || 0);
+            const totalOtherRevenue = Number(otherRevenueByWeek.get(week) || 0);
+            if (totalFreight <= 0 && totalOtherRevenue <= 0) continue;
+            const placeholderDate = new Date(`${week}T00:00:00.000Z`);
+            recordsV1.push({
+              snapshotDate: placeholderDate,
+              itemName: 'Freight & Other Revenue',
+              sku: '__freight_other_placeholder__',
+              site: 'N/A',
+              customer: 'N/A',
+              quantitySold: 0,
+              revenue: 0,
+              cogs: 0,
+              freightAllocated: totalFreight,
+              otherRevenueAllocated: totalOtherRevenue,
+              isPlaceholderRow: true,
+            } as any);
           }
         }
 
