@@ -48,6 +48,10 @@ export default function Header({
     return allowedSections.includes(sectionId);
   };
 
+  // Items shown in the header "Reports" dropdown. Standard Reports and
+  // Valuation Reports are intentionally omitted here per product direction —
+  // they remain reachable from the left sidebar but should not appear in the
+  // header dropdown.
   const financialReportsViews = [
     { id: 'kpis', label: 'Key Ratios', section: 'financial-reports' },
     { id: 'trend-analysis', label: 'Performance Trends', section: 'financial-reports' },
@@ -57,10 +61,13 @@ export default function Header({
     { id: 'working-capital', label: 'Working Capital', section: 'financial-reports' },
     { id: 'covenants', label: 'Loan Covenants', section: 'covenants' },
     { id: 'financial-statements', label: 'Financial Statements', section: 'financial-statements' },
-    { id: 'custom-print', label: 'Standard Reports', section: 'financial-reports' },
-    { id: 'valuation-reports', label: 'Valuation Reports', section: 'valuation' }
   ];
-  const isFinancialReportsView = financialReportsViews.some((item) => item.id === currentView);
+  // Views that should still light up the header "Reports" tab when active,
+  // even if they don't appear in the dropdown (sidebar-only entries).
+  const sidebarOnlyReportViews = ['custom-print', 'valuation-reports'];
+  const isFinancialReportsView =
+    financialReportsViews.some((item) => item.id === currentView) ||
+    sidebarOnlyReportViews.includes(currentView);
 
   if (!currentUser) return null;
 
