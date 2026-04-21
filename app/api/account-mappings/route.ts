@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getAllowedTargetFieldSet, getTargetFieldOptions } from "@/lib/constants/sector-target-fields";
 import { rebuildDailyFinancialSnapshotsFromGL } from "@/lib/financial/daily-bs-from-gl";
 import { syncMonthlyFinancialBsFromDailySnapshot } from "@/lib/financials/sync-monthly-bs-from-daily";
+import { syncMonthlyFinancialPnlFromDailySnapshot } from "@/lib/financials/sync-monthly-pnl-from-daily";
 
 export const dynamic = "force-dynamic";
 // Mapping save can trigger a downstream DFS rebuild (Infor tenants only)
@@ -837,6 +838,7 @@ export async function POST(request: NextRequest) {
           ok: boolean;
           rebuilt?: { datesProcessed: number; rowsWritten: number; mappedAccountCount: number };
           bsSync?: { monthsUpdated: number; monthsSkippedNoDfs: number; errors: number };
+          pnlSync?: { monthsUpdated: number; monthsSkipped: number; errors: number };
           error?: string;
           skipped?: string;
         }
@@ -864,8 +866,18 @@ export async function POST(request: NextRequest) {
             startDate,
             endDate,
             frequency: "daily",
+            // Mapping changes can rewire which accounts feed which DFS
+            // P&L columns. Force overwrite so the DFS rows reflect the
+            // new mapping immediately, otherwise stale per-day P&L
+            // values linger until the nightly sync.
+            pnlUpdateMode: "overwrite",
           });
           const bsSync = await syncMonthlyFinancialBsFromDailySnapshot(companyId);
+          // Re-derive MonthlyFinancial P&L scalars + revenue/cogs/expense
+          // breakdown JSON from GL truth so Data Review and the rest of
+          // useMasterData reflect the mapping change without waiting for
+          // a nightly job. Idempotent and best-effort.
+          const pnlSync = await syncMonthlyFinancialPnlFromDailySnapshot(companyId);
           propagation = {
             ok: true,
             rebuilt: {
@@ -877,6 +889,11 @@ export async function POST(request: NextRequest) {
               monthsUpdated: bsSync.monthsUpdated,
               monthsSkippedNoDfs: bsSync.monthsSkippedNoDfs,
               errors: bsSync.errors,
+            },
+            pnlSync: {
+              monthsUpdated: pnlSync.monthsUpdated,
+              monthsSkipped: pnlSync.monthsSkippedNoMappings,
+              errors: pnlSync.errors,
             },
           };
         } else {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { rebuildDailyFinancialSnapshotsFromGL } from '@/lib/financial/daily-bs-from-gl';
+import { syncMonthlyFinancialBsFromDailySnapshot } from '@/lib/financials/sync-monthly-bs-from-daily';
+import { syncMonthlyFinancialPnlFromDailySnapshot } from '@/lib/financials/sync-monthly-pnl-from-daily';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -46,6 +48,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       fiscalYearStartMonth?: number;
       fiscalYearStartDay?: number;
       pnlUpdateMode?: string;
+      // When true (default), after the DFS rebuild also re-derive
+      // MonthlyFinancial BS columns + P&L scalars + breakdown JSON from
+      // the freshly-rebuilt DFS rows. This is what keeps Data Review and
+      // the rest of useMasterData aligned with Daily Financials. Pass
+      // false if you only want to rebuild DFS without touching the
+      // monthly publish path.
+      syncMonthly?: boolean;
     };
 
     const expectedSecret = process.env.CRON_SECRET || 'dev-secret-change-me';
@@ -104,6 +113,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const pnlUpdateMode: 'preserve' | 'overwrite' =
       pnlModeRaw === 'overwrite' ? 'overwrite' : 'preserve';
 
+    const syncMonthly = body.syncMonthly !== false;
+
     const startedAt = Date.now();
     const result = await rebuildDailyFinancialSnapshotsFromGL({
       companyId,
@@ -114,6 +125,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       fiscalYearStartDay: fyDay,
       pnlUpdateMode,
     });
+
+    let monthlySync:
+      | {
+          ok: boolean;
+          bs?: { monthsUpdated: number; monthsSkippedNoDfs: number; errors: number };
+          pnl?: { monthsUpdated: number; monthsSkipped: number; errors: number };
+          error?: string;
+        }
+      | null = null;
+    if (syncMonthly) {
+      try {
+        const bsSync = await syncMonthlyFinancialBsFromDailySnapshot(companyId);
+        const pnlSync = await syncMonthlyFinancialPnlFromDailySnapshot(companyId);
+        monthlySync = {
+          ok: true,
+          bs: {
+            monthsUpdated: bsSync.monthsUpdated,
+            monthsSkippedNoDfs: bsSync.monthsSkippedNoDfs,
+            errors: bsSync.errors,
+          },
+          pnl: {
+            monthsUpdated: pnlSync.monthsUpdated,
+            monthsSkipped: pnlSync.monthsSkippedNoMappings,
+            errors: pnlSync.errors,
+          },
+        };
+      } catch (syncErr) {
+        monthlySync = {
+          ok: false,
+          error: syncErr instanceof Error ? syncErr.message : String(syncErr),
+        };
+      }
+    }
+
     const elapsedMs = Date.now() - startedAt;
 
     return NextResponse.json({
@@ -126,10 +171,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       fiscalYearStartMonth: fyMonth,
       fiscalYearStartDay: fyDay,
       pnlUpdateMode,
+      syncMonthly,
       datesProcessed: result.datesProcessed,
       rowsWritten: result.rowsWritten,
       mappedAccountCount: result.mappedAccountCount,
       unmappedTargetFields: result.unmappedTargetFields,
+      monthlySync,
       elapsedMs,
     });
   } catch (error) {

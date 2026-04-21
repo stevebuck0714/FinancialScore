@@ -333,7 +333,7 @@ function signForTargetField(field: string): number {
 // (`revenue`). Without this, `signForTargetField('rev_finished_goods_sales')`
 // would return the default +1 (debit-positive) and produce the wrong sign on
 // revenue contributions.
-function signForDfsColumn(column: string): number {
+export function signForDfsColumn(column: string): number {
   if (ASSET_TARGET_FIELDS.has(column)) return 1;
   if (LIABILITY_TARGET_FIELDS.has(column)) return -1;
   if (EQUITY_TARGET_FIELDS.has(column)) return -1;
@@ -345,7 +345,7 @@ function signForDfsColumn(column: string): number {
   return 1;
 }
 
-type AccountMappingRow = {
+export type AccountMappingRow = {
   accountName: string | null;
   accountId: string | null;
   accountCode: string | null;
@@ -353,7 +353,7 @@ type AccountMappingRow = {
   targetField: string;
 };
 
-type AccountTarget = {
+export type AccountTarget = {
   targetField: string;
   classification: string | null;
   accountName: string | null;
@@ -367,7 +367,7 @@ type AccountTarget = {
  * Infor companies historically carried the GL account number in any of those
  * three slots depending on how the connection was originally configured.
  */
-function buildAccountIdToTarget(
+export function buildAccountIdToTarget(
   mappings: AccountMappingRow[]
 ): Map<string, AccountTarget> {
   const out = new Map<string, AccountTarget>();
@@ -409,7 +409,7 @@ type GlSumRow = { accountId: string; balance: number | null };
  * were lost). `signedAmount` is the dr-cr-equivalent in standard
  * debit-positive convention and matches dr-cr on rows where both are populated.
  */
-async function sumGLByAccount(
+export async function sumGLByAccount(
   companyId: string,
   accountIds: string[],
   lowerBoundInclusive: Date | null,
