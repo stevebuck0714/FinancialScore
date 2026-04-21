@@ -13,7 +13,11 @@ import {
 } from '@/lib/operations/construction-mock-data';
 import { getInforM3CredentialsWithOptionalEnvFallback } from '@/lib/infor-m3/credentials';
 import { callInforIonApi } from '@/lib/infor-m3/client';
-import { getCashBalanceSheetAnchorConfig } from '@/lib/financial/cash-balance-sheet-anchor';
+import {
+  getCashBalanceSheetAnchorConfig,
+  getCashAccountAllowlistSet,
+  isAllowedCashAccount,
+} from '@/lib/financial/cash-balance-sheet-anchor';
 import { getApBalanceSheetAnchorConfig } from '@/lib/financial/ap-balance-sheet-anchor';
 import { getArBalanceSheetAnchorConfig } from '@/lib/financial/ar-balance-sheet-anchor';
 import { computeDsoSeriesFromDaily } from '@/lib/financials/dso-from-daily';
@@ -6174,6 +6178,11 @@ export async function GET(request: NextRequest) {
       case 'cash':
         // Canonical cash series comes from GL-derived cash movements.
         data = [];
+        // Optional per-company allowlist of cash accounts. When present, the
+        // cash position chart and bank-account table only include these
+        // accounts. This filters out non-cash GL accounts (e.g. prepaids,
+        // contra-assets) that were tagged as cash by source mappings.
+        const cashAccountAllowlist = getCashAccountAllowlistSet(companyId);
         const observedCashHistory = await prisma.cashSnapshot.findMany({
           where: {
             companyId,
@@ -6203,6 +6212,11 @@ export async function GET(request: NextRequest) {
             const accountName = String(row.accountName || '').trim();
             if (!accountName || /^cash account \d+$/i.test(accountName)) continue;
             if (isExcludedCashControlAccount(row.accountId, row.accountNumber, accountName)) continue;
+            // Per-company cash account allowlist: exclude non-cash GL
+            // accounts (e.g. prepaids, contra-assets) that the source
+            // tagged as cash. When no allowlist is configured for the
+            // company, this is a no-op.
+            if (!isAllowedCashAccount(row, cashAccountAllowlist)) continue;
             const accountKey = accountKeyFromParts(row.accountId, row.accountNumber, accountName);
             if (!accountKey) continue;
             const dayKey = dateKeyUtc(new Date(row.snapshotDate));
@@ -6262,18 +6276,30 @@ export async function GET(request: NextRequest) {
                   take: Math.max(limit * 50, 5000),
                 })
               : [];
-          if (movementRows.length > 0) {
+          // Drop movements for non-cash GL accounts when an allowlist is set,
+          // so the synthetic roll-forward is built only from real cash activity.
+          const filteredMovementRows = cashAccountAllowlist
+            ? movementRows.filter((row: { sourceAccountId: string | null }) =>
+                isAllowedCashAccount(
+                  { sourceAccountId: row.sourceAccountId },
+                  cashAccountAllowlist
+                )
+              )
+            : movementRows;
+          if (filteredMovementRows.length > 0) {
             if (sheetAnchorCfg && anchorDayForMovements) {
-              const anchorRows = sheetAnchorCfg.accounts.map((a) => ({
-                snapshotDate: anchorDayForMovements,
-                accountName: a.accountName,
-                cashBalance: a.cashBalance,
-                accountId: a.accountId,
-                accountNumber: a.accountNumber,
-              }));
+              const anchorRows = sheetAnchorCfg.accounts
+                .filter((a) => isAllowedCashAccount(a, cashAccountAllowlist))
+                .map((a) => ({
+                  snapshotDate: anchorDayForMovements,
+                  accountName: a.accountName,
+                  cashBalance: a.cashBalance,
+                  accountId: a.accountId,
+                  accountNumber: a.accountNumber,
+                }));
               syntheticDaily = buildDailyCashSeriesFromMovements(
                 anchorRows,
-                movementRows,
+                filteredMovementRows,
                 startDate,
                 endDate
               );
@@ -6301,6 +6327,7 @@ export async function GET(request: NextRequest) {
                 for (const row of anchorHistory) {
                   const accountName = String(row.accountName || '').trim();
                   if (!accountName || /^cash account \d+$/i.test(accountName)) continue;
+                  if (!isAllowedCashAccount(row, cashAccountAllowlist)) continue;
                   const key = accountKeyFromParts(row.accountId, row.accountNumber, row.accountName);
                   if (!key) continue;
                   const dayKey = dateKeyUtc(new Date(row.snapshotDate));
@@ -6312,9 +6339,14 @@ export async function GET(request: NextRequest) {
                 const latestAnchorDay = Array.from(anchorsByDay.keys()).sort((a, b) => b.localeCompare(a))[0];
                 if (latestAnchorDay) {
                   const anchorRows = Array.from(anchorsByDay.get(latestAnchorDay)!.values());
-                  syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, movementRows, startDate, endDate);
+                  syntheticDaily = buildDailyCashSeriesFromMovements(anchorRows, filteredMovementRows, startDate, endDate);
                 }
               }
+            }
+            if (cashAccountAllowlist) {
+              syntheticDaily = syntheticDaily.filter((row) =>
+                isAllowedCashAccount(row, cashAccountAllowlist)
+              );
             }
           }
         }
@@ -6413,9 +6445,30 @@ export async function GET(request: NextRequest) {
             const observedRows = observedByMergeKey.get(accountKey) || [];
             const syntheticRows = syntheticByMergeKey.get(accountKey) || [];
 
-            // Prefer GL movement-derived history when available. Snapshot-only balances
-            // from CSI bank headers can be flat/static across long ranges.
-            const selectedRows = syntheticRows.length > 0 ? syntheticRows : observedRows;
+            // When a per-company cash allowlist is active, the bank-feed
+            // CashSnapshot is treated as truth on any day it exists for an
+            // account, and the synthetic GL roll-forward is only used to
+            // fill gaps. This avoids mid-week wobble caused by reversing
+            // GL entries (accruals, intracompany transfers) that net to
+            // zero by week's end but make Mon–Thu values jump around.
+            //
+            // Without an allowlist, fall back to the prior behavior:
+            // prefer GL movement-derived history when available, since
+            // for some Infor CSI tenants snapshot-only balances from
+            // bank headers can be flat/static across long ranges.
+            let selectedRows: typeof observedRows;
+            if (cashAccountAllowlist) {
+              const observedDayKeys = new Set<string>();
+              for (const r of observedRows) {
+                observedDayKeys.add(dateKeyUtc(new Date(r.snapshotDate)));
+              }
+              const gapFillFromSynthetic = syntheticRows.filter(
+                (r) => !observedDayKeys.has(dateKeyUtc(new Date(r.snapshotDate)))
+              );
+              selectedRows = [...observedRows, ...gapFillFromSynthetic];
+            } else {
+              selectedRows = syntheticRows.length > 0 ? syntheticRows : observedRows;
+            }
 
             const identityRow =
               [...observedRows, ...syntheticRows].find((row) => row.accountId || row.accountNumber) ||
