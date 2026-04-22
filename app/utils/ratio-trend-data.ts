@@ -32,6 +32,7 @@ const toNumber = (value: unknown): number => {
 };
 
 const MAX_RATIO_MONTHS = 36;
+const LTM_MONTHS = 12;
 
 const formatMonth = (monthValue: unknown): string => {
   if (!monthValue) return '';
@@ -97,25 +98,8 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
   return populatedMonths.map((entry, index) => {
     const m = entry.row;
     const month = entry.month;
-    const previousMonth = index > 0 ? populatedMonths[index - 1].row : null;
-    const hasPreviousMonthData = !!previousMonth;
 
-    const revenue = toNumber((m as any).revenue);
-    const cogs = toNumber((m as any).cogsTotal);
-    const grossProfit = revenue - cogs;
-
-    const operatingExpenses =
-      toNumber((m as any).payroll) + toNumber((m as any).ownerBasePay) + toNumber((m as any).benefits) +
-      toNumber((m as any).insurance) + toNumber((m as any).professionalFees) + toNumber((m as any).subcontractors) +
-      toNumber((m as any).rent) + toNumber((m as any).taxLicense) + toNumber((m as any).phoneComm) + toNumber((m as any).infrastructure) +
-      toNumber((m as any).autoTravel) + toNumber((m as any).salesExpense) + toNumber((m as any).marketing) +
-      toNumber((m as any).trainingCert) + toNumber((m as any).mealsEntertainment) + toNumber((m as any).otherExpense);
-
-    const ebit = grossProfit - operatingExpenses;
-    const ebitda = ebit + toNumber((m as any).depreciationAmortization);
-    const interestExpense = toNumber((m as any).interestExpense);
-    const netProfit = ebit - interestExpense;
-
+    // Point-in-time balance sheet values for liquidity and leverage ratios.
     const cash = toNumber((m as any).cash);
     const ar = toNumber((m as any).ar);
     const inventory = toNumber((m as any).inventory);
@@ -140,46 +124,132 @@ export function buildRatioTrendData(monthly: MonthlyDataRow[]): RatioTrendPoint[
     const totalLiabilities = Math.max(reportedTotalLiabilities, fallbackTotalLiabilities);
     const equity = toNumber((m as any).equity || (m as any).totalEquity) || (totalAssets - totalLiabilities);
 
-    const prevInventory = hasPreviousMonthData ? toNumber((previousMonth as any).inventory) : null;
-    const prevAr = hasPreviousMonthData ? toNumber((previousMonth as any).ar) : null;
-    const prevAp = hasPreviousMonthData ? toNumber((previousMonth as any).ap) : null;
-    const prevAssets = hasPreviousMonthData ? toNumber((previousMonth as any).totalAssets) : null;
-    const prevEquity = hasPreviousMonthData
-      ? toNumber((previousMonth as any).equity || (previousMonth as any).totalEquity)
-      : null;
-
-    const avgInventory = prevInventory !== null ? (inventory + prevInventory) / 2 : null;
-    const avgAr = prevAr !== null ? (ar + prevAr) / 2 : null;
-    const avgAp = prevAp !== null ? (ap + prevAp) / 2 : null;
-    const avgAssets = prevAssets !== null ? (totalAssets + prevAssets) / 2 : null;
-    const avgEquity = prevEquity !== null ? (equity + prevEquity) / 2 : null;
+    // LTM (Last Twelve Months) numerators and average denominators for activity / turnover
+    // ratios. Activity ratios are annualized by definition: numerator = trailing 12-month sum,
+    // denominator = average balance across the same 12-month window. When fewer than 12 months
+    // of populated history exist we return null rather than annualize a partial year (which
+    // would falsely smooth volatility and mislead the trend chart).
+    const hasFullLtmWindow = index >= LTM_MONTHS - 1;
+    let ltmRevenue: number | null = null;
+    let ltmCogs: number | null = null;
+    let ltmNetProfit: number | null = null;
+    let ltmInterestExpense: number | null = null;
+    let ltmDepreciation: number | null = null;
+    let avgInventory_ltm: number | null = null;
+    let avgAr_ltm: number | null = null;
+    let avgAp_ltm: number | null = null;
+    let avgAssets_ltm: number | null = null;
+    let avgEquity_ltm: number | null = null;
+    if (hasFullLtmWindow) {
+      let revSum = 0;
+      let cogsSum = 0;
+      let interestSum = 0;
+      let depSum = 0;
+      let opExpSum = 0;
+      let invSum = 0;
+      let arSum = 0;
+      let apSum = 0;
+      let assetsSum = 0;
+      let equitySum = 0;
+      for (let k = index - (LTM_MONTHS - 1); k <= index; k += 1) {
+        const r = populatedMonths[k].row as any;
+        revSum += toNumber(r.revenue);
+        cogsSum += toNumber(r.cogsTotal);
+        interestSum += toNumber(r.interestExpense);
+        depSum += toNumber(r.depreciationAmortization);
+        opExpSum +=
+          toNumber(r.payroll) + toNumber(r.ownerBasePay) + toNumber(r.benefits) +
+          toNumber(r.insurance) + toNumber(r.professionalFees) + toNumber(r.subcontractors) +
+          toNumber(r.rent) + toNumber(r.taxLicense) + toNumber(r.phoneComm) + toNumber(r.infrastructure) +
+          toNumber(r.autoTravel) + toNumber(r.salesExpense) + toNumber(r.marketing) +
+          toNumber(r.trainingCert) + toNumber(r.mealsEntertainment) + toNumber(r.otherExpense);
+        const rInventory = toNumber(r.inventory);
+        const rAr = toNumber(r.ar);
+        const rAp = toNumber(r.ap);
+        const rCash = toNumber(r.cash);
+        const rOtherCA = toNumber(r.otherCA);
+        const rTca = toNumber(r.tca) || (rCash + rAr + rInventory + rOtherCA);
+        const rFixedAssets = toNumber(r.fixedAssets);
+        const rOtherNCA = toNumber(r.otherNCA);
+        const rTotalAssets = toNumber(r.totalAssets) || (rTca + rFixedAssets + rOtherNCA);
+        const rOtherCL = toNumber(r.otherCL);
+        const rLocDebt = toNumber(r.loc);
+        const rReportedTcl = toNumber(r.tcl);
+        const rTcl = Math.max(rReportedTcl, rAp + rOtherCL + rLocDebt);
+        const rLtDebt = toNumber(r.ltDebt || r.ltd);
+        const rOtherLTL = toNumber(r.otherLTL);
+        const rReportedTL = toNumber(r.totalLiabilities || r.totalLiab);
+        const rTotalLiabilities = Math.max(rReportedTL, rTcl + rLtDebt + rOtherLTL);
+        const rEquity = toNumber(r.equity || r.totalEquity) || (rTotalAssets - rTotalLiabilities);
+        invSum += rInventory;
+        arSum += rAr;
+        apSum += rAp;
+        assetsSum += rTotalAssets;
+        equitySum += rEquity;
+      }
+      ltmRevenue = revSum;
+      ltmCogs = cogsSum;
+      ltmInterestExpense = interestSum;
+      ltmDepreciation = depSum;
+      ltmNetProfit = revSum - cogsSum - opExpSum - interestSum;
+      avgInventory_ltm = invSum / LTM_MONTHS;
+      avgAr_ltm = arSum / LTM_MONTHS;
+      avgAp_ltm = apSum / LTM_MONTHS;
+      avgAssets_ltm = assetsSum / LTM_MONTHS;
+      avgEquity_ltm = equitySum / LTM_MONTHS;
+    }
 
     const currentRatio = tcl > 0 ? tca / tcl : null;
     const quickRatio = tcl > 0 ? (tca - inventory) / tcl : null;
     const workingCapital = tca - tcl;
 
-    const invTurnover = avgInventory && avgInventory > 0 ? cogs / avgInventory : null;
-    const arTurnover = avgAr && avgAr > 0 ? revenue / avgAr : null;
-    const apTurnover = avgAp && avgAp > 0 ? cogs / avgAp : null;
+    const invTurnover =
+      ltmCogs !== null && avgInventory_ltm && avgInventory_ltm > 0
+        ? ltmCogs / avgInventory_ltm
+        : null;
+    const arTurnover =
+      ltmRevenue !== null && avgAr_ltm && avgAr_ltm > 0 ? ltmRevenue / avgAr_ltm : null;
+    const apTurnover =
+      ltmCogs !== null && avgAp_ltm && avgAp_ltm > 0 ? ltmCogs / avgAp_ltm : null;
     const daysInv = invTurnover && invTurnover > 0 ? 365 / invTurnover : null;
     const daysAR = arTurnover && arTurnover > 0 ? 365 / arTurnover : null;
     const daysAP = apTurnover && apTurnover > 0 ? 365 / apTurnover : null;
-    const salesWC = workingCapital > 0 ? revenue / workingCapital : null;
+    const salesWC =
+      ltmRevenue !== null && workingCapital > 0 ? ltmRevenue / workingCapital : null;
 
     const totalDebt = ltDebt + tcl;
-    const interestCov = interestExpense > 0 ? ebit / interestExpense : null;
-    const debtSvcCov = totalDebt > 0 ? (netProfit + toNumber((m as any).depreciationAmortization)) / totalDebt : null;
-    const cfToDebt = totalDebt > 0 ? netProfit / totalDebt : null;
+    // LTM EBIT = LTM Net Profit + LTM Interest (we derived netProfit as EBIT - interest above).
+    const ltmEbit =
+      ltmNetProfit !== null && ltmInterestExpense !== null
+        ? ltmNetProfit + ltmInterestExpense
+        : null;
+    const interestCov =
+      ltmEbit !== null && ltmInterestExpense !== null && ltmInterestExpense > 0
+        ? ltmEbit / ltmInterestExpense
+        : null;
+    const debtSvcCov =
+      totalDebt > 0 && ltmNetProfit !== null && ltmDepreciation !== null
+        ? (ltmNetProfit + ltmDepreciation) / totalDebt
+        : null;
+    const cfToDebt =
+      totalDebt > 0 && ltmNetProfit !== null ? ltmNetProfit / totalDebt : null;
 
     const debtToNW = equity > 0 ? totalLiabilities / equity : null;
     const fixedToNW = equity > 0 ? fixedAssets / equity : null;
     const leverage = equity > 0 ? totalAssets / equity : null;
 
-    const totalAssetTO = avgAssets && avgAssets > 0 ? revenue / avgAssets : null;
-    const roe = avgEquity && avgEquity > 0 ? netProfit / avgEquity : null;
-    const roa = avgAssets && avgAssets > 0 ? netProfit / avgAssets : null;
-    const ebitdaMargin = revenue > 0 ? ebitda / revenue : null;
-    const ebitMargin = revenue > 0 ? ebit / revenue : null;
+    const totalAssetTO =
+      ltmRevenue !== null && avgAssets_ltm && avgAssets_ltm > 0 ? ltmRevenue / avgAssets_ltm : null;
+    const roe =
+      ltmNetProfit !== null && avgEquity_ltm && avgEquity_ltm > 0 ? ltmNetProfit / avgEquity_ltm : null;
+    const roa =
+      ltmNetProfit !== null && avgAssets_ltm && avgAssets_ltm > 0 ? ltmNetProfit / avgAssets_ltm : null;
+    const ebitdaMargin =
+      ltmRevenue !== null && ltmRevenue > 0 && ltmEbit !== null && ltmDepreciation !== null
+        ? (ltmEbit + ltmDepreciation) / ltmRevenue
+        : null;
+    const ebitMargin =
+      ltmRevenue !== null && ltmRevenue > 0 && ltmEbit !== null ? ltmEbit / ltmRevenue : null;
 
     return {
       month,
