@@ -1016,7 +1016,10 @@ export default function OperationsTab({
   };
 
   const fetchCashConversionFinancialData = async () => {
-    const response = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
+    const response = await fetch(
+      `/api/financials?companyId=${selectedCompanyId}&_ts=${Date.now()}`,
+      { cache: 'no-store' }
+    );
     if (!response.ok) throw new Error('Failed to load cash conversion financial data');
     const payload = await response.json();
     const records = Array.isArray(payload?.records) ? payload.records : [];

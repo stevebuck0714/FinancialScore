@@ -5,6 +5,21 @@ import { auditFinancialAccess, auditForbiddenAccess } from '@/lib/audit-logger';
 import { financialQuerySchema, validateInput } from '@/lib/validation-schemas';
 import { withPrismaReconnectRetry } from '@/lib/prisma-retry';
 
+// Financial data must always be live - never cache at the Next.js fetch cache or
+// CDN edge layer. Without this, the App Router's default fetch cache can serve a
+// stale snapshot from Vercel's edge to /api/financials callers (e.g. the parent
+// page's monthly-data loader), causing reports to display old months even after
+// new data has been published. See docs/DAILY_TRIAL_BALANCE_MONTH_END_PUBLISH_PLAN.md
+// for the broader two-lane data architecture this guarantees.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+  Pragma: 'no-cache',
+  Expires: '0',
+} as const;
+
 // GET financial records for a company
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +32,7 @@ export async function GET(request: NextRequest) {
     if (!companyId) {
       return NextResponse.json(
         { error: 'Company ID required' },
-        { status: 400 }
+        { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -28,7 +43,7 @@ export async function GET(request: NextRequest) {
       await auditForbiddenAccess('FinancialRecord', companyId, 'READ');
       return NextResponse.json(
         { error: 'Forbidden: Access to this company denied' },
-        { status: 403 }
+        { status: 403, headers: NO_STORE_HEADERS }
       );
     }
 
@@ -62,12 +77,12 @@ export async function GET(request: NextRequest) {
       await auditFinancialAccess('FINANCIAL_RECORD_VIEWED', records[0].id, companyId);
     }
 
-    return NextResponse.json({ records });
+    return NextResponse.json({ records }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error('Error fetching financial records:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }
