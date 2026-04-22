@@ -722,11 +722,19 @@ export async function POST(request: NextRequest) {
           take: 200,
         })
       ),
+      // Daily snapshot tables can have thousands of rows in any window for
+      // high-volume INFOR/M3 customers (Atlantic Precision has 8,790 daily
+      // CustomerSalesSnapshot rows alone). With orderBy: 'asc' + take: 200 we
+      // were silently truncating to the OLDEST 200 rows in the window, so the
+      // "latest snapshot" used for findings/concentration was months out of
+      // date. Fetch desc+take(200) to keep the MOST RECENT 200 rows, then
+      // reverse so downstream code (which assumes ascending order via
+      // .slice(-3), [length-1], etc.) continues to work.
       safeFindMany(
         'cash snapshots',
         prisma.cashSnapshot.findMany({
           where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
-          orderBy: { snapshotDate: 'asc' },
+          orderBy: { snapshotDate: 'desc' },
           take: 200,
         })
       ),
@@ -734,7 +742,7 @@ export async function POST(request: NextRequest) {
         'ar snapshots',
         prisma.aRAgingSnapshot.findMany({
           where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
-          orderBy: { snapshotDate: 'asc' },
+          orderBy: { snapshotDate: 'desc' },
           take: 200,
         })
       ),
@@ -742,7 +750,7 @@ export async function POST(request: NextRequest) {
         'ap snapshots',
         prisma.aPAgingSnapshot.findMany({
           where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
-          orderBy: { snapshotDate: 'asc' },
+          orderBy: { snapshotDate: 'desc' },
           take: 200,
         })
       ),
@@ -750,7 +758,7 @@ export async function POST(request: NextRequest) {
         'customer snapshots',
         prisma.customerSalesSnapshot.findMany({
           where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
-          orderBy: { snapshotDate: 'asc' },
+          orderBy: { snapshotDate: 'desc' },
           take: 200,
         })
       ),
@@ -758,7 +766,7 @@ export async function POST(request: NextRequest) {
         'product snapshots',
         prisma.productSalesSnapshot.findMany({
           where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
-          orderBy: { snapshotDate: 'asc' },
+          orderBy: { snapshotDate: 'desc' },
           take: 200,
         })
       ),
@@ -766,11 +774,20 @@ export async function POST(request: NextRequest) {
         'inventory snapshots',
         prisma.inventorySnapshot.findMany({
           where: { companyId, frequency: { in: ['daily', 'weekly', 'monthly'] }, snapshotDate: { gte: startDate, lte: endDate } },
-          orderBy: { snapshotDate: 'asc' },
+          orderBy: { snapshotDate: 'desc' },
           take: 200,
         })
       ),
     ]);
+
+    // Restore ascending order so downstream code that uses .slice(-3),
+    // .slice(-6, -3), arr[length - 1], etc. continues to mean "most recent N".
+    rawCashSnapshots.reverse();
+    rawArSnapshots.reverse();
+    rawApSnapshots.reverse();
+    rawCustomerSnapshots.reverse();
+    rawProductSnapshots.reverse();
+    rawInventorySnapshots.reverse();
 
     const { frequency: cashFrequency, rows: cashSnapshots } = selectBestOpsSeries(rawCashSnapshots, preferredOpsFrequency);
     const { frequency: arFrequency, rows: arSnapshots } = selectBestOpsSeries(rawArSnapshots, preferredOpsFrequency);
