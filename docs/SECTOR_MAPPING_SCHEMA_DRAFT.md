@@ -136,10 +136,12 @@ It is intended as an approval artifact before implementation.
 - `rev_other_revenue` - Other Revenue
 
 **COGS categories**
-- `cogs_inventory_purchases` - Inventory Purchases
-- `cogs_freight_in_duties` - Freight-In / Duties
+- `cogs_product_cost` - Product Cost
+- `cogs_inbound_logistics` - Inbound Logistics
 - `cogs_inventory_adjustments` - Inventory Adjustments
-- `cogs_warehouse_fulfillment_labor` - Warehouse / Fulfillment Labor
+- `cogs_handling_and_preparation` - Handling & Preparation
+- `cogs_outbound_fulfillment` - Outbound Fulfillment (policy-driven; some companies report freight-out and pick/pack/ship in selling expense instead of COGS)
+- `cogs_contra_cogs` - Contra COGS (discounts, returns, rebates; stored as ingested - no sign flip on rollup)
 - `cogs_other_cogs` - Other COGS
 
 ### NAICS 45 - Retail Trade

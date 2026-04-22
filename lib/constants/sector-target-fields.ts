@@ -158,7 +158,15 @@ const SECTOR_SCHEMA_BY_CODE: Record<string, SectorSchema> = {
       'Value-Added Services',
       'Other Revenue',
     ],
-    cogs: ['Inventory Purchases', 'Freight-In / Duties', 'Inventory Adjustments', 'Warehouse / Fulfillment Labor', 'Other COGS'],
+    cogs: [
+      'Product Cost',
+      'Inbound Logistics',
+      'Inventory Adjustments',
+      'Handling & Preparation',
+      'Outbound Fulfillment',
+      'Contra COGS',
+      'Other COGS',
+    ],
   },
   '45': {
     revenue: [
