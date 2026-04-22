@@ -30,6 +30,12 @@ type Finding = {
    data: {
      monthlyFinancials: Array<any>;
    };
+   meta?: {
+     trendSource?: 'dfs' | 'monthly';
+     trendWindow?: { start?: string; end?: string };
+     dfs?: { daysCovered?: number; firstSnapshot?: string; lastSnapshot?: string } | null;
+     monthlyFinancialRecordId?: string | null;
+   };
  };
  
  interface TrendExplorerProps {
@@ -453,6 +459,25 @@ type Finding = {
    return (
      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px' }}>
       <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>Trend Explorer</h1>
+
+      {context?.meta?.trendSource && (
+        <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+          Source:{' '}
+          <span style={{ fontWeight: 600, color: context.meta.trendSource === 'dfs' ? '#0f766e' : '#475569' }}>
+            {context.meta.trendSource === 'dfs' ? 'Daily GL (live)' : 'Monthly Financials'}
+          </span>
+          {context.meta.trendSource === 'dfs' && context.meta.dfs?.lastSnapshot && (
+            <>
+              {' · '}
+              Through {new Date(context.meta.dfs.lastSnapshot).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </>
+          )}
+        </div>
+      )}
 
       <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
         <div style={{ padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', flex: 1 }}>

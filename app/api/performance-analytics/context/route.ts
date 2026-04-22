@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireAuth, validateCompanyAccess } from '@/lib/tenant-security';
 import { auditForbiddenAccess } from '@/lib/audit-logger';
 import { getOpsMetricProfile } from '@/lib/performance-analytics/ops-metric-profiles';
+import { loadMonthlyFromDfs } from '@/lib/performance-analytics/monthly-from-dfs';
 
 export const dynamic = 'force-dynamic';
 
@@ -132,13 +133,33 @@ export async function GET(request: NextRequest) {
         )
       : [];
 
+    // Prefer DailyFinancialSnapshot when the tenant has daily coverage in the
+    // requested window (avoids the legacy MonthlyFinancial duplication issue
+    // and shows the latest ingest immediately). Fall back to MonthlyFinancial
+    // pinned to the latest FinancialRecord when DFS is empty.
+    const dfsMonthly = await loadMonthlyFromDfs(companyId, startDate, endDate);
+
+    const latestFinancialRecord = dfsMonthly
+      ? null
+      : await safeFindFirst(
+          'latest financial record',
+          prisma.financialRecord.findFirst({
+            where: { companyId },
+            select: { id: true },
+            orderBy: { createdAt: 'desc' },
+          }) as any
+        );
+
     const monthlyFinancialWhere: any = {
       companyId,
       monthDate: { gte: startDate, lte: endDate },
     };
+    if (latestFinancialRecord && (latestFinancialRecord as any).id) {
+      monthlyFinancialWhere.financialRecordId = (latestFinancialRecord as any).id;
+    }
 
     const [
-      monthlyFinancials,
+      monthlyFinancialsRaw,
       cashSnapshots,
       arSnapshots,
       apSnapshots,
@@ -146,14 +167,16 @@ export async function GET(request: NextRequest) {
       productSnapshots,
       inventorySnapshots,
     ] = await Promise.all([
-      safeFindMany(
-        'monthly financials',
-        prisma.monthlyFinancial.findMany({
-          where: monthlyFinancialWhere,
-          orderBy: { monthDate: 'asc' },
-          take: limit,
-        })
-      ),
+      dfsMonthly
+        ? Promise.resolve([])
+        : safeFindMany(
+            'monthly financials',
+            prisma.monthlyFinancial.findMany({
+              where: monthlyFinancialWhere,
+              orderBy: { monthDate: 'asc' },
+              take: limit,
+            })
+          ),
       safeFindMany(
         'cash snapshots',
         prisma.cashSnapshot.findMany({
@@ -211,6 +234,9 @@ export async function GET(request: NextRequest) {
 
     const opsProfile = getOpsMetricProfile(industrySectorCategory);
 
+    const monthlyFinancials = dfsMonthly ? dfsMonthly.rows : monthlyFinancialsRaw;
+    const trendSource: 'dfs' | 'monthly' = dfsMonthly ? 'dfs' : 'monthly';
+
     return NextResponse.json({
       company: {
         id: company?.id || companyId,
@@ -229,8 +255,26 @@ export async function GET(request: NextRequest) {
         operational: operationalGoals[0]?.goals || {},
       },
       operationalProfile: opsProfile,
+      meta: {
+        trendSource,
+        trendWindow: {
+          start: startDate,
+          end: endDate,
+        },
+        dfs: dfsMonthly
+          ? {
+              daysCovered: dfsMonthly.daysCovered,
+              firstSnapshot: dfsMonthly.firstSnapshot,
+              lastSnapshot: dfsMonthly.lastSnapshot,
+            }
+          : null,
+        monthlyFinancialRecordId:
+          latestFinancialRecord && (latestFinancialRecord as any).id
+            ? (latestFinancialRecord as any).id
+            : null,
+      },
       ranges: {
-        financials: summarizeRange(monthlyFinancials),
+        financials: summarizeRange(monthlyFinancials as any),
         cash: summarizeRange(cashSnapshots),
         ar: summarizeRange(arSnapshots),
         ap: summarizeRange(apSnapshots),
