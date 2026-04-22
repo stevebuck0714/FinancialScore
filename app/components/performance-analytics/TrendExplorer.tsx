@@ -115,8 +115,10 @@ const EQUITY_NEAR_ZERO_THRESHOLD = 1000;
       if (!m?.monthDate) continue;
       const date = new Date(m.monthDate);
       if (Number.isNaN(date.getTime())) continue;
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      // Keep latest row for month if duplicates ever appear.
+      // Use UTC components: the API stamps monthDate as UTC midnight on the
+      // 1st of the month, so local-time getFullYear/getMonth would shift the
+      // bucket one month earlier in any timezone west of UTC.
+      const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
       byMonth.set(monthKey, m);
     }
 
@@ -510,11 +512,16 @@ const EQUITY_NEAR_ZERO_THRESHOLD = 1000;
           {context.meta.trendSource === 'dfs' && context.meta.dfs?.lastSnapshot && (
             <>
               {' · '}
-              Through {new Date(context.meta.dfs.lastSnapshot).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+              Balance-sheet values as of{' '}
+              <span style={{ fontWeight: 600, color: '#0f766e' }}>
+                {new Date(context.meta.dfs.lastSnapshot).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  timeZone: 'UTC',
+                })}
+              </span>{' '}
+              (last DFS ingest); P&amp;L is month-to-date through the same day for the current month.
             </>
           )}
         </div>
