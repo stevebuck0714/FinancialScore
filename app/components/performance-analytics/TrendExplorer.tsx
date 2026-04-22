@@ -42,8 +42,13 @@ type Finding = {
    companyId: string;
  }
  
- const formatCurrency = (value: number) => `$${(value / 1000).toFixed(0)}k`;
- const formatPercent = (value: number) => `${value.toFixed(1)}%`;
+const formatCurrency = (value: number) => `$${(value / 1000).toFixed(0)}k`;
+const formatPercent = (value: number) => `${value.toFixed(1)}%`;
+const formatRatio = (value: number) => `${value.toFixed(2)}x`;
+
+// Equity values smaller than this magnitude are treated as "near zero" for the
+// debt-to-equity ratio (denominator unsafe). Renders the point as a gap.
+const EQUITY_NEAR_ZERO_THRESHOLD = 1000;
  
  export default function TrendExplorer({ companyId }: TrendExplorerProps) {
    const [context, setContext] = useState<ContextResponse | null>(null);
@@ -142,6 +147,12 @@ type Finding = {
         cash: m.cash || 0,
         ar: m.ar || 0,
         inventory: m.inventory || 0,
+        ap: m.ap || 0,
+        tca: m.tca || 0,
+        tcl: m.tcl || 0,
+        loc: m.loc || 0,
+        ltd: m.ltd || 0,
+        totalEquity: m.totalEquity || 0,
       }));
 
     const isMeaningfulMonth = (row: any) => {
@@ -202,10 +213,40 @@ type Finding = {
     }));
   }, [pnlMonthly]);
 
+  const apData = useMemo(() => {
+    return monthly.map((m: any) => ({ month: m.month, value: m.ap }));
+  }, [monthly]);
+
+  const workingCapitalData = useMemo(() => {
+    return monthly.map((m: any) => ({
+      month: m.month,
+      value: (Number(m.tca) || 0) - (Number(m.tcl) || 0),
+    }));
+  }, [monthly]);
+
+  // Definition A: interest-bearing debt (LOC + LTD) divided by total equity.
+  // Renders a null gap for months where |totalEquity| is below the
+  // near-zero threshold, so the chart doesn't spike to infinity.
+  const debtToEquityData = useMemo(() => {
+    return monthly.map((m: any) => {
+      const equity = Number(m.totalEquity) || 0;
+      const debt = (Number(m.loc) || 0) + (Number(m.ltd) || 0);
+      const value =
+        Math.abs(equity) >= EQUITY_NEAR_ZERO_THRESHOLD ? debt / equity : null;
+      return { month: m.month, value };
+    });
+  }, [monthly]);
+
+  const debtToEquityHasGaps = useMemo(
+    () => debtToEquityData.some((d: any) => d.value === null),
+    [debtToEquityData]
+  );
+
   const trendMonthly = pnlMonthly.length ? pnlMonthly : monthly;
  
    const benchmarks = context?.benchmarks?.items || [];
    const grossMarginBenchmark = getBenchmarkValue(benchmarks as any, 'Gross Margin');
+  const debtToEquityBenchmark = getBenchmarkValue(benchmarks as any, 'Debt to Equity');
  
    const operationalGoals = context?.goals?.operational || {};
    const cashGoal = operationalGoals.total_cash ? monthly.map(() => operationalGoals.total_cash) : undefined;
@@ -608,6 +649,54 @@ type Finding = {
               formatter={formatCurrency}
               goalLineData={inventoryGoal}
             />
+          </div>
+          <div>
+            {renderRationale(
+              'Accounts Payable',
+              'Accounts payable balance tracks vendor obligations and short-term funding from suppliers.'
+            )}
+            <LineChart
+              title="Accounts Payable"
+              data={apData}
+              color="#a855f7"
+              compact
+              labelFormat="m-yy-adaptive"
+              formatter={formatCurrency}
+            />
+          </div>
+          <div>
+            {renderRationale(
+              'Working Capital',
+              'Working capital (current assets minus current liabilities) measures short-term liquidity headroom. Negative values indicate reliance on supplier financing or revolver credit.'
+            )}
+            <LineChart
+              title="Working Capital (Current Assets − Current Liabilities)"
+              data={workingCapitalData}
+              color="#0ea5e9"
+              compact
+              labelFormat="m-yy-adaptive"
+              formatter={formatCurrency}
+            />
+          </div>
+          <div>
+            {renderRationale(
+              'Debt to Equity',
+              'Interest-bearing debt (LOC + LTD) divided by total equity. Bank-style leverage view; excludes operating liabilities like AP. Months where equity is near zero are shown as gaps to avoid misleading spikes.'
+            )}
+            <LineChart
+              title="Debt / Equity (Interest-Bearing)"
+              data={debtToEquityData}
+              color="#dc2626"
+              compact
+              labelFormat="m-yy-adaptive"
+              formatter={formatRatio}
+              benchmarkValue={debtToEquityBenchmark}
+            />
+            {debtToEquityHasGaps && (
+              <div style={{ marginTop: '4px', fontSize: '11px', color: '#94a3b8' }}>
+                Some months omitted: total equity below ${EQUITY_NEAR_ZERO_THRESHOLD.toLocaleString()} (ratio undefined).
+              </div>
+            )}
           </div>
          </div>
        </div>
