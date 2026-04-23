@@ -19,23 +19,6 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 
-// Financial reports are month-end reports - never the in-progress current
-// calendar month. Any monthly row whose monthDate falls in or after the start
-// of the current UTC month is excluded from this endpoint's payload, so no
-// downstream financial report (Reports tab, Financial KPIs, MD&A, Valuation,
-// Ratios, Cash Flow, Data Review, Forecast actuals) can display partial
-// current-month data. Operations endpoints are intentionally not touched -
-// they continue to serve current-month-to-date from the daily lane.
-const startOfCurrentMonthUtc = (): Date =>
-  new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-
-const isMonthEndOnly = (rawMonthDate: unknown, cutoff: Date): boolean => {
-  if (!rawMonthDate) return false;
-  const date = rawMonthDate instanceof Date ? rawMonthDate : new Date(rawMonthDate as string);
-  if (Number.isNaN(date.getTime())) return false;
-  return date.getTime() < cutoff.getTime();
-};
-
 const collectPrefixedValues = (
   month: Record<string, unknown>,
   breakdown: Record<string, unknown>,
@@ -81,15 +64,6 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     });
-
-    // Hard cutoff: drop any monthly row whose monthDate falls in or after the
-    // current UTC month. Financial reports are month-end reports only.
-    const cutoff = startOfCurrentMonthUtc();
-    if (latestRecord?.monthlyData) {
-      latestRecord.monthlyData = latestRecord.monthlyData.filter((m: any) =>
-        isMonthEndOnly(m?.monthDate, cutoff),
-      );
-    }
 
     if (!latestRecord || !latestRecord.monthlyData || latestRecord.monthlyData.length === 0) {
       // For ERP COA mapping-first workflows (for example CSI), it is valid to have
