@@ -145,16 +145,20 @@ export default function LOBReportingTab({
   } else if (statementPeriod === 'last-12-months') {
     filteredMonthly = monthly.slice(-12);
   } else if (statementPeriod === 'ytd') {
-    const currentYear = now.getFullYear();
+    // monthDate is stored as a UTC instant. Use UTC accessors so a row
+    // saved as 2026-03-01T00:00:00Z does not slide into Feb when read in
+    // negative-offset timezones (PT/MT/CT/ET) and end up in the wrong
+    // year bucket.
+    const currentYear = now.getUTCFullYear();
     filteredMonthly = monthly.filter(m => {
       const monthDate = new Date(m.date || m.month);
-      return monthDate.getFullYear() === currentYear;
+      return monthDate.getUTCFullYear() === currentYear;
     });
   } else if (statementPeriod === 'last-year') {
-    const lastYear = now.getFullYear() - 1;
+    const lastYear = now.getUTCFullYear() - 1;
     filteredMonthly = monthly.filter(m => {
       const monthDate = new Date(m.date || m.month);
-      return monthDate.getFullYear() === lastYear;
+      return monthDate.getUTCFullYear() === lastYear;
     });
   } else if (statementPeriod === 'last-3-years') {
     filteredMonthly = monthly.slice(-36);
@@ -230,8 +234,11 @@ export default function LOBReportingTab({
       return String(monthValue);
     }
     
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
+    // Use UTC accessors so dates stored as UTC instants (eg
+    // 2026-03-01T00:00:00Z) don't slide back a month in negative-offset
+    // timezones.
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
     
     return `${month}-${year}`;
   };
@@ -687,8 +694,8 @@ export default function LOBReportingTab({
               // Try to parse as date and extract quarter
               const date = new Date(monthStr);
               if (!isNaN(date.getTime())) {
-                const monthNum = date.getMonth() + 1;
-                const year = date.getFullYear();
+                const monthNum = date.getUTCMonth() + 1;
+                const year = date.getUTCFullYear();
                 if (monthNum >= 1 && monthNum <= 3) {
                   quarter = `Q1 ${year}`;
                 } else if (monthNum >= 4 && monthNum <= 6) {

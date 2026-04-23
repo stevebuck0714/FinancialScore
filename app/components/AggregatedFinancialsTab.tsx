@@ -34,16 +34,20 @@ function calculateAggregatedValues(monthly: any[], period: string) {
   } else if (period === 'last-12-months') {
     filteredMonthly = sortedMonthly.slice(-12);
   } else if (period === 'ytd') {
-    const currentYear = now.getFullYear();
+    // Use UTC accessors: monthDate is stored as a UTC instant
+    // (eg 2026-03-01T00:00:00Z); local getFullYear()/getMonth() in
+    // negative-offset timezones (PT, MT, CT, ET) shifts the row into the
+    // previous month/year and mis-buckets it.
+    const currentYear = now.getUTCFullYear();
     filteredMonthly = sortedMonthly.filter(m => {
       const monthDate = new Date(m.date || m.month || m.monthDate || 0);
-      return monthDate.getFullYear() === currentYear;
+      return monthDate.getUTCFullYear() === currentYear;
     });
   } else if (period === 'last-year') {
-    const lastYear = now.getFullYear() - 1;
+    const lastYear = now.getUTCFullYear() - 1;
     filteredMonthly = sortedMonthly.filter(m => {
       const monthDate = new Date(m.date || m.month || m.monthDate || 0);
-      return monthDate.getFullYear() === lastYear;
+      return monthDate.getUTCFullYear() === lastYear;
     });
   } else if (period === 'last-3-years') {
     filteredMonthly = sortedMonthly.slice(-36);
@@ -189,20 +193,27 @@ function calculateAggregatedValues(monthly: any[], period: string) {
 
   // Get period label
   let periodLabel = '';
+  // Format a UTC monthDate as "Month YYYY" without sliding into the prior
+  // month in negative-offset timezones.
+  const formatMonthYearUtc = (d: Date | null): string => {
+    if (!d) return '';
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  };
+
   if (period === 'current-month') {
     const lastMonth = filteredMonthly[filteredMonthly.length - 1];
     const monthDate = new Date(lastMonth.date || lastMonth.month || lastMonth.monthDate || 0);
-    periodLabel = `For the Month Ended ${monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+    periodLabel = `For the Month Ended ${formatMonthYearUtc(monthDate)}`;
   } else if (period === 'current-quarter') {
     const lastMonth = filteredMonthly[filteredMonthly.length - 1];
     const monthDate = lastMonth ? new Date(lastMonth.date || lastMonth.month || lastMonth.monthDate || 0) : null;
-    periodLabel = monthDate ? `For the Quarter Ended ${monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}` : 'Current Quarter';
+    periodLabel = monthDate ? `For the Quarter Ended ${formatMonthYearUtc(monthDate)}` : 'Current Quarter';
   } else if (period === 'last-12-months') {
     periodLabel = 'For the Last 12 Months';
   } else if (period === 'ytd') {
-    periodLabel = `Year to Date ${now.getFullYear()}`;
+    periodLabel = `Year to Date ${now.getUTCFullYear()}`;
   } else if (period === 'last-year') {
-    periodLabel = `For the Year Ended December 31, ${now.getFullYear() - 1}`;
+    periodLabel = `For the Year Ended December 31, ${now.getUTCFullYear() - 1}`;
   } else if (period === 'last-3-years') {
     periodLabel = 'For the Last 3 Years';
   }
