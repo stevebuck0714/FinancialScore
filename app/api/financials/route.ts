@@ -20,6 +20,24 @@ const NO_STORE_HEADERS = {
   Expires: '0',
 } as const;
 
+// Financial reports are month-end reports - never the in-progress current
+// calendar month. Any monthly row whose monthDate falls in or after the start
+// of the current UTC month is excluded from this endpoint's payload, so no
+// downstream financial report (Reports tab, Financial KPIs, MD&A, Valuation,
+// Ratios, Cash Flow, Forecast actuals, Data Review) can display partial
+// current-month data. Operations endpoints (/api/operational-data, daily
+// routes) are intentionally not touched - they continue to serve current-
+// month-to-date from the daily lane.
+const startOfCurrentMonthUtc = (): Date =>
+  new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+
+const isMonthEndOnly = (rawMonthDate: unknown, cutoff: Date): boolean => {
+  if (!rawMonthDate) return false;
+  const date = rawMonthDate instanceof Date ? rawMonthDate : new Date(rawMonthDate as string);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() < cutoff.getTime();
+};
+
 // GET financial records for a company
 export async function GET(request: NextRequest) {
   try {
@@ -75,6 +93,17 @@ export async function GET(request: NextRequest) {
     // AUDIT: Log financial data access
     if (records.length > 0) {
       await auditFinancialAccess('FINANCIAL_RECORD_VIEWED', records[0].id, companyId);
+    }
+
+    // Hard cutoff: drop any monthly row whose monthDate falls in or after the
+    // current UTC month. Financial reports are month-end reports only.
+    const cutoff = startOfCurrentMonthUtc();
+    for (const record of records) {
+      if ((record as any)?.monthlyData?.length) {
+        (record as any).monthlyData = (record as any).monthlyData.filter((m: any) =>
+          isMonthEndOnly(m?.monthDate, cutoff),
+        );
+      }
     }
 
     return NextResponse.json({ records }, { headers: NO_STORE_HEADERS });
