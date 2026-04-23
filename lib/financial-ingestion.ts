@@ -15,15 +15,18 @@ export type CanonicalFinancialPayload = {
 
 type FinancialImportMode = 'through' | 'only';
 
+// Always returns UTC start-of-month. See lib/date-utils.ts.
 function parseMonthDate(value: unknown): Date | null {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1, 0, 0, 0, 0));
+  }
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
   const normalized = /^\d{4}-\d{2}$/.test(trimmed) ? `${trimmed}-01` : trimmed;
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return null;
-  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+  return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
 function normalizePayload(payload: unknown): CanonicalFinancialPayload {
@@ -91,6 +94,9 @@ async function resolveUploadedByUserId(companyId: string, preferredUserId?: stri
   return anyUser?.id || null;
 }
 
+// UTC. Local-TZ accessors here used to silently shift boundary monthDates
+// (eg. 2026-03-01T00:00:00Z) to the previous month on negative-offset
+// laptops. See lib/date-utils.ts for the broader rule.
 function parseTargetMonth(value: unknown): Date | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -100,8 +106,8 @@ function parseTargetMonth(value: unknown): Date | null {
   const month = Number(monthToken);
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
   // Through-mode comparisons use `row.monthDate <= targetMonthDate`.
-  // Return end-of-target-month so rows dated at month end are included.
-  return new Date(year, month, 0, 23, 59, 59, 999);
+  // Return end-of-target-month UTC so rows dated at month end are included.
+  return new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 }
 
 function normalizeImportMode(value: unknown): FinancialImportMode {
@@ -110,7 +116,7 @@ function normalizeImportMode(value: unknown): FinancialImportMode {
 }
 
 function monthKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 export async function ingestFinancialPayload(params: {
@@ -132,8 +138,8 @@ export async function ingestFinancialPayload(params: {
   const filteredRowsBase = targetMonthDate
     ? canonicalRows.filter((row) =>
         mode === 'only'
-          ? row.monthDate.getFullYear() === targetMonthDate.getFullYear() &&
-            row.monthDate.getMonth() === targetMonthDate.getMonth()
+          ? row.monthDate.getUTCFullYear() === targetMonthDate.getUTCFullYear() &&
+            row.monthDate.getUTCMonth() === targetMonthDate.getUTCMonth()
           : row.monthDate <= targetMonthDate
       )
     : canonicalRows;
@@ -141,10 +147,17 @@ export async function ingestFinancialPayload(params: {
     targetMonthDate && mode === 'through' && Number.isFinite(params.maxMonths) && Number(params.maxMonths) > 0
       ? (() => {
           const maxMonths = Math.max(1, Math.floor(Number(params.maxMonths)));
+          // UTC start-of-earliest-month — see comment on parseTargetMonth.
           const earliestAllowed = new Date(
-            targetMonthDate.getFullYear(),
-            targetMonthDate.getMonth() - (maxMonths - 1),
-            1
+            Date.UTC(
+              targetMonthDate.getUTCFullYear(),
+              targetMonthDate.getUTCMonth() - (maxMonths - 1),
+              1,
+              0,
+              0,
+              0,
+              0,
+            ),
           );
           return filteredRowsBase.filter((row) => row.monthDate >= earliestAllowed);
         })()
@@ -203,7 +216,7 @@ export async function ingestFinancialPayload(params: {
 
   const anomalies = findZeroRevenueAnomalies(boundedRows);
   const latestMonth = boundedRows[boundedRows.length - 1].monthDate;
-  const latestMonthKey = `${latestMonth.getFullYear()}-${String(latestMonth.getMonth() + 1).padStart(2, '0')}`;
+  const latestMonthKey = `${latestMonth.getUTCFullYear()}-${String(latestMonth.getUTCMonth() + 1).padStart(2, '0')}`;
   const latestMonthWarnings = anomalies.filter((x) => x.month === latestMonthKey);
   const blockingFailures = anomalies.filter((x) => x.month !== latestMonthKey);
   if (blockingFailures.length > 0) {

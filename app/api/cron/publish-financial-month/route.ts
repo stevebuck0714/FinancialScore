@@ -3,9 +3,12 @@ import prisma from '@/lib/prisma';
 import { publishMonthFromDailySnapshots } from '@/lib/financial/publish-month-service';
 import { supportsPublishFromDailySnapshots } from '@/lib/financial/pipeline-strategy';
 
+// UTC. The cron runs on Vercel (UTC) so this was already effectively UTC,
+// but using local-TZ accessors made it ambiguous when invoked from a script
+// on a developer laptop. See lib/date-utils.ts for the broader rule.
 function previousMonthString(now = new Date()): string {
-  const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-  const month = now.getMonth() === 0 ? 12 : now.getMonth();
+  const year = now.getUTCMonth() === 0 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
+  const month = now.getUTCMonth() === 0 ? 12 : now.getUTCMonth();
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 

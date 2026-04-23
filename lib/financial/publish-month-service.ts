@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { BS_LAST_DAY_FIELDS, parseMonthInput, PNL_SUM_FIELDS, safeNumber } from '@/lib/financial/month-publish';
+import { monthKey } from '@/lib/date-utils';
 
 export type PublishMonthParams = {
   companyId: string;
@@ -111,8 +112,10 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
     };
   }
 
-  const monthKeyFromDate = (date: Date): string =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  // UTC-only. See lib/date-utils.ts. Local-TZ accessors here used to
+  // mis-classify boundary snapshots (eg. 2026-03-01T00:00:00Z) into the
+  // previous month when the writer ran on a developer's laptop in PT.
+  const monthKeyFromDate = (date: Date): string => monthKey(date) || '';
 
   const publishSingleMonth = async (targetMonth: string): Promise<{
     success: boolean;
@@ -338,7 +341,9 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
     };
   }
 
-  const backfillStart = new Date(monthStart.getFullYear(), monthStart.getMonth() - (backfillMonths - 1), 1);
+  const backfillStart = new Date(
+    Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - (backfillMonths - 1), 1, 0, 0, 0, 0),
+  );
   const backfillSnapshots = await dailySnapshotDelegate.findMany({
     where: {
       companyId,

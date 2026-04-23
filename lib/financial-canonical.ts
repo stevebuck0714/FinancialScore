@@ -212,7 +212,7 @@ export function findZeroRevenueAnomalies(
   return rows
     .filter((row) => row.revenue === 0 && (row.cogsTotal > 0 || row.expense > 0))
     .map((row) => ({
-      month: `${row.monthDate.getFullYear()}-${String(row.monthDate.getMonth() + 1).padStart(2, '0')}`,
+      month: `${row.monthDate.getUTCFullYear()}-${String(row.monthDate.getUTCMonth() + 1).padStart(2, '0')}`,
       revenue: row.revenue,
       cogsTotal: row.cogsTotal,
       expense: row.expense,

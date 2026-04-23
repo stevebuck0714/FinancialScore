@@ -47,7 +47,6 @@ type OpTab = 'dashboard' | 'overview' | string;
 const COLORS = ['#0f2b4b', '#1f4e79', '#2e6f9e', '#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
 const CASH_DISTRIBUTION_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#4f46e5', '#ea580c'];
 const AR_TREND_COLORS = ['#3e8db5', '#5aa5a7', '#7d8f6a', '#8b6a3d', '#7a4e8a'];
-const BUSINESS_TZ_OFFSET_MS = -4 * 60 * 60 * 1000;
 const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
   if (!percent || percent < 0.04) return null;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -4415,9 +4414,11 @@ export default function OperationsTab({
     const toBusinessUtcDay = (value: string | Date | null | undefined): Date | null => {
       const parsed = parseDateValue(value as any);
       if (!parsed) return null;
-      // Operational snapshots are business-day keyed in UTC-4.
-      const shifted = new Date(parsed.getTime() + BUSINESS_TZ_OFFSET_MS);
-      return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
+      // UTC-only day bucketing — see lib/date-utils.ts. Previously this shifted
+      // by UTC-4 ("US Eastern midnight") which silently dropped early-morning
+      // UTC snapshots into the previous business day on this view, while the
+      // canonical aggregator did not. The two surfaces now bucket identically.
+      return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
     };
     const selectedStartUtc = toUtcDay(startDate);
     const selectedEndUtc = toUtcDay(endDate);

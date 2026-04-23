@@ -99,11 +99,84 @@ export function formatQuarterUtc(value: MonthInput): string {
   return `Q${getQuarterUtc(d)} ${d.getUTCFullYear()}`;
 }
 
-/** UTC start-of-month Date for a given input (1st @ 00:00:00 UTC). */
+/** UTC start-of-month Date for a given input (1st @ 00:00:00.000 UTC). */
 export function startOfMonthUtc(value: MonthInput): Date | null {
   const d = toDate(value);
   if (!d) return null;
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0));
+}
+
+/** UTC end-of-month Date for a given input (last day @ 23:59:59.999 UTC). */
+export function endOfMonthUtc(value: MonthInput): Date | null {
+  const d = toDate(value);
+  if (!d) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+}
+
+/** UTC start-of-quarter Date for a given input (Jan/Apr/Jul/Oct 1 @ 00:00:00.000 UTC). */
+export function startOfQuarterUtc(value: MonthInput): Date | null {
+  const d = toDate(value);
+  if (!d) return null;
+  const qStart = Math.floor(d.getUTCMonth() / 3) * 3;
+  return new Date(Date.UTC(d.getUTCFullYear(), qStart, 1, 0, 0, 0, 0));
+}
+
+/** UTC end-of-quarter Date for a given input (last day of Mar/Jun/Sep/Dec @ 23:59:59.999 UTC). */
+export function endOfQuarterUtc(value: MonthInput): Date | null {
+  const d = toDate(value);
+  if (!d) return null;
+  const qStart = Math.floor(d.getUTCMonth() / 3) * 3;
+  return new Date(Date.UTC(d.getUTCFullYear(), qStart + 3, 0, 23, 59, 59, 999));
+}
+
+/** UTC start-of-year Date for a given input (Jan 1 @ 00:00:00.000 UTC). */
+export function startOfYearUtc(value: MonthInput): Date | null {
+  const d = toDate(value);
+  if (!d) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
+}
+
+/** UTC end-of-year Date for a given input (Dec 31 @ 23:59:59.999 UTC). */
+export function endOfYearUtc(value: MonthInput): Date | null {
+  const d = toDate(value);
+  if (!d) return null;
+  return new Date(Date.UTC(d.getUTCFullYear() + 1, 0, 0, 23, 59, 59, 999));
+}
+
+/** UTC start-of-day Date (00:00:00.000 UTC). */
+export function startOfDayUtc(value: MonthInput): Date | null {
+  const d = toDate(value);
+  if (!d) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+}
+
+/** UTC end-of-day Date (23:59:59.999 UTC). */
+export function endOfDayUtc(value: MonthInput): Date | null {
+  const d = toDate(value);
+  if (!d) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
+}
+
+/** Stable "YYYY-MM-DD" key for the day bucket. Always UTC. */
+export function dayKeyUtc(value: MonthInput): string | null {
+  const d = toDate(value);
+  if (!d) return null;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Stable "YYYY-Qn" key for the quarter bucket. Always UTC. */
+export function quarterKeyUtc(value: MonthInput): string | null {
+  const d = toDate(value);
+  if (!d) return null;
+  const q = Math.floor(d.getUTCMonth() / 3) + 1;
+  return `${d.getUTCFullYear()}-Q${q}`;
+}
+
+/** Stable "YYYY" key for the year bucket. Always UTC. */
+export function yearKeyUtc(value: MonthInput): string | null {
+  const d = toDate(value);
+  if (!d) return null;
+  return String(d.getUTCFullYear());
 }
 
 /** True if both inputs fall in the same UTC calendar month. */

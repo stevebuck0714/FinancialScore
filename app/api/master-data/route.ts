@@ -246,7 +246,7 @@ export async function GET(request: NextRequest) {
         const dateStr = typeof dateValue === 'string' ? dateValue : (dateValue instanceof Date ? dateValue.toISOString() : String(dateValue));
         const dateObj = dateValue instanceof Date ? dateValue : new Date(dateValue);
         if (isNaN(dateObj.getTime())) return false;
-        return dateObj.getFullYear() === 2025 && dateObj.getMonth() === 10; // Month is 0-indexed, so 10 = November
+        return dateObj.getUTCFullYear() === 2025 && dateObj.getUTCMonth() === 10; // Month is 0-indexed, so 10 = November
       });
       if (nov2025) {
         console.log(`📅 November 2025 data:`, {

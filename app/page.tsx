@@ -2976,16 +2976,19 @@ function FinancialScorePage() {
     updatedAt?: number;
   }>({ state: 'idle' });
   const [isPublishingMonthlyData, setIsPublishingMonthlyData] = useState(false);
+  // UTC-only month picker — local-TZ accessors here used to pick the wrong
+  // "previous month" depending on which side of UTC midnight the browser's
+  // wall clock was on. See lib/date-utils.ts.
   const [publishMonthInput, setPublishMonthInput] = useState<string>(() => {
     const now = new Date();
-    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    const year = now.getUTCMonth() === 0 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
+    const month = now.getUTCMonth() === 0 ? 12 : now.getUTCMonth();
     return `${year}-${String(month).padStart(2, '0')}`;
   });
   const [apiFinancialTargetMonth, setApiFinancialTargetMonth] = useState<string>(() => {
     const now = new Date();
-    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    const year = now.getUTCMonth() === 0 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
+    const month = now.getUTCMonth() === 0 ? 12 : now.getUTCMonth();
     return `${year}-${String(month).padStart(2, '0')}`;
   });
   const [apiFinancialImportMode, setApiFinancialImportMode] = useState<'through' | 'only'>('through');
@@ -2993,8 +2996,8 @@ function FinancialScorePage() {
   const applyMappingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const [erpCaoThroughMonth, setErpCaoThroughMonth] = useState<string>(() => {
     const now = new Date();
-    const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-    const month = now.getMonth() === 0 ? 12 : now.getMonth();
+    const year = now.getUTCMonth() === 0 ? now.getUTCFullYear() - 1 : now.getUTCFullYear();
+    const month = now.getUTCMonth() === 0 ? 12 : now.getUTCMonth();
     return `${year}-${String(month).padStart(2, '0')}`;
   });
   const [erpCaoLoading, setErpCaoLoading] = useState(false);

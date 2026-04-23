@@ -228,8 +228,9 @@ export class MasterDataStore {
       .map(month => {
         const date = month.date || month.month;
         const dateObj = date instanceof Date ? date : new Date(date as string);
+        // UTC label and accessors — see lib/date-utils.ts.
         return {
-          month: dateObj.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+          month: dateObj.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
           date: dateObj,
         };
       });
@@ -241,12 +242,12 @@ export class MasterDataStore {
     last6Months: { month: string; date: Date }[]
   ): MonthlyPercentage[] {
     return last6Months.map(({ month, date }) => {
-      // Find the corresponding month in master data
+      // UTC accessors so monthly buckets match across browser TZ and server TZ.
       const monthData = monthlyData.find(m => {
         const mDate = m.date || m.month;
         const mDateObj = mDate instanceof Date ? mDate : new Date(mDate as string);
-        return mDateObj.getMonth() === date.getMonth() &&
-               mDateObj.getFullYear() === date.getFullYear();
+        return mDateObj.getUTCMonth() === date.getUTCMonth() &&
+               mDateObj.getUTCFullYear() === date.getUTCFullYear();
       });
 
       if (!monthData) {

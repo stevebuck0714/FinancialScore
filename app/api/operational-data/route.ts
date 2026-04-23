@@ -79,46 +79,41 @@ function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
+// UTC start-of-month for `date` shifted by `months`. Local-TZ accessors
+// here used to roll a UTC-midnight `date` (eg. 2026-03-01T00:00:00Z) into
+// the wrong month on negative-offset laptops. See lib/date-utils.ts.
 function addMonths(date: Date, months: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1, 0, 0, 0, 0));
 }
-
-const BUSINESS_TZ_OFFSET_HOURS = -4;
-const BUSINESS_TZ_OFFSET_MS = BUSINESS_TZ_OFFSET_HOURS * 60 * 60 * 1000;
-const BUSINESS_TZ_START_HOUR_UTC = -BUSINESS_TZ_OFFSET_HOURS;
 
 function isWeekendUtc(date: Date): boolean {
   const dow = date.getUTCDay();
   return dow === 0 || dow === 6;
 }
 
+// UTC day boundaries. Daily snapshots are written at UTC midnight by
+// lib/financial/daily-bs-from-gl.ts, so day buckets must also be anchored at
+// UTC midnight (00:00:00.000Z). This used to anchor at 04:00 UTC ("US Eastern
+// midnight") which silently dropped early-morning UTC snapshots into the
+// previous day. See lib/date-utils.ts for the broader rule.
 function startOfUtcDay(date: Date): Date {
-  // Normalize to business-day boundaries in UTC-4 (fixed offset).
-  const shifted = new Date(date.getTime() + BUSINESS_TZ_OFFSET_MS);
   return new Date(
-    Date.UTC(
-      shifted.getUTCFullYear(),
-      shifted.getUTCMonth(),
-      shifted.getUTCDate(),
-      BUSINESS_TZ_START_HOUR_UTC,
-      0,
-      0,
-      0
-    )
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0),
   );
 }
 
 function endOfUtcDay(date: Date): Date {
-  const start = startOfUtcDay(date);
-  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999),
+  );
 }
 
 function parseDateParamBoundary(value: string | null, boundary: 'start' | 'end', fallback: Date): Date {
   if (!value) return fallback;
   const trimmed = value.trim();
   if (!trimmed) return fallback;
-  // Treat date-only params as full UTC-4 business-day boundaries so same-day
-  // snapshots (commonly persisted with non-midnight UTC timestamps) are not excluded.
+  // Date-only params expand to full UTC days so same-day snapshots stored at
+  // non-midnight UTC timestamps are still included in the window.
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
     const day = parseIsoDayKey(trimmed);
     return boundary === 'start' ? day : endOfUtcDay(day);
@@ -129,7 +124,7 @@ function parseDateParamBoundary(value: string | null, boundary: 'start' | 'end',
 }
 
 function dateKeyUtc(date: Date): string {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 function parseIsoDayKey(dayKey: string): Date {
@@ -140,8 +135,7 @@ function parseIsoDayKey(dayKey: string): Date {
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
     return new Date(`${dayKey}T00:00:00.000Z`);
   }
-  // UTC-4 midnight is 04:00 UTC.
-  return new Date(Date.UTC(year, month - 1, day, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
 }
 
 function computeDailyCashTotalsByDate(
@@ -170,29 +164,39 @@ function computeDailyApTotalsByDate(
     .map(([date, totalAp]) => ({ date, totalAp }));
 }
 
+// UTC-only month/quarter/year bucketing.
+//
+// History: these used to apply a "business TZ" shift (UTC-4) before bucketing,
+// on the theory that daily snapshots stored at midnight UTC actually represent
+// the business day in US Eastern. That coupling silently put boundary
+// snapshots (eg. a `2026-03-01T00:00:00Z` row, which is "Feb 28 8pm" Eastern)
+// in the previous month when this aggregator rolled up to monthly, while the
+// publish-month writer (which is the source of `MonthlyFinancial.monthDate`)
+// bucketed the same snapshot in March. Result: Daily Financials and Data
+// Review disagreed by exactly one day's revenue at the start of every month.
+//
+// The unification rule for the entire app is: bucket by the row's UTC
+// calendar day, period. See lib/date-utils.ts for the broader rule and
+// lib/financial/publish-month-service.ts for the writer side.
 function shiftToBusinessTz(date: Date): Date {
-  return new Date(date.getTime() + BUSINESS_TZ_OFFSET_MS);
+  return date;
 }
 
 function startOfBusinessMonth(date: Date): Date {
-  const shifted = shiftToBusinessTz(date);
-  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
 function startOfBusinessQuarter(date: Date): Date {
-  const shifted = shiftToBusinessTz(date);
-  const quarterStartMonth = Math.floor(shifted.getUTCMonth() / 3) * 3;
-  return new Date(Date.UTC(shifted.getUTCFullYear(), quarterStartMonth, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+  const quarterStartMonth = Math.floor(date.getUTCMonth() / 3) * 3;
+  return new Date(Date.UTC(date.getUTCFullYear(), quarterStartMonth, 1, 0, 0, 0, 0));
 }
 
 function startOfBusinessYear(date: Date): Date {
-  const shifted = shiftToBusinessTz(date);
-  return new Date(Date.UTC(shifted.getUTCFullYear(), 0, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+  return new Date(Date.UTC(date.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
 }
 
 function businessMonthKey(date: Date): string {
-  const shifted = shiftToBusinessTz(date);
-  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 function monthStartFromBusinessMonthKey(key: string): Date {
@@ -202,7 +206,7 @@ function monthStartFromBusinessMonthKey(key: string): Date {
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
     return startOfBusinessMonth(new Date());
   }
-  return new Date(Date.UTC(year, month - 1, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+  return new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
 }
 
 type StatementRollup = 'daily' | 'quarterly' | 'annual';
@@ -234,10 +238,11 @@ const DAILY_STATEMENT_BALANCE_FIELDS = [
   'totalLAndE',
 ] as const;
 
+// UTC quarter/year bucket boundaries used by the aggregator. Same UTC-only
+// rule as the helpers above — see comment on shiftToBusinessTz.
 function startOfBusinessQuarterByDate(date: Date): Date {
-  const shifted = shiftToBusinessTz(date);
-  const quarterStartMonth = Math.floor(shifted.getUTCMonth() / 3) * 3;
-  return new Date(Date.UTC(shifted.getUTCFullYear(), quarterStartMonth, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+  const quarterStartMonth = Math.floor(date.getUTCMonth() / 3) * 3;
+  return new Date(Date.UTC(date.getUTCFullYear(), quarterStartMonth, 1, 0, 0, 0, 0));
 }
 
 function endOfBusinessQuarterByDate(date: Date): Date {
@@ -246,8 +251,7 @@ function endOfBusinessQuarterByDate(date: Date): Date {
 }
 
 function startOfBusinessYearByDate(date: Date): Date {
-  const shifted = shiftToBusinessTz(date);
-  return new Date(Date.UTC(shifted.getUTCFullYear(), 0, 1, BUSINESS_TZ_START_HOUR_UTC, 0, 0, 0));
+  return new Date(Date.UTC(date.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
 }
 
 function endOfBusinessYearByDate(date: Date): Date {
@@ -256,15 +260,14 @@ function endOfBusinessYearByDate(date: Date): Date {
 }
 
 function statementRollupKey(date: Date, rollup: StatementRollup): string {
-  const shifted = shiftToBusinessTz(date);
   if (rollup === 'daily') {
     return dateKeyUtc(date);
   }
   if (rollup === 'quarterly') {
-    const quarter = Math.floor(shifted.getUTCMonth() / 3) + 1;
-    return `${shifted.getUTCFullYear()}-Q${quarter}`;
+    const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
+    return `${date.getUTCFullYear()}-Q${quarter}`;
   }
-  return String(shifted.getUTCFullYear());
+  return String(date.getUTCFullYear());
 }
 
 function aggregateDailyStatementRows(
