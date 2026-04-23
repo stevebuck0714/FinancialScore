@@ -200,10 +200,7 @@ export default function FinancialForecastTab({
         return;
       }
       try {
-        const response = await fetch(
-          `/api/master-data?companyId=${selectedCompanyId}&_ts=${Date.now()}`,
-          { cache: 'no-store' }
-        );
+        const response = await fetch(`/api/master-data?companyId=${selectedCompanyId}`);
         const data = await response.json();
         if (!response.ok || isCancelled) return;
         const nextMonthly = Array.isArray(data?.monthlyData) ? data.monthlyData : [];

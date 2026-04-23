@@ -4916,14 +4916,7 @@ function FinancialScorePage() {
       
       try {
         console.log('Loading financial data for company:', selectedCompanyId);
-        // Cache-bust + no-store: monthly financial data must be live. Without
-        // these, Next.js's App Router fetch cache or Vercel's edge can serve a
-        // stale response, which previously caused report tabs (KPIs, Reports,
-        // Ratios, Cash Flow) to lag behind Data Review by a month.
-        const response = await fetch(
-          `/api/financials?companyId=${selectedCompanyId}&_ts=${Date.now()}`,
-          { cache: 'no-store' }
-        );
+        const response = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
         
         if (!response.ok) {
           console.log('No financial data found for company');
@@ -5887,10 +5880,7 @@ function FinancialScorePage() {
 
     try {
       console.log('?? Loading master data for goals:', selectedCompanyId);
-      const response = await fetch(
-        `/api/master-data?companyId=${selectedCompanyId}&_ts=${Date.now()}`,
-        { cache: 'no-store' }
-      );
+      const response = await fetch(`/api/master-data?companyId=${selectedCompanyId}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -15201,10 +15191,7 @@ function FinancialScorePage() {
                                   let discoveredMonths = extractMonths(Array.isArray(loadedMonthlyData) ? loadedMonthlyData : []);
                                   if (discoveredMonths.length === 0 && selectedCompanyId) {
                                     try {
-                                      const financialsResponse = await fetch(
-                                        `/api/financials?companyId=${selectedCompanyId}&_ts=${Date.now()}`,
-                                        { cache: 'no-store' }
-                                      );
+                                      const financialsResponse = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
                                       const financialsJson = await financialsResponse.json().catch(() => ({}));
                                       const persistedRows = Array.isArray(financialsJson?.records?.[0]?.monthlyData)
                                         ? financialsJson.records[0].monthlyData

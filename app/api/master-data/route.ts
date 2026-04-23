@@ -1,19 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// Master data drives every monthly financial report (Reports tab, Financial KPIs,
-// Ratios, Cash Flow, Data Review, etc.). It must always reflect the latest
-// published month - never serve a cached snapshot from the App Router fetch cache
-// or Vercel's edge. See docs/DAILY_TRIAL_BALANCE_MONTH_END_PUBLISH_PLAN.md.
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-const NO_STORE_HEADERS = {
-  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-  Pragma: 'no-cache',
-  Expires: '0',
-} as const;
-
 const toNumber = (value: unknown): number => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -50,7 +37,7 @@ export async function GET(request: NextRequest) {
     if (!companyId) {
       return NextResponse.json(
         { error: 'Missing companyId parameter' },
-        { status: 400, headers: NO_STORE_HEADERS }
+        { status: 400 }
       );
     }
 
@@ -75,7 +62,7 @@ export async function GET(request: NextRequest) {
         expenseCategories: [],
         _source: 'database',
         months: 0,
-      }, { headers: NO_STORE_HEADERS });
+      });
     }
 
     // Format monthly data to match expected structure
@@ -239,12 +226,12 @@ export async function GET(request: NextRequest) {
       expenseCategories: [],
       _source: 'database',
       months: monthlyData.length
-    }, { headers: NO_STORE_HEADERS });
+    });
   } catch (error: any) {
     console.error('Error loading master data:', error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
-      { status: 500, headers: NO_STORE_HEADERS }
+      { status: 500 }
     );
   }
 }
