@@ -62,21 +62,27 @@ export class MasterDataStore {
     return MasterDataStore.instance;
   }
 
-  async fetchMasterData(companyId: string): Promise<{
+  async fetchMasterData(
+    companyId: string,
+    scope: 'published' | 'all' = 'published',
+  ): Promise<{
     success: boolean;
     data?: MasterDataResponse;
     error?: string;
   }> {
     try {
       // Always fetch fresh data - no caching for financial data
-      console.log(`🎯 Fetching fresh master data for company: ${companyId}`);
+      console.log(`🎯 Fetching fresh master data for company: ${companyId} (scope=${scope})`);
       const controller = new AbortController();
       const timeoutMs = 20000;
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      const response = await fetch(`/api/master-data?companyId=${companyId}&_ts=${Date.now()}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      }).finally(() => clearTimeout(timeoutId));
+      const response = await fetch(
+        `/api/master-data?companyId=${companyId}&scope=${scope}&_ts=${Date.now()}`,
+        {
+          cache: 'no-store',
+          signal: controller.signal,
+        },
+      ).finally(() => clearTimeout(timeoutId));
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -292,8 +298,18 @@ export class MasterDataStore {
 // Export singleton instance
 export const masterDataStore = MasterDataStore.getInstance();
 
-// React hook for using master data in components
-export function useMasterData(companyId: string | null) {
+// React hook for using master data in components.
+//
+// scope:
+//   'published' (default) - month-end financial reports. Only completed,
+//                           published months are returned. Use for every
+//                           Reports / Valuation / MDA / KPI surface.
+//   'all'                 - includes the in-progress current month. Use only
+//                           for Operations and Data Review.
+export function useMasterData(
+  companyId: string | null,
+  scope: 'published' | 'all' = 'published',
+) {
   const [data, setData] = React.useState<{
     cogsCategories: GoalCategory[];
     expenseCategories: GoalCategory[];
@@ -316,7 +332,7 @@ export function useMasterData(companyId: string | null) {
       setError(null);
 
       try {
-        const result = await masterDataStore.fetchMasterData(companyId);
+        const result = await masterDataStore.fetchMasterData(companyId, scope);
 
         if (result.success && result.data) {
           const transformed = masterDataStore.transformForGoals(result.data);
@@ -333,7 +349,7 @@ export function useMasterData(companyId: string | null) {
     };
 
     loadData();
-  }, [companyId]);
+  }, [companyId, scope]);
 
   return {
     data,
@@ -348,7 +364,7 @@ export function useMasterData(companyId: string | null) {
         // This will cause a fresh fetch
         setLoading(true);
         setError(null);
-        masterDataStore.fetchMasterData(companyId).then(result => {
+        masterDataStore.fetchMasterData(companyId, scope).then(result => {
           if (result.success && result.data) {
             const transformed = masterDataStore.transformForGoals(result.data);
             setData(transformed);
@@ -364,6 +380,17 @@ export function useMasterData(companyId: string | null) {
       }
     }
   };
+}
+
+// Explicit, typed wrappers so callers cannot ambiguously pick a scope.
+// Every month-end financial report uses usePublishedMasterData.
+// Only Operations and Data Review use useAllMasterData.
+export function usePublishedMasterData(companyId: string | null) {
+  return useMasterData(companyId, 'published');
+}
+
+export function useAllMasterData(companyId: string | null) {
+  return useMasterData(companyId, 'all');
 }
 
 // Import React for the hook

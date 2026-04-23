@@ -29,10 +29,21 @@ const collectPrefixedValues = (
 };
 
 // GET - Load Master data for a company from database
+//
+// Query params:
+//   companyId  (required) - target company
+//   scope      (optional) - 'published' (default) | 'all'
+//                           'published' returns only months whose
+//                           FinancialMonthPublish.status is PUBLISHED or LOCKED.
+//                           'all' returns every month present in the latest
+//                           FinancialRecord (including the in-progress month).
+//                           Use 'all' only for Operations / Data Review.
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const companyId = searchParams.get('companyId');
+    const scopeRaw = (searchParams.get('scope') || 'published').toLowerCase();
+    const scope: 'published' | 'all' = scopeRaw === 'all' ? 'all' : 'published';
 
     if (!companyId) {
       return NextResponse.json(
@@ -61,12 +72,39 @@ export async function GET(request: NextRequest) {
         monthlyData: [],
         expenseCategories: [],
         _source: 'database',
+        _scope: scope,
         months: 0,
       });
     }
 
+    // Apply the publish gate when scope === 'published'.
+    // We compare on UTC start-of-month so MonthlyFinancial.monthDate matches
+    // FinancialMonthPublish.monthStart regardless of timezone storage quirks.
+    let publishedKeys: Set<string> | null = null;
+    if (scope === 'published') {
+      const publishedRows = await prisma.financialMonthPublish.findMany({
+        where: { companyId, status: { in: ['PUBLISHED', 'LOCKED'] } },
+        select: { monthStart: true },
+      });
+      publishedKeys = new Set(
+        publishedRows.map((r) => {
+          const d = r.monthStart;
+          return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        })
+      );
+    }
+
+    const sourceRows = (publishedKeys
+      ? latestRecord.monthlyData.filter((m: any) => {
+          const d = m?.monthDate ? new Date(m.monthDate) : null;
+          if (!d || Number.isNaN(d.getTime())) return false;
+          const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          return publishedKeys!.has(key);
+        })
+      : latestRecord.monthlyData);
+
     // Format monthly data to match expected structure
-    const monthlyData = latestRecord.monthlyData.map((month: any) => {
+    const monthlyData = sourceRows.map((month: any) => {
       const cash = month.cash || 0;
       const ar = month.ar || 0;
       const inventory = month.inventory || 0;
@@ -121,6 +159,7 @@ export async function GET(request: NextRequest) {
       return {
       date: month.monthDate,
       month: month.monthDate,
+      monthDate: month.monthDate,
       revenue: hasSectorRevenue ? sectorRevenueTotal : toNumber(month.revenue),
       expense: month.expense || 0,
       cogsPayroll: hasSectorCogs ? 0 : month.cogsPayroll || 0,
@@ -225,6 +264,7 @@ export async function GET(request: NextRequest) {
       monthlyData,
       expenseCategories: [],
       _source: 'database',
+      _scope: scope,
       months: monthlyData.length
     });
   } catch (error: any) {

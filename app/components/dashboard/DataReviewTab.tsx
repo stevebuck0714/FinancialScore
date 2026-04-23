@@ -3,7 +3,7 @@
 import React from "react";
 import { exportDataReviewToExcel } from "../../utils/excel-export";
 import type { MonthlyDataRow, Mappings } from "../../types";
-import { useMasterData } from "@/lib/master-data-store";
+import { useAllMasterData } from "@/lib/master-data-store";
 import { getFieldDisplayName } from "@/lib/constants/field-display-names";
 
 interface DataReviewTabProps {
@@ -14,7 +14,10 @@ interface DataReviewTabProps {
 
 export default function DataReviewTab({ selectedCompanyId, companyName, accountMappings }: DataReviewTabProps) {
   // Use master data store instead of receiving monthly data as prop
-  const { monthlyData, loading: masterDataLoading, error: masterDataError } = useMasterData(selectedCompanyId);
+  // Data Review is the operational/audit view — it shows everything ingested,
+  // including the in-progress current month so users can see what's flowing in.
+  // Month-end financial reports use the default published-only scope.
+  const { monthlyData, loading: masterDataLoading, error: masterDataError } = useAllMasterData(selectedCompanyId);
 
   const getMonthKey = (monthValue: unknown): string | null => {
     if (monthValue instanceof Date && !Number.isNaN(monthValue.getTime())) {

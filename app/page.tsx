@@ -4916,17 +4916,24 @@ function FinancialScorePage() {
       
       try {
         console.log('Loading financial data for company:', selectedCompanyId);
-        const response = await fetch(`/api/financials?companyId=${selectedCompanyId}`);
-        
+        // Single source of truth: /api/master-data with the publish gate.
+        // Default scope=published means partial / in-progress months are
+        // excluded automatically — every report wired through `monthly`
+        // (MDA, Valuation, ratios, etc.) will only see closed-month data.
+        const response = await fetch(
+          `/api/master-data?companyId=${selectedCompanyId}&scope=published&_ts=${Date.now()}`,
+          { cache: 'no-store' },
+        );
+
         if (!response.ok) {
           console.log('No financial data found for company');
           setLoadedMonthlyData([]);
           return;
         }
-        
+
         const data = await response.json();
-        if (data.records && data.records.length > 0 && data.records[0].monthlyData) {
-          const monthlyData = data.records[0].monthlyData;
+        if (Array.isArray(data?.monthlyData) && data.monthlyData.length > 0) {
+          const monthlyData = data.monthlyData;
           
           // Convert API data to the format expected by the app
           const formattedData = monthlyData.map((m: any) => ({
