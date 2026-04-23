@@ -47,18 +47,19 @@ export default function GoalsView({
   }, [selectedCompanyId]);
 
   // Build a stable "last 6 months" timeline for operational goals (oldest -> newest).
+  // UTC bucketing — see lib/date-utils.ts
   const operationalMonthDates = React.useMemo(() => {
     const now = new Date();
     const months: Date[] = [];
     for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
       months.push(d);
     }
     return months;
   }, []);
 
   const operationalMonthLabels = React.useMemo(
-    () => operationalMonthDates.map(d => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })),
+    () => operationalMonthDates.map(d => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' })),
     [operationalMonthDates]
   );
 
@@ -591,9 +592,10 @@ export default function GoalsView({
   // Process data for each metric
   const processMetrics = (metrics: any[], records: any[]) => {
     // Keep one record per month (latest snapshot), then project onto fixed 6-month timeline.
+    // UTC bucketing — see lib/date-utils.ts
     const monthlyRecordMap = records.reduce((acc: any, r: any) => {
       const snapshot = new Date(r.snapshotDate);
-      const monthKey = `${snapshot.getFullYear()}-${String(snapshot.getMonth() + 1).padStart(2, '0')}`;
+      const monthKey = `${snapshot.getUTCFullYear()}-${String(snapshot.getUTCMonth() + 1).padStart(2, '0')}`;
       if (!acc[monthKey] || new Date(r.snapshotDate) > new Date(acc[monthKey].snapshotDate)) {
         acc[monthKey] = r;
       }
@@ -602,7 +604,7 @@ export default function GoalsView({
 
     return metrics.map(metric => {
       const values = operationalMonthDates.map(monthDate => {
-        const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+        const monthKey = `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, '0')}`;
         const record = monthlyRecordMap[monthKey];
         return record ? metric.getValue(record) : 0;
       });
@@ -616,7 +618,7 @@ export default function GoalsView({
   
   // For cash and inventory, we need to aggregate by month
   const cashByMonth = (operationalData.cash || []).reduce((acc: any, r: any) => {
-    const month = new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    const month = new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
     if (!acc[month]) acc[month] = { snapshotDate: r.snapshotDate, cashBalance: 0 };
     acc[month].cashBalance += r.cashBalance;
     return acc;
@@ -624,7 +626,7 @@ export default function GoalsView({
   const cashRecords = Object.values(cashByMonth);
 
   const inventoryByMonth = (operationalData.inventory || []).reduce((acc: any, r: any) => {
-    const month = new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    const month = new Date(r.snapshotDate).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
     if (!acc[month]) acc[month] = { snapshotDate: r.snapshotDate, assetValue: 0 };
     acc[month].assetValue += r.assetValue;
     return acc;

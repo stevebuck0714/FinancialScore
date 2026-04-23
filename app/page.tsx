@@ -57,6 +57,17 @@ import { parseTrialBalanceCSV, getAccountsForMapping, processTrialBalanceToMonth
 import { getTargetFieldOptions } from '@/lib/constants/sector-target-fields';
 import { getSdeSectorBenchmarks } from '@/lib/sde-sector-benchmarks';
 import { useMasterData, masterDataStore } from '@/lib/master-data-store';
+import {
+  formatMonthShort,
+  formatMonthLong,
+  monthLabelMmYyyy,
+  getMonthYearUtc,
+  getMonthIndexUtc,
+  getQuarterUtc,
+  monthKey as monthKeyUtc,
+  currentYearUtc,
+  currentMonthIndexUtc,
+} from '@/lib/date-utils';
 import type { SdeExecutiveFinancialSummary, SdeExecutiveSummary, SdeRecommendation } from '@/lib/sde-recommendations';
 import { buildSdeValuationPreviewModel } from '@/lib/sde-valuation-preview-model';
 const AccountMappingTable = dynamic(() => import('./components/dashboard/AccountMappingTable'), { ssr: false });
@@ -9697,8 +9708,8 @@ function FinancialScorePage() {
     for (const row of monthly) {
       const d = parseRowDate(row);
       if (!d) continue;
-      const year = d.getFullYear();
-      const quarter = Math.floor(d.getMonth() / 3) + 1;
+      const year = d.getUTCFullYear();
+      const quarter = Math.floor(d.getUTCMonth() / 3) + 1;
       const key = `${year}-Q${quarter}`;
       const base = quarterAgg.get(key) || {
         year,
@@ -9749,8 +9760,8 @@ function FinancialScorePage() {
         if (chunk.length === 0) continue;
         const lastRow = chunk[chunk.length - 1] as any;
         const d = parseRowDate(lastRow) || parseRowDate(chunk[0] as any);
-        const year = d ? d.getFullYear() : 2000 + sequentialBuckets.length;
-        const quarter = d ? Math.floor(d.getMonth() / 3) + 1 : ((sequentialBuckets.length % 4) + 1);
+        const year = d ? d.getUTCFullYear() : 2000 + sequentialBuckets.length;
+        const quarter = d ? Math.floor(d.getUTCMonth() / 3) + 1 : ((sequentialBuckets.length % 4) + 1);
         const bucket: QuarterBucket = {
           year,
           quarter,
@@ -9820,8 +9831,8 @@ function FinancialScorePage() {
     for (const row of trendData) {
       const d = parseRowDate(row as any);
       if (!d) continue;
-      const year = d.getFullYear();
-      const quarter = Math.floor(d.getMonth() / 3) + 1;
+      const year = d.getUTCFullYear();
+      const quarter = Math.floor(d.getUTCMonth() / 3) + 1;
       const key = `${year}-Q${quarter}`;
       const dateMs = d.getTime();
       const current = quarterRatioMap.get(key);
@@ -12510,7 +12521,7 @@ function FinancialScorePage() {
                     <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '16px', border: '1px solid #c4b5fd' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: '#5b21b6', marginBottom: '4px' }}>DATE RANGE</div>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#7c3aed' }}>
-                        {new Date(loadedMonthlyData[0].date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - {new Date(loadedMonthlyData[loadedMonthlyData.length - 1].date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                        {formatMonthShort(loadedMonthlyData[0].date)} - {formatMonthShort(loadedMonthlyData[loadedMonthlyData.length - 1].date)}
                       </div>
                     </div>
                     <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '16px', border: '1px solid #93c5fd' }}>
@@ -12544,7 +12555,7 @@ function FinancialScorePage() {
                         <tbody>
                           {loadedMonthlyData.slice(-6).map((m, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '8px', color: '#1e293b' }}>{new Date(m.date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>
+                              <td style={{ padding: '8px', color: '#1e293b' }}>{formatMonthShort(m.date)}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>${m.revenue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#ef4444', fontWeight: '600' }}>${m.expense.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>${m.cogsTotal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
@@ -12575,7 +12586,7 @@ function FinancialScorePage() {
                         <tbody>
                           {loadedMonthlyData.slice(-6).map((m, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '8px', color: '#1e293b' }}>{new Date(m.date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>
+                              <td style={{ padding: '8px', color: '#1e293b' }}>{formatMonthShort(m.date)}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>${m.cash.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#3b82f6' }}>${m.ar.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>${m.ap.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
@@ -13176,7 +13187,7 @@ function FinancialScorePage() {
                     <div style={{ background: '#ede9fe', borderRadius: '8px', padding: '16px', border: '1px solid #c4b5fd' }}>
                       <div style={{ fontSize: '12px', fontWeight: '600', color: '#5b21b6', marginBottom: '4px' }}>DATE RANGE</div>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#7c3aed' }}>
-                        {new Date(loadedMonthlyData[0].date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - {new Date(loadedMonthlyData[loadedMonthlyData.length - 1].date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                        {formatMonthShort(loadedMonthlyData[0].date)} - {formatMonthShort(loadedMonthlyData[loadedMonthlyData.length - 1].date)}
                       </div>
                     </div>
                     <div style={{ background: '#dbeafe', borderRadius: '8px', padding: '16px', border: '1px solid #93c5fd' }}>
@@ -13203,7 +13214,7 @@ function FinancialScorePage() {
                             <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', color: '#475569' }}>Account</th>
                             {loadedMonthlyData.slice(-3).map((m, idx) => (
                               <th key={idx} style={{ padding: '8px', textAlign: 'right', fontWeight: '600', color: '#475569' }}>
-                                {new Date(m.date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                                {formatMonthShort(m.date)}
                               </th>
                             ))}
                           </tr>
@@ -13312,7 +13323,7 @@ function FinancialScorePage() {
                         <tbody>
                           {loadedMonthlyData.slice(-6).map((m, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '8px', color: '#1e293b' }}>{new Date(m.date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>
+                              <td style={{ padding: '8px', color: '#1e293b' }}>{formatMonthShort(m.date)}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>${m.cash.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#3b82f6' }}>${m.ar.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                               <td style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>${m.ap.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
@@ -14460,7 +14471,7 @@ function FinancialScorePage() {
               const dateValue = latest?.month || latest?.date;
               const parsed = dateValue ? new Date(String(dateValue)) : null;
               if (!parsed || Number.isNaN(parsed.getTime())) return null;
-              return `${String(parsed.getMonth() + 1).padStart(2, '0')}/${parsed.getFullYear()}`;
+              return `${String(parsed.getUTCMonth() + 1).padStart(2, '0')}/${parsed.getUTCFullYear()}`;
             })();
 
             return (
@@ -15168,7 +15179,7 @@ function FinancialScorePage() {
                                     if (match) return `${match[1]}-${match[2]}`;
                                     const parsed = new Date(raw);
                                     if (Number.isNaN(parsed.getTime())) return null;
-                                    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+                                    return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
                                   };
                                   const buildMonthRange = (startYm: string, endYm: string): string[] => {
                                     const out: string[] = [];
@@ -17180,13 +17191,13 @@ function FinancialScorePage() {
 
             const getYearFromMonthValue = (monthValue: unknown): number | null => {
               if (monthValue instanceof Date && !isNaN(monthValue.getTime())) {
-                return monthValue.getFullYear();
+                return monthValue.getUTCFullYear();
               }
               if (typeof monthValue === 'string') {
                 const yearMatch = monthValue.match(/\b(20\d{2}|19\d{2})\b/);
                 if (yearMatch) return Number(yearMatch[1]);
                 const parsed = new Date(monthValue);
-                if (!isNaN(parsed.getTime())) return parsed.getFullYear();
+                if (!isNaN(parsed.getTime())) return parsed.getUTCFullYear();
               }
               return null;
             };
@@ -17233,7 +17244,7 @@ function FinancialScorePage() {
                 const monthDate = (m as any)?.month ? new Date(String((m as any).month)) : null;
                 const daysInMonth =
                   monthDate && !Number.isNaN(monthDate.getTime())
-                    ? new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate()
+                    ? new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 0)).getUTCDate()
                     : 30;
                 // Align with working-capital financial report logic.
                 const dso = ar > 0 && revenue > 0 ? (ar / revenue) * daysInMonth : 0;
@@ -17418,7 +17429,7 @@ function FinancialScorePage() {
               const monthKey = (value: unknown): string | null => {
                 const parsed = value ? new Date(value as any) : null;
                 if (!parsed || isNaN(parsed.getTime())) return null;
-                return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+                return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
               };
 
               const normalized = customerQualityRecords
@@ -17533,7 +17544,7 @@ function FinancialScorePage() {
                 const monthDate = (m as any)?.month ? new Date(String((m as any).month)) : null;
                 const daysInMonth =
                   monthDate && !Number.isNaN(monthDate.getTime())
-                    ? new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate()
+                    ? new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 0)).getUTCDate()
                     : 30;
                 // Align with WorkingCapitalTab formulas in financial reports.
                 const dso = ar > 0 && revenue > 0 ? (ar / revenue) * daysInMonth : 0;
@@ -18841,7 +18852,7 @@ function FinancialScorePage() {
                             const maxTotal = Math.max(...monthlyBuckets.map((row) => row.total), 1);
                             const formatMonthLabel = (monthValue: string): string => {
                               const parsed = new Date(monthValue);
-                              if (!isNaN(parsed.getTime())) return `${parsed.getMonth() + 1}/${String(parsed.getFullYear()).slice(-2)}`;
+                              if (!isNaN(parsed.getTime())) return `${parsed.getUTCMonth() + 1}/${String(parsed.getUTCFullYear()).slice(-2)}`;
                               const m = monthValue.match(/^(\d{1,2})[-/](\d{4})$/);
                               if (m) return `${Number(m[1])}/${m[2].slice(-2)}`;
                               return monthValue.slice(0, 7);
@@ -22475,7 +22486,7 @@ function FinancialScorePage() {
               });
               const currentMonth = sortedMonthly[sortedMonthly.length - 1];
               const monthDate = new Date(currentMonth.date || currentMonth.month);
-              const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+              const monthName = formatMonthLong(currentMonth.date || currentMonth.month);
 
               const {
                 revenue,
@@ -22711,7 +22722,7 @@ function FinancialScorePage() {
               // Copy the entire common size logic from QB version
               const currentMonth = monthly[monthly.length - 1];
               const monthDate = new Date(currentMonth.date || currentMonth.month);
-              const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+              const monthName = formatMonthLong(currentMonth.date || currentMonth.month);
               
               // Revenue
               const {
@@ -23051,7 +23062,7 @@ function FinancialScorePage() {
             } else if (statementType === 'balance-sheet' && statementPeriod === 'current-month') {
               const currentMonth = monthly[monthly.length - 1];
               const monthDate = new Date(currentMonth.date || currentMonth.month);
-              const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+              const monthName = formatMonthLong(currentMonth.date || currentMonth.month);
               
                 // Assets - Use imported totals directly from CSV
                 const cash = currentMonth.cash || 0;
@@ -23273,37 +23284,32 @@ function FinancialScorePage() {
             else if (monthly.length > 0 && statementPeriod !== 'current-month') {
               // Helper function to get months for the selected period
               const getMonthsForPeriod = () => {
-                const now = new Date();
-                const currentYear = now.getFullYear();
-                const currentMonth = now.getMonth(); // 0-11
-                
+                // Use UTC year for filtering. monthDate is a UTC instant in
+                // the DB; local accessors slide rows to the prior month/year
+                // in negative-offset timezones (PT/MT/CT/ET).
+                const currentYear = currentYearUtc();
+
                 switch (statementPeriod) {
                   case 'current-quarter':
                     // Last 3 months
                     return monthly.slice(-3);
-                  
+
                   case 'last-12-months':
                     // Last 12 months
                     return monthly.slice(-12);
-                  
+
                   case 'ytd':
                     // Year to date - from January of current year to now
-                    return monthly.filter(m => {
-                      const mDate = new Date(m.date || m.month);
-                      return mDate.getFullYear() === currentYear;
-                    });
-                  
+                    return monthly.filter(m => getMonthYearUtc(m.date || m.month) === currentYear);
+
                   case 'last-year':
                     // Full previous year
-                    return monthly.filter(m => {
-                      const mDate = new Date(m.date || m.month);
-                      return mDate.getFullYear() === currentYear - 1;
-                    });
-                  
+                    return monthly.filter(m => getMonthYearUtc(m.date || m.month) === currentYear - 1);
+
                   case 'last-3-years':
                     // Last 36 months
                     return monthly.slice(-36);
-                  
+
                   default:
                     return [];
                 }
@@ -23324,24 +23330,24 @@ function FinancialScorePage() {
                 );
               }
               
-              // Get period label
+              // Get period label (UTC — see lib/date-utils for rationale)
               const getPeriodLabel = () => {
                 const firstMonth = periodMonths[0];
                 const lastMonth = periodMonths[periodMonths.length - 1];
-                const firstDate = new Date(firstMonth.date || firstMonth.month);
-                const lastDate = new Date(lastMonth.date || lastMonth.month);
-                
+                const firstSrc = firstMonth.date || firstMonth.month;
+                const lastSrc = lastMonth.date || lastMonth.month;
+
                 switch (statementPeriod) {
                   case 'current-quarter':
-                    return `Current Quarter (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
+                    return `Current Quarter (${formatMonthShort(firstSrc)} - ${formatMonthShort(lastSrc)})`;
                   case 'last-12-months':
-                    return `Last 12 Months (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
+                    return `Last 12 Months (${formatMonthShort(firstSrc)} - ${formatMonthShort(lastSrc)})`;
                   case 'ytd':
-                    return `Year to Date ${lastDate.getFullYear()} (Jan - ${lastDate.toLocaleDateString('en-US', { month: 'short' })})`;
+                    return `Year to Date ${getMonthYearUtc(lastSrc) ?? ''} (Jan - ${formatMonthShort(lastSrc).split(' ')[0]})`;
                   case 'last-year':
-                    return `Fiscal Year ${firstDate.getFullYear()}`;
+                    return `Fiscal Year ${getMonthYearUtc(firstSrc) ?? ''}`;
                   case 'last-3-years':
-                    return `Last 3 Years (${firstDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`;
+                    return `Last 3 Years (${formatMonthShort(firstSrc)} - ${formatMonthShort(lastSrc)})`;
                   default:
                     return '';
                 }
@@ -23350,39 +23356,23 @@ function FinancialScorePage() {
               const periodLabel = getPeriodLabel();
               const latestMonth = periodMonths[periodMonths.length - 1];
               
-              // Helper function to group months by display period
+              // Helper function to group months by display period (UTC)
               const groupMonthsByDisplay = () => {
                 if (statementDisplay === 'monthly') {
                   // Each month is its own period
-                  return periodMonths.map((m, idx) => {
-                    const dateValue = m.date || m.month;
-                    const dateObj = dateValue ? new Date(dateValue) : new Date();
-                    const label = !isNaN(dateObj.getTime()) 
-                      ? dateObj.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-                      : 'Unknown';
-                    
-                    // DEBUG: Log first 3 periods
-                    if (idx < 3) {
-                      console.log(`?? Period ${idx}:`, { 
-                        dateValue, 
-                        dateObj, 
-                        isValid: !isNaN(dateObj.getTime()), 
-                        label,
-                        fullMonth: m
-                      });
-                    }
-                    
+                  return periodMonths.map(m => {
+                    const src = m.date || m.month;
+                    const label = formatMonthShort(src) || 'Unknown';
                     return { label, months: [m] };
                   });
                 } else if (statementDisplay === 'quarterly') {
-                  // Group by quarter
+                  // Group by quarter (UTC)
                   const quarters: { [key: string]: any[] } = {};
                   periodMonths.forEach(m => {
-                    const dateValue = m.date || m.month;
-                    const date = dateValue ? new Date(dateValue) : new Date();
-                    if (!isNaN(date.getTime())) {
-                      const year = date.getFullYear();
-                      const quarter = Math.floor(date.getMonth() / 3) + 1;
+                    const src = m.date || m.month;
+                    const year = getMonthYearUtc(src);
+                    const quarter = getQuarterUtc(src);
+                    if (year !== null && quarter !== null) {
                       const key = `Q${quarter} ${year}`;
                       if (!quarters[key]) quarters[key] = [];
                       quarters[key].push(m);
@@ -23393,15 +23383,15 @@ function FinancialScorePage() {
                     months
                   }));
                 } else {
-                  // Annual - group by year
+                  // Annual - group by UTC year
                   const years: { [key: string]: any[] } = {};
                   periodMonths.forEach(m => {
-                    const dateValue = m.date || m.month;
-                    const date = dateValue ? new Date(dateValue) : new Date();
-                    if (!isNaN(date.getTime())) {
-                      const year = date.getFullYear().toString();
-                      if (!years[year]) years[year] = [];
-                      years[year].push(m);
+                    const src = m.date || m.month;
+                    const year = getMonthYearUtc(src);
+                    if (year !== null) {
+                      const key = String(year);
+                      if (!years[key]) years[key] = [];
+                      years[key].push(m);
                     }
                   });
                   return Object.entries(years).map(([year, months]) => ({

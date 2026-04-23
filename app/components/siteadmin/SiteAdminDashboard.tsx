@@ -1400,7 +1400,8 @@ export default function SiteAdminDashboard(props: any) {
   >({});
   const currentMonthKey = React.useMemo(() => {
     const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    // UTC bucketing — see lib/date-utils.ts
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
   }, []);
   const [financialImportSettingsByCompany, setFinancialImportSettingsByCompany] = React.useState<
     Record<string, { targetMonth: string }>

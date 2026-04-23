@@ -1438,21 +1438,21 @@ export default function DashboardView({
                     }
                     const date = monthValue instanceof Date ? monthValue : new Date(monthValue);
                     if (isNaN(date.getTime())) return String(monthValue);
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const year = date.getFullYear();
+                    // UTC bucketing — see lib/date-utils.ts
+                    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                    const year = date.getUTCFullYear();
                     return `${month}-${year}`;
                   };
-                  
+
                   // Get last month date
                   const lastMonthValue = historicalData[historicalData.length - 1].month;
                   const lastMonth = lastMonthValue instanceof Date ? lastMonthValue : new Date(lastMonthValue);
-                  
-                  // Generate projected months in MM-YYYY format
+
+                  // Generate projected months in MM-YYYY format (UTC)
                   const projectedMonths = Array.from({ length: 12 }, (_, i) => {
-                    const date = new Date(lastMonth);
-                    date.setMonth(date.getMonth() + i + 1);
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const year = date.getFullYear();
+                    const date = new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth() + i + 1, 1));
+                    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                    const year = date.getUTCFullYear();
                     return `${month}-${year}`;
                   });
                   

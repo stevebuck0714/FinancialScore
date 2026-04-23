@@ -21,7 +21,8 @@ export default function WorkingCapitalTab({
 
     const parsed = new Date(asString);
     if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      // UTC bucketing — see lib/date-utils.ts
+      return parsed.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
     }
 
     // Keep the source label if parsing fails to avoid "Invalid Date" in charts/tooltips.
@@ -367,7 +368,7 @@ export default function WorkingCapitalTab({
                   const monthDate = curr.month ? new Date(String(curr.month)) : null;
                   const daysInMonth =
                     monthDate && !Number.isNaN(monthDate.getTime())
-                      ? new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate()
+                      ? new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 0)).getUTCDate()
                       : 30;
 
                   const DIO = inventory > 0 && monthlyCOGS > 0 ? (inventory / monthlyCOGS) * daysInMonth : 0;

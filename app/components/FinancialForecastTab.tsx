@@ -88,17 +88,18 @@ function parseMonthDate(row: any): Date | null {
   return parsed;
 }
 
+// UTC bucketing — see lib/date-utils.ts
 function getQuarterInfo(date: Date) {
-  const month = date.getMonth();
+  const month = date.getUTCMonth();
   const quarter = (Math.floor(month / 3) + 1) as 1 | 2 | 3 | 4;
-  const year = date.getFullYear();
+  const year = date.getUTCFullYear();
   return { year, quarter, key: `${year}-Q${quarter}` };
 }
 
 function getQuarterEndLabel(year: number, quarter: number): string {
   const monthIndex = quarter * 3 - 1;
-  const endDate = new Date(year, monthIndex, 1);
-  return endDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  const endDate = new Date(Date.UTC(year, monthIndex, 1));
+  return endDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
 }
 
 function shiftQuarter(year: number, quarter: number, offset: number): { year: number; quarter: 1 | 2 | 3 | 4 } {
@@ -116,13 +117,12 @@ function shiftQuarter(year: number, quarter: number, offset: number): { year: nu
 }
 
 function shiftMonth(year: number, month: number, offset: number): { year: number; month: number } {
-  const date = new Date(year, month, 1);
-  date.setMonth(date.getMonth() + offset);
-  return { year: date.getFullYear(), month: date.getMonth() };
+  const date = new Date(Date.UTC(year, month + offset, 1));
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() };
 }
 
 function getMonthLabel(year: number, month: number): string {
-  return new Date(year, month, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  return new Date(Date.UTC(year, month, 1)).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
 }
 
 function getFridayOfCurrentWeek(baseDate: Date): Date {
@@ -320,8 +320,9 @@ export default function FinancialForecastTab({
     monthly.forEach((row) => {
       const date = parseMonthDate(row);
       if (!date) return;
-      const year = date.getFullYear();
-      const month = date.getMonth();
+      // UTC bucketing — see lib/date-utils.ts
+      const year = date.getUTCFullYear();
+      const month = date.getUTCMonth();
       const key = `${year}-${String(month + 1).padStart(2, '0')}`;
       if (!grouped.has(key)) {
         grouped.set(key, {
@@ -435,8 +436,10 @@ export default function FinancialForecastTab({
   const latestActualMonth = useMemo(() => monthActuals[monthActuals.length - 1] || null, [monthActuals]);
 
   const monthlyForecastPeriods = useMemo<MonthMeta[]>(() => {
-    const startYear = latestActualMonth?.year || new Date().getFullYear();
-    const startMonth = latestActualMonth?.month ?? new Date().getMonth();
+    // UTC bucketing — see lib/date-utils.ts
+    const now = new Date();
+    const startYear = latestActualMonth?.year || now.getUTCFullYear();
+    const startMonth = latestActualMonth?.month ?? now.getUTCMonth();
     const results: MonthMeta[] = [];
     if (isAccrualWeeklyMode) {
       const forecastAnchor = getFridayOfCurrentWeek(new Date());
@@ -458,7 +461,7 @@ export default function FinancialForecastTab({
     if (useQuarterlyActualColumns) {
       const latestQuarter =
         quarterActuals[quarterActuals.length - 1] ||
-        getQuarterInfo(new Date(startYear, startMonth, 1));
+        getQuarterInfo(new Date(Date.UTC(startYear, startMonth, 1)));
       const firstForecastQuarter = shiftQuarter(latestQuarter.year, latestQuarter.quarter, 1);
       for (let i = 0; i < 4; i++) {
         const shifted = shiftQuarter(firstForecastQuarter.year, firstForecastQuarter.quarter, i);
@@ -486,12 +489,14 @@ export default function FinancialForecastTab({
 
   const quarterlyForecastPeriods = useMemo<QuarterMeta[]>(() => {
     if (isAccrualWeeklyMode) return [];
+    // UTC bucketing — see lib/date-utils.ts
+    const now = new Date();
     if (useQuarterlyActualColumns) {
-      const startYear = latestActualMonth?.year || new Date().getFullYear();
-      const startMonth = latestActualMonth?.month ?? new Date().getMonth();
+      const startYear = latestActualMonth?.year || now.getUTCFullYear();
+      const startMonth = latestActualMonth?.month ?? now.getUTCMonth();
       const latestQuarter =
         quarterActuals[quarterActuals.length - 1] ||
-        getQuarterInfo(new Date(startYear, startMonth, 1));
+        getQuarterInfo(new Date(Date.UTC(startYear, startMonth, 1)));
       const firstFutureQuarter = shiftQuarter(latestQuarter.year, latestQuarter.quarter, 1 + monthlyForecastPeriods.length);
       const futureQuarterCount = 16; // 4 years beyond the current forecast year
       const results: QuarterMeta[] = [];
@@ -506,10 +511,10 @@ export default function FinancialForecastTab({
       }
       return results;
     }
-    const seedYear = latestActualMonth?.year || new Date().getFullYear();
-    const seedMonth = latestActualMonth?.month ?? new Date().getMonth();
+    const seedYear = latestActualMonth?.year || now.getUTCFullYear();
+    const seedMonth = latestActualMonth?.month ?? now.getUTCMonth();
     const afterFirstYear = shiftMonth(seedYear, seedMonth, 12);
-    const quarterSeed = getQuarterInfo(new Date(afterFirstYear.year, afterFirstYear.month, 1));
+    const quarterSeed = getQuarterInfo(new Date(Date.UTC(afterFirstYear.year, afterFirstYear.month, 1)));
     const firstQuarter = shiftQuarter(quarterSeed.year, quarterSeed.quarter, 1);
     const results: QuarterMeta[] = [];
     for (let i = 0; i < 12; i++) {
@@ -1051,7 +1056,7 @@ export default function FinancialForecastTab({
       const endQuarter = quarterlyForecastPeriods[blockStart + 3] || startQuarter;
       return {
         id: `fy-${idx + 1}`,
-        label: String(endQuarter?.year || startQuarter?.year || new Date().getFullYear()),
+        label: String(endQuarter?.year || startQuarter?.year || new Date().getUTCFullYear()),
         startIndex: monthlyForecastPeriods.length + blockStart,
       };
     });

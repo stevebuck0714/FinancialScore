@@ -151,8 +151,9 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
   const formatMonthShort = (monthStr: string): string => {
     const date = parseMonthToDate(monthStr);
     if (!date) return monthStr;
-    const month = date.getMonth() + 1;
-    const yy = String(date.getFullYear()).slice(-2);
+    // UTC bucketing — see lib/date-utils.ts
+    const month = date.getUTCMonth() + 1;
+    const yy = String(date.getUTCFullYear()).slice(-2);
     return `${month}/${yy}`;
   };
 
@@ -174,13 +175,13 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
     const firstDate = parsedPoints[0].date;
     const lastDate = parsedPoints[parsedPoints.length - 1].date;
     const spanMonths =
-      (lastDate.getFullYear() - firstDate.getFullYear()) * 12 +
-      (lastDate.getMonth() - firstDate.getMonth()) + 1;
+      (lastDate.getUTCFullYear() - firstDate.getUTCFullYear()) * 12 +
+      (lastDate.getUTCMonth() - firstDate.getUTCMonth()) + 1;
 
     const intervalMonths = spanMonths <= 12 ? 3 : spanMonths <= 24 ? 6 : 12;
 
     const candidates: number[] = parsedPoints
-      .filter(({ date }) => ((date.getMonth() + 1) % intervalMonths) === 0)
+      .filter(({ date }) => ((date.getUTCMonth() + 1) % intervalMonths) === 0)
       .map(({ idx }) => idx);
 
     // Always keep the first label for context.
@@ -189,7 +190,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
     // Only keep the final label if it lands on a quarter/half-year boundary.
     const lastParsed = parsedPoints[parsedPoints.length - 1];
     if (lastParsed) {
-      const lastMonth = lastParsed.date.getMonth() + 1;
+      const lastMonth = lastParsed.date.getUTCMonth() + 1;
       const isQuarterOrHalfBoundary = lastMonth % 3 === 0;
       if (isQuarterOrHalfBoundary) {
         candidates.push(lastParsed.idx);
@@ -357,48 +358,48 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
           }
           
           if (format === 'quarterly') {
-            // Convert month to month/year label (no Q labels)
+            // Convert month to month/year label (no Q labels) — UTC
             const getQuarterLabel = (monthStr: string) => {
               const parsed = parseMonthToDate(monthStr);
               if (parsed) {
-                const year = parsed.getFullYear();
-                const month = parsed.getMonth() + 1;
+                const year = parsed.getUTCFullYear();
+                const month = parsed.getUTCMonth() + 1;
                 return `${month}/${year.toString().slice(-2)}`;
               }
               return monthStr;
             };
-            
+
             // Only show labels for quarter-end months (March, June, September, December)
             // AND skip every other quarter to reduce crowding
             const isQuarterEnd = (monthStr: string) => {
               const parsed = parseMonthToDate(monthStr);
               if (parsed) {
-                const month = parsed.getMonth() + 1;
+                const month = parsed.getUTCMonth() + 1;
                 return month % 3 === 0;
               }
               return false;
             };
-            
+
             // Show every other quarter (skip one between labels)
             const quarterEndPoints = points.filter((pt, idx) => isQuarterEnd(pt.month));
             const isThisPointShown = isQuarterEnd(p.month) && quarterEndPoints.findIndex(pt => pt.month === p.month) % 2 === 0;
-            
+
             if (!isThisPointShown) return null;
             return <text key={i} x={p.x} y={height - padding.bottom + 20} textAnchor="middle" fontSize="11" fill="#64748b">{getQuarterLabel(p.month)}</text>;
           } else {
-            // Semi-annual format (default)
+            // Semi-annual format (default) — UTC
             const getSemiAnnualLabel = (monthStr: string) => {
               const parsed = parseMonthToDate(monthStr);
               if (parsed) {
-                const year = parsed.getFullYear();
-                const month = parsed.getMonth() + 1;
+                const year = parsed.getUTCFullYear();
+                const month = parsed.getUTCMonth() + 1;
                 return `${month}/${year.toString().slice(-2)}`;
               }
               return monthStr;
             };
-            
+
             const parsed = parseMonthToDate(p.month);
-            const month = parsed ? parsed.getMonth() + 1 : 0;
+            const month = parsed ? parsed.getUTCMonth() + 1 : 0;
             const isSemiAnnualEnd = month === 6 || month === 12;
 
             // Only label June/December for clean half-year axis.
@@ -462,10 +463,10 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
                   Quarter
                 </td>
                 {visibleData.map((d, i) => {
-                  // Only show quarterly data (every 3rd month)
+                  // Only show quarterly data (every 3rd month) — UTC
                   const date = parseMonthToDate(String(d.month));
                   if (date) {
-                    const month = date.getMonth() + 1;
+                    const month = date.getUTCMonth() + 1;
                     if (month % 3 !== 0) return null;
                   }
                   return (
@@ -482,7 +483,7 @@ export function LineChart({ title, data, valueKey, color, yMax, showTable, compa
                 {visibleData.map((d, i) => {
                   const date = parseMonthToDate(String(d.month));
                   if (date) {
-                    const month = date.getMonth() + 1;
+                    const month = date.getUTCMonth() + 1;
                     if (month % 3 !== 0) return null;
                   }
                   return (
@@ -540,12 +541,13 @@ export function ProjectionChart({ title, historicalData, projectedData, valueKey
       return String(monthValue);
     }
     
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    
+    // UTC bucketing — see lib/date-utils.ts
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+
     return `${month}-${year}`;
   };
-  
+
   const formatter = formatValue || ((v: number) => v.toFixed(1));
   const hist = historicalData.slice(-12).map(d => ({ month: formatMonth(d.month), value: d[valueKey], type: 'historical' }));
   const mostLikely = projectedData.mostLikely.map(d => ({ month: d.month, value: d[valueKey], type: 'mostLikely' }));

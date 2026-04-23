@@ -68,9 +68,10 @@ export default function CashFlowTab({
       return String(monthValue);
     }
     
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    
+    // UTC bucketing — see lib/date-utils.ts
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+
     return `${month}-${year}`;
   };
 
@@ -217,7 +218,7 @@ export default function CashFlowTab({
           // Try to extract year from date string
           const date = new Date(yearEndMonth);
           if (!isNaN(date.getTime())) {
-            yearLabel = String(date.getFullYear());
+            yearLabel = String(date.getUTCFullYear());
           }
         }
         displayData.push({

@@ -32,8 +32,9 @@ export default function TrendAnalysisView({
       if (!value) return null;
       const date = value instanceof Date ? value : new Date(value as string);
       if (Number.isNaN(date.getTime())) return null;
-      const year = date.getFullYear();
-      const month = date.getMonth() + 1;
+      // UTC bucketing — see lib/date-utils.ts
+      const year = date.getUTCFullYear();
+      const month = date.getUTCMonth() + 1;
       if (year < 2000 || year > 2100 || month < 1 || month > 12) return null;
       return `${String(month).padStart(2, '0')}-${year}`;
     };
