@@ -4383,7 +4383,12 @@ function FinancialScorePage() {
               lobBreakdowns: m.lobBreakdowns || null
             }));
             if (isStaleRequest()) return;
-            setLoadedMonthlyData(convertedMonthly);
+            // NOTE: We intentionally do NOT setLoadedMonthlyData here.
+            // The publish-gated /api/master-data?scope=published effect below
+            // owns `loadedMonthlyData` so financial reports never see partial
+            // current-month data or unpublished history. We still hydrate
+            // qbRawData / mapping / file metadata above so non-report UI works.
+            void convertedMonthly;
           } else {
             // CSV/Trial Balance data - check if it has processed monthly data
             setQbRawData(null);
@@ -4481,8 +4486,14 @@ function FinancialScorePage() {
                 lobBreakdowns: m.lobBreakdowns || null
               }));
               if (isStaleRequest()) return;
-              setLoadedMonthlyData(convertedMonthly);
-              console.log(`? Trial Balance monthly data loaded with ${convertedMonthly.length} months`);
+              // NOTE: We intentionally do NOT setLoadedMonthlyData here.
+              // The publish-gated /api/master-data?scope=published effect below
+              // owns `loadedMonthlyData` so financial reports always honor the
+              // FinancialMonthPublish gate (no partial current month, no
+              // unpublished history). Trial-balance raw payload was already
+              // hydrated above for the data-mapping UI.
+              void convertedMonthly;
+              console.log(`Trial Balance raw hydrated (${convertedMonthly.length} months); reports will load via publish-gated master-data effect`);
             } else {
               // Legacy CSV upload - set rawRows for manual processing
               setRawRows(latestRecord.rawData);
