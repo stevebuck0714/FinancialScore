@@ -4215,8 +4215,12 @@ function FinancialScorePage() {
       
       try {
         // ALWAYS clear state at the start to prevent stale data
-        console.log('?? Clearing all state before loading new company data');
-        setLoadedMonthlyData([]);
+        // NOTE: do NOT clear loadedMonthlyData here. The publish-gated
+        // /api/master-data?scope=published effect below is the sole owner
+        // of loadedMonthlyData. Clearing here on currentUser/qbLastSync
+        // changes (whose deps don't match that effect) leaves reports stuck
+        // on an empty state until the user reloads or changes company.
+        console.log('?? Clearing company-scoped state before loading new company data');
         setLatestFinancialSource(null);
         setQbRawData(null);
         setAccountReviewRawData(null);
