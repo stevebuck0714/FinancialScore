@@ -63,6 +63,19 @@ function resolveMonthStartUtc(targetMonth: string | null): Date | null {
   return new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
 }
 
+// Group B = "QuickBooks pattern": no per-account GLTransactionFact rows are
+// written for these systems, so the only trustworthy per-account number is
+// what landed in MonthlyFinancial via 1:1 AccountMapping.targetField.
+// Everything else (Infor, Sage Intacct, Vista Cloud, NetSuite, Acumatica,
+// Odoo, Dynamics 365) is treated as Group A: GLTransactionFact +
+// BalanceSheetAccountAnchor based.
+const GROUP_B_ACCOUNTING_SYSTEMS = new Set([
+  'QUICKBOOKS',
+  'QUICKBOOKS_DESKTOP',
+  'XERO',
+  'SAGE',
+]);
+
 const BS_TARGET_FIELDS = new Set([
   'cash',
   'ar',
@@ -551,98 +564,6 @@ async function collectMonthlyMovementFromGlTransactionFacts(companyId: string, t
   return valueByKey;
 }
 
-async function collectBalanceSheetValuesFromMonthlyFinancial(
-  companyId: string,
-  targetMonth: string | null
-): Promise<Map<string, number>> {
-  const valueByKey = new Map<string, number>();
-  const monthlyRows = await withPrismaReconnectRetry(
-    () => prisma.$queryRaw<Array<Record<string, unknown>>>`
-    SELECT
-      mf."cash",
-      mf."ar",
-      mf."inventory",
-      mf."otherCA" AS "otherCA",
-      mf."fixedAssets" AS "fixedAssets",
-      mf."otherAssets" AS "otherAssets",
-      mf."totalAssets" AS "totalAssets",
-      mf."ap",
-      mf."loc",
-      mf."otherCL" AS "otherCL",
-      mf."tcl",
-      mf."ltd",
-      mf."totalLiab" AS "totalLiab",
-      mf."ownersCapital" AS "ownersCapital",
-      mf."ownersDraw" AS "ownersDraw",
-      mf."commonStock" AS "commonStock",
-      mf."preferredStock" AS "preferredStock",
-      mf."retainedEarnings" AS "retainedEarnings",
-      mf."additionalPaidInCapital" AS "additionalPaidInCapital",
-      mf."treasuryStock" AS "treasuryStock",
-      mf."totalEquity" AS "totalEquity",
-      mf."totalLAndE" AS "totalLAndE"
-    FROM "MonthlyFinancial" mf
-    WHERE mf."companyId" = ${companyId}
-      ${
-        targetMonth
-          ? Prisma.sql`AND to_char(date_trunc('month', mf."monthDate"), 'YYYY-MM') = ${targetMonth}`
-          : Prisma.empty
-      }
-    ORDER BY mf."monthDate" DESC, mf."createdAt" DESC
-    LIMIT 1
-  `,
-    'account-review.latest-values.collectBalanceSheetValuesFromMonthlyFinancial.monthlyRows',
-  );
-  const monthly = monthlyRows[0] || null;
-  if (!monthly) return valueByKey;
-
-  const mappings = await withPrismaReconnectRetry(
-    () =>
-      prisma.accountMapping.findMany({
-        where: {
-          companyId,
-          targetField: { notIn: ['', 'unmapped', 'UNMAPPED'] },
-        },
-        select: {
-          accountName: true,
-          accountId: true,
-          accountCode: true,
-          targetField: true,
-        },
-      }),
-    'account-review.latest-values.collectBalanceSheetValuesFromMonthlyFinancial.mappings',
-  );
-
-  const bsMappings = mappings.filter((mapping) => BS_TARGET_FIELDS.has(normalizeTargetField(mapping.targetField)));
-  const byTarget = new Map<string, typeof bsMappings>();
-  for (const mapping of bsMappings) {
-    const normalized = normalizeTargetField(mapping.targetField);
-    if (!byTarget.has(normalized)) byTarget.set(normalized, []);
-    byTarget.get(normalized)!.push(mapping);
-  }
-
-  for (const [normalizedTarget, targetMappings] of byTarget.entries()) {
-    const sample = targetMappings[0];
-    const amount = normalizeNumber((monthly as Record<string, unknown>)[sample.targetField as string]);
-    // Guardrail: do not fan out one rollup line value (e.g. total cash)
-    // to many detailed accounts; only hydrate 1:1 mapped targets here.
-    if (targetMappings.length !== 1) {
-      valueByKey.set(`target:${normalizedTarget}`, amount);
-      continue;
-    }
-    const mapping = targetMappings[0];
-    const accountId = String(mapping.accountId || '').trim();
-    const accountCode = String(mapping.accountCode || '').trim();
-    const accountName = String(mapping.accountName || '').trim().toLowerCase();
-    if (accountId) setAccountValueByAliases(valueByKey, accountId, amount);
-    if (accountCode) setAccountValueByAliases(valueByKey, accountCode, amount);
-    if (accountName) valueByKey.set(`name:${accountName}`, amount);
-    valueByKey.set(`target:${normalizedTarget}`, amount);
-  }
-
-  return valueByKey;
-}
-
 async function collectAllMappedValuesFromMonthlyFinancial(
   companyId: string,
   targetMonth: string | null
@@ -749,7 +670,7 @@ export async function GET(request: NextRequest) {
       'account-review.latest-values.get.company',
     );
     const accountingSystem = String(company?.accountingSystem || '').trim().toUpperCase();
-
+    const isGroupB = GROUP_B_ACCOUNTING_SYSTEMS.has(accountingSystem);
 
     const hasAccess = await validateCompanyAccess(companyId);
     if (!hasAccess) {
@@ -757,36 +678,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const rows = await withPrismaReconnectRetry(
-      () => prisma.$queryRaw<Array<{ csiFinancial: unknown; m3Financial: unknown; csiCoa: unknown; m3Coa: unknown }>>`
-      SELECT
-        "connectionMetadata"->'inforCsiFinancialPayload' AS "csiFinancial",
-        "connectionMetadata"->'inforM3FinancialPayload' AS "m3Financial",
-        "connectionMetadata"->'inforCsiCoaPayload' AS "csiCoa",
-        "connectionMetadata"->'inforM3CoaPayload' AS "m3Coa"
-      FROM "AccountingConnection"
-      WHERE "companyId" = ${companyId}
-        AND platform = 'INFOR_M3'
-      LIMIT 1
-    `,
-      'account-review.latest-values.get.accounting-connection',
-    );
-    const payloadRow = rows[0] || null;
-    const metadataPayload = hasGlResponsesPayload(payloadRow?.csiFinancial)
-      ? asObjectPayload(payloadRow?.csiFinancial)
-      : hasGlResponsesPayload(payloadRow?.csiCoa)
-        ? asObjectPayload(payloadRow?.csiCoa)
-        : hasGlResponsesPayload(payloadRow?.m3Financial)
-          ? asObjectPayload(payloadRow?.m3Financial)
-          : hasGlResponsesPayload(payloadRow?.m3Coa)
-            ? asObjectPayload(payloadRow?.m3Coa)
-            : asObjectPayload(payloadRow?.csiFinancial) ||
-              asObjectPayload(payloadRow?.csiCoa) ||
-              asObjectPayload(payloadRow?.m3Financial) ||
-              asObjectPayload(payloadRow?.m3Coa) ||
-              null;
-    const valueByKey = collectValuesFromInforPayload(metadataPayload, targetMonth);
-
+    // Mappings drive both the BS-vs-P&L classification (via targetField) and
+    // the 1:1 fan-out guardrails inside the MonthlyFinancial collectors.
     const mappings = await withPrismaReconnectRetry(
       () =>
         prisma.accountMapping.findMany({
@@ -819,55 +712,121 @@ export async function GET(request: NextRequest) {
       if (name) bsAccountKeySet.add(`name:${name}`);
     }
 
-    // Fallback source: raw Infor sync logs (SLGLTRANS/ledger-style items).
-    // This keeps account-level values available even when GL facts are not yet hydrated.
-    const apiSyncValues = await collectValuesFromApiSyncLogs(companyId, targetMonth);
-    for (const [key, value] of apiSyncValues.entries()) {
-      if (!valueByKey.has(key)) valueByKey.set(key, value);
-    }
+    const valueByKey = new Map<string, number>();
+    let perAccountAnchorResult: {
+      values: Map<string, number>;
+      anchorDate: Date | null;
+      accountCount: number;
+    } = { values: new Map(), anchorDate: null, accountCount: 0 };
 
-    // Income/expense accounts should show month movement, not cumulative balances.
-    const monthMovementValues = await collectMonthlyMovementFromGlTransactionFacts(companyId, targetMonth);
-    for (const [key, value] of monthMovementValues.entries()) {
-      if (bsAccountKeySet.has(key)) continue;
-      valueByKey.set(key, value);
-    }
+    if (isGroupB) {
+      // Group B (QuickBooks / Xero / Sage on-prem): no per-account
+      // GLTransactionFact ingestion. Latest Value is exclusively the
+      // 1:1-mapped MonthlyFinancial[targetField] for the selected month.
+      // Multi-mapped targets emit only a `target:<field>` rollup so the
+      // per-account row shows N/A instead of a fanned-out fake split.
+      const monthlyAll = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
+      for (const [key, value] of monthlyAll.entries()) {
+        valueByKey.set(key, value);
+      }
+    } else {
+      // Group A ("Big ERP" pattern): Infor M3/CSI, Sage Intacct, Vista Cloud,
+      // NetSuite, Acumatica, Odoo, Dynamics 365.
+      //
+      // Resolution order (lowest -> highest priority; later writes win):
+      //   1. MonthlyFinancial 1:1 baseline (last-resort for both BS and P&L)
+      //   2. Infor connection-metadata snapshot + SLGLTRANS logs (P&L only)
+      //   3. GLACCTPERIODBALANCES (BS only, M3-native EOM)
+      //   4. Cumulative GLTransactionFact through monthEnd (BS only)
+      //   5. Monthly GLTransactionFact movement (P&L only) – primary P&L source
+      //   6. BalanceSheetAccountAnchor + GL delta (BS only) – authoritative
+      //
+      // The bsAccountKeySet guard is applied to every fallback so movement /
+      // snapshot values can never be written into a BS account row, and EOM
+      // balance sources can never be written into a P&L row.
 
-    // Balance-sheet account review values must match Data Review source (MonthlyFinancial).
-    const monthlyBsValues = await collectBalanceSheetValuesFromMonthlyFinancial(companyId, targetMonth);
-    for (const [key, value] of monthlyBsValues.entries()) valueByKey.set(key, value);
+      // 1. MonthlyFinancial 1:1 baseline.
+      const monthlyBaseline = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
+      for (const [key, value] of monthlyBaseline.entries()) {
+        valueByKey.set(key, value);
+      }
 
-    // For BS account-level rows, fill missing values from month-end point-in-time/cumulative facts.
-    // This avoids N/A when MonthlyFinancial only contains rollup fields for multi-mapped targets.
-    const periodValues = await collectValuesFromPeriodBalanceLogs(companyId, targetMonth);
-    for (const [key, value] of periodValues.entries()) {
-      if (!bsAccountKeySet.has(key)) continue;
-      if (!valueByKey.has(key)) valueByKey.set(key, value);
-    }
-    const factValues = await collectValuesFromGlTransactionFacts(companyId, targetMonth);
-    for (const [key, value] of factValues.entries()) {
-      if (!bsAccountKeySet.has(key)) continue;
-      // BS accounts must be EOM cumulative balances. Override any movement-based
-      // value written by SLGLTRANS-derived sources (#1, #2) so e.g. Inventory
-      // doesn't render the March consumption instead of the 3/31 balance.
-      valueByKey.set(key, value);
-    }
+      // 2. Tertiary P&L fallbacks – Infor connection-metadata snapshot and
+      // SLGLTRANS log items. Only relevant when the company is Infor; for
+      // other Group A systems the AccountingConnection row will not carry
+      // these payloads and the collectors return empty maps.
+      const isInfor = accountingSystem === 'INFOR_M3' || accountingSystem === 'INFOR_CSI';
+      if (isInfor) {
+        const rows = await withPrismaReconnectRetry(
+          () => prisma.$queryRaw<Array<{ csiFinancial: unknown; m3Financial: unknown; csiCoa: unknown; m3Coa: unknown }>>`
+          SELECT
+            "connectionMetadata"->'inforCsiFinancialPayload' AS "csiFinancial",
+            "connectionMetadata"->'inforM3FinancialPayload' AS "m3Financial",
+            "connectionMetadata"->'inforCsiCoaPayload' AS "csiCoa",
+            "connectionMetadata"->'inforM3CoaPayload' AS "m3Coa"
+          FROM "AccountingConnection"
+          WHERE "companyId" = ${companyId}
+            AND platform = 'INFOR_M3'
+          LIMIT 1
+        `,
+          'account-review.latest-values.get.accounting-connection',
+        );
+        const payloadRow = rows[0] || null;
+        const metadataPayload = hasGlResponsesPayload(payloadRow?.csiFinancial)
+          ? asObjectPayload(payloadRow?.csiFinancial)
+          : hasGlResponsesPayload(payloadRow?.csiCoa)
+            ? asObjectPayload(payloadRow?.csiCoa)
+            : hasGlResponsesPayload(payloadRow?.m3Financial)
+              ? asObjectPayload(payloadRow?.m3Financial)
+              : hasGlResponsesPayload(payloadRow?.m3Coa)
+                ? asObjectPayload(payloadRow?.m3Coa)
+                : asObjectPayload(payloadRow?.csiFinancial) ||
+                  asObjectPayload(payloadRow?.csiCoa) ||
+                  asObjectPayload(payloadRow?.m3Financial) ||
+                  asObjectPayload(payloadRow?.m3Coa) ||
+                  null;
+        const inforSnapshot = collectValuesFromInforPayload(metadataPayload, targetMonth);
+        for (const [key, value] of inforSnapshot.entries()) {
+          if (bsAccountKeySet.has(key)) continue;
+          valueByKey.set(key, value);
+        }
+        const apiSyncValues = await collectValuesFromApiSyncLogs(companyId, targetMonth);
+        for (const [key, value] of apiSyncValues.entries()) {
+          if (bsAccountKeySet.has(key)) continue;
+          valueByKey.set(key, value);
+        }
+      }
 
-    // Most authoritative BS source: per-account anchor + GL delta. Mirrors the
-    // anchor pattern used by lib/financial/daily-bs-from-gl.ts so per-account
-    // EOM balances include pre-ingest activity (cash, fixed assets,
-    // accumulated depreciation, etc. that have non-zero opening balances).
-    // Always overwrites prior sources for the keys it produces.
-    const perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
-    for (const [key, value] of perAccountAnchorResult.values.entries()) {
-      valueByKey.set(key, value);
-    }
+      // 3. GLACCTPERIODBALANCES – Infor M3 native period-end balances.
+      // BS-only. Acts as a fallback when no anchor exists for an account.
+      if (accountingSystem === 'INFOR_M3') {
+        const periodValues = await collectValuesFromPeriodBalanceLogs(companyId, targetMonth);
+        for (const [key, value] of periodValues.entries()) {
+          if (!bsAccountKeySet.has(key)) continue;
+          valueByKey.set(key, value);
+        }
+      }
 
-    // QBO account review does not have GLTransactionFact-style account movement sources.
-    // Fill account rows directly from latest mapped MonthlyFinancial fields.
-    if (accountingSystem === 'QUICKBOOKS' || accountingSystem === 'QUICKBOOKS_DESKTOP') {
-      const qboMonthlyValues = await collectAllMappedValuesFromMonthlyFinancial(companyId, targetMonth);
-      for (const [key, value] of qboMonthlyValues.entries()) {
+      // 4. Cumulative GLTransactionFact through monthEnd. BS-only.
+      const factValues = await collectValuesFromGlTransactionFacts(companyId, targetMonth);
+      for (const [key, value] of factValues.entries()) {
+        if (!bsAccountKeySet.has(key)) continue;
+        valueByKey.set(key, value);
+      }
+
+      // 5. Monthly GLTransactionFact movement. P&L-only, primary source.
+      const monthMovementValues = await collectMonthlyMovementFromGlTransactionFacts(companyId, targetMonth);
+      for (const [key, value] of monthMovementValues.entries()) {
+        if (bsAccountKeySet.has(key)) continue;
+        valueByKey.set(key, value);
+      }
+
+      // 6. Per-account BalanceSheetAccountAnchor + GL delta. BS-only,
+      // authoritative – mirrors lib/financial/daily-bs-from-gl.ts so EOM
+      // balances include pre-ingest activity (cash, fixed assets,
+      // accumulated depreciation, etc. with non-zero opening balances).
+      perAccountAnchorResult = await collectValuesFromPerAccountAnchors(companyId, targetMonth);
+      for (const [key, value] of perAccountAnchorResult.values.entries()) {
         valueByKey.set(key, value);
       }
     }
@@ -876,6 +835,8 @@ export async function GET(request: NextRequest) {
       ok: true,
       companyId,
       targetMonth,
+      accountingSystem,
+      resolutionGroup: isGroupB ? 'B_QUICKBOOKS_PATTERN' : 'A_BIG_ERP_PATTERN',
       count: valueByKey.size,
       values: Object.fromEntries(valueByKey.entries()),
       perAccountAnchor: perAccountAnchorResult.anchorDate

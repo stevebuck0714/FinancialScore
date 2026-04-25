@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback, ChangeEvent, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, ChangeEvent, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { Upload, AlertCircle, TrendingUp, DollarSign, FileSpreadsheet, CreditCard, MapPin, Lock } from 'lucide-react';
@@ -86,6 +86,26 @@ const TrendExplorer = dynamic(() => import('./components/performance-analytics/T
 const AnomalyInbox = dynamic(() => import('./components/performance-analytics/AnomalyInbox'), { ssr: false });
 const OpportunityWorkspace = dynamic(() => import('./components/performance-analytics/OpportunityWorkspace'), { ssr: false });
 const ValuationSdeSection5Preview = dynamic(() => import('./components/valuation/ValuationSdeSection5Preview'), { ssr: false });
+const EbitdaAdjustmentsProvider = dynamic(
+  () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaAdjustmentsProvider),
+  { ssr: false },
+);
+const EbitdaLineItemAccounts = dynamic(
+  () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaLineItemAccounts),
+  { ssr: false },
+);
+const EbitdaLineItemTotal = dynamic(
+  () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaLineItemTotal),
+  { ssr: false },
+);
+const EbitdaHelperBar = dynamic(
+  () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaHelperBar),
+  { ssr: false },
+);
+const EbitdaAccountList = dynamic(
+  () => import('./components/valuation/EbitdaAdjustmentsPanel').then((m) => m.EbitdaAccountList),
+  { ssr: false },
+);
 const ValuationWorkingCapitalSection4Preview = dynamic(() => import('./components/valuation/ValuationWorkingCapitalSection4Preview'), { ssr: false });
 const ValuationEbitdaSection6Preview = dynamic(() => import('./components/valuation/ValuationEbitdaSection6Preview'), { ssr: false });
 const ValuationDcfSection7Preview = dynamic(() => import('./components/valuation/ValuationDcfSection7Preview'), { ssr: false });
@@ -2140,6 +2160,73 @@ function FinancialScorePage() {
     }
   };
 
+  const printAccountReview = () => {
+    if (typeof window === 'undefined') return;
+    const sourceNode = document.getElementById('account-review-print-area');
+    if (!sourceNode) {
+      alert('Account Review table is not available to print.');
+      return;
+    }
+    const cloned = sourceNode.cloneNode(true) as HTMLElement;
+    cloned.style.maxHeight = 'none';
+    cloned.style.overflow = 'visible';
+    cloned.querySelectorAll('input,select,textarea').forEach((el) => {
+      const element = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      const value =
+        element instanceof HTMLSelectElement
+          ? element.options[element.selectedIndex]?.text || element.value
+          : element.value;
+      const span = document.createElement('span');
+      span.textContent = value || '';
+      span.style.fontFamily = 'monospace';
+      element.replaceWith(span);
+    });
+    const currentCompany = Array.isArray(companies)
+      ? companies.find((c: any) => c?.id === selectedCompanyId)
+      : null;
+    const companyLabel = String((currentCompany as any)?.companyName || (currentCompany as any)?.name || '').trim() || 'Account Review';
+    const monthLabel = latestAccountReviewMonthLabel ? ` — ${latestAccountReviewMonthLabel}` : '';
+    const generatedAt = new Date().toLocaleString();
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) {
+      alert('Popup blocked. Please allow popups for this site to print the Account Review.');
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${companyLabel} — Account Review</title>
+    <style>
+      @page { size: letter landscape; margin: 0.5in; }
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; color: #1e293b; margin: 0; padding: 16px; }
+      h1 { font-size: 18px; margin: 0 0 4px 0; }
+      .meta { font-size: 11px; color: #64748b; margin-bottom: 12px; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      thead { background: #f8fafc; }
+      th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #475569; }
+      th:nth-child(4), th:nth-child(5), th:nth-child(6) { text-align: right; }
+      td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+      td:nth-child(4), td:nth-child(5), td:nth-child(6) { text-align: right; font-family: monospace; }
+      tr { page-break-inside: avoid; }
+      thead { display: table-header-group; }
+    </style>
+  </head>
+  <body>
+    <h1>${companyLabel} — Account Review${monthLabel}</h1>
+    <div class="meta">Generated ${generatedAt}</div>
+    ${cloned.innerHTML}
+    <script>
+      window.addEventListener('load', function () {
+        setTimeout(function () { window.focus(); window.print(); }, 100);
+      });
+    <\/script>
+  </body>
+</html>`);
+    printWindow.document.close();
+  };
+
   // Back-compat: if something sets the legacy top-level 'payments' tab,
   // redirect it into Company Management > Payments.
   useEffect(() => {
@@ -2544,6 +2631,14 @@ function FinancialScorePage() {
     analysisQualifierMode?: 'auto' | 'manual';
     analysisQualifierAudit?: any;
   }>({});
+  /**
+   * Per-(bucket, lineItem) assignment sums emitted by EbitdaAdjustmentsProvider.
+   * Lets the SDE math consume "auto-derived from assignments" values for each
+   * line item without re-querying the API. Shape: { OWNER_COMP: { ownerSalary: 12345 } }.
+   */
+  const [ebitdaLineItemTotals, setEbitdaLineItemTotals] = useState<
+    Partial<Record<'OWNER_COMP' | 'PERSONAL' | 'NON_RECURRING' | 'ONE_TIME_REVENUE', Record<string, number>>>
+  >({});
 
   // State - Goals
   const [expenseGoals, setExpenseGoals] = useState<{[key: string]: number}>({});
@@ -3752,10 +3847,34 @@ function FinancialScorePage() {
         .then(res => res.json())
         .then(data => {
           if (data.invalidMappingsCount > 0) {
-            alert(
-              `We found ${data.invalidMappingsCount} saved mapping(s) that do not match this company's selected sector. ` +
-              `Those mappings were set to Unmapped. Please review and remap Revenue/COGS fields before saving.`,
-            );
+            const invalidRows: any[] = Array.isArray(data.invalidMappings) ? data.invalidMappings : [];
+            const previewLines = invalidRows.slice(0, 8).map((row: any) => {
+              const name = String(row?.accountName || 'Unnamed').trim();
+              const field = String(row?.invalidTargetField || '').trim();
+              const cls = String(row?.accountClassification || '').trim();
+              const reasonBits: string[] = [];
+              if (field) reasonBits.push(`previously mapped to "${field}"`);
+              if (cls) reasonBits.push(`classification "${cls}"`);
+              const reason = reasonBits.length ? ` — ${reasonBits.join(', ')}` : '';
+              return `  • ${name}${reason}`;
+            });
+            const more =
+              invalidRows.length > previewLines.length
+                ? `\n  …and ${invalidRows.length - previewLines.length} more`
+                : '';
+            const summary =
+              `${data.invalidMappingsCount} saved mapping(s) were flagged as invalid for this company's selected sector ` +
+              `(or have a target field that doesn't match their account classification). ` +
+              `Those rows have been cleared to Unmapped.\n\n` +
+              `Affected accounts:\n${previewLines.join('\n')}${more}\n\n` +
+              `Review and remap them in the Account Mappings table, then click Save Account Mappings.`;
+            console.warn('?? Invalid mappings flagged on load', {
+              companyId: selectedCompanyId,
+              count: data.invalidMappingsCount,
+              invalidMappings: invalidRows,
+              industrySectorCategory: data.industrySectorCategory,
+            });
+            alert(summary);
           }
           if (data.mappings && data.mappings.length > 0) {
             console.log(`? Loaded ${data.mappings.length} saved account mappings`);
@@ -9314,7 +9433,7 @@ function FinancialScorePage() {
       title: '5. SDE Valuation',
       rows: [
         { key: 'sde_executiveSummary', label: 'Executive Summary' },
-        { key: 'sde_ebitdaAdjustments', label: 'EBITDA Adjustments' },
+        { key: 'sde_ebitdaAdjustments', label: 'Quality of Earnings' },
         { key: 'sde_revenueQuality', label: 'Revenue Quality' },
         { key: 'sde_customerQuality', label: 'Customer Quality' },
         { key: 'sde_workingCapital', label: 'Working Capital' },
@@ -10323,7 +10442,7 @@ function FinancialScorePage() {
       }
       if (valuationBuilderSelections.sde_ebitdaAdjustments) {
         const c: string[] = [];
-        c.push(`${rowLabel('sde_ebitdaAdjustments', 'EBITDA Adjustments')}:`);
+        c.push(`${rowLabel('sde_ebitdaAdjustments', 'Quality of Earnings')}:`);
         c.push(`- Reported EBITDA baseline: ${money(valuationExecutiveOverview.ttmEbitda)}.`);
         c.push(`- Net normalization adjustments (to SDE): ${money(adjustments)}.`);
         c.push(`- Normalized SDE: ${money(valuationExecutiveOverview.ttmSde)}.`);
@@ -14440,24 +14559,35 @@ function FinancialScorePage() {
                 : selectedAccountingSystem === 'XERO'
                   ? 'Xero'
                   : selectedAccountingSystemLabel || 'accounting';
+            // Only route the Process button into the CSV workflow when there is
+            // actually a CSV in memory right now, OR the company is permanently
+            // configured as CSV_FILE. A merely-cached CSV in localStorage is NOT
+            // enough — an ERP-connected company can have a stale CSV from an
+            // earlier session, and we don't want that to suppress the
+            // through-month / mode selector or force the CSV branch in the
+            // click handler. The "Load Saved CSV" button still appears whenever
+            // hasSavedCsvInLocalStorage is true, so the user can opt in.
+            // Previously this also matched on latestFinancialSource containing
+            // "csv", which trapped ERP companies in a Catch-22 (CSV branch
+            // bounced with "Upload a CSV first" because nothing was loaded).
             const isCsvMappingWorkflow =
               hasCsvData ||
-              selectedAccountingSystem === 'CSV_FILE' ||
-              String(latestFinancialSource || '').toLowerCase().includes('csv');
+              selectedAccountingSystem === 'CSV_FILE';
             const showCsvProcessButton =
               selectedAccountingSystem === 'CSV_FILE' ||
               hasCsvData ||
               hasSavedCsvInLocalStorage;
-            const hasSupportedApiReprocessPlatform = ['QUICKBOOKS', 'XERO', 'INFOR_M3', 'INFOR_CSI', 'QUICKBOOKS_DESKTOP', 'SAGE', 'SAGE_INTACCT'].includes(
-              String(selectedAccountingSystem || '').toUpperCase()
-            );
             const selectedSystemNormalized = String(selectedAccountingSystem || '').toUpperCase();
             const erpCaoEnabledSystems = ['QUICKBOOKS_DESKTOP', 'INFOR_M3', 'INFOR_CSI'];
             const showErpCaoLoadPanel = erpCaoEnabledSystems.includes(selectedSystemNormalized);
-            const showProcessButton =
-              showCsvProcessButton ||
-              hasSupportedApiReprocessPlatform ||
-              Boolean(loadedMonthlyData && loadedMonthlyData.length > 0);
+            // Process Mappings button is always available once the user is in this
+            // section (which itself only renders when there are mappings or CSV
+            // data to act on). The click handler routes per-system: CSV uploads
+            // run processTrialBalanceToMonthly; INFOR_CSI runs runCsiMappingPipeline;
+            // every other system (Vista, NetSuite, Acumatica, Odoo, Dynamics 365,
+            // Sage Intacct, QB, QBD, Xero, Sage, Infor M3) falls through to the
+            // generic /api/financials/reprocess-mappings endpoint.
+            const showProcessButton = true;
             const latestAccountReviewMonthLabel = (() => {
               const selectedTargetMonth = String(apiFinancialTargetMonth || '').trim();
               if (/^\d{4}-\d{2}$/.test(selectedTargetMonth)) {
@@ -14978,29 +15108,32 @@ function FinancialScorePage() {
                           {/* Unified process button for all import types */}
                           {showProcessButton && (
                           <>
-                          {!isCsvMappingWorkflow && (
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              {String(selectedAccountingSystem || '').toUpperCase() === 'QUICKBOOKS' && (
-                                <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
-                              )}
-                              <input
-                                type="month"
-                                value={apiFinancialTargetMonth}
-                                onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {String(selectedAccountingSystem || '').toUpperCase() === 'QUICKBOOKS' && (
+                              <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>Through month</span>
+                            )}
+                            <input
+                              type="month"
+                              value={apiFinancialTargetMonth}
+                              onChange={(e) => setApiFinancialTargetMonth(e.target.value)}
+                              title={
+                                isCsvMappingWorkflow
+                                  ? 'Limit CSV processing to (or through) this month. Leave blank to process every month in the file.'
+                                  : 'Target month for reprocessing this accounting source.'
+                              }
+                              style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
+                            />
+                            {String(selectedAccountingSystem || '').toUpperCase() !== 'QUICKBOOKS' && (
+                              <select
+                                value={apiFinancialImportMode}
+                                onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
                                 style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
-                              />
-                              {String(selectedAccountingSystem || '').toUpperCase() !== 'QUICKBOOKS' && (
-                                <select
-                                  value={apiFinancialImportMode}
-                                  onChange={(e) => setApiFinancialImportMode(e.target.value === 'only' ? 'only' : 'through')}
-                                  style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px', background: 'white' }}
-                                >
-                                  <option value="through">Through month</option>
-                                  <option value="only">Only month</option>
-                                </select>
-                              )}
-                            </div>
-                          )}
+                              >
+                                <option value="through">Through month</option>
+                                <option value="only">Only month</option>
+                              </select>
+                            )}
+                          </div>
                           <button
                             ref={applyMappingsButtonRef}
                             onClick={async () => {
@@ -15010,8 +15143,59 @@ function FinancialScorePage() {
                               }
 
                               if (isCsvMappingWorkflow) {
-                                if (!hasCsvData) {
-                                  alert('Upload a CSV or click "Load Saved CSV" first.');
+                                let csvForProcessing = selectedCompanyCsvTrialBalanceData;
+                                let storageKeyTried = '';
+                                let storageHadKey = false;
+                                let storageCompanyId: string | null = null;
+                                if (!csvForProcessing && typeof window !== 'undefined' && selectedCompanyId) {
+                                  storageKeyTried = `csvTrialBalance_${selectedCompanyId}`;
+                                  try {
+                                    const savedCsvRaw = localStorage.getItem(storageKeyTried);
+                                    storageHadKey = !!savedCsvRaw;
+                                    if (savedCsvRaw) {
+                                      const parsedSaved = JSON.parse(savedCsvRaw);
+                                      storageCompanyId = parsedSaved?._companyId ?? null;
+                                      if (parsedSaved && parsedSaved._companyId === selectedCompanyId) {
+                                        setCsvTrialBalanceData(parsedSaved);
+                                        csvForProcessing = parsedSaved;
+                                        console.log('?? Auto-loaded saved CSV from localStorage for processing');
+                                      }
+                                    }
+                                  } catch (loadErr) {
+                                    console.warn('Failed to auto-load saved CSV:', loadErr);
+                                  }
+                                }
+                                if (!csvForProcessing) {
+                                  console.warn('?? Process Mappings: no CSV available', {
+                                    selectedCompanyId,
+                                    selectedAccountingSystem,
+                                    hasCsvDataInState: !!csvTrialBalanceData,
+                                    csvInStateCompanyId: csvTrialBalanceData?._companyId || null,
+                                    csvInStateMatchesSelected:
+                                      !!csvTrialBalanceData && csvTrialBalanceData._companyId === selectedCompanyId,
+                                    storageKeyTried,
+                                    storageHadKey,
+                                    storageCompanyId,
+                                  });
+                                  const lines = [
+                                    'No CSV is loaded for this company.',
+                                    '',
+                                    'How to fix:',
+                                    '  1. Scroll up to "Upload CSV" and pick the trial balance file again, OR',
+                                    '  2. If you previously uploaded one, click "Load Saved CSV" if that button is visible.',
+                                    '',
+                                    'Diagnostics (also in browser console):',
+                                    `  • Selected company: ${selectedCompanyId || '(none)'}`,
+                                    `  • CSV in memory: ${csvTrialBalanceData ? 'yes' : 'no'}${
+                                      csvTrialBalanceData?._companyId
+                                        ? ` (tagged for company ${csvTrialBalanceData._companyId})`
+                                        : ''
+                                    }`,
+                                    `  • CSV in browser storage: ${storageHadKey ? 'yes' : 'no'}${
+                                      storageCompanyId ? ` (tagged for company ${storageCompanyId})` : ''
+                                    }`,
+                                  ];
+                                  alert(lines.join('\n'));
                                   return;
                                 }
                                 if (!currentUser) {
@@ -15029,8 +15213,57 @@ function FinancialScorePage() {
                                   }));
 
                                   // Process the CSV data using mappings
-                                  const processedData = processTrialBalanceToMonthly(selectedCompanyCsvTrialBalanceData, normalizedMappingsForProcessing);
-                                  const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(selectedCompanyCsvTrialBalanceData, normalizedMappingsForProcessing);
+                                  const fullProcessedData = processTrialBalanceToMonthly(csvForProcessing, normalizedMappingsForProcessing);
+                                  const dailyMapped = processTrialBalanceToDailySnapshotsAndLines(csvForProcessing, normalizedMappingsForProcessing);
+
+                                  // Optionally narrow the monthly slice the user wants to keep.
+                                  // The month input governs both ERP and CSV paths now: for CSV
+                                  // we filter the in-memory rows after parsing.
+                                  // - "through": all months <= targetMonth
+                                  // - "only":    just the targetMonth
+                                  // Blank or invalid targetMonth = no filter (legacy behavior).
+                                  const targetMonthForCsv = String(apiFinancialTargetMonth || '').trim();
+                                  const targetMonthMatch = targetMonthForCsv.match(/^(\d{4})-(\d{2})$/);
+                                  let processedData = fullProcessedData;
+                                  if (targetMonthMatch && Array.isArray(fullProcessedData)) {
+                                    const monthKeyOf = (row: any): string | null => {
+                                      const candidate =
+                                        row?.month ||
+                                        row?.monthDate ||
+                                        row?.date ||
+                                        row?.period ||
+                                        null;
+                                      if (!candidate) return null;
+                                      const raw = String(candidate);
+                                      const directMatch = raw.match(/^(\d{4})-(\d{2})/);
+                                      if (directMatch) return `${directMatch[1]}-${directMatch[2]}`;
+                                      const parsed = new Date(raw);
+                                      if (Number.isNaN(parsed.getTime())) return null;
+                                      return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`;
+                                    };
+                                    const limitMonthKey = `${targetMonthMatch[1]}-${targetMonthMatch[2]}`;
+                                    const mode = String(apiFinancialImportMode || 'through');
+                                    processedData = fullProcessedData.filter((row: any) => {
+                                      const key = monthKeyOf(row);
+                                      if (!key) return true;
+                                      return mode === 'only' ? key === limitMonthKey : key <= limitMonthKey;
+                                    });
+                                    if (processedData.length === 0) {
+                                      const proceedAnyway = confirm(
+                                        `No CSV rows match ${mode === 'only' ? `month ${limitMonthKey}` : `months through ${limitMonthKey}`}. ` +
+                                          `Process all ${fullProcessedData.length} months from the CSV instead?`
+                                      );
+                                      if (!proceedAnyway) {
+                                        setIsProcessingMonthlyData(false);
+                                        return;
+                                      }
+                                      processedData = fullProcessedData;
+                                    } else {
+                                      console.log(
+                                        `?? CSV month filter: kept ${processedData.length}/${fullProcessedData.length} months (mode=${mode}, limit=${limitMonthKey})`
+                                      );
+                                    }
+                                  }
 
                                   // Save to database
                                   const response = await fetch('/api/financials', {
@@ -15039,8 +15272,8 @@ function FinancialScorePage() {
                                     body: JSON.stringify({
                                       companyId: selectedCompanyId,
                                       uploadedByUserId: currentUser.id,
-                                      fileName: selectedCompanyCsvTrialBalanceData?.fileName || 'CSV Trial Balance Upload',
-                                      rawData: selectedCompanyCsvTrialBalanceData,
+                                      fileName: csvForProcessing?.fileName || 'CSV Trial Balance Upload',
+                                      rawData: csvForProcessing,
                                       columnMapping: { source: 'csv_trial_balance', mappings: normalizedMappingsForProcessing },
                                       monthlyData: processedData
                                     })
@@ -15059,6 +15292,67 @@ function FinancialScorePage() {
 
                                   await response.json();
                                   console.log(`? Processed and saved ${processedData.length} months of CSV data`);
+
+                                  // Auto-publish every month we just saved so the master-data API
+                                  // (scope=published) and downstream reports light up immediately.
+                                  // CSV-only — ERP and lightweight-payload paths handle publishing
+                                  // through their own flows and are not touched here.
+                                  try {
+                                    const monthsToPublish = (() => {
+                                      const set = new Set<string>();
+                                      for (const row of Array.isArray(processedData) ? processedData : []) {
+                                        const candidate =
+                                          (row as any)?.month ||
+                                          (row as any)?.monthDate ||
+                                          (row as any)?.date ||
+                                          (row as any)?.period ||
+                                          null;
+                                        if (!candidate) continue;
+                                        const raw = String(candidate);
+                                        const direct = raw.match(/^(\d{4})-(\d{2})/);
+                                        if (direct) {
+                                          set.add(`${direct[1]}-${direct[2]}`);
+                                          continue;
+                                        }
+                                        const parsed = new Date(raw);
+                                        if (!Number.isNaN(parsed.getTime())) {
+                                          set.add(
+                                            `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}`,
+                                          );
+                                        }
+                                      }
+                                      return Array.from(set).sort();
+                                    })();
+
+                                    if (monthsToPublish.length === 0) {
+                                      console.warn('CSV auto-publish: no months extracted from processedData; skipping.');
+                                    } else {
+                                      console.log(`📣 Auto-publishing ${monthsToPublish.length} CSV month(s):`, monthsToPublish);
+                                      const publishResults = await Promise.all(
+                                        monthsToPublish.map(async (month) => {
+                                          try {
+                                            const r = await fetch('/api/financials/publish-month', {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ companyId: selectedCompanyId, month, force: false }),
+                                            });
+                                            const body = await r.json().catch(() => ({}));
+                                            return { month, ok: r.ok, status: r.status, body };
+                                          } catch (publishErr: any) {
+                                            return { month, ok: false, status: 0, body: { error: String(publishErr?.message || publishErr) } };
+                                          }
+                                        }),
+                                      );
+                                      const successCount = publishResults.filter((p) => p.ok).length;
+                                      const failed = publishResults.filter((p) => !p.ok);
+                                      console.log(`✅ CSV auto-publish complete: ${successCount}/${publishResults.length} months published.`);
+                                      if (failed.length > 0) {
+                                        console.warn('CSV auto-publish: some months failed:', failed);
+                                      }
+                                    }
+                                  } catch (autoPublishError) {
+                                    console.error('CSV auto-publish failed:', autoPublishError);
+                                  }
 
                                   // Persist detailed daily post-mapped data for Operations > Daily Financials
                                   try {
@@ -15399,25 +15693,43 @@ function FinancialScorePage() {
                         ? `Account Review - All ${csvTrialBalanceData.accounts?.length || 0} accounts (Most Recent Period)`
                         : `Account Review - All ${aiMappings.length} mapped accounts`}
                     </h2>
-                    <button
-                      onClick={saveAccountMappings}
-                      disabled={isSavingMappings}
-                      style={{
-                        padding: '8px 16px',
-                        background: isSavingMappings ? '#9ca3af' : '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        cursor: isSavingMappings ? 'not-allowed' : 'pointer',
-                        boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
-                      }}
-                    >
-                      {isSavingMappings ? 'Saving...' : 'Save Account Review'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => printAccountReview()}
+                        style={{
+                          padding: '8px 16px',
+                          background: '#2563eb',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          boxShadow: '0 2px 6px rgba(37, 99, 235, 0.3)'
+                        }}
+                      >
+                        Print
+                      </button>
+                      <button
+                        onClick={saveAccountMappings}
+                        disabled={isSavingMappings}
+                        style={{
+                          padding: '8px 16px',
+                          background: isSavingMappings ? '#9ca3af' : '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          cursor: isSavingMappings ? 'not-allowed' : 'pointer',
+                          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)'
+                        }}
+                      >
+                        {isSavingMappings ? 'Saving...' : 'Save Account Review'}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
+                  <div id="account-review-print-area" style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
                     <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
                       <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                         <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
@@ -15427,6 +15739,8 @@ function FinancialScorePage() {
                           <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px' }}>
                             {latestAccountReviewMonthLabel ? `Latest Value (${latestAccountReviewMonthLabel})` : 'Latest Value'}
                           </th>
+                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '90px' }}>Owner %</th>
+                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px' }}>Owner Amount</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -15780,35 +16094,210 @@ function FinancialScorePage() {
                           };
 
                           return (hasCsvData && csvTrialBalanceData
-                          ? [...(csvTrialBalanceData.accounts || [])]
-                              .sort((a: any, b: any) => compareByIdThenName(a?.acctId, b?.acctId, a?.description, b?.description))
-                              .map((account: any, idx: number) => {
-                              const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
-                              const latestDate = validDates[validDates.length - 1];
-                              let latestValue = 0;
-                              if (account.values) {
-                                if (latestDate && account.values[latestDate] !== undefined) {
-                                  latestValue = account.values[latestDate];
-                                } else {
-                                  const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
-                                  if (valueKeys.length > 0) {
-                                    const lastKey = valueKeys[valueKeys.length - 1];
-                                    latestValue = account.values[lastKey] || 0;
+                          ? (() => {
+                              // Index aiMappings by accountId / accountCode / accountName
+                              // so each CSV row can find its corresponding mapping
+                              // record. The mapping owns ownerPercent (and is what
+                              // "Save Account Review" persists), so we mutate
+                              // aiMappings even when the row is rendered from CSV.
+                              const mappingIndexByAccountKey = new Map<string, number>();
+                              const indexKey = (value: unknown): string =>
+                                String(value || '').trim().toLowerCase();
+                              if (Array.isArray(aiMappings)) {
+                                aiMappings.forEach((m: any, i: number) => {
+                                  const candidates = [m?.accountId, m?.accountCode, m?.accountName];
+                                  for (const c of candidates) {
+                                    const key = indexKey(c);
+                                    if (key && !mappingIndexByAccountKey.has(key)) {
+                                      mappingIndexByAccountKey.set(key, i);
+                                    }
+                                  }
+                                });
+                              }
+                              return [...(csvTrialBalanceData.accounts || [])]
+                                .sort((a: any, b: any) =>
+                                  compareByIdThenName(a?.acctId, b?.acctId, a?.description, b?.description)
+                                )
+                                .map((account: any, idx: number) => {
+                                const validDates = csvTrialBalanceData.dates?.filter((d: string) => d && d.trim() !== '') || [];
+                                const latestDate = validDates[validDates.length - 1];
+                                let latestValue = 0;
+                                if (account.values) {
+                                  if (latestDate && account.values[latestDate] !== undefined) {
+                                    latestValue = account.values[latestDate];
+                                  } else {
+                                    const valueKeys = Object.keys(account.values).filter(k => k && k.trim() !== '');
+                                    if (valueKeys.length > 0) {
+                                      const lastKey = valueKeys[valueKeys.length - 1];
+                                      latestValue = account.values[lastKey] || 0;
+                                    }
                                   }
                                 }
-                              }
-                              return (
-                                <tr key={`csv-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                  <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>{account.acctType}</td>
-                                  <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{account.acctId}</td>
-                                  <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
-                                  <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
-                                    ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    {latestValue < 0 && ' (CR)'}
-                                  </td>
-                                </tr>
-                              );
-                            })
+                                const csvAccountKeyCandidates = [account.acctId, account.description].map(indexKey).filter(Boolean);
+                                let matchedMappingIndex = -1;
+                                for (const key of csvAccountKeyCandidates) {
+                                  const found = mappingIndexByAccountKey.get(key);
+                                  if (typeof found === 'number') {
+                                    matchedMappingIndex = found;
+                                    break;
+                                  }
+                                }
+                                const matchedMapping =
+                                  matchedMappingIndex >= 0 && Array.isArray(aiMappings)
+                                    ? aiMappings[matchedMappingIndex]
+                                    : null;
+                                const rawOwnerPct = matchedMapping?.ownerPercent;
+                                const ownerPctNumber =
+                                  rawOwnerPct === null || rawOwnerPct === undefined || rawOwnerPct === ''
+                                    ? null
+                                    : Number(rawOwnerPct);
+                                const hasValidOwnerPct = ownerPctNumber !== null && Number.isFinite(ownerPctNumber);
+                                const ownerInputValue = hasValidOwnerPct ? String(ownerPctNumber) : '';
+                                const ownerAmount = hasValidOwnerPct
+                                  ? (Number(latestValue) * ownerPctNumber!) / 100
+                                  : null;
+                                const csvAcctTypeRaw = String(account.acctType || '').trim();
+                                const csvAcctId = String(account.acctId || '').trim();
+                                // Extract a 4+ digit account code from any candidate
+                                // string (accountCode, accountId, acctId, accountName,
+                                // CSV description). Mirrors getClassId() in the upper
+                                // AccountMappingTable so this column shows the same
+                                // "Class ID" the user sees there even when the saved
+                                // mapping only has it embedded in the account name
+                                // (e.g. "10000 Select Bank Checking").
+                                const extractAccountCode = (...values: unknown[]): string => {
+                                  for (const value of values) {
+                                    const raw = String(value || '').trim();
+                                    if (!raw) continue;
+                                    const directMatch = raw.match(/\b(\d{4,})\b/);
+                                    if (directMatch?.[1]) return directMatch[1];
+                                    const digitsOnly = raw.replace(/\D/g, '');
+                                    if (digitsOnly.length >= 4) return digitsOnly;
+                                  }
+                                  return '';
+                                };
+                                const idColumnDisplay = extractAccountCode(
+                                  matchedMapping?.accountCode,
+                                  matchedMapping?.accountId,
+                                  matchedMapping?.acctId,
+                                  matchedMapping?.accountName,
+                                  csvAcctId,
+                                  account.description,
+                                );
+                                const selectedTypeOption = matchedMapping
+                                  ? getClassificationOptionValue(
+                                      matchedMapping.accountClassification ||
+                                        matchedMapping.sourceStatus ||
+                                        csvAcctTypeRaw
+                                    )
+                                  : getClassificationOptionValue(csvAcctTypeRaw);
+                                return (
+                                  <tr key={`csv-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                    <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px' }}>
+                                      {matchedMappingIndex >= 0 ? (
+                                        <select
+                                          value={selectedTypeOption}
+                                          onChange={(e) => {
+                                            const selected = e.target.value;
+                                            setAiMappings((prev) => {
+                                              const updated = [...(Array.isArray(prev) ? prev : [])];
+                                              if (!updated[matchedMappingIndex]) return prev;
+                                              updated[matchedMappingIndex] = {
+                                                ...updated[matchedMappingIndex],
+                                                accountClassification: encodeManualClassification(selected),
+                                              };
+                                              return updated;
+                                            });
+                                          }}
+                                          style={{
+                                            fontSize: '11px',
+                                            border: '1px solid #cbd5e1',
+                                            borderRadius: '4px',
+                                            padding: '2px 4px',
+                                            background: '#fff',
+                                            color: '#334155',
+                                            minWidth: '130px',
+                                          }}
+                                        >
+                                          <option value="Revenue">Revenue</option>
+                                          <option value="Cost of Goods Sold">Cost of Goods Sold</option>
+                                          <option value="Expense">Expense</option>
+                                          <option value="Asset">Asset</option>
+                                          <option value="Liability">Liability</option>
+                                          <option value="Equity">Equity</option>
+                                          <option value="Other">Other</option>
+                                        </select>
+                                      ) : (
+                                        <span title="No saved mapping yet — generate or save mappings to enable Type editing.">
+                                          {csvAcctTypeRaw || '—'}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '11px', fontFamily: 'monospace' }}>{idColumnDisplay || '—'}</td>
+                                    <td style={{ padding: '6px 8px', color: '#1e293b', fontSize: '11px' }}>{account.description}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                      ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      {latestValue < 0 && ' (CR)'}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: '11px' }}>
+                                      {matchedMappingIndex >= 0 ? (
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={100}
+                                          step="0.01"
+                                          value={ownerInputValue}
+                                          placeholder="0"
+                                          onChange={(e) => {
+                                            const raw = e.target.value;
+                                            setAiMappings((prev) => {
+                                              const updated = [...(Array.isArray(prev) ? prev : [])];
+                                              if (!updated[matchedMappingIndex]) return prev;
+                                              let nextValue: number | null;
+                                              if (raw === '') {
+                                                nextValue = null;
+                                              } else {
+                                                const parsed = Number(raw);
+                                                if (!Number.isFinite(parsed)) return prev;
+                                                nextValue = Math.max(0, Math.min(100, parsed));
+                                              }
+                                              updated[matchedMappingIndex] = {
+                                                ...updated[matchedMappingIndex],
+                                                ownerPercent: nextValue,
+                                              };
+                                              return updated;
+                                            });
+                                          }}
+                                          style={{
+                                            width: '70px',
+                                            fontSize: '11px',
+                                            padding: '2px 4px',
+                                            border: '1px solid #cbd5e1',
+                                            borderRadius: '4px',
+                                            textAlign: 'right',
+                                            background: '#fff',
+                                            color: '#334155',
+                                            fontFamily: 'monospace',
+                                          }}
+                                        />
+                                      ) : (
+                                        <span
+                                          style={{ color: '#94a3b8' }}
+                                          title="No saved mapping for this account yet — generate or save mappings to enable Owner %."
+                                        >
+                                          —
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right', color: ownerAmount == null ? '#94a3b8' : ownerAmount >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                      {ownerAmount == null
+                                        ? '—'
+                                        : `$${Math.abs(ownerAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${ownerAmount < 0 ? ' (CR)' : ''}`}
+                                    </td>
+                                  </tr>
+                                );
+                              });
+                            })()
                           : aiMappings
                               .map((mapping: any, originalIndex: number) => ({ mapping, originalIndex }))
                               .sort((a, b) =>
@@ -15892,6 +16381,69 @@ function FinancialScorePage() {
                                     ? 'N/A'
                                     : `$${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${latestValue < 0 ? ' (CR)' : ''}`}
                                 </td>
+                                {(() => {
+                                  const rawOwnerPct = mapping?.ownerPercent;
+                                  const ownerPctNumber =
+                                    rawOwnerPct === null || rawOwnerPct === undefined || rawOwnerPct === ''
+                                      ? null
+                                      : Number(rawOwnerPct);
+                                  const hasValidOwnerPct = ownerPctNumber !== null && Number.isFinite(ownerPctNumber);
+                                  const inputValue = hasValidOwnerPct ? String(ownerPctNumber) : '';
+                                  const ownerAmount =
+                                    latestValue != null && hasValidOwnerPct
+                                      ? (latestValue * ownerPctNumber!) / 100
+                                      : null;
+                                  return (
+                                    <>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: '11px' }}>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={100}
+                                          step="0.01"
+                                          value={inputValue}
+                                          placeholder="0"
+                                          onChange={(e) => {
+                                            const raw = e.target.value;
+                                            setAiMappings((prev) => {
+                                              const updated = [...(Array.isArray(prev) ? prev : [])];
+                                              if (!updated[originalIndex]) return prev;
+                                              let nextValue: number | null;
+                                              if (raw === '') {
+                                                nextValue = null;
+                                              } else {
+                                                const parsed = Number(raw);
+                                                if (!Number.isFinite(parsed)) return prev;
+                                                nextValue = Math.max(0, Math.min(100, parsed));
+                                              }
+                                              updated[originalIndex] = {
+                                                ...updated[originalIndex],
+                                                ownerPercent: nextValue,
+                                              };
+                                              return updated;
+                                            });
+                                          }}
+                                          style={{
+                                            width: '70px',
+                                            fontSize: '11px',
+                                            padding: '2px 4px',
+                                            border: '1px solid #cbd5e1',
+                                            borderRadius: '4px',
+                                            textAlign: 'right',
+                                            background: '#fff',
+                                            color: '#334155',
+                                            fontFamily: 'monospace',
+                                          }}
+                                        />
+                                      </td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: ownerAmount == null ? '#94a3b8' : ownerAmount >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
+                                        {ownerAmount == null
+                                          ? '—'
+                                          : `$${Math.abs(ownerAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${ownerAmount < 0 ? ' (CR)' : ''}`}
+                                      </td>
+                                    </>
+                                  );
+                                })()}
                               </tr>
                             );
                           })
@@ -16838,10 +17390,10 @@ function FinancialScorePage() {
 
                     const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
                     const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
-                    const effectiveOwnerSalaryAdj =
-                      ownerSalaryAdj > 0 ? ownerSalaryAdj : Math.abs(sdeManualInputs.ownerSalary ?? 0);
-                    const effectiveOwnersDrawAdj =
-                      ownersDrawAdj > 0 ? ownersDrawAdj : Math.abs(sdeManualInputs.ownersDraw ?? 0);
+                    const ownerSalaryAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownerSalary ?? 0;
+                    const ownersDrawAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownersDraw ?? 0;
+                    const effectiveOwnerSalaryAdj = ownerSalaryAssigned + Math.abs(sdeManualInputs.ownerSalary ?? 0);
+                    const effectiveOwnersDrawAdj = ownersDrawAssigned + Math.abs(sdeManualInputs.ownersDraw ?? 0);
                     const effectiveMarketReplacementSalary = Math.abs(sdeManualInputs.marketReplacementSalary ?? 0);
                     const effectiveOwnerCompOther = sdeManualInputs.ownerCompOther ?? 0;
                     const coreSellerAdjustment = effectiveOwnerSalaryAdj + effectiveOwnersDrawAdj - effectiveMarketReplacementSalary + effectiveOwnerCompOther;
@@ -17125,10 +17677,10 @@ function FinancialScorePage() {
 
             const ownerSalaryAdj = Math.abs(sumTtmField('ownerBasePay'));
             const ownersDrawAdj = Math.abs(sumTtmField('ownersDraw'));
-            const effectiveOwnerSalaryAdj =
-              ownerSalaryAdj > 0 ? ownerSalaryAdj : Math.abs(sdeManualInputs.ownerSalary ?? 0);
-            const effectiveOwnersDrawAdj =
-              ownersDrawAdj > 0 ? ownersDrawAdj : Math.abs(sdeManualInputs.ownersDraw ?? 0);
+            const ownerSalaryAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownerSalary ?? 0;
+            const ownersDrawAssigned = ebitdaLineItemTotals.OWNER_COMP?.ownersDraw ?? 0;
+            const effectiveOwnerSalaryAdj = ownerSalaryAssigned + Math.abs(sdeManualInputs.ownerSalary ?? 0);
+            const effectiveOwnersDrawAdj = ownersDrawAssigned + Math.abs(sdeManualInputs.ownersDraw ?? 0);
             const marketReplacementSalaryAdj = 0;
             const effectiveMarketReplacementSalary =
               Math.abs(sdeManualInputs.marketReplacementSalary ?? marketReplacementSalaryAdj);
@@ -18018,7 +18570,7 @@ function FinancialScorePage() {
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', borderBottom: '2px solid #e2e8f0' }}>
                     {[
                       { id: 'recommendations' as const, label: 'Executive Summary' },
-                      { id: 'ebitda-adjustments' as const, label: 'EBITDA Adjustments' },
+                      { id: 'ebitda-adjustments' as const, label: 'Quality of Earnings' },
                       { id: 'revenue-quality' as const, label: 'Revenue Quality' },
                       { id: 'customer-quality' as const, label: 'Customer Quality' },
                       { id: 'working-capital' as const, label: 'Working Capital' },
@@ -18051,6 +18603,7 @@ function FinancialScorePage() {
                 </div>
                 {sdeModuleTab === 'ebitda-adjustments' && (
                 <>
+                <EbitdaAdjustmentsProvider companyId={selectedCompanyId || null} onLineItemTotalsChange={setEbitdaLineItemTotals}>
                 <div style={{ background: 'white', borderRadius: '10px', padding: '16px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
@@ -18058,7 +18611,7 @@ function FinancialScorePage() {
                     </h2>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', alignItems: 'start' }}>
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>EBITDA, Trailing 12 Months</div>
                       {[
@@ -18083,153 +18636,174 @@ function FinancialScorePage() {
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>1. Owner Compensation Adjustment</div>
                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Replace owner pay with market salary.</div>
-                      {[
-                        ['Owner salary', ownerSalaryAdj > 0 ? formatDollars(effectiveOwnerSalaryAdj) : (sdeManualInputs.ownerSalary ?? 0), ownerSalaryAdj > 0 ? 'readonly' : 'ownerSalaryInput'],
-                        ['Owners Draw', ownersDrawAdj > 0 ? formatDollars(effectiveOwnersDrawAdj) : (sdeManualInputs.ownersDraw ?? 0), ownersDrawAdj > 0 ? 'readonly' : 'ownersDrawInput'],
-                        ['Market replacement salary', effectiveMarketReplacementSalary, 'input'],
-                        ['Other', effectiveOwnerCompOther, 'ownerCompOther'],
-                        ['Adjustment', formatDollars(coreSellerAdjustment), 'readonly-adjustment'],
-                      ].map(([label, value, rowType]) => {
+                      {([
+                        ['Owner salary', sdeManualInputs.ownerSalary ?? 0, 'ownerSalaryInput', 'ownerSalary'],
+                        ['Owners Draw', sdeManualInputs.ownersDraw ?? 0, 'ownersDrawInput', 'ownersDraw'],
+                        ['Market replacement salary', effectiveMarketReplacementSalary, 'input', 'marketReplacementSalary'],
+                        ['Other', effectiveOwnerCompOther, 'ownerCompOther', 'ownerCompOther'],
+                        ['Adjustment', formatDollars(coreSellerAdjustment), 'readonly-adjustment', null],
+                      ] as Array<[string, any, string, string | null]>).map(([label, value, rowType, lineKey]) => {
                         const isAdjustmentRow = label.toLowerCase().includes('adjustment');
+                        const accountsRow = lineKey ? (
+                          <EbitdaLineItemAccounts bucket="OWNER_COMP" lineItem={lineKey} />
+                        ) : null;
                         if (rowType === 'ownerSalaryInput') {
                           return (
-                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
-                              <span>{label}</span>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={formatInputDollars(Number(value) || 0)}
-                                onChange={(e) => {
-                                  const parsed = parseInputDollars(e.target.value);
-                                  setSdeManualInputs((prev) => ({ ...prev, ownerSalary: Math.abs(parsed) }));
-                                }}
-                                style={{
-                                  width: '130px',
-                                  textAlign: 'right',
-                                  padding: '3px 6px',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  fontWeight: 600
-                                }}
-                              />
-                            </div>
+                            <React.Fragment key={label}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                                <span>{label}</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatInputDollars(Number(value) || 0)}
+                                  onChange={(e) => {
+                                    const parsed = parseInputDollars(e.target.value);
+                                    setSdeManualInputs((prev) => ({ ...prev, ownerSalary: Math.abs(parsed) }));
+                                  }}
+                                  style={{
+                                    width: '130px',
+                                    textAlign: 'right',
+                                    padding: '3px 6px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    fontWeight: 600
+                                  }}
+                                />
+                              </div>
+                              {accountsRow}
+                            </React.Fragment>
                           );
                         }
                         if (rowType === 'ownersDrawInput') {
                           return (
-                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
-                              <span>{label}</span>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={formatInputDollars(Number(value) || 0)}
-                                onChange={(e) => {
-                                  const parsed = parseInputDollars(e.target.value);
-                                  setSdeManualInputs((prev) => ({ ...prev, ownersDraw: Math.abs(parsed) }));
-                                }}
-                                style={{
-                                  width: '130px',
-                                  textAlign: 'right',
-                                  padding: '3px 6px',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  fontWeight: 600
-                                }}
-                              />
-                            </div>
+                            <React.Fragment key={label}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                                <span>{label}</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatInputDollars(Number(value) || 0)}
+                                  onChange={(e) => {
+                                    const parsed = parseInputDollars(e.target.value);
+                                    setSdeManualInputs((prev) => ({ ...prev, ownersDraw: Math.abs(parsed) }));
+                                  }}
+                                  style={{
+                                    width: '130px',
+                                    textAlign: 'right',
+                                    padding: '3px 6px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    fontWeight: 600
+                                  }}
+                                />
+                              </div>
+                              {accountsRow}
+                            </React.Fragment>
                           );
                         }
                         if (rowType === 'input') {
                           return (
-                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
-                              <span>{label}</span>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={formatInputDollars(Number(value) || 0)}
-                                onChange={(e) => {
-                                  const parsed = parseInputDollars(e.target.value);
-                                  setSdeManualInputs((prev) => ({ ...prev, marketReplacementSalary: Math.abs(parsed) }));
-                                }}
-                                style={{
-                                  width: '130px',
-                                  textAlign: 'right',
-                                  padding: '3px 6px',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  fontWeight: 600
-                                }}
-                              />
-                            </div>
+                            <React.Fragment key={label}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                                <span>{label}</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatInputDollars(Number(value) || 0)}
+                                  onChange={(e) => {
+                                    const parsed = parseInputDollars(e.target.value);
+                                    setSdeManualInputs((prev) => ({ ...prev, marketReplacementSalary: Math.abs(parsed) }));
+                                  }}
+                                  style={{
+                                    width: '130px',
+                                    textAlign: 'right',
+                                    padding: '3px 6px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    fontWeight: 600
+                                  }}
+                                />
+                              </div>
+                              {accountsRow}
+                            </React.Fragment>
                           );
                         }
                         if (rowType === 'ownerCompOther') {
                           return (
-                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
-                              <span>{label}</span>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={formatInputDollars(Number(value) || 0)}
-                                onChange={(e) => {
-                                  const parsed = parseInputDollars(e.target.value);
-                                  setSdeManualInputs((prev) => ({ ...prev, ownerCompOther: parsed }));
-                                }}
-                                style={{
-                                  width: '130px',
-                                  textAlign: 'right',
-                                  padding: '3px 6px',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  fontWeight: 600
-                                }}
-                              />
-                            </div>
+                            <React.Fragment key={label}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                                <span>{label}</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatInputDollars(Number(value) || 0)}
+                                  onChange={(e) => {
+                                    const parsed = parseInputDollars(e.target.value);
+                                    setSdeManualInputs((prev) => ({ ...prev, ownerCompOther: parsed }));
+                                  }}
+                                  style={{
+                                    width: '130px',
+                                    textAlign: 'right',
+                                    padding: '3px 6px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    fontWeight: 600
+                                  }}
+                                />
+                              </div>
+                              {accountsRow}
+                            </React.Fragment>
                           );
                         }
                         return (
-                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: isAdjustmentRow ? 700 : 400 }}>
-                            <span>{label}</span>
-                            <span style={{ fontWeight: isAdjustmentRow ? 700 : 600 }}>{value}</span>
-                          </div>
+                          <React.Fragment key={label}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: isAdjustmentRow ? 700 : 400 }}>
+                              <span>{label}</span>
+                              <span style={{ fontWeight: isAdjustmentRow ? 700 : 600 }}>{value}</span>
+                            </div>
+                            {accountsRow}
+                          </React.Fragment>
                         );
                       })}
                     </div>
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>2. Personal / Discretionary Expenses</div>
-                      {[
+                      {([
                         ['personal travel', effectivePersonalTravel, 'personalTravel'],
                         ['family payroll', effectiveFamilyPayroll, 'familyPayroll'],
                         ['auto leases', effectiveAutoLeases, 'autoLeases'],
                         ['meals & entertainment', effectiveMealsEntertainment, 'mealsEntertainment'],
                         ['club dues', effectiveClubDues, 'clubDues'],
                         ['Other', effectivePersonalOther, 'personalOther'],
-                      ].map(([label, value, key]) => (
-                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
-                          <span>{label}</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={formatInputDollars(Number(value) || 0)}
-                            onChange={(e) => {
-                              const parsed = parseInputDollars(e.target.value);
-                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
-                            }}
-                            style={{
-                              width: '130px',
-                              textAlign: 'right',
-                              padding: '3px 6px',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '4px',
-                              fontSize: '12px',
-                              fontWeight: 600
-                            }}
-                          />
-                        </div>
+                      ] as Array<[string, any, string]>).map(([label, value, key]) => (
+                        <React.Fragment key={String(label)}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                            <span>{label}</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={formatInputDollars(Number(value) || 0)}
+                              onChange={(e) => {
+                                const parsed = parseInputDollars(e.target.value);
+                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                              }}
+                              style={{
+                                width: '130px',
+                                textAlign: 'right',
+                                padding: '3px 6px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: 600
+                              }}
+                            />
+                          </div>
+                          <EbitdaLineItemAccounts bucket="PERSONAL" lineItem={String(key)} />
+                        </React.Fragment>
                       ))}
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
                         <span>Adjustment</span>
@@ -18265,35 +18839,38 @@ function FinancialScorePage() {
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>3. Non-Recurring Expenses</div>
                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>One-time items.</div>
-                      {[
+                      {([
                         ['legal settlements', effectiveLegalSettlements, 'legalSettlements'],
                         ['major repairs', effectiveMajorRepairs, 'majorRepairs'],
                         ['consulting', effectiveConsulting, 'consulting'],
                         ['ERP install', effectiveErpInstall, 'erpInstall'],
                         ['relocation', effectiveRelocation, 'relocation'],
                         ['Other', effectiveNonRecurringOther, 'nonRecurringOther'],
-                      ].map(([label, value, key]) => (
-                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
-                          <span>{label}</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={formatInputDollars(Number(value) || 0)}
-                            onChange={(e) => {
-                              const parsed = parseInputDollars(e.target.value);
-                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
-                            }}
-                            style={{
-                              width: '130px',
-                              textAlign: 'right',
-                              padding: '3px 6px',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '4px',
-                              fontSize: '12px',
-                              fontWeight: 600
-                            }}
-                          />
-                        </div>
+                      ] as Array<[string, any, string]>).map(([label, value, key]) => (
+                        <React.Fragment key={String(label)}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                            <span>{label}</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={formatInputDollars(Number(value) || 0)}
+                              onChange={(e) => {
+                                const parsed = parseInputDollars(e.target.value);
+                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                              }}
+                              style={{
+                                width: '130px',
+                                textAlign: 'right',
+                                padding: '3px 6px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: 600
+                              }}
+                            />
+                          </div>
+                          <EbitdaLineItemAccounts bucket="NON_RECURRING" lineItem={String(key)} />
+                        </React.Fragment>
                       ))}
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
                         <span>Adjustment</span>
@@ -18303,39 +18880,47 @@ function FinancialScorePage() {
                     <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>4. One-Time Revenue</div>
                       <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Remove revenue that will not repeat.</div>
-                      {[
+                      {([
                         ['asset sales', effectiveAssetSales, 'assetSales'],
                         ['insurance proceeds', effectiveInsuranceProceeds, 'insuranceProceeds'],
                         ['one-time contract', effectiveOneTimeContract, 'oneTimeContract'],
                         ['Other', effectiveOneTimeRevenueOther, 'oneTimeRevenueOther'],
-                      ].map(([label, value, key]) => (
-                        <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
-                          <span>{label}</span>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={formatInputDollars(Number(value) || 0)}
-                            onChange={(e) => {
-                              const parsed = parseInputDollars(e.target.value);
-                              setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
-                            }}
-                            style={{
-                              width: '130px',
-                              textAlign: 'right',
-                              padding: '3px 6px',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '4px',
-                              fontSize: '12px',
-                              fontWeight: 600
-                            }}
-                          />
-                        </div>
+                      ] as Array<[string, any, string]>).map(([label, value, key]) => (
+                        <React.Fragment key={String(label)}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '3px 0' }}>
+                            <span>{label}</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={formatInputDollars(Number(value) || 0)}
+                              onChange={(e) => {
+                                const parsed = parseInputDollars(e.target.value);
+                                setSdeManualInputs((prev) => ({ ...prev, [String(key)]: parsed }));
+                              }}
+                              style={{
+                                width: '130px',
+                                textAlign: 'right',
+                                padding: '3px 6px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: 600
+                              }}
+                            />
+                          </div>
+                          <EbitdaLineItemAccounts bucket="ONE_TIME_REVENUE" lineItem={String(key)} />
+                        </React.Fragment>
                       ))}
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#475569', padding: '3px 0', fontWeight: 700 }}>
                         <span>Adjustment</span>
                         <span style={{ fontWeight: 700 }}>{formatDollars(oneTimeRevenueAdj)}</span>
                       </div>
                     </div>
+                    <EbitdaAccountList />
+                  </div>
+
+                  <div style={{ marginTop: '12px' }}>
+                    <EbitdaHelperBar />
                   </div>
                 </div>
 
@@ -18532,6 +19117,7 @@ function FinancialScorePage() {
                     </div>
                   </div>
                 </div>
+                </EbitdaAdjustmentsProvider>
                 </>
                 )}
                 {sdeModuleTab === 'revenue-quality' && (

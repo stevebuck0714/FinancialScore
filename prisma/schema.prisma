@@ -671,6 +671,18 @@ model AccountMapping {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   lobAllocations        Json?
+  // Per-account owner ownership share (0-100). Used by Account Review to
+  // compute "Owner Amount" = Latest Value * ownerPercent / 100.
+  ownerPercent          Float?
+  // Bucket assignment for the SDE/EBITDA Adjustments page. Null = not an
+  // SDE adjustment. Allowed values:
+  //   OWNER_COMP, PERSONAL, NON_RECURRING, ONE_TIME_REVENUE
+  sdeAdjustmentBucket   String?
+  // Specific line item within an SDE adjustment bucket (e.g. for OWNER_COMP:
+  // 'ownerSalary' | 'ownersDraw' | 'marketReplacementSalary' | 'ownerCompOther').
+  // Null = assigned to the bucket without a specific line. The catalog of valid
+  // values lives in lib/sde/adjustment-line-items.ts (single source of truth).
+  sdeAdjustmentLineItem String?
   company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, accountId])

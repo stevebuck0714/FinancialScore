@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireCompanyAccess } from '@/lib/tenant-security';
-import { publishMonthFromDailySnapshots } from '@/lib/financial/publish-month-service';
+import {
+  publishMonthFromDailySnapshots,
+  publishMonthsFromMonthlyFinancialDirect,
+} from '@/lib/financial/publish-month-service';
 import prisma from '@/lib/prisma';
 import { supportsPublishFromDailySnapshots } from '@/lib/financial/pipeline-strategy';
 
@@ -48,6 +51,45 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 }
       );
+    }
+
+    // CSV-only direct path: CSV trial-balance uploads write to MonthlyFinancial
+    // but never produce DailyFinancialSnapshot rows (the source has no daily
+    // grain). Route those companies to the monthly-direct publisher so the
+    // publish gate flips without requiring fabricated daily snapshots.
+    //
+    // IMPORTANT: this branch is gated on the exact `CSV_FILE` system string —
+    // every ERP system (INFOR_M3, INFOR_CSI, NETSUITE, ACUMATICA, ODOO,
+    // DYNAMICS365, EPICOR, IFS, QUICKBOOKS_DESKTOP) keeps using the existing
+    // daily-snapshots flow unchanged.
+    if (accountingSystem === 'CSV_FILE') {
+      const csvResult = await publishMonthsFromMonthlyFinancialDirect({
+        companyId,
+        month,
+        force,
+      });
+      if (!csvResult.success) {
+        const error = String(csvResult.error || 'Failed to publish month from MonthlyFinancial');
+        if (error.includes('No FinancialRecord') || error.includes('No MonthlyFinancial')) {
+          return NextResponse.json({ error }, { status: 404 });
+        }
+        if (csvResult.lockedMonths.includes(month)) {
+          return NextResponse.json({ error: 'Month is locked. Pass force=true to override.' }, { status: 409 });
+        }
+        if (error.includes('Run prisma migrate')) return NextResponse.json({ error }, { status: 501 });
+        return NextResponse.json({ error }, { status: 500 });
+      }
+      return NextResponse.json({
+        success: true,
+        companyId: csvResult.companyId,
+        month,
+        mode: 'CSV_MONTHLY_DIRECT',
+        monthsPublished: csvResult.publishedMonths.length,
+        publishedMonths: csvResult.publishedMonths,
+        skippedMonths: csvResult.skippedMonths,
+        lockedMonths: csvResult.lockedMonths,
+        missingMonths: csvResult.missingMonths,
+      });
     }
 
     const result = await publishMonthFromDailySnapshots({

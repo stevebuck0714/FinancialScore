@@ -444,3 +444,191 @@ export async function publishMonthFromDailySnapshots(params: PublishMonthParams)
     ...(publishedMonths.length > 0 ? {} : { error: 'No months were published during initial backfill' }),
   };
 }
+
+// -----------------------------------------------------------------------------
+// CSV / monthly-direct publish path
+// -----------------------------------------------------------------------------
+// CSV trial-balance uploads do not produce DailyFinancialSnapshot rows — the
+// raw data only has monthly columns. For those companies, "publishing a month"
+// just means flagging the existing MonthlyFinancial row(s) for that month as
+// PUBLISHED in the FinancialMonthPublish table so the master-data API
+// (scope=published) returns them.
+//
+// This helper is the CSV-lane equivalent of publishMonthFromDailySnapshots.
+// It does NOT recompute aggregates — it trusts the MonthlyFinancial rows the
+// CSV processor already wrote — it only writes the publish gate row.
+
+export type PublishMonthsFromMonthlyParams = {
+  companyId: string;
+  // Either a single month (YYYY-MM) or a list of months. If empty, all months
+  // present in MonthlyFinancial for the most-recent FinancialRecord are
+  // published.
+  month?: string;
+  months?: string[];
+  force?: boolean;
+};
+
+export type PublishMonthsFromMonthlyResult = {
+  success: boolean;
+  companyId: string;
+  publishedMonths: string[];
+  skippedMonths: string[];
+  lockedMonths: string[];
+  missingMonths: string[];
+  error?: string;
+};
+
+export async function publishMonthsFromMonthlyFinancialDirect(
+  params: PublishMonthsFromMonthlyParams,
+): Promise<PublishMonthsFromMonthlyResult> {
+  const companyId = String(params.companyId || '').trim();
+  const force = Boolean(params.force);
+
+  if (!companyId) {
+    return {
+      success: false,
+      companyId,
+      publishedMonths: [],
+      skippedMonths: [],
+      lockedMonths: [],
+      missingMonths: [],
+      error: 'companyId is required',
+    };
+  }
+
+  const publishDelegate = getFinancialMonthPublishDelegate();
+  if (!publishDelegate) {
+    return {
+      success: false,
+      companyId,
+      publishedMonths: [],
+      skippedMonths: [],
+      lockedMonths: [],
+      missingMonths: [],
+      error: 'FinancialMonthPublish model not available. Run prisma migrate + prisma generate.',
+    };
+  }
+
+  // Normalize requested months. Empty -> publish every month present in
+  // MonthlyFinancial (for the latest FinancialRecord).
+  const requestedRaw: string[] = [];
+  if (params.month) requestedRaw.push(String(params.month).trim());
+  if (Array.isArray(params.months)) {
+    for (const m of params.months) requestedRaw.push(String(m || '').trim());
+  }
+  const requestedMonths = Array.from(new Set(requestedRaw.filter(Boolean))).sort();
+
+  // Pull the available months for this company from MonthlyFinancial. We use
+  // the latest FinancialRecord so we publish what the CSV processor most
+  // recently wrote.
+  const latestRecord = await prisma.financialRecord.findFirst({
+    where: { companyId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  if (!latestRecord) {
+    return {
+      success: false,
+      companyId,
+      publishedMonths: [],
+      skippedMonths: [],
+      lockedMonths: [],
+      missingMonths: requestedMonths,
+      error: 'No FinancialRecord found for this company. Process the CSV first.',
+    };
+  }
+
+  const monthlyRows = await prisma.monthlyFinancial.findMany({
+    where: { companyId, financialRecordId: latestRecord.id },
+    select: { monthDate: true },
+    orderBy: { monthDate: 'asc' },
+  });
+  if (monthlyRows.length === 0) {
+    return {
+      success: false,
+      companyId,
+      publishedMonths: [],
+      skippedMonths: [],
+      lockedMonths: [],
+      missingMonths: requestedMonths,
+      error: 'No MonthlyFinancial rows found for this company. Process the CSV first.',
+    };
+  }
+
+  const monthDateByKey = new Map<string, Date>();
+  for (const row of monthlyRows) {
+    const d = new Date(row.monthDate);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    if (!monthDateByKey.has(key)) {
+      monthDateByKey.set(key, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0)));
+    }
+  }
+
+  const targetMonths = requestedMonths.length > 0 ? requestedMonths : Array.from(monthDateByKey.keys()).sort();
+
+  const publishedMonths: string[] = [];
+  const skippedMonths: string[] = [];
+  const lockedMonths: string[] = [];
+  const missingMonths: string[] = [];
+
+  for (const ym of targetMonths) {
+    const monthStart = monthDateByKey.get(ym);
+    if (!monthStart) {
+      missingMonths.push(ym);
+      continue;
+    }
+    const monthEnd = new Date(
+      Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0, 23, 59, 59, 999),
+    );
+
+    const existing = await publishDelegate.findUnique({
+      where: { companyId_monthStart: { companyId, monthStart } },
+    });
+    if (existing?.status === 'LOCKED' && !force) {
+      lockedMonths.push(ym);
+      continue;
+    }
+
+    const notes = force
+      ? 'Force publish | basis=csv_monthly_financial | currency=USD | IS=monthly_activity | BS=month_end_balance'
+      : 'basis=csv_monthly_financial | currency=USD | IS=monthly_activity | BS=month_end_balance';
+    try {
+      await publishDelegate.upsert({
+        where: { companyId_monthStart: { companyId, monthStart } },
+        create: {
+          companyId,
+          monthStart,
+          monthEnd,
+          status: 'PUBLISHED',
+          publishedAt: new Date(),
+          sourceSnapshotDays: 0,
+          sourceRunIds: [],
+          notes,
+        },
+        update: {
+          status: 'PUBLISHED',
+          publishedAt: new Date(),
+          sourceSnapshotDays: 0,
+          sourceRunIds: [],
+          notes,
+        },
+      });
+      publishedMonths.push(ym);
+    } catch (err) {
+      console.error(`Failed to publish ${ym} for company ${companyId}:`, err);
+      skippedMonths.push(ym);
+    }
+  }
+
+  return {
+    success: publishedMonths.length > 0,
+    companyId,
+    publishedMonths,
+    skippedMonths,
+    lockedMonths,
+    missingMonths,
+    ...(publishedMonths.length === 0
+      ? { error: 'No months were published from MonthlyFinancial' }
+      : {}),
+  };
+}

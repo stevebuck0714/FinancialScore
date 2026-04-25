@@ -989,7 +989,15 @@ export default function DashboardView({
                       revenue: m.revenue
                     };
                   });
-                  
+
+                  if (wcData.length === 0) {
+                    return (
+                      <div key="wc-empty" style={{ gridColumn: '1 / -1', padding: '12px', fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                        Working Capital widgets need at least one month of financial data.
+                      </div>
+                    );
+                  }
+
                   const current = wcData[wcData.length - 1];
                   const prior = wcData.length >= 13 ? wcData[wcData.length - 13] : wcData[0];
                   const currentWC = current.workingCapital;
@@ -1414,9 +1422,17 @@ export default function DashboardView({
                       tcl: cl
                     };
                   });
-                  
+
                   // Use last 36 months (3 years) for projection if available
                   const historicalData = wcHistorical.slice(-36);
+
+                  if (historicalData.length === 0) {
+                    return (
+                      <div key="wc-projection-empty" style={{ gridColumn: '1 / -1', padding: '12px', fontSize: '12px', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                        Working Capital projection needs at least one month of historical data.
+                      </div>
+                    );
+                  }
                   
                   // Extract TCA and TCL arrays
                   const tcaValues = historicalData.map(d => d.tca);

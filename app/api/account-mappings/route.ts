@@ -755,11 +755,19 @@ export async function POST(request: NextRequest) {
           m.accountClassification || matchedExisting?.accountClassification || null,
         targetField,
       };
+      const incomingOwnerPercent = (() => {
+        const raw = m?.ownerPercent;
+        if (raw === null || raw === undefined || raw === "") return null;
+        const num = typeof raw === "number" ? raw : Number(raw);
+        if (!Number.isFinite(num)) return null;
+        return Math.max(0, Math.min(100, num));
+      })();
       const extendedMappingData = {
         ...baseMappingData,
         allocationMethod: m.allocationMethod || "manual",
         confidence: m.confidence || "medium",
         lobAllocations: m.lobAllocations || null,
+        ownerPercent: incomingOwnerPercent,
       };
       if (!matchedExisting) {
         try {
@@ -775,7 +783,9 @@ export async function POST(request: NextRequest) {
           const isCompatFieldError =
             message.includes("Unknown argument `allocationMethod`") ||
             message.includes("Unknown argument `confidence`") ||
-            message.includes("Unknown argument `lobAllocations`");
+            message.includes("Unknown argument `lobAllocations`") ||
+            message.includes("Unknown argument `ownerPercent`") ||
+            message.includes('column "ownerPercent" of relation "AccountMapping" does not exist');
           if (!isCompatFieldError) throw createError;
           console.warn(
             "AccountMapping create fallback: schema/client does not support extended mapping fields in this environment.",
@@ -800,7 +810,9 @@ export async function POST(request: NextRequest) {
           const isCompatFieldError =
             message.includes("Unknown argument `allocationMethod`") ||
             message.includes("Unknown argument `confidence`") ||
-            message.includes("Unknown argument `lobAllocations`");
+            message.includes("Unknown argument `lobAllocations`") ||
+            message.includes("Unknown argument `ownerPercent`") ||
+            message.includes('column "ownerPercent" of relation "AccountMapping" does not exist');
           if (!isCompatFieldError) throw updateError;
           console.warn(
             "AccountMapping update fallback: schema/client does not support extended mapping fields in this environment.",
