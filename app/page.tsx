@@ -2206,9 +2206,9 @@ function FinancialScorePage() {
       table { width: 100%; border-collapse: collapse; font-size: 11px; }
       thead { background: #f8fafc; }
       th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #475569; }
-      th:nth-child(4), th:nth-child(5), th:nth-child(6) { text-align: right; }
+      th:nth-child(4) { text-align: right; }
       td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
-      td:nth-child(4), td:nth-child(5), td:nth-child(6) { text-align: right; font-family: monospace; }
+      td:nth-child(4) { text-align: right; font-family: monospace; }
       tr { page-break-inside: avoid; }
       thead { display: table-header-group; }
     </style>
@@ -15739,8 +15739,6 @@ function FinancialScorePage() {
                           <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px' }}>
                             {latestAccountReviewMonthLabel ? `Latest Value (${latestAccountReviewMonthLabel})` : 'Latest Value'}
                           </th>
-                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '90px' }}>Owner %</th>
-                          <th style={{ textAlign: 'right', padding: '8px', fontWeight: '600', color: '#475569', minWidth: '130px' }}>Owner Amount</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -16146,16 +16144,6 @@ function FinancialScorePage() {
                                   matchedMappingIndex >= 0 && Array.isArray(aiMappings)
                                     ? aiMappings[matchedMappingIndex]
                                     : null;
-                                const rawOwnerPct = matchedMapping?.ownerPercent;
-                                const ownerPctNumber =
-                                  rawOwnerPct === null || rawOwnerPct === undefined || rawOwnerPct === ''
-                                    ? null
-                                    : Number(rawOwnerPct);
-                                const hasValidOwnerPct = ownerPctNumber !== null && Number.isFinite(ownerPctNumber);
-                                const ownerInputValue = hasValidOwnerPct ? String(ownerPctNumber) : '';
-                                const ownerAmount = hasValidOwnerPct
-                                  ? (Number(latestValue) * ownerPctNumber!) / 100
-                                  : null;
                                 const csvAcctTypeRaw = String(account.acctType || '').trim();
                                 const csvAcctId = String(account.acctId || '').trim();
                                 // Extract a 4+ digit account code from any candidate
@@ -16238,61 +16226,6 @@ function FinancialScorePage() {
                                     <td style={{ padding: '6px 8px', textAlign: 'right', color: latestValue >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
                                       ${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       {latestValue < 0 && ' (CR)'}
-                                    </td>
-                                    <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: '11px' }}>
-                                      {matchedMappingIndex >= 0 ? (
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          max={100}
-                                          step="0.01"
-                                          value={ownerInputValue}
-                                          placeholder="0"
-                                          onChange={(e) => {
-                                            const raw = e.target.value;
-                                            setAiMappings((prev) => {
-                                              const updated = [...(Array.isArray(prev) ? prev : [])];
-                                              if (!updated[matchedMappingIndex]) return prev;
-                                              let nextValue: number | null;
-                                              if (raw === '') {
-                                                nextValue = null;
-                                              } else {
-                                                const parsed = Number(raw);
-                                                if (!Number.isFinite(parsed)) return prev;
-                                                nextValue = Math.max(0, Math.min(100, parsed));
-                                              }
-                                              updated[matchedMappingIndex] = {
-                                                ...updated[matchedMappingIndex],
-                                                ownerPercent: nextValue,
-                                              };
-                                              return updated;
-                                            });
-                                          }}
-                                          style={{
-                                            width: '70px',
-                                            fontSize: '11px',
-                                            padding: '2px 4px',
-                                            border: '1px solid #cbd5e1',
-                                            borderRadius: '4px',
-                                            textAlign: 'right',
-                                            background: '#fff',
-                                            color: '#334155',
-                                            fontFamily: 'monospace',
-                                          }}
-                                        />
-                                      ) : (
-                                        <span
-                                          style={{ color: '#94a3b8' }}
-                                          title="No saved mapping for this account yet — generate or save mappings to enable Owner %."
-                                        >
-                                          —
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td style={{ padding: '6px 8px', textAlign: 'right', color: ownerAmount == null ? '#94a3b8' : ownerAmount >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
-                                      {ownerAmount == null
-                                        ? '—'
-                                        : `$${Math.abs(ownerAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${ownerAmount < 0 ? ' (CR)' : ''}`}
                                     </td>
                                   </tr>
                                 );
@@ -16381,69 +16314,6 @@ function FinancialScorePage() {
                                     ? 'N/A'
                                     : `$${Math.abs(latestValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${latestValue < 0 ? ' (CR)' : ''}`}
                                 </td>
-                                {(() => {
-                                  const rawOwnerPct = mapping?.ownerPercent;
-                                  const ownerPctNumber =
-                                    rawOwnerPct === null || rawOwnerPct === undefined || rawOwnerPct === ''
-                                      ? null
-                                      : Number(rawOwnerPct);
-                                  const hasValidOwnerPct = ownerPctNumber !== null && Number.isFinite(ownerPctNumber);
-                                  const inputValue = hasValidOwnerPct ? String(ownerPctNumber) : '';
-                                  const ownerAmount =
-                                    latestValue != null && hasValidOwnerPct
-                                      ? (latestValue * ownerPctNumber!) / 100
-                                      : null;
-                                  return (
-                                    <>
-                                      <td style={{ padding: '6px 8px', textAlign: 'right', fontSize: '11px' }}>
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          max={100}
-                                          step="0.01"
-                                          value={inputValue}
-                                          placeholder="0"
-                                          onChange={(e) => {
-                                            const raw = e.target.value;
-                                            setAiMappings((prev) => {
-                                              const updated = [...(Array.isArray(prev) ? prev : [])];
-                                              if (!updated[originalIndex]) return prev;
-                                              let nextValue: number | null;
-                                              if (raw === '') {
-                                                nextValue = null;
-                                              } else {
-                                                const parsed = Number(raw);
-                                                if (!Number.isFinite(parsed)) return prev;
-                                                nextValue = Math.max(0, Math.min(100, parsed));
-                                              }
-                                              updated[originalIndex] = {
-                                                ...updated[originalIndex],
-                                                ownerPercent: nextValue,
-                                              };
-                                              return updated;
-                                            });
-                                          }}
-                                          style={{
-                                            width: '70px',
-                                            fontSize: '11px',
-                                            padding: '2px 4px',
-                                            border: '1px solid #cbd5e1',
-                                            borderRadius: '4px',
-                                            textAlign: 'right',
-                                            background: '#fff',
-                                            color: '#334155',
-                                            fontFamily: 'monospace',
-                                          }}
-                                        />
-                                      </td>
-                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: ownerAmount == null ? '#94a3b8' : ownerAmount >= 0 ? '#10b981' : '#ef4444', fontWeight: '600', fontSize: '11px', fontFamily: 'monospace' }}>
-                                        {ownerAmount == null
-                                          ? '—'
-                                          : `$${Math.abs(ownerAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${ownerAmount < 0 ? ' (CR)' : ''}`}
-                                      </td>
-                                    </>
-                                  );
-                                })()}
                               </tr>
                             );
                           })
