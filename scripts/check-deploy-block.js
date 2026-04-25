@@ -108,6 +108,26 @@ function extractFailedMigrationNames(outputText) {
 }
 
 /**
+ * Detect a Prisma migrate failure caused by an object that already exists in
+ * the target database (typical when a migration was historically applied via
+ * `prisma db push` and the corresponding _prisma_migrations row is missing).
+ * Returns the migration name reported by Prisma, or null if the failure is a
+ * different kind.
+ */
+function extractAlreadyExistsMigrationName(outputText) {
+  if (!outputText) return null;
+  const isAlreadyExists = /(?:relation|table|index|constraint|column|sequence|type|schema) "[^"]+" already exists/i.test(
+    outputText
+  );
+  if (!isAlreadyExists) return null;
+  const explicitMatch =
+    /Migration name:\s*([A-Za-z0-9_./-]+)/i.exec(outputText) ||
+    /migration `([^`]+)`/i.exec(outputText) ||
+    /Applying migration `([^`]+)`/i.exec(outputText);
+  return explicitMatch ? String(explicitMatch[1]).trim() : null;
+}
+
+/**
  * Check if deployment should be blocked
  * Used to prevent auto-deploys to production when BLOCK_AUTO_DEPLOY=true
  */
@@ -360,7 +380,7 @@ WHERE m."id" = r."id"
         if (resolveRolledBack.status !== 0) {
           console.error('');
           console.error('🛑 PRISMA MIGRATION RESOLVE FAILED');
-          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           console.error('');
           console.error(`Could not mark failed migration as rolled back: ${migrationName}`);
           console.error('Resolve this migration manually, then redeploy.');
@@ -375,6 +395,50 @@ WHERE m."id" = r."id"
         migrationDeploy = runPrismaCommand(['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma']);
         printCommandOutput(migrationDeploy);
       }
+    }
+
+    // Auto-baseline: if migrate deploy fails because an object already exists
+    // (e.g., the table was created via legacy `prisma db push` and the
+    // _prisma_migrations row is missing), mark the orphan migration as applied
+    // and retry. Up to 5 such migrations per build to avoid unbounded loops.
+    let baselineAttempts = 0;
+    while (
+      migrationDeploy &&
+      migrationDeploy.status !== 0 &&
+      baselineAttempts < 5
+    ) {
+      const currentOutput = `${migrationDeploy.stdout || ''}\n${migrationDeploy.stderr || ''}`;
+      const orphanMigration = extractAlreadyExistsMigrationName(currentOutput);
+      if (!orphanMigration) break;
+      baselineAttempts += 1;
+      console.warn(
+        `⚠️  Migration "${orphanMigration}" failed with "already exists"; ` +
+          'baselining as applied and retrying deploy.'
+      );
+      const resolveApplied = runPrismaCommand([
+        'prisma',
+        'migrate',
+        'resolve',
+        '--applied',
+        orphanMigration,
+        '--schema',
+        'prisma/schema.prisma',
+      ]);
+      printCommandOutput(resolveApplied);
+      if (resolveApplied.status !== 0) {
+        console.error('');
+        console.error('🛑 PRISMA MIGRATION BASELINE FAILED');
+        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.error('');
+        console.error(`Could not mark migration as applied: ${orphanMigration}`);
+        console.error('Mark it manually with `prisma migrate resolve --applied`, then redeploy.');
+        console.error('');
+        console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.error('');
+        break;
+      }
+      migrationDeploy = runPrismaCommand(['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma']);
+      printCommandOutput(migrationDeploy);
     }
 
     if (migrationDeploy && migrationDeploy.status === 0) {

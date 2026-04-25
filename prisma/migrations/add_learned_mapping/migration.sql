@@ -1,5 +1,8 @@
--- CreateTable
-CREATE TABLE "LearnedMapping" (
+-- CreateTable (idempotent: this migration predates timestamped naming and was
+-- historically applied via `prisma db push`, so on some environments the table
+-- exists without a corresponding _prisma_migrations row. IF NOT EXISTS keeps
+-- `prisma migrate deploy` working in either state.)
+CREATE TABLE IF NOT EXISTS "LearnedMapping" (
     "id" TEXT NOT NULL,
     "accountName" TEXT NOT NULL,
     "accountClassification" TEXT,
@@ -13,11 +16,11 @@ CREATE TABLE "LearnedMapping" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "LearnedMapping_accountName_accountClassification_targetFi_key" ON "LearnedMapping"("accountName", "accountClassification", "targetField");
+CREATE UNIQUE INDEX IF NOT EXISTS "LearnedMapping_accountName_accountClassification_targetFi_key" ON "LearnedMapping"("accountName", "accountClassification", "targetField");
 
 -- CreateIndex
-CREATE INDEX "LearnedMapping_accountName_idx" ON "LearnedMapping"("accountName");
+CREATE INDEX IF NOT EXISTS "LearnedMapping_accountName_idx" ON "LearnedMapping"("accountName");
 
 -- CreateIndex
-CREATE INDEX "LearnedMapping_targetField_idx" ON "LearnedMapping"("targetField");
+CREATE INDEX IF NOT EXISTS "LearnedMapping_targetField_idx" ON "LearnedMapping"("targetField");
 
