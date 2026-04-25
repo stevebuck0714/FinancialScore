@@ -55,6 +55,40 @@ async function getFailedPrismaMigrations(databaseUrl) {
   }
 }
 
+/**
+ * Detects whether AccountMapping carries the new generic `accountId` column,
+ * the legacy `qbAccountId` column (pre-rename migration), or neither (fresh
+ * DB / table missing). Lets the dedupe step run safely against any DB state
+ * instead of crashing when the expected column is absent.
+ */
+async function detectAccountMappingIdColumn(databaseUrl) {
+  const client = new Client({
+    connectionString: databaseUrl,
+    ssl: { rejectUnauthorized: false },
+  });
+  try {
+    await client.connect();
+    const result = await client.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'AccountMapping'
+        AND column_name IN ('accountId', 'qbAccountId')
+    `);
+    const cols = new Set((result.rows || []).map((r) => String(r.column_name)));
+    if (cols.has('accountId')) return 'accountId';
+    if (cols.has('qbAccountId')) return 'qbAccountId';
+    return null;
+  } catch (error) {
+    const message = String(error?.message || '');
+    // Table does not exist yet (fresh DB) — treat as "nothing to dedupe".
+    if (/relation .*AccountMapping.* does not exist/i.test(message)) return null;
+    throw error;
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
 function extractFailedMigrationNames(outputText) {
   const names = new Set();
   const patterns = [
@@ -165,45 +199,74 @@ if (isProduction) {
   }
 
   console.log('🧹 Cleaning duplicate AccountMapping identities before migration...');
-  const dedupeSql = `
+  let accountMappingIdColumn = null;
+  try {
+    accountMappingIdColumn = await detectAccountMappingIdColumn(process.env.DATABASE_URL);
+  } catch (error) {
+    console.error('');
+    console.error('🛑 ACCOUNT MAPPING DEDUPE PRECHECK FAILED');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    console.error('Could not inspect AccountMapping schema before dedupe.');
+    console.error(String(error?.message || error));
+    console.error('');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('');
+    process.exit(1);
+  }
+
+  if (accountMappingIdColumn === null) {
+    console.log(
+      '   ⏭  AccountMapping has neither "accountId" nor "qbAccountId" column ' +
+        '(table missing or pre-init) — skipping dedupe; migrations will create it.'
+    );
+  } else {
+    if (accountMappingIdColumn === 'qbAccountId') {
+      console.log(
+        '   ℹ  Production still uses legacy "qbAccountId" column; deduping by it. ' +
+          'The rename to "accountId" happens in 20260419130000_rename_account_mapping_qb_to_generic.'
+      );
+    }
+    const dedupeSql = `
 WITH ranked AS (
   SELECT
     "id",
     ROW_NUMBER() OVER (
-      PARTITION BY "companyId", "accountId"
+      PARTITION BY "companyId", "${accountMappingIdColumn}"
       ORDER BY COALESCE("updatedAt", "createdAt") DESC, "createdAt" DESC, "id" DESC
     ) AS rn
   FROM "AccountMapping"
-  WHERE "accountId" IS NOT NULL
-    AND NULLIF(TRIM("accountId"), '') IS NOT NULL
+  WHERE "${accountMappingIdColumn}" IS NOT NULL
+    AND NULLIF(TRIM("${accountMappingIdColumn}"), '') IS NOT NULL
 )
 DELETE FROM "AccountMapping" m
 USING ranked r
 WHERE m."id" = r."id"
   AND r.rn > 1;
 `;
-  const dedupeMappings = spawnSync(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['prisma', 'db', 'execute', '--schema', 'prisma/schema.prisma', '--stdin'],
-    {
-      stdio: ['pipe', 'inherit', 'inherit'],
-      env: process.env,
-      input: dedupeSql,
-    }
-  );
+    const dedupeMappings = spawnSync(
+      process.platform === 'win32' ? 'npx.cmd' : 'npx',
+      ['prisma', 'db', 'execute', '--schema', 'prisma/schema.prisma', '--stdin'],
+      {
+        stdio: ['pipe', 'inherit', 'inherit'],
+        env: process.env,
+        input: dedupeSql,
+      }
+    );
 
-  if (dedupeMappings.status !== 0) {
-    printCommandOutput(dedupeMappings);
-    console.error('');
-    console.error('🛑 ACCOUNT MAPPING DEDUPE FAILED');
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.error('');
-    console.error('Could not remove duplicate AccountMapping rows before migration.');
-    console.error('Fix duplicates for ("companyId","accountId") and re-run deploy.');
-    console.error('');
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.error('');
-    process.exit(dedupeMappings.status || 1);
+    if (dedupeMappings.status !== 0) {
+      printCommandOutput(dedupeMappings);
+      console.error('');
+      console.error('🛑 ACCOUNT MAPPING DEDUPE FAILED');
+      console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.error('');
+      console.error('Could not remove duplicate AccountMapping rows before migration.');
+      console.error(`Fix duplicates for ("companyId","${accountMappingIdColumn}") and re-run deploy.`);
+      console.error('');
+      console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.error('');
+      process.exit(dedupeMappings.status || 1);
+    }
   }
 
   try {
