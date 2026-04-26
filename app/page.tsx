@@ -136,6 +136,31 @@ const resolveCompanyLandingView = (user: any, company?: any): 'operations' | 'da
   return userIsDemo || companyIsDemo ? 'operations' : 'daily-alerts';
 };
 
+type ValuationTab = 'sde' | 'ebitda' | 'dcf' | 'business-overview';
+type CompetitorSearchScope = 'local' | 'state' | 'regional' | 'national';
+type ResearchDepth = 'standard' | 'deep';
+type CompetitorTableRow = {
+  name: string;
+  scope: string;
+  location: string;
+  competitorType: string;
+  revenueEstimate: string;
+  employeeEstimate: string;
+  yearsInBusiness: string;
+  overlap: string;
+  threatLevel: string;
+  source: string;
+};
+
+const COMPETITOR_SEARCH_SCOPE_OPTIONS: Array<{ id: CompetitorSearchScope; label: string; description: string }> = [
+  { id: 'local', label: 'Local', description: 'City or metro-area competitors and alternatives.' },
+  { id: 'state', label: 'State', description: 'Companies across the same state.' },
+  { id: 'regional', label: 'Regional', description: 'Broader regional competitors around the company footprint.' },
+  { id: 'national', label: 'National', description: 'U.S. category leaders and direct product competitors.' },
+];
+
+const DEFAULT_COMPETITOR_SEARCH_SCOPES: CompetitorSearchScope[] = ['local', 'state', 'regional', 'national'];
+
 type AccountReviewApiValueCacheEntry = {
   cachedAt: number;
   values: Record<string, number>;
@@ -1065,6 +1090,8 @@ function FinancialScorePage() {
     es_normalizedEarnings: true,
     es_keyValueDrivers: true,
     es_keyRisks: true,
+    bo_companyBackgroundHistory: true,
+    bo_marketPositionCompetitiveLandscape: true,
     bo_companyProfile: true,
     bo_companyDisclosures: true,
     bo_revenueModel: true,
@@ -2562,7 +2589,18 @@ function FinancialScorePage() {
   const [qualifierAutosaveStatus, setQualifierAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const qualifierAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sdeAnalysisTotalsState, setSdeAnalysisTotalsState] = useState<Record<string, number>>({});
-  const [valuationMethodTab, setValuationMethodTab] = useState<'sde' | 'ebitda' | 'dcf'>('sde');
+  const [valuationMethodTab, setValuationMethodTab] = useState<ValuationTab>('sde');
+  const [businessContextSaveStatus, setBusinessContextSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [businessContextGenerateStatus, setBusinessContextGenerateStatus] = useState<'idle' | 'generating' | 'generated' | 'error'>('idle');
+  const [businessContextGenerateError, setBusinessContextGenerateError] = useState('');
+  const [businessContextLoading, setBusinessContextLoading] = useState(false);
+  const [companyBackgroundHistory, setCompanyBackgroundHistory] = useState('');
+  const [marketPositionCompetitiveLandscape, setMarketPositionCompetitiveLandscape] = useState('');
+  const [competitorTable, setCompetitorTable] = useState<CompetitorTableRow[]>([]);
+  const [researchDepth, setResearchDepth] = useState<ResearchDepth>('deep');
+  const [competitorSearchScopes, setCompetitorSearchScopes] = useState<CompetitorSearchScope[]>(DEFAULT_COMPETITOR_SEARCH_SCOPES);
+  const [researchSourcesText, setResearchSourcesText] = useState('');
+  const [businessContextLastUpdatedAt, setBusinessContextLastUpdatedAt] = useState<string | null>(null);
   const [sdeModuleTab, setSdeModuleTab] = useState<'ebitda-adjustments' | 'revenue-quality' | 'customer-quality' | 'working-capital' | 'cash-flow-quality' | 'balance-sheet-quality' | 'recommendations'>('recommendations');
   const [ebitdaAnalysisTab, setEbitdaAnalysisTab] = useState<'revenue-quality' | 'customer-mix' | 'cash-flow-quality' | 'balance-sheet-quality'>('revenue-quality');
   const [dcfAnalysisTab, setDcfAnalysisTab] = useState<'working-capital' | 'cash-flow-quality' | 'revenue-durability' | 'balance-sheet-quality'>('working-capital');
@@ -3604,6 +3642,47 @@ function FinancialScorePage() {
           setSdeAnalysisTotalsState({});
         });
     }
+  }, [selectedCompanyId]);
+
+  // Load editable business overview / market position content when company changes
+  useEffect(() => {
+    if (!selectedCompanyId) {
+      setCompanyBackgroundHistory('');
+      setMarketPositionCompetitiveLandscape('');
+      setCompetitorSearchScopes(DEFAULT_COMPETITOR_SEARCH_SCOPES);
+      setResearchSourcesText('');
+      setBusinessContextLastUpdatedAt(null);
+      return;
+    }
+
+    setBusinessContextLoading(true);
+    fetch(`/api/company-market-context?companyId=${selectedCompanyId}`)
+      .then(res => res.json())
+      .then(data => {
+        const scopes = Array.isArray(data?.competitorSearchScopes)
+          ? data.competitorSearchScopes.filter((scope: string) =>
+              DEFAULT_COMPETITOR_SEARCH_SCOPES.includes(scope as CompetitorSearchScope)
+            )
+          : DEFAULT_COMPETITOR_SEARCH_SCOPES;
+        setCompanyBackgroundHistory(String(data?.companyBackgroundHistory || ''));
+        setMarketPositionCompetitiveLandscape(String(data?.marketPositionCompetitiveLandscape || ''));
+        setCompetitorTable(Array.isArray(data?.competitorTable) ? data.competitorTable : []);
+        setResearchDepth(data?.researchDepth === 'standard' ? 'standard' : 'deep');
+        setCompetitorSearchScopes(scopes.length > 0 ? scopes : DEFAULT_COMPETITOR_SEARCH_SCOPES);
+        setResearchSourcesText(Array.isArray(data?.researchSources) ? data.researchSources.join('\n') : '');
+        setBusinessContextLastUpdatedAt(data?.updatedAt || data?.lastResearchedAt || null);
+      })
+      .catch(err => {
+        console.error('Error loading company market context:', err);
+        setCompanyBackgroundHistory('');
+        setMarketPositionCompetitiveLandscape('');
+        setCompetitorTable([]);
+        setResearchDepth('deep');
+        setCompetitorSearchScopes(DEFAULT_COMPETITOR_SEARCH_SCOPES);
+        setResearchSourcesText('');
+        setBusinessContextLastUpdatedAt(null);
+      })
+      .finally(() => setBusinessContextLoading(false));
   }, [selectedCompanyId]);
 
   // Ensure qualifier defaults are always seeded by sector + industry group
@@ -8983,6 +9062,125 @@ function FinancialScorePage() {
     () => companyProfiles.find((p) => p.companyId === selectedCompanyId) || null,
     [companyProfiles, selectedCompanyId]
   );
+  const businessContextSources = useMemo(
+    () => researchSourcesText.split(/\r?\n/).map((source) => source.trim()).filter(Boolean),
+    [researchSourcesText]
+  );
+  const saveBusinessContext = useCallback(async (markResearched = false) => {
+    if (!selectedCompanyId) return;
+    setBusinessContextSaveStatus('saving');
+    try {
+      const response = await fetch('/api/company-market-context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          companyBackgroundHistory,
+          marketPositionCompetitiveLandscape,
+          competitorTable,
+          researchDepth,
+          competitorSearchScopes,
+          researchSources: businessContextSources,
+          markResearched,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to save business overview');
+      }
+      setBusinessContextLastUpdatedAt(new Date().toISOString());
+      setBusinessContextSaveStatus('saved');
+      setTimeout(() => setBusinessContextSaveStatus('idle'), 2500);
+    } catch (err) {
+      console.error('Error saving business overview / market position:', err);
+      setBusinessContextSaveStatus('error');
+      setTimeout(() => setBusinessContextSaveStatus('idle'), 3000);
+    }
+  }, [
+    selectedCompanyId,
+    companyBackgroundHistory,
+    marketPositionCompetitiveLandscape,
+    competitorTable,
+    researchDepth,
+    competitorSearchScopes,
+    businessContextSources,
+  ]);
+  const applyBusinessContextTemplate = useCallback(() => {
+    const location = [
+      company?.addressCity || '',
+      company?.addressState || '',
+    ].filter(Boolean).join(', ') || company?.location || 'the company market';
+    const companyLabel = companyName || 'the company';
+
+    setCompanyBackgroundHistory(`Company Background & History
+
+${companyLabel} is located in ${location}. Summarize the company's founding history, ownership or leadership background, operating footprint, major product and service lines, industries served, certifications, and any key milestones that help explain the valuation context.
+
+Key points to verify:
+- Founding year and founder/ownership history
+- Headquarters and operating locations
+- Core products and services
+- Industries and customer segments served
+- Certifications, quality systems, or regulatory credentials
+- Notable growth milestones, acquisitions, or strategic changes`);
+
+    setMarketPositionCompetitiveLandscape(`Market Position & Competitive Landscape
+
+Summarize how ${companyLabel} is positioned against relevant competitors. Separate competitors by the selected search scopes so local alternatives, state/regional firms, and national category competitors are not mixed together.
+
+Competitor search scopes selected: ${competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', ')}
+
+Suggested structure:
+- Local competitors:
+- State competitors:
+- Regional competitors:
+- National competitors:
+- Key differentiators:
+- Competitive risks or threats:
+- Valuation implications:`);
+  }, [company, companyName, competitorSearchScopes]);
+  const generateBusinessContextResearch = useCallback(async () => {
+    if (!selectedCompanyId || !companyName) return;
+    setBusinessContextGenerateStatus('generating');
+    setBusinessContextGenerateError('');
+    try {
+      const location = [
+        company?.addressCity || '',
+        company?.addressState || '',
+      ].filter(Boolean).join(', ') || company?.location || '';
+      const response = await fetch('/api/company-market-context/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: selectedCompanyId,
+          companyName,
+          location,
+          website: (company as any)?.website || (company as any)?.websiteUrl || (company as any)?.url || '',
+          industry: (company as any)?.industrySector || (company as any)?.industrySectorCategory || '',
+          aiResearchSearchName: selectedCompanyProfile?.aiResearchSearchName || '',
+          aiResearchAliases: selectedCompanyProfile?.aiResearchAliases || [],
+          aiResearchExcludedNames: selectedCompanyProfile?.aiResearchExcludedNames || [],
+          aiResearchIdentityAnchors: selectedCompanyProfile?.aiResearchIdentityAnchors || [],
+          researchDepth,
+          competitorSearchScopes,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'Research generation failed.');
+      }
+      setCompanyBackgroundHistory(String(result?.companyBackgroundHistory || ''));
+      setMarketPositionCompetitiveLandscape(String(result?.marketPositionCompetitiveLandscape || ''));
+      setCompetitorTable(Array.isArray(result?.competitorTable) ? result.competitorTable : []);
+      setResearchSourcesText(Array.isArray(result?.researchSources) ? result.researchSources.join('\n') : '');
+      setBusinessContextGenerateStatus('generated');
+      setTimeout(() => setBusinessContextGenerateStatus('idle'), 3000);
+    } catch (err: any) {
+      console.error('Error generating business overview / market position:', err);
+      setBusinessContextGenerateError(err?.message || 'Research generation failed.');
+      setBusinessContextGenerateStatus('error');
+    }
+  }, [selectedCompanyId, companyName, company, selectedCompanyProfile, researchDepth, competitorSearchScopes]);
   const businessOverviewProfileItems = useMemo(() => {
     const companyAddress = [
       company?.addressStreet,
@@ -9401,6 +9599,8 @@ function FinancialScorePage() {
       id: '2',
       title: '2. Business Overview',
       rows: [
+        { key: 'bo_companyBackgroundHistory', label: 'Company Background & History' },
+        { key: 'bo_marketPositionCompetitiveLandscape', label: 'Market Position & Competitive Landscape' },
         { key: 'bo_companyProfile', label: 'Company Profile' },
         { key: 'bo_companyDisclosures', label: 'Company Disclosures' },
         { key: 'bo_revenueModel', label: 'Revenue Model' },
@@ -9485,6 +9685,8 @@ function FinancialScorePage() {
   ]), []);
   const buildBusinessOverviewReportText = useCallback((): string => {
     const businessRows = [
+      { key: 'bo_companyBackgroundHistory', label: 'Company Background & History' },
+      { key: 'bo_marketPositionCompetitiveLandscape', label: 'Market Position & Competitive Landscape' },
       { key: 'bo_companyProfile', label: 'Company Profile' },
       { key: 'bo_companyDisclosures', label: 'Company Disclosures' },
       { key: 'bo_revenueModel', label: 'Revenue Model' },
@@ -9497,6 +9699,28 @@ function FinancialScorePage() {
     const pctOrNA = (value: number | null | undefined) =>
       Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : 'N/A';
     const lines: string[] = [valuationReportSectionDisplayTitle('2. Business Overview'), ''];
+    if (valuationBuilderSelections.bo_companyBackgroundHistory) {
+      lines.push(`${rowLabel('bo_companyBackgroundHistory', 'Company Background & History')}:`);
+      lines.push(companyBackgroundHistory.trim() || '- No company background and history narrative has been saved.');
+      lines.push('');
+    }
+    if (valuationBuilderSelections.bo_marketPositionCompetitiveLandscape) {
+      lines.push(`${rowLabel('bo_marketPositionCompetitiveLandscape', 'Market Position & Competitive Landscape')}:`);
+      lines.push(marketPositionCompetitiveLandscape.trim() || '- No market position and competitive landscape narrative has been saved.');
+      lines.push(`- Competitor search scopes: ${competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', ')}`);
+      if (competitorTable.length > 0) {
+        lines.push('');
+        lines.push('Competitor Table:');
+        competitorTable.forEach((row) => {
+          lines.push(`- ${row.name} (${row.scope || 'N/A'}; ${row.location || 'N/A'}): ${row.competitorType || 'N/A'} | Revenue: ${row.revenueEstimate || 'not publicly available'} | Employees: ${row.employeeEstimate || 'not publicly available'} | Years in business: ${row.yearsInBusiness || 'not publicly available'} | Threat: ${row.threatLevel || 'N/A'} | Overlap: ${row.overlap || 'N/A'}`);
+        });
+      }
+      if (businessContextSources.length > 0) {
+        lines.push('- Sources:');
+        businessContextSources.forEach((source) => lines.push(`  - ${source}`));
+      }
+      lines.push('');
+    }
     if (valuationBuilderSelections.bo_companyProfile) {
       lines.push(`${rowLabel('bo_companyProfile', 'Company Profile')}:`);
       for (const item of businessOverviewProfileItems) {
@@ -9533,6 +9757,11 @@ function FinancialScorePage() {
     valuationBuilderSelections,
     indexToLetterLabel,
     valuationReportSectionDisplayTitle,
+    companyBackgroundHistory,
+    marketPositionCompetitiveLandscape,
+    competitorTable,
+    competitorSearchScopes,
+    businessContextSources,
     businessOverviewProfileItems,
     businessOverviewDisclosuresSummary,
     businessOverviewRevenueMix,
@@ -9547,6 +9776,29 @@ function FinancialScorePage() {
     const sel = valuationBuilderSelections;
     const pctOrNA = (value: number | null | undefined) =>
       Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : 'N/A';
+    const textBlockHtml = (value: string, emptyText: string) =>
+      esc(value.trim() || emptyText).replace(/\n/g, '<br />');
+
+    const backgroundHistoryHtml = sel.bo_companyBackgroundHistory
+      ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Company Background & History</div>
+        <div style="font-size: 13px; color: #334155; line-height: 1.6;">${textBlockHtml(companyBackgroundHistory, 'No company background and history narrative has been saved.')}</div>
+      </div>`
+      : '';
+
+    const sourceListHtml = businessContextSources.length > 0
+      ? `<div style="margin-top: 10px;"><div style="font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 4px;">Sources</div><ul style="margin: 0; padding-left: 18px;">${businessContextSources.map((source) => `<li>${esc(source)}</li>`).join('')}</ul></div>`
+      : '';
+
+    const marketPositionHtml = sel.bo_marketPositionCompetitiveLandscape
+      ? `<div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-bottom: 8px;">Market Position & Competitive Landscape</div>
+        <div style="font-size: 13px; color: #334155; line-height: 1.6;">${textBlockHtml(marketPositionCompetitiveLandscape, 'No market position and competitive landscape narrative has been saved.')}</div>
+        <div style="font-size: 12px; color: #64748b; margin-top: 10px;"><strong>Competitor search scopes:</strong> ${esc(competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', '))}</div>
+        ${competitorTable.length > 0 ? `<div style="margin-top: 12px; overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 11px; color: #334155;"><thead><tr style="background: #f8fafc;">${['Competitor', 'Scope', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat'].map((h) => `<th style="text-align:left;padding:6px;border:1px solid #e2e8f0;">${esc(h)}</th>`).join('')}</tr></thead><tbody>${competitorTable.map((row) => `<tr><td style="padding:6px;border:1px solid #e2e8f0;font-weight:700;">${esc(row.name)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.scope)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.location)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.competitorType)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.revenueEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.employeeEstimate)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.yearsInBusiness)}</td><td style="padding:6px;border:1px solid #e2e8f0;">${esc(row.threatLevel)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+        ${sourceListHtml}
+      </div>`
+      : '';
 
     const profileListHtml = businessOverviewProfileItems
       .flatMap((item) => {
@@ -9662,6 +9914,8 @@ function FinancialScorePage() {
           <div style="font-size: 16px; color: #475569; margin-top: 4px; line-height: 1.45;">Prepared for: <strong>${esc(companyName || 'Selected Company')}</strong> | Generated: ${esc(new Date().toLocaleDateString('en-US'))}</div>
         </div>
         <div style="padding: 16px 18px; display: grid; gap: 12px;">
+          ${backgroundHistoryHtml}
+          ${marketPositionHtml}
           ${row1Html}
           ${keyEmployeesHtml}
           ${bottomRowHtml}
@@ -9672,6 +9926,11 @@ function FinancialScorePage() {
     valuationBuilderSelections,
     company,
     companyName,
+    companyBackgroundHistory,
+    marketPositionCompetitiveLandscape,
+    competitorTable,
+    competitorSearchScopes,
+    businessContextSources,
     businessOverviewProfileItems,
     businessOverviewDisclosureItems,
     businessOverviewKeyEmployees,
@@ -11753,7 +12012,8 @@ function FinancialScorePage() {
                       {[
                         { id: 'sde' as const, label: 'SDE' },
                         { id: 'ebitda' as const, label: 'EBITDA ANALYSIS' },
-                        { id: 'dcf' as const, label: 'DCF ANALYSIS' }
+                        { id: 'dcf' as const, label: 'DCF ANALYSIS' },
+                        { id: 'business-overview' as const, label: 'BUSINESS OVERVIEW / MARKET POSITION' }
                       ].map((item) => (
                         <div
                           key={item.id}
@@ -17059,6 +17319,62 @@ function FinancialScorePage() {
                   </div>
                 </div>
                 <div style={{ padding: '16px 18px', display: 'grid', gap: '12px' }}>
+                  {valuationBuilderSelections.bo_companyBackgroundHistory && (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Company Background & History</div>
+                      <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                        {companyBackgroundHistory.trim() || 'No company background and history narrative has been saved.'}
+                      </div>
+                    </div>
+                  )}
+                  {valuationBuilderSelections.bo_marketPositionCompetitiveLandscape && (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', marginBottom: '8px' }}>Market Position & Competitive Landscape</div>
+                      <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                        {marketPositionCompetitiveLandscape.trim() || 'No market position and competitive landscape narrative has been saved.'}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
+                        <strong>Competitor search scopes:</strong> {competitorSearchScopes.map((scope) => scope.toUpperCase()).join(', ')}
+                      </div>
+                      {competitorTable.length > 0 && (
+                        <div style={{ marginTop: '12px', overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', color: '#334155' }}>
+                            <thead>
+                              <tr style={{ background: '#f8fafc' }}>
+                                {['Competitor', 'Scope', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat'].map((header) => (
+                                  <th key={header} style={{ textAlign: 'left', padding: '6px', border: '1px solid #e2e8f0' }}>{header}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {competitorTable.map((row, idx) => (
+                                <tr key={`${row.name}-${idx}`}>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0', fontWeight: 700 }}>{row.name}</td>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.scope}</td>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.location}</td>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.competitorType}</td>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.revenueEstimate}</td>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.employeeEstimate}</td>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.yearsInBusiness}</td>
+                                  <td style={{ padding: '6px', border: '1px solid #e2e8f0' }}>{row.threatLevel}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {businessContextSources.length > 0 && (
+                        <div style={{ marginTop: '10px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '4px' }}>Sources</div>
+                          <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: '#475569', lineHeight: 1.5 }}>
+                            {businessContextSources.map((source, idx) => (
+                              <li key={`${source}-${idx}`}>{source}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {(valuationBuilderSelections.bo_companyProfile || valuationBuilderSelections.bo_companyDisclosures) && (
                     <div
                       style={{
@@ -17199,13 +17515,14 @@ function FinancialScorePage() {
       )}
 
       {/* Valuation View */}
-      {currentView === 'valuation' && selectedCompanyId && monthly.length > 0 && (
+      {currentView === 'valuation' && selectedCompanyId && (monthly.length > 0 || valuationMethodTab === 'business-overview') && (
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h1 style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-              {valuationMethodTab === 'sde' ? 'SDE Valuation' : valuationMethodTab === 'ebitda' ? 'EBITDA Valuation' : 'DCF Valuation'}
+              {valuationMethodTab === 'sde' ? 'SDE Valuation' : valuationMethodTab === 'ebitda' ? 'EBITDA Valuation' : valuationMethodTab === 'dcf' ? 'DCF Valuation' : 'Business Overview / Market Position'}
             </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {valuationMethodTab !== 'business-overview' && (
               <button
                 id="valuation-save-settings-btn"
                 onClick={async () => {
@@ -17412,10 +17729,245 @@ function FinancialScorePage() {
               >
                 {valuationSaveStatus === 'saving' ? 'Saving...' : valuationSaveStatus === 'saved' ? 'Saved' : valuationSaveStatus === 'error' ? 'Retry Save' : 'Save Changes'}
               </button>
+              )}
             </div>
           </div>
           
-          {(() => {
+          {valuationMethodTab === 'business-overview' ? (
+            <div style={{ display: 'grid', gap: '16px' }}>
+              <div style={{ background: 'white', border: '1px solid #dbe5ef', borderRadius: '12px', padding: '18px 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <div>
+                    {businessContextLastUpdatedAt && (
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        Last saved: {new Date(businessContextLastUpdatedAt).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={applyBusinessContextTemplate}
+                      style={{
+                        padding: '8px 12px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#fff',
+                        color: '#334155',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Insert Manual Draft Template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={generateBusinessContextResearch}
+                      disabled={businessContextGenerateStatus === 'generating' || !companyName}
+                      title="Generate a source-backed draft using Perplexity Sonar Pro."
+                      style={{
+                        padding: '8px 12px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: businessContextGenerateStatus === 'generated' ? '#ecfdf3' : businessContextGenerateStatus === 'error' ? '#fef2f2' : businessContextGenerateStatus === 'generating' ? '#f8fafc' : '#fff',
+                        color: businessContextGenerateStatus === 'generated' ? '#166534' : businessContextGenerateStatus === 'error' ? '#991b1b' : businessContextGenerateStatus === 'generating' ? '#64748b' : '#334155',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: businessContextGenerateStatus === 'generating' || !companyName ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {businessContextGenerateStatus === 'generating' ? 'Generating...' : businessContextGenerateStatus === 'generated' ? 'Draft Generated' : businessContextGenerateStatus === 'error' ? 'Retry Generate' : 'Generate Research'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => saveBusinessContext(false)}
+                      disabled={businessContextSaveStatus === 'saving'}
+                      style={{
+                        padding: '8px 14px',
+                        border: businessContextSaveStatus === 'error' ? '1px solid #fecaca' : businessContextSaveStatus === 'saved' ? '1px solid #86efac' : '1px solid #1f70c1',
+                        borderRadius: '8px',
+                        background: businessContextSaveStatus === 'error' ? '#fef2f2' : businessContextSaveStatus === 'saved' ? '#ecfdf3' : businessContextSaveStatus === 'saving' ? '#f8fafc' : '#1f70c1',
+                        color: businessContextSaveStatus === 'error' ? '#991b1b' : businessContextSaveStatus === 'saved' ? '#166534' : businessContextSaveStatus === 'saving' ? '#64748b' : 'white',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: businessContextSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {businessContextSaveStatus === 'saving' ? 'Saving...' : businessContextSaveStatus === 'saved' ? 'Saved' : businessContextSaveStatus === 'error' ? 'Retry Save' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+                {businessContextLoading && (
+                  <div style={{ fontSize: '13px', color: '#64748b', padding: '8px 0' }}>Loading saved business overview...</div>
+                )}
+                {businessContextGenerateError && businessContextGenerateStatus === 'error' && (
+                  <div style={{ fontSize: '13px', color: '#991b1b', padding: '8px 0' }}>{businessContextGenerateError}</div>
+                )}
+              </div>
+
+              <div style={{ background: 'white', border: '1px solid #dbe5ef', borderRadius: '12px', padding: '18px 20px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>Company Background & History</div>
+                <textarea
+                  value={companyBackgroundHistory}
+                  onChange={(e) => setCompanyBackgroundHistory(e.target.value)}
+                  placeholder="Enter or generate the company's background, history, ownership, locations, products, industries served, certifications, and milestones."
+                  style={{
+                    width: '100%',
+                    minHeight: '240px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '14px',
+                    lineHeight: 1.55,
+                    color: '#1e293b',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+
+              <div style={{ background: 'white', border: '1px solid #dbe5ef', borderRadius: '12px', padding: '18px 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>Market Position & Competitive Landscape</div>
+                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>Choose the research depth and search scopes that should drive future AI competitor research.</div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '10px 12px', alignItems: 'center', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#475569' }}>Research Depth</div>
+                  <select
+                    value={researchDepth}
+                    onChange={(e) => setResearchDepth(e.target.value === 'standard' ? 'standard' : 'deep')}
+                    style={{
+                      width: '220px',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      background: 'white',
+                      color: '#334155',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <option value="standard">Standard - faster / lower cost</option>
+                    <option value="deep">Deep - more detailed scan</option>
+                  </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+                  {COMPETITOR_SEARCH_SCOPE_OPTIONS.map((option) => {
+                    const checked = competitorSearchScopes.includes(option.id);
+                    return (
+                      <label
+                        key={option.id}
+                        style={{
+                          display: 'flex',
+                          gap: '10px',
+                          alignItems: 'flex-start',
+                          border: checked ? '1px solid #93c5fd' : '1px solid #e2e8f0',
+                          borderRadius: '10px',
+                          padding: '10px 12px',
+                          background: checked ? '#eff6ff' : '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setCompetitorSearchScopes((prev) => {
+                              if (e.target.checked) {
+                                return prev.includes(option.id) ? prev : [...prev, option.id];
+                              }
+                              const next = prev.filter((scope) => scope !== option.id);
+                              return next.length > 0 ? next : prev;
+                            });
+                          }}
+                          style={{ marginTop: '3px' }}
+                        />
+                        <span>
+                          <span style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{option.label}</span>
+                          <span style={{ display: 'block', fontSize: '12px', color: '#64748b', lineHeight: 1.35 }}>{option.description}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <textarea
+                  value={marketPositionCompetitiveLandscape}
+                  onChange={(e) => setMarketPositionCompetitiveLandscape(e.target.value)}
+                  placeholder="Enter or generate the market position, direct competitors, regional alternatives, national category competitors, differentiators, risks, and valuation implications."
+                  style={{
+                    width: '100%',
+                    minHeight: '260px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '14px',
+                    lineHeight: 1.55,
+                    color: '#1e293b',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                  }}
+                />
+                {competitorTable.length > 0 && (
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>Competitor Size & Positioning Table</div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>
+                      Revenue and employee figures are estimates unless marked as company-reported or otherwise source-backed.
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#334155' }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc' }}>
+                            {['Competitor', 'Scope', 'Location', 'Type', 'Revenue', 'Employees', 'Years', 'Threat', 'Overlap'].map((header) => (
+                              <th key={header} style={{ textAlign: 'left', padding: '8px', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{header}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {competitorTable.map((row, idx) => (
+                            <tr key={`${row.name}-${idx}`}>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0', fontWeight: 700, minWidth: '160px' }}>{row.name}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0' }}>{row.scope || 'N/A'}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '130px' }}>{row.location || 'N/A'}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '160px' }}>{row.competitorType || 'N/A'}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '130px' }}>{row.revenueEstimate || 'not publicly available'}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '120px' }}>{row.employeeEstimate || 'not publicly available'}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '110px' }}>{row.yearsInBusiness || 'not publicly available'}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0' }}>{row.threatLevel || 'N/A'}</td>
+                              <td style={{ padding: '8px', border: '1px solid #e2e8f0', minWidth: '220px' }}>{row.overlap || 'N/A'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background: 'white', border: '1px solid #dbe5ef', borderRadius: '12px', padding: '18px 20px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>Sources</div>
+                <textarea
+                  value={researchSourcesText}
+                  onChange={(e) => setResearchSourcesText(e.target.value)}
+                  placeholder="Add one source URL or note per line. Future AI research will populate this automatically."
+                  style={{
+                    width: '100%',
+                    minHeight: '120px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '14px',
+                    lineHeight: 1.55,
+                    color: '#1e293b',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+            </div>
+          ) : (() => {
             // Calculate trailing 12 months values
             const last12 = monthly.slice(-12);
             const ttmRevenue = last12.reduce((sum, m) => sum + (m.revenue || 0), 0);

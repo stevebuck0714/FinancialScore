@@ -195,6 +195,10 @@ export interface CompanyProfile {
   keyAdvisors: string;
   specialNotes: string;
   qoeNotes: string;
+  aiResearchSearchName?: string;
+  aiResearchAliases?: string[];
+  aiResearchExcludedNames?: string[];
+  aiResearchIdentityAnchors?: string[];
   disclosures: {
     bankruptcies: string;
     liens: string;
